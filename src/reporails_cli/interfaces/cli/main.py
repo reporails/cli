@@ -270,6 +270,39 @@ def map(
         console.print(f"[green]Saved:[/green] {backbone_path}")
 
 
+@app.command()
+def sync(
+    checks_dir: str = typer.Argument(
+        "checks",
+        help="Local checks directory to sync .md files to",
+    ),
+) -> None:
+    """Sync rule definitions from framework repo (dev command).
+
+    Downloads .md files from reporails/framework to local checks directory.
+    Preserves existing .yml files (OpenGrep patterns).
+
+    Typical usage:
+        ails sync checks
+    """
+    from reporails_cli.core.init import sync_rules_to_local
+
+    target = Path(checks_dir).resolve()
+
+    if not target.exists():
+        console.print(f"[red]Error:[/red] Directory not found: {target}")
+        raise typer.Exit(1)
+
+    console.print(f"Syncing .md files from framework repo to {target}...")
+
+    try:
+        count = sync_rules_to_local(target)
+        console.print(f"[green]Synced {count} rule definition(s)[/green]")
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+
 def main() -> None:
     """Entry point for CLI."""
     app()

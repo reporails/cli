@@ -53,6 +53,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reporails_cli"]
+only-include = ["src/reporails_cli", "checks"]
+exclude = ["checks/**/*.md"]
+
+[tool.hatch.build.targets.wheel.sources]
+"checks" = "reporails_cli/bundled_checks"
 
 [tool.poe.tasks]
 lint = "ruff check src/ tests/"
