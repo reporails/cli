@@ -1,0 +1,32 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: C4-has-never-antipattern
+    message: "Documents antipatterns with NEVER statements"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "\\bNEVER\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C4-has-do-not-antipattern
+    message: "Documents antipatterns with 'do not' statements"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)\\bdo\\s+not\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C4-has-avoid-antipattern
+    message: "Documents antipatterns with 'avoid' statements"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)\\bavoid\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

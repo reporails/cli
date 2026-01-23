@@ -1,0 +1,20 @@
+rules:
+  - id: S5-has-paths-frontmatter
+    message: "Rule file has path-scoped frontmatter"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "^---[\\s\\S]*?paths:\\s*\\["
+    paths:
+      include:
+        - "**/.claude/rules/*.md"
+
+  - id: S5-missing-paths-scope
+    message: "Consider adding 'paths:' frontmatter to scope this rule"
+    severity: INFO
+    languages: [generic]
+    patterns:
+      - pattern-regex: "^---"
+      - pattern-not-regex: "paths:"
+    paths:
+      include:
+        - "**/.claude/rules/*.md"

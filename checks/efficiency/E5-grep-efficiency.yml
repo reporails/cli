@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: E5-documents-grep-efficiency
+    message: "Documents efficient grep usage"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:files_with_matches|head_limit|output_mode)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: E5-mentions-bounded-search
+    message: "Documents bounded search practices"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:limit|bound|cap).*(?:search|grep|output)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

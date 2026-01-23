@@ -1,0 +1,23 @@
+rules:
+  # Note: Actual link validation requires custom tooling
+  # These patterns extract links for validation
+
+  - id: C11-import-reference
+    message: "File reference found - verify target exists"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "@[a-zA-Z0-9_][a-zA-Z0-9_/.-]*\\.md"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C11-markdown-link
+    message: "Markdown link found - verify target exists"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "\\]\\([^)]+\\)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

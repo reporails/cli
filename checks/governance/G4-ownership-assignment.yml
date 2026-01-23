@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: G4-owner-in-frontmatter
+    message: "Owner specified in YAML frontmatter"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "^---[\\s\\S]*?owner:\\s*[\"']?\\w+"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: G4-maintainer-documented
+    message: "Maintainer/owner documented in file"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:maintained|owned)\\s+by"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

@@ -1,0 +1,21 @@
+rules:
+  # Note: Ratio-based checks require custom tooling
+  # These patterns detect import presence
+
+  - id: E7-import-present
+    message: "File contains @import reference"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "@[a-zA-Z0-9_/.-]+\\.md"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+
+  - id: E7-see-reference-present
+    message: "File contains 'See @...' reference"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)see\\s+@[a-zA-Z0-9_/.-]+"
+    paths:
+      include:
+        - "**/CLAUDE.md"

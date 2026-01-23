@@ -1,0 +1,24 @@
+# Reporails CLI Backbone - read at session start
+
+# Specs (read arch.md first for architectural changes)
+specs:
+  arch: docs/specs/arch.md
+  modules: docs/specs/modules.md
+  models: docs/specs/models.md
+  scoring: docs/specs/scoring.md
+  caching: docs/specs/caching.md
+
+# Source
+src:
+  core: src/reporails_cli/core/
+  interfaces: src/reporails_cli/interfaces/
+  formatters: src/reporails_cli/formatters/
+  semantic: src/reporails_cli/semantic/
+
+# Rules
+checks:
+  structure: checks/structure/    # S1-S7
+  content: checks/content/        # C1-C12
+  efficiency: checks/efficiency/  # E1-E8
+  governance: checks/governance/  # G1-G8
+  maintenance: checks/maintenance/ # M1-M7

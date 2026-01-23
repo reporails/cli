@@ -1,0 +1,24 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: C3-path-specific-in-root
+    message: "Path-specific rule may belong in .claude/rules/"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:when\\s+(?:editing|modifying|working\\s+(?:on|with))|for\\s+files\\s+in)\\s+[\"'`]?(?:src/|lib/|test)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+      exclude:
+        - "**/.claude/**"
+
+  - id: C3-language-specific-in-root
+    message: "Language-specific rule may be better in scoped rule file"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:in\\s+)?(?:python|typescript|javascript|go|rust|java)\\s+(?:files?|code)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+      exclude:
+        - "**/.claude/**"

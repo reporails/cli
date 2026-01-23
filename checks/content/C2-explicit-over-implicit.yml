@@ -1,0 +1,42 @@
+rules:
+  # Heuristic patterns for semantic rule - catches obvious cases
+
+  - id: C2-vague-properly
+    message: "Vague: 'properly' - specify what proper means"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "(?i)\\b(?:do|format|handle|write|code)\\s+(?:\\w+\\s+)?properly\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C2-vague-good-naming
+    message: "Vague: 'good naming' - specify naming conventions"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "(?i)\\bgood\\s+(?:naming|names|conventions?)\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C2-vague-appropriate
+    message: "Vague: 'appropriate' - define what is appropriate"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)\\buse\\s+appropriate\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C2-vague-best-practices
+    message: "Vague: 'best practices' - list specific practices"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)\\bfollow\\s+best\\s+practices\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

@@ -1,0 +1,18 @@
+rules:
+  - id: S2-has-import-reference
+    message: "File uses @import for progressive disclosure"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "@[a-zA-Z0-9_/.-]+\\.md"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+
+  - id: S2-has-see-reference
+    message: "File uses 'See @...' pattern for progressive disclosure"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)see\\s+@[a-zA-Z0-9_/.-]+"
+    paths:
+      include:
+        - "**/CLAUDE.md"

@@ -1,0 +1,21 @@
+rules:
+  # NOTE: Absence detection (missing fields) requires custom tooling
+  # These patterns validate backbone.yml HAS required fields
+
+  - id: S6-backbone-has-working-dir
+    message: "backbone.yml defines working_dir"
+    severity: INFO
+    languages: [yaml]
+    pattern: "working_dir: ..."
+    paths:
+      include:
+        - "**/.reporails/backbone.yml"
+
+  - id: S6-backbone-has-source
+    message: "backbone.yml defines source structure"
+    severity: INFO
+    languages: [yaml]
+    pattern: "source: ..."
+    paths:
+      include:
+        - "**/.reporails/backbone.yml"

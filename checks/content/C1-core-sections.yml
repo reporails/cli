@@ -1,0 +1,22 @@
+rules:
+  # NOTE: Absence detection requires custom tooling, not OpenGrep patterns
+  # These rules are checked semantically via semantic/definitions.py
+  # Placeholder pattern to prevent rule loading errors
+
+  - id: C1-has-project-heading
+    message: "CLAUDE.md has project-related heading"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)^##?\\s*(project|context|overview|about)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+
+  - id: C1-has-commands-heading
+    message: "CLAUDE.md has commands/scripts section"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)^##?\\s*(commands?|scripts?|quick\\s*start)"
+    paths:
+      include:
+        - "**/CLAUDE.md"

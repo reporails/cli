@@ -1,0 +1,92 @@
+[project]
+name = "reporails-cli"
+version = "0.0.1"
+description = "Lint and score CLAUDE.md files — MCP-first AI context governance"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "Reporails Team" }]
+keywords = ["claude", "ai", "context", "lint", "mcp", "claude-code"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "httpx>=0.27.0",
+    "mcp>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.23.0",
+    "mypy>=1.8.0",
+    "types-PyYAML>=6.0.0",
+    "ruff>=0.3.0",
+    "poethepoet>=0.25.0",
+]
+
+[project.scripts]
+ails = "reporails_cli.interfaces.cli.main:app"
+ails-mcp = "reporails_cli.interfaces.mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/reporails/cli"
+Documentation = "https://reporails.dev/docs"
+Repository = "https://github.com/reporails/cli"
+Issues = "https://github.com/reporails/cli/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reporails_cli"]
+
+[tool.poe.tasks]
+lint = "ruff check src/ tests/"
+format = "ruff format src/ tests/"
+type = "mypy src/"
+test_unit = "pytest tests/unit/ -v"
+test_integration = "pytest tests/integration/ -v"
+qa_fast = ["lint", "type", "test_unit"]
+qa = ["lint", "type", "test_unit", "test_integration"]
+mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+mypy_path = "src"
+packages = ["reporails_cli"]
+explicit_package_bases = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "unit: Fast, isolated unit tests",
+    "integration: Cross-component tests",
+    "mcp: MCP server/tool tests",
+]
