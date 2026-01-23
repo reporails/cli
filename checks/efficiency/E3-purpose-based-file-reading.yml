@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: E3-documents-reading-strategy
+    message: "Documents file reading strategy"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:read(?:ing)?\\s+strateg|when\\s+reading|how\\s+to\\s+read)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: E3-mentions-offset-limit
+    message: "Documents offset/limit for efficient reading"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:offset|limit)\\s*[=:]\\s*[0-9]+"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

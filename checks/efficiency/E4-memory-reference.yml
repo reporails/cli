@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: E4-documents-memory-reference
+    message: "Documents memory reference practice"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:from\\s+memory|reference.*memory|don't\\s+re-?read|avoid\\s+re-?reading)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: E4-anti-reread
+    message: "Documents avoiding re-reading files"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:re-?read|reading.*again|already\\s+read)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

@@ -1,0 +1,33 @@
+# Claude Code Ignore Patterns
+# Never read these files/directories.
+
+# Lock file
+uv.lock
+
+# Python cache & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# Build artifacts & caches
+.cache/
+.langgraph_api/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Version control
+.git/
+
+# IDE & editor
+.idea/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local

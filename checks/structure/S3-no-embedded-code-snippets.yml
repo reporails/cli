@@ -1,0 +1,20 @@
+rules:
+  - id: S3-embedded-code-block
+    message: "Code snippet embedded in CLAUDE.md - reference source files instead"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "```(?:python|javascript|typescript|java|go|rust|c|cpp|csharp|ruby|php|swift|kotlin)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: S3-large-code-block
+    message: "Large code block (10+ lines) - reference source file instead"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "```[a-z]*\\n(?:[^`]*\\n){10,}```"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

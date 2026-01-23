@@ -1,0 +1,23 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: G3-security-section
+    message: "Has security-related rules section"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)^##?\\s*security"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: G3-security-owner
+    message: "Security ownership documented"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)security\\s+(?:team|owner|lead)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+        - "**/CODEOWNERS"

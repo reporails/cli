@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: C6-repeated-instruction
+    message: "May indicate duplication: 'as mentioned'"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:as\\s+mentioned|as\\s+noted|as\\s+stated)\\s+(?:above|below|earlier|in)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C6-see-also-reference
+    message: "Cross-reference found - ensure no duplication"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)see\\s+also"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

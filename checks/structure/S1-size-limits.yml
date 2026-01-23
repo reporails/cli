@@ -1,0 +1,29 @@
+rules:
+  # S1: Size Limits - detect symptoms of oversized files
+  # Accurate line counting requires custom tooling
+
+  # Pattern matches files with 6+ level-2 headings AND 100+ lines
+  - id: S1-many-sections
+    message: "File has 6+ sections and >100 lines - consider splitting or using hierarchical structure"
+    severity: WARNING
+    languages: [generic]
+    patterns:
+      # 6+ level-2 headings
+      - pattern-regex: "(?s)^## [^\\n]+.*?^## [^\\n]+.*?^## [^\\n]+.*?^## [^\\n]+.*?^## [^\\n]+.*?^## [^\\n]+"
+      # 100+ lines
+      - pattern-regex: "(?s)(?:[^\\n]*\\n){100,}"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+
+  # Pattern matches very long code blocks (>15 lines suggests embedded code)
+  - id: S1-long-code-block
+    message: "Code block exceeds 15 lines - reference source file instead"
+    severity: WARNING
+    languages: [generic]
+    # Match code block with 15+ newlines inside
+    pattern-regex: "```[^\\n]*\\n(?:[^\\n]*\\n){15,}```"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

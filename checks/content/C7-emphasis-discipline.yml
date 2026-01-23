@@ -1,0 +1,30 @@
+rules:
+  - id: C7-important-keyword
+    message: "IMPORTANT keyword - ensure truly critical (max 3-5 per file)"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "\\bIMPORTANT\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C7-critical-keyword
+    message: "CRITICAL keyword - ensure truly critical (max 3-5 per file)"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "\\bCRITICAL\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C7-excessive-caps
+    message: "Multiple consecutive caps words may indicate over-emphasis"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "\\b[A-Z]{2,}\\s+[A-Z]{2,}\\s+[A-Z]{2,}\\b"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

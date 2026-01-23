@@ -1,0 +1,12 @@
+rules:
+  # M6: Map Staleness Prevention - check backbone has path definitions
+  # Only check project root .reporails/ folder
+
+  - id: M6-backbone-has-paths
+    message: "backbone.yml contains path definitions"
+    severity: INFO
+    languages: [yaml]
+    pattern-regex: "(?:path|dir|file)s?:\\s*[\"']?[a-zA-Z0-9_./-]+"
+    paths:
+      include:
+        - ".reporails/backbone.yml"

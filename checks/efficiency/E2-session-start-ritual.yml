@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: E2-documents-session-ritual
+    message: "Documents session start ritual"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:session\\s+start|at\\s+session\\s+start|when\\s+starting)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: E2-references-backbone
+    message: "References backbone.yml for session start"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)read.*backbone\\.yml"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

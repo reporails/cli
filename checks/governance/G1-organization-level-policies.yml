@@ -1,0 +1,13 @@
+rules:
+  # Note: File existence checks require custom tooling
+  # These patterns detect references to org-level policies
+
+  - id: G1-references-managed-policy
+    message: "References organization-level managed policy"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?:managed-policy|/etc/claude/|PROGRAMDATA.*claude)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: E8-redundant-token-warning
+    message: "Redundant: Claude tracks tokens - remove manual warnings"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:watch|careful|mind).*(?:token|context)\\s*(?:limit|budget|window)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: E8-redundant-summarize
+    message: "Redundant: Claude manages context - remove summarization instructions"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)summarize.*(?:to\\s+save|conserve).*tokens?"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

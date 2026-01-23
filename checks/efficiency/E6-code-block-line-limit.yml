@@ -1,0 +1,10 @@
+rules:
+  - id: E6-large-code-block
+    message: "Code block exceeds 10 lines - reference source file instead"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "```[a-z]*\\n(?:[^`]*\\n){10,}```"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

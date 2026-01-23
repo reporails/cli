@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: M2-branch-protection
+    message: "Branch protection configured"
+    severity: INFO
+    languages: [yaml]
+    pattern-regex: "(?:CLAUDE\\.md|required_pull_request_reviews)"
+    paths:
+      include:
+        - "**/.github/branch-protection.yml"
+        - "**/.github/settings.yml"
+
+  - id: M2-codeowners-claude
+    message: "CODEOWNERS includes CLAUDE.md"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "CLAUDE\\.md"
+    paths:
+      include:
+        - "**/CODEOWNERS"
+        - "**/.github/CODEOWNERS"

@@ -1,0 +1,30 @@
+rules:
+  - id: C5-should-instead-of-must
+    message: "Use 'MUST' instead of 'should' for clearer requirements"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "(?i)\\bshould\\b(?!\\s+not)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C5-consider-instead-of-must
+    message: "Use 'MUST' instead of 'consider' for clearer requirements"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)\\bconsider\\s+(using|keeping|adding|removing)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: C5-must-without-context
+    message: "MUST statement lacks context (add ' — ' or 'because')"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "^[*-]?\\s*MUST\\s+(?!.*(?:—|because|since|to ensure)).*$"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

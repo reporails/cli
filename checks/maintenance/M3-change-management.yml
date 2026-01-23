@@ -1,0 +1,22 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: M3-documents-approval
+    message: "Documents approval process"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:approv(?:al|e)|review|sign-?off)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: M3-documents-change-process
+    message: "Documents change management process"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:change\\s+(?:management|process)|how\\s+to\\s+(?:update|change))"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

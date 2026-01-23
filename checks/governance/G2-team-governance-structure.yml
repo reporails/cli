@@ -1,0 +1,23 @@
+rules:
+  # Heuristic patterns for semantic rule
+
+  - id: G2-documents-ownership
+    message: "Documents ownership/responsibility structure"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "(?i)(?:owner|responsible|maintainer|lead)"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+        - "**/CODEOWNERS"
+
+  - id: G2-has-codeowners
+    message: "CODEOWNERS file present for governance"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: ".*"
+    paths:
+      include:
+        - "**/CODEOWNERS"
+        - "**/.github/CODEOWNERS"

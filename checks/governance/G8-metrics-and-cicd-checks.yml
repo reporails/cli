@@ -1,0 +1,29 @@
+rules:
+  - id: G8-workflow-has-reporails
+    message: "CI workflow includes reporails checks"
+    severity: INFO
+    languages: [yaml]
+    pattern-regex: "reporails|ails\\s+check|ails\\s+score"
+    paths:
+      include:
+        - "**/.github/workflows/*.yml"
+        - "**/.github/workflows/*.yaml"
+
+  - id: G8-workflow-checks-claude-md
+    message: "CI workflow validates CLAUDE.md"
+    severity: INFO
+    languages: [yaml]
+    pattern-regex: "CLAUDE\\.md"
+    paths:
+      include:
+        - "**/.github/workflows/*.yml"
+        - "**/.github/workflows/*.yaml"
+
+  - id: G8-pre-commit-claude
+    message: "Pre-commit hook for CLAUDE.md validation"
+    severity: INFO
+    languages: [yaml]
+    pattern-regex: "CLAUDE\\.md|reporails"
+    paths:
+      include:
+        - "**/.pre-commit-config.yaml"

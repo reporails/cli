@@ -1,0 +1,21 @@
+.idea
+.venv
+__pycache__
+
+# Dev scripts (sync from framework repo)
+scripts/
+
+# Check md files (synced from framework)
+checks/*/*.md
+
+docs/research
+
+# Reporails caches (backbone.yml is committed, caches are not)
+.reporails/.cache/
+# Prevent stray .reporails in subdirectories
+*/.reporails/
+
+.env
+
+# Claude Code MCP config (machine-specific paths)
+.claude/mcp.json

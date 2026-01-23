@@ -1,0 +1,22 @@
+rules:
+  # NOTE: S7-missing-h1-heading requires absence detection (custom tooling)
+  # This pattern detects presence of proper H1 heading
+
+  - id: S7-has-h1-heading
+    message: "CLAUDE.md has level-1 heading"
+    severity: INFO
+    languages: [generic]
+    pattern-regex: "^# [^#\\n]+"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+
+  - id: S7-heading-hierarchy-skip
+    message: "Heading hierarchy skips levels (# to ### without ##)"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "^#\\s+[^\\n]+\\n(?:(?!^## )[^\\n]*\\n)*^### "
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
