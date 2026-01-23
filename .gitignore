@@ -2,8 +2,9 @@
 .venv
 __pycache__
 
-# Check md files (synced from framework)
+# Framework docs (symlinked from framework repo)
 checks/*/*.md
+docs/capability-levels.md
 
 docs/research
 
