@@ -12,12 +12,16 @@ Path helpers for reporails home directory. No lazy downloading (see `init.py`).
 
 ## core/init.py
 
-Downloads OpenGrep binary and rules on first run.
+Downloads OpenGrep binary and syncs rules on first run.
 
 **Functions:**
-- `run_init()` → `dict` — Download opengrep + rules, return status
+- `run_init()` → `dict` — Download opengrep + setup rules, return status
 - `download_opengrep()` → `Path` — Download OpenGrep binary
-- `download_rules()` → `tuple[Path, int]` — Clone rules from framework repo, return (path, count)
+- `download_rules()` → `tuple[Path, int]` — Merge bundled .yml + downloaded .md to ~/.reporails/checks/
+- `get_bundled_checks_path()` → `Path | None` — Get path to bundled .yml files in package
+- `copy_bundled_yml_files(dest)` → `int` — Copy bundled .yml files to destination
+- `download_md_files(dest)` → `int` — Download .md files from framework repo
+- `sync_rules_to_local(local_checks_dir)` → `int` — Sync .md files to local checks dir (dev)
 
 **Platform Support:**
 
@@ -80,6 +84,7 @@ Typer CLI application.
 - `check [PATH]` — Validate with format option (text/json)
 - `map [PATH]` — Discover project structure, generate backbone.yml
 - `explain RULE_ID` — Show rule details
+- `sync [CHECKS_DIR]` — Sync .md rule definitions from framework (dev)
 
 ## formatters/
 

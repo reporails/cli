@@ -1,7 +1,8 @@
-"""Init command - downloads opengrep and rules."""
+"""Init command - downloads opengrep and syncs rules."""
 
 from __future__ import annotations
 
+import importlib.resources
 import platform
 import shutil
 import stat
@@ -98,17 +99,66 @@ def download_opengrep() -> Path:
     return bin_path
 
 
-def download_rules() -> tuple[Path, int]:
+def get_bundled_checks_path() -> Path | None:
     """
-    Download rules from framework repo to ~/.reporails/checks/.
-
-    Clones the framework repo and copies rules/ to ~/.reporails/checks/.
+    Get path to bundled checks (.yml files) in installed package.
 
     Returns:
-        Tuple of (checks_path, rule_count)
+        Path to bundled_checks directory, or None if not found
     """
-    checks_path = get_reporails_home() / "checks"
+    try:
+        # Use importlib.resources to find bundled checks
+        files = importlib.resources.files("reporails_cli")
+        bundled = files / "bundled_checks"
+        # Convert to Path - this works for installed packages
+        with importlib.resources.as_file(bundled) as path:
+            if path.exists():
+                return path
+    except (TypeError, FileNotFoundError):
+        pass
+    return None
 
+
+def copy_bundled_yml_files(dest: Path) -> int:
+    """
+    Copy bundled .yml files from package to destination.
+
+    Args:
+        dest: Destination directory
+
+    Returns:
+        Number of .yml files copied
+    """
+    bundled_path = get_bundled_checks_path()
+    if bundled_path is None:
+        return 0
+
+    dest.mkdir(parents=True, exist_ok=True)
+    count = 0
+
+    for yml_file in bundled_path.rglob("*.yml"):
+        # Preserve directory structure
+        relative = yml_file.relative_to(bundled_path)
+        dest_file = dest / relative
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(yml_file, dest_file)
+        count += 1
+
+    return count
+
+
+def download_md_files(dest: Path) -> int:
+    """
+    Download .md files from framework repo to destination.
+
+    Only copies .md files, preserving directory structure.
+
+    Args:
+        dest: Destination directory
+
+    Returns:
+        Number of .md files copied
+    """
     with TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         framework_path = tmp_path / "framework"
@@ -130,17 +180,59 @@ def download_rules() -> tuple[Path, int]:
             msg = "No rules/ directory found in framework repo"
             raise RuntimeError(msg)
 
-        # Clear existing checks
-        if checks_path.exists():
-            shutil.rmtree(checks_path)
+        dest.mkdir(parents=True, exist_ok=True)
+        count = 0
 
-        # Copy rules to checks
-        shutil.copytree(source_rules, checks_path)
+        # Copy only .md files, preserving structure
+        for md_file in source_rules.rglob("*.md"):
+            relative = md_file.relative_to(source_rules)
+            dest_file = dest / relative
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(md_file, dest_file)
+            count += 1
 
-        # Count rule files
-        rule_count = len(list(checks_path.rglob("*.md")))
+    return count
 
-    return checks_path, rule_count
+
+def download_rules() -> tuple[Path, int]:
+    """
+    Setup rules at ~/.reporails/checks/.
+
+    Merges two sources:
+    1. Bundled .yml files (OpenGrep patterns) from package
+    2. Downloaded .md files (rule definitions) from framework repo
+
+    Returns:
+        Tuple of (checks_path, total_file_count)
+    """
+    checks_path = get_reporails_home() / "checks"
+
+    # Clear existing checks
+    if checks_path.exists():
+        shutil.rmtree(checks_path)
+
+    # 1. Copy bundled .yml files
+    yml_count = copy_bundled_yml_files(checks_path)
+
+    # 2. Download .md files from framework
+    md_count = download_md_files(checks_path)
+
+    return checks_path, yml_count + md_count
+
+
+def sync_rules_to_local(local_checks_dir: Path) -> int:
+    """
+    Sync .md files from framework repo to local checks directory.
+
+    For development: downloads only .md files, preserving existing .yml files.
+
+    Args:
+        local_checks_dir: Local checks directory (e.g., ./checks/)
+
+    Returns:
+        Number of .md files synced
+    """
+    return download_md_files(local_checks_dir)
 
 
 def run_init() -> dict[str, str | int | Path]:
@@ -148,7 +240,7 @@ def run_init() -> dict[str, str | int | Path]:
     Run global initialization.
 
     1. Download opengrep binary to ~/.reporails/bin/
-    2. Download rules from framework to ~/.reporails/checks/
+    2. Setup rules at ~/.reporails/checks/ (bundled .yml + downloaded .md)
 
     Returns dict with status info.
     """
@@ -159,7 +251,7 @@ def run_init() -> dict[str, str | int | Path]:
     results["opengrep_path"] = bin_path
     results["opengrep_version"] = OPENGREP_VERSION
 
-    # 2. Download rules
+    # 2. Setup rules (merge bundled yml + framework md)
     checks_path, rule_count = download_rules()
     results["checks_path"] = checks_path
     results["rule_count"] = rule_count

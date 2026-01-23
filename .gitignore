@@ -2,9 +2,6 @@
 .venv
 __pycache__
 
-# Dev scripts (sync from framework repo)
-scripts/
-
 # Check md files (synced from framework)
 checks/*/*.md
 

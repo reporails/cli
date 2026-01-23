@@ -35,6 +35,15 @@ uv run ails map . --save                 # Save backbone.yml to repo
 | `ails map PATH` | Map project structure, find instruction files |
 | `ails map PATH --save` | Save `backbone.yml` to `.reporails/` |
 | `ails explain RULE_ID` | Show rule details |
+| `ails sync checks` | Sync .md rule definitions from framework repo (dev) |
+
+## Rule Files
+
+- `checks/**/*.yml` — OpenGrep patterns (tracked in CLI repo)
+- `checks/**/*.md` — Rule definitions (gitignored, symlinked to framework)
+
+**Dev setup:** Run `./scripts/link-rules.sh` to symlink .md files from framework repo.
+Edits in `checks/*.md` go to `../framework/rules/` (same file via symlink).
 
 ## Project Structure
 
