@@ -77,10 +77,12 @@ Reporails lints AI coding agent instruction files against 42 community-maintaine
 3. **Validation**: User invokes `ails check` (MCP or CLI)
 4. **File Map**: Engine uses cached file map (`.reporails/.cache/`)
 5. **Registry**: Loads rules from `checks/**/*.md` frontmatter
-6. **OpenGrep**: Engine shells out with `.yml` rules → SARIF output
-7. **Parsing**: Engine parses SARIF → Violation objects (skips INFO-level)
-8. **Scoring**: `calculate_score()` computes 0-10 score
-9. **Output**: Formatter adapts output (JSON for MCP, text for CLI)
+6. **Detection** (three paths):
+   - **Deterministic**: OpenGrep → SARIF → `Violation` objects
+   - **Heuristic**: OpenGrep → SARIF → `JudgmentRequest` (for LLM confirmation)
+   - **Semantic**: Direct → `JudgmentRequest` (no OpenGrep gate)
+7. **Scoring**: `calculate_score()` computes 0-10 score from violations
+8. **Output**: Formatter adapts output (JSON for MCP, text for CLI)
 
 ## File Structure
 
@@ -134,6 +136,43 @@ ails map [PATH] -o yaml        # Output as YAML
 
 # Information
 ails explain RULE_ID           # Show rule details
+```
+
+## OpenGrep Integration
+
+Pattern matching is powered by [OpenGrep](https://github.com/opengrep/opengrep), a semantic grep engine.
+
+### Capabilities
+
+| Feature | Use Case |
+|---------|----------|
+| `pattern-regex` | PCRE patterns for keyword detection |
+| `languages: generic` | Markdown file analysis |
+| YAML parsing | Frontmatter validation |
+| Metavariables | Capture and reference patterns |
+| Cross-file analysis | Duplicate/conflict detection |
+
+### Severity Mapping
+
+| OpenGrep Level | Engine Behavior |
+|----------------|-----------------|
+| `ERROR` | Creates `Violation` (deterministic) or `JudgmentRequest` (heuristic) |
+| `WARNING` | Creates `Violation` (deterministic) or `JudgmentRequest` (heuristic) |
+| `INFO` | Skipped (informational only) |
+| `note` | Skipped |
+
+### Example Pattern
+
+```yaml
+# C10: NEVER with alternative
+- id: C10-never-with-alternative
+  message: "NEVER statement has positive alternative"
+  severity: INFO
+  languages: [generic]
+  pattern-regex: "NEVER.*[—–-]|NEVER.*instead"
+  paths:
+    include:
+      - "**/CLAUDE.md"
 ```
 
 ## Quality Gates

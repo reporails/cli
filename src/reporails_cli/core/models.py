@@ -73,6 +73,10 @@ class Rule:
     antipatterns: list[Antipattern] = field(default_factory=list)
     validation: str | None = None
 
+    # Heuristic/semantic fields (for LLM confirmation)
+    question: str | None = None
+    criteria: str | None = None
+
     # Paths (set after loading)
     md_path: Path | None = None
     yml_path: Path | None = None

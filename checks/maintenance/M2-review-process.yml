@@ -1,5 +1,6 @@
 rules:
-  # Heuristic patterns for semantic rule
+  # Heuristic gate: detect review process indicators
+  # Positive indicators (INFO) plus problem detector (WARNING)
 
   - id: M2-branch-protection
     message: "Branch protection configured"
@@ -20,3 +21,14 @@ rules:
       include:
         - "**/CODEOWNERS"
         - "**/.github/CODEOWNERS"
+
+  - id: M2-direct-commit-indicator
+    message: "Instruction file may have direct commits without review"
+    severity: WARNING
+    languages: [generic]
+    # Detect instruction files that mention bypassing review
+    pattern-regex: "(?i)(?:skip\\s+review|no\\s+review|direct\\s+commit|without\\s+(?:pr|review))"
+    paths:
+      include:
+        - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"

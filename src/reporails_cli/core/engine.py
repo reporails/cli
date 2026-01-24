@@ -120,17 +120,24 @@ async def run_validation(
     heuristic_rules = get_rules_by_type(applicable_rules, RuleType.HEURISTIC)
     semantic_rules = get_rules_by_type(applicable_rules, RuleType.SEMANTIC)
 
-    # Collect .yml paths for OpenGrep (only for applicable rules)
-    yml_paths = get_rule_yml_paths(deterministic_rules) + get_rule_yml_paths(heuristic_rules)
-
-    # Run OpenGrep if we have yml rules
     violations: list[Violation] = []
-    if yml_paths and opengrep_path.exists():
-        sarif = await run_opengrep(yml_paths, target, opengrep_path)
-        violations.extend(parse_sarif(sarif, applicable_rules))
-
-    # Prepare semantic judgment requests (only for applicable semantic rules)
     judgment_requests: list[JudgmentRequest] = []
+
+    # Run deterministic rules → direct violations
+    deterministic_yml_paths = get_rule_yml_paths(deterministic_rules)
+    if deterministic_yml_paths and opengrep_path.exists():
+        sarif = await run_opengrep(deterministic_yml_paths, target, opengrep_path)
+        violations.extend(parse_sarif(sarif, deterministic_rules))
+
+    # Run heuristic rules → JudgmentRequest (two-stage filter)
+    # Stage 1: OpenGrep pattern gate (fast, cheap)
+    # Stage 2: LLM evaluates matched content
+    heuristic_yml_paths = get_rule_yml_paths(heuristic_rules)
+    if heuristic_yml_paths and opengrep_path.exists():
+        sarif = await run_opengrep(heuristic_yml_paths, target, opengrep_path)
+        judgment_requests.extend(parse_sarif_for_heuristics(sarif, heuristic_rules))
+
+    # Prepare semantic judgment requests (no pattern gate - always LLM)
     for claude_file in claude_files:
         content = claude_file.read_text(encoding="utf-8")
         relative_path = str(claude_file.relative_to(project_root))
@@ -449,6 +456,101 @@ def parse_sarif(sarif: dict[str, Any], rules: dict[str, Rule]) -> list[Violation
             )
 
     return violations
+
+
+def parse_sarif_for_heuristics(sarif: dict[str, Any], rules: dict[str, Rule]) -> list[JudgmentRequest]:
+    """
+    Parse OpenGrep SARIF output into JudgmentRequests for heuristic rules.
+
+    Two-stage filter: OpenGrep match gates LLM evaluation.
+    Skips INFO/note level findings.
+
+    Args:
+        sarif: Parsed SARIF JSON from heuristic rule patterns
+        rules: Dict of heuristic rules for metadata lookup
+
+    Returns:
+        List of JudgmentRequest objects for LLM confirmation
+    """
+    requests: list[JudgmentRequest] = []
+
+    for run in sarif.get("runs", []):
+        # Build map of rule levels from tool definitions
+        rule_levels: dict[str, str] = {}
+        tool = run.get("tool", {}).get("driver", {})
+        for rule_def in tool.get("rules", []):
+            rule_id = rule_def.get("id", "")
+            level = rule_def.get("defaultConfiguration", {}).get("level", "warning")
+            rule_levels[rule_id] = level
+
+        for result in run.get("results", []):
+            sarif_rule_id = result.get("ruleId", "")
+
+            # Skip INFO/note level findings - they're informational, not candidates
+            rule_level = rule_levels.get(sarif_rule_id, "warning")
+            if rule_level in ("note", "none"):
+                continue
+
+            short_rule_id = extract_short_rule_id(sarif_rule_id)
+            message = result.get("message", {}).get("text", "")
+
+            # Get location and matched content
+            locations = result.get("locations", [])
+            if locations:
+                loc = locations[0].get("physicalLocation", {})
+                artifact = loc.get("artifactLocation", {}).get("uri", "unknown")
+                region = loc.get("region", {})
+                line = region.get("startLine", 0)
+                location = f"{artifact}:{line}"
+                # Get snippet if available
+                snippet = region.get("snippet", {}).get("text", message)
+            else:
+                location = "unknown"
+                snippet = message
+
+            # Get rule metadata using short ID
+            rule = rules.get(short_rule_id)
+            if not rule:
+                continue
+
+            # Skip if rule doesn't have question/criteria (shouldn't happen for heuristics)
+            if not rule.question:
+                continue
+
+            # Parse criteria - may be string or already dict
+            criteria: dict[str, str]
+            if isinstance(rule.criteria, dict):
+                criteria = rule.criteria
+            elif isinstance(rule.criteria, str):
+                # Simple string criteria becomes single-entry dict
+                criteria = {"pass_condition": rule.criteria}
+            else:
+                criteria = {"pass_condition": "Evaluate based on context"}
+
+            # Get severity and points from first antipattern (or defaults)
+            severity = Severity.MEDIUM
+            points_if_fail = -10
+            for ap in rule.antipatterns:
+                severity = ap.severity
+                points_if_fail = ap.points
+                break
+
+            request = JudgmentRequest(
+                rule_id=short_rule_id,
+                rule_title=rule.title,
+                content=snippet,
+                location=location,
+                question=rule.question,
+                criteria=criteria,
+                examples={"good": [], "bad": []},  # Heuristics use criteria, not examples
+                choices=["pass", "fail"],
+                pass_value="pass",
+                severity=severity,
+                points_if_fail=points_if_fail,
+            )
+            requests.append(request)
+
+    return requests
 
 
 def prepare_semantic_requests(

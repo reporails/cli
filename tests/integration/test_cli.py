@@ -30,8 +30,9 @@ class TestCheckCommand:
         with TemporaryDirectory() as tmpdir:
             result = runner.invoke(app, ["check", tmpdir])
 
-            # Should complete (no CLAUDE.md to validate)
-            assert "Score" in result.output or "0" in result.output
+            # Should show helpful error message
+            assert result.exit_code == 1
+            assert "No instruction files found" in result.output
 
     def test_check_with_claude_md(self) -> None:
         """Validates CLAUDE.md and shows results."""
@@ -52,7 +53,8 @@ class TestCheckCommand:
 
             result = runner.invoke(app, ["check", tmpdir])
 
-            assert "Score" in result.output
+            # Check for score box (SCORE:) or quick summary (ails:)
+            assert "SCORE:" in result.output or "ails:" in result.output
 
     def test_check_json_format(self) -> None:
         """Outputs JSON when requested."""
@@ -66,34 +68,18 @@ class TestCheckCommand:
             # Should be valid JSON structure
             assert '"score"' in result.output
 
-    def test_check_sarif_format(self) -> None:
-        """Outputs SARIF when requested."""
+    def test_check_brief_format(self) -> None:
+        """Outputs brief summary when requested."""
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir)
             claude_file = path / "CLAUDE.md"
             claude_file.write_text("# Test")
 
-            result = runner.invoke(app, ["check", tmpdir, "--format", "sarif"])
+            result = runner.invoke(app, ["check", tmpdir, "--format", "brief"])
 
-            # Should have SARIF structure
-            assert '"version": "2.1.0"' in result.output
-
-
-@pytest.mark.integration
-class TestScoreCommand:
-    """Test ails score command."""
-
-    def test_score_shows_summary(self) -> None:
-        """Shows score summary."""
-        with TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir)
-            claude_file = path / "CLAUDE.md"
-            claude_file.write_text("# Test")
-
-            result = runner.invoke(app, ["score", tmpdir])
-
-            assert "Score" in result.output
-            assert "/" in result.output  # e.g., "75/100"
+            # Should have one-line summary with score and level
+            assert "ails:" in result.output
+            assert "/" in result.output  # e.g., "10.0/10"
 
 
 @pytest.mark.integration

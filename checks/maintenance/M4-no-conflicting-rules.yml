@@ -1,10 +1,10 @@
 rules:
-  # Note: True conflict detection requires semantic analysis
-  # These patterns detect potential conflict indicators
+  # Heuristic gate: detect potential conflict indicators
+  # LLM confirms if rules actually conflict
 
   - id: M4-both-always-never
-    message: "Both ALWAYS and NEVER present - verify no contradictions"
-    severity: INFO
+    message: "Both ALWAYS and NEVER present - LLM should verify no contradictions"
+    severity: WARNING
     languages: [generic]
     patterns:
       - pattern-regex: "\\bALWAYS\\b"

@@ -1,9 +1,10 @@
 rules:
-  # Heuristic patterns for semantic rule
+  # Heuristic gate: detect potential duplication indicators
+  # LLM confirms if content is actually duplicated
 
   - id: C6-repeated-instruction
-    message: "May indicate duplication: 'as mentioned'"
-    severity: INFO
+    message: "Duplication indicator found - ensure content isn't repeated elsewhere"
+    severity: WARNING
     languages: [generic]
     pattern-regex: "(?i)(?:as\\s+mentioned|as\\s+noted|as\\s+stated)\\s+(?:above|below|earlier|in)"
     paths:
@@ -12,8 +13,8 @@ rules:
         - "**/.claude/rules/*.md"
 
   - id: C6-see-also-reference
-    message: "Cross-reference found - ensure no duplication"
-    severity: INFO
+    message: "Cross-reference found - ensure no duplication between files"
+    severity: WARNING
     languages: [generic]
     pattern-regex: "(?i)see\\s+also"
     paths:

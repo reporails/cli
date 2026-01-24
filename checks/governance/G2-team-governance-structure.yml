@@ -1,5 +1,6 @@
 rules:
-  # Heuristic patterns for semantic rule
+  # Heuristic gate: detect governance indicators
+  # Positive indicators (INFO) for context, plus a gate pattern (WARNING)
 
   - id: G2-documents-ownership
     message: "Documents ownership/responsibility structure"
@@ -21,3 +22,13 @@ rules:
       include:
         - "**/CODEOWNERS"
         - "**/.github/CODEOWNERS"
+
+  - id: G2-multiple-rule-files-no-owner
+    message: "Multiple rule files without clear ownership - governance structure may be needed"
+    severity: WARNING
+    languages: [generic]
+    # Detect rule files that don't specify an owner in frontmatter
+    pattern-regex: "^---[\\s\\S]*?---(?![\\s\\S]*owner:)"
+    paths:
+      include:
+        - "**/.claude/rules/*.md"

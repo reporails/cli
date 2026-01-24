@@ -1,5 +1,6 @@
 rules:
-  # Heuristic patterns for semantic rule
+  # Heuristic gate: detect ownership assignment
+  # Positive indicators (INFO) plus problem detector (WARNING)
 
   - id: G4-owner-in-frontmatter
     message: "Owner specified in YAML frontmatter"
@@ -19,4 +20,14 @@ rules:
     paths:
       include:
         - "**/CLAUDE.md"
+        - "**/.claude/rules/*.md"
+
+  - id: G4-rule-file-no-owner
+    message: "Rule file without owner in frontmatter - assign ownership"
+    severity: WARNING
+    languages: [generic]
+    # Detect frontmatter that doesn't include owner field
+    pattern-regex: "^---\\n(?:(?!owner:)[^\\n]*\\n)+---"
+    paths:
+      include:
         - "**/.claude/rules/*.md"
