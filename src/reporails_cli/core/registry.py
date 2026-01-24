@@ -138,6 +138,8 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         see_also=frontmatter.get("see_also", []),
         antipatterns=antipatterns,
         validation=frontmatter.get("validation"),
+        question=frontmatter.get("question"),
+        criteria=frontmatter.get("criteria"),
         md_path=md_path,
         yml_path=yml_path,
     )

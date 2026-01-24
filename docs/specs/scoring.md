@@ -96,12 +96,48 @@ Estimates rework time from **re-explanation loops** and **redo cycles** caused b
 | Medium | 2 min | Brief clarification |
 | Low | 1 min | Minor friction |
 
-## Semantic Rules
+## Rule Detection Types
 
-6 rules require LLM judgment (defined in `semantic/definitions.py`):
+Rules are classified by detection method, optimizing for accuracy and cost:
+
+| Type | Count | Detection Method | Output |
+|------|-------|------------------|--------|
+| Deterministic | 20 | OpenGrep pattern → direct result | `Violation` |
+| Heuristic | 12 | OpenGrep gate → LLM confirmation | `JudgmentRequest` |
+| Semantic | 6 | LLM judgment only | `JudgmentRequest` |
+
+### Deterministic Rules
+
+100% certainty via OpenGrep pattern matching. Match = violation.
+
+### Heuristic Rules (Two-Stage Filter)
+
+Minimizes LLM cost with pattern gating:
+
+```
+OpenGrep pattern match (gate)
+    │
+    ├── No match → Pass (95% of files, zero LLM cost)
+    │
+    └── Match → JudgmentRequest
+                    │
+                    └── LLM evaluates question + criteria
+                            │
+                            ├── Confirmed → Violation
+                            └── Dismissed → Pass
+```
+
+Each heuristic rule has:
+- `detection`: OpenGrep pattern that gates LLM calls
+- `question`: What to ask when pattern matches
+- `criteria`: Pass/fail definition
+
+### Semantic Rules
+
+6 rules require LLM judgment with no pattern gate (defined in `semantic/definitions.py`):
 - C2, C8, E2, G3, M1, S3
 
-These generate `JudgmentRequest` objects for host LLM evaluation.
+These always generate `JudgmentRequest` objects for host LLM evaluation.
 
 ## Related Docs
 

@@ -70,10 +70,8 @@ class TestRunValidation:
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir)
 
-            result = run_validation_sync(path)
-
-            assert result.score == 0
-            assert result.rules_checked == 0
+            with pytest.raises(FileNotFoundError, match="No instruction files found"):
+                run_validation_sync(path)
 
     def test_validates_simple_claude_md(self) -> None:
         """Validates a simple CLAUDE.md file."""
@@ -102,7 +100,7 @@ class TestRunValidation:
 
             # Should get a score (may have violations depending on rules)
             assert result.score >= 0
-            assert result.score <= 100
+            assert result.score <= 10  # Score is 0-10, not 0-100
             assert result.level in Level
 
     def test_generates_judgment_requests_for_semantic_rules(self) -> None:

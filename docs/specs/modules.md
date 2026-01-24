@@ -48,8 +48,9 @@ Runs OpenGrep and collects results. Orchestration only.
 **Functions:**
 - `run_validation(target, rules, opengrep_path)` → `ValidationResult` — Full validation
 - `run_opengrep(yml_paths, target, opengrep_path)` → `dict` — Execute OpenGrep, return SARIF
-- `parse_sarif(sarif, rules)` → `list[Violation]` — Parse SARIF output (pure)
-- `prepare_semantic_requests(rules, content, file_path)` → `list[JudgmentRequest]` — Build LLM requests (pure)
+- `parse_sarif(sarif, rules)` → `list[Violation]` — Parse SARIF output for deterministic rules (pure)
+- `parse_sarif_for_heuristics(sarif, rules)` → `list[JudgmentRequest]` — Parse SARIF output for heuristic rules (pure)
+- `prepare_semantic_requests(rules, content, file_path)` → `list[JudgmentRequest]` — Build LLM requests for semantic rules (pure)
 
 ## core/scorer.py
 

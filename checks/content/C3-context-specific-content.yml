@@ -1,9 +1,10 @@
 rules:
-  # Heuristic patterns for semantic rule
+  # Heuristic gate: detect context-specific content in root CLAUDE.md
+  # LLM confirms if it should move to scoped rules
 
   - id: C3-path-specific-in-root
-    message: "Path-specific rule may belong in .claude/rules/"
-    severity: INFO
+    message: "Path-specific rule in root - may belong in .claude/rules/"
+    severity: WARNING
     languages: [generic]
     pattern-regex: "(?i)(?:when\\s+(?:editing|modifying|working\\s+(?:on|with))|for\\s+files\\s+in)\\s+[\"'`]?(?:src/|lib/|test)"
     paths:
@@ -13,8 +14,8 @@ rules:
         - "**/.claude/**"
 
   - id: C3-language-specific-in-root
-    message: "Language-specific rule may be better in scoped rule file"
-    severity: INFO
+    message: "Language-specific rule in root - may be better in scoped rule file"
+    severity: WARNING
     languages: [generic]
     pattern-regex: "(?i)(?:in\\s+)?(?:python|typescript|javascript|go|rust|java)\\s+(?:files?|code)"
     paths:

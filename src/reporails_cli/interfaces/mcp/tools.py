@@ -30,8 +30,11 @@ async def validate_tool(path: str = ".") -> dict[str, Any]:
     if not target.exists():
         return {"error": f"Path not found: {target}"}
 
-    result = await run_validation(target)
-    return mcp_formatter.format_result(result)
+    try:
+        result = await run_validation(target)
+        return mcp_formatter.format_result(result)
+    except FileNotFoundError as e:
+        return {"error": str(e)}
 
 
 async def validate_tool_text(path: str = ".") -> str:
@@ -54,8 +57,11 @@ async def validate_tool_text(path: str = ".") -> str:
     if not target.exists():
         return f"Error: Path not found: {target}"
 
-    result = await run_validation(target)
-    return text_formatter.format_result(result, ascii_mode=True)
+    try:
+        result = await run_validation(target)
+        return text_formatter.format_result(result, ascii_mode=True)
+    except FileNotFoundError as e:
+        return f"Error: {e}"
 
 
 async def score_tool(path: str = ".") -> dict[str, Any]:
@@ -76,8 +82,11 @@ async def score_tool(path: str = ".") -> dict[str, Any]:
     if not target.exists():
         return {"error": f"Path not found: {target}"}
 
-    result = await run_validation(target)
-    return mcp_formatter.format_score(result)
+    try:
+        result = await run_validation(target)
+        return mcp_formatter.format_score(result)
+    except FileNotFoundError as e:
+        return {"error": str(e)}
 
 
 async def explain_tool(rule_id: str) -> dict[str, Any]:

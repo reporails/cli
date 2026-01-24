@@ -27,12 +27,12 @@ class TestValidateTool:
         assert "error" in result
 
     async def test_validate_empty_directory(self) -> None:
-        """Handles empty directory."""
+        """Handles empty directory with helpful error."""
         with TemporaryDirectory() as tmpdir:
             result = await validate_tool(tmpdir)
 
-            assert "score" in result
-            assert result["score"] == 0
+            assert "error" in result
+            assert "No instruction files found" in result["error"]
 
     async def test_validate_with_claude_md(self) -> None:
         """Validates CLAUDE.md and returns results."""
@@ -60,7 +60,7 @@ class TestValidateTool:
             assert "score" in result
             assert "level" in result
             assert "violations" in result
-            assert 0 <= result["score"] <= 100
+            assert 0 <= result["score"] <= 10  # Score is 0-10, not 0-100
 
 
 @pytest.mark.integration
