@@ -195,11 +195,9 @@ class CapabilityResult:
 
 @dataclass(frozen=True)
 class FrictionEstimate:
-    """Time waste estimate from violations."""
+    """Friction estimate from violations."""
 
-    level: str  # "high", "medium", "low", "none"
-    total_minutes: int
-    by_category: dict[str, int]  # {"S": 5, "C": 3, ...}
+    level: str  # "extreme", "high", "medium", "small", "none"
 
 
 # =============================================================================
@@ -306,9 +304,6 @@ class ValidationResult:
     # Evaluation completeness
     is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
     pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules
-    # Legacy fields for backward compat
-    time_waste_estimate: dict[str, int] = field(default_factory=dict)
-    violation_points: int = 0
 
 
 @dataclass(frozen=True)

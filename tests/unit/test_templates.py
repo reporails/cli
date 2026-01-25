@@ -99,7 +99,7 @@ class TestPartialEvaluation:
             rules_passed=7,
             rules_failed=3,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="low", total_minutes=5, by_category={}),
+            friction=FrictionEstimate(level="small"),
             is_partial=is_partial,
             pending_semantic=pending_semantic,
         )
@@ -172,7 +172,7 @@ class TestPendingSemanticDisplay:
             rules_passed=10,
             rules_failed=0,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="none", total_minutes=0, by_category={}),
+            friction=FrictionEstimate(level="none"),
             is_partial=True,
             pending_semantic=pending,
         )
@@ -222,7 +222,7 @@ class TestPendingSemanticDisplay:
             rules_passed=10,
             rules_failed=0,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="none", total_minutes=0, by_category={}),
+            friction=FrictionEstimate(level="none"),
             is_partial=False,
             pending_semantic=None,
         )
@@ -258,7 +258,7 @@ class TestPendingSemanticDisplay:
             rules_passed=9,
             rules_failed=1,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="none", total_minutes=0, by_category={}),
+            friction=FrictionEstimate(level="none"),
             is_partial=True,
             pending_semantic=pending,
         )
@@ -291,7 +291,7 @@ class TestMCPCallToAction:
             rules_passed=9,
             rules_failed=1,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="low", total_minutes=5, by_category={}),
+            friction=FrictionEstimate(level="small"),
             is_partial=True,
             pending_semantic=PendingSemantic(rule_count=2, file_count=1, rules=("C6", "C10")),
         )
@@ -328,7 +328,7 @@ class TestMCPCallToAction:
             rules_passed=10,
             rules_failed=0,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="none", total_minutes=0, by_category={}),
+            friction=FrictionEstimate(level="none"),
             is_partial=False,
             pending_semantic=None,
         )
@@ -353,7 +353,7 @@ class TestFormatScore:
             rules_passed=10,
             rules_failed=0,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="none", total_minutes=0, by_category={}),
+            friction=FrictionEstimate(level="none"),
             is_partial=True,
             pending_semantic=None,
         )
@@ -374,7 +374,7 @@ class TestFormatScore:
             rules_passed=10,
             rules_failed=0,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="none", total_minutes=0, by_category={}),
+            friction=FrictionEstimate(level="none"),
             is_partial=False,
             pending_semantic=None,
         )

@@ -6,7 +6,6 @@ import importlib.resources
 import platform
 import shutil
 import stat
-import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -40,7 +39,8 @@ OPENGREP_URLS: dict[tuple[str, str], str] = {
     ),
 }
 
-FRAMEWORK_REPO = "https://github.com/reporails/framework.git"
+RULES_VERSION = "v0.0.1"
+RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 
 
 def get_platform() -> tuple[str, str]:
@@ -191,49 +191,34 @@ def copy_local_framework(source: Path) -> tuple[Path, int]:
     return rules_path, count
 
 
-def download_md_files(dest: Path) -> int:
+def download_rules_tarball(dest: Path) -> int:
     """
-    Download .md files from framework repo to destination.
-
-    Only copies .md files, preserving directory structure.
+    Download rules from GitHub release tarball.
 
     Args:
-        dest: Destination directory
+        dest: Destination directory (~/.reporails/rules/)
 
     Returns:
-        Number of .md files copied
+        Number of files extracted
     """
-    with TemporaryDirectory() as tmpdir:
-        tmp_path = Path(tmpdir)
-        framework_path = tmp_path / "framework"
+    import tarfile
 
-        # Clone framework repo
-        result = subprocess.run(
-            ["git", "clone", "--depth=1", FRAMEWORK_REPO, str(framework_path)],
-            capture_output=True,
-            text=True,
-        )
+    url = RULES_TARBALL_URL.format(version=RULES_VERSION)
 
-        if result.returncode != 0:
-            msg = f"Failed to clone framework repo: {result.stderr}"
-            raise RuntimeError(msg)
+    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+        response = client.get(url)
+        response.raise_for_status()
 
-        # Source rules directory
-        source_rules = framework_path / "rules"
-        if not source_rules.exists():
-            msg = "No rules/ directory found in framework repo"
-            raise RuntimeError(msg)
+        with TemporaryDirectory() as tmpdir:
+            tarball_path = Path(tmpdir) / "rules.tar.gz"
+            tarball_path.write_bytes(response.content)
 
-        dest.mkdir(parents=True, exist_ok=True)
-        count = 0
+            # Extract
+            with tarfile.open(tarball_path, "r:gz") as tar:
+                tar.extractall(path=dest)
 
-        # Copy only .md files, preserving structure
-        for md_file in source_rules.rglob("*.md"):
-            relative = md_file.relative_to(source_rules)
-            dest_file = dest / relative
-            dest_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(md_file, dest_file)
-            count += 1
+            # Count files
+            count = sum(1 for _ in dest.rglob("*") if _.is_file())
 
     return count
 
@@ -244,7 +229,7 @@ def download_from_github() -> tuple[Path, int]:
 
     Merges two sources:
     1. Bundled .yml files (OpenGrep patterns) from package
-    2. Downloaded .md files (rule definitions) from framework repo
+    2. Downloaded files from GitHub release tarball
 
     Returns:
         Tuple of (rules_path, total_file_count)
@@ -255,13 +240,15 @@ def download_from_github() -> tuple[Path, int]:
     if rules_path.exists():
         shutil.rmtree(rules_path)
 
+    rules_path.mkdir(parents=True, exist_ok=True)
+
     # 1. Copy bundled .yml files
     yml_count = copy_bundled_yml_files(rules_path)
 
-    # 2. Download .md files from framework
-    md_count = download_md_files(rules_path)
+    # 2. Download from GitHub release tarball
+    tarball_count = download_rules_tarball(rules_path)
 
-    return rules_path, yml_count + md_count
+    return rules_path, yml_count + tarball_count
 
 
 def download_rules() -> tuple[Path, int]:
@@ -285,17 +272,17 @@ def download_rules() -> tuple[Path, int]:
 
 def sync_rules_to_local(local_checks_dir: Path) -> int:
     """
-    Sync .md files from framework repo to local checks directory.
+    Sync rules from GitHub release tarball to local checks directory.
 
-    For development: downloads only .md files, preserving existing .yml files.
+    For development: downloads rules from release tarball.
 
     Args:
         local_checks_dir: Local checks directory (e.g., ./checks/)
 
     Returns:
-        Number of .md files synced
+        Number of files synced
     """
-    return download_md_files(local_checks_dir)
+    return download_rules_tarball(local_checks_dir)
 
 
 def run_init() -> dict[str, str | int | Path]:

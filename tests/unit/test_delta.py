@@ -218,7 +218,7 @@ class TestDeltaInFormatters:
             rules_passed=7,
             rules_failed=3,
             feature_summary="Root file",
-            friction=FrictionEstimate(level="low", total_minutes=5, by_category={}),
+            friction=FrictionEstimate(level="small"),
         )
 
     def test_json_formatter_includes_delta_fields(self) -> None:

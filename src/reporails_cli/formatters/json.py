@@ -12,17 +12,6 @@ from reporails_cli.core.models import PendingSemantic, ScanDelta, ValidationResu
 from reporails_cli.core.scorer import LEVEL_LABELS
 
 
-def _get_friction_level(total_minutes: int) -> str:
-    """Determine friction level from total minutes."""
-    if total_minutes >= 20:
-        return "high"
-    elif total_minutes >= 10:
-        return "medium"
-    elif total_minutes >= 5:
-        return "low"
-    return "none"
-
-
 def _format_pending_semantic(pending: PendingSemantic | None) -> dict[str, Any] | None:
     """Format pending semantic rules for JSON output."""
     if pending is None:
@@ -49,8 +38,6 @@ def format_result(
     Returns:
         Canonical dict representation
     """
-    total_minutes = result.friction.total_minutes if result.friction else 0
-
     data: dict[str, Any] = {
         "score": result.score,
         "level": result.level.value,
@@ -85,10 +72,7 @@ def format_result(
             }
             for jr in result.judgment_requests
         ],
-        "friction": {
-            "level": result.friction.level if result.friction else "none",
-            "estimated_minutes": total_minutes,
-        },
+        "friction": result.friction.level if result.friction else "none",
         # Evaluation completeness
         "evaluation": "partial" if result.is_partial else "complete",
         "is_partial": result.is_partial,
@@ -119,8 +103,6 @@ def format_score(result: ValidationResult) -> dict[str, Any]:
     Returns:
         Simplified dict with just score info
     """
-    total_minutes = result.friction.total_minutes if result.friction else 0
-
     return {
         "score": result.score,
         "level": result.level.value,
@@ -129,7 +111,7 @@ def format_score(result: ValidationResult) -> dict[str, Any]:
         "rules_checked": result.rules_checked,
         "violations_count": len(result.violations),
         "has_critical": any(v.severity.value == "critical" for v in result.violations),
-        "friction": _get_friction_level(total_minutes),
+        "friction": result.friction.level if result.friction else "none",
     }
 
 

@@ -15,14 +15,6 @@ SEVERITY_WEIGHTS: dict[Severity, float] = {
 # Default weight for rules (used when calculating total possible points)
 DEFAULT_RULE_WEIGHT: float = 2.5
 
-# Time waste by severity (minutes per violation per session)
-SEVERITY_TIME: dict[Severity, int] = {
-    Severity.CRITICAL: 5,  # Clarification loop + partial redo
-    Severity.HIGH: 3,  # Clarification loop
-    Severity.MEDIUM: 2,  # Brief clarification
-    Severity.LOW: 1,  # Minor friction
-}
-
 # Level labels - must match levels.yml
 LEVEL_LABELS: dict[Level, str] = {
     Level.L1: "Absent",
@@ -112,48 +104,42 @@ def get_severity_weight(severity: Severity) -> float:
 
 
 def estimate_friction(violations: list[Violation]) -> FrictionEstimate:
-    """Estimate time waste from violations.
+    """Estimate friction from violations.
+
+    Friction levels based on violation severity:
+    - extreme: Any critical violation
+    - high: 2+ high severity OR 5+ total violations
+    - medium: 1 high severity OR 3-4 violations
+    - small: 1-2 violations (medium/low severity)
+    - none: No violations
 
     Args:
         violations: List of violations
 
     Returns:
-        FrictionEstimate with level and breakdown
+        FrictionEstimate with level
     """
     unique = dedupe_violations(violations)
-    by_category: dict[str, int] = {}
 
-    for v in unique:
-        minutes = SEVERITY_TIME.get(v.severity, 2)
-        category = v.rule_id[0] if v.rule_id else "U"
-        by_category[category] = by_category.get(category, 0) + minutes
+    if not unique:
+        return FrictionEstimate(level="none")
 
-    total = sum(by_category.values())
+    # Count by severity
+    critical_count = sum(1 for v in unique if v.severity == Severity.CRITICAL)
+    high_count = sum(1 for v in unique if v.severity == Severity.HIGH)
+    total_count = len(unique)
 
     # Determine level
-    if total >= 20:
+    if critical_count > 0:
+        level = "extreme"
+    elif high_count >= 2 or total_count >= 5:
         level = "high"
-    elif total >= 10:
+    elif high_count >= 1 or total_count >= 3:
         level = "medium"
-    elif total >= 5:
-        level = "low"
     else:
-        level = "none"
+        level = "small"
 
-    return FrictionEstimate(level=level, total_minutes=total, by_category=by_category)
-
-
-def estimate_time_waste(violations: list[Violation]) -> dict[str, int]:
-    """Legacy function - returns time waste dict.
-
-    Args:
-        violations: List of violations
-
-    Returns:
-        Dict with 'total' and per-category minutes
-    """
-    friction = estimate_friction(violations)
-    return {"total": friction.total_minutes, **friction.by_category}
+    return FrictionEstimate(level=level)
 
 
 def get_level_label(level: Level) -> str:
