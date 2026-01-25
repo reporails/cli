@@ -18,28 +18,12 @@ def build_semantic_requests(
     rules: dict[str, Rule],
     target: Path,
 ) -> list[JudgmentRequest]:
-    """Build JudgmentRequests only for files where patterns matched.
-
-    Semantic rules MUST have OpenGrep patterns. This function only builds
-    requests for locations where the pattern matched.
-
-    Args:
-        sarif: OpenGrep SARIF results for semantic patterns
-        rules: Dict of semantic rules
-        target: Project root directory (for reading matched files)
-
-    Returns:
-        List of JudgmentRequest objects for matched locations
-    """
     requests: list[JudgmentRequest] = []
-
-    # Get semantic rules only
     semantic_rules = {k: v for k, v in rules.items() if v.type == RuleType.SEMANTIC}
 
     if not semantic_rules:
         return requests
 
-    # Process SARIF matches
     for run in sarif.get("runs", []):
         for result in run.get("results", []):
             sarif_rule_id = result.get("ruleId", "")
@@ -50,20 +34,58 @@ def build_semantic_requests(
             if not rule:
                 continue
 
-            # Read file content for this match
-            file_path = location.rsplit(":", 1)[0] if ":" in location else location
-            full_path = target / file_path
-
-            try:
-                content = full_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            # Extract snippet from SARIF (not whole file!)
+            snippet = extract_snippet(result, target)
+            if not snippet:
                 continue
 
-            request = build_request(rule, content, location)
+            request = build_request(rule, snippet, location)
             if request:
                 requests.append(request)
 
     return requests
+
+
+def extract_snippet(result: dict[str, Any], target: Path) -> str | None:
+    """Extract matched content snippet from SARIF result.
+
+    SARIF provides the matched region. Use that instead of reading whole file.
+    Falls back to context lines around match if snippet not in SARIF.
+    """
+    # Try to get snippet from SARIF
+    locations = result.get("locations", [])
+    if locations:
+        physical = locations[0].get("physicalLocation", {})
+        region = physical.get("region", {})
+
+        # SARIF may include the snippet directly
+        snippet = region.get("snippet", {}).get("text")
+        if snippet:
+            return snippet
+
+    # Fallback: read lines around the match
+    location = get_location(result)
+    if ":" not in location:
+        return None
+
+    file_path, line_str = location.rsplit(":", 1)
+    try:
+        line_num = int(line_str)
+    except ValueError:
+        return None
+
+    full_path = target / file_path
+    try:
+        lines = full_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    # Get 5 lines of context (2 before, match, 2 after)
+    start = max(0, line_num - 3)
+    end = min(len(lines), line_num + 2)
+    context_lines = lines[start:end]
+
+    return "\n".join(context_lines)
 
 
 def build_request(
