@@ -231,8 +231,28 @@ def record_scan(
     instruction_files: int,
 ) -> None
 
+def get_previous_scan(target: Path) -> AnalyticsEntry | None
+"""Get the most recent scan for comparison (delta computation)."""
+
 def load_project_analytics(project_id: str) -> ProjectAnalytics | None
 def get_project_id(target: Path) -> str
+```
+
+### Delta Computation
+
+The CLI computes score/level/violation deltas between runs:
+
+```python
+# In CLI check command:
+previous_scan = get_previous_scan(target)
+result = run_validation(target)
+delta = ScanDelta.compute(
+    current_score=result.score,
+    current_level=result.level.value,
+    current_violations=len(result.violations),
+    previous=previous_scan,
+)
+# Display shows: "Score: 8.5/10 ↑ +1.5"
 ```
 
 ---

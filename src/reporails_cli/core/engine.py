@@ -1,6 +1,6 @@
 """Validation engine - orchestration only, no domain logic.
 
-Coordinates other modules to run validation. Target: <100 lines.
+Coordinates other modules to run validation. Target: <200 lines.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from reporails_cli.core.cache import record_scan
 from reporails_cli.core.capability import (
     detect_features_content,
     determine_capability_level,
-    estimate_preliminary_level,
 )
 from reporails_cli.core.discover import generate_backbone_yaml, run_discovery, save_backbone
 from reporails_cli.core.init import run_init
@@ -39,7 +38,9 @@ def run_validation(
 ) -> ValidationResult:
     """Run full validation on target directory.
 
-    Orchestrates: features → rules → OpenGrep → violations → score.
+    Two-pass approach:
+    1. Capability detection (small pattern set) → determines final level
+    2. Rule validation (filtered by final level) → violations + score
 
     Args:
         target: Directory or file to validate
@@ -64,9 +65,6 @@ def run_validation(
     if not backbone_path.exists():
         save_backbone(project_root, generate_backbone_yaml(run_discovery(project_root)))
 
-    # Phase 1: Filesystem feature detection
-    features = detect_features_filesystem(project_root)
-
     # Get template vars from agent config for yml placeholder resolution
     template_context = get_agent_vars(agent) if agent else {}
 
@@ -74,48 +72,56 @@ def run_validation(
     if rules is None:
         rules = load_rules(rules_dir)
 
-    # Estimate preliminary level from filesystem features (for early rule filtering)
-    # This avoids running unnecessary rules - major performance optimization
-    prelim_level = estimate_preliminary_level(features)
-    prelim_applicable_rules = get_applicable_rules(rules, prelim_level)
+    # =========================================================================
+    # PASS 1: Capability Detection (determines final level)
+    # =========================================================================
 
-    # Collect yml paths: capability patterns + only applicable rules
-    all_yml_paths: list[Path] = []
+    # Filesystem feature detection (fast)
+    features = detect_features_filesystem(project_root)
 
-    # Add capability detection patterns
+    # Content feature detection via OpenGrep (capability patterns only)
     capability_patterns = get_capability_patterns_path()
+    capability_sarif = {}
     if capability_patterns.exists():
-        all_yml_paths.append(capability_patterns)
+        capability_sarif = run_opengrep(
+            [capability_patterns], target, opengrep_path, template_context
+        )
 
-    # Add only applicable rule yml paths (filtered by preliminary level)
-    all_yml_paths.extend(get_rule_yml_paths(prelim_applicable_rules))
+    content_features = detect_features_content(capability_sarif)
 
-    # Run single consolidated OpenGrep invocation with filtered rules
-    combined_sarif = run_opengrep(
-        all_yml_paths, target, opengrep_path, template_context
-    ) if all_yml_paths else {"runs": []}
-
-    # Phase 2: Content feature detection (from combined SARIF)
-    content_features = detect_features_content(combined_sarif)
-
-    # Determine final capability level (may be higher than preliminary)
+    # Determine FINAL capability level (filesystem + content)
     capability = determine_capability_level(features, content_features)
+    final_level = capability.level
 
-    # Use preliminary level for scoring (we only ran those rules)
-    # Note: final level is displayed but scoring uses prelim rules
-    applicable_rules = prelim_applicable_rules
+    # =========================================================================
+    # PASS 2: Rule Validation (filtered by final level)
+    # =========================================================================
+
+    # Filter rules by FINAL level - this ensures scoring matches displayed level
+    applicable_rules = get_applicable_rules(rules, final_level)
+
+    # Run OpenGrep on applicable rules only
+    rule_yml_paths = get_rule_yml_paths(applicable_rules)
+    rule_sarif = {}
+    if rule_yml_paths:
+        rule_sarif = run_opengrep(
+            rule_yml_paths, target, opengrep_path, template_context
+        )
 
     # Split by type
     deterministic = {k: v for k, v in applicable_rules.items() if v.type == RuleType.DETERMINISTIC}
     semantic = {k: v for k, v in applicable_rules.items() if v.type == RuleType.SEMANTIC}
 
-    # Parse violations from combined SARIF (only deterministic rules)
-    violations = parse_sarif(combined_sarif, deterministic)
+    # Parse violations from rule SARIF (only deterministic rules)
+    violations = parse_sarif(rule_sarif, deterministic)
 
-    # Build semantic requests from combined SARIF (only semantic rules)
-    judgment_requests = build_semantic_requests(combined_sarif, semantic, project_root)
+    # Build semantic requests from rule SARIF (only semantic rules)
+    judgment_requests = build_semantic_requests(rule_sarif, semantic, project_root)
 
-    # Calculate score and friction
+    # =========================================================================
+    # Scoring (uses same rules that were filtered by final level)
+    # =========================================================================
+
     unique_violations = dedupe_violations(violations)
     score = calculate_score(len(applicable_rules), unique_violations)
     friction = estimate_friction(unique_violations)
@@ -125,7 +131,7 @@ def run_validation(
     elapsed_ms = (time.perf_counter() - start_time) * 1000
     if record_analytics:
         with contextlib.suppress(OSError):
-            record_scan(target, score, capability.level.value, len(violations),
+            record_scan(target, score, final_level.value, len(violations),
                         len(applicable_rules), elapsed_ms, features.instruction_file_count)
 
     # Build pending semantic summary
@@ -141,7 +147,7 @@ def run_validation(
 
     return ValidationResult(
         score=score,
-        level=capability.level,
+        level=final_level,
         violations=tuple(violations),
         judgment_requests=tuple(judgment_requests),
         rules_checked=len(applicable_rules),

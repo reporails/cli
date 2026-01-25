@@ -64,6 +64,9 @@ def calculate_score(rules_checked: int, violations: list[Violation]) -> float:
 
     Score = (earned_points / possible_points) × 10
 
+    Lost points are capped per rule - multiple violations of the same rule
+    don't deduct more than the rule's weight (DEFAULT_RULE_WEIGHT).
+
     Args:
         rules_checked: Total number of rules checked
         violations: List of violations found
@@ -77,9 +80,16 @@ def calculate_score(rules_checked: int, violations: list[Violation]) -> float:
     # Total possible points
     possible = rules_checked * DEFAULT_RULE_WEIGHT
 
-    # Calculate points lost from deduped violations
+    # Group violations by rule_id, cap lost points per rule
     unique_violations = dedupe_violations(violations)
-    lost = sum(SEVERITY_WEIGHTS.get(v.severity, DEFAULT_RULE_WEIGHT) for v in unique_violations)
+    by_rule: dict[str, float] = {}
+    for v in unique_violations:
+        weight = SEVERITY_WEIGHTS.get(v.severity, DEFAULT_RULE_WEIGHT)
+        # Accumulate but cap at rule weight
+        current = by_rule.get(v.rule_id, 0.0)
+        by_rule[v.rule_id] = min(current + weight, DEFAULT_RULE_WEIGHT)
+
+    lost = sum(by_rule.values())
 
     # Earned = possible - lost (floor at 0)
     earned = max(0.0, possible - lost)
