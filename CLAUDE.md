@@ -64,11 +64,21 @@ See `docs/specs/arch.md` for full architecture.
 
 | Command | Purpose |
 |---------|---------|
-| `uv run poe qa_fast` | Lint, type check, unit tests |
-| `uv run poe qa` | Full QA including integration |
+| `uv run poe qa_fast` | Lint, type check, unit tests (pre-commit) |
+| `uv run poe qa` | Full QA including integration tests |
 | `uv run poe lint` | Ruff linter |
 | `uv run poe format` | Format code |
 | `uv run poe type` | Mypy type checking |
+| `uv run poe test_unit` | Unit tests only (fast, no OpenGrep) |
+| `uv run poe test_integration` | Integration tests (requires OpenGrep) |
+
+## Test Structure
+
+```
+tests/
+├── unit/           # Fast tests, no external dependencies
+└── integration/    # Requires OpenGrep binary
+```
 
 ## Architecture
 

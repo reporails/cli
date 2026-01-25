@@ -12,11 +12,8 @@ The CLI must handle these correctly and not confuse "no findings" with errors.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
-
-import pytest
 
 from tests.conftest import create_temp_rule_file
 

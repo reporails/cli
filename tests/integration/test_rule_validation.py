@@ -10,8 +10,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from tests.conftest import create_temp_rule_file
 
 
@@ -338,7 +336,7 @@ class TestCLIRuleValidation:
 
         sarif_path = tmp_path / "output.sarif"
 
-        result = subprocess.run(
+        subprocess.run(
             [
                 str(opengrep_bin),
                 "scan",

@@ -6,12 +6,7 @@ Unresolved templates cause silent failures that are hard to debug.
 
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
-from tempfile import TemporaryDirectory
-
-import pytest
 
 from tests.conftest import create_temp_rule_file
 

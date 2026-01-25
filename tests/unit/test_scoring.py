@@ -1,14 +1,12 @@
-"""Scoring tests - scores must be reproducible and match spec.
+"""Scoring unit tests - scores must be reproducible and match spec.
 
 The score (0-10) represents how well a project follows reporails rules.
 Scoring must be deterministic and predictable.
+
+These tests are pure unit tests with no external dependencies.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
-
-import pytest
 
 from reporails_cli.core.models import Severity, Violation
 
@@ -173,62 +171,6 @@ class TestScoreDeterminism:
 
         assert score_12 == score_21, (
             f"Violation order should not matter: [v1,v2]={score_12}, [v2,v1]={score_21}"
-        )
-
-
-class TestValidationScoring:
-    """Test scoring through validation pipeline."""
-
-    def test_clean_project_high_score(self, level2_project: Path) -> None:
-        """Clean project should have high score."""
-        from reporails_cli.core.engine import run_validation_sync
-
-        result = run_validation_sync(level2_project, agent="claude")
-
-        # A clean project should score well
-        assert result.score >= 8.0, (
-            f"Clean project should score 8+, got {result.score}\n"
-            f"Violations: {result.violations}"
-        )
-
-    def test_score_reproducible_across_runs(self, level3_project: Path) -> None:
-        """Same project should produce same score across runs."""
-        from reporails_cli.core.engine import run_validation_sync
-
-        scores = []
-        for _ in range(3):
-            result = run_validation_sync(level3_project, agent="claude")
-            scores.append(result.score)
-
-        assert len(set(scores)) == 1, (
-            f"Score should be reproducible, got: {scores}"
-        )
-
-    def test_score_is_deterministic_for_same_content(self, tmp_path: Path) -> None:
-        """Same content should produce same score across runs."""
-        from reporails_cli.core.engine import run_validation_sync
-
-        # Create project with content
-        (tmp_path / "CLAUDE.md").write_text("""\
-# Test Project
-
-A test project.
-
-## Commands
-
-- `test` - Run tests
-
-## Architecture
-
-Simple architecture.
-""")
-
-        result1 = run_validation_sync(tmp_path, agent="claude")
-        result2 = run_validation_sync(tmp_path, agent="claude")
-
-        # Same content should give same score
-        assert result1.score == result2.score, (
-            f"Same content gave different scores: {result1.score} vs {result2.score}"
         )
 
 

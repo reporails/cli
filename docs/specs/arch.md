@@ -95,6 +95,8 @@ reporails-cli/
 │       └── mcp.py            # MCP wrapper
 ├── docs/specs/               # Architecture docs
 └── tests/
+    ├── unit/                 # Fast, isolated unit tests
+    └── integration/          # Tests requiring OpenGrep
 ```
 
 ### Bundled vs Downloaded
