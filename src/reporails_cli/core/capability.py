@@ -14,6 +14,7 @@ from reporails_cli.core.models import (
     CapabilityResult,
     ContentFeatures,
     DetectedFeatures,
+    Level,
 )
 
 # Capability weights for scoring
@@ -130,7 +131,7 @@ def calculate_filesystem_score(features: DetectedFeatures) -> int:
     return score
 
 
-def estimate_preliminary_level(features: DetectedFeatures) -> "Level":
+def estimate_preliminary_level(features: DetectedFeatures) -> Level:
     """Estimate capability level from filesystem features only.
 
     Conservative estimate for early rule filtering.

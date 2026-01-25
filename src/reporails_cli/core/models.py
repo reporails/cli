@@ -244,8 +244,8 @@ class ScanDelta:
         current_score: float,
         current_level: str,
         current_violations: int,
-        previous: "AnalyticsEntry | None",
-    ) -> "ScanDelta":
+        previous: AnalyticsEntry | None,
+    ) -> ScanDelta:
         """Compute delta from current values and previous scan entry.
 
         Args:

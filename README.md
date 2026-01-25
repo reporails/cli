@@ -1,63 +1,70 @@
 # Reporails CLI
 
-Lint and score CLAUDE.md files — MCP-first AI context governance.
+Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
-## Installation
-
-### MCP Server (recommended)
+## Quick Start
 
 ```bash
-claude mcp add --scope user --transport stdio reporails -- uvx --from reporails-cli ails-mcp
+# Install (downloads OpenGrep automatically)
+uvx reporails-cli init
+
+# Check your setup
+ails check .
 ```
 
-Then in Claude Code: "Check my CLAUDE.md"
+That's it. You'll see:
 
-### CLI
+```
+╔══════════════════════════════════════════════════════════════╗
+║   SCORE: 6.3 / 10 (partial)  |  CAPABILITY: Governed (L5)    ║
+║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░         ║
+╚══════════════════════════════════════════════════════════════╝
 
-```bash
-pip install reporails-cli
+Violations:
+  CLAUDE.md (7 issues)
+    ○ MED C4.no-antipatterns :1    No NEVER or AVOID statements found
+    · LOW C12.no-version     :1    No version or date marker found
+    ...
 ```
 
-## Usage
+Fix the issues, run again, watch your score improve.
+
+## What It Checks
+
+- **Structure** — File organization, size limits
+- **Content** — Clarity, completeness, anti-patterns
+- **Efficiency** — Token usage, context management
+- **Maintenance** — Versioning, review processes
+- **Governance** — Ownership, security policies
+
+## Capability Levels
+
+| Level | Name | What it means |
+|-------|------|---------------|
+| L1 | Minimal | Just a CLAUDE.md |
+| L2 | Basic | Structured sections |
+| L3 | Structured | .claude/rules/ directory |
+| L4 | Managed | Backbone + automation |
+| L5 | Governed | Full governance setup |
+
+## MCP Integration (for Claude Code)
+
+For full semantic analysis, add the MCP server:
 
 ```bash
-ails check .              # Validate instruction files
-ails check . -f json      # Output as JSON
+claude mcp add reporails -- uvx --from reporails-cli ails-mcp
+```
+
+Then ask Claude: "Check my CLAUDE.md setup"
+
+## Commands
+
+```bash
+ails check .              # Score your setup
+ails check . -f json      # JSON output (for CI)
 ails map . --save         # Generate backbone.yml
-ails explain S1           # Show rule details
+ails explain S1           # Explain a rule
 ```
-
-## How It Works
-
-1. Loads rules from `~/.reporails/checks/` (auto-downloaded on first run)
-2. Runs OpenGrep (auto-downloaded) with rule patterns
-3. Calculates score (0-10) and capability level (L1-L6)
-4. For semantic rules, returns JudgmentRequests for host LLM
-
-## Rule Categories
-
-| Category | Rules | Focus |
-|----------|-------|-------|
-| Structure (S) | S1-S7 | File size, organization |
-| Content (C) | C1-C12 | Clarity, completeness |
-| Efficiency (E) | E1-E8 | Token usage, context |
-| Maintenance (M) | M1-M7 | Versioning, review |
-| Governance (G) | G1-G8 | Policies, ownership |
-
-## Development
-
-```bash
-uv sync                                  # Install dependencies
-uv run ails check . --checks-dir checks  # Run against local rules
-uv run poe qa                            # Full test suite
-```
-
-### MCP Setup
-
-To use the reporails MCP server during development:
-
-1. Copy `.claude/mcp.json.example` to `.claude/mcp.json`
-2. Replace `<PROJECT_ROOT>` with the absolute path to this repo
 
 ## License
 

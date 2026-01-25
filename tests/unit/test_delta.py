@@ -8,11 +8,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-import pytest
-
 from reporails_cli.core.cache import AnalyticsEntry
 from reporails_cli.core.models import (
     FrictionEstimate,
@@ -302,9 +297,7 @@ class TestDeltaInFormatters:
             violations_delta=None,
         )
 
-        output = text_formatter.format_result(result, delta=delta)
-
-        # May be truncated in box display, but compact output shows full text
+        # Full format may truncate level in box display, so test compact instead
         compact_output = text_formatter.format_compact(result, delta=delta)
         assert "from L2" in compact_output
 

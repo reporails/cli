@@ -6,10 +6,9 @@ capability detection, and scoring.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator
 
 import pytest
 

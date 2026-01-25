@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from reporails_cli.core.models import Level
 
 
@@ -102,8 +100,8 @@ class TestCapabilityLevelDetermination:
         """Level 1 project should be detected as L1 or L2."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            determine_capability_level,
             detect_features_content,
+            determine_capability_level,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -122,8 +120,8 @@ class TestCapabilityLevelDetermination:
         """Level 2 project should be detected as L2 or L3."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            determine_capability_level,
             detect_features_content,
+            determine_capability_level,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -142,8 +140,8 @@ class TestCapabilityLevelDetermination:
         """Level 3 project should be detected as L3 or higher."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            determine_capability_level,
             detect_features_content,
+            determine_capability_level,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -162,8 +160,8 @@ class TestCapabilityLevelDetermination:
         """Level 5 project should be detected as L5 or L6."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            determine_capability_level,
             detect_features_content,
+            determine_capability_level,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -182,8 +180,8 @@ class TestCapabilityLevelDetermination:
         """Missing expected files should result in lower level, not error."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            determine_capability_level,
             detect_features_content,
+            determine_capability_level,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -212,8 +210,8 @@ class TestCapabilityScoring:
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
             calculate_capability_score,
-            merge_content_features,
             detect_features_content,
+            merge_content_features,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -244,8 +242,8 @@ class TestLevelDeterminism:
         """Same project should always detect same level."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            determine_capability_level,
             detect_features_content,
+            determine_capability_level,
         )
         from reporails_cli.core.opengrep import run_capability_detection
 
@@ -266,8 +264,8 @@ class TestLevelDeterminism:
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
             calculate_capability_score,
-            merge_content_features,
             detect_features_content,
+            merge_content_features,
         )
         from reporails_cli.core.levels import capability_score_to_level
         from reporails_cli.core.opengrep import run_capability_detection
