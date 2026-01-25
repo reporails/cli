@@ -48,4 +48,18 @@ Foundational principles for all code in the reporails codebase.
   - `format_rule(rule_id: str, rule_data: dict) -> T`
 - `json.py` is the canonical source; others may wrap it
 - No business logic in formatters — pure transformation
-- 
+
+## 7. Module Size Discipline
+
+- Modules should not exceed 300 lines
+- Functions should not exceed 50 lines
+- If a module grows beyond limit → split by responsibility
+- If same pattern appears in 2+ places → extract to utils.py
+
+## 8. Single Responsibility
+
+- Each module owns one concern
+- engine.py = orchestration only
+- opengrep.py = binary execution only
+- sarif.py = SARIF parsing only
+- scorer.py = score calculation only

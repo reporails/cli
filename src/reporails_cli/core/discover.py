@@ -109,9 +109,25 @@ def _is_valid_path_reference(path: str) -> bool:
     # Filter out URLs
     if path.startswith("http://") or path.startswith("https://"):
         return False
+    # Reject path traversal attempts (../../../etc)
+    # Normalize and check for excessive parent refs
+    if path.count("..") > 2:
+        return False
+    # Reject absolute paths outside project
+    if path.startswith("/") and not path.startswith("./"):
+        return False
     # Filter out common false positives
     false_positives = {"e.g.", "i.e.", "etc.", "vs.", "v1", "v2"}
     return path.lower() not in false_positives
+
+
+def _is_path_within_bounds(path: str, project_root: Path) -> bool:
+    """Check if resolved path stays within project bounds."""
+    try:
+        resolved = (project_root / path).resolve()
+        return resolved.is_relative_to(project_root)
+    except (ValueError, OSError):
+        return False
 
 
 def compute_content_hash(file_path: Path) -> str:
@@ -160,7 +176,9 @@ def discover_components(target: Path, instruction_files: list[Path]) -> dict[str
         # Extract references from file content
         content = file_path.read_text(encoding="utf-8")
         refs = extract_references(content)
-        component.imports.extend([r.path for r in refs])
+        # Filter: only include references that stay within project bounds
+        valid_refs = [r.path for r in refs if _is_path_within_bounds(r.path, target)]
+        component.imports.extend(valid_refs)
 
         # Compute content hash
         if component.content_hash is None:

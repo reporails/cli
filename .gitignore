@@ -17,3 +17,4 @@ docs/research
 
 # Claude Code MCP config (machine-specific paths)
 .claude/mcp.json
+.mcp.json

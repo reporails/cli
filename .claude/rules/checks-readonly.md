@@ -1,10 +1,12 @@
 ---
-paths: ["checks/**/*.md"]
+paths: ["src/reporails_cli/bundled/**"]
 ---
 
-# Read-Only Rule Files
+# Bundled Config Files
 
-NEVER modify `checks/**/*.md` files unless explicitly instructed by a human.
+NEVER modify bundled config files without explicit human instruction.
 
-- Rule `.md` files define metadata (id, type, category, detection method)
-- Only create/modify corresponding `.yml` files for OpenGrep patterns
+- `levels.yml` — Level definitions and rule-to-level mapping
+- `capability-patterns.yml` — OpenGrep patterns for capability detection
+
+These are CLI-owned orchestration logic, not framework rules.

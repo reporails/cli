@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 
 import httpx
 
-from reporails_cli.core.bootstrap import get_opengrep_bin, get_reporails_home
+from reporails_cli.core.bootstrap import get_global_config, get_opengrep_bin, get_reporails_home
 
 # Hardcoded version - no env var handling
 OPENGREP_VERSION = "1.15.1"
@@ -147,6 +147,50 @@ def copy_bundled_yml_files(dest: Path) -> int:
     return count
 
 
+def copy_local_framework(source: Path) -> tuple[Path, int]:
+    """
+    Copy rules from local framework directory to ~/.reporails/rules/.
+
+    Used in dev mode when framework_path is configured in ~/.reporails/config.yml.
+
+    Local framework structure:
+        source/
+        ├── core/           # Core rules
+        ├── agents/         # Agent-specific rules
+        │   └── claude/
+        │       └── rules/  # Claude-specific rules
+        ├── schemas/
+        └── docs/
+
+    Args:
+        source: Local framework directory path
+
+    Returns:
+        Tuple of (rules_path, total_file_count)
+    """
+    rules_path = get_reporails_home() / "rules"
+
+    # Clear existing rules
+    if rules_path.exists():
+        shutil.rmtree(rules_path)
+
+    rules_path.mkdir(parents=True, exist_ok=True)
+    count = 0
+
+    # Directories to copy from framework root
+    dirs_to_copy = ["core", "agents", "schemas", "docs"]
+
+    for dir_name in dirs_to_copy:
+        source_dir = source / dir_name
+        if source_dir.exists() and source_dir.is_dir():
+            dest_dir = rules_path / dir_name
+            shutil.copytree(source_dir, dest_dir)
+            # Count files copied
+            count += sum(1 for _ in dest_dir.rglob("*") if _.is_file())
+
+    return rules_path, count
+
+
 def download_md_files(dest: Path) -> int:
     """
     Download .md files from framework repo to destination.
@@ -194,30 +238,49 @@ def download_md_files(dest: Path) -> int:
     return count
 
 
-def download_rules() -> tuple[Path, int]:
+def download_from_github() -> tuple[Path, int]:
     """
-    Setup rules at ~/.reporails/checks/.
+    Setup rules from GitHub at ~/.reporails/rules/.
 
     Merges two sources:
     1. Bundled .yml files (OpenGrep patterns) from package
     2. Downloaded .md files (rule definitions) from framework repo
 
     Returns:
-        Tuple of (checks_path, total_file_count)
+        Tuple of (rules_path, total_file_count)
     """
-    checks_path = get_reporails_home() / "checks"
+    rules_path = get_reporails_home() / "rules"
 
-    # Clear existing checks
-    if checks_path.exists():
-        shutil.rmtree(checks_path)
+    # Clear existing rules
+    if rules_path.exists():
+        shutil.rmtree(rules_path)
 
     # 1. Copy bundled .yml files
-    yml_count = copy_bundled_yml_files(checks_path)
+    yml_count = copy_bundled_yml_files(rules_path)
 
     # 2. Download .md files from framework
-    md_count = download_md_files(checks_path)
+    md_count = download_md_files(rules_path)
 
-    return checks_path, yml_count + md_count
+    return rules_path, yml_count + md_count
+
+
+def download_rules() -> tuple[Path, int]:
+    """
+    Setup rules at ~/.reporails/rules/.
+
+    Checks for local framework_path in config first (dev mode),
+    otherwise downloads from GitHub.
+
+    Returns:
+        Tuple of (rules_path, total_file_count)
+    """
+    # Check for local framework override (dev mode)
+    config = get_global_config()
+    if config.framework_path and config.framework_path.exists():
+        return copy_local_framework(config.framework_path)
+
+    # Otherwise download from GitHub
+    return download_from_github()
 
 
 def sync_rules_to_local(local_checks_dir: Path) -> int:
@@ -240,7 +303,7 @@ def run_init() -> dict[str, str | int | Path]:
     Run global initialization.
 
     1. Download opengrep binary to ~/.reporails/bin/
-    2. Setup rules at ~/.reporails/checks/ (bundled .yml + downloaded .md)
+    2. Setup rules at ~/.reporails/rules/ (from local framework or GitHub)
 
     Returns dict with status info.
     """
@@ -251,9 +314,9 @@ def run_init() -> dict[str, str | int | Path]:
     results["opengrep_path"] = bin_path
     results["opengrep_version"] = OPENGREP_VERSION
 
-    # 2. Setup rules (merge bundled yml + framework md)
-    checks_path, rule_count = download_rules()
-    results["checks_path"] = checks_path
+    # 2. Setup rules (check local framework_path first, then GitHub)
+    rules_path, rule_count = download_rules()
+    results["rules_path"] = rules_path
     results["rule_count"] = rule_count
 
     return results

@@ -1,10 +1,10 @@
 # Architecture Overview
 
-> Version 0.0.1 | AI Instruction Linter
+> Version 0.1.0 | AI Instruction Linter
 
 ## Overview
 
-Reporails lints AI coding agent instruction files against 42 community-maintained rules.
+Reporails lints AI coding agent instruction files against community-maintained rules.
 
 **repoRAILS** = **Repo** **R**ecursive **AI** **L**inting**S**
 
@@ -14,28 +14,13 @@ Reporails lints AI coding agent instruction files against 42 community-maintaine
 | CLI Command | `ails` |
 | MCP Server | `ails-mcp` |
 
-### Core Principles
+## Core Principles
 
 - **MCP-First**: Primary interface is MCP for Claude Code integration
-- **OpenGrep-Powered**: Uses OpenGrep for pattern matching (lazy-downloaded)
+- **OpenGrep-Powered**: Uses OpenGrep for deterministic pattern matching
 - **Rules as Data**: Rules defined in markdown frontmatter + OpenGrep YAML
-- **Backbone-Driven**: Discovery generates backbone.yml for dependency tracking
+- **Framework Separation**: CLI orchestrates, framework defines rules
 - **No Detection Logic in Python**: Python orchestrates, OpenGrep detects
-
-### Agent Support
-
-**Currently supported (v0.0.1):**
-- Claude: `CLAUDE.md`, `.claude/rules/*.md`
-
-**Discovery-ready (detection only, no linting rules yet):**
-
-| Agent | Instruction Files | Status |
-|-------|-------------------|--------|
-| Cursor | `.cursorrules`, `.cursor/rules/*.md` | Detected |
-| Windsurf | `.windsurfrules` | Detected |
-| GitHub Copilot | `.github/copilot-instructions.md` | Detected |
-| Aider | `.aider.conf.yml`, `CONVENTIONS.md` | Detected |
-| Generic | `AGENTS.md`, `.ai/**/*.md` | Detected |
 
 ## Architecture
 
@@ -51,129 +36,321 @@ Reporails lints AI coding agent instruction files against 42 community-maintaine
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Core Layer                               │
 ├───────────┬───────────┬───────────┬───────────┬─────────────────┤
-│  Agents   │ Discovery │  Engine   │  Registry │     Scorer      │
+│   Init    │ Discovery │  Engine   │  Registry │     Scorer      │
 └───────────┴───────────┴───────────┴───────────┴─────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      External Layer                             │
 ├─────────────────────────────────┬───────────────────────────────┤
-│          OpenGrep Binary        │      Semantic Definitions     │
+│       OpenGrep Binary           │       Framework (Rules)       │
+│    (~/.reporails/bin/)          │    (~/.reporails/rules/)      │
 └─────────────────────────────────┴───────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                       Output Layer                              │
-├───────────────────────────────┬─────────────────────────────────┤
-│         JSON Format           │          Text Format            │
-│    (canonical, for MCP)       │        (CLI display)            │
-└───────────────────────────────┴─────────────────────────────────┘
+├───────────────────────────────────┬─────────────────────────────┤
+│         JSON Format               │        Text Format          │
+│    (canonical, for MCP)           │      (CLI display)          │
+└───────────────────────────────────┴─────────────────────────────┘
 ```
 
-### Data Flow
+## Directory Structure
 
-1. **First Run**: Auto-downloads OpenGrep + rules to `~/.reporails/`
-2. **Mapping**: `ails map` analyzes project → caches backbone internally
-3. **Validation**: User invokes `ails check` (MCP or CLI)
-4. **File Map**: Engine uses cached file map (`.reporails/.cache/`)
-5. **Registry**: Loads rules from `checks/**/*.md` frontmatter
-6. **Detection** (three paths):
-   - **Deterministic**: OpenGrep → SARIF → `Violation` objects
-   - **Heuristic**: OpenGrep → SARIF → `JudgmentRequest` (for LLM confirmation)
-   - **Semantic**: Direct → `JudgmentRequest` (no OpenGrep gate)
-7. **Scoring**: `calculate_score()` computes 0-10 score from violations
-8. **Output**: Formatter adapts output (JSON for MCP, text for CLI)
-
-## File Structure
+### CLI Repository
 
 ```
 reporails-cli/
-├── docs/
-│   ├── capability-levels.md # L1-L6 capability levels (user-facing)
-│   └── specs/
-│       ├── arch.md         # This file
-│       ├── caching.md      # Discovery and caching
-│       ├── scoring.md      # Scoring and time waste
-│       ├── principles.md   # Architecture principles
-│       ├── modules.md      # Module specifications
-│       └── models.md       # Data models
-├── checks/                 # Rule definitions
-│   ├── structure/          # S1-S7 (.md + .yml)
-│   ├── content/            # C1-C12
-│   ├── efficiency/         # E1-E8
-│   ├── governance/         # G1-G8
-│   └── maintenance/        # M1-M7
 ├── src/reporails_cli/
 │   ├── core/
-│   │   ├── agents.py       # Agent definitions (agent-agnostic)
-│   │   ├── cache.py        # Hybrid caching (project-local + global analytics)
-│   │   ├── discover.py     # Discovery engine
-│   │   ├── engine.py       # Validation engine
-│   │   ├── models.py       # Data models
-│   │   ├── registry.py     # Rule loading
-│   │   └── scorer.py       # Scoring functions
-│   ├── interfaces/         # MCP + CLI adapters
-│   ├── formatters/         # Output adapters
-│   └── semantic/           # 6 semantic rule definitions
+│   │   ├── init.py         # Download OpenGrep + framework
+│   │   ├── bootstrap.py    # Path helpers
+│   │   ├── agents.py       # Agent definitions
+│   │   ├── levels.py       # Level config, rule mapping
+│   │   ├── discover.py     # Project discovery
+│   │   ├── engine.py       # Validation orchestration
+│   │   ├── registry.py     # Rule loading + resolution
+│   │   ├── scorer.py       # Score calculation
+│   │   └── models.py       # Data models
+│   ├── bundled/            # CLI-owned config (not downloaded)
+│   │   ├── capability-patterns.yml
+│   │   └── levels.yml
+│   ├── interfaces/
+│   │   ├── mcp/server.py   # MCP server
+│   │   └── cli/main.py     # Typer CLI
+│   └── formatters/         # Output adapters
+├── docs/specs/             # Architecture docs
 └── tests/
-    ├── unit/
-    └── integration/
 ```
+
+### Bundled vs Downloaded
+
+| Content | Location | Source | Purpose |
+|---------|----------|--------|---------|
+| **Bundled** | `src/bundled/` | CLI package | Orchestration logic |
+| **Downloaded** | `~/.reporails/rules/` | Framework release | Rule definitions |
+
+**Bundled (CLI-owned):**
+- `capability-patterns.yml` — OpenGrep patterns for feature detection
+- `levels.yml` — Level definitions, rule-to-level mapping
+
+**Downloaded (Framework-owned):**
+- `core/` — Rule definitions (.md + .yml)
+- `agents/` — Agent-specific rules
+- `schemas/` — Rule schema definitions
+- `docs/` — Reference documentation
+
+This separation ensures:
+- CLI controls how levels work (orchestration)
+- Framework controls what rules exist (data)
+- CLI can upgrade independently of framework
+
+### Runtime Structure
+
+```
+~/.reporails/
+├── bin/
+│   └── opengrep                  # Downloaded binary
+├── rules/                        # Downloaded framework
+│   ├── core/                     # Core rules
+│   │   ├── structure/
+│   │   ├── content/
+│   │   ├── efficiency/
+│   │   ├── governance/
+│   │   └── maintenance/
+│   ├── agents/                   # Agent-specific rules
+│   │   └── claude/
+│   │       ├── config.yml
+│   │       └── rules/
+│   ├── schemas/                  # Rule schemas
+│   └── docs/                     # Reference docs
+│       ├── capability-levels.md
+│       ├── methodology-thresholds.md
+│       └── sources.yml
+├── config.yml                    # Global user config (optional)
+└── version                       # Installed framework version
+```
+
+### Project Structure (User's Repo)
+
+```
+project/
+├── CLAUDE.md                     # Root instruction file
+├── .claude/
+│   └── rules/                    # Path-scoped rules
+├── .reporails/                   # Project-level config
+│   ├── config.yml                # Overrides, disabled rules
+│   ├── rules/                    # Custom rules (user's own)
+│   │   ├── my-rule.md
+│   │   └── my-rule.yml
+│   └── overrides/                # Override framework rules
+│       └── S1-size-limits.yml    # Different threshold
+└── .reporails/.cache/            # Gitignored
+    ├── file-map.json
+    └── judgment-cache.json
+```
+
+## First Run Flow
+
+```
+User runs: ails check
+           │
+           ▼
+┌─────────────────────────────┐
+│  Check ~/.reporails/        │
+│  - bin/opengrep exists?     │
+│  - rules/ exists?           │
+└─────────────────────────────┘
+           │
+           ▼ (missing)
+┌─────────────────────────────┐
+│  Download OpenGrep          │
+│  - Detect OS/arch           │
+│  - Download binary          │
+│  - Verify checksum          │
+│  - Extract to bin/          │
+└─────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│  Download Framework         │
+│  - Fetch latest release     │
+│  - Download tarball         │
+│  - Verify checksum          │
+│  - Extract to rules/        │
+│  - Write version file       │
+└─────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│  Run Validation             │
+└─────────────────────────────┘
+```
+
+## Rule Resolution
+
+Rules are resolved in priority order (later overrides earlier):
+
+```
+1. ~/.reporails/rules/core/              # Framework core rules
+2. ~/.reporails/rules/agents/{agent}/    # Framework agent rules
+3. .reporails/overrides/                 # Project overrides
+4. .reporails/rules/                     # Project custom rules
+```
+
+**Resolution logic:**
+
+- Rules matched by ID (e.g., `S1`)
+- Override replaces entire rule (not merge)
+- Custom rules add to rule set
+- Disabled rules removed from set
+
+**Example:**
+
+```yaml
+# .reporails/config.yml
+disabled_rules:
+  - S1          # Disable size limits entirely
+  - C7          # Disable emphasis discipline
+
+overrides:
+  S3:
+    severity: low   # Demote code block check
+```
+
+## Rule Types
+
+Two rule types (defined in framework `schemas/rule.schema.yml`):
+
+| Type | Detection | LLM | Output |
+|------|-----------|-----|--------|
+| **Deterministic** | OpenGrep pattern → direct result | No | `Violation` |
+| **Semantic** | Content extraction → LLM evaluation | Yes | `JudgmentRequest` |
+
+### Deterministic Flow
+
+```
+OpenGrep runs .yml pattern
+        │
+        ▼
+    Match found?
+        │
+    ┌───┴───┐
+    No      Yes
+    │       │
+    ▼       ▼
+  Pass    Violation
+```
+
+### Semantic Flow
+
+```
+Engine extracts content
+        │
+        ▼
+  Build JudgmentRequest
+  (question, criteria)
+        │
+        ▼
+  Return to host LLM
+        │
+        ▼
+  LLM evaluates
+        │
+        ▼
+  JudgmentResponse
+        │
+    ┌───┴───┐
+  Pass     Fail
+            │
+            ▼
+        Violation
+```
+
+## Agent Support
+
+**Currently supported (v0.0.1):**
+- Claude: `CLAUDE.md`, `.claude/rules/*.md`
+
+**Discovery-ready (detection only, no linting rules yet):**
+
+| Agent | Instruction Files | Status |
+|-------|-------------------|--------|
+| Cursor | `.cursorrules`, `.cursor/rules/*.md` | Detected |
+| Windsurf | `.windsurfrules` | Detected |
+| GitHub Copilot | `.github/copilot-instructions.md` | Detected |
+| Aider | `.aider.conf.yml`, `CONVENTIONS.md` | Detected |
+| Generic | `AGENTS.md`, `.ai/**/*.md` | Detected |
 
 ## Commands
 
 ```bash
 # Validation
-ails check [PATH]              # Validate instruction files (auto-installs on first run)
+ails check [PATH]              # Validate instruction files
 ails check [PATH] --refresh    # Force re-scan, ignore cache
 ails check [PATH] -f json      # Output as JSON (for MCP/scripts)
-ails check [PATH] -c DIR       # Use custom checks directory
+ails check [PATH] -q           # Suppress semantic rules message
 
-# Mapping
-ails map [PATH]                # Map project structure
-ails map [PATH] --save         # Save backbone.yml to .reporails/
-ails map [PATH] -o yaml        # Output as YAML
+# Management
+ails update                    # Update framework to latest
+ails update --version 0.1.0    # Update to specific version
 
 # Information
 ails explain RULE_ID           # Show rule details
+ails version                   # Show CLI and framework versions
+```
+
+## Configuration
+
+### Global Config (`~/.reporails/config.yml`)
+
+```yaml
+# Framework source (default: GitHub releases)
+framework_path: null           # Local path override (dev only)
+
+# Update behavior
+auto_update_check: true        # Check for updates weekly
+```
+
+### Project Config (`.reporails/config.yml`)
+
+```yaml
+# Pin framework version
+framework_version: "0.0.1"
+
+# Disable rules
+disabled_rules:
+  - S1
+  - C7
+
+# Override severity
+overrides:
+  S3:
+    severity: low
+  E6:
+    severity: low
 ```
 
 ## OpenGrep Integration
 
-Pattern matching is powered by [OpenGrep](https://github.com/opengrep/opengrep), a semantic grep engine.
-
-### Capabilities
-
-| Feature | Use Case |
-|---------|----------|
-| `pattern-regex` | PCRE patterns for keyword detection |
-| `languages: generic` | Markdown file analysis |
-| YAML parsing | Frontmatter validation |
-| Metavariables | Capture and reference patterns |
-| Cross-file analysis | Duplicate/conflict detection |
+Pattern matching powered by [OpenGrep](https://github.com/opengrep/opengrep).
 
 ### Severity Mapping
 
 | OpenGrep Level | Engine Behavior |
 |----------------|-----------------|
-| `ERROR` | Creates `Violation` (deterministic) or `JudgmentRequest` (heuristic) |
-| `WARNING` | Creates `Violation` (deterministic) or `JudgmentRequest` (heuristic) |
-| `INFO` | Skipped (informational only) |
-| `note` | Skipped |
+| `ERROR` | Creates `Violation` |
+| `WARNING` | Creates `Violation` |
+| `INFO` | Skipped |
 
-### Example Pattern
+### Platform Support
 
-```yaml
-# C10: NEVER with alternative
-- id: C10-never-with-alternative
-  message: "NEVER statement has positive alternative"
-  severity: INFO
-  languages: [generic]
-  pattern-regex: "NEVER.*[—–-]|NEVER.*instead"
-  paths:
-    include:
-      - "**/CLAUDE.md"
-```
+| OS | Architecture | Binary |
+|----|--------------|--------|
+| Linux | x86_64, aarch64 | opengrep-linux-* |
+| macOS | x86_64, arm64 | opengrep-darwin-* |
+| Windows | x86_64 | opengrep-windows-*.exe |
 
 ## Quality Gates
 
@@ -182,9 +359,8 @@ Pattern matching is powered by [OpenGrep](https://github.com/opengrep/opengrep),
 
 ## Related Docs
 
-- [Caching & Discovery](caching.md) — Discovery system, caching strategy
-- [Scoring](scoring.md) — Score calculation, time waste, semantic rules
-- [Architecture Principles](principles.md) — DI, pure functions, hexagonal
-- [Module Specifications](modules.md) — Functions per module
-- [Data Models](models.md) — Dataclass definitions
-- [Capability Levels](../capability-levels.md) — L1-L6 level definitions
+- [Caching & Discovery](caching.md)
+- [Scoring](scoring.md)
+- [Architecture Principles](principles.md)
+- [Module Specifications](modules.md)
+- [Data Models](models.md)

@@ -1,0 +1,54 @@
+# OpenGrep patterns for capability detection
+# CLI-owned configuration for content analysis (Phase 2)
+
+rules:
+  - id: capability.has-sections
+    message: "Has markdown sections (H2+)"
+    languages: [generic]
+    severity: INFO
+    pattern-regex: "^##+ "
+    paths:
+      include:
+        - "*.md"
+        - "**/CLAUDE.md"
+        - "**/*.md"
+
+  - id: capability.has-imports
+    message: "Has @imports or file references"
+    languages: [generic]
+    severity: INFO
+    pattern-either:
+      - pattern-regex: "@import"
+      - pattern-regex: "@docs/"
+      - pattern-regex: "@\\.shared/"
+      - pattern-regex: "Read `[^`]+`"
+    paths:
+      include:
+        - "*.md"
+        - "**/CLAUDE.md"
+        - "**/*.md"
+
+  - id: capability.has-explicit-constraints
+    message: "Has MUST/MUST NOT/NEVER constraints"
+    languages: [generic]
+    severity: INFO
+    pattern-either:
+      - pattern-regex: "\\bMUST\\b"
+      - pattern-regex: "\\bMUST NOT\\b"
+      - pattern-regex: "\\bNEVER\\b"
+    paths:
+      include:
+        - "*.md"
+        - "**/CLAUDE.md"
+        - "**/*.md"
+
+  - id: capability.has-path-scoped-rules
+    message: "Has path-scoped rules (paths: in frontmatter)"
+    languages: [generic]
+    severity: INFO
+    pattern-regex: "^paths:\\s*$"
+    paths:
+      include:
+        - ".claude/rules/*.md"
+        - ".cursor/rules/*.md"
+        - ".ai/rules/*.md"

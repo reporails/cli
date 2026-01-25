@@ -1,114 +1,48 @@
-"""Feature detection and rule applicability.
+"""Feature detection (filesystem) and rule applicability.
 
-Determines which rules apply based on detected project features.
-Rules are additive - baseline rules always apply, additional rules
-added based on features present.
+Phase 1 of capability detection - scans filesystem for features.
+Phase 2 (content detection) is in capability.py.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 
-@dataclass
-class DetectedFeatures:
-    """Features detected in a project."""
-
-    has_claude_md: bool = False
-    has_rules_dir: bool = False  # .claude/rules/
-    has_backbone: bool = False  # .reporails/backbone.yml
-    has_shared_files: bool = False  # shared instruction files
-    has_imports: bool = False  # uses @imports in content
-    has_multiple_instruction_files: bool = False
-    has_hierarchical_structure: bool = False  # nested CLAUDE.md files
-    instruction_file_count: int = 0
-    component_count: int = 0
+from reporails_cli.core.levels import get_rules_for_level
+from reporails_cli.core.models import DetectedFeatures, Level, Rule
 
 
-# Rule applicability by feature
-# Baseline rules (L2) - always checked
-BASELINE_RULES: set[str] = {
-    "S1",  # Size limits
-    "C1",  # Core sections
-    "C2",  # Explicit over implicit
-    "C4",  # Anti-pattern documentation
-    "C7",  # Emphasis discipline
-    "C8",  # Instructions over philosophy
-    "C9",  # Has project description
-    "C10",  # Has NEVER statements
-    "C12",  # Has version/date
-    "M5",  # Auto-generated content review
-}
+def detect_features_filesystem(target: Path) -> DetectedFeatures:
+    """Detect project features from file structure.
 
-# Rules for structured content (has @imports, no embedded code)
-STRUCTURED_RULES: set[str] = {
-    "S2",  # Progressive disclosure
-    "S3",  # No embedded code snippets
-    "S7",  # Clear markdown structure
-    "C3",  # Context-specific content
-    "C6",  # Single source of truth
-    "C11",  # Links are valid
-    "E6",  # Code block line limit
-    "E7",  # Import count
-    "M1",  # Version control
-    "M2",  # Review process
-}
-
-# Rules for modular setup (has .claude/rules/)
-MODULAR_RULES: set[str] = {
-    "S4",  # Hierarchical memory
-    "S5",  # Path-scoped rules
-    "E1",  # Deterministic tools for style
-    "E3",  # Purpose-based file reading
-    "E4",  # Memory reference
-    "E5",  # Grep efficiency
-    "E8",  # Context window awareness
-    "M7",  # Rule snippet length enforcement
-}
-
-# Rules for governed setup (org policies, PR-based)
-GOVERNED_RULES: set[str] = {
-    "G1",  # Organization-level policies
-    "G2",  # Team governance structure
-    "G3",  # Security rules ownership
-    "G4",  # Ownership assignment
-    "G8",  # Metrics and CI/CD checks
-    "M3",  # Change management
-    "M4",  # No conflicting rules
-}
-
-# Rules for adaptive setup (backbone, contracts)
-ADAPTIVE_RULES: set[str] = {
-    "S6",  # YAML backbone
-    "C5",  # MUST/MUST NOT with context
-    "E2",  # Session start ritual
-    "G5",  # Contract registry
-    "G6",  # Component-contract binding
-    "G7",  # Architecture tests
-    "M6",  # Map staleness prevention
-}
-
-
-def detect_features(target: Path) -> DetectedFeatures:
-    """
-    Detect project features from file structure.
+    Phase 1 of capability detection - filesystem only, no content analysis.
 
     Args:
         target: Project root path
 
     Returns:
-        DetectedFeatures with all detected indicators
+        DetectedFeatures with filesystem-based indicators
     """
     features = DetectedFeatures()
 
     # Check for CLAUDE.md at root
     root_claude = target / "CLAUDE.md"
     features.has_claude_md = root_claude.exists()
+    features.has_instruction_file = features.has_claude_md
 
     # Check for .claude/rules/
     rules_dir = target / ".claude" / "rules"
     features.has_rules_dir = rules_dir.exists() and any(rules_dir.glob("*.md"))
+
+    # Check for other agent rules directories
+    other_rules = [".cursor/rules", ".ai/rules"]
+    for pattern in other_rules:
+        other_dir = target / pattern
+        if other_dir.exists() and any(other_dir.glob("*.md")):
+            features.has_rules_dir = True
+            break
 
     # Check for backbone.yml
     backbone_path = target / ".reporails" / "backbone.yml"
@@ -119,76 +53,63 @@ def detect_features(target: Path) -> DetectedFeatures:
     features.instruction_file_count = len(claude_files)
     features.has_multiple_instruction_files = len(claude_files) > 1
 
+    if features.instruction_file_count > 0:
+        features.has_instruction_file = True
+
     # Check for hierarchical structure (nested CLAUDE.md)
     for cf in claude_files:
         if cf.parent != target:
             features.has_hierarchical_structure = True
             break
 
-    # Check for @imports in content
+    # Check for @imports in content (simple check, full check in Phase 2)
     if features.has_claude_md:
-        content = root_claude.read_text(encoding="utf-8")
-        features.has_imports = "@" in content and ("@import" in content.lower() or "@" in content)
+        try:
+            content = root_claude.read_text(encoding="utf-8")
+            features.has_imports = "@" in content
+        except (OSError, UnicodeDecodeError):
+            pass
 
     # Check for shared files
-    shared_patterns = [".shared/", "shared/", ".ai/shared/"]
+    shared_patterns = [".shared", "shared", ".ai/shared"]
     for pattern in shared_patterns:
-        if (target / pattern.rstrip("/")).exists():
+        if (target / pattern).exists():
             features.has_shared_files = True
             break
 
     # Count components from backbone if present
     if features.has_backbone:
         try:
-            import yaml
-
             backbone_content = backbone_path.read_text(encoding="utf-8")
             backbone_data = yaml.safe_load(backbone_content)
             features.component_count = len(backbone_data.get("components", {}))
-        except Exception:
+        except (yaml.YAMLError, OSError):
             pass
 
     return features
 
 
-def get_applicable_rules(features: DetectedFeatures) -> set[str]:
-    """
-    Determine which rules apply based on detected features.
+def get_applicable_rules(rules: dict[str, Rule], level: Level) -> dict[str, Rule]:
+    """Filter rules to those applicable at the given level.
 
-    Rules are additive - start with baseline, add rules for each
-    feature present.
+    Rules apply at their minimum level and above.
 
     Args:
-        features: Detected project features
+        rules: Dict of all rules
+        level: Detected capability level
 
     Returns:
-        Set of rule IDs that should be checked
+        Dict of applicable rules
     """
-    applicable = set(BASELINE_RULES)
+    # Get rule IDs for this level from levels.yml
+    applicable_ids = get_rules_for_level(level)
 
-    # Add structured rules if has imports or multiple files
-    if features.has_imports or features.has_multiple_instruction_files:
-        applicable.update(STRUCTURED_RULES)
-
-    # Add modular rules if has .claude/rules/
-    if features.has_rules_dir:
-        applicable.update(MODULAR_RULES)
-
-    # Add adaptive rules if has backbone
-    if features.has_backbone:
-        applicable.update(ADAPTIVE_RULES)
-
-    # Add governed rules if has multiple components or shared files
-    # (indicators of team/org scale)
-    if features.component_count >= 3 or features.has_shared_files:
-        applicable.update(GOVERNED_RULES)
-
-    return applicable
+    # Filter rules
+    return {k: v for k, v in rules.items() if k in applicable_ids}
 
 
 def get_feature_summary(features: DetectedFeatures) -> str:
-    """
-    Generate human-readable summary of detected features.
+    """Generate human-readable summary of detected features.
 
     Args:
         features: Detected project features
@@ -221,3 +142,9 @@ def get_feature_summary(features: DetectedFeatures) -> str:
         parts.append(" + ".join(feature_list))
 
     return ", ".join(parts) if parts else "No features detected"
+
+
+# Legacy alias for backward compatibility
+def detect_features(target: Path) -> DetectedFeatures:
+    """Legacy alias for detect_features_filesystem()."""
+    return detect_features_filesystem(target)
