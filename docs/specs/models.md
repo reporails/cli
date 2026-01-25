@@ -162,11 +162,54 @@ class ValidationResult:
     violations: tuple[Violation, ...]         # Immutable
     judgment_requests: tuple[JudgmentRequest, ...]
     rules_checked: int                        # Deterministic rules checked
-    rules_pending: int                        # Semantic rules pending
     rules_passed: int
     rules_failed: int
     feature_summary: str                      # Human-readable
     friction: FrictionEstimate
+    is_partial: bool = True                   # True if semantic rules pending
+    pending_semantic: PendingSemantic | None = None  # Summary of pending rules
+```
+
+### PendingSemantic
+
+Summary of pending semantic rules for partial evaluation.
+
+```python
+@dataclass(frozen=True)
+class PendingSemantic:
+    rule_count: int          # Number of unique semantic rules pending
+    file_count: int          # Number of files requiring evaluation
+    rules: tuple[str, ...]   # List of pending rule IDs (e.g., ["C2", "E2"])
+```
+
+### ScanDelta
+
+Comparison between current and previous scan for progress tracking.
+
+```python
+@dataclass(frozen=True)
+class ScanDelta:
+    score_delta: float | None         # Change in score (positive = improved)
+    level_previous: str | None        # Previous level if changed
+    level_improved: bool | None       # True if level went up
+    violations_delta: int | None      # Change in violations (negative = improved)
+
+    @classmethod
+    def compute(
+        cls,
+        current_score: float,
+        current_level: str,
+        current_violations: int,
+        previous: AnalyticsEntry | None,
+    ) -> ScanDelta:
+        """Compute delta from previous scan entry."""
+        if previous is None:
+            return cls(None, None, None, None)
+
+        score_delta = round(current_score - previous.score, 1)
+        level_changed = current_level != previous.level
+        # ... comparison logic
+        return cls(score_delta, level_previous, level_improved, violations_delta)
 ```
 
 ---
@@ -338,6 +381,28 @@ class UpdateResult:
     old_version: str | None = None
     new_version: str | None = None
 ```
+
+---
+
+## Analytics
+
+### AnalyticsEntry
+
+A single scan record from project analytics history.
+
+```python
+@dataclass(frozen=True)
+class AnalyticsEntry:
+    timestamp: str           # ISO format
+    score: float
+    level: str               # "L1" through "L6"
+    violations_count: int
+    rules_checked: int
+    elapsed_ms: float
+    instruction_files: int
+```
+
+Used by `get_previous_scan()` to compute `ScanDelta` for progress tracking.
 
 ---
 

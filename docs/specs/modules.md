@@ -11,29 +11,42 @@ src/reporails_cli/
 │   ├── init.py           # Download OpenGrep + framework
 │   ├── registry.py       # Load rules, resolution chain
 │   ├── levels.py         # Level config, rule-to-level mapping
-│   ├── agents.py         # Agent definitions, detection
 │   ├── applicability.py  # Feature detection (filesystem)
 │   ├── capability.py     # Capability scoring (OpenGrep)
 │   ├── discover.py       # Find instruction files
-│   ├── engine.py         # Orchestration only
-│   ├── opengrep.py       # Run binary, return SARIF
+│   ├── engine.py         # Orchestration only (~170 lines)
+│   ├── opengrep/         # OpenGrep execution (package)
+│   │   ├── __init__.py   # Public API re-exports
+│   │   ├── runner.py     # Binary execution, sync only
+│   │   ├── templates.py  # {{placeholder}} resolution
+│   │   └── semgrepignore.py  # .semgrepignore handling
 │   ├── sarif.py          # Parse SARIF → Violations
 │   ├── semantic.py       # Build JudgmentRequests
 │   ├── scorer.py         # Calculate score, level
-│   ├── cache.py          # Project + global cache
+│   ├── cache.py          # Project + global cache, analytics
 │   ├── models.py         # Dataclasses
 │   └── utils.py          # Shared helpers
 ├── bundled/
 │   ├── capability-patterns.yml  # OpenGrep patterns for capability detection
 │   └── levels.yml               # Level definitions and rule mappings
+├── templates/            # CLI output templates
+│   └── __init__.py       # Template loader (load_template, render)
 ├── interfaces/
 │   ├── cli/main.py       # Typer CLI entry point
 │   └── mcp/
 │       ├── server.py     # MCP server
-│       └── tools.py      # Tool implementations
+│       └── tools.py      # Tool implementations (sync)
 └── formatters/
     ├── json.py           # Canonical format
-    ├── text.py           # CLI display
+    ├── text/             # CLI display (package)
+    │   ├── __init__.py   # Public API re-exports
+    │   ├── full.py       # Full terminal output
+    │   ├── compact.py    # Non-TTY output
+    │   ├── box.py        # Assessment box formatting
+    │   ├── violations.py # Violations section
+    │   ├── components.py # Shared helpers
+    │   ├── chars.py      # Unicode/ASCII character sets
+    │   └── rules.py      # Rule explanation
     └── mcp.py            # MCP wrapper
 ```
 
@@ -43,7 +56,7 @@ src/reporails_cli/
 interfaces/ (CLI, MCP)
      │
      ▼
-engine.py (orchestration)
+engine.py (orchestration, sync)
      │
      ├──► init.py ──► bootstrap.py
      │
@@ -53,7 +66,10 @@ engine.py (orchestration)
      │
      ├──► discover.py
      │
-     ├──► opengrep.py
+     ├──► opengrep/ (package)
+     │       ├── runner.py
+     │       ├── templates.py
+     │       └── semgrepignore.py
      │
      ├──► sarif.py ──► models.py
      │
@@ -64,7 +80,7 @@ engine.py (orchestration)
      └──► cache.py
             │
             ▼
-      formatters/
+      formatters/ ──► templates/
 ```
 
 ---
@@ -95,43 +111,6 @@ REPORAILS_HOME = Path.home() / ".reporails"
 FRAMEWORK_REPO = "reporails/reporails-rules"
 FRAMEWORK_RELEASE_URL = f"https://github.com/{FRAMEWORK_REPO}/releases/download"
 ```
-
----
-
-## core/agents.py
-
-Agent definitions and detection. Supports multiple AI coding assistants.
-
-**Functions:**
-
-| Function | Returns | Description |
-|----------|---------|-------------|
-| `detect_agents(target)` | `list[DetectedAgent]` | Detect configured agents |
-| `get_all_instruction_files(target)` | `list[Path]` | Get instruction files for all agents |
-| `get_agent_type(agent_id)` | `AgentType` | Get agent definition |
-
-**AgentType Definition:**
-
-```python
-@dataclass(frozen=True)
-class AgentType:
-    id: str                          # e.g., "claude"
-    name: str                        # e.g., "Claude (Anthropic)"
-    instruction_patterns: tuple[str, ...]  # Glob patterns
-    config_patterns: tuple[str, ...]
-    rule_patterns: tuple[str, ...]
-```
-
-**Known Agents:**
-
-| Agent | Instruction Files | Rules Dir |
-|-------|-------------------|-----------|
-| claude | `CLAUDE.md`, `**/CLAUDE.md` | `.claude/rules/` |
-| cursor | `.cursorrules`, `.cursor/rules/*.md` | `.cursor/rules/` |
-| windsurf | `.windsurfrules` | — |
-| copilot | `.github/copilot-instructions.md` | — |
-| aider | `.aider.conf.yml`, `CONVENTIONS.md` | — |
-| generic | `AGENTS.md`, `.ai/**/*.md` | `.ai/rules/` |
 
 ---
 
@@ -352,85 +331,117 @@ Finds instruction files and builds project map.
 
 ## core/engine.py
 
-Orchestration only. Coordinates other modules.
+Orchestration only. Coordinates other modules. ~170 lines.
 
 **Functions:**
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `run_validation(target, agent, ...)` | `ValidationResult` | Full validation |
-| `run_validation_sync(...)` | `ValidationResult` | Sync wrapper |
+| `run_validation(target, agent, ...)` | `ValidationResult` | Full validation (sync) |
+| `run_validation_sync(...)` | `ValidationResult` | Legacy alias for `run_validation` |
 
 **Orchestration Flow:**
 
 ```python
-async def run_validation(target: Path, agent: str = "claude", ...) -> ValidationResult:
-    # 1. Ensure initialized
-    ensure_initialized()
-    
-    # 2. Detect features
-    features = detect_features(target)
-    
-    # 3. Load and resolve rules
-    rules = load_rules(agent, target)
-    applicable = get_applicable_rules(rules, features)
-    
-    # 4. Split by type
-    deterministic = get_rules_by_type(applicable, RuleType.DETERMINISTIC)
-    semantic = get_rules_by_type(applicable, RuleType.SEMANTIC)
-    
-    # 5. Run deterministic (OpenGrep)
-    sarif = run_opengrep(deterministic, target)
-    violations = parse_sarif(sarif, deterministic)
-    
-    # 6. Build semantic requests
-    judgment_requests = build_semantic_requests(semantic, target)
-    
-    # 7. Calculate score
-    score = calculate_score(len(applicable), violations)
-    level = determine_capability_level(features)
-    
-    # 8. Return result
-    return ValidationResult(...)
+def run_validation(target: Path, agent: str = "claude", ...) -> ValidationResult:
+    # 1. Auto-init if needed
+    if not is_initialized():
+        run_init()
+
+    # 2. Auto-create backbone if missing
+    if not backbone_path.exists():
+        save_backbone(project_root, generate_backbone_yaml(run_discovery(project_root)))
+
+    # 3. Phase 1: Filesystem feature detection
+    features = detect_features_filesystem(project_root)
+
+    # 4. Load rules, estimate preliminary level for filtering
+    rules = load_rules(rules_dir)
+    prelim_level = estimate_preliminary_level(features)
+    applicable = get_applicable_rules(rules, prelim_level)
+
+    # 5. Single consolidated OpenGrep invocation
+    #    - Capability patterns + applicable rule patterns
+    combined_sarif = run_opengrep(all_yml_paths, target, template_context=get_agent_vars(agent))
+
+    # 6. Phase 2: Content feature detection from SARIF
+    content_features = detect_features_content(combined_sarif)
+    capability = determine_capability_level(features, content_features)
+
+    # 7. Parse violations, build semantic requests
+    violations = parse_sarif(combined_sarif, deterministic_rules)
+    judgment_requests = build_semantic_requests(combined_sarif, semantic_rules, target)
+
+    # 8. Calculate score, friction
+    score = calculate_score(len(applicable), dedupe_violations(violations))
+    friction = estimate_friction(violations)
+
+    # 9. Record analytics, return result
+    record_scan(target, score, capability.level.value, ...)
+    return ValidationResult(
+        score=score,
+        level=capability.level,
+        violations=tuple(violations),
+        judgment_requests=tuple(judgment_requests),
+        is_partial=bool(judgment_requests),
+        pending_semantic=PendingSemantic(...) if judgment_requests else None,
+        ...
+    )
 ```
 
 ---
 
-## core/opengrep.py
+## core/opengrep/ (package)
 
-Runs OpenGrep binary. Isolated I/O.
+Runs OpenGrep binary. Isolated I/O. Sync-only (async removed in v0.0.1).
 
-**Functions:**
+### Package Structure
+
+```
+core/opengrep/
+├── __init__.py       # Public API re-exports (34 lines)
+├── runner.py         # Binary execution (203 lines)
+├── templates.py      # {{placeholder}} resolution (138 lines)
+└── semgrepignore.py  # .semgrepignore handling (39 lines)
+```
+
+### Public API (`__init__.py`)
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `run_opengrep(config_paths, target)` | `dict` | Execute and return SARIF |
+| `run_opengrep(yml_paths, target, opengrep_path, template_context)` | `dict` | Execute and return SARIF |
 | `run_capability_detection(target)` | `dict` | Run bundled capability patterns |
 | `run_rule_validation(rules, target)` | `dict` | Run rule .yml patterns |
-| `build_temp_config(yml_paths)` | `Path` | Create merged temp config |
-| `get_opengrep_command(config, target)` | `list[str]` | Build command args |
+| `get_rule_yml_paths(rules)` | `list[Path]` | Get existing .yml paths |
+| `set_debug_timing(enabled)` | `None` | Enable/disable timing output |
+| `has_templates(yml_path)` | `bool` | Check for {{placeholder}} |
+| `resolve_templates(yml_path, context)` | `str` | Resolve template placeholders |
 
-**Invocation Strategy:**
+### Template Resolution (`templates.py`)
 
-OpenGrep is invoked twice per validation:
+Handles `{{placeholder}}` substitution in .yml rule configs:
 
-1. **Capability detection** — bundled `capability-patterns.yml`
-2. **Rule validation** — framework `.yml` files
+- **Array context** (paths.include): Expands list to multiple items
+- **Regex context** (pattern-regex): Converts globs to regex, joins with `|`
+- **Scalar context**: Simple string substitution
 
-This separation keeps capability logic (CLI concern) separate from rule logic (framework concern).
+### Invocation Strategy
+
+Engine makes **single consolidated OpenGrep invocation**:
 
 ```
 engine.py
     │
-    ├──► run_capability_detection()  ──► capability-patterns.yml
-    │           │
-    │           ▼
-    │    ContentFeatures
-    │
-    └──► run_rule_validation()  ──► rules/**/*.yml
+    └──► run_opengrep(all_yml_paths, target, template_context)
+                │
+                ├── capability-patterns.yml (bundled)
+                └── applicable rule .yml files (framework)
                 │
                 ▼
-         SARIF → Violations
+         Combined SARIF output
+                │
+                ├──► detect_features_content() → ContentFeatures
+                └──► parse_sarif() → Violations
 ```
 
 ---
@@ -604,6 +615,47 @@ Tool implementations.
 
 ---
 
+## templates/
+
+CLI output template system. Uses simple `{variable}` substitution.
+
+**Functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `load_template(name)` | `str` | Load template file by name |
+| `render(name, **kwargs)` | `str` | Load and render template with variables |
+| `render_conditional(name, condition, **kwargs)` | `str` | Render only if condition true |
+
+**Template Files:**
+
+```
+templates/
+├── __init__.py           # Template loader
+├── cli_box.txt           # Assessment box
+├── cli_violation.txt     # Single violation line
+├── cli_file_header.txt   # File header with count
+├── cli_pending.txt       # Pending semantic section
+├── cli_cta.txt           # MCP call-to-action
+├── cli_legend.txt        # Severity legend
+└── cli_working.txt       # "What's working" section
+```
+
+**Usage:**
+
+```python
+from reporails_cli.templates import render
+
+output = render("cli_violation.txt",
+    icon="●",
+    rule_id="S1.root-too-long",
+    line="45",
+    message="Root file exceeds 200 lines",
+)
+```
+
+---
+
 ## formatters/
 
 Output adapters. Same interface, different formats.
@@ -621,20 +673,41 @@ def format_rule(rule_id: str, rule_data: dict) -> T
 | Module | Output | Notes |
 |--------|--------|-------|
 | `json.py` | `dict` | Canonical source of truth |
-| `text.py` | `str` | CLI terminal display |
+| `text/` | `str` | CLI terminal display (package) |
 | `mcp.py` | `dict` | Wraps json.py, adds MCP instructions |
 
-### text.py Functions
+### text/ Package
+
+Refactored from single file to package for maintainability:
+
+```
+formatters/text/
+├── __init__.py       # Public API re-exports (28 lines)
+├── full.py           # Full terminal output (136 lines)
+├── compact.py        # Non-TTY output (121 lines)
+├── box.py            # Assessment box formatting (89 lines)
+├── violations.py     # Violations section (92 lines)
+├── components.py     # Shared helpers (117 lines)
+├── chars.py          # Unicode/ASCII character sets (42 lines)
+└── rules.py          # Rule explanation (50 lines)
+```
+
+**Public API (`text/__init__.py`):**
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `format_result(result, ascii_mode, quiet_semantic)` | `str` | Full validation output |
-| `format_compact(result, ascii_mode)` | `str` | Clean output for non-TTY |
-| `format_score(result, ascii_mode)` | `str` | Score summary only |
+| `format_result(result, ascii_mode, quiet_semantic, show_legend, delta)` | `str` | Full validation output |
+| `format_compact(result, ascii_mode, delta)` | `str` | Clean output for non-TTY |
+| `format_score(result, ascii_mode, delta)` | `str` | Score summary only |
 | `format_rule(rule_id, rule_data)` | `str` | Rule explanation |
 | `format_legend(ascii_mode)` | `str` | Severity legend |
-| `format_violations(violations, ascii_mode)` | `str` | Violation list |
-| `format_level_display(level, has_orphan)` | `str` | "L3" or "L3+" |
+
+**Delta Display:**
+
+All formatters accept optional `ScanDelta` parameter to show improvement/regression indicators:
+- Score: `↑ +1.5` or `↓ -0.5`
+- Level: `(was L3)` when changed
+- Violations: `(-2)` or `(+3)`
 
 ---
 
@@ -644,13 +717,17 @@ Per [Principle 7](principles.md#7-module-size-discipline):
 
 | Module | Max Lines | Current | Status |
 |--------|-----------|---------|--------|
-| engine.py | 100 | 600+ | ❌ Split |
-| registry.py | 150 | ~150 | ✓ |
-| discover.py | 150 | ~250 | ❌ Trim |
-| cache.py | 150 | ~200 | ⚠️ Review |
-| scorer.py | 100 | ~150 | ⚠️ Review |
-| main.py | 200 | ~300 | ⚠️ Review |
-| All others | 100 | — | — |
+| engine.py | 200 | 173 | ✓ |
+| registry.py | 150 | 155 | ✓ |
+| discover.py | 400 | 362 | ✓ |
+| cache.py | 400 | 352 | ✓ |
+| scorer.py | 200 | 182 | ✓ |
+| main.py | 250 | ~200 | ✓ |
+| opengrep/runner.py | 250 | 203 | ✓ |
+| opengrep/templates.py | 150 | 138 | ✓ |
+| text/compact.py | 150 | 121 | ✓ |
+| text/full.py | 150 | 136 | ✓ |
+| All others | 150 | — | — |
 
 ---
 

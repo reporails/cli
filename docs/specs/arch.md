@@ -64,23 +64,36 @@ Reporails lints AI coding agent instruction files against community-maintained r
 reporails-cli/
 ├── src/reporails_cli/
 │   ├── core/
-│   │   ├── init.py         # Download OpenGrep + framework
-│   │   ├── bootstrap.py    # Path helpers
-│   │   ├── agents.py       # Agent definitions
-│   │   ├── levels.py       # Level config, rule mapping
-│   │   ├── discover.py     # Project discovery
-│   │   ├── engine.py       # Validation orchestration
-│   │   ├── registry.py     # Rule loading + resolution
-│   │   ├── scorer.py       # Score calculation
-│   │   └── models.py       # Data models
-│   ├── bundled/            # CLI-owned config (not downloaded)
+│   │   ├── init.py           # Download OpenGrep + framework
+│   │   ├── bootstrap.py      # Path helpers
+│   │   ├── levels.py         # Level config, rule mapping
+│   │   ├── discover.py       # Project discovery
+│   │   ├── engine.py         # Validation orchestration (~170 lines)
+│   │   ├── registry.py       # Rule loading + resolution
+│   │   ├── scorer.py         # Score calculation
+│   │   ├── models.py         # Data models
+│   │   ├── cache.py          # Caching + analytics
+│   │   ├── opengrep/         # OpenGrep execution (package)
+│   │   │   ├── runner.py     # Binary execution
+│   │   │   ├── templates.py  # {{placeholder}} resolution
+│   │   │   └── semgrepignore.py
+│   │   └── sarif.py          # SARIF parsing
+│   ├── bundled/              # CLI-owned config (not downloaded)
 │   │   ├── capability-patterns.yml
 │   │   └── levels.yml
+│   ├── templates/            # CLI output templates
 │   ├── interfaces/
-│   │   ├── mcp/server.py   # MCP server
-│   │   └── cli/main.py     # Typer CLI
-│   └── formatters/         # Output adapters
-├── docs/specs/             # Architecture docs
+│   │   ├── mcp/server.py     # MCP server
+│   │   └── cli/main.py       # Typer CLI
+│   └── formatters/
+│       ├── json.py           # Canonical format
+│       ├── text/             # Terminal display (package)
+│       │   ├── full.py       # Full output
+│       │   ├── compact.py    # Non-TTY output
+│       │   ├── box.py        # Assessment box
+│       │   └── ...
+│       └── mcp.py            # MCP wrapper
+├── docs/specs/               # Architecture docs
 └── tests/
 ```
 
