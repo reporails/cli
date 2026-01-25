@@ -31,7 +31,7 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path not found: {target}"}
 
     try:
-        result = run_validation(target)
+        result = run_validation(target, agent="claude")
         return mcp_formatter.format_result(result)
     except FileNotFoundError as e:
         return {"error": str(e)}
@@ -58,7 +58,7 @@ def validate_tool_text(path: str = ".") -> str:
         return f"Error: Path not found: {target}"
 
     try:
-        result = run_validation(target)
+        result = run_validation(target, agent="claude")
         return text_formatter.format_result(result, ascii_mode=True)
     except FileNotFoundError as e:
         return f"Error: {e}"
@@ -83,7 +83,7 @@ def score_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path not found: {target}"}
 
     try:
-        result = run_validation(target)
+        result = run_validation(target, agent="claude")
         return mcp_formatter.format_score(result)
     except FileNotFoundError as e:
         return {"error": str(e)}

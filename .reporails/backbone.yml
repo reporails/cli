@@ -1,5 +1,5 @@
 version: 1
-generated_at: '2026-01-25T02:00:04.046332+00:00'
+generated_at: '2026-01-25T17:43:08.682362+00:00'
 generator: ails discover
 target: /home/cleverhoods/Projects/ai/reporail/cli
 agents:
@@ -33,7 +33,7 @@ components:
     root: .
     instruction_files:
     - CLAUDE.md
-    content_hash: sha256:137f2c3e0c16b3fa
+    content_hash: sha256:ed36169e31ea423e
     imports:
     - .reporails/backbone.yml
     - docs/specs/arch.md
