@@ -1,0 +1,99 @@
+# Level definitions and rule-to-level mapping
+# CLI-owned configuration for orchestration logic
+
+levels:
+  L1:
+    name: Absent
+    required_rules: []
+
+  L2:
+    name: Basic
+    includes: [L1]
+    required_rules:
+      - S1   # Size limits
+      - C1   # Core sections
+      - C2   # Explicit over implicit
+      - C4   # Anti-pattern documentation
+      - C7   # Emphasis discipline
+      - C8   # Instructions over philosophy
+      - C9   # Has project description
+      - C10  # Has NEVER statements
+      - C12  # Has version/date
+      - M5   # Auto-generated content review
+
+  L3:
+    name: Structured
+    includes: [L2]
+    required_rules:
+      - S2   # Progressive disclosure
+      - S3   # No embedded code snippets
+      - S7   # Clear markdown structure
+      - C3   # Context-specific content
+      - C6   # Single source of truth
+      - C11  # Links are valid
+      - E6   # Code block line limit
+      - E7   # Import count
+      - M1   # Version control
+      - M2   # Review process
+
+  L4:
+    name: Abstracted
+    includes: [L3]
+    required_rules:
+      - S4   # Hierarchical memory
+      - S5   # Path-scoped rules
+      - E1   # Deterministic tools for style
+      - E3   # Purpose-based file reading
+      - E4   # Memory reference
+      - E5   # Grep efficiency
+      - E8   # Context window awareness
+      - M7   # Rule snippet length enforcement
+
+  L5:
+    name: Governed
+    includes: [L4]
+    required_rules:
+      - G1   # Organization-level policies
+      - G2   # Team governance structure
+      - G3   # Security rules ownership
+      - G4   # Ownership assignment
+      - G8   # Metrics and CI/CD checks
+      - M3   # Change management
+      - M4   # No conflicting rules
+
+  L6:
+    name: Adaptive
+    includes: [L5]
+    required_rules:
+      - S6   # YAML backbone
+      - C5   # MUST/MUST NOT with context
+      - E2   # Session start ritual
+      - G5   # Contract registry
+      - G6   # Component-contract binding
+      - G7   # Architecture tests
+      - M6   # Map staleness prevention
+
+# Capability score thresholds
+score_thresholds:
+  L1: 0
+  L2: 1
+  L3: 3
+  L4: 5
+  L5: 7
+  L6: 10
+
+# Feature detection for capability scoring
+detection:
+  L6:
+    - has_backbone
+  L5:
+    - component_count_3plus
+    - has_shared_files
+  L4:
+    - has_rules_dir
+  L3:
+    - has_imports
+    - has_multiple_instruction_files
+  L2:
+    - has_instruction_file
+  L1: []

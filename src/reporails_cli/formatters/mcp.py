@@ -15,8 +15,7 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
     """
     Format validation result for MCP response.
 
-    Currently returns canonical dict. Add MCP-specific
-    transformations here if needed in the future.
+    Adds instructions for Claude to evaluate JudgmentRequests inline.
 
     Args:
         result: ValidationResult from engine
@@ -24,7 +23,18 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
     Returns:
         Dict suitable for MCP tool response
     """
-    return json_formatter.format_result(result)
+    data = json_formatter.format_result(result)
+
+    # Add evaluation instructions if there are judgment requests
+    if data.get("judgment_requests"):
+        data["_instructions"] = (
+            "SEMANTIC RULE EVALUATION REQUIRED: "
+            "For each judgment_request, read the file content and evaluate "
+            "against the question and criteria provided. Report violations "
+            "where criteria are not met. Include these in your response to the user."
+        )
+
+    return data
 
 
 def format_score(result: ValidationResult) -> dict[str, Any]:

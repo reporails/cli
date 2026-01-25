@@ -118,9 +118,9 @@ async def explain_tool(rule_id: str) -> dict[str, Any]:
         "level": rule.level,
         "scoring": rule.scoring,
         "detection": rule.detection,
-        "antipatterns": [
-            {"id": ap.id, "name": ap.name, "severity": ap.severity.value, "points": ap.points}
-            for ap in rule.antipatterns
+        "checks": [
+            {"id": c.id, "name": c.name, "severity": c.severity.value}
+            for c in rule.checks
         ],
         "see_also": rule.see_also,
     }

@@ -1,0 +1,306 @@
+"""Pytest fixtures for reporails test suite.
+
+Provides reusable fixtures for testing template resolution, rule validation,
+capability detection, and scoring.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, Generator
+
+import pytest
+
+# Path to test fixtures
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def fixtures_dir() -> Path:
+    """Return path to fixtures directory."""
+    return FIXTURES_DIR
+
+
+@pytest.fixture
+def opengrep_bin() -> Path:
+    """Return path to OpenGrep binary, skip if not installed."""
+    from reporails_cli.core.bootstrap import get_opengrep_bin
+
+    bin_path = get_opengrep_bin()
+    if not bin_path.exists():
+        pytest.skip("OpenGrep not installed (run 'ails check' first to download)")
+    return bin_path
+
+
+@pytest.fixture
+def agent_config() -> dict[str, str]:
+    """Return Claude agent template variables."""
+    from reporails_cli.core.bootstrap import get_agent_vars
+
+    return get_agent_vars("claude")
+
+
+@pytest.fixture
+def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
+    """Create a minimal temporary project directory."""
+    project = tmp_path / "test_project"
+    project.mkdir()
+
+    # Create minimal CLAUDE.md
+    claude_md = project / "CLAUDE.md"
+    claude_md.write_text("# Test Project\n\nThis is a test project.\n")
+
+    yield project
+
+    # Cleanup handled by tmp_path fixture
+
+
+@pytest.fixture
+def level1_project(tmp_path: Path) -> Generator[Path, None, None]:
+    """Create a Level 1 (minimal) project - just CLAUDE.md."""
+    project = tmp_path / "level1"
+    project.mkdir()
+
+    (project / "CLAUDE.md").write_text(
+        "# My Project\n\nA simple project.\n"
+    )
+
+    yield project
+
+
+@pytest.fixture
+def level2_project(tmp_path: Path) -> Generator[Path, None, None]:
+    """Create a Level 2 (basic) project - CLAUDE.md with sections."""
+    project = tmp_path / "level2"
+    project.mkdir()
+
+    (project / "CLAUDE.md").write_text("""\
+# My Project
+
+A project with structure.
+
+## Commands
+
+- `npm install` - Install dependencies
+- `npm test` - Run tests
+
+## Architecture
+
+The project uses a modular architecture.
+
+## Constraints
+
+- MUST use TypeScript
+- NEVER commit secrets
+""")
+
+    yield project
+
+
+@pytest.fixture
+def level3_project(tmp_path: Path) -> Generator[Path, None, None]:
+    """Create a Level 3 (structured) project - CLAUDE.md + rules dir."""
+    project = tmp_path / "level3"
+    project.mkdir()
+
+    (project / "CLAUDE.md").write_text("""\
+# My Project
+
+A structured project.
+
+## Commands
+
+- `npm install` - Install dependencies
+
+## Architecture
+
+Read `.claude/rules/` for detailed rules.
+""")
+
+    # Create rules directory
+    rules_dir = project / ".claude" / "rules"
+    rules_dir.mkdir(parents=True)
+
+    (rules_dir / "testing.md").write_text("""\
+# Testing Rules
+
+- MUST write tests for new features
+- NEVER skip failing tests
+""")
+
+    yield project
+
+
+@pytest.fixture
+def level5_project(tmp_path: Path) -> Generator[Path, None, None]:
+    """Create a Level 5 (governed) project - full setup with backbone."""
+    project = tmp_path / "level5"
+    project.mkdir()
+
+    (project / "CLAUDE.md").write_text("""\
+# My Project
+
+A governed project with full structure.
+
+## Session Start
+
+1. Read `.reporails/backbone.yml`
+2. Check project status
+
+## Commands
+
+- `npm install` - Install dependencies
+
+## Architecture
+
+See component documentation.
+""")
+
+    # Create rules directory
+    rules_dir = project / ".claude" / "rules"
+    rules_dir.mkdir(parents=True)
+
+    (rules_dir / "security.md").write_text("""\
+# Security Rules
+
+- MUST validate all inputs
+- NEVER log secrets
+""")
+
+    (rules_dir / "testing.md").write_text("""\
+# Testing Rules
+
+- MUST write tests for new features
+""")
+
+    # Create .reporails directory with backbone
+    reporails_dir = project / ".reporails"
+    reporails_dir.mkdir()
+
+    (reporails_dir / "backbone.yml").write_text("""\
+version: 1
+agents:
+  claude:
+    instruction_files:
+      - CLAUDE.md
+    rule_files:
+      - .claude/rules/security.md
+      - .claude/rules/testing.md
+components:
+  root:
+    instruction_files:
+      - CLAUDE.md
+""")
+
+    yield project
+
+
+# --- Rule YAML Fixtures ---
+
+@pytest.fixture
+def valid_rule_yaml() -> str:
+    """Return a valid OpenGrep rule YAML."""
+    return """\
+rules:
+  - id: test-valid-rule
+    message: "Found a TODO comment"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "TODO"
+    paths:
+      include:
+        - "**/*.md"
+"""
+
+
+@pytest.fixture
+def valid_rule_with_patterns_yaml() -> str:
+    """Return a valid rule using patterns block."""
+    return """\
+rules:
+  - id: test-patterns-rule
+    message: "File missing required section"
+    severity: WARNING
+    languages: [generic]
+    patterns:
+      - pattern-regex: "."
+      - pattern-not-regex: "## Commands"
+    paths:
+      include:
+        - "**/*.md"
+"""
+
+
+@pytest.fixture
+def invalid_toplevel_pattern_not_regex_yaml() -> str:
+    """Return an INVALID rule with pattern-not-regex at top level.
+
+    This is the bug we found - pattern-not-regex requires patterns: block.
+    """
+    return """\
+rules:
+  - id: test-invalid-toplevel
+    message: "Invalid schema"
+    severity: WARNING
+    languages: [generic]
+    pattern-not-regex: "something"
+    paths:
+      include:
+        - "**/*.md"
+"""
+
+
+@pytest.fixture
+def rule_with_template_yaml() -> str:
+    """Return a rule with template placeholder."""
+    return """\
+rules:
+  - id: test-template-rule
+    message: "Found match"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "MUST"
+    paths:
+      include:
+        - "{{instruction_files}}"
+"""
+
+
+@pytest.fixture
+def rule_with_unresolvable_template_yaml() -> str:
+    """Return a rule with a template that won't resolve."""
+    return """\
+rules:
+  - id: test-unresolvable
+    message: "Unresolvable template"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "test"
+    paths:
+      include:
+        - "{{nonexistent_variable}}"
+"""
+
+
+# --- Helper Functions ---
+
+def run_opengrep_validate(yml_path: Path, opengrep_bin: Path) -> tuple[int, str]:
+    """Run opengrep scan and return (exit_code, stderr).
+
+    Note: opengrep doesn't have --validate, so we do a scan and check for errors.
+    """
+    result = subprocess.run(
+        [str(opengrep_bin), "scan", "--sarif", "--config", str(yml_path), "."],
+        capture_output=True,
+        cwd=yml_path.parent,
+    )
+    return result.returncode, result.stderr.decode("utf-8", errors="replace")
+
+
+def create_temp_rule_file(tmp_path: Path, content: str, name: str = "test-rule.yml") -> Path:
+    """Create a temporary rule YAML file."""
+    rule_path = tmp_path / name
+    rule_path.write_text(content)
+    return rule_path

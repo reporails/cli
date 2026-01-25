@@ -20,10 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
-def get_reporails_home() -> Path:
-    """Get global reporails directory (~/.reporails/)."""
-    return Path.home() / ".reporails"
+from reporails_cli.core.bootstrap import get_reporails_home
 
 
 def get_analytics_dir() -> Path:

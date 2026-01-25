@@ -1,24 +1,46 @@
-# Reporails CLI Backbone - read at session start
-
-# Specs (read arch.md first for architectural changes)
-specs:
-  arch: docs/specs/arch.md
-  modules: docs/specs/modules.md
-  models: docs/specs/models.md
-  scoring: docs/specs/scoring.md
-  caching: docs/specs/caching.md
-
-# Source
-src:
-  core: src/reporails_cli/core/
-  interfaces: src/reporails_cli/interfaces/
-  formatters: src/reporails_cli/formatters/
-  semantic: src/reporails_cli/semantic/
-
-# Rules
-checks:
-  structure: checks/structure/    # S1-S7
-  content: checks/content/        # C1-C12
-  efficiency: checks/efficiency/  # E1-E8
-  governance: checks/governance/  # G1-G8
-  maintenance: checks/maintenance/ # M1-M7
+version: 1
+generated_at: '2026-01-25T02:00:04.046332+00:00'
+generator: ails discover
+target: /home/cleverhoods/Projects/ai/reporail/cli
+agents:
+  claude:
+    name: Claude (Anthropic)
+    instruction_files:
+    - CLAUDE.md
+    config_files:
+    - .claude/mcp.json
+    rule_files:
+    - .claude/rules/backbone.md
+    - .claude/rules/checks-readonly.md
+    - .claude/rules/documentation.md
+    - .claude/rules/instruction-file-style.md
+    - .claude/rules/specs.md
+    - .claude/rules/writing-rules.md
+components:
+  .claude.rules:
+    root: .claude/rules
+    instruction_files:
+    - .claude/rules/backbone.md
+    - .claude/rules/checks-readonly.md
+    - .claude/rules/documentation.md
+    - .claude/rules/instruction-file-style.md
+    - .claude/rules/specs.md
+    - .claude/rules/writing-rules.md
+    content_hash: sha256:bb2584d1cb25003d
+    imports:
+    - .reporails/backbone.yml
+  root:
+    root: .
+    instruction_files:
+    - CLAUDE.md
+    content_hash: sha256:137f2c3e0c16b3fa
+    imports:
+    - .reporails/backbone.yml
+    - docs/specs/arch.md
+    - docs/specs/modules.md
+shared:
+- .reporails/backbone.yml
+stats:
+  total_instruction_files: 7
+  total_components: 2
+  total_references: 4

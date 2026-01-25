@@ -2,48 +2,43 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
-import yaml
+from reporails_cli.core.bootstrap import get_rules_path
+from reporails_cli.core.models import Category, Check, Rule, RuleType, Severity
+from reporails_cli.core.utils import parse_frontmatter
 
-from reporails_cli.core.models import Antipattern, Category, Rule, RuleType, Severity
 
-
-def get_checks_dir() -> Path:
-    """
-    Get checks directory (~/.reporails/checks/).
+def get_rules_dir() -> Path:
+    """Get rules directory (~/.reporails/rules/).
 
     Returns:
-        Path to checks directory
+        Path to rules directory
     """
-    from reporails_cli.core.bootstrap import get_checks_path
-
-    return get_checks_path()
+    return get_rules_path()
 
 
-def load_rules(checks_dir: Path | None = None) -> dict[str, Rule]:
-    """
-    Load all rules from checks directory.
+def load_rules(rules_dir: Path | None = None) -> dict[str, Rule]:
+    """Load all rules from rules directory.
 
-    Scans checks/**/*.md, parses frontmatter, links to .yml files.
+    Scans rules/**/*.md, parses frontmatter, links to .yml files.
 
     Args:
-        checks_dir: Path to checks directory (default: ~/.reporails/checks/)
+        rules_dir: Path to rules directory (default: ~/.reporails/rules/)
 
     Returns:
         Dict mapping rule ID to Rule object
     """
-    if checks_dir is None:
-        checks_dir = get_checks_dir()
+    if rules_dir is None:
+        rules_dir = get_rules_dir()
 
-    if not checks_dir.exists():
+    if not rules_dir.exists():
         return {}
 
     rules: dict[str, Rule] = {}
 
-    for md_path in checks_dir.rglob("*.md"):
+    for md_path in rules_dir.rglob("*.md"):
         try:
             content = md_path.read_text(encoding="utf-8")
             frontmatter = parse_frontmatter(content)
@@ -65,41 +60,8 @@ def load_rules(checks_dir: Path | None = None) -> dict[str, Rule]:
     return rules
 
 
-def parse_frontmatter(content: str) -> dict[str, Any]:
-    """
-    Parse YAML frontmatter from markdown content.
-
-    Pure function — no I/O.
-
-    Args:
-        content: Markdown file content
-
-    Returns:
-        Parsed frontmatter dict
-
-    Raises:
-        ValueError: If frontmatter missing or invalid
-    """
-    # Match YAML frontmatter between --- delimiters
-    # Pattern allows for empty frontmatter (no content between delimiters)
-    pattern = r"^---\s*\n(.*?)---\s*\n"
-    match = re.match(pattern, content, re.DOTALL)
-
-    if not match:
-        msg = "No frontmatter found"
-        raise ValueError(msg)
-
-    yaml_content = match.group(1)
-    try:
-        return yaml.safe_load(yaml_content) or {}
-    except yaml.YAMLError as e:
-        msg = f"Invalid YAML in frontmatter: {e}"
-        raise ValueError(msg) from e
-
-
 def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None) -> Rule:
-    """
-    Build Rule object from parsed frontmatter.
+    """Build Rule object from parsed frontmatter.
 
     Pure function — validates and constructs.
 
@@ -115,39 +77,42 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         KeyError: If required fields missing
         ValueError: If field values invalid
     """
-    # Parse antipatterns
-    antipatterns = []
-    for ap_data in frontmatter.get("antipatterns", []):
-        antipattern = Antipattern(
-            id=ap_data["id"],
-            name=ap_data["name"],
-            severity=Severity(ap_data.get("severity", "medium")),
-            points=ap_data.get("points", -10),
+    # Parse checks (formerly antipatterns)
+    checks = []
+    # Support both "checks" and legacy "antipatterns" field names
+    check_data = frontmatter.get("checks", frontmatter.get("antipatterns", []))
+    for item in check_data:
+        check = Check(
+            id=item.get("id", ""),
+            name=item.get("name", ""),
+            severity=Severity(item.get("severity", "medium")),
         )
-        antipatterns.append(antipattern)
+        checks.append(check)
 
     return Rule(
         id=frontmatter["id"],
         title=frontmatter["title"],
         category=Category(frontmatter["category"]),
         type=RuleType(frontmatter["type"]),
-        level=frontmatter["level"],
-        scoring=frontmatter.get("scoring", 0),
+        level=frontmatter.get("level", "L2"),  # Default to L2 (Basic) if not specified
+        checks=checks,
         detection=frontmatter.get("detection"),
         sources=frontmatter.get("sources", []),
         see_also=frontmatter.get("see_also", []),
-        antipatterns=antipatterns,
+        scoring=frontmatter.get("scoring", 0),
         validation=frontmatter.get("validation"),
         question=frontmatter.get("question"),
         criteria=frontmatter.get("criteria"),
+        choices=frontmatter.get("choices"),
+        pass_value=frontmatter.get("pass_value"),
+        examples=frontmatter.get("examples"),
         md_path=md_path,
         yml_path=yml_path,
     )
 
 
 def get_rules_by_type(rules: dict[str, Rule], rule_type: RuleType) -> dict[str, Rule]:
-    """
-    Filter rules by type.
+    """Filter rules by type.
 
     Pure function.
 
@@ -162,8 +127,7 @@ def get_rules_by_type(rules: dict[str, Rule], rule_type: RuleType) -> dict[str, 
 
 
 def get_rules_by_category(rules: dict[str, Rule], category: Category) -> dict[str, Rule]:
-    """
-    Filter rules by category.
+    """Filter rules by category.
 
     Pure function.
 
@@ -178,8 +142,7 @@ def get_rules_by_category(rules: dict[str, Rule], category: Category) -> dict[st
 
 
 def get_rule_yml_paths(rules: dict[str, Rule]) -> list[Path]:
-    """
-    Get list of .yml paths for rules that have them.
+    """Get list of .yml paths for rules that have them.
 
     Pure function.
 

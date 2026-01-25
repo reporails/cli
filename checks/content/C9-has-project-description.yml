@@ -1,9 +1,0 @@
-rules:
-  - id: C9-title-then-heading
-    message: "Title followed by heading - add project description"
-    severity: WARNING
-    languages: [generic]
-    pattern-regex: "^#\\s+[^\\n]+\\n\\s*\\n##\\s+"
-    paths:
-      include:
-        - "**/CLAUDE.md"

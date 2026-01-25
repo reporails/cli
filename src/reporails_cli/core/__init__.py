@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from reporails_cli.core.models import (
-    Antipattern,
     Category,
+    Check,
     JudgmentRequest,
     JudgmentResponse,
     Level,
@@ -16,13 +16,13 @@ from reporails_cli.core.models import (
 )
 from reporails_cli.core.scorer import (
     calculate_score,
-    determine_capability_level,
+    estimate_friction,
     estimate_time_waste,
 )
 
 __all__ = [
-    "Antipattern",
     "Category",
+    "Check",
     "JudgmentRequest",
     "JudgmentResponse",
     "Level",
@@ -32,6 +32,6 @@ __all__ = [
     "ValidationResult",
     "Violation",
     "calculate_score",
-    "determine_capability_level",
+    "estimate_friction",
     "estimate_time_waste",
 ]

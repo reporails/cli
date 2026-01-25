@@ -55,6 +55,7 @@ build-backend = "hatchling.build"
 packages = ["src/reporails_cli"]
 only-include = ["src/reporails_cli", "checks"]
 exclude = ["checks/**/*.md"]
+artifacts = ["src/reporails_cli/bundled/*.yml", "src/reporails_cli/bundled/.semgrepignore"]
 
 [tool.hatch.build.targets.wheel.sources]
 "checks" = "reporails_cli/bundled_checks"

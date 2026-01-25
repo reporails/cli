@@ -24,8 +24,7 @@ def _get_friction_level(total_minutes: int) -> str:
 
 
 def format_result(result: ValidationResult) -> dict[str, Any]:
-    """
-    Convert ValidationResult to canonical dict format.
+    """Convert ValidationResult to canonical dict format.
 
     This is the single source of truth for result serialization.
 
@@ -35,7 +34,7 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
     Returns:
         Canonical dict representation
     """
-    total_minutes = result.time_waste_estimate.get("total", 0)
+    total_minutes = result.friction.total_minutes if result.friction else 0
 
     return {
         "score": result.score,
@@ -54,6 +53,7 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
                 "location": v.location,
                 "message": v.message,
                 "severity": v.severity.value,
+                "check_id": v.check_id,
             }
             for v in result.violations
         ],
@@ -71,15 +71,14 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
             for jr in result.judgment_requests
         ],
         "friction": {
-            "level": _get_friction_level(total_minutes),
+            "level": result.friction.level if result.friction else "none",
             "estimated_minutes": total_minutes,
         },
     }
 
 
 def format_score(result: ValidationResult) -> dict[str, Any]:
-    """
-    Convert ValidationResult to minimal score dict.
+    """Convert ValidationResult to minimal score dict.
 
     Args:
         result: ValidationResult from engine
@@ -87,7 +86,7 @@ def format_score(result: ValidationResult) -> dict[str, Any]:
     Returns:
         Simplified dict with just score info
     """
-    total_minutes = result.time_waste_estimate.get("total", 0)
+    total_minutes = result.friction.total_minutes if result.friction else 0
 
     return {
         "score": result.score,
@@ -102,8 +101,7 @@ def format_score(result: ValidationResult) -> dict[str, Any]:
 
 
 def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Format rule explanation as dict.
+    """Format rule explanation as dict.
 
     Args:
         rule_id: Rule identifier
@@ -119,6 +117,6 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
         "type": rule_data.get("type", ""),
         "level": rule_data.get("level", ""),
         "description": rule_data.get("description", ""),
-        "antipatterns": rule_data.get("antipatterns", []),
+        "checks": rule_data.get("checks", rule_data.get("antipatterns", [])),
         "see_also": rule_data.get("see_also", []),
     }
