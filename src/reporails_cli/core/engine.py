@@ -20,7 +20,7 @@ from reporails_cli.core.capability import (
 )
 from reporails_cli.core.discover import generate_backbone_yaml, run_discovery, save_backbone
 from reporails_cli.core.init import run_init
-from reporails_cli.core.models import Rule, RuleType, ValidationResult
+from reporails_cli.core.models import PendingSemantic, Rule, RuleType, ValidationResult
 from reporails_cli.bundled import get_capability_patterns_path
 from reporails_cli.core.opengrep import get_rule_yml_paths, run_opengrep
 from reporails_cli.core.registry import load_rules
@@ -129,6 +129,17 @@ async def run_validation(
             record_scan(target, score, capability.level.value, len(violations),
                         len(applicable_rules), elapsed_ms, features.instruction_file_count)
 
+    # Build pending semantic summary
+    pending_semantic = None
+    if judgment_requests:
+        unique_rules = sorted({jr.rule_id for jr in judgment_requests})
+        unique_files = {jr.location.rsplit(":", 1)[0] for jr in judgment_requests}
+        pending_semantic = PendingSemantic(
+            rule_count=len(unique_rules),
+            file_count=len(unique_files),
+            rules=tuple(unique_rules),
+        )
+
     return ValidationResult(
         score=score,
         level=capability.level,
@@ -139,6 +150,8 @@ async def run_validation(
         rules_failed=rules_failed,
         feature_summary=capability.feature_summary,
         friction=friction,
+        is_partial=bool(judgment_requests),  # Partial if semantic rules pending
+        pending_semantic=pending_semantic,
         time_waste_estimate=friction.by_category,
         violation_points=sum(-2 for _ in unique_violations),  # Legacy
     )

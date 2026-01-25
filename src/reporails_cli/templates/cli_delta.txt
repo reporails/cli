@@ -1,0 +1,1 @@
+{score_delta}{level_delta}{violations_delta}
