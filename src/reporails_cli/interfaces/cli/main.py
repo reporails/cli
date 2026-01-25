@@ -120,10 +120,17 @@ def check(
     # Get previous scan BEFORE running validation (for delta comparison)
     previous_scan = get_previous_scan(target)
 
+    # Determine if we should show spinner (TTY + not explicitly JSON)
+    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact")
+
     # Run validation with timing
     start_time = time.perf_counter()
     try:
-        result = run_validation_sync(target, rules_dir=rules_path, use_cache=not refresh, agent=agent)
+        if show_spinner:
+            with console.status("[bold]Scanning instruction files...[/bold]"):
+                result = run_validation_sync(target, rules_dir=rules_path, use_cache=not refresh, agent=agent)
+        else:
+            result = run_validation_sync(target, rules_dir=rules_path, use_cache=not refresh, agent=agent)
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from None

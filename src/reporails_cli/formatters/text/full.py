@@ -84,6 +84,7 @@ def format_result(
     quiet_semantic: bool = False,
     show_legend: bool = True,
     delta: ScanDelta | None = None,
+    show_mcp_cta: bool = True,
 ) -> str:
     """Format validation result for terminal output."""
     data = json_formatter.format_result(result, delta)
@@ -121,8 +122,8 @@ def format_result(
         threshold_hint = ">=20" if friction_level == "high" else ">=10" if friction_level == "medium" else ">=5"
         sections.append(f"Friction: {friction_level.title()} (~{friction_minutes} min/session, threshold: {threshold_hint})")
 
-    # MCP CTA (only if partial and not quiet)
-    if result.is_partial and not quiet_semantic:
+    # MCP CTA (only if partial, not quiet, and CTA enabled)
+    if show_mcp_cta and result.is_partial and not quiet_semantic:
         cta = _format_cta(result, ascii_mode)
         if cta:
             sections.append("")
