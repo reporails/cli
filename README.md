@@ -3,21 +3,16 @@
 Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ## Quick Start
-
 ```bash
-# Install (downloads OpenGrep automatically)
-uvx reporails-cli init
-
-# Check your setup
-ails check .
+# Check your setup (auto-installs OpenGrep + rules on first run)
+uvx reporails-cli check .
 ```
 
 That's it. You'll see:
-
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 6.3 / 10 (partial)  |  CAPABILITY: Governed (L5)    ║
-║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░         ║
+║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Governed (L5)    ║
+║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
 ╚══════════════════════════════════════════════════════════════╝
 
 Violations:
@@ -41,30 +36,37 @@ Fix the issues, run again, watch your score improve.
 
 | Level | Name | What it means |
 |-------|------|---------------|
-| L1 | Minimal | Just a CLAUDE.md |
-| L2 | Basic | Structured sections |
-| L3 | Structured | .claude/rules/ directory |
-| L4 | Managed | Backbone + automation |
-| L5 | Governed | Full governance setup |
+| L1 | Absent | No instruction file |
+| L2 | Basic | Has CLAUDE.md |
+| L3 | Structured | Sections, imports |
+| L4 | Abstracted | .claude/rules/ directory |
+| L5 | Governed | Shared files, 3+ components |
+| L6 | Adaptive | Backbone + full governance |
 
 ## MCP Integration (for Claude Code)
 
 For full semantic analysis, add the MCP server:
-
 ```bash
-claude mcp add reporails -- uvx --from reporails-cli ails-mcp
+claude mcp add reporails -- uvx reporails-cli ails-mcp
 ```
 
-Then ask Claude: "Check my CLAUDE.md setup"
+Then ask Claude: "What ails claude?"
 
 ## Commands
-
 ```bash
 ails check .              # Score your setup
 ails check . -f json      # JSON output (for CI)
+ails check . --strict     # Exit 1 if violations (for CI)
+ails map .                # Show project structure
 ails map . --save         # Generate backbone.yml
 ails explain S1           # Explain a rule
 ```
+
+## Rules
+
+Rules are maintained separately at [reporails/rules](https://github.com/reporails/rules).
+
+Want to add or improve rules? Contribute there.
 
 ## License
 
