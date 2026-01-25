@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.models import ValidationResult
+from reporails_cli.core.models import ScanDelta, ValidationResult
 from reporails_cli.core.scorer import LEVEL_LABELS
 
 
@@ -23,20 +23,24 @@ def _get_friction_level(total_minutes: int) -> str:
     return "none"
 
 
-def format_result(result: ValidationResult) -> dict[str, Any]:
+def format_result(
+    result: ValidationResult,
+    delta: ScanDelta | None = None,
+) -> dict[str, Any]:
     """Convert ValidationResult to canonical dict format.
 
     This is the single source of truth for result serialization.
 
     Args:
         result: ValidationResult from engine
+        delta: Optional ScanDelta for comparison with previous run
 
     Returns:
         Canonical dict representation
     """
     total_minutes = result.friction.total_minutes if result.friction else 0
 
-    return {
+    data: dict[str, Any] = {
         "score": result.score,
         "level": result.level.value,
         "capability": LEVEL_LABELS.get(result.level, "Unknown"),
@@ -75,6 +79,20 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
             "estimated_minutes": total_minutes,
         },
     }
+
+    # Add delta fields (null if no previous run or unchanged)
+    if delta is not None:
+        data["score_delta"] = delta.score_delta
+        data["level_previous"] = delta.level_previous
+        data["level_improved"] = delta.level_improved
+        data["violations_delta"] = delta.violations_delta
+    else:
+        data["score_delta"] = None
+        data["level_previous"] = None
+        data["level_improved"] = None
+        data["violations_delta"] = None
+
+    return data
 
 
 def format_score(result: ValidationResult) -> dict[str, Any]:

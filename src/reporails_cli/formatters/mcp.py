@@ -7,11 +7,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.models import ValidationResult
+from reporails_cli.core.models import ScanDelta, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 
 
-def format_result(result: ValidationResult) -> dict[str, Any]:
+def format_result(
+    result: ValidationResult,
+    delta: ScanDelta | None = None,
+) -> dict[str, Any]:
     """
     Format validation result for MCP response.
 
@@ -19,11 +22,12 @@ def format_result(result: ValidationResult) -> dict[str, Any]:
 
     Args:
         result: ValidationResult from engine
+        delta: Optional ScanDelta for comparison with previous run
 
     Returns:
         Dict suitable for MCP tool response
     """
-    data = json_formatter.format_result(result)
+    data = json_formatter.format_result(result, delta)
 
     # Add evaluation instructions if there are judgment requests
     if data.get("judgment_requests"):
