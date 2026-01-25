@@ -11,6 +11,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.cache import get_previous_scan, record_scan
 from reporails_cli.core.discover import generate_backbone_yaml, run_discovery, save_backbone
 from reporails_cli.core.engine import run_validation_sync
@@ -116,6 +117,15 @@ def check(
 
     # Resolve rules directory
     rules_path = Path(rules_dir).resolve() if rules_dir else None
+
+    # Early check for missing instruction files
+    instruction_files = get_all_instruction_files(target)
+    if not instruction_files:
+        console.print("No instruction files found.")
+        console.print("Level: L1 (Absent)")
+        console.print()
+        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        return
 
     # Get previous scan BEFORE running validation (for delta comparison)
     previous_scan = get_previous_scan(target)
