@@ -278,14 +278,12 @@ class CapabilityResult:
 
 ### FrictionEstimate
 
-Time waste estimate from violations.
+Friction estimate from violations.
 
 ```python
 @dataclass(frozen=True)
 class FrictionEstimate:
-    level: str           # "high", "medium", "low", "none"
-    total_minutes: int
-    by_category: dict[str, int]  # {"S": 5, "C": 3, ...}
+    level: str  # "extreme", "high", "medium", "small", "none"
 ```
 
 ---

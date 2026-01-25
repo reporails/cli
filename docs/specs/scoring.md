@@ -297,57 +297,41 @@ def get_applicable_rules(rules: dict[str, Rule], level: Level) -> dict[str, Rule
 
 ## Friction Estimation
 
-Estimates rework time from violations. Based on re-explanation loops and redo cycles.
+Estimates friction from violations based on severity counts.
 
 ### Friction Levels
 
-| Level | Total Minutes | Meaning |
-|-------|---------------|---------|
-| High | ≥20 min | Significant rework expected |
-| Medium | 10-19 min | Moderate rework |
-| Low | 5-9 min | Minor friction |
-| None | <5 min | Minimal impact |
-
-### Time per Severity
-
-| Severity | Minutes | Description |
-|----------|---------|-------------|
-| Critical | 5 | Clarification loop + partial redo |
-| High | 3 | Clarification loop |
-| Medium | 2 | Brief clarification |
-| Low | 1 | Minor friction |
+| Level | Criteria | Meaning |
+|-------|----------|---------|
+| Extreme | Any critical violation | Severe issues requiring immediate attention |
+| High | 2+ high severity OR 5+ violations | Significant friction expected |
+| Medium | 1 high severity OR 3-4 violations | Moderate friction |
+| Small | 1-2 violations (medium/low) | Minor friction |
+| None | No violations | No friction |
 
 ### Calculation
 
 ```python
-SEVERITY_TIME = {
-    Severity.CRITICAL: 5,
-    Severity.HIGH: 3,
-    Severity.MEDIUM: 2,
-    Severity.LOW: 1,
-}
-
 def estimate_friction(violations: list[Violation]) -> FrictionEstimate:
     unique = dedupe_violations(violations)
-    by_category = {}
-    
-    for v in unique:
-        minutes = SEVERITY_TIME[v.severity]
-        category = v.rule_id[0]  # S, C, E, M, G
-        by_category[category] = by_category.get(category, 0) + minutes
-    
-    total = sum(by_category.values())
-    
-    if total >= 20:
+
+    if not unique:
+        return FrictionEstimate(level="none")
+
+    critical_count = sum(1 for v in unique if v.severity == Severity.CRITICAL)
+    high_count = sum(1 for v in unique if v.severity == Severity.HIGH)
+    total_count = len(unique)
+
+    if critical_count > 0:
+        level = "extreme"
+    elif high_count >= 2 or total_count >= 5:
         level = "high"
-    elif total >= 10:
+    elif high_count >= 1 or total_count >= 3:
         level = "medium"
-    elif total >= 5:
-        level = "low"
     else:
-        level = "none"
-    
-    return FrictionEstimate(level=level, total_minutes=total, by_category=by_category)
+        level = "small"
+
+    return FrictionEstimate(level=level)
 ```
 
 ---
@@ -416,7 +400,7 @@ Engine extracts content
 ║   Setup: 3 instruction files, .claude/rules/                 ║
 ║                                                              ║
 ║   2 violation(s) · 25 rules checked                          ║
-║   Friction: Low (est. ~7 min rework)                         ║
+║   Friction: Small                                            ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
