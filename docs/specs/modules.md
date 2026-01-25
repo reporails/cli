@@ -108,8 +108,6 @@ Path helpers and config loading. No I/O except config file reading.
 
 ```python
 REPORAILS_HOME = Path.home() / ".reporails"
-FRAMEWORK_REPO = "reporails/reporails-rules"
-FRAMEWORK_RELEASE_URL = f"https://github.com/{FRAMEWORK_REPO}/releases/download"
 ```
 
 ---
@@ -169,31 +167,39 @@ detection:
 
 ## core/init.py
 
-Downloads OpenGrep binary and framework tarball on first run.
+Downloads OpenGrep binary and framework rules tarball on first run.
+
+**Constants:**
+
+```python
+OPENGREP_VERSION = "1.15.1"
+RULES_VERSION = "v0.0.1"
+RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
+```
 
 **Functions:**
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `run_init(force=False)` | `InitResult` | Full initialization |
-| `ensure_initialized()` | `bool` | Check and init if needed |
+| `run_init()` | `dict` | Full initialization (OpenGrep + rules) |
 | `download_opengrep()` | `Path` | Download binary for platform |
-| `download_framework(version="latest")` | `Path` | Download and extract tarball |
-| `get_latest_version()` | `str` | Fetch latest release tag from GitHub |
-| `verify_checksum(file, expected)` | `bool` | Verify SHA256 |
-| `get_platform_info()` | `tuple[str, str]` | Get OS and arch |
+| `download_rules()` | `tuple[Path, int]` | Download rules (local or GitHub) |
+| `download_from_github()` | `tuple[Path, int]` | Download from GitHub release tarball |
+| `download_rules_tarball(dest)` | `int` | Download and extract tarball |
+| `copy_bundled_yml_files(dest)` | `int` | Copy bundled .yml files |
+| `copy_local_framework(source)` | `tuple[Path, int]` | Copy from local path (dev mode) |
+| `get_platform()` | `tuple[str, str]` | Get OS and arch |
 
 **Download Flow:**
 
 ```
-1. Check ~/.reporails/version
-2. If missing or outdated:
-   a. Fetch latest release tag
-   b. Download tarball from GitHub releases
-   c. Verify checksum
-   d. Extract to ~/.reporails/rules/
-   e. Write version file
-3. Return rules path
+1. Download OpenGrep binary for platform
+2. Setup rules:
+   a. Check for local framework_path override (dev mode)
+   b. If local: copy from local path
+   c. Otherwise: download from GitHub release tarball
+3. Merge bundled .yml files with downloaded rules
+4. Return results dict
 ```
 
 **Platform Support:**
@@ -485,10 +491,11 @@ Calculates scores. All pure functions.
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `calculate_score(rules_checked, violations)` | `float` | Score on 0-10 scale |
-| `determine_capability_level(features)` | `Level` | L1-L6 from features |
-| `estimate_friction(violations)` | `FrictionEstimate` | Time waste estimate |
+| `estimate_friction(violations)` | `FrictionEstimate` | Friction level from severity counts |
 | `get_severity_weight(severity)` | `float` | Weight for scoring |
 | `dedupe_violations(violations)` | `list[Violation]` | Remove duplicates |
+| `get_level_label(level)` | `str` | Human-readable label |
+| `has_critical_violations(violations)` | `bool` | Check for critical violations |
 
 **Scoring Formula:**
 
