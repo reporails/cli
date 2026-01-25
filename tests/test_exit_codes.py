@@ -173,12 +173,12 @@ class TestCLIExitCodeHandling:
         opengrep_bin: Path,
     ) -> None:
         """CLI should treat exit 0 as success (no violations)."""
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         rule_path = create_temp_rule_file(tmp_path, valid_rule_yaml)
         (tmp_path / "test.md").write_text("# Nothing to find\n")
 
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             tmp_path,
             opengrep_bin,
@@ -197,7 +197,7 @@ class TestCLIExitCodeHandling:
         Note: We don't use --error flag, so exit 1 isn't expected in normal
         operation. But if it occurs, it should be treated as "findings exist".
         """
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         rule_yaml = """\
 rules:
@@ -210,7 +210,7 @@ rules:
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "test.md").write_text("# TODO: Add more tests\n")
 
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             tmp_path,
             opengrep_bin,
@@ -236,7 +236,7 @@ rules:
         regression: Exit code 7 caused CLI to return empty results,
         silently hiding the actual error.
         """
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         bad_yaml = """\
 rules:
@@ -245,7 +245,7 @@ rules:
 """
         rule_path = create_temp_rule_file(tmp_path, bad_yaml)
 
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             tmp_path,
             opengrep_bin,
@@ -262,12 +262,12 @@ rules:
         opengrep_bin: Path,
     ) -> None:
         """'No findings' should not be treated as an error condition."""
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         rule_path = create_temp_rule_file(tmp_path, valid_rule_yaml)
         (tmp_path / "test.md").write_text("# Clean file with nothing to find\n")
 
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             tmp_path,
             opengrep_bin,
@@ -292,7 +292,7 @@ rules:
         When a rule targets specific paths that don't exist in the project,
         this should be a warning at most, not a failure.
         """
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         # Rule that only matches .rs files (Rust)
         rule_yaml = """\
@@ -311,7 +311,7 @@ rules:
         # Create only .md files (no .rs)
         (tmp_path / "readme.md").write_text("# No Rust here\n")
 
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             tmp_path,
             opengrep_bin,

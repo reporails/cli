@@ -130,12 +130,12 @@ class TestTemplateResolution:
         This is the critical integration test - templates must be resolved
         in the temp file that gets passed to the opengrep binary.
         """
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_template_yaml)
 
         # Run with template context - should resolve
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             temp_project,
             opengrep_bin,
@@ -165,12 +165,12 @@ class TestTemplateResolution:
         # 2. Return empty results (no matches for literal "{{...}}")
         # It should NOT silently succeed with wrong behavior
 
-        from reporails_cli.core.opengrep import run_opengrep_sync
+        from reporails_cli.core.opengrep import run_opengrep
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_template_yaml)
 
         # Run with empty context (simulates missing agent config)
-        result = run_opengrep_sync(
+        result = run_opengrep(
             [rule_path],
             temp_project,
             opengrep_bin,

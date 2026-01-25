@@ -10,7 +10,7 @@ from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters import text as text_formatter
 
 
-async def validate_tool(path: str = ".") -> dict[str, Any]:
+def validate_tool(path: str = ".") -> dict[str, Any]:
     """
     Validate CLAUDE.md files at path.
 
@@ -31,13 +31,13 @@ async def validate_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path not found: {target}"}
 
     try:
-        result = await run_validation(target)
+        result = run_validation(target)
         return mcp_formatter.format_result(result)
     except FileNotFoundError as e:
         return {"error": str(e)}
 
 
-async def validate_tool_text(path: str = ".") -> str:
+def validate_tool_text(path: str = ".") -> str:
     """
     Validate CLAUDE.md files at path, returning text format.
 
@@ -58,13 +58,13 @@ async def validate_tool_text(path: str = ".") -> str:
         return f"Error: Path not found: {target}"
 
     try:
-        result = await run_validation(target)
+        result = run_validation(target)
         return text_formatter.format_result(result, ascii_mode=True)
     except FileNotFoundError as e:
         return f"Error: {e}"
 
 
-async def score_tool(path: str = ".") -> dict[str, Any]:
+def score_tool(path: str = ".") -> dict[str, Any]:
     """
     Quick score check for CLAUDE.md files.
 
@@ -83,13 +83,13 @@ async def score_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path not found: {target}"}
 
     try:
-        result = await run_validation(target)
+        result = run_validation(target)
         return mcp_formatter.format_score(result)
     except FileNotFoundError as e:
         return {"error": str(e)}
 
 
-async def explain_tool(rule_id: str) -> dict[str, Any]:
+def explain_tool(rule_id: str) -> dict[str, Any]:
     """
     Get detailed info about a specific rule.
 
