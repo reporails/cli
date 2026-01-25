@@ -94,12 +94,10 @@ def format_compact(
         lines.append("")
 
     # Friction
-    friction = data.get("friction", {})
-    friction_level = friction.get("level", "none")
-    friction_minutes = friction.get("estimated_minutes", 0)
-    if friction_level != "none" and friction_minutes >= 5:
-        threshold_hint = ">=20" if friction_level == "high" else ">=10" if friction_level == "medium" else ">=5"
-        lines.append(f"Friction: {friction_level.title()} (~{friction_minutes} min/session, threshold: {threshold_hint})")
+    friction = data.get("friction", "none")
+    friction_level = friction if isinstance(friction, str) else friction.get("level", "none")
+    if friction_level != "none":
+        lines.append(f"Friction: {friction_level.title()}")
         lines.append("")
 
     # Legend footer

@@ -17,7 +17,6 @@ from reporails_cli.core.models import (
 from reporails_cli.core.scorer import (
     calculate_score,
     estimate_friction,
-    estimate_time_waste,
 )
 
 __all__ = [
@@ -33,5 +32,4 @@ __all__ = [
     "Violation",
     "calculate_score",
     "estimate_friction",
-    "estimate_time_waste",
 ]

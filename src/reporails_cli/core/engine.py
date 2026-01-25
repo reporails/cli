@@ -157,8 +157,6 @@ def run_validation(
         friction=friction,
         is_partial=bool(judgment_requests),  # Partial if semantic rules pending
         pending_semantic=pending_semantic,
-        time_waste_estimate=friction.by_category,
-        violation_points=sum(-2 for _ in unique_violations),  # Legacy
     )
 
 

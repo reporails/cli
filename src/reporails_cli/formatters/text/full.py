@@ -116,11 +116,9 @@ def format_result(
         sections.append("")
 
     # Friction estimate
-    friction_level = friction.get("level", "none")
-    friction_minutes = friction.get("estimated_minutes", 0)
-    if friction_level != "none" and friction_minutes >= 5:
-        threshold_hint = ">=20" if friction_level == "high" else ">=10" if friction_level == "medium" else ">=5"
-        sections.append(f"Friction: {friction_level.title()} (~{friction_minutes} min/session, threshold: {threshold_hint})")
+    friction_level = friction if isinstance(friction, str) else friction.get("level", "none")
+    if friction_level != "none":
+        sections.append(f"Friction: {friction_level.title()}")
 
     # MCP CTA (only if partial, not quiet, and CTA enabled)
     if show_mcp_cta and result.is_partial and not quiet_semantic:
