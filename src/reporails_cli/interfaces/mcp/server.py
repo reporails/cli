@@ -79,8 +79,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     if name == "validate":
         path = arguments.get("path", ".")
         # Get both text report and structured data (for judgment requests)
-        text_result = await validate_tool_text(path)
-        dict_result = await validate_tool(path)
+        text_result = validate_tool_text(path)
+        dict_result = validate_tool(path)
 
         # Build response with text report
         response_parts = [text_result]
@@ -111,10 +111,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text="\n".join(response_parts))]
     elif name == "score":
         path = arguments.get("path", ".")
-        result = await score_tool(path)
+        result = score_tool(path)
     elif name == "explain":
         rule_id = arguments.get("rule_id", "")
-        result = await explain_tool(rule_id)
+        result = explain_tool(rule_id)
     else:
         result = {"error": f"Unknown tool: {name}"}
 

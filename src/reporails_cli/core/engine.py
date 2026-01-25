@@ -5,11 +5,11 @@ Coordinates other modules to run validation. Target: <100 lines.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import time
 from pathlib import Path
 
+from reporails_cli.bundled import get_capability_patterns_path
 from reporails_cli.core.applicability import detect_features_filesystem, get_applicable_rules
 from reporails_cli.core.bootstrap import get_agent_vars, get_opengrep_bin, is_initialized
 from reporails_cli.core.cache import record_scan
@@ -21,7 +21,6 @@ from reporails_cli.core.capability import (
 from reporails_cli.core.discover import generate_backbone_yaml, run_discovery, save_backbone
 from reporails_cli.core.init import run_init
 from reporails_cli.core.models import PendingSemantic, Rule, RuleType, ValidationResult
-from reporails_cli.bundled import get_capability_patterns_path
 from reporails_cli.core.opengrep import get_rule_yml_paths, run_opengrep
 from reporails_cli.core.registry import load_rules
 from reporails_cli.core.sarif import dedupe_violations, parse_sarif
@@ -29,7 +28,7 @@ from reporails_cli.core.scorer import calculate_score, estimate_friction
 from reporails_cli.core.semantic import build_semantic_requests
 
 
-async def run_validation(
+def run_validation(
     target: Path,
     rules: dict[str, Rule] | None = None,
     opengrep_path: Path | None = None,
@@ -92,7 +91,7 @@ async def run_validation(
     all_yml_paths.extend(get_rule_yml_paths(prelim_applicable_rules))
 
     # Run single consolidated OpenGrep invocation with filtered rules
-    combined_sarif = await run_opengrep(
+    combined_sarif = run_opengrep(
         all_yml_paths, target, opengrep_path, template_context
     ) if all_yml_paths else {"runs": []}
 
@@ -167,8 +166,8 @@ def run_validation_sync(
     agent: str = "",
     checks_dir: Path | None = None,  # Legacy alias
 ) -> ValidationResult:
-    """Synchronous wrapper for run_validation."""
+    """Legacy alias for run_validation (now sync)."""
     # Support legacy checks_dir parameter
     if checks_dir is not None and rules_dir is None:
         rules_dir = checks_dir
-    return asyncio.run(run_validation(target, rules, opengrep_path, rules_dir, use_cache, record_analytics, agent))
+    return run_validation(target, rules, opengrep_path, rules_dir, use_cache, record_analytics, agent)

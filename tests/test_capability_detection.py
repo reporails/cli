@@ -69,9 +69,9 @@ class TestContentFeatureDetection:
     ) -> None:
         """Detect markdown sections (## headings) in content."""
         from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
-        sarif = run_capability_detection_sync(level2_project)
+        sarif = run_capability_detection(level2_project)
         content_features = detect_features_content(sarif)
 
         assert content_features.has_sections, (
@@ -85,9 +85,9 @@ class TestContentFeatureDetection:
     ) -> None:
         """Detect MUST/NEVER constraints in content."""
         from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
-        sarif = run_capability_detection_sync(level2_project)
+        sarif = run_capability_detection(level2_project)
         content_features = detect_features_content(sarif)
 
         assert content_features.has_explicit_constraints, (
@@ -105,10 +105,10 @@ class TestCapabilityLevelDetermination:
             determine_capability_level,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         features = detect_features_filesystem(level1_project)
-        sarif = run_capability_detection_sync(level1_project)
+        sarif = run_capability_detection(level1_project)
         content_features = detect_features_content(sarif)
 
         result = determine_capability_level(features, content_features)
@@ -125,10 +125,10 @@ class TestCapabilityLevelDetermination:
             determine_capability_level,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         features = detect_features_filesystem(level2_project)
-        sarif = run_capability_detection_sync(level2_project)
+        sarif = run_capability_detection(level2_project)
         content_features = detect_features_content(sarif)
 
         result = determine_capability_level(features, content_features)
@@ -145,10 +145,10 @@ class TestCapabilityLevelDetermination:
             determine_capability_level,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         features = detect_features_filesystem(level3_project)
-        sarif = run_capability_detection_sync(level3_project)
+        sarif = run_capability_detection(level3_project)
         content_features = detect_features_content(sarif)
 
         result = determine_capability_level(features, content_features)
@@ -165,10 +165,10 @@ class TestCapabilityLevelDetermination:
             determine_capability_level,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         features = detect_features_filesystem(level5_project)
-        sarif = run_capability_detection_sync(level5_project)
+        sarif = run_capability_detection(level5_project)
         content_features = detect_features_content(sarif)
 
         result = determine_capability_level(features, content_features)
@@ -185,13 +185,13 @@ class TestCapabilityLevelDetermination:
             determine_capability_level,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         # Create minimal structure
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
 
         features = detect_features_filesystem(tmp_path)
-        sarif = run_capability_detection_sync(tmp_path)
+        sarif = run_capability_detection(tmp_path)
         content_features = detect_features_content(sarif)
 
         # Should not raise error
@@ -215,18 +215,18 @@ class TestCapabilityScoring:
             merge_content_features,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         # Level 1 score
         features1 = detect_features_filesystem(level1_project)
-        sarif1 = run_capability_detection_sync(level1_project)
+        sarif1 = run_capability_detection(level1_project)
         content1 = detect_features_content(sarif1)
         merge_content_features(features1, content1)
         score1 = calculate_capability_score(features1)
 
         # Level 3 score
         features3 = detect_features_filesystem(level3_project)
-        sarif3 = run_capability_detection_sync(level3_project)
+        sarif3 = run_capability_detection(level3_project)
         content3 = detect_features_content(sarif3)
         merge_content_features(features3, content3)
         score3 = calculate_capability_score(features3)
@@ -247,12 +247,12 @@ class TestLevelDeterminism:
             determine_capability_level,
             detect_features_content,
         )
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         results = []
         for _ in range(3):
             features = detect_features_filesystem(level3_project)
-            sarif = run_capability_detection_sync(level3_project)
+            sarif = run_capability_detection(level3_project)
             content_features = detect_features_content(sarif)
             result = determine_capability_level(features, content_features)
             results.append(result.level)
@@ -270,10 +270,10 @@ class TestLevelDeterminism:
             detect_features_content,
         )
         from reporails_cli.core.levels import capability_score_to_level
-        from reporails_cli.core.opengrep import run_capability_detection_sync
+        from reporails_cli.core.opengrep import run_capability_detection
 
         features = detect_features_filesystem(level3_project)
-        sarif = run_capability_detection_sync(level3_project)
+        sarif = run_capability_detection(level3_project)
         content_features = detect_features_content(sarif)
         merge_content_features(features, content_features)
         score = calculate_capability_score(features)
