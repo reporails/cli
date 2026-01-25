@@ -1,0 +1,1 @@
+Legend: {crit}=CRIT  {high}=HIGH  {med}=MED  {low}=LOW

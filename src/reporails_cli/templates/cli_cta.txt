@@ -1,0 +1,4 @@
+{separator}
+For complete analysis, add reporails MCP to your coding agent:
+  claude mcp add reporails -- uv run ails mcp
+{separator}

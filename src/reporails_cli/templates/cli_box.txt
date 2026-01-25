@@ -1,0 +1,10 @@
+{top_border}
+{empty_line}
+{score_line}
+{bar_line}
+{empty_line}
+{setup_line}
+{empty_line}
+{summary_line}
+{empty_line}
+{bottom_border}

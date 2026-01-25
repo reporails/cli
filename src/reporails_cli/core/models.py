@@ -282,6 +282,15 @@ class ScanDelta:
 
 
 @dataclass(frozen=True)
+class PendingSemantic:
+    """Summary of pending semantic rules for partial evaluation."""
+
+    rule_count: int  # Number of semantic rules pending
+    file_count: int  # Files with pending semantic checks
+    rules: tuple[str, ...]  # Rule IDs (e.g., "C6", "C10")
+
+
+@dataclass(frozen=True)
 class ValidationResult:
     """Complete validation output."""
 
@@ -294,6 +303,9 @@ class ValidationResult:
     rules_failed: int
     feature_summary: str  # Human-readable
     friction: FrictionEstimate
+    # Evaluation completeness
+    is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
+    pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules
     # Legacy fields for backward compat
     time_waste_estimate: dict[str, int] = field(default_factory=dict)
     violation_points: int = 0

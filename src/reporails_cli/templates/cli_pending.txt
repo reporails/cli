@@ -1,0 +1,3 @@
+Pending semantic evaluation:
+  {rule_count} rules across {file_count} files
+  Rules: {rule_list}

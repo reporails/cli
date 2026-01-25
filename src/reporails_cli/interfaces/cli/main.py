@@ -161,10 +161,6 @@ def check(
         output = text_formatter.format_result(result, ascii_mode=ascii, quiet_semantic=quiet_semantic, delta=delta)
         console.print(output)
         console.print(f"\n[dim]Completed in {elapsed_ms:.0f}ms[/dim]")
-        if result.judgment_requests and not quiet_semantic:
-            console.print(
-                "\n[dim]Tip: Add reporails MCP to Claude Code for semantic rule evaluation.[/dim]"
-            )
 
     # Record scan in analytics (after display, so previous_scan was accurate)
     record_scan(

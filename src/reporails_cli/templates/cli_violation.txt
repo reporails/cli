@@ -1,0 +1,1 @@
+    {icon} {rule_id:<18} :{line:<4} {message}
