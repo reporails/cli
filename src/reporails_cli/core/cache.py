@@ -280,6 +280,22 @@ def save_project_analytics(analytics: ProjectAnalytics) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def get_previous_scan(target: Path) -> AnalyticsEntry | None:
+    """Get the most recent scan entry for comparison (before current run is recorded).
+
+    Args:
+        target: Project root
+
+    Returns:
+        Last AnalyticsEntry or None if no previous scan
+    """
+    project_id = get_project_id(target)
+    analytics = load_project_analytics(project_id)
+    if analytics is None or len(analytics.history) < 1:
+        return None
+    return analytics.history[-1]  # Last recorded scan
+
+
 def record_scan(
     target: Path,
     score: float,

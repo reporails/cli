@@ -11,8 +11,10 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from reporails_cli.core.cache import get_previous_scan, record_scan
 from reporails_cli.core.discover import generate_backbone_yaml, run_discovery, save_backbone
 from reporails_cli.core.engine import run_validation_sync
+from reporails_cli.core.models import ScanDelta
 from reporails_cli.core.opengrep import set_debug_timing
 from reporails_cli.core.registry import load_rules
 from reporails_cli.formatters import json as json_formatter
@@ -115,6 +117,9 @@ def check(
     # Resolve rules directory
     rules_path = Path(rules_dir).resolve() if rules_dir else None
 
+    # Get previous scan BEFORE running validation (for delta comparison)
+    previous_scan = get_previous_scan(target)
+
     # Run validation with timing
     start_time = time.perf_counter()
     try:
@@ -124,19 +129,27 @@ def check(
         raise typer.Exit(1) from None
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+    # Compute delta from previous scan
+    delta = ScanDelta.compute(
+        current_score=result.score,
+        current_level=result.level.value,
+        current_violations=len(result.violations),
+        previous=previous_scan,
+    )
+
     # Auto-detect format if not specified
     output_format = format if format else _default_format()
 
     # Format output
     if output_format == "json":
-        data = json_formatter.format_result(result)
+        data = json_formatter.format_result(result, delta)
         data["elapsed_ms"] = round(elapsed_ms, 1)
         print(json.dumps(data, indent=2))
     elif output_format == "compact":
-        output = text_formatter.format_compact(result, ascii_mode=ascii)
+        output = text_formatter.format_compact(result, ascii_mode=ascii, delta=delta)
         print(output)
     elif output_format == "brief":
-        data = json_formatter.format_result(result)
+        data = json_formatter.format_result(result, delta)
         score = data.get("score", 0)
         level = data.get("level", "?")
         violations = len(data.get("violations", []))
@@ -145,13 +158,24 @@ def check(
         status = check_mark if violations == 0 else f"{cross_mark} {violations} violations"
         print(f"ails: {score:.1f}/10 ({level}) {status}")
     else:
-        output = text_formatter.format_result(result, ascii_mode=ascii, quiet_semantic=quiet_semantic)
+        output = text_formatter.format_result(result, ascii_mode=ascii, quiet_semantic=quiet_semantic, delta=delta)
         console.print(output)
         console.print(f"\n[dim]Completed in {elapsed_ms:.0f}ms[/dim]")
         if result.judgment_requests and not quiet_semantic:
             console.print(
                 "\n[dim]Tip: Add reporails MCP to Claude Code for semantic rule evaluation.[/dim]"
             )
+
+    # Record scan in analytics (after display, so previous_scan was accurate)
+    record_scan(
+        target=target,
+        score=result.score,
+        level=result.level.value,
+        violations_count=len(result.violations),
+        rules_checked=result.rules_checked,
+        elapsed_ms=elapsed_ms,
+        instruction_files=result.rules_checked,  # Approximation
+    )
 
     # Exit with error only in strict mode
     if strict and result.violations:

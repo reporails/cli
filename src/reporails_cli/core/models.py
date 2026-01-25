@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reporails_cli.core.cache import AnalyticsEntry
 
 
 class Category(str, Enum):
@@ -223,6 +227,58 @@ class ProjectConfig:
 # =============================================================================
 # Result Models
 # =============================================================================
+
+
+@dataclass(frozen=True)
+class ScanDelta:
+    """Comparison between current and previous scan."""
+
+    score_delta: float | None  # None if no previous or unchanged
+    level_previous: str | None  # None if unchanged or no previous
+    level_improved: bool | None  # True=up, False=down, None=unchanged/no previous
+    violations_delta: int | None  # Negative=improvement, positive=regression, None if unchanged
+
+    @classmethod
+    def compute(
+        cls,
+        current_score: float,
+        current_level: str,
+        current_violations: int,
+        previous: "AnalyticsEntry | None",
+    ) -> "ScanDelta":
+        """Compute delta from current values and previous scan entry.
+
+        Args:
+            current_score: Current scan score
+            current_level: Current level (e.g., "L3")
+            current_violations: Current violation count
+            previous: Previous AnalyticsEntry or None
+
+        Returns:
+            ScanDelta with computed differences
+        """
+        if previous is None:
+            return cls(None, None, None, None)
+
+        # Score delta (round to 1 decimal, None if unchanged)
+        raw_score_delta = round(current_score - previous.score, 1)
+        score_delta = raw_score_delta if raw_score_delta != 0 else None
+
+        # Level comparison (extract number from "L3" etc)
+        curr_num = int(current_level[1]) if current_level.startswith("L") else 0
+        prev_num = int(previous.level[1]) if previous.level.startswith("L") else 0
+        if curr_num != prev_num:
+            level_previous = previous.level
+            level_improved = curr_num > prev_num
+        else:
+            level_previous = None
+            level_improved = None
+
+        # Violations delta (None if unchanged)
+        viol_delta = current_violations - previous.violations_count
+        violations_delta = viol_delta if viol_delta != 0 else None
+
+        return cls(score_delta, level_previous, level_improved, violations_delta)
 
 
 @dataclass(frozen=True)

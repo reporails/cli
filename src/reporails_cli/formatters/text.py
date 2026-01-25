@@ -9,7 +9,11 @@ import contextlib
 import os
 from typing import Any
 
-from reporails_cli.core.models import ValidationResult
+from reporails_cli.core.models import ScanDelta, ValidationResult
+
+# Delta indicator characters
+_UNICODE_DELTA = {"up": "↑", "down": "↓"}
+_ASCII_DELTA = {"up": "^", "down": "v"}
 from reporails_cli.core.scorer import LEVEL_LABELS
 from reporails_cli.formatters import json as json_formatter
 
@@ -68,7 +72,53 @@ def _build_score_bar(score: float, ascii_mode: bool | None = None) -> str:
     return chars["filled"] * filled + chars["empty"] * (bar_width - filled)
 
 
-def _format_assessment_box(data: dict[str, Any], ascii_mode: bool | None = None) -> str:
+def _get_delta_chars(ascii_mode: bool | None = None) -> dict[str, str]:
+    """Get delta indicator characters based on mode."""
+    if ascii_mode is None:
+        ascii_mode = _ASCII_MODE
+    return _ASCII_DELTA if ascii_mode else _UNICODE_DELTA
+
+
+def _format_score_delta(delta: ScanDelta | None, ascii_mode: bool | None = None) -> str:
+    """Format score delta indicator."""
+    if delta is None or delta.score_delta is None:
+        return ""
+    d = _get_delta_chars(ascii_mode)
+    if delta.score_delta > 0:
+        return f"  {d['up']} +{delta.score_delta:.1f}"
+    else:
+        return f"  {d['down']} {delta.score_delta:.1f}"
+
+
+def _format_level_delta(delta: ScanDelta | None, ascii_mode: bool | None = None) -> str:
+    """Format level delta indicator."""
+    if delta is None or delta.level_previous is None:
+        return ""
+    d = _get_delta_chars(ascii_mode)
+    if delta.level_improved:
+        return f"  {d['up']} from {delta.level_previous}"
+    else:
+        return f"  {d['down']} from {delta.level_previous}"
+
+
+def _format_violations_delta(delta: ScanDelta | None, ascii_mode: bool | None = None) -> str:
+    """Format violations delta indicator."""
+    if delta is None or delta.violations_delta is None:
+        return ""
+    d = _get_delta_chars(ascii_mode)
+    if delta.violations_delta < 0:
+        # Decreased = good
+        return f"  {d['down']} {delta.violations_delta}"
+    else:
+        # Increased = bad
+        return f"  {d['up']} +{delta.violations_delta}"
+
+
+def _format_assessment_box(
+    data: dict[str, Any],
+    ascii_mode: bool | None = None,
+    delta: ScanDelta | None = None,
+) -> str:
     """Format the visual assessment box."""
     chars = _get_chars(ascii_mode)
     lines = []
@@ -87,8 +137,13 @@ def _format_assessment_box(data: dict[str, Any], ascii_mode: bool | None = None)
     lines.append(chars["tl"] + chars["h"] * box_width + chars["tr"])
     lines.append(chars["v"] + " " * box_width + chars["v"])
 
-    # Score line with capability
-    score_text = f"SCORE: {score:.1f} / 10  |  CAPABILITY: {level_label} ({level})"
+    # Score line with capability and delta indicators
+    score_delta_str = _format_score_delta(delta, ascii_mode)
+    level_delta_str = _format_level_delta(delta, ascii_mode)
+    score_text = f"SCORE: {score:.1f} / 10{score_delta_str}  |  CAPABILITY: {level_label} ({level}){level_delta_str}"
+    # Truncate if too long for box
+    if len(score_text) > box_width - 6:
+        score_text = score_text[: box_width - 9] + "..."
     lines.append(chars["v"] + "   " + score_text.ljust(box_width - 3) + chars["v"])
 
     # Score bar
@@ -111,10 +166,11 @@ def _format_assessment_box(data: dict[str, Any], ascii_mode: bool | None = None)
         rule_id = v.get("rule_id", "")
         seen_violations.add((file_path, rule_id))
     violation_count = len(seen_violations)
+    violations_delta_str = _format_violations_delta(delta, ascii_mode)
     if violation_count == 0:
         summary = f"No violations · {rules_checked} rules checked"
     else:
-        summary = f"{violation_count} violation(s) · {rules_checked} rules checked"
+        summary = f"{violation_count} violation(s){violations_delta_str} · {rules_checked} rules checked"
     lines.append(chars["v"] + "   " + summary.ljust(box_width - 3) + chars["v"])
     lines.append(chars["v"] + " " * box_width + chars["v"])
 
@@ -129,9 +185,10 @@ def format_result(
     ascii_mode: bool | None = None,
     quiet_semantic: bool = False,
     show_legend: bool = True,
+    delta: ScanDelta | None = None,
 ) -> str:
     """Format validation result for terminal output."""
-    data = json_formatter.format_result(result)
+    data = json_formatter.format_result(result, delta)
     chars = _get_chars(ascii_mode)
 
     lines = []
@@ -143,7 +200,7 @@ def format_result(
     friction = data.get("friction", {})
 
     # Assessment box
-    lines.append(_format_assessment_box(data, ascii_mode))
+    lines.append(_format_assessment_box(data, ascii_mode, delta))
     lines.append("")
 
     # What's working well
@@ -262,9 +319,10 @@ def format_compact(
     result: ValidationResult,
     ascii_mode: bool | None = None,
     show_legend: bool = True,
+    delta: ScanDelta | None = None,
 ) -> str:
     """Format validation result in compact form for Claude Code / non-TTY."""
-    data = json_formatter.format_result(result)
+    data = json_formatter.format_result(result, delta)
     chars = _get_chars(ascii_mode)
     lines = []
 
@@ -290,11 +348,14 @@ def format_compact(
         deduped_grouped[file_path] = unique
         deduped_count += len(unique)
 
-    # Header line
+    # Header line with delta indicators
+    score_delta_str = _format_score_delta(delta, ascii_mode)
+    level_delta_str = _format_level_delta(delta, ascii_mode)
+    violations_delta_str = _format_violations_delta(delta, ascii_mode) if deduped_count > 0 else ""
     if deduped_count > 0:
-        lines.append(f"Score: {score:.1f}/10 ({level_label} ({level})) - {deduped_count} violations")
+        lines.append(f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}) - {deduped_count} violations{violations_delta_str}")
     else:
-        lines.append(f"Score: {score:.1f}/10 ({level_label} ({level})) {chars['check']} clean")
+        lines.append(f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}) {chars['check']} clean")
         return "\n".join(lines)
 
     lines.append("")
