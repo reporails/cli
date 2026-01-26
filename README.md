@@ -3,6 +3,21 @@
 Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ## Quick Start
+
+### MCP Integration (for Claude Code)
+
+For full semantic analysis, add the MCP server:
+```bash
+# Add the MCP and restart Claude
+claude mcp add reporails -- uvx reporails-cli ails-mcp
+```
+
+Then ask Claude: 
+```
+❯ What ails claude?
+```
+
+### CLI path (only deterministic rules)
 ```bash
 # Check your setup (auto-installs OpenGrep + rules on first run)
 uvx reporails-cli check .
@@ -42,15 +57,6 @@ Fix the issues, run again, watch your score improve.
 | L4 | Abstracted | .claude/rules/ directory |
 | L5 | Governed | Shared files, 3+ components |
 | L6 | Adaptive | Backbone + full governance |
-
-## MCP Integration (for Claude Code)
-
-For full semantic analysis, add the MCP server:
-```bash
-claude mcp add reporails -- uvx reporails-cli ails-mcp
-```
-
-Then ask Claude: "What ails claude?"
 
 ## Commands
 ```bash
