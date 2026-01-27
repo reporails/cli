@@ -1,6 +1,7 @@
 # Reporails CLI
 
 Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
+[Why this exists](https://dev.to/cleverhoods/claudemd-lint-score-improve-repeat-2om5)
 
 ## Quick Start
 
