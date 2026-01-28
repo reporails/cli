@@ -167,15 +167,20 @@ detection:
 
 ## core/init.py
 
-Downloads OpenGrep binary and framework rules tarball on first run.
+Downloads OpenGrep binary and framework rules tarball on first run. Handles updates.
 
 **Constants:**
 
 ```python
 OPENGREP_VERSION = "1.15.1"
-RULES_VERSION = "v0.0.1"
+RULES_VERSION = "v0.1.1"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
+RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 ```
+
+**Dataclasses:**
+
+- `UpdateResult`: previous_version, new_version, updated, rule_count, message
 
 **Functions:**
 
@@ -186,9 +191,13 @@ RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{versi
 | `download_rules()` | `tuple[Path, int]` | Download rules (local or GitHub) |
 | `download_from_github()` | `tuple[Path, int]` | Download from GitHub release tarball |
 | `download_rules_tarball(dest)` | `int` | Download and extract tarball |
+| `download_rules_version(version)` | `tuple[Path, int]` | Download rules for specific version |
 | `copy_bundled_yml_files(dest)` | `int` | Copy bundled .yml files |
 | `copy_local_framework(source)` | `tuple[Path, int]` | Copy from local path (dev mode) |
 | `get_platform()` | `tuple[str, str]` | Get OS and arch |
+| `get_latest_version()` | `str \| None` | Fetch latest version from GitHub API |
+| `update_rules(version, force)` | `UpdateResult` | Update rules to version (or latest) |
+| `write_version_file(version)` | `None` | Write version to ~/.reporails/version |
 
 **Download Flow:**
 
@@ -199,7 +208,20 @@ RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{versi
    b. If local: copy from local path
    c. Otherwise: download from GitHub release tarball
 3. Merge bundled .yml files with downloaded rules
-4. Return results dict
+4. Write version file
+5. Return results dict
+```
+
+**Update Flow:**
+
+```
+1. Check for dev mode (local framework_path)
+2. Determine target version (specified or fetch latest)
+3. Check current installed version
+4. Skip if already at target (unless --force)
+5. Download and extract rules tarball
+6. Write version file
+7. Return UpdateResult
 ```
 
 **Platform Support:**
@@ -588,8 +610,11 @@ Typer CLI application.
 | `ails map [PATH]` | Discover project structure |
 | `ails map --save` | Save backbone.yml |
 | `ails explain RULE_ID` | Show rule details |
-| `ails update` | Update framework |
-| `ails version` | Show versions |
+| `ails update` | Update framework to latest |
+| `ails update --version VERSION` | Update to specific version |
+| `ails update --check` | Check for updates without installing |
+| `ails update --force` | Force reinstall even if current |
+| `ails version` | Show CLI and framework versions |
 
 ---
 

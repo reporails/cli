@@ -26,4 +26,3 @@ paths: ["src/**/*.py"]  # Optional: scope to specific files
 - Use descriptive filenames (`api-validation.md` not `rules1.md`)
 - Add `paths` frontmatter to reduce noise when not relevant
 - No paths = loads globally for all files
-- Content MUST be actionable, not explanatory

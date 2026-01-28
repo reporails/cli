@@ -6,12 +6,19 @@ import importlib.resources
 import platform
 import shutil
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import httpx
 
-from reporails_cli.core.bootstrap import get_global_config, get_opengrep_bin, get_reporails_home
+from reporails_cli.core.bootstrap import (
+    get_global_config,
+    get_installed_version,
+    get_opengrep_bin,
+    get_reporails_home,
+    get_version_file,
+)
 
 # Hardcoded version - no env var handling
 OPENGREP_VERSION = "1.15.1"
@@ -39,8 +46,20 @@ OPENGREP_URLS: dict[tuple[str, str], str] = {
     ),
 }
 
-RULES_VERSION = "v0.0.1"
+RULES_VERSION = "v0.1.1"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
+RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
+
+
+@dataclass
+class UpdateResult:
+    """Result of an update operation."""
+
+    previous_version: str | None
+    new_version: str
+    updated: bool
+    rule_count: int
+    message: str
 
 
 def get_platform() -> tuple[str, str]:
@@ -285,6 +304,151 @@ def sync_rules_to_local(local_checks_dir: Path) -> int:
     return download_rules_tarball(local_checks_dir)
 
 
+def write_version_file(version: str) -> None:
+    """Write version to ~/.reporails/version file."""
+    version_file = get_version_file()
+    version_file.parent.mkdir(parents=True, exist_ok=True)
+    version_file.write_text(version.strip() + "\n", encoding="utf-8")
+
+
+def get_latest_version() -> str | None:
+    """
+    Fetch the latest release version from GitHub API.
+
+    Returns:
+        Version string (e.g., "v0.1.1") or None if fetch fails
+    """
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(RULES_API_URL)
+            response.raise_for_status()
+            data: dict[str, object] = response.json()
+            tag_name = data.get("tag_name")
+            return str(tag_name) if tag_name else None
+    except (httpx.HTTPError, KeyError):
+        return None
+
+
+def download_rules_version(version: str) -> tuple[Path, int]:
+    """
+    Download rules for a specific version.
+
+    Args:
+        version: Version string (e.g., "v0.1.1")
+
+    Returns:
+        Tuple of (rules_path, total_file_count)
+    """
+    import tarfile
+
+    rules_path = get_reporails_home() / "rules"
+
+    # Clear existing rules
+    if rules_path.exists():
+        shutil.rmtree(rules_path)
+
+    rules_path.mkdir(parents=True, exist_ok=True)
+
+    # 1. Copy bundled .yml files
+    yml_count = copy_bundled_yml_files(rules_path)
+
+    # 2. Download from GitHub release tarball
+    url = RULES_TARBALL_URL.format(version=version)
+
+    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+        response = client.get(url)
+        response.raise_for_status()
+
+        with TemporaryDirectory() as tmpdir:
+            tarball_path = Path(tmpdir) / "rules.tar.gz"
+            tarball_path.write_bytes(response.content)
+
+            # Extract
+            with tarfile.open(tarball_path, "r:gz") as tar:
+                tar.extractall(path=rules_path)
+
+            # Count files
+            tarball_count = sum(1 for _ in rules_path.rglob("*") if _.is_file())
+
+    # Write version file
+    write_version_file(version)
+
+    return rules_path, yml_count + tarball_count
+
+
+def update_rules(version: str | None = None, force: bool = False) -> UpdateResult:
+    """
+    Update rules to specified version or latest.
+
+    Args:
+        version: Target version (e.g., "v0.1.1"). If None, uses latest.
+        force: Force update even if already at target version.
+
+    Returns:
+        UpdateResult with details about the update
+    """
+    # Check for local framework override (dev mode)
+    config = get_global_config()
+    if config.framework_path and config.framework_path.exists():
+        return UpdateResult(
+            previous_version=get_installed_version(),
+            new_version="local",
+            updated=False,
+            rule_count=0,
+            message="Using local framework path (dev mode). Disable framework_path in config to update.",
+        )
+
+    # Determine target version
+    if version:
+        target_version = version if version.startswith("v") else f"v{version}"
+    else:
+        latest = get_latest_version()
+        if not latest:
+            return UpdateResult(
+                previous_version=get_installed_version(),
+                new_version="unknown",
+                updated=False,
+                rule_count=0,
+                message="Failed to fetch latest version from GitHub.",
+            )
+        target_version = latest
+
+    # Check current version
+    current_version = get_installed_version()
+
+    # Skip if already at target version (unless forced)
+    if current_version == target_version and not force:
+        return UpdateResult(
+            previous_version=current_version,
+            new_version=target_version,
+            updated=False,
+            rule_count=0,
+            message=f"Already at version {target_version}.",
+        )
+
+    # Download and install
+    try:
+        _rules_path, rule_count = download_rules_version(target_version)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return UpdateResult(
+                previous_version=current_version,
+                new_version=target_version,
+                updated=False,
+                rule_count=0,
+                message=f"Version {target_version} not found.",
+            )
+        raise
+
+    return UpdateResult(
+        previous_version=current_version,
+        new_version=target_version,
+        updated=True,
+        rule_count=rule_count,
+        message=f"Updated from {current_version or 'none'} to {target_version}.",
+    )
+
+
 def run_init() -> dict[str, str | int | Path]:
     """
     Run global initialization.
@@ -305,5 +469,9 @@ def run_init() -> dict[str, str | int | Path]:
     rules_path, rule_count = download_rules()
     results["rules_path"] = rules_path
     results["rule_count"] = rule_count
+
+    # 3. Write version file
+    write_version_file(RULES_VERSION)
+    results["rules_version"] = RULES_VERSION
 
     return results

@@ -6,8 +6,6 @@
 
 Reporails lints AI coding agent instruction files against community-maintained rules.
 
-**repoRAILS** = **Repo** **R**ecursive **AI** **L**inting**S**
-
 | Purpose | Name |
 |---------|------|
 | Brand/Package | `reporails` |
