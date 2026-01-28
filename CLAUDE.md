@@ -1,8 +1,6 @@
-# Reporails CLI
+# Reporails CLI v0.1.0
 
 AI instruction linter. Validates instruction files against community-maintained rules.
-
-**repoRAILS** = **Repo** **R**ecursive **AI** **L**inting**S**
 
 ## Development Context
 
@@ -19,6 +17,23 @@ Don't conflate these when discussing features, delivery, or documentation.
 1. Read `.reporails/backbone.yml` for project structure
 2. Read `docs/specs/arch.md` for architecture decisions
 3. Read `docs/specs/modules.md` before modifying core modules
+
+## File Reading Strategy
+
+- Check `.reporails/backbone.yml` before searching for files
+- Read specs (`docs/specs/*.md`) before modifying core modules
+- Prefer reading specific files over broad glob patterns
+
+## Search Efficiency
+
+- Use `Grep --type py` for Python-specific searches
+- Use `Glob "src/**/*.py"` to find Python files
+- Limit searches to `src/` or `tests/` directories when possible
+- Avoid grepping the entire repo; scope to relevant paths
+
+## Memory
+
+Reference previous context from `.reporails/backbone.yml` for project structure. The backbone maps all instruction files and their imports.
 
 ## Quick Start
 ```bash
@@ -62,28 +77,12 @@ See `docs/specs/arch.md` for full architecture.
 
 ## QA Commands
 
-| Command | Purpose |
-|---------|---------|
-| `uv run poe qa_fast` | Lint, type check, unit tests (pre-commit) |
-| `uv run poe qa` | Full QA including integration tests |
-| `uv run poe lint` | Ruff linter |
-| `uv run poe format` | Format code |
-| `uv run poe type` | Mypy type checking |
-| `uv run poe test_unit` | Unit tests only (fast, no OpenGrep) |
-| `uv run poe test_integration` | Integration tests (requires OpenGrep) |
-
-## Test Structure
-
-```
-tests/
-├── unit/           # Fast tests, no external dependencies
-└── integration/    # Requires OpenGrep binary
-```
+- `uv run poe qa_fast` — Lint, type check, unit tests (pre-commit)
+- `uv run poe qa` — Full QA including integration tests
 
 ## Architecture
 
-- **Agent-Agnostic**: Detects Claude, Cursor, Windsurf, Copilot, Aider
-- **Claude Rules v0.0.1**: Linting rules currently for Claude only
+@docs/specs/arch.md for full architecture details.
+
 - **OpenGrep-Powered**: Deterministic pattern matching
-- **Two-Phase Detection**: Filesystem + content analysis for capability scoring
 - **Framework Separation**: CLI orchestrates, framework defines rules

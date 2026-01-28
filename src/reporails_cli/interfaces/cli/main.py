@@ -343,6 +343,75 @@ def sync(
         raise typer.Exit(1) from None
 
 
+@app.command()
+def update(
+    version: str = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Target version (e.g., v0.1.1). Defaults to latest.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force update even if already at target version",
+    ),
+    check: bool = typer.Option(
+        False,
+        "--check",
+        "-c",
+        help="Check for updates without installing",
+    ),
+) -> None:
+    """Update rules framework to latest or specified version."""
+    from reporails_cli.core.bootstrap import get_installed_version
+    from reporails_cli.core.init import get_latest_version, update_rules
+
+    if check:
+        # Check-only mode
+        current = get_installed_version()
+        with console.status("[bold]Checking for updates...[/bold]"):
+            latest = get_latest_version()
+
+        if not latest:
+            console.print("[yellow]Warning:[/yellow] Could not fetch latest version from GitHub.")
+            raise typer.Exit(1)
+
+        console.print(f"Installed: {current or 'not installed'}")
+        console.print(f"Latest:    {latest}")
+
+        if current == latest:
+            console.print("[green]You are up to date.[/green]")
+        else:
+            console.print(f"\n[cyan]Run 'ails update' to update to {latest}[/cyan]")
+        return
+
+    # Perform update
+    with console.status("[bold]Updating rules framework...[/bold]"):
+        result = update_rules(version=version, force=force)
+
+    if result.updated:
+        console.print(f"[green]Updated:[/green] {result.previous_version or 'none'} → {result.new_version}")
+        console.print(f"[dim]{result.rule_count} files installed[/dim]")
+    else:
+        console.print(result.message)
+
+
+@app.command("version")
+def show_version() -> None:
+    """Show CLI and framework versions."""
+    from reporails_cli import __version__ as cli_version
+    from reporails_cli.core.bootstrap import get_installed_version
+    from reporails_cli.core.init import OPENGREP_VERSION, RULES_VERSION
+
+    installed = get_installed_version()
+
+    console.print(f"CLI:       {cli_version}")
+    console.print(f"Framework: {installed or 'not installed'} (bundled: {RULES_VERSION})")
+    console.print(f"OpenGrep:  {OPENGREP_VERSION}")
+
+
 def main() -> None:
     """Entry point for CLI."""
     app()
