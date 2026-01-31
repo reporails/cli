@@ -11,7 +11,6 @@ from reporails_cli.core.models import ScanDelta, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.box import format_assessment_box
 from reporails_cli.formatters.text.chars import get_chars
-from reporails_cli.formatters.text.components import format_legend
 from reporails_cli.formatters.text.violations import format_violations_section
 from reporails_cli.templates import render
 
@@ -144,10 +143,5 @@ def format_result(
         if cta:
             sections.append("")
             sections.append(cta)
-
-    # Legend footer
-    if violations and show_legend:
-        sections.append("")
-        sections.append(format_legend(ascii_mode))
 
     return "\n".join(sections)

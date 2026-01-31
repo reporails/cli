@@ -12,7 +12,6 @@ from reporails_cli.core.models import ScanDelta, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.components import (
-    format_legend,
     format_level_delta,
     format_score_delta,
     format_violations_delta,
@@ -77,14 +76,12 @@ def format_compact(
             sev = v.get("severity", "medium")
             icon = severity_icons.get(sev, "?")
             rule_id = v.get("rule_id", "?")
-            check_id = v.get("check_id")
-            display_id = f"{rule_id}.{check_id}" if check_id else rule_id
             msg = v.get("message", "")
             location = v.get("location", "")
             line_num = location.rsplit(":", 1)[-1] if ":" in location else "?"
             if len(msg) > 45:
                 msg = msg[:42] + "..."
-            lines.append(f"  {icon} {display_id}:{line_num} {msg}")
+            lines.append(f"  {icon} :{line_num} {msg:<47} {rule_id}")
         lines.append("")
 
     # Pending semantic
@@ -99,10 +96,6 @@ def format_compact(
     if friction_level != "none":
         lines.append(f"Friction: {friction_level.title()}")
         lines.append("")
-
-    # Legend footer
-    if deduped_count > 0 and show_legend:
-        lines.append(format_legend(ascii_mode))
 
     return "\n".join(lines).rstrip()
 

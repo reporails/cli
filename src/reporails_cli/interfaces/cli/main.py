@@ -92,6 +92,11 @@ def check(
         "--agent",
         help="Agent identifier for template vars (claude, cursor, etc.)",
     ),
+    with_recommended: bool = typer.Option(
+        False,
+        "--with-recommended",
+        help="Include recommended rules package (auto-downloads if needed)",
+    ),
     experimental: bool = typer.Option(
         False,
         "--experimental",
@@ -123,6 +128,20 @@ def check(
     # Resolve rules directory
     rules_path = Path(rules_dir).resolve() if rules_dir else None
 
+    # Handle --with-recommended: auto-download and inject into project packages
+    if with_recommended:
+        from reporails_cli.core.init import download_recommended, is_recommended_installed
+
+        if not is_recommended_installed():
+            try:
+                if sys.stdout.isatty() and format not in ("json", "brief", "compact"):
+                    with console.status("[bold]Downloading recommended rules...[/bold]"):
+                        download_recommended()
+                else:
+                    download_recommended()
+            except Exception as e:
+                console.print(f"[yellow]Warning:[/yellow] Could not download recommended rules: {e}")
+
     # Early check for missing instruction files
     instruction_files = get_all_instruction_files(target)
     if not instruction_files:
@@ -138,6 +157,9 @@ def check(
     # Determine if we should show spinner (TTY + not explicitly JSON)
     show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact")
 
+    # Build extra packages list from flags
+    extra_packages = ["recommended"] if with_recommended else None
+
     # Run validation with timing
     start_time = time.perf_counter()
     try:
@@ -145,12 +167,14 @@ def check(
             with console.status("[bold]Scanning instruction files...[/bold]"):
                 result = run_validation_sync(
                     target, rules_dir=rules_path, use_cache=not refresh,
-                    agent=agent, include_experimental=experimental
+                    agent=agent, include_experimental=experimental,
+                    extra_packages=extra_packages,
                 )
         else:
             result = run_validation_sync(
                 target, rules_dir=rules_path, use_cache=not refresh,
-                agent=agent, include_experimental=experimental
+                agent=agent, include_experimental=experimental,
+                extra_packages=extra_packages,
             )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -366,6 +390,11 @@ def update(
         "-f",
         help="Force update even if already at target version",
     ),
+    recommended: bool = typer.Option(
+        False,
+        "--recommended",
+        help="Re-fetch recommended rules package",
+    ),
     check: bool = typer.Option(
         False,
         "--check",
@@ -376,6 +405,19 @@ def update(
     """Update rules framework to latest or specified version."""
     from reporails_cli.core.bootstrap import get_installed_version
     from reporails_cli.core.init import get_latest_version, update_rules
+
+    # Handle --recommended: re-fetch recommended package
+    if recommended:
+        from reporails_cli.core.init import download_recommended
+
+        try:
+            with console.status("[bold]Downloading recommended rules...[/bold]"):
+                pkg_path = download_recommended()
+            console.print(f"[green]Updated:[/green] recommended rules at {pkg_path}")
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Could not download recommended rules: {e}")
+            raise typer.Exit(1) from None
+        return
 
     if check:
         # Check-only mode

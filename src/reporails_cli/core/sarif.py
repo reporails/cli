@@ -25,14 +25,16 @@ def extract_rule_id(sarif_rule_id: str) -> str:
     OpenGrep formats rule IDs as: checks.{category}.{id}-{slug}
     Example: checks.structure.S1-many-h2-headings -> S1
 
+    Handles prefixed IDs: AILS_E4, CLAUDE_S2, AILS_CLAUDE_M1
+
     Args:
         sarif_rule_id: Full ruleId from SARIF output
 
     Returns:
-        Short rule ID (e.g., S1, C10, M7)
+        Short rule ID (e.g., S1, C10, AILS_E4, CLAUDE_S2)
     """
-    # Pattern: extract the ID part (letter + digits) from the last segment
-    match = re.search(r"\.([A-Z]\d+)-", sarif_rule_id)
+    # Pattern: optional AILS_ and/or CLAUDE_ prefix, then letter + digits
+    match = re.search(r"\.((?:AILS_)?(?:CLAUDE_)?[A-Z]\d+)-", sarif_rule_id)
     if match:
         return match.group(1)
     return sarif_rule_id
@@ -44,13 +46,15 @@ def extract_check_slug(sarif_rule_id: str) -> str | None:
     OpenGrep formats rule IDs as: checks.{category}.{id}-{slug}
     Example: checks.structure.S1-many-sections -> many-sections
 
+    Handles prefixed IDs: AILS_E4-slug, CLAUDE_S2-slug, AILS_CLAUDE_M1-slug
+
     Args:
         sarif_rule_id: Full ruleId from SARIF output
 
     Returns:
         Check slug (e.g., "many-sections") or None
     """
-    match = re.search(r"\.[A-Z]\d+-(.+)$", sarif_rule_id)
+    match = re.search(r"\.(?:AILS_)?(?:CLAUDE_)?[A-Z]\d+-(.+)$", sarif_rule_id)
     if match:
         return match.group(1)
     return None

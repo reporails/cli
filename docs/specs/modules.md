@@ -100,7 +100,11 @@ Path helpers and config loading. No I/O except config file reading.
 | `get_agent_rules_path(agent)` | `Path` | `~/.reporails/rules/agents/{agent}/rules/` |
 | `get_schemas_path()` | `Path` | `~/.reporails/rules/schemas/` |
 | `get_version_file()` | `Path` | `~/.reporails/version` |
+| `get_agent_config(agent)` | `AgentConfig` | Load agent excludes + overrides from framework config |
 | `get_global_config()` | `GlobalConfig` | Load `~/.reporails/config.yml` |
+| `get_project_config(project_root)` | `ProjectConfig` | Load `.reporails/config.yml` from project |
+| `get_package_paths(project_root, packages)` | `list[Path]` | Resolve package names to `.reporails/packages/<name>/` dirs |
+| `get_package_level_rules(project_root, packages)` | `dict[str, list[str]]` | Load and merge level→rules mappings from package `levels.yml` files |
 | `is_initialized()` | `bool` | Check if OpenGrep + rules exist |
 | `get_installed_version()` | `str | None` | Read version file |
 
@@ -121,7 +125,7 @@ Level configuration and rule-to-level mapping. Loaded from bundled config.
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `get_level_config()` | `LevelConfig` | Load bundled levels.yml |
-| `get_rules_for_level(level)` | `set[str]` | Rule IDs required at level |
+| `get_rules_for_level(level, extra_level_rules=None)` | `set[str]` | Rule IDs required at level (with optional package extras) |
 | `get_level_label(level)` | `str` | Human-readable label |
 | `get_level_includes(level)` | `list[Level]` | Levels included (inheritance) |
 | `detect_orphan_features(features, level)` | `bool` | Features above base level |
@@ -238,29 +242,30 @@ RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 
 ## core/registry.py
 
-Loads rules from framework and resolves with project overrides.
+Loads rules from framework and project packages, applies tier filtering and disabled_rules.
 
 **Functions:**
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `load_rules(agent, project_path)` | `dict[str, Rule]` | Load and resolve all rules |
-| `load_framework_rules(agent)` | `dict[str, Rule]` | Load from `~/.reporails/rules/` |
-| `load_project_overrides(project_path)` | `dict[str, Rule]` | Load from `.reporails/overrides/` |
-| `load_project_rules(project_path)` | `dict[str, Rule]` | Load from `.reporails/rules/` |
-| `load_project_config(project_path)` | `ProjectConfig` | Load `.reporails/config.yml` |
-| `parse_rule_file(md_path)` | `Rule` | Parse frontmatter from .md |
-| `find_yml_file(md_path)` | `Path | None` | Find matching .yml |
+| `load_rules(rules_dir, include_experimental, project_root, agent)` | `dict[str, Rule]` | Load and resolve all rules |
+| `get_experimental_rules(rules_dir)` | `dict[str, Rule]` | Get experimental-tier rules (for skip reporting) |
+| `build_rule(frontmatter, md_path, yml_path)` | `Rule` | Build Rule from parsed frontmatter (pure) |
+| `derive_tier(backed_by)` | `Tier` | Derive core/experimental from source weights |
 | `get_rules_by_type(rules, type)` | `dict[str, Rule]` | Filter by type (pure) |
+| `get_rules_by_category(rules, category)` | `dict[str, Rule]` | Filter by category (pure) |
+| `get_rule_yml_paths(rules)` | `list[Path]` | Get .yml paths for rules |
 
 **Resolution Order:**
 
 ```
-1. ~/.reporails/rules/core/           # Framework core
-2. ~/.reporails/rules/agents/{agent}/ # Framework agent
-3. .reporails/overrides/              # Project overrides
-4. .reporails/rules/                  # Project custom
-5. Apply disabled_rules from config   # Remove disabled
+1. ~/.reporails/rules/core/              # Framework core
+2. ~/.reporails/rules/agents/            # Framework agent
+3. Agent excludes (remove rule IDs)
+4. Agent overrides (adjust check severity, disable checks)
+5. .reporails/packages/<name>/           # Project packages (override by rule ID)
+6. Filter: tier (core vs experimental)
+7. Filter: disabled_rules removal
 ```
 
 ---
@@ -274,7 +279,7 @@ Detects project features (filesystem) and filters applicable rules.
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `detect_features_filesystem(target)` | `DetectedFeatures` | Scan directories/files |
-| `get_applicable_rules(rules, level)` | `dict[str, Rule]` | Filter rules by level |
+| `get_applicable_rules(rules, level, extra_level_rules=None)` | `dict[str, Rule]` | Filter rules by level (with optional package extras) |
 | `get_feature_summary(features)` | `str` | Human-readable summary |
 
 **Filesystem Detection:**
@@ -421,7 +426,7 @@ def run_validation(target: Path, agent: str = "claude", ...) -> ValidationResult
 
 ## core/opengrep/ (package)
 
-Runs OpenGrep binary. Isolated I/O. Sync-only (async removed in v0.0.1).
+Runs OpenGrep binary. Isolated I/O. Sync-only (async removed in v0.1.0).
 
 ### Package Structure
 
@@ -574,6 +579,7 @@ Dataclasses. Frozen where possible.
 - `JudgmentResponse`: rule_id, verdict, reason, passed
 - `ValidationResult`: score, level, violations, judgment_requests, ...
 - `DetectedFeatures`: has_claude_md, has_rules_dir, ...
+- `AgentConfig`: agent, excludes, overrides
 - `GlobalConfig`: framework_path, auto_update_check
 - `ProjectConfig`: framework_version, disabled_rules, overrides
 

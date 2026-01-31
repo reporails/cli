@@ -8,7 +8,11 @@ from __future__ import annotations
 from typing import Any
 
 from reporails_cli.formatters.text.chars import get_chars
-from reporails_cli.formatters.text.components import get_severity_label, normalize_path
+from reporails_cli.formatters.text.components import (
+    format_legend,
+    get_severity_icons,
+    normalize_path,
+)
 from reporails_cli.templates import render
 
 
@@ -21,7 +25,8 @@ def format_violations_section(
         return "No violations found."
 
     chars = get_chars(ascii_mode)
-    lines = ["Violations:", "-" * 60]
+    legend = format_legend(ascii_mode)
+    lines = [f"Violations:  {legend}", "-" * 60]
 
     # Group by file
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -68,21 +73,22 @@ def format_violations_section(
             key=lambda v: (severity_order.get(v.get("severity", ""), 9), v.get("location", "")),
         )
 
+        severity_icons = get_severity_icons(chars)
+
         for v in sorted_violations:
-            severity_label = get_severity_label(v.get("severity", ""), chars)
+            sev = v.get("severity", "medium")
+            icon = severity_icons.get(sev, "?")
             location = v.get("location", "")
             line_num = location.rsplit(":", 1)[-1] if ":" in location else "?"
             msg = v.get("message", "")
-            max_msg_len = 48
+            max_msg_len = 50
             if len(msg) > max_msg_len:
                 msg = msg[: max_msg_len - 3] + "..."
             rule_id = v.get("rule_id", "")
-            check_id = v.get("check_id")
-            display_id = f"{rule_id}.{check_id}" if check_id else rule_id
 
             lines.append(render("cli_violation.txt",
-                icon=severity_label,
-                rule_id=display_id,
+                icon=icon,
+                rule_id=rule_id,
                 line=line_num,
                 message=msg,
             ))

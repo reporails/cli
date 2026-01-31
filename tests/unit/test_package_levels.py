@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import yaml
 
+from reporails_cli.core.applicability import get_applicable_rules
 from reporails_cli.core.bootstrap import get_package_level_rules
 from reporails_cli.core.levels import get_rules_for_level
-from reporails_cli.core.applicability import get_applicable_rules
 from reporails_cli.core.models import Category, Level, Rule, RuleType
-
 
 # =============================================================================
 # get_package_level_rules tests
