@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.models import PendingSemantic, ScanDelta, ValidationResult
+from reporails_cli.core.models import (
+    PendingSemantic,
+    ScanDelta,
+    SkippedExperimental,
+    ValidationResult,
+)
 from reporails_cli.core.scorer import LEVEL_LABELS
 
 
@@ -20,6 +25,16 @@ def _format_pending_semantic(pending: PendingSemantic | None) -> dict[str, Any] 
         "rule_count": pending.rule_count,
         "file_count": pending.file_count,
         "rules": list(pending.rules),
+    }
+
+
+def _format_skipped_experimental(skipped: SkippedExperimental | None) -> dict[str, Any] | None:
+    """Format skipped experimental rules for JSON output."""
+    if skipped is None:
+        return None
+    return {
+        "rule_count": skipped.rule_count,
+        "rules": list(skipped.rules),
     }
 
 
@@ -77,6 +92,7 @@ def format_result(
         "evaluation": "partial" if result.is_partial else "complete",
         "is_partial": result.is_partial,
         "pending_semantic": _format_pending_semantic(result.pending_semantic),
+        "skipped_experimental": _format_skipped_experimental(result.skipped_experimental),
     }
 
     # Add delta fields (null if no previous run or unchanged)

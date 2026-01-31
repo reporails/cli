@@ -11,9 +11,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from reporails_cli.core.agents import get_all_instruction_files
-from reporails_cli.core.cache import get_previous_scan, record_scan
-from reporails_cli.core.discover import generate_backbone_yaml, run_discovery, save_backbone
+from reporails_cli.core.agents import detect_agents, get_all_instruction_files
+from reporails_cli.core.cache import ProjectCache, content_hash, get_previous_scan, record_scan
+from reporails_cli.core.discover import generate_backbone_yaml, save_backbone
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
 from reporails_cli.core.opengrep import set_debug_timing
@@ -92,6 +92,11 @@ def check(
         "--agent",
         help="Agent identifier for template vars (claude, cursor, etc.)",
     ),
+    experimental: bool = typer.Option(
+        False,
+        "--experimental",
+        help="Include experimental rules (methodology-backed, lower confidence)",
+    ),
     debug: bool = typer.Option(
         False,
         "--debug",
@@ -138,9 +143,15 @@ def check(
     try:
         if show_spinner:
             with console.status("[bold]Scanning instruction files...[/bold]"):
-                result = run_validation_sync(target, rules_dir=rules_path, use_cache=not refresh, agent=agent)
+                result = run_validation_sync(
+                    target, rules_dir=rules_path, use_cache=not refresh,
+                    agent=agent, include_experimental=experimental
+                )
         else:
-            result = run_validation_sync(target, rules_dir=rules_path, use_cache=not refresh, agent=agent)
+            result = run_validation_sync(
+                target, rules_dir=rules_path, use_cache=not refresh,
+                agent=agent, include_experimental=experimental
+            )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from None
@@ -258,7 +269,7 @@ def map(
         help="Save backbone.yml to .reporails/ directory",
     ),
 ) -> None:
-    """Map project structure - find instruction files and components."""
+    """Map project structure - detect agents and project layout."""
     target = Path(path).resolve()
 
     if not target.exists():
@@ -266,10 +277,10 @@ def map(
         raise typer.Exit(1)
 
     start_time = time.perf_counter()
-    result = run_discovery(target)
+    agents = detect_agents(target)
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-    backbone_yaml = generate_backbone_yaml(result)
+    backbone_yaml = generate_backbone_yaml(target, agents)
 
     if output == "yaml":
         console.print(backbone_yaml)
@@ -278,37 +289,35 @@ def map(
         data = yaml_lib.safe_load(backbone_yaml)
         console.print(json.dumps(data, indent=2))
     else:
-        console.print(f"[bold]Discovery Results[/bold] - {target.name}")
-        console.print("=" * 60)
+        console.print(f"[bold]Project Map[/bold] - {target.name}")
+        console.print("=" * 50)
         console.print()
 
-        console.print(f"[bold]Agents detected:[/bold] {len(result.agents)}")
-        for agent in result.agents:
-            console.print(
-                f"  - {agent.agent_type.name}: {len(agent.instruction_files)} instruction file(s)"
-            )
+        # Agents
+        for agent in agents:
+            root_files = [f for f in agent.instruction_files if f.parent == target]
+            main_file = str(root_files[0].relative_to(target)) if root_files else "?"
+            console.print(f"[bold]{agent.agent_type.name}[/bold]")
+            console.print(f"  main: {main_file}")
+            for label, dir_path in agent.detected_directories.items():
+                console.print(f"  {label}: {dir_path}")
+            if agent.config_files:
+                console.print(f"  config: {agent.config_files[0].relative_to(target)}")
+            console.print()
 
-        console.print()
+        # Structure
+        from reporails_cli.core.discover import detect_project_structure
 
-        console.print(f"[bold]Components:[/bold] {len(result.components)}")
-        for comp_id, comp in sorted(result.components.items()):
-            indent = "  " * comp_id.count(".")
-            files = len(comp.instruction_files)
-            imports = len(comp.imports)
-            console.print(f"  {indent}{comp_id}: {files} file(s), {imports} import(s)")
+        structure = detect_project_structure(target)
+        if structure:
+            console.print("[bold]Structure:[/bold]")
+            for key, value in structure.items():
+                if isinstance(value, list):
+                    console.print(f"  {key}: {', '.join(value)}")
+                else:
+                    console.print(f"  {key}: {value}")
+            console.print()
 
-        console.print()
-
-        if result.shared_files:
-            console.print(f"[bold]Shared files:[/bold] {len(result.shared_files)}")
-            for sf in result.shared_files[:10]:
-                console.print(f"  - {sf}")
-            if len(result.shared_files) > 10:
-                console.print(f"  ... and {len(result.shared_files) - 10} more")
-
-        console.print()
-        console.print(f"[dim]Total instruction files: {result.total_instruction_files}[/dim]")
-        console.print(f"[dim]Total references: {result.total_references}[/dim]")
         console.print(f"[dim]Completed in {elapsed_ms:.0f}ms[/dim]")
 
     if save:
@@ -396,6 +405,62 @@ def update(
         console.print(f"[dim]{result.rule_count} files installed[/dim]")
     else:
         console.print(result.message)
+
+
+@app.command()
+def dismiss(
+    rule_id: str = typer.Argument(..., help="Rule ID to dismiss (e.g., C6, M4)"),
+    file: str = typer.Argument(None, help="Specific file to dismiss for (default: all instruction files)"),
+    path: str = typer.Option(".", help="Project root"),
+) -> None:
+    """Dismiss a semantic rule finding (mark as pass/false-positive).
+
+    Writes a pass verdict to the judgment cache for the given rule+file.
+    Uses current content hash, so the dismissal auto-invalidates when the file changes.
+    """
+    target = Path(path).resolve()
+
+    if not target.exists():
+        console.print(f"[red]Error:[/red] Path not found: {target}")
+        raise typer.Exit(1)
+
+    rule_id_upper = rule_id.upper()
+    cache = ProjectCache(target)
+
+    if file:
+        # Dismiss for a specific file
+        files = [Path(file)]
+    else:
+        # Dismiss for all instruction files
+        files = [f.relative_to(target) for f in get_all_instruction_files(target)]
+
+    if not files:
+        console.print("[yellow]No instruction files found.[/yellow]")
+        raise typer.Exit(1)
+
+    dismissed = 0
+    for f in files:
+        full_path = target / f if not f.is_absolute() else f
+        if not full_path.exists():
+            console.print(f"[yellow]Skipping:[/yellow] {f} (not found)")
+            continue
+
+        file_path = str(f)
+        try:
+            file_hash = content_hash(full_path)
+        except OSError:
+            console.print(f"[yellow]Skipping:[/yellow] {f} (could not read)")
+            continue
+
+        existing = cache.get_cached_judgment(file_path, file_hash) or {}
+        existing[rule_id_upper] = {
+            "verdict": "pass",
+            "reason": "Dismissed via ails dismiss",
+        }
+        cache.set_cached_judgment(file_path, file_hash, existing)
+        dismissed += 1
+
+    console.print(f"[green]Dismissed[/green] {rule_id_upper} for {dismissed} file(s)")
 
 
 @app.command("version")

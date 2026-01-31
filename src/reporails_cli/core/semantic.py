@@ -59,7 +59,7 @@ def extract_snippet(result: dict[str, Any], target: Path) -> str | None:
         region = physical.get("region", {})
 
         # SARIF may include the snippet directly
-        snippet = region.get("snippet", {}).get("text")
+        snippet: str | None = region.get("snippet", {}).get("text")
         if snippet:
             return snippet
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from reporails_cli.core.cache import AnalyticsEntry
@@ -37,11 +37,40 @@ class Severity(str, Enum):
     LOW = "low"  # Weight: 1.0
 
 
+class Tier(str, Enum):
+    """Rule confidence tier, derived from backing source weights."""
+
+    CORE = "core"
+    EXPERIMENTAL = "experimental"
+
+
+class PatternConfidence(str, Enum):
+    """How reliable a rule's detection pattern is."""
+
+    VERY_HIGH = "very_high"  # Exact structural match
+    HIGH = "high"  # Tight regex, rare false positives
+    MEDIUM = "medium"  # Reasonable regex, some edge cases
+    LOW = "low"  # Broad match, known false positives
+    VERY_LOW = "very_low"  # Placeholder or minimal pattern
+
+
+@dataclass(frozen=True)
+class BackedByEntry:
+    """A single evidence backing for a rule.
+
+    Maps to backed_by entries in rule frontmatter (schema v4).
+    """
+
+    source: str  # Source ID from sources.yml
+    claim: str  # Claim ID within that source
+
+
 class Level(str, Enum):
     """Capability levels from framework."""
 
-    L1 = "L1"  # Absent
-    L2 = "L2"  # Basic
+    L0 = "L0"  # Absent
+    L1 = "L1"  # Basic
+    L2 = "L2"  # Scoped
     L3 = "L3"  # Structured
     L4 = "L4"  # Abstracted
     L5 = "L5"  # Governed
@@ -79,8 +108,12 @@ class Rule:
     examples: dict[str, list[str]] | None = None  # {good: [...], bad: [...]}
 
     # References
-    sources: list[int] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
     see_also: list[str] = field(default_factory=list)
+    backed_by: list[BackedByEntry] = field(default_factory=list)
+
+    # Pattern quality
+    pattern_confidence: PatternConfidence | None = None
 
     # Legacy field names (for backward compatibility during transition)
     detection: str | None = None
@@ -187,7 +220,6 @@ class CapabilityResult:
     """Result of capability detection pipeline."""
 
     features: DetectedFeatures
-    capability_score: int  # 0-12
     level: Level  # Base level (L1-L6)
     has_orphan_features: bool  # Has features above base level (display as L3+)
     feature_summary: str  # Human-readable
@@ -206,6 +238,15 @@ class FrictionEstimate:
 
 
 @dataclass
+class AgentConfig:
+    """Agent configuration from framework (agents/{agent}/config.yml)."""
+
+    agent: str = ""
+    excludes: list[str] = field(default_factory=list)
+    overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml)."""
 
@@ -218,8 +259,10 @@ class ProjectConfig:
     """Project-level configuration (.reporails/config.yml)."""
 
     framework_version: str | None = None  # Pin version
+    packages: list[str] = field(default_factory=list)  # Project rule packages
     disabled_rules: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    experimental: bool | list[str] = False  # True, False, or list of rule IDs
 
 
 # =============================================================================
@@ -289,6 +332,14 @@ class PendingSemantic:
 
 
 @dataclass(frozen=True)
+class SkippedExperimental:
+    """Summary of skipped experimental rules."""
+
+    rule_count: int  # Number of experimental rules skipped
+    rules: tuple[str, ...]  # Rule IDs (e.g., "E2", "S3")
+
+
+@dataclass(frozen=True)
 class ValidationResult:
     """Complete validation output."""
 
@@ -304,6 +355,7 @@ class ValidationResult:
     # Evaluation completeness
     is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
     pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules
+    skipped_experimental: SkippedExperimental | None = None  # Summary of skipped experimental rules
 
 
 @dataclass(frozen=True)

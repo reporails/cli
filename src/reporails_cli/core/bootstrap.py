@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import yaml
 
 if TYPE_CHECKING:
-    from reporails_cli.core.models import GlobalConfig
+    from reporails_cli.core.models import AgentConfig, GlobalConfig, ProjectConfig
 
 # Constants
 REPORAILS_HOME = Path.home() / ".reporails"
@@ -58,6 +58,32 @@ def get_agent_rules_path(agent: str) -> Path:
 def get_agent_config_path(agent: str) -> Path:
     """Get path to agent config file (~/.reporails/rules/agents/{agent}/config.yml)."""
     return get_rules_path() / "agents" / agent / "config.yml"
+
+
+def get_agent_config(agent: str) -> AgentConfig:
+    """Load agent config (excludes + overrides) from framework.
+
+    Args:
+        agent: Agent identifier (e.g., "claude")
+
+    Returns:
+        AgentConfig with excludes and overrides, or defaults if missing/malformed
+    """
+    from reporails_cli.core.models import AgentConfig
+
+    config_path = get_agent_config_path(agent)
+    if not config_path.exists():
+        return AgentConfig()
+
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        return AgentConfig(
+            agent=data.get("agent", ""),
+            excludes=data.get("excludes", []),
+            overrides=data.get("overrides", {}),
+        )
+    except (yaml.YAMLError, OSError):
+        return AgentConfig()
 
 
 def get_agent_vars(agent: str = "claude") -> dict[str, str | list[str]]:
@@ -123,6 +149,84 @@ def get_global_config() -> GlobalConfig:
         )
     except (yaml.YAMLError, OSError):
         return GlobalConfig()
+
+
+def get_project_config(project_root: Path) -> ProjectConfig:
+    """Load project configuration from .reporails/config.yml.
+
+    Returns default config if file doesn't exist or is malformed.
+
+    Args:
+        project_root: Root directory of the project
+
+    Returns:
+        ProjectConfig with loaded or default values
+    """
+    from reporails_cli.core.models import ProjectConfig
+
+    config_path = project_root / ".reporails" / "config.yml"
+    if not config_path.exists():
+        return ProjectConfig()
+
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        return ProjectConfig(
+            framework_version=data.get("framework_version"),
+            packages=data.get("packages", []),
+            disabled_rules=data.get("disabled_rules", []),
+            overrides=data.get("overrides", {}),
+            experimental=data.get("experimental", False),
+        )
+    except (yaml.YAMLError, OSError):
+        return ProjectConfig()
+
+
+def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
+    """Resolve package names to directories under .reporails/packages/.
+
+    Silently skips packages whose directory doesn't exist.
+
+    Args:
+        project_root: Root directory of the project
+        packages: List of package names
+
+    Returns:
+        List of existing package directory paths
+    """
+    paths: list[Path] = []
+    for name in packages:
+        pkg_dir = project_root / ".reporails" / "packages" / name
+        if pkg_dir.is_dir():
+            paths.append(pkg_dir)
+    return paths
+
+
+def get_package_level_rules(project_root: Path, packages: list[str]) -> dict[str, list[str]]:
+    """Load and merge level→rules mappings from packages.
+
+    Each package may have a levels.yml defining which levels its rules belong to.
+
+    Args:
+        project_root: Root directory of the project
+        packages: List of package names
+
+    Returns:
+        Dict mapping level key (e.g., "L2") to list of rule IDs
+    """
+    merged: dict[str, list[str]] = {}
+    for name in packages:
+        levels_path = project_root / ".reporails" / "packages" / name / "levels.yml"
+        if not levels_path.exists():
+            continue
+        try:
+            data = yaml.safe_load(levels_path.read_text(encoding="utf-8")) or {}
+            for level_key, level_data in data.get("levels", {}).items():
+                if isinstance(level_data, dict):
+                    rules = level_data.get("rules", [])
+                    merged.setdefault(level_key, []).extend(rules)
+        except (yaml.YAMLError, OSError):
+            continue
+    return merged
 
 
 def get_installed_version() -> str | None:

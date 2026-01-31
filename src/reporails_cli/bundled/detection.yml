@@ -1,0 +1,15 @@
+# Gate-based capability detection (CLI-owned)
+# Determines project capability level from detected features.
+# Level definitions and rule mappings come from the rules repo (levels.yml).
+#
+# Plain string = required (AND with siblings). Nested list = any-of (OR).
+
+detection:
+  L1: [has_instruction_file]
+  L2: [has_explicit_constraints]
+  L3:
+    - has_sections
+    - [has_imports, has_multiple_instruction_files]
+  L4: [has_rules_dir]
+  L5: [component_count_3plus, has_shared_files]
+  L6: [has_backbone]

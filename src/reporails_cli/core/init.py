@@ -46,9 +46,68 @@ OPENGREP_URLS: dict[tuple[str, str], str] = {
     ),
 }
 
-RULES_VERSION = "v0.1.1"
+RULES_VERSION = "v0.2.0"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
+
+# Schema versions this CLI can consume (match on major.minor, ignore patch)
+# Only schemas the CLI reads directly — others are ignored
+REQUIRED_SCHEMAS: dict[str, str] = {
+    "rule": "0.0",
+    "levels": "0.0",
+    "agent": "0.0",
+}
+
+
+class IncompatibleSchemaError(RuntimeError):
+    """Raised when downloaded rules require a newer CLI version."""
+
+
+def check_manifest_compatibility(rules_path: Path) -> None:
+    """Check manifest.yml schema versions against CLI requirements.
+
+    Reads manifest.yml from the rules directory and verifies that
+    all schemas the CLI consumes are at compatible versions.
+
+    Compatibility: major.minor must match. Patch differences are OK.
+
+    Args:
+        rules_path: Path to rules directory containing manifest.yml
+
+    Raises:
+        IncompatibleSchemaError: If any required schema is incompatible
+    """
+    import yaml
+
+    manifest_path = rules_path / "manifest.yml"
+    if not manifest_path.exists():
+        # No manifest = pre-contract rules, accept silently
+        return
+
+    content = manifest_path.read_text(encoding="utf-8")
+    manifest = yaml.safe_load(content) or {}
+    schemas = manifest.get("schemas", {})
+
+    incompatible = []
+    for schema_name, required_prefix in REQUIRED_SCHEMAS.items():
+        actual = schemas.get(schema_name)
+        if actual is None:
+            # Schema not in manifest — accept (might be a new CLI consuming old rules)
+            continue
+
+        # Compare major.minor prefix
+        actual_prefix = ".".join(actual.split(".")[:2])
+        if actual_prefix != required_prefix:
+            incompatible.append(
+                f"  {schema_name}: requires {required_prefix}.x, got {actual}"
+            )
+
+    if incompatible:
+        details = "\n".join(incompatible)
+        raise IncompatibleSchemaError(
+            f"Rules require schema versions this CLI doesn't support:\n{details}\n"
+            "Upgrade the CLI to use these rules."
+        )
 
 
 @dataclass
@@ -206,6 +265,14 @@ def copy_local_framework(source: Path) -> tuple[Path, int]:
             shutil.copytree(source_dir, dest_dir)
             # Count files copied
             count += sum(1 for _ in dest_dir.rglob("*") if _.is_file())
+
+    # Copy root-level files (levels.yml, manifest.yml)
+    root_files = ["levels.yml", "manifest.yml"]
+    for filename in root_files:
+        source_file = source / filename
+        if source_file.exists():
+            shutil.copy2(source_file, rules_path / filename)
+            count += 1
 
     return rules_path, count
 
@@ -370,6 +437,9 @@ def download_rules_version(version: str) -> tuple[Path, int]:
             # Count files
             tarball_count = sum(1 for _ in rules_path.rglob("*") if _.is_file())
 
+    # Verify schema compatibility before committing
+    check_manifest_compatibility(rules_path)
+
     # Write version file
     write_version_file(version)
 
@@ -387,17 +457,6 @@ def update_rules(version: str | None = None, force: bool = False) -> UpdateResul
     Returns:
         UpdateResult with details about the update
     """
-    # Check for local framework override (dev mode)
-    config = get_global_config()
-    if config.framework_path and config.framework_path.exists():
-        return UpdateResult(
-            previous_version=get_installed_version(),
-            new_version="local",
-            updated=False,
-            rule_count=0,
-            message="Using local framework path (dev mode). Disable framework_path in config to update.",
-        )
-
     # Determine target version
     if version:
         target_version = version if version.startswith("v") else f"v{version}"
@@ -439,6 +498,14 @@ def update_rules(version: str | None = None, force: bool = False) -> UpdateResul
                 message=f"Version {target_version} not found.",
             )
         raise
+    except IncompatibleSchemaError as e:
+        return UpdateResult(
+            previous_version=current_version,
+            new_version=target_version,
+            updated=False,
+            rule_count=0,
+            message=str(e),
+        )
 
     return UpdateResult(
         previous_version=current_version,

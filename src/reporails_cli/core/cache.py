@@ -28,6 +28,14 @@ def get_analytics_dir() -> Path:
     return get_reporails_home() / "analytics" / "projects"
 
 
+def content_hash(path: Path) -> str:
+    """SHA256 hash of file content for cache invalidation.
+
+    Returns a prefixed truncated hash suitable for cache keys.
+    """
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
 # =============================================================================
 # Project Identification
 # =============================================================================

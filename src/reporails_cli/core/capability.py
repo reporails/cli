@@ -9,27 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.levels import capability_score_to_level, detect_orphan_features
+from reporails_cli.core.levels import detect_orphan_features, determine_level_from_gates
 from reporails_cli.core.models import (
     CapabilityResult,
     ContentFeatures,
     DetectedFeatures,
     Level,
 )
-
-# Capability weights for scoring
-CAPABILITY_WEIGHTS: dict[str, int] = {
-    "has_instruction_file": 1,
-    "has_sections": 1,
-    "has_imports": 1,
-    "has_explicit_constraints": 1,
-    "has_rules_dir": 2,
-    "has_path_scoped_rules": 1,
-    "has_shared_files": 1,
-    "component_count_3plus": 1,
-    "has_backbone": 2,
-}
-# Max: 12 points
 
 
 def detect_features_content(sarif: dict[str, Any]) -> ContentFeatures:
@@ -67,85 +53,20 @@ def detect_features_content(sarif: dict[str, Any]) -> ContentFeatures:
     )
 
 
-def calculate_capability_score(features: DetectedFeatures) -> int:
-    """Calculate capability score from features.
-
-    Args:
-        features: Detected project features
-
-    Returns:
-        Score from 0 to 12
-    """
-    score = 0
-
-    # Phase 1 features (filesystem)
-    if features.has_instruction_file or features.has_claude_md:
-        score += CAPABILITY_WEIGHTS["has_instruction_file"]
-    if features.has_rules_dir:
-        score += CAPABILITY_WEIGHTS["has_rules_dir"]
-    if features.has_shared_files:
-        score += CAPABILITY_WEIGHTS["has_shared_files"]
-    if features.component_count >= 3:
-        score += CAPABILITY_WEIGHTS["component_count_3plus"]
-    if features.has_backbone:
-        score += CAPABILITY_WEIGHTS["has_backbone"]
-
-    # Phase 2 features (content)
-    if features.has_sections:
-        score += CAPABILITY_WEIGHTS["has_sections"]
-    if features.has_imports:
-        score += CAPABILITY_WEIGHTS["has_imports"]
-    if features.has_explicit_constraints:
-        score += CAPABILITY_WEIGHTS["has_explicit_constraints"]
-    if features.has_path_scoped_rules:
-        score += CAPABILITY_WEIGHTS["has_path_scoped_rules"]
-
-    return score
-
-
-def calculate_filesystem_score(features: DetectedFeatures) -> int:
-    """Calculate capability score from filesystem features only.
-
-    Used for early rule filtering before OpenGrep runs.
-    Returns conservative estimate (may be lower than final level).
-
-    Args:
-        features: Detected project features (filesystem only)
-
-    Returns:
-        Score from 0 to 7 (filesystem features max)
-    """
-    score = 0
-
-    if features.has_instruction_file or features.has_claude_md:
-        score += CAPABILITY_WEIGHTS["has_instruction_file"]
-    if features.has_rules_dir:
-        score += CAPABILITY_WEIGHTS["has_rules_dir"]
-    if features.has_shared_files:
-        score += CAPABILITY_WEIGHTS["has_shared_files"]
-    if features.component_count >= 3:
-        score += CAPABILITY_WEIGHTS["component_count_3plus"]
-    if features.has_backbone:
-        score += CAPABILITY_WEIGHTS["has_backbone"]
-
-    return score
-
-
 def estimate_preliminary_level(features: DetectedFeatures) -> Level:
     """Estimate capability level from filesystem features only.
 
-    Conservative estimate for early rule filtering.
-    Final level is determined after content analysis.
+    Uses gate-based detection with skip_content=True, which treats
+    content-only gates as passing (optimistic). This means slightly
+    more rules loaded for OpenGrep Pass 2, never fewer.
 
     Args:
         features: Detected project features (filesystem only)
 
     Returns:
-        Preliminary Level (may be lower than final)
+        Preliminary Level (may be higher than final)
     """
-    from reporails_cli.core.levels import capability_score_to_level
-    score = calculate_filesystem_score(features)
-    return capability_score_to_level(score)
+    return determine_level_from_gates(features, skip_content=True)
 
 
 def merge_content_features(
@@ -172,7 +93,7 @@ def determine_capability_level(
     features: DetectedFeatures,
     content_features: ContentFeatures | None = None,
 ) -> CapabilityResult:
-    """Determine capability level from features.
+    """Determine capability level from features using gate-based detection.
 
     Two-phase pipeline:
     1. Filesystem features (already in features)
@@ -183,15 +104,14 @@ def determine_capability_level(
         content_features: Optional content features to merge
 
     Returns:
-        CapabilityResult with level, score, and summary
+        CapabilityResult with level and summary
     """
     # Merge content features if provided
     if content_features:
         merge_content_features(features, content_features)
 
-    # Calculate score and level
-    score = calculate_capability_score(features)
-    level = capability_score_to_level(score)
+    # Determine level via gate walk
+    level = determine_level_from_gates(features)
 
     # Check for orphan features
     has_orphan = detect_orphan_features(features, level)
@@ -201,7 +121,6 @@ def determine_capability_level(
 
     return CapabilityResult(
         features=features,
-        capability_score=score,
         level=level,
         has_orphan_features=has_orphan,
         feature_summary=summary,

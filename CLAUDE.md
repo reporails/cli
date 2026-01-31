@@ -12,15 +12,8 @@ You are developing the reporails CLI, not an end user.
 
 Don't conflate these when discussing features, delivery, or documentation.
 
-## Session Start
-
-1. Read `.reporails/backbone.yml` for project structure
-2. Read `docs/specs/arch.md` for architecture decisions
-3. Read `docs/specs/modules.md` before modifying core modules
-
 ## File Reading Strategy
 
-- Check `.reporails/backbone.yml` before searching for files
 - Read specs (`docs/specs/*.md`) before modifying core modules
 - Prefer reading specific files over broad glob patterns
 
@@ -30,10 +23,6 @@ Don't conflate these when discussing features, delivery, or documentation.
 - Use `Glob "src/**/*.py"` to find Python files
 - Limit searches to `src/` or `tests/` directories when possible
 - Avoid grepping the entire repo; scope to relevant paths
-
-## Memory
-
-Reference previous context from `.reporails/backbone.yml` for project structure. The backbone maps all instruction files and their imports.
 
 ## Quick Start
 ```bash

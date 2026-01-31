@@ -14,6 +14,26 @@ from reporails_cli.core.levels import get_rules_for_level
 from reporails_cli.core.models import DetectedFeatures, Level, Rule
 
 
+def _count_components(backbone_data: dict) -> int:  # type: ignore[type-arg]
+    """Count components from backbone data, version-aware.
+
+    v1: count entries in components dict
+    v2: count agents + their directory entries
+    """
+    version = backbone_data.get("version", 1)
+    if version == 1:
+        return len(backbone_data.get("components", {}))
+    # v2: count agents + their directory entries
+    agents = backbone_data.get("agents", {})
+    count = 0
+    for agent_data in agents.values():
+        count += 1  # the agent itself
+        for value in agent_data.values():
+            if isinstance(value, str) and value.endswith("/"):
+                count += 1
+    return count
+
+
 def detect_features_filesystem(target: Path) -> DetectedFeatures:
     """Detect project features from file structure.
 
@@ -82,14 +102,18 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
         try:
             backbone_content = backbone_path.read_text(encoding="utf-8")
             backbone_data = yaml.safe_load(backbone_content)
-            features.component_count = len(backbone_data.get("components", {}))
+            features.component_count = _count_components(backbone_data)
         except (yaml.YAMLError, OSError):
             pass
 
     return features
 
 
-def get_applicable_rules(rules: dict[str, Rule], level: Level) -> dict[str, Rule]:
+def get_applicable_rules(
+    rules: dict[str, Rule],
+    level: Level,
+    extra_level_rules: dict[str, list[str]] | None = None,
+) -> dict[str, Rule]:
     """Filter rules to those applicable at the given level.
 
     Rules apply at their minimum level and above.
@@ -97,12 +121,13 @@ def get_applicable_rules(rules: dict[str, Rule], level: Level) -> dict[str, Rule
     Args:
         rules: Dict of all rules
         level: Detected capability level
+        extra_level_rules: Additional level→rule mappings (e.g., from packages)
 
     Returns:
         Dict of applicable rules
     """
-    # Get rule IDs for this level from levels.yml
-    applicable_ids = get_rules_for_level(level)
+    # Get rule IDs for this level from levels.yml (+ package extras)
+    applicable_ids = get_rules_for_level(level, extra_level_rules)
 
     # Filter rules
     return {k: v for k, v in rules.items() if k in applicable_ids}

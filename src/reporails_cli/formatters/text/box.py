@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from reporails_cli.core.levels import get_level_labels
 from reporails_cli.core.models import ScanDelta
-from reporails_cli.core.scorer import LEVEL_LABELS
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.components import (
     build_score_bar,
@@ -37,7 +37,7 @@ def format_assessment_box(
     violations = data.get("violations", [])
     is_partial = data.get("is_partial", True)
 
-    level_label = LEVEL_LABELS.get(level, level)
+    level_label = get_level_labels().get(level, level)
 
     # Delta indicators
     score_delta_str = format_score_delta(delta, ascii_mode)

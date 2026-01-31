@@ -17,8 +17,9 @@ DEFAULT_RULE_WEIGHT: float = 2.5
 
 # Level labels - must match levels.yml
 LEVEL_LABELS: dict[Level, str] = {
-    Level.L1: "Absent",
-    Level.L2: "Basic",
+    Level.L0: "Absent",
+    Level.L1: "Basic",
+    Level.L2: "Scoped",
     Level.L3: "Structured",
     Level.L4: "Abstracted",
     Level.L5: "Governed",

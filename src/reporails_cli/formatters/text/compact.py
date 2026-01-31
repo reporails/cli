@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from reporails_cli.core.levels import get_level_labels
 from reporails_cli.core.models import ScanDelta, ValidationResult
-from reporails_cli.core.scorer import LEVEL_LABELS
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.components import (
@@ -34,7 +34,7 @@ def format_compact(
 
     score = data.get("score", 0.0)
     level = data.get("level", "L1")
-    level_label = LEVEL_LABELS.get(result.level, "Unknown")
+    level_label = get_level_labels().get(result.level, "Unknown")
     violations = data.get("violations", [])
     is_partial = data.get("is_partial", True)
 
@@ -109,7 +109,7 @@ def format_compact(
 
 def format_score(result: ValidationResult, ascii_mode: bool | None = None) -> str:
     """Format quick score summary for terminal."""
-    level_label = LEVEL_LABELS.get(result.level, "Unknown")
+    level_label = get_level_labels().get(result.level, "Unknown")
     violation_count = len(result.violations)
     partial = " (partial)" if result.is_partial else ""
 
