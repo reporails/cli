@@ -119,6 +119,16 @@ def get_schemas_path() -> Path:
     return get_rules_path() / "schemas"
 
 
+def get_global_packages_path() -> Path:
+    """Get path to global packages directory (~/.reporails/packages/)."""
+    return get_reporails_home() / "packages"
+
+
+def get_recommended_package_path() -> Path:
+    """Get path to recommended package (~/.reporails/packages/recommended/)."""
+    return get_global_packages_path() / "recommended"
+
+
 def get_version_file() -> Path:
     """Get path to version file (~/.reporails/version)."""
     return get_reporails_home() / "version"
@@ -182,9 +192,11 @@ def get_project_config(project_root: Path) -> ProjectConfig:
 
 
 def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
-    """Resolve package names to directories under .reporails/packages/.
+    """Resolve package names to directories.
 
-    Silently skips packages whose directory doesn't exist.
+    Checks project-local (.reporails/packages/<name>) first, then falls back
+    to global (~/.reporails/packages/<name>). Project-local overrides global
+    for the same package name. Silently skips packages not found in either.
 
     Args:
         project_root: Root directory of the project
@@ -193,11 +205,18 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
     Returns:
         List of existing package directory paths
     """
+    global_base = get_global_packages_path()
     paths: list[Path] = []
     for name in packages:
-        pkg_dir = project_root / ".reporails" / "packages" / name
-        if pkg_dir.is_dir():
-            paths.append(pkg_dir)
+        # Project-local takes priority
+        local_dir = project_root / ".reporails" / "packages" / name
+        if local_dir.is_dir():
+            paths.append(local_dir)
+            continue
+        # Fall back to global
+        global_dir = global_base / name
+        if global_dir.is_dir():
+            paths.append(global_dir)
     return paths
 
 
@@ -205,6 +224,8 @@ def get_package_level_rules(project_root: Path, packages: list[str]) -> dict[str
     """Load and merge level→rules mappings from packages.
 
     Each package may have a levels.yml defining which levels its rules belong to.
+    Resolves package paths using the same project-local then global fallback
+    logic as get_package_paths().
 
     Args:
         project_root: Root directory of the project
@@ -214,8 +235,8 @@ def get_package_level_rules(project_root: Path, packages: list[str]) -> dict[str
         Dict mapping level key (e.g., "L2") to list of rule IDs
     """
     merged: dict[str, list[str]] = {}
-    for name in packages:
-        levels_path = project_root / ".reporails" / "packages" / name / "levels.yml"
+    for pkg_path in get_package_paths(project_root, packages):
+        levels_path = pkg_path / "levels.yml"
         if not levels_path.exists():
             continue
         try:

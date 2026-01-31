@@ -8,7 +8,12 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.bootstrap import get_agent_config, get_package_paths, get_project_config, get_rules_path
+from reporails_cli.core.bootstrap import (
+    get_agent_config,
+    get_package_paths,
+    get_project_config,
+    get_rules_path,
+)
 from reporails_cli.core.models import (
     AgentConfig,
     BackedByEntry,
@@ -127,6 +132,7 @@ def load_rules(
     include_experimental: bool = False,
     project_root: Path | None = None,
     agent: str = "",
+    extra_packages: list[str] | None = None,
 ) -> dict[str, Rule]:
     """Load rules from framework, project packages, filtered by tier and config.
 
@@ -172,7 +178,12 @@ def load_rules(
 
     # 4. Load project packages (override framework rules by ID)
     config = _load_project_config(project_root)
-    for pkg_path in get_package_paths(project_root or Path(), config.packages):
+    packages = list(config.packages)
+    if extra_packages:
+        for pkg in extra_packages:
+            if pkg not in packages:
+                packages.append(pkg)
+    for pkg_path in get_package_paths(project_root or Path(), packages):
         rules.update(_load_from_path(pkg_path))
 
     # 5. Filter by tier if experimental not included

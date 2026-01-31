@@ -9,9 +9,15 @@ import pytest
 import yaml
 
 from reporails_cli.core.bootstrap import get_agent_config
-from reporails_cli.core.models import AgentConfig, Category, Check, Rule, RuleType, Severity
+from reporails_cli.core.models import (
+    AgentConfig,
+    Category,
+    Check,
+    Rule,
+    RuleType,
+    Severity,
+)
 from reporails_cli.core.registry import _apply_agent_overrides, load_rules
-
 
 # =============================================================================
 # get_agent_config tests

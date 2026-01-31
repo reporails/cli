@@ -49,6 +49,7 @@ def run_validation(
     record_analytics: bool = True,
     agent: str = "",
     include_experimental: bool = False,
+    extra_packages: list[str] | None = None,
 ) -> ValidationResult:
     """Run full validation on target directory.
 
@@ -84,7 +85,7 @@ def run_validation(
 
     # Load rules if not provided
     if rules is None:
-        rules = load_rules(rules_dir, include_experimental=include_experimental, project_root=project_root, agent=agent)
+        rules = load_rules(rules_dir, include_experimental=include_experimental, project_root=project_root, agent=agent, extra_packages=extra_packages)
 
     # Track skipped experimental rules (for display when not included)
     skipped_experimental = None
@@ -123,9 +124,14 @@ def run_validation(
 
     # Load package level mappings for applicability filtering
     config = get_project_config(project_root) if project_root else None
+    packages = list(config.packages) if config else []
+    if extra_packages:
+        for pkg in extra_packages:
+            if pkg not in packages:
+                packages.append(pkg)
     package_level_rules = (
-        get_package_level_rules(project_root, config.packages)
-        if config and config.packages
+        get_package_level_rules(project_root, packages)
+        if packages
         else {}
     )
 
@@ -235,6 +241,7 @@ def run_validation_sync(
     agent: str = "",
     checks_dir: Path | None = None,  # Legacy alias
     include_experimental: bool = False,
+    extra_packages: list[str] | None = None,
 ) -> ValidationResult:
     """Legacy alias for run_validation (now sync)."""
     # Support legacy checks_dir parameter
@@ -242,5 +249,5 @@ def run_validation_sync(
         rules_dir = checks_dir
     return run_validation(
         target, rules, opengrep_path, rules_dir, use_cache,
-        record_analytics, agent, include_experimental
+        record_analytics, agent, include_experimental, extra_packages
     )

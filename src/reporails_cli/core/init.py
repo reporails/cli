@@ -16,6 +16,7 @@ from reporails_cli.core.bootstrap import (
     get_global_config,
     get_installed_version,
     get_opengrep_bin,
+    get_recommended_package_path,
     get_reporails_home,
     get_version_file,
 )
@@ -45,6 +46,12 @@ OPENGREP_URLS: dict[tuple[str, str], str] = {
         f"v{OPENGREP_VERSION}/opengrep-core_windows_x86.zip"
     ),
 }
+
+RECOMMENDED_REPO = "reporails/recommended"
+RECOMMENDED_BRANCH = "0.0.1"
+RECOMMENDED_ARCHIVE_URL = (
+    f"https://github.com/{RECOMMENDED_REPO}/archive/refs/heads/{RECOMMENDED_BRANCH}.tar.gz"
+)
 
 RULES_VERSION = "v0.2.0"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
@@ -335,6 +342,72 @@ def download_from_github() -> tuple[Path, int]:
     tarball_count = download_rules_tarball(rules_path)
 
     return rules_path, yml_count + tarball_count
+
+
+def is_recommended_installed() -> bool:
+    """Check if recommended package is installed with content."""
+    pkg_path = get_recommended_package_path()
+    if not pkg_path.exists():
+        return False
+    # Must have at least one file
+    return any(pkg_path.iterdir())
+
+
+def download_recommended() -> Path:
+    """Download recommended rules package from GitHub archive.
+
+    Fetches the archive from reporails/recommended, extracts to
+    ~/.reporails/packages/recommended/, stripping the top-level directory
+    prefix that GitHub adds to archives.
+
+    Returns:
+        Path to the installed package directory
+    """
+    import tarfile
+
+    pkg_path = get_recommended_package_path()
+
+    # Clear existing
+    if pkg_path.exists():
+        shutil.rmtree(pkg_path)
+
+    pkg_path.mkdir(parents=True, exist_ok=True)
+
+    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+        response = client.get(RECOMMENDED_ARCHIVE_URL)
+        response.raise_for_status()
+
+        with TemporaryDirectory() as tmpdir:
+            tarball_path = Path(tmpdir) / "recommended.tar.gz"
+            tarball_path.write_bytes(response.content)
+
+            with tarfile.open(tarball_path, "r:gz") as tar:
+                tar.extractall(path=tmpdir)
+
+            # GitHub archives extract to <repo>-<branch>/ — find and move contents
+            extracted_dirs = [
+                d for d in Path(tmpdir).iterdir()
+                if d.is_dir() and d.name != "__MACOSX"
+                and d.name.startswith("recommended-")
+            ]
+            if extracted_dirs:
+                source_dir = extracted_dirs[0]
+                for item in source_dir.iterdir():
+                    dest = pkg_path / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, dest)
+                    else:
+                        shutil.copy2(item, dest)
+            else:
+                # Fallback: extract directly (non-GitHub archive)
+                with tarfile.open(tarball_path, "r:gz") as tar:
+                    tar.extractall(path=pkg_path)
+
+    # Write version marker
+    version_file = pkg_path / ".version"
+    version_file.write_text(RECOMMENDED_BRANCH + "\n", encoding="utf-8")
+
+    return pkg_path
 
 
 def download_rules() -> tuple[Path, int]:

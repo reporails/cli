@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
+from unittest.mock import patch
 
 from reporails_cli.core.bootstrap import get_package_paths, get_project_config
-from reporails_cli.core.models import ProjectConfig
 
 
 class TestGetProjectConfig:
@@ -93,6 +91,55 @@ class TestGetPackagePaths:
     def test_empty_packages_list(self, tmp_path: Path) -> None:
         paths = get_package_paths(tmp_path, [])
         assert paths == []
+
+    def test_resolves_from_global_packages(self, tmp_path: Path) -> None:
+        """Global ~/.reporails/packages/ is checked as fallback."""
+        global_pkg = tmp_path / "global_home" / "packages" / "recommended"
+        global_pkg.mkdir(parents=True)
+
+        project = tmp_path / "project"
+        project.mkdir()
+
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_packages_path",
+            return_value=tmp_path / "global_home" / "packages",
+        ):
+            paths = get_package_paths(project, ["recommended"])
+        assert paths == [global_pkg]
+
+    def test_project_local_overrides_global(self, tmp_path: Path) -> None:
+        """Project-local package takes priority over global."""
+        global_pkg = tmp_path / "global_home" / "packages" / "recommended"
+        global_pkg.mkdir(parents=True)
+
+        project = tmp_path / "project"
+        local_pkg = project / ".reporails" / "packages" / "recommended"
+        local_pkg.mkdir(parents=True)
+
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_packages_path",
+            return_value=tmp_path / "global_home" / "packages",
+        ):
+            paths = get_package_paths(project, ["recommended"])
+        assert paths == [local_pkg]
+
+    def test_mixed_local_and_global(self, tmp_path: Path) -> None:
+        """One package local, another global."""
+        global_pkg = tmp_path / "global_home" / "packages" / "recommended"
+        global_pkg.mkdir(parents=True)
+
+        project = tmp_path / "project"
+        local_pkg = project / ".reporails" / "packages" / "custom"
+        local_pkg.mkdir(parents=True)
+
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_packages_path",
+            return_value=tmp_path / "global_home" / "packages",
+        ):
+            paths = get_package_paths(project, ["custom", "recommended"])
+        assert len(paths) == 2
+        assert paths[0] == local_pkg
+        assert paths[1] == global_pkg
 
 
 # Helper to create a minimal rule .md file with frontmatter
