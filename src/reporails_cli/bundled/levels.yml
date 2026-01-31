@@ -1,99 +1,52 @@
-# Level definitions and rule-to-level mapping
-# CLI-owned configuration for orchestration logic
+# Canonical level definitions for the Reporails framework.
+# Source of truth: docs/capability-levels.md (Capability Assessment Matrix)
+#
+# CLI consumers should prefer this file over any bundled copy.
 
 levels:
-  L1:
+  L0:
     name: Absent
-    required_rules: []
+    description: No instruction file
+    rules: []
+
+  L1:
+    name: Basic
+    description: Instruction file exists, reviewed, has basic content
+    rules: [CLAUDE_M1, S1, C1, C2, C4, C8, C9, C10, C12]
 
   L2:
-    name: Basic
-    includes: [L1]
-    required_rules:
-      - S1   # Size limits
-      - C1   # Core sections
-      - C2   # Explicit over implicit
-      - C4   # Anti-pattern documentation
-      - C7   # Emphasis discipline
-      - C8   # Instructions over philosophy
-      - C9   # Has project description
-      - C10  # Has NEVER statements
-      - C12  # Has version/date
-      - M5   # Auto-generated content review
+    name: Scoped
+    description: Project-specific constraints and tool delegation
+    rules: [C5, C7, S2, S3, S5, M1]
 
   L3:
     name: Structured
-    includes: [L2]
-    required_rules:
-      - S2   # Progressive disclosure
-      - S3   # No embedded code snippets
-      - S7   # Clear markdown structure
-      - C3   # Context-specific content
-      - C6   # Single source of truth
-      - C11  # Links are valid
-      - E6   # Code block line limit
-      - E7   # Import count
-      - M1   # Version control
-      - M2   # Review process
+    description: Clear sections, external references, organized content
+    rules: [C3, C6, C11, E1, E6, E7, E8, M2, M4]
 
   L4:
     name: Abstracted
-    includes: [L3]
-    required_rules:
-      - S4   # Hierarchical memory
-      - S5   # Path-scoped rules
-      - E1   # Deterministic tools for style
-      - E3   # Purpose-based file reading
-      - E4   # Memory reference
-      - E5   # Grep efficiency
-      - E8   # Context window awareness
-      - M7   # Rule snippet length enforcement
+    description: Rules directory, path-scoped loading
+    rules: [CLAUDE_S1, CLAUDE_S2, CLAUDE_S3, CLAUDE_M2, E3, E4, E5, M3]
 
   L5:
     name: Governed
-    includes: [L4]
-    required_rules:
-      - G1   # Organization-level policies
-      - G2   # Team governance structure
-      - G3   # Security rules ownership
-      - G4   # Ownership assignment
-      - G8   # Metrics and CI/CD checks
-      - M3   # Change management
-      - M4   # No conflicting rules
+    description: Team policies, process controls, compliance tracking
+    rules: [CLAUDE_G1, G1, G2, G3, G7]
 
   L6:
     name: Adaptive
-    includes: [L5]
-    required_rules:
-      - S6   # YAML backbone
-      - C5   # MUST/MUST NOT with context
-      - E2   # Session start ritual
-      - G5   # Contract registry
-      - G6   # Component-contract binding
-      - G7   # Architecture tests
-      - M6   # Map staleness prevention
+    description: Backbone-driven navigation, contracts
+    rules: [S4, E2, G4, G5, G6, M5]
 
-# Capability score thresholds
-score_thresholds:
-  L1: 0
-  L2: 1
-  L3: 3
-  L4: 5
-  L5: 7
-  L6: 10
-
-# Feature detection for capability scoring
+# Gate-based capability detection
+# Plain string = required (AND with siblings). Nested list = any-of (OR).
 detection:
-  L6:
-    - has_backbone
-  L5:
-    - component_count_3plus
-    - has_shared_files
-  L4:
-    - has_rules_dir
+  L1: [has_instruction_file]
+  L2: [has_explicit_constraints]
   L3:
-    - has_imports
-    - has_multiple_instruction_files
-  L2:
-    - has_instruction_file
-  L1: []
+    - has_sections
+    - [has_imports, has_multiple_instruction_files]
+  L4: [has_rules_dir]
+  L5: [component_count_3plus, has_shared_files]
+  L6: [has_backbone]

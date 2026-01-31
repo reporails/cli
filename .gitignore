@@ -15,6 +15,8 @@ docs/research
 
 .env
 
-# Claude Code MCP config (machine-specific paths)
+# Claude Code (machine-specific)
 .claude/mcp.json
+.claude/settings.local.json
+.claude/skills/
 .mcp.json

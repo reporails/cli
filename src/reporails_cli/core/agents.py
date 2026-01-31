@@ -24,6 +24,7 @@ class AgentType:
     instruction_patterns: tuple[str, ...]  # Glob patterns for instruction files
     config_patterns: tuple[str, ...]  # Glob patterns for config files
     rule_patterns: tuple[str, ...]  # Glob patterns for rule/snippet files
+    directory_patterns: tuple[tuple[str, str], ...] = ()  # (label, dir_path) pairs
 
 
 # Known coding agents and their conventions
@@ -34,6 +35,11 @@ KNOWN_AGENTS: dict[str, AgentType] = {
         instruction_patterns=("CLAUDE.md", "**/CLAUDE.md"),
         config_patterns=(".claude/settings.json", ".claude/mcp.json"),
         rule_patterns=(".claude/rules/*.md", ".claude/**/*.md"),
+        directory_patterns=(
+            ("rules", ".claude/rules"),
+            ("skills", ".claude/skills"),
+            ("tasks", ".claude/tasks"),
+        ),
     ),
     "cursor": AgentType(
         id="cursor",
@@ -41,6 +47,9 @@ KNOWN_AGENTS: dict[str, AgentType] = {
         instruction_patterns=(".cursorrules", ".cursor/rules/*.md"),
         config_patterns=(".cursor/settings.json",),
         rule_patterns=(".cursor/rules/*.md",),
+        directory_patterns=(
+            ("rules", ".cursor/rules"),
+        ),
     ),
     "windsurf": AgentType(
         id="windsurf",
@@ -81,6 +90,7 @@ class DetectedAgent:
     instruction_files: list[Path] = field(default_factory=list)
     config_files: list[Path] = field(default_factory=list)
     rule_files: list[Path] = field(default_factory=list)
+    detected_directories: dict[str, str] = field(default_factory=dict)
 
 
 def detect_agents(target: Path) -> list[DetectedAgent]:
@@ -114,6 +124,13 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
         for pattern in agent_type.rule_patterns:
             rule_files.extend(target.glob(pattern))
 
+        # Detect directories
+        detected_dirs: dict[str, str] = {}
+        for label, dir_path in agent_type.directory_patterns:
+            full_path = target / dir_path
+            if full_path.is_dir() and any(full_path.iterdir()):
+                detected_dirs[label] = dir_path + "/"
+
         # Only include if we found at least one instruction file
         if instruction_files:
             detected.append(
@@ -122,6 +139,7 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
                     instruction_files=sorted(set(instruction_files)),
                     config_files=sorted(set(config_files)),
                     rule_files=sorted(set(rule_files)),
+                    detected_directories=detected_dirs,
                 )
             )
 

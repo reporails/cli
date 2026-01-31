@@ -65,6 +65,18 @@ def _format_pending_section(
     )
 
 
+def _format_experimental_section(
+    result: ValidationResult,
+) -> str:
+    """Format skipped experimental rules section."""
+    if not result.skipped_experimental:
+        return ""
+
+    se = result.skipped_experimental
+    rule_list = ", ".join(se.rules)
+    return f"[dim]Experimental rules not checked: {se.rule_count}\n  Use --experimental to include: {rule_list}[/dim]"
+
+
 def _format_cta(
     result: ValidationResult,
     ascii_mode: bool | None = None,
@@ -119,6 +131,12 @@ def format_result(
     friction_level = friction if isinstance(friction, str) else friction.get("level", "none")
     if friction_level != "none":
         sections.append(f"Friction: {friction_level.title()}")
+
+    # Skipped experimental rules
+    experimental = _format_experimental_section(result)
+    if experimental:
+        sections.append("")
+        sections.append(experimental)
 
     # MCP CTA (only if partial, not quiet, and CTA enabled)
     if show_mcp_cta and result.is_partial and not quiet_semantic:

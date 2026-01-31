@@ -198,43 +198,6 @@ class TestCapabilityLevelDetermination:
         assert result.level is not None, "Should determine a level even for minimal project"
 
 
-class TestCapabilityScoring:
-    """Test capability score calculation."""
-
-    def test_score_increases_with_features(
-        self,
-        level1_project: Path,
-        level3_project: Path,
-    ) -> None:
-        """More features should result in higher capability score."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            calculate_capability_score,
-            detect_features_content,
-            merge_content_features,
-        )
-        from reporails_cli.core.opengrep import run_capability_detection
-
-        # Level 1 score
-        features1 = detect_features_filesystem(level1_project)
-        sarif1 = run_capability_detection(level1_project)
-        content1 = detect_features_content(sarif1)
-        merge_content_features(features1, content1)
-        score1 = calculate_capability_score(features1)
-
-        # Level 3 score
-        features3 = detect_features_filesystem(level3_project)
-        sarif3 = run_capability_detection(level3_project)
-        content3 = detect_features_content(sarif3)
-        merge_content_features(features3, content3)
-        score3 = calculate_capability_score(features3)
-
-        assert score3 > score1, (
-            f"Level 3 project should score higher than Level 1: "
-            f"L3={score3}, L1={score1}"
-        )
-
-
 class TestLevelDeterminism:
     """Test that level detection is deterministic."""
 
@@ -259,25 +222,23 @@ class TestLevelDeterminism:
             f"Level detection should be deterministic, got different results: {results}"
         )
 
-    def test_same_score_same_level(self, level3_project: Path) -> None:
-        """Same capability score should always map to same level."""
+    def test_same_features_same_level(self, level3_project: Path) -> None:
+        """Same features should always map to same level."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
-            calculate_capability_score,
             detect_features_content,
             merge_content_features,
         )
-        from reporails_cli.core.levels import capability_score_to_level
+        from reporails_cli.core.levels import determine_level_from_gates
         from reporails_cli.core.opengrep import run_capability_detection
 
         features = detect_features_filesystem(level3_project)
         sarif = run_capability_detection(level3_project)
         content_features = detect_features_content(sarif)
         merge_content_features(features, content_features)
-        score = calculate_capability_score(features)
 
-        # Same score should always give same level
-        levels = [capability_score_to_level(score) for _ in range(5)]
+        # Same features should always give same level
+        levels = [determine_level_from_gates(features) for _ in range(5)]
         assert len(set(levels)) == 1, (
-            f"Same score ({score}) should give same level, got: {levels}"
+            f"Same features should give same level, got: {levels}"
         )
