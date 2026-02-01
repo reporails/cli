@@ -18,5 +18,6 @@ docs/research
 # Claude Code (machine-specific)
 .claude/mcp.json
 .claude/settings.local.json
-.claude/skills/
+.claude/skills/*
+!.claude/skills/add-changelog-entry/
 .mcp.json
