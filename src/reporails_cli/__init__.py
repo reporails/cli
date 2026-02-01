@@ -1,4 +1,4 @@
-"""Reporails - Lint and score CLAUDE.md files."""
+"""Reporails - Validate and score CLAUDE.md files."""
 
 from __future__ import annotations
 

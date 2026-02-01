@@ -1,6 +1,6 @@
 # Reporails CLI v0.1.0
 
-AI instruction linter. Validates instruction files against community-maintained rules.
+AI instruction validator. Validates instruction files against community-maintained rules.
 
 ## Development Context
 
