@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from reporails_cli.core.init import (
     RECOMMENDED_ARCHIVE_URL,
-    RECOMMENDED_BRANCH,
+    RECOMMENDED_VERSION,
     download_recommended,
     is_recommended_installed,
 )
@@ -105,7 +105,7 @@ class TestDownloadRecommended:
         # Version file written
         version_file = pkg_dir / ".version"
         assert version_file.exists()
-        assert version_file.read_text().strip() == RECOMMENDED_BRANCH
+        assert version_file.read_text().strip() == RECOMMENDED_VERSION
 
     def test_clears_existing_before_download(self, tmp_path: Path) -> None:
         """Old content is removed before extracting new."""

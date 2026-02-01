@@ -15,12 +15,17 @@ Usage:
   reporails install [--scope user|project]   Register MCP server with Claude Code
   reporails uninstall [--scope user|project] Remove MCP server from Claude Code
   reporails check [PATH] [OPTIONS]           Validate instruction files
+  reporails explain RULE_ID                  Show rule details
+  reporails update                           Update rules framework
+  reporails dismiss RULE_ID                  Dismiss a semantic finding
+  reporails version                          Show version info
   reporails <command> [args...]              Proxy any command to ails CLI
 
 Examples:
   npx @reporails/cli install          # Add MCP server (user scope)
-  npx @reporails/cli check .          # Score your setup
+  npx @reporails/cli check            # Score your setup
   npx @reporails/cli explain S1       # Explain a rule
+  npx @reporails/cli update           # Update rules
 
 Prerequisites:
   Node.js >= 18 (uv is auto-installed if missing)

@@ -48,9 +48,9 @@ OPENGREP_URLS: dict[tuple[str, str], str] = {
 }
 
 RECOMMENDED_REPO = "reporails/recommended"
-RECOMMENDED_BRANCH = "0.0.1"
+RECOMMENDED_VERSION = "0.0.1"
 RECOMMENDED_ARCHIVE_URL = (
-    f"https://github.com/{RECOMMENDED_REPO}/archive/refs/heads/{RECOMMENDED_BRANCH}.tar.gz"
+    f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{RECOMMENDED_VERSION}.tar.gz"
 )
 
 RULES_VERSION = "v0.2.0"
@@ -384,7 +384,7 @@ def download_recommended() -> Path:
             with tarfile.open(tarball_path, "r:gz") as tar:
                 tar.extractall(path=tmpdir)
 
-            # GitHub archives extract to <repo>-<branch>/ — find and move contents
+            # GitHub archives extract to <repo>-<tag>/ — find and move contents
             extracted_dirs = [
                 d for d in Path(tmpdir).iterdir()
                 if d.is_dir() and d.name != "__MACOSX"
@@ -405,7 +405,7 @@ def download_recommended() -> Path:
 
     # Write version marker
     version_file = pkg_path / ".version"
-    version_file.write_text(RECOMMENDED_BRANCH + "\n", encoding="utf-8")
+    version_file.write_text(RECOMMENDED_VERSION + "\n", encoding="utf-8")
 
     return pkg_path
 
