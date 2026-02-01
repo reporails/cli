@@ -54,6 +54,8 @@ src/reporails_cli/
 └── formatters/     # Output adapters
 ```
 
+Path-scoped rules in `.claude/rules/` — see those files for context-specific constraints.
+
 See `docs/specs/arch.md` for full architecture.
 
 ## Framework vs CLI
