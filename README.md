@@ -5,7 +5,15 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ## Quick Start
 
-### MCP Integration (for Claude Code)
+### One-line install (npm)
+
+```bash
+npx @reporails/cli install
+```
+
+This registers the MCP server with Claude Code. Then ask Claude: `What ails claude?`
+
+### MCP Integration (manual)
 
 For full semantic analysis, add the MCP server:
 ```bash
