@@ -1,4 +1,4 @@
-"""Typer CLI for reporails - lint and score AI instruction files."""
+"""Typer CLI for reporails - validate and score AI instruction files."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from reporails_cli.formatters import text as text_formatter
 
 app = typer.Typer(
     name="ails",
-    help="Lint and score CLAUDE.md files - what ails your repo?",
+    help="Validate and score CLAUDE.md files - what ails your repo?",
     no_args_is_help=True,
 )
 console = Console()

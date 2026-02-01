@@ -29,9 +29,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="validate",
             description=(
-                "Lint and score AI coding agent instruction files (CLAUDE.md, .cursorrules, copilot-instructions.md, etc). "
+                "Validate and score AI coding agent instruction files (CLAUDE.md, .cursorrules, copilot-instructions.md, etc). "
                 "Returns violations, score (0-10), capability level (L1-L6), and semantic rules for you to evaluate inline. "
-                "Use when user asks: 'what ails', 'check instructions', 'lint setup', 'score my config', 'validate agent files'. "
+                "Use when user asks: 'what ails', 'check instructions', 'score my config', 'validate agent files'. "
                 "Prefer this over running 'ails' via bash — only this tool returns semantic candidates for your evaluation."
             ),
             inputSchema={

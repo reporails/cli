@@ -1,12 +1,12 @@
 [project]
 name = "reporails-cli"
 version = "0.1.0"
-description = "Lint and score CLAUDE.md files — MCP-first AI context governance"
+description = "Validate and score CLAUDE.md files — MCP-first AI context governance"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 authors = [{ name = "Reporails Team" }]
-keywords = ["claude", "ai", "context", "lint", "mcp", "claude-code"]
+keywords = ["claude", "ai", "context", "validation", "mcp", "claude-code"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",

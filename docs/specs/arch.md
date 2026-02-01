@@ -1,10 +1,10 @@
 # Architecture Overview
 
-> Version 0.1.0 | AI Instruction Linter
+> Version 0.1.0 | AI Instruction Validator
 
 ## Overview
 
-Reporails lints AI coding agent instruction files against community-maintained rules.
+Reporails validates AI coding agent instruction files against community-maintained rules.
 
 | Purpose | Name |
 |---------|------|
@@ -286,7 +286,7 @@ Engine extracts content
 **Currently supported (v0.0.1):**
 - Claude: `CLAUDE.md`, `.claude/rules/*.md`
 
-**Discovery-ready (detection only, no linting rules yet):**
+**Discovery-ready (detection only, no validation rules yet):**
 
 | Agent | Instruction Files | Status |
 |-------|-------------------|--------|
