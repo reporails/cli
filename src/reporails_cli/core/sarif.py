@@ -141,9 +141,11 @@ def parse_sarif(sarif: dict[str, Any], rules: dict[str, Rule]) -> list[Violation
             message = result.get("message", {}).get("text", "")
             location = get_location(result)
 
-            # Get rule metadata
+            # Get rule metadata — skip results not in the provided rules dict
             rule = rules.get(short_rule_id)
-            title = rule.title if rule else sarif_rule_id
+            if rule is None:
+                continue
+            title = rule.title
             severity = get_severity(rule, check_slug)
 
             violations.append(

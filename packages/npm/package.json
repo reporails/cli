@@ -1,0 +1,30 @@
+{
+  "name": "@reporails/cli",
+  "version": "0.1.0",
+  "description": "Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.",
+  "type": "module",
+  "bin": {
+    "reporails": "bin/reporails.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "linter",
+    "ai-instructions",
+    "claude-md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reporails/cli"
+  },
+  "license": "Apache-2.0",
+  "author": "Reporails"
+}
