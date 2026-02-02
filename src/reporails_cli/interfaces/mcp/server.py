@@ -94,26 +94,34 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "description": "Array of judgment results from semantic rule evaluation",
                         "items": {
-                            "type": "object",
-                            "properties": {
-                                "rule_id": {
+                            "oneOf": [
+                                {
                                     "type": "string",
-                                    "description": "Rule ID (e.g., C6, M4)",
+                                    "description": "Compact format: 'rule_id:location:verdict:reason' (e.g., 'C6:CLAUDE.md:pass:Criteria met')",
                                 },
-                                "location": {
-                                    "type": "string",
-                                    "description": "File path (e.g., CLAUDE.md)",
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "rule_id": {
+                                            "type": "string",
+                                            "description": "Rule ID (e.g., C6, M4)",
+                                        },
+                                        "location": {
+                                            "type": "string",
+                                            "description": "File path (e.g., CLAUDE.md)",
+                                        },
+                                        "verdict": {
+                                            "type": "string",
+                                            "description": "Evaluation result: 'pass' or 'fail'",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "description": "Brief explanation of the verdict",
+                                        },
+                                    },
+                                    "required": ["rule_id", "location", "verdict"],
                                 },
-                                "verdict": {
-                                    "type": "string",
-                                    "description": "Evaluation result: 'pass' or 'fail'",
-                                },
-                                "reason": {
-                                    "type": "string",
-                                    "description": "Brief explanation of the verdict",
-                                },
-                            },
-                            "required": ["rule_id", "location", "verdict"],
+                            ],
                         },
                     },
                 },
@@ -208,8 +216,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 "If all semantic rules pass, the score remains the same but is now COMPLETE (not partial). "
                 "If any semantic rules fail, add those violations and recalculate.\n\n"
                 "IMPORTANT: After evaluation, call the 'record_judgments' tool to cache your verdicts. "
-                "This prevents re-evaluation on subsequent runs. Pass each rule's verdict as:\n"
-                '  {"rule_id": "C6", "location": "CLAUDE.md", "verdict": "pass"|"fail", "reason": "..."}'
+                "This prevents re-evaluation on subsequent runs. "
+                "Pass verdicts as compact strings: \"rule_id:location:verdict:reason\"\n"
+                '  e.g. ["C6:CLAUDE.md:pass:Criteria met", "M2:.claude/rules/foo.md:fail:Contradictions found"]'
             )
 
         return [TextContent(type="text", text="\n".join(response_parts))]
@@ -232,10 +241,17 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         recorded = 0
 
         for j in judgments:
-            rule_id = j.get("rule_id", "")
-            location = j.get("location", "")
-            verdict = j.get("verdict", "")
-            reason = j.get("reason", "")
+            if isinstance(j, str):
+                parts = j.split(":", 3)
+                if len(parts) < 3:
+                    continue
+                rule_id, location, verdict = parts[0], parts[1], parts[2]
+                reason = parts[3] if len(parts) > 3 else ""
+            else:
+                rule_id = j.get("rule_id", "")
+                location = j.get("location", "")
+                verdict = j.get("verdict", "")
+                reason = j.get("reason", "")
 
             if not rule_id or not location or not verdict:
                 continue
