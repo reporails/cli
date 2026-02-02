@@ -116,17 +116,28 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
     backbone_path = target / ".reporails" / "backbone.yml"
     features.has_backbone = backbone_path.exists()
 
-    # Count instruction files
-    claude_files = list(target.rglob("CLAUDE.md"))
-    features.instruction_file_count = len(claude_files)
-    features.has_multiple_instruction_files = len(claude_files) > 1
+    # Count instruction files (all agents, not just CLAUDE.md)
+    all_instruction_files = get_all_instruction_files(target)
+    features.instruction_file_count = len(all_instruction_files)
+    features.has_multiple_instruction_files = len(all_instruction_files) > 1
 
     if features.instruction_file_count > 0:
         features.has_instruction_file = True
 
-    # Check for hierarchical structure (nested CLAUDE.md)
-    for cf in claude_files:
-        if cf.parent != target:
+    # Check for hierarchical structure: any agent with the same instruction
+    # file name appearing at multiple directory levels (e.g. root CLAUDE.md
+    # + nested src/CLAUDE.md).  Driven by detect_agents(), not hardcoded names.
+    from reporails_cli.core.agents import detect_agents
+
+    for detected in detect_agents(target):
+        names_at_root: set[str] = set()
+        has_nested = False
+        for f in detected.instruction_files:
+            if f.parent == target:
+                names_at_root.add(f.name)
+            else:
+                has_nested = True
+        if names_at_root and has_nested:
             features.has_hierarchical_structure = True
             break
 

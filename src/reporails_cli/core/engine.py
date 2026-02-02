@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from reporails_cli.bundled import get_capability_patterns_path
+from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.applicability import detect_features_filesystem, get_applicable_rules
 from reporails_cli.core.bootstrap import (
     get_agent_vars,
@@ -107,12 +108,21 @@ def run_validation(
 
     # Content feature detection via OpenGrep (capability patterns only)
     extra_targets = features.resolved_symlinks or None
+
+    # Compute instruction files once — pass directly to OpenGrep to avoid
+    # scanning the entire project tree (major perf win on large repos)
+    instruction_files = get_all_instruction_files(project_root) or None
+    if instruction_files and extra_targets:
+        # Merge resolved symlinks into instruction files (deduped in runner)
+        instruction_files = list(instruction_files) + list(extra_targets)
+
     capability_patterns = get_capability_patterns_path()
     capability_sarif = {}
     if capability_patterns.exists():
         capability_sarif = run_opengrep(
             [capability_patterns], target, opengrep_path, template_context,
             extra_targets=extra_targets,
+            instruction_files=instruction_files,
         )
 
     content_features = detect_features_content(capability_sarif)
@@ -148,6 +158,7 @@ def run_validation(
         rule_sarif = run_opengrep(
             rule_yml_paths, target, opengrep_path, template_context,
             extra_targets=extra_targets,
+            instruction_files=instruction_files,
         )
 
     # Split by type
