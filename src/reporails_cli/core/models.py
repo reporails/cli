@@ -185,7 +185,7 @@ class DetectedFeatures:
     has_claude_md: bool = False  # CLAUDE.md at root (legacy compat)
 
     # Directory structure
-    has_rules_dir: bool = False  # .claude/rules/, .cursor/rules/, etc.
+    is_abstracted: bool = False  # .claude/rules/, .claude/skills/, etc.
     has_shared_files: bool = False  # .shared/, shared/, cross-refs
     has_backbone: bool = False  # .reporails/backbone.yml
 

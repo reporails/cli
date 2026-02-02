@@ -98,16 +98,18 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
     features.has_claude_md = root_claude.exists()
     features.has_instruction_file = features.has_claude_md
 
-    # Check for .claude/rules/
-    rules_dir = target / ".claude" / "rules"
-    features.has_rules_dir = rules_dir.exists() and any(rules_dir.glob("*.md"))
-
-    # Check for other agent rules directories
-    other_rules = [".cursor/rules", ".ai/rules"]
-    for pattern in other_rules:
-        other_dir = target / pattern
-        if other_dir.exists() and any(other_dir.glob("*.md")):
-            features.has_rules_dir = True
+    # Check for abstracted structure (rules, skills, agents directories)
+    abstracted_dirs = [
+        ".claude/rules",
+        ".claude/skills",
+        ".claude/agents",
+        ".cursor/rules",
+        ".ai/rules",
+    ]
+    for dirname in abstracted_dirs:
+        d = target / dirname
+        if d.exists() and any(d.iterdir()):
+            features.is_abstracted = True
             break
 
     # Check for backbone.yml
@@ -203,8 +205,8 @@ def get_feature_summary(features: DetectedFeatures) -> str:
 
     # Features present
     feature_list = []
-    if features.has_rules_dir:
-        feature_list.append(".claude/rules/")
+    if features.is_abstracted:
+        feature_list.append("abstracted")
     if features.has_backbone:
         feature_list.append("backbone.yml")
     if features.has_shared_files:

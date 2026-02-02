@@ -149,8 +149,8 @@ def get_feature_summary(features: DetectedFeatures) -> str:
 
     # Features present
     feature_list = []
-    if features.has_rules_dir:
-        feature_list.append(".claude/rules/")
+    if features.is_abstracted:
+        feature_list.append("abstracted")
     if features.has_backbone:
         feature_list.append("backbone.yml")
     if features.has_shared_files:

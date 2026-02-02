@@ -67,8 +67,8 @@ class TestEvaluateGateItem:
         assert _evaluate_gate_item(features, "has_sections", skip_content=True) is True
 
     def test_skip_content_does_not_affect_non_content_gate(self) -> None:
-        features = DetectedFeatures()  # has_rules_dir=False
-        assert _evaluate_gate_item(features, "has_rules_dir", skip_content=True) is False
+        features = DetectedFeatures()  # is_abstracted=False
+        assert _evaluate_gate_item(features, "is_abstracted", skip_content=True) is False
 
     def test_skip_content_in_or_group(self) -> None:
         features = DetectedFeatures()  # nothing set
@@ -118,7 +118,7 @@ class TestDetermineLevelFromGates:
             has_explicit_constraints=True,
             has_sections=True,
             has_imports=True,
-            has_rules_dir=True,
+            is_abstracted=True,
         )
         assert determine_level_from_gates(features) == Level.L4
 
@@ -128,7 +128,7 @@ class TestDetermineLevelFromGates:
             has_explicit_constraints=True,
             has_sections=True,
             has_imports=True,
-            has_rules_dir=True,
+            is_abstracted=True,
             component_count=3,
             has_shared_files=True,
             has_backbone=True,
@@ -142,7 +142,7 @@ class TestDetermineLevelFromGates:
             has_explicit_constraints=True,
             has_sections=True,
             has_imports=True,
-            has_rules_dir=True,
+            is_abstracted=True,
             # L5 gates missing: component_count < 3 and no shared_files
             has_backbone=True,  # L6 gate
         )
@@ -155,7 +155,7 @@ class TestDetermineLevelFromGates:
             # has_explicit_constraints=False (content gate, skipped)
             # has_sections=False (content gate, skipped)
             has_imports=True,  # not a content gate
-            has_rules_dir=True,
+            is_abstracted=True,
         )
         assert determine_level_from_gates(features, skip_content=True) == Level.L4
 
@@ -171,10 +171,10 @@ class TestDetectOrphanFeatures:
         )
         assert detect_orphan_features(features, Level.L2) is True
 
-    def test_l1_with_rules_dir_is_orphan(self) -> None:
+    def test_l1_with_abstracted_is_orphan(self) -> None:
         features = DetectedFeatures(
             has_instruction_file=True,
-            has_rules_dir=True,
+            is_abstracted=True,
         )
         assert detect_orphan_features(features, Level.L1) is True
 
@@ -184,7 +184,7 @@ class TestDetectOrphanFeatures:
             has_explicit_constraints=True,
             has_sections=True,
             has_imports=True,
-            has_rules_dir=True,
+            is_abstracted=True,
             component_count=3,
             has_shared_files=True,
             has_backbone=True,
