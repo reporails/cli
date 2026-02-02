@@ -26,11 +26,6 @@ def get_capability_patterns_path() -> Path:
     return get_bundled_path() / "capability-patterns.yml"
 
 
-def get_levels_path() -> Path:
-    """Get path to bundled levels.yml."""
-    return get_bundled_path() / "levels.yml"
-
-
 def get_semgrepignore_path() -> Path:
     """Get path to bundled .semgrepignore."""
     return get_bundled_path() / ".semgrepignore"

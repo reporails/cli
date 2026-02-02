@@ -24,7 +24,6 @@ from reporails_cli.core.capability import (
     detect_features_content,
     determine_capability_level,
 )
-from reporails_cli.core.discover import generate_backbone_placeholder, save_backbone
 from reporails_cli.core.init import run_init
 from reporails_cli.core.models import (
     PendingSemantic,
@@ -99,12 +98,6 @@ def run_validation(
 
     # Filesystem feature detection (fast)
     features = detect_features_filesystem(project_root)
-
-    # Auto-create backbone placeholder if missing (AFTER feature detection,
-    # so has_backbone reflects actual project state, not the auto-created placeholder)
-    backbone_path = project_root / ".reporails" / "backbone.yml"
-    if not backbone_path.exists():
-        save_backbone(project_root, generate_backbone_placeholder())
 
     # Content feature detection via OpenGrep (capability patterns only)
     extra_targets = features.resolved_symlinks or None
