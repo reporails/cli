@@ -105,17 +105,17 @@ def format_assessment_box(
     if any(cs["total"] > 0 for cs in cat_summary):
         severity_icons = get_severity_icons(chars)
         cat_lines = []
-        cat_lines.append(pad_line("Check            Result", box_width, chars["v"]))
-        cat_lines.append(pad_line(chars["sep"] * 23, box_width, chars["v"]))
+        cat_lines.append(pad_line("Check            Result    Severity", box_width, chars["v"]))
+        cat_lines.append(pad_line(chars["sep"] * 35, box_width, chars["v"]))
         for cs in cat_summary:
             name = cs["name"].title()
             if cs["total"]:
                 stat = f"{cs['passed']}/{cs['total']}"
                 icon = severity_icons.get(cs["worst_severity"], "") if cs["worst_severity"] else ""
-                result_str = f"{stat} {icon}".rstrip()
             else:
-                result_str = "\u2013"
-            row = f"{name:<17}{result_str}"
+                stat = "\u2013"
+                icon = ""
+            row = f"{name:<17}{stat:<10}{icon}"
             cat_lines.append(pad_line(row, box_width, chars["v"]))
         cat_lines.append(empty_line)
         category_section = "\n".join(cat_lines)
