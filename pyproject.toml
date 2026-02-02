@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.1.1"
+version = "0.1.2"
 description = "Validate and score CLAUDE.md files — MCP-first AI context governance"
 readme = "README.md"
 license = { text = "Apache-2.0" }
