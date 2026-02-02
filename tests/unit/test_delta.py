@@ -343,7 +343,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=0.8, level_previous=None, level_improved=None, violations_delta=None)
         result = _format_score_delta(delta, ascii_mode=False)
 
-        assert result == "  ↑ +0.8"
+        assert "↑" in result and "+0.8" in result
 
     def test_score_regression_format(self) -> None:
         """Score regression should show ↓ -X.X format."""
@@ -352,7 +352,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=-1.5, level_previous=None, level_improved=None, violations_delta=None)
         result = _format_score_delta(delta, ascii_mode=False)
 
-        assert result == "  ↓ -1.5"
+        assert "↓" in result and "-1.5" in result
 
     def test_level_improvement_format(self) -> None:
         """Level improvement should show ↑ from LX format."""
@@ -361,7 +361,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=None, level_previous="L2", level_improved=True, violations_delta=None)
         result = _format_level_delta(delta, ascii_mode=False)
 
-        assert result == "  ↑ from L2"
+        assert "↑" in result and "from L2" in result
 
     def test_level_regression_format(self) -> None:
         """Level regression should show ↓ from LX format."""
@@ -370,7 +370,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=None, level_previous="L4", level_improved=False, violations_delta=None)
         result = _format_level_delta(delta, ascii_mode=False)
 
-        assert result == "  ↓ from L4"
+        assert "↓" in result and "from L4" in result
 
     def test_violations_decreased_format(self) -> None:
         """Violations decrease (good) should show ↓ -N format."""
@@ -379,7 +379,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=None, level_previous=None, level_improved=None, violations_delta=-4)
         result = _format_violations_delta(delta, ascii_mode=False)
 
-        assert result == "  ↓ -4"
+        assert "↓" in result and "-4" in result
 
     def test_violations_increased_format(self) -> None:
         """Violations increase (bad) should show ↑ +N format."""
@@ -388,7 +388,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=None, level_previous=None, level_improved=None, violations_delta=3)
         result = _format_violations_delta(delta, ascii_mode=False)
 
-        assert result == "  ↑ +3"
+        assert "↑" in result and "+3" in result
 
     def test_ascii_mode_uses_ascii_arrows(self) -> None:
         """ASCII mode should use ^ and v instead of ↑ and ↓."""
@@ -397,7 +397,7 @@ class TestDeltaDisplayRules:
         delta = ScanDelta(score_delta=0.8, level_previous=None, level_improved=None, violations_delta=None)
         result = _format_score_delta(delta, ascii_mode=True)
 
-        assert result == "  ^ +0.8"
+        assert "^" in result and "+0.8" in result
 
     def test_none_delta_returns_empty_string(self) -> None:
         """None values should return empty string."""

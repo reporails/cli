@@ -18,28 +18,18 @@ class TestGetProjectConfig:
         assert config.framework_version is None
         assert config.experimental is False
 
-    def test_loads_packages(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".reporails"
-        config_dir.mkdir()
-        (config_dir / "config.yml").write_text(
-            "packages:\n  - recommended\n  - custom\n"
-        )
+    def test_loads_packages(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("packages:\n  - recommended\n  - custom\n")
         config = get_project_config(tmp_path)
         assert config.packages == ["recommended", "custom"]
 
-    def test_loads_disabled_rules(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".reporails"
-        config_dir.mkdir()
-        (config_dir / "config.yml").write_text(
-            "disabled_rules:\n  - S1\n  - C7\n"
-        )
+    def test_loads_disabled_rules(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("disabled_rules:\n  - S1\n  - C7\n")
         config = get_project_config(tmp_path)
         assert config.disabled_rules == ["S1", "C7"]
 
-    def test_loads_all_fields(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".reporails"
-        config_dir.mkdir()
-        (config_dir / "config.yml").write_text(
+    def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file(
             "framework_version: '0.1.0'\n"
             "packages:\n  - recommended\n"
             "disabled_rules:\n  - S1\n"
@@ -51,18 +41,14 @@ class TestGetProjectConfig:
         assert config.disabled_rules == ["S1"]
         assert config.experimental is True
 
-    def test_returns_defaults_on_malformed_yaml(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".reporails"
-        config_dir.mkdir()
-        (config_dir / "config.yml").write_text(": : :\n  bad yaml [[[")
+    def test_returns_defaults_on_malformed_yaml(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file(": : :\n  bad yaml [[[")
         config = get_project_config(tmp_path)
         assert config.packages == []
         assert config.disabled_rules == []
 
-    def test_returns_defaults_on_empty_file(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".reporails"
-        config_dir.mkdir()
-        (config_dir / "config.yml").write_text("")
+    def test_returns_defaults_on_empty_file(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("")
         config = get_project_config(tmp_path)
         assert config.packages == []
 

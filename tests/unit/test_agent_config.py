@@ -27,7 +27,7 @@ from reporails_cli.core.registry import _apply_agent_overrides, load_rules
 class TestGetAgentConfig:
     """Test loading agent config from framework."""
 
-    def test_loads_excludes_and_overrides(self, tmp_path: Path) -> None:
+    def test_loads_excludes_and_overrides(self, tmp_path: Path, make_config_file) -> None:
         config_data = {
             "agent": "claude",
             "excludes": ["S4", "S5"],
@@ -36,9 +36,7 @@ class TestGetAgentConfig:
                 "E5-no-grep-guidance": {"severity": "low", "disabled": True},
             },
         }
-        config_path = tmp_path / "agents" / "claude" / "config.yml"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text(yaml.dump(config_data))
+        config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
         with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
@@ -59,28 +57,25 @@ class TestGetAgentConfig:
         assert result.excludes == []
         assert result.overrides == {}
 
-    def test_malformed_yaml_returns_defaults(self, tmp_path: Path) -> None:
-        config_path = tmp_path / "config.yml"
-        config_path.write_text(": : : invalid yaml [[[")
+    def test_malformed_yaml_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
+        config_path = make_config_file(": : : invalid yaml [[[", subdir=".", name="config.yml")
 
         with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
 
-    def test_empty_file_returns_defaults(self, tmp_path: Path) -> None:
-        config_path = tmp_path / "config.yml"
-        config_path.write_text("")
+    def test_empty_file_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
+        config_path = make_config_file("", subdir=".", name="config.yml")
 
         with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
 
-    def test_config_without_excludes_or_overrides(self, tmp_path: Path) -> None:
+    def test_config_without_excludes_or_overrides(self, tmp_path: Path, make_config_file) -> None:
         config_data = {"agent": "claude", "vars": {"instruction_files": "CLAUDE.md"}}
-        config_path = tmp_path / "config.yml"
-        config_path.write_text(yaml.dump(config_data))
+        config_path = make_config_file(yaml.dump(config_data), subdir=".", name="config.yml")
 
         with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")

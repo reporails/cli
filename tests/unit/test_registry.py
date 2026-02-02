@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.core.models import BackedByEntry, Category, PatternConfidence, RuleType
 from reporails_cli.core.registry import build_rule
 
@@ -95,24 +97,17 @@ class TestBuildRuleBasic:
 class TestBuildRulePatternConfidence:
     """Test pattern_confidence parsing in build_rule."""
 
-    def test_pattern_confidence_parsed(self) -> None:
-        fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": "very_high"}
+    @pytest.mark.parametrize("level", ["very_high", "high", "medium", "low", "very_low"])
+    def test_confidence_level_parsed(self, level: str) -> None:
+        fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": level}
         rule = build_rule(fm, Path("test.md"), None)
-        assert rule.pattern_confidence == PatternConfidence.VERY_HIGH
-
-    def test_all_confidence_levels(self) -> None:
-        for level in ("very_high", "high", "medium", "low", "very_low"):
-            fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": level}
-            rule = build_rule(fm, Path("test.md"), None)
-            assert rule.pattern_confidence == PatternConfidence(level)
+        assert rule.pattern_confidence == PatternConfidence(level)
 
     def test_none_when_absent(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.pattern_confidence is None
 
     def test_invalid_value_raises(self) -> None:
-        import pytest
-
         fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": "bogus"}
         with pytest.raises(ValueError):
             build_rule(fm, Path("test.md"), None)
