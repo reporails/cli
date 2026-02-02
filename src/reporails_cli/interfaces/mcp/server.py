@@ -8,7 +8,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from reporails_cli.core.bootstrap import is_initialized
-from reporails_cli.core.cache import ProjectCache, content_hash, get_previous_scan
+from reporails_cli.core.cache import get_previous_scan
 from reporails_cli.core.engine import run_validation
 from reporails_cli.core.models import ScanDelta
 from reporails_cli.formatters import mcp as mcp_formatter
@@ -41,7 +41,7 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Directory to validate (default: current directory)",
                         "default": ".",
-                    }
+                    },
                 },
             },
         ),
@@ -73,59 +73,6 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["rule_id"],
-            },
-        ),
-        Tool(
-            name="record_judgments",
-            description=(
-                "Record semantic rule evaluation results to cache. "
-                "Call this after evaluating semantic rules from validate. "
-                "Caches verdicts so passing rules are not re-evaluated on subsequent runs."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Project directory that was validated",
-                        "default": ".",
-                    },
-                    "judgments": {
-                        "type": "array",
-                        "description": "Array of judgment results from semantic rule evaluation",
-                        "items": {
-                            "oneOf": [
-                                {
-                                    "type": "string",
-                                    "description": "Compact format: 'rule_id:location:verdict:reason' (e.g., 'C6:CLAUDE.md:pass:Criteria met')",
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "rule_id": {
-                                            "type": "string",
-                                            "description": "Rule ID (e.g., C6, M4)",
-                                        },
-                                        "location": {
-                                            "type": "string",
-                                            "description": "File path (e.g., CLAUDE.md)",
-                                        },
-                                        "verdict": {
-                                            "type": "string",
-                                            "description": "Evaluation result: 'pass' or 'fail'",
-                                        },
-                                        "reason": {
-                                            "type": "string",
-                                            "description": "Brief explanation of the verdict",
-                                        },
-                                    },
-                                    "required": ["rule_id", "location", "verdict"],
-                                },
-                            ],
-                        },
-                    },
-                },
-                "required": ["judgments"],
             },
         ),
     ]
@@ -215,10 +162,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 "After evaluating semantic rules above, report the FINAL score. "
                 "If all semantic rules pass, the score remains the same but is now COMPLETE (not partial). "
                 "If any semantic rules fail, add those violations and recalculate.\n\n"
-                "IMPORTANT: After evaluation, call the 'record_judgments' tool to cache your verdicts. "
-                "This prevents re-evaluation on subsequent runs. "
-                "Pass verdicts as compact strings: \"rule_id:location:verdict:reason\"\n"
-                '  e.g. ["C6:CLAUDE.md:pass:Criteria met", "M2:.claude/rules/foo.md:fail:Contradictions found"]'
+                "IMPORTANT: Cache your verdicts via Bash so they persist across runs:\n"
+                '  ails judge . "C6:CLAUDE.md:pass:Criteria met" "M2:.claude/rules/foo.md:fail:Contradictions found"\n'
+                "Format: rule_id:location:verdict:reason"
             )
 
         return [TextContent(type="text", text="\n".join(response_parts))]
@@ -226,61 +172,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         path = arguments.get("path", ".")
         score_result = score_tool(path)
         return [TextContent(type="text", text=json.dumps(score_result, indent=2))]
-    elif name == "record_judgments":
-        path = arguments.get("path", ".")
-        judgments = arguments.get("judgments", [])
-
-        if not judgments:
-            return [TextContent(type="text", text=json.dumps({"error": "No judgments provided"}))]
-
-        target = Path(path).resolve()
-        if not target.exists():
-            return [TextContent(type="text", text=json.dumps({"error": f"Path not found: {target}"}))]
-
-        cache = ProjectCache(target)
-        recorded = 0
-
-        for j in judgments:
-            if isinstance(j, str):
-                parts = j.split(":", 3)
-                if len(parts) < 3:
-                    continue
-                rule_id, location, verdict = parts[0], parts[1], parts[2]
-                reason = parts[3] if len(parts) > 3 else ""
-            else:
-                rule_id = j.get("rule_id", "")
-                location = j.get("location", "")
-                verdict = j.get("verdict", "")
-                reason = j.get("reason", "")
-
-            if not rule_id or not location or not verdict:
-                continue
-
-            # Strip line number from location to get file path
-            file_path = location.rsplit(":", 1)[0] if ":" in location else location
-            full_path = target / file_path
-
-            if not full_path.exists():
-                continue
-
-            try:
-                file_hash = content_hash(full_path)
-            except OSError:
-                continue
-
-            # Load existing results for this file, merge in new verdict
-            existing = cache.get_cached_judgment(file_path, file_hash) or {}
-            existing[rule_id] = {
-                "verdict": verdict,
-                "reason": reason,
-            }
-            cache.set_cached_judgment(file_path, file_hash, existing)
-            recorded += 1
-
-        return [TextContent(type="text", text=json.dumps({
-            "recorded": recorded,
-            "total": len(judgments),
-        }))]
     elif name == "explain":
         rule_id = arguments.get("rule_id", "")
         explain_result = explain_tool(rule_id)

@@ -304,6 +304,62 @@ def get_previous_scan(target: Path) -> AnalyticsEntry | None:
     return analytics.history[-1]  # Last recorded scan
 
 
+def cache_judgments(target: Path, judgments: list[Any]) -> int:
+    """Cache semantic judgment verdicts for a project.
+
+    Accepts verdicts as either compact strings ("rule_id:location:verdict:reason")
+    or dicts with rule_id, location, verdict, reason keys.
+
+    Args:
+        target: Project root path
+        judgments: List of verdict strings or dicts
+
+    Returns:
+        Count of successfully recorded judgments
+    """
+    cache = ProjectCache(target)
+    recorded = 0
+
+    for j in judgments:
+        if isinstance(j, str):
+            parts = j.split(":", 3)
+            if len(parts) < 3:
+                continue
+            rule_id, location, verdict = parts[0], parts[1], parts[2]
+            reason = parts[3] if len(parts) > 3 else ""
+        else:
+            rule_id = j.get("rule_id", "")
+            location = j.get("location", "")
+            verdict = j.get("verdict", "")
+            reason = j.get("reason", "")
+
+        if not rule_id or not location or not verdict:
+            continue
+
+        # Strip line number from location to get file path
+        file_path = location.rsplit(":", 1)[0] if ":" in location else location
+        full_path = target / file_path
+
+        if not full_path.exists():
+            continue
+
+        try:
+            file_hash = content_hash(full_path)
+        except OSError:
+            continue
+
+        # Load existing results for this file, merge in new verdict
+        existing = cache.get_cached_judgment(file_path, file_hash) or {}
+        existing[rule_id] = {
+            "verdict": verdict,
+            "reason": reason,
+        }
+        cache.set_cached_judgment(file_path, file_hash, existing)
+        recorded += 1
+
+    return recorded
+
+
 def record_scan(
     target: Path,
     score: float,
