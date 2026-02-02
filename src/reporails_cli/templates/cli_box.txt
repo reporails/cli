@@ -6,5 +6,7 @@
 {setup_line}
 {empty_line}
 {summary_line}
+{friction_line}
 {empty_line}
+{category_section}
 {bottom_border}

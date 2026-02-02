@@ -1,2 +1,0 @@
-  {s_hdr} {c_hdr} {e_hdr} {m_hdr} {g_hdr}
-  {s_stat}{s_ind} {c_stat}{c_ind} {e_stat}{e_ind} {m_stat}{m_ind} {g_stat}{g_ind}

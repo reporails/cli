@@ -105,23 +105,22 @@ class TestPartialEvaluation:
         )
 
     def test_partial_shows_partial_marker(self) -> None:
-        """Partial evaluation should show (partial) marker."""
+        """Partial evaluation should show MCP CTA."""
         from reporails_cli.formatters import text as text_formatter
 
         result = self._make_result(is_partial=True)
         output = text_formatter.format_result(result)
 
-        assert "(partial)" in output
+        assert "complete analysis" in output
 
     def test_complete_no_partial_marker(self) -> None:
-        """Complete evaluation should not show (partial) marker."""
+        """Complete evaluation should not show MCP CTA."""
         from reporails_cli.formatters import text as text_formatter
 
         result = self._make_result(is_partial=False)
         output = text_formatter.format_result(result)
 
-        # Should not contain (partial)
-        assert "(partial)" not in output
+        assert "complete analysis" not in output
 
     def test_json_includes_evaluation_field(self) -> None:
         """JSON output should include evaluation completeness field."""
