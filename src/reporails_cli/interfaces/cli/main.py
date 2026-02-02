@@ -225,6 +225,17 @@ def check(
         instruction_files=result.rules_checked,  # Approximation
     )
 
+    # Update check (non-blocking, swallows errors)
+    if output_format not in ("json", "compact", "brief"):
+        from reporails_cli.core.bootstrap import get_global_config
+        from reporails_cli.core.update_check import check_for_updates, format_update_message
+
+        config = get_global_config()
+        if config.auto_update_check:
+            notification = check_for_updates()
+            if notification:
+                console.print(format_update_message(notification))
+
     # Exit with error only in strict mode
     if strict and result.violations:
         raise typer.Exit(1)
