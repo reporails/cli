@@ -196,6 +196,9 @@ class DetectedFeatures:
     has_hierarchical_structure: bool = False  # nested CLAUDE.md files
     detected_agents: list[str] = field(default_factory=list)
 
+    # Symlink resolution (for OpenGrep extra targets)
+    resolved_symlinks: list[Path] = field(default_factory=list)
+
     # === Phase 2: Content detection (OpenGrep) ===
 
     # Content analysis

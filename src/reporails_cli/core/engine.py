@@ -75,11 +75,6 @@ def run_validation(
     if opengrep_path is None:
         opengrep_path = get_opengrep_bin()
 
-    # Auto-create backbone placeholder if missing
-    backbone_path = project_root / ".reporails" / "backbone.yml"
-    if not backbone_path.exists():
-        save_backbone(project_root, generate_backbone_placeholder())
-
     # Get template vars from agent config for yml placeholder resolution
     template_context = get_agent_vars(agent) if agent else {}
 
@@ -104,12 +99,20 @@ def run_validation(
     # Filesystem feature detection (fast)
     features = detect_features_filesystem(project_root)
 
+    # Auto-create backbone placeholder if missing (AFTER feature detection,
+    # so has_backbone reflects actual project state, not the auto-created placeholder)
+    backbone_path = project_root / ".reporails" / "backbone.yml"
+    if not backbone_path.exists():
+        save_backbone(project_root, generate_backbone_placeholder())
+
     # Content feature detection via OpenGrep (capability patterns only)
+    extra_targets = features.resolved_symlinks or None
     capability_patterns = get_capability_patterns_path()
     capability_sarif = {}
     if capability_patterns.exists():
         capability_sarif = run_opengrep(
-            [capability_patterns], target, opengrep_path, template_context
+            [capability_patterns], target, opengrep_path, template_context,
+            extra_targets=extra_targets,
         )
 
     content_features = detect_features_content(capability_sarif)
@@ -143,7 +146,8 @@ def run_validation(
     rule_sarif = {}
     if rule_yml_paths:
         rule_sarif = run_opengrep(
-            rule_yml_paths, target, opengrep_path, template_context
+            rule_yml_paths, target, opengrep_path, template_context,
+            extra_targets=extra_targets,
         )
 
     # Split by type

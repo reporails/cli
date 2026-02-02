@@ -6,12 +6,17 @@ Phase 2 (content detection) is in capability.py.
 
 from __future__ import annotations
 
+import errno
+import logging
 from pathlib import Path
 
 import yaml
 
+from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.levels import get_rules_for_level
 from reporails_cli.core.models import DetectedFeatures, Level, Rule
+
+logger = logging.getLogger(__name__)
 
 
 def _count_components(backbone_data: dict) -> int:  # type: ignore[type-arg]
@@ -32,6 +37,47 @@ def _count_components(backbone_data: dict) -> int:  # type: ignore[type-arg]
             if isinstance(value, str) and value.endswith("/"):
                 count += 1
     return count
+
+
+def resolve_symlinked_files(target: Path) -> list[Path]:
+    """Find instruction files that are symlinks pointing outside the scan directory.
+
+    OpenGrep skips symlinks whose resolved target is outside the scan directory.
+    This function detects those files so their resolved paths can be passed as
+    additional scan targets.
+
+    Args:
+        target: Project root path
+
+    Returns:
+        List of resolved (real) paths for symlinks pointing outside target
+    """
+    resolved: list[Path] = []
+    try:
+        real_target = target.resolve()
+    except OSError:
+        return resolved
+
+    for path in get_all_instruction_files(target):
+        if not path.is_symlink():
+            continue
+        try:
+            real_path = path.resolve(strict=True)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                logger.warning(
+                    "Circular symlink detected: %s — file will be skipped",
+                    path,
+                )
+            continue
+        # Only include if resolved path is outside the scan directory
+        try:
+            real_path.relative_to(real_target)
+        except ValueError:
+            # Outside the scan directory — OpenGrep will miss this
+            resolved.append(real_path)
+
+    return resolved
 
 
 def detect_features_filesystem(target: Path) -> DetectedFeatures:
@@ -105,6 +151,9 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
             features.component_count = _count_components(backbone_data)
         except (yaml.YAMLError, OSError):
             pass
+
+    # Resolve symlinked instruction files (for OpenGrep extra targets)
+    features.resolved_symlinks = resolve_symlinked_files(target)
 
     return features
 

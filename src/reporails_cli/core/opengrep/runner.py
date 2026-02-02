@@ -44,6 +44,7 @@ def run_opengrep(
     target: Path,
     opengrep_path: Path | None = None,
     template_context: dict[str, str | list[str]] | None = None,
+    extra_targets: list[Path] | None = None,
 ) -> dict[str, Any]:
     """Execute OpenGrep with specified rule configs.
 
@@ -54,6 +55,8 @@ def run_opengrep(
         target: Directory to scan
         opengrep_path: Path to OpenGrep binary (optional, auto-detects)
         template_context: Optional dict for resolving {{placeholder}} in yml files
+        extra_targets: Additional file paths to scan (e.g. resolved symlinks
+            whose targets fall outside the scan directory)
 
     Returns:
         Parsed SARIF JSON output
@@ -115,6 +118,11 @@ def run_opengrep(
         # Add target
         cmd.append(str(target))
 
+        # Add extra targets (e.g. resolved symlinks outside scan directory)
+        if extra_targets:
+            for extra in extra_targets:
+                cmd.append(str(extra))
+
         # Run OpenGrep
         proc = subprocess.run(cmd, capture_output=True, check=False)
 
@@ -151,13 +159,17 @@ def run_opengrep(
                 created_semgrepignore.unlink()
 
 
-def run_capability_detection(target: Path) -> dict[str, Any]:
+def run_capability_detection(
+    target: Path,
+    extra_targets: list[Path] | None = None,
+) -> dict[str, Any]:
     """Run capability detection using bundled patterns.
 
     Uses bundled capability-patterns.yml for content analysis.
 
     Args:
         target: Directory to scan
+        extra_targets: Additional file paths to scan (e.g. resolved symlinks)
 
     Returns:
         Parsed SARIF JSON output
@@ -167,15 +179,20 @@ def run_capability_detection(target: Path) -> dict[str, Any]:
         logger.warning("Capability patterns not found: %s", patterns_path)
         return {"runs": []}
 
-    return run_opengrep([patterns_path], target)
+    return run_opengrep([patterns_path], target, extra_targets=extra_targets)
 
 
-def run_rule_validation(rules: dict[str, Rule], target: Path) -> dict[str, Any]:
+def run_rule_validation(
+    rules: dict[str, Rule],
+    target: Path,
+    extra_targets: list[Path] | None = None,
+) -> dict[str, Any]:
     """Run rule validation using rule .yml files.
 
     Args:
         rules: Dict of rules with yml_path set
         target: Directory to scan
+        extra_targets: Additional file paths to scan (e.g. resolved symlinks)
 
     Returns:
         Parsed SARIF JSON output
@@ -185,7 +202,7 @@ def run_rule_validation(rules: dict[str, Rule], target: Path) -> dict[str, Any]:
         # No patterns to run - this is normal, not an error
         return {"runs": []}
 
-    return run_opengrep(yml_paths, target)
+    return run_opengrep(yml_paths, target, extra_targets=extra_targets)
 
 
 def get_rule_yml_paths(rules: dict[str, Rule]) -> list[Path]:

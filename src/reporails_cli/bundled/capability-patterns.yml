@@ -1,5 +1,11 @@
 # OpenGrep patterns for capability detection
 # CLI-owned configuration for content analysis (Phase 2)
+#
+# TODO: Scope paths using {{instruction_files}} from agent config
+# instead of **/*.md to avoid scanning non-instruction markdown files.
+# Blocked by OpenGrep skipping symlinked instruction files (e.g.
+# CLAUDE.md -> AGENTS.md), which means template-scoped paths miss
+# the real file content. Needs symlink-aware path resolution first.
 
 rules:
   - id: capability.has-sections
@@ -29,18 +35,28 @@ rules:
         - "**/*.md"
 
   - id: capability.has-explicit-constraints
-    message: "Has MUST/MUST NOT/NEVER constraints"
+    message: "Has explicit constraints (RFC 2119, structural, or marker)"
     languages: [generic]
     severity: INFO
     pattern-either:
+      # Strong: RFC 2119 all-caps keywords
       - pattern-regex: "\\bMUST\\b"
       - pattern-regex: "\\bMUST NOT\\b"
       - pattern-regex: "\\bNEVER\\b"
+      # Medium: list-item + constraint verb (structural context prevents false positives)
+      - pattern-regex: "^- .*Never"
+      - pattern-regex: "^- .*Avoid"
+      - pattern-regex: "^- .*Always"
+      - pattern-regex: "^- .*must"
+      # Medium: explicit negation
+      - pattern-regex: "Do NOT"
+      - pattern-regex: "do NOT"
+      # Medium: anti-pattern markers
+      - pattern-regex: "❌"
     paths:
       include:
-        - "*.md"
+        - "**/AGENTS.md"
         - "**/CLAUDE.md"
-        - "**/*.md"
 
   - id: capability.has-path-scoped-rules
     message: "Has path-scoped rules (paths: in frontmatter)"
@@ -50,5 +66,4 @@ rules:
     paths:
       include:
         - ".claude/rules/*.md"
-        - ".cursor/rules/*.md"
         - ".ai/rules/*.md"
