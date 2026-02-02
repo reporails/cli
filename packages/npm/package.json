@@ -1,6 +1,6 @@
 {
   "name": "@reporails/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.",
   "type": "module",
   "bin": {
