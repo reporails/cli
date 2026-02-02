@@ -177,7 +177,7 @@ Downloads OpenGrep binary and framework rules tarball on first run. Handles upda
 
 ```python
 OPENGREP_VERSION = "1.15.1"
-RULES_VERSION = "v0.1.1"
+RULES_VERSION = "0.2.1"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 ```

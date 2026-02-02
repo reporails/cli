@@ -47,7 +47,7 @@ jobs:
       - name: Set version from release tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          npm version "$VERSION" --no-git-tag-version
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
         run: npm publish --access public --provenance
