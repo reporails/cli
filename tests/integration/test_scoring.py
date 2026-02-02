@@ -20,7 +20,7 @@ class TestValidationScoring:
         # A clean project should score well
         assert result.score >= 8.0, (
             f"Clean project should score 8+, got {result.score}\n"
-            f"Violations: {result.violations}"
+            f"Violations {result.violations}"
         )
 
     def test_score_reproducible_across_runs(self, level3_project: Path) -> None:

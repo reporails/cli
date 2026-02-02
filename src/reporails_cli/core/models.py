@@ -21,6 +21,16 @@ class Category(str, Enum):
     EFFICIENCY = "efficiency"
 
 
+# Category code → Category enum mapping (first letter of rule ID)
+CATEGORY_CODES: dict[str, Category] = {
+    "S": Category.STRUCTURE,
+    "C": Category.CONTENT,
+    "E": Category.EFFICIENCY,
+    "M": Category.MAINTENANCE,
+    "G": Category.GOVERNANCE,
+}
+
+
 class RuleType(str, Enum):
     """How the rule is detected. Two types only."""
 
@@ -235,6 +245,18 @@ class FrictionEstimate:
     level: str  # "extreme", "high", "medium", "small", "none"
 
 
+@dataclass(frozen=True)
+class CategoryStats:
+    """Per-category rule statistics for the category summary table."""
+
+    code: str  # "S", "C", "E", "M", "G"
+    name: str  # "Structure", "Content", etc.
+    total: int
+    passed: int
+    failed: int
+    worst_severity: str | None  # "critical"/"high"/"medium"/"low" or None
+
+
 # =============================================================================
 # Configuration Models
 # =============================================================================
@@ -355,6 +377,8 @@ class ValidationResult:
     rules_failed: int
     feature_summary: str  # Human-readable
     friction: FrictionEstimate
+    # Per-category breakdown
+    category_summary: tuple[CategoryStats, ...] = ()
     # Evaluation completeness
     is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
     pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules

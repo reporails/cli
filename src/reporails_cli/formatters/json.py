@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from reporails_cli.core.models import (
+    CategoryStats,
     PendingSemantic,
     ScanDelta,
     SkippedExperimental,
@@ -26,6 +27,21 @@ def _format_pending_semantic(pending: PendingSemantic | None) -> dict[str, Any] 
         "file_count": pending.file_count,
         "rules": list(pending.rules),
     }
+
+
+def _format_category_summary(summary: tuple[CategoryStats, ...]) -> list[dict[str, Any]]:
+    """Format category summary for JSON output."""
+    return [
+        {
+            "code": cs.code,
+            "name": cs.name,
+            "total": cs.total,
+            "passed": cs.passed,
+            "failed": cs.failed,
+            "worst_severity": cs.worst_severity,
+        }
+        for cs in summary
+    ]
 
 
 def _format_skipped_experimental(skipped: SkippedExperimental | None) -> dict[str, Any] | None:
@@ -88,6 +104,7 @@ def format_result(
             for jr in result.judgment_requests
         ],
         "friction": result.friction.level if result.friction else "none",
+        "category_summary": _format_category_summary(result.category_summary),
         # Evaluation completeness
         "evaluation": "partial" if result.is_partial else "complete",
         "is_partial": result.is_partial,

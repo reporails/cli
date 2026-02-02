@@ -5,8 +5,6 @@ Provides rich, detailed output for interactive terminal use.
 
 from __future__ import annotations
 
-from typing import Any
-
 from reporails_cli.core.models import ScanDelta, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.box import format_assessment_box
@@ -14,38 +12,68 @@ from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.violations import format_violations_section
 from reporails_cli.templates import render
 
+# Full category names with code letter in parentheses
+_CATEGORY_HEADERS = {
+    "S": "(S)tructure",
+    "C": "(C)ontent",
+    "E": "(E)fficiency",
+    "M": "(M)aintenance",
+    "G": "(G)overnance",
+}
 
-def _format_working_section(
-    violations: list[dict[str, Any]],
-    rules_passed: int,
+def _format_category_table(
+    result: ValidationResult,
     ascii_mode: bool | None = None,
 ) -> str:
-    """Format 'What's working well' section."""
-    if rules_passed <= 0:
+    """Format per-category summary table.
+
+    Template: ``{x_stat}{x_ind}`` (no gap) with 1-space gap between columns,
+    matching the 1-space gap between headers.  So ``len(stat) + len(ind)``
+    must equal ``len(hdr)`` for each column.
+
+    Example output::
+
+      (S)tructure (C)ontent (E)fficiency (M)aintenance (G)overnance
+      6/7 ○       12/12     7/7          6/6           –
+    """
+    if not result.category_summary:
+        return ""
+
+    if all(cs.total == 0 for cs in result.category_summary):
         return ""
 
     chars = get_chars(ascii_mode)
-
-    # Find categories with violations
-    violation_categories: set[str] = set()
-    for v in violations:
-        rule_id = v.get("rule_id", "")
-        if rule_id:
-            violation_categories.add(rule_id[0])
-
-    all_categories = {
-        "S": "Structure", "C": "Content", "E": "Efficiency",
-        "M": "Maintenance", "G": "Governance",
+    severity_icons = {
+        "critical": chars["crit"],
+        "high": chars["high"],
+        "medium": chars["med"],
+        "low": chars["low"],
     }
-    passing_categories = [
-        name for code, name in all_categories.items() if code not in violation_categories
-    ]
 
-    if not passing_categories:
-        return ""
+    template_vars: dict[str, str] = {}
+    for cs in result.category_summary:
+        key = cs.code.lower()
+        hdr = _CATEGORY_HEADERS[cs.code]
+        col_w = len(hdr)
+        template_vars[f"{key}_hdr"] = hdr
 
-    items = "\n".join(f"  {chars['check']} {cat}" for cat in passing_categories)
-    return render("cli_working.txt", items=items)
+        # Stat: passed/total or –
+        stat = f"{cs.passed}/{cs.total}" if cs.total else "–"
+
+        # Indicator: severity icon or empty
+        ind = severity_icons.get(cs.worst_severity, "") if cs.worst_severity else ""
+
+        # Build cell: "stat ind" padded to col_w via {x_stat}{x_ind}
+        # Put stat + space into {x_stat}, indicator + padding into {x_ind}
+        if ind:
+            stat_part = stat + " "
+            template_vars[f"{key}_stat"] = stat_part
+            template_vars[f"{key}_ind"] = ind.ljust(col_w - len(stat_part))
+        else:
+            template_vars[f"{key}_stat"] = stat.ljust(col_w)
+            template_vars[f"{key}_ind"] = ""
+
+    return render("cli_working.txt", **template_vars).rstrip()
 
 
 def _format_pending_section(
@@ -100,8 +128,6 @@ def format_result(
     """Format validation result for terminal output."""
     data = json_formatter.format_result(result, delta)
 
-    summary_info = data.get("summary", {})
-    rules_passed = summary_info.get("rules_passed", 0)
     violations = data.get("violations", [])
     friction = data.get("friction", {})
 
@@ -111,8 +137,8 @@ def format_result(
     sections.append(format_assessment_box(data, ascii_mode, delta))
     sections.append("")
 
-    # What's working well
-    working = _format_working_section(violations, rules_passed, ascii_mode)
+    # Category summary table
+    working = _format_category_table(result, ascii_mode)
     if working:
         sections.append(working)
         sections.append("")
