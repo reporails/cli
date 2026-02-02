@@ -112,6 +112,7 @@ A structured project.
 ## Commands
 
 - `npm install` - Install dependencies
+- MUST run linter before committing
 
 ## Architecture
 
@@ -151,6 +152,7 @@ A governed project with full structure.
 ## Commands
 
 - `npm install` - Install dependencies
+- NEVER push directly to main
 
 ## Architecture
 

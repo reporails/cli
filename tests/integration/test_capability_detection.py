@@ -31,7 +31,7 @@ class TestFilesystemFeatureDetection:
 
         features = detect_features_filesystem(level3_project)
 
-        assert features.has_rules_dir, (
+        assert features.is_abstracted, (
             f"Should detect .claude/rules/ in {level3_project}"
         )
 
@@ -52,7 +52,7 @@ class TestFilesystemFeatureDetection:
         features = detect_features_filesystem(tmp_path)
 
         assert not features.has_instruction_file
-        assert not features.has_rules_dir
+        assert not features.is_abstracted
         assert not features.has_backbone
         assert features.instruction_file_count == 0
 

@@ -51,7 +51,7 @@ class TestBackboneGateNotAlwaysTrue:
             has_explicit_constraints=True,
             has_sections=True,
             has_imports=True,
-            has_rules_dir=True,
+            is_abstracted=True,
             # No backbone, no shared files, no component count
         )
         level = determine_level_from_gates(features)
@@ -66,7 +66,7 @@ class TestBackboneGateNotAlwaysTrue:
             has_explicit_constraints=True,
             has_sections=True,
             has_imports=True,
-            has_rules_dir=True,
+            is_abstracted=True,
             component_count=3,
             has_shared_files=True,
             has_backbone=True,
