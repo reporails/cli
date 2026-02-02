@@ -1,6 +1,7 @@
 """Level configuration and gate-based capability detection.
 
-Loads from bundled levels.yml. All functions are pure after initial load.
+Detection gates loaded from bundled detection.yml (CLI-owned).
+Rule-to-level mapping loaded from framework levels.yml (downloaded).
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from reporails_cli.bundled import get_levels_path
+from reporails_cli.bundled import get_detection_path
 from reporails_cli.core.bootstrap import get_rules_path
 from reporails_cli.core.models import Level
 
@@ -46,21 +47,21 @@ _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
 
 @lru_cache(maxsize=1)
 def get_level_config() -> dict[str, Any]:
-    """Load bundled levels.yml configuration.
+    """Load bundled detection.yml configuration.
 
-    Used for detection gates (CLI-owned). Rule-to-level mapping
+    Contains detection gates only (CLI-owned). Rule-to-level mapping
     comes from the framework's levels.yml via get_framework_level_config().
 
     Cached for performance.
 
     Returns:
-        Parsed levels.yml content
+        Parsed detection.yml content
     """
-    levels_path = get_levels_path()
-    if not levels_path.exists():
-        return {"levels": {}}
+    detection_path = get_detection_path()
+    if not detection_path.exists():
+        return {}
 
-    content = levels_path.read_text(encoding="utf-8")
+    content = detection_path.read_text(encoding="utf-8")
     config: dict[str, Any] = yaml.safe_load(content) or {}
     return config
 
