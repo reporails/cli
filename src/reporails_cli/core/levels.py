@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from reporails_cli.bundled import get_levels_path
+from reporails_cli.core.bootstrap import get_rules_path
 from reporails_cli.core.models import Level
 
 if TYPE_CHECKING:
@@ -47,6 +48,9 @@ _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
 def get_level_config() -> dict[str, Any]:
     """Load bundled levels.yml configuration.
 
+    Used for detection gates (CLI-owned). Rule-to-level mapping
+    comes from the framework's levels.yml via get_framework_level_config().
+
     Cached for performance.
 
     Returns:
@@ -61,12 +65,40 @@ def get_level_config() -> dict[str, Any]:
     return config
 
 
+@lru_cache(maxsize=1)
+def get_framework_level_config() -> dict[str, Any]:
+    """Load the framework's levels.yml for rule-to-level mapping.
+
+    The framework (downloaded to ~/.reporails/rules/) owns which rules
+    belong to which level. Falls back to bundled levels.yml if the
+    framework copy doesn't exist.
+
+    Cached for performance.
+
+    Returns:
+        Parsed levels data from framework levels.yml
+    """
+    framework_levels = get_rules_path() / "levels.yml"
+    if framework_levels.exists():
+        try:
+            content = framework_levels.read_text(encoding="utf-8")
+            config: dict[str, Any] = yaml.safe_load(content) or {}
+            return config
+        except (yaml.YAMLError, OSError):
+            pass
+
+    # Fall back to bundled
+    return get_level_config()
+
+
 def get_rules_for_level(
     level: Level,
     extra_level_rules: dict[str, list[str]] | None = None,
 ) -> set[str]:
     """Get all rule IDs required for a given level.
 
+    Reads rule-to-level mapping from the framework's levels.yml
+    (not the bundled one, which only handles detection gates).
     Includes rules from all levels up to and including the given level.
 
     Args:
@@ -76,7 +108,7 @@ def get_rules_for_level(
     Returns:
         Set of rule IDs applicable at this level
     """
-    config = get_level_config()
+    config = get_framework_level_config()
     levels_data = config.get("levels", {})
 
     # Build rules set by traversing level inheritance
