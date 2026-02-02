@@ -25,29 +25,23 @@ from reporails_cli.core.update_check import (
 
 
 class TestUpdateNotification:
-    def test_has_cli_update_when_versions_differ(self) -> None:
-        n = UpdateNotification(cli_current="0.1.0", cli_latest="0.2.0")
-        assert n.has_cli_update is True
+    @pytest.mark.parametrize("current,latest,expected", [
+        ("0.1.0", "0.2.0", True),
+        ("0.1.0", "0.1.0", False),
+        (None, None, False),
+    ])
+    def test_has_cli_update(self, current: str | None, latest: str | None, expected: bool) -> None:
+        n = UpdateNotification(cli_current=current, cli_latest=latest)
+        assert n.has_cli_update is expected
 
-    def test_no_cli_update_when_same(self) -> None:
-        n = UpdateNotification(cli_current="0.1.0", cli_latest="0.1.0")
-        assert n.has_cli_update is False
-
-    def test_no_cli_update_when_none(self) -> None:
-        n = UpdateNotification()
-        assert n.has_cli_update is False
-
-    def test_has_rules_update_when_versions_differ(self) -> None:
-        n = UpdateNotification(rules_current="0.0.1", rules_latest="0.0.2")
-        assert n.has_rules_update is True
-
-    def test_no_rules_update_when_same(self) -> None:
-        n = UpdateNotification(rules_current="0.0.1", rules_latest="0.0.1")
-        assert n.has_rules_update is False
-
-    def test_no_rules_update_when_none(self) -> None:
-        n = UpdateNotification()
-        assert n.has_rules_update is False
+    @pytest.mark.parametrize("current,latest,expected", [
+        ("0.0.1", "0.0.2", True),
+        ("0.0.1", "0.0.1", False),
+        (None, None, False),
+    ])
+    def test_has_rules_update(self, current: str | None, latest: str | None, expected: bool) -> None:
+        n = UpdateNotification(rules_current=current, rules_latest=latest)
+        assert n.has_rules_update is expected
 
 
 # ---------------------------------------------------------------------------
