@@ -11,7 +11,6 @@ from reporails_cli.formatters.text.box import format_assessment_box
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.components import get_severity_icons, pad_line
 from reporails_cli.formatters.text.violations import format_violations_section
-from reporails_cli.templates import render
 
 
 def _format_pending_section(
@@ -83,13 +82,26 @@ def _format_cta(
     result: ValidationResult,
     ascii_mode: bool | None = None,
 ) -> str:
-    """Format MCP call-to-action for partial evaluation."""
+    """Format MCP call-to-action box for partial evaluation."""
     if not result.is_partial:
         return ""
 
     chars = get_chars(ascii_mode)
-    separator = chars["sep"] * 64
-    return render("cli_cta.txt", separator=separator)
+    width = 64
+    border = chars["h"] * width
+
+    msg = "For complete analysis, add reporails MCP to your agent:"
+    cmd = "claude mcp add reporails -- uvx --from reporails-cli ails-mcp"
+
+    lines = [
+        border,
+        "",
+        msg.center(width),
+        cmd.center(width),
+        "",
+        border,
+    ]
+    return "\n".join(lines)
 
 
 def format_result(
@@ -118,7 +130,6 @@ def format_result(
     pending = _format_pending_section(result, quiet_semantic, ascii_mode)
     if pending:
         sections.append(pending)
-        sections.append("")
 
     # Skipped experimental rules
     experimental = _format_experimental_section(result)
