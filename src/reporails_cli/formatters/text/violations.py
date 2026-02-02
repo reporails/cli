@@ -26,7 +26,9 @@ def format_violations_section(
 
     chars = get_chars(ascii_mode)
     legend = format_legend(ascii_mode)
-    lines = [f"Violations:  {legend}", "-" * 60]
+    line_width = 62
+    header = f"Violations{legend:>{line_width - len('Violations')}}"
+    lines = [header, "-" * line_width]
 
     # Group by file
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -81,10 +83,15 @@ def format_violations_section(
             location = v.get("location", "")
             line_num = location.rsplit(":", 1)[-1] if ":" in location else "?"
             msg = v.get("message", "")
-            max_msg_len = 50
+            rule_id = v.get("rule_id", "")
+
+            # Prefix: "    X  :nnnn " = 13 chars; suffix: " rule_id"
+            # Fit message so full line stays within line_width
+            max_msg_len = line_width - 13 - 1 - len(rule_id)
+            max_msg_len = max(max_msg_len, 10)  # floor
             if len(msg) > max_msg_len:
                 msg = msg[: max_msg_len - 3] + "..."
-            rule_id = v.get("rule_id", "")
+            msg = msg.ljust(max_msg_len)
 
             lines.append(render("cli_violation.txt",
                 icon=icon,

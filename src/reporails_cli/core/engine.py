@@ -26,9 +26,12 @@ from reporails_cli.core.capability import (
 )
 from reporails_cli.core.init import run_init
 from reporails_cli.core.models import (
+    Category,
+    CategoryStats,
     PendingSemantic,
     Rule,
     RuleType,
+    Severity,
     SkippedExperimental,
     ValidationResult,
     Violation,
@@ -38,6 +41,74 @@ from reporails_cli.core.registry import get_experimental_rules, load_rules
 from reporails_cli.core.sarif import dedupe_violations, parse_sarif
 from reporails_cli.core.scorer import calculate_score, estimate_friction
 from reporails_cli.core.semantic import build_semantic_requests
+
+_SEVERITY_ORDER = {
+    Severity.CRITICAL: 0,
+    Severity.HIGH: 1,
+    Severity.MEDIUM: 2,
+    Severity.LOW: 3,
+}
+
+# Category enum → single-letter display code
+_CATEGORY_CODE: dict[Category, str] = {
+    Category.STRUCTURE: "S",
+    Category.CONTENT: "C",
+    Category.EFFICIENCY: "E",
+    Category.MAINTENANCE: "M",
+    Category.GOVERNANCE: "G",
+}
+
+# Canonical display order
+_CATEGORY_ORDER = ("S", "C", "E", "M", "G")
+
+# Code → human name
+_CATEGORY_NAMES = {
+    "S": "Structure", "C": "Content", "E": "Efficiency",
+    "M": "Maintenance", "G": "Governance",
+}
+
+
+def _compute_category_summary(
+    applicable_rules: dict[str, Rule],
+    unique_violations: list[Violation],
+) -> tuple[CategoryStats, ...]:
+    """Compute per-category stats from applicable rules and violations."""
+    # Build rule_id → category code lookup from Rule.category enum
+    rule_category: dict[str, str] = {}
+    totals: dict[str, int] = {}
+    for rule in applicable_rules.values():
+        code = _CATEGORY_CODE.get(rule.category, "")
+        if not code:
+            continue
+        rule_category[rule.id] = code
+        totals[code] = totals.get(code, 0) + 1
+
+    # Count failed rules and worst severity per category
+    failed: dict[str, set[str]] = {}
+    worst: dict[str, Severity] = {}
+    for v in unique_violations:
+        code = rule_category.get(v.rule_id, "")
+        if not code:
+            continue
+        if code not in failed:
+            failed[code] = set()
+        failed[code].add(v.rule_id)
+        if code not in worst or _SEVERITY_ORDER[v.severity] < _SEVERITY_ORDER[worst[code]]:
+            worst[code] = v.severity
+
+    stats = []
+    for code in _CATEGORY_ORDER:
+        total = totals.get(code, 0)
+        fail_count = len(failed.get(code, set()))
+        stats.append(CategoryStats(
+            code=code,
+            name=_CATEGORY_NAMES[code],
+            total=total,
+            passed=total - fail_count,
+            failed=fail_count,
+            worst_severity=worst[code].value if code in worst else None,
+        ))
+    return tuple(stats)
 
 
 def run_validation(
@@ -201,6 +272,7 @@ def run_validation(
     # =========================================================================
 
     unique_violations = dedupe_violations(violations)
+    category_summary = _compute_category_summary(applicable_rules, unique_violations)
     score = calculate_score(len(applicable_rules), unique_violations)
     friction = estimate_friction(unique_violations)
     rules_failed = len({v.rule_id for v in unique_violations})
@@ -233,6 +305,7 @@ def run_validation(
         rules_failed=rules_failed,
         feature_summary=capability.feature_summary,
         friction=friction,
+        category_summary=category_summary,
         is_partial=bool(judgment_requests),  # Partial if semantic rules pending
         pending_semantic=pending_semantic,
         skipped_experimental=skipped_experimental,
