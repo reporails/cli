@@ -9,6 +9,7 @@ from reporails_cli.core.models import ScanDelta, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.box import format_assessment_box
 from reporails_cli.formatters.text.chars import get_chars
+from reporails_cli.formatters.text.components import get_severity_icons, pad_line
 from reporails_cli.formatters.text.violations import format_violations_section
 from reporails_cli.templates import render
 
@@ -16,17 +17,54 @@ from reporails_cli.templates import render
 def _format_pending_section(
     result: ValidationResult,
     quiet_semantic: bool = False,
+    ascii_mode: bool | None = None,
 ) -> str:
-    """Format pending semantic evaluation section."""
+    """Format pending semantic evaluation box."""
     if quiet_semantic or not result.pending_semantic:
         return ""
 
     ps = result.pending_semantic
-    return render("cli_pending.txt",
-        rule_count=ps.rule_count,
-        file_count=ps.file_count,
-        rule_list=", ".join(ps.rules),
-    )
+    chars = get_chars(ascii_mode)
+    box_width = 62
+
+    top_border = chars["tl"] + chars["h"] * box_width + chars["tr"]
+    bottom_border = chars["bl"] + chars["h"] * box_width + chars["br"]
+    empty_line = chars["v"] + " " * box_width + chars["v"]
+
+    severity_icons = get_severity_icons(chars)
+
+    # Header line: title + count on same line
+    header_text = f"Pending semantic evaluation: {ps.rule_count} rules across {ps.file_count} files"
+    header_line = pad_line(header_text, box_width, chars["v"])
+
+    # Build per-rule table from judgment_requests
+    seen: dict[str, tuple[str, str]] = {}  # rule_id -> (title, severity)
+    for jr in result.judgment_requests:
+        if jr.rule_id not in seen:
+            seen[jr.rule_id] = (jr.rule_title, jr.severity.value)
+
+    rule_lines = []
+    rule_lines.append(pad_line("Rule             Description                  Severity", box_width, chars["v"]))
+    rule_lines.append(pad_line(chars["sep"] * 53, box_width, chars["v"]))
+    for rule_id in ps.rules:
+        title, severity = seen.get(rule_id, ("", ""))
+        icon = severity_icons.get(severity, "") if severity else ""
+        # Truncate title to fit: 17 (rule) + 29 (title) + icon
+        max_title = 29
+        display_title = title[:max_title] if len(title) > max_title else title
+        row = f"{rule_id:<17}{display_title:<29}{icon}"
+        rule_lines.append(pad_line(row, box_width, chars["v"]))
+
+    lines = [
+        top_border,
+        empty_line,
+        header_line,
+        empty_line,
+        *rule_lines,
+        empty_line,
+        bottom_border,
+    ]
+    return "\n".join(lines)
 
 
 def _format_experimental_section(
@@ -77,7 +115,7 @@ def format_result(
     sections.append(format_violations_section(violations, ascii_mode))
 
     # Pending semantic
-    pending = _format_pending_section(result, quiet_semantic)
+    pending = _format_pending_section(result, quiet_semantic, ascii_mode)
     if pending:
         sections.append(pending)
         sections.append("")
