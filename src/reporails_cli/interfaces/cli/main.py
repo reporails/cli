@@ -12,7 +12,13 @@ import typer
 from rich.console import Console
 
 from reporails_cli.core.agents import detect_agents, get_all_instruction_files
-from reporails_cli.core.cache import ProjectCache, content_hash, get_previous_scan, record_scan
+from reporails_cli.core.cache import (
+    ProjectCache,
+    cache_judgments,
+    content_hash,
+    get_previous_scan,
+    record_scan,
+)
 from reporails_cli.core.discover import generate_backbone_yaml, save_backbone
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
@@ -514,6 +520,32 @@ def dismiss(
         dismissed += 1
 
     console.print(f"[green]Dismissed[/green] {rule_id_upper} for {dismissed} file(s)")
+
+
+@app.command()
+def judge(
+    path: str = typer.Argument(".", help="Project root"),
+    verdicts: list[str] = typer.Argument(None, help="Verdict strings: rule_id:location:verdict:reason"),  # noqa: B008
+) -> None:
+    """Cache semantic rule verdicts (batch).
+
+    Accepts one or more verdict strings in rule_id:location:verdict:reason format.
+
+    Example:
+        ails judge . "C6:CLAUDE.md:pass:Criteria met" "M2:.claude/rules/foo.md:fail:Contradictions found"
+    """
+    target = Path(path).resolve()
+
+    if not target.exists():
+        console.print(f"[red]Error:[/red] Path not found: {target}")
+        raise typer.Exit(1)
+
+    if not verdicts:
+        console.print("[yellow]No verdicts provided.[/yellow]")
+        raise typer.Exit(1)
+
+    recorded = cache_judgments(target, verdicts)
+    print(json.dumps({"recorded": recorded}))
 
 
 @app.command("version")
