@@ -304,6 +304,7 @@ def run_validation(
         rules_passed=len(applicable_rules) - rules_failed,
         rules_failed=rules_failed,
         feature_summary=capability.feature_summary,
+        has_orphan_features=capability.has_orphan_features,
         friction=friction,
         category_summary=category_summary,
         is_partial=bool(judgment_requests),  # Partial if semantic rules pending

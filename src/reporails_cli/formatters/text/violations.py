@@ -26,9 +26,17 @@ def format_violations_section(
 
     chars = get_chars(ascii_mode)
     legend = format_legend(ascii_mode)
-    line_width = 62
+    line_width = 64
+    separator = "-" * line_width
     header = f"Violations{legend:>{line_width - len('Violations')}}"
-    lines = [header, "-" * line_width]
+    lines = [header, separator]
+
+    # Fixed column widths:  "    " (4) + icon (1) + "  " (2) + line (4) + "  " (2) = 13 prefix
+    # suffix: "  " (2) + rule_id
+    line_col_w = 4
+    prefix_w = 4 + 1 + 2 + line_col_w + 2  # 13
+    suffix_gap = 2
+    col_labels = f"    {'':1}  {'line':<{line_col_w}}  {'issue':<{line_width - prefix_w - suffix_gap - 4}}  {'rule':>4}"
 
     # Group by file
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -50,6 +58,7 @@ def format_violations_section(
 
     sorted_files = sorted(grouped.items(), key=file_sort_key)
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    severity_icons = get_severity_icons(chars)
 
     for file_path, file_violations in sorted_files:
         display_path = normalize_path(file_path)
@@ -69,37 +78,41 @@ def format_violations_section(
             count=len(unique_violations),
             issue_word=issue_word,
         ))
+        lines.append(separator)
+        lines.append(col_labels)
 
         sorted_violations = sorted(
             unique_violations,
             key=lambda v: (severity_order.get(v.get("severity", ""), 9), v.get("location", "")),
         )
 
-        severity_icons = get_severity_icons(chars)
-
         for v in sorted_violations:
             sev = v.get("severity", "medium")
             icon = severity_icons.get(sev, "?")
             location = v.get("location", "")
-            line_num = location.rsplit(":", 1)[-1] if ":" in location else "?"
+            raw_line = location.rsplit(":", 1)[-1] if ":" in location else ""
             msg = v.get("message", "")
             rule_id = v.get("rule_id", "")
 
-            # Prefix: "    X  :nnnn " = 13 chars; suffix: " rule_id"
-            # Fit message so full line stays within line_width
-            max_msg_len = line_width - 13 - 1 - len(rule_id)
-            max_msg_len = max(max_msg_len, 10)  # floor
+            # Line number: show :N for line-specific, blank for file-wide (line 1)
+            line_str = f":{raw_line}" if raw_line and raw_line != "1" else ""
+            line_field = line_str.ljust(line_col_w)
+
+            # Fit message within remaining space
+            max_msg_len = line_width - prefix_w - suffix_gap - len(rule_id)
+            max_msg_len = max(max_msg_len, 10)
             if len(msg) > max_msg_len:
                 msg = msg[: max_msg_len - 3] + "..."
             msg = msg.ljust(max_msg_len)
 
             lines.append(render("cli_violation.txt",
                 icon=icon,
+                line=line_field,
                 rule_id=rule_id,
-                line=line_num,
                 message=msg,
             ))
 
+        lines.append(separator)
         lines.append("")
 
     return "\n".join(lines)

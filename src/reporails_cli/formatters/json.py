@@ -73,6 +73,7 @@ def format_result(
         "score": result.score,
         "level": result.level.value,
         "capability": LEVEL_LABELS.get(result.level, "Unknown"),
+        "has_orphan_features": result.has_orphan_features,
         "feature_summary": result.feature_summary,
         "summary": {
             "rules_checked": result.rules_checked,

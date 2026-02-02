@@ -12,69 +12,6 @@ from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.violations import format_violations_section
 from reporails_cli.templates import render
 
-# Full category names with code letter in parentheses
-_CATEGORY_HEADERS = {
-    "S": "(S)tructure",
-    "C": "(C)ontent",
-    "E": "(E)fficiency",
-    "M": "(M)aintenance",
-    "G": "(G)overnance",
-}
-
-def _format_category_table(
-    result: ValidationResult,
-    ascii_mode: bool | None = None,
-) -> str:
-    """Format per-category summary table.
-
-    Template: ``{x_stat}{x_ind}`` (no gap) with 1-space gap between columns,
-    matching the 1-space gap between headers.  So ``len(stat) + len(ind)``
-    must equal ``len(hdr)`` for each column.
-
-    Example output::
-
-      (S)tructure (C)ontent (E)fficiency (M)aintenance (G)overnance
-      6/7 ○       12/12     7/7          6/6           –
-    """
-    if not result.category_summary:
-        return ""
-
-    if all(cs.total == 0 for cs in result.category_summary):
-        return ""
-
-    chars = get_chars(ascii_mode)
-    severity_icons = {
-        "critical": chars["crit"],
-        "high": chars["high"],
-        "medium": chars["med"],
-        "low": chars["low"],
-    }
-
-    template_vars: dict[str, str] = {}
-    for cs in result.category_summary:
-        key = cs.code.lower()
-        hdr = _CATEGORY_HEADERS[cs.code]
-        col_w = len(hdr)
-        template_vars[f"{key}_hdr"] = hdr
-
-        # Stat: passed/total or –
-        stat = f"{cs.passed}/{cs.total}" if cs.total else "–"
-
-        # Indicator: severity icon or empty
-        ind = severity_icons.get(cs.worst_severity, "") if cs.worst_severity else ""
-
-        # Build cell: "stat ind" padded to col_w via {x_stat}{x_ind}
-        # Put stat + space into {x_stat}, indicator + padding into {x_ind}
-        if ind:
-            stat_part = stat + " "
-            template_vars[f"{key}_stat"] = stat_part
-            template_vars[f"{key}_ind"] = ind.ljust(col_w - len(stat_part))
-        else:
-            template_vars[f"{key}_stat"] = stat.ljust(col_w)
-            template_vars[f"{key}_ind"] = ""
-
-    return render("cli_working.txt", **template_vars).rstrip()
-
 
 def _format_pending_section(
     result: ValidationResult,
@@ -129,19 +66,12 @@ def format_result(
     data = json_formatter.format_result(result, delta)
 
     violations = data.get("violations", [])
-    friction = data.get("friction", {})
 
     sections = []
 
     # Assessment box
     sections.append(format_assessment_box(data, ascii_mode, delta))
     sections.append("")
-
-    # Category summary table
-    working = _format_category_table(result, ascii_mode)
-    if working:
-        sections.append(working)
-        sections.append("")
 
     # Violations
     sections.append(format_violations_section(violations, ascii_mode))
@@ -151,11 +81,6 @@ def format_result(
     if pending:
         sections.append(pending)
         sections.append("")
-
-    # Friction estimate
-    friction_level = friction if isinstance(friction, str) else friction.get("level", "none")
-    if friction_level != "none":
-        sections.append(f"Friction: {friction_level.title()}")
 
     # Skipped experimental rules
     experimental = _format_experimental_section(result)

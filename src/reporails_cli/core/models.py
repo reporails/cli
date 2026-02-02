@@ -378,6 +378,7 @@ class ValidationResult:
     feature_summary: str  # Human-readable
     friction: FrictionEstimate
     # Per-category breakdown
+    has_orphan_features: bool = False  # Features above base level (display as L3+)
     category_summary: tuple[CategoryStats, ...] = ()
     # Evaluation completeness
     is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
