@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches:
+      # Release branches: run QA on every push (e.g. 0.1.4)
+      - "[0-9]*.[0-9]*.[0-9]*"
+
+jobs:
+  qa:
+    name: QA gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint
+        run: uv run poe lint
+
+      - name: Type check
+        run: uv run poe type
+
+      - name: Unit tests
+        run: uv run poe test_unit
+
+      - name: Download OpenGrep
+        run: uv run python -c "from reporails_cli.core.init import download_opengrep; download_opengrep()"
+
+      - name: Integration tests
+        run: uv run poe test_integration
