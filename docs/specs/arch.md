@@ -306,7 +306,8 @@ ails check [PATH] -f json      # Output as JSON (for MCP/scripts)
 ails check [PATH] -q           # Suppress semantic rules message
 
 # Management
-ails update                    # Update framework to latest
+ails update                    # Update rules framework to latest
+ails update --cli              # Upgrade CLI package itself
 ails update --version 0.1.0    # Update to specific version
 
 # Information

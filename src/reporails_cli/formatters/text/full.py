@@ -91,7 +91,7 @@ def _format_cta(
     border = chars["h"] * width
 
     msg = "For complete analysis, add reporails MCP to your agent:"
-    cmd = "claude mcp add reporails -- uvx --from reporails-cli ails-mcp"
+    cmd = "claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp"
 
     lines = [
         border,

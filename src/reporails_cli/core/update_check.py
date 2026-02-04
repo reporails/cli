@@ -135,4 +135,10 @@ def format_update_message(notification: UpdateNotification) -> str:
         parts.append(f"framework {notification.rules_current} → {notification.rules_latest}")
 
     detail = ", ".join(parts)
-    return f"[dim]Update available: {detail}. Run: ails update[/dim]"
+    commands = []
+    if notification.has_cli_update:
+        commands.append("ails update --cli")
+    if notification.has_rules_update:
+        commands.append("ails update")
+    cmd = " && ".join(commands)
+    return f"[dim]Update available: {detail}. Run: {cmd}[/dim]"
