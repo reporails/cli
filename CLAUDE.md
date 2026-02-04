@@ -1,4 +1,4 @@
-# Reporails CLI v0.1.2
+# Reporails CLI v0.1.3
 
 AI instruction validator. Validates instruction files against community-maintained rules.
 
