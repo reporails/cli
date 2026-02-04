@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> Version 0.1.3 | AI Instruction Validator
+> Version 0.1.4 | AI Instruction Validator
 
 ## Overview
 
