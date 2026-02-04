@@ -288,6 +288,7 @@ class ProjectConfig:
     disabled_rules: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     experimental: bool | list[str] = False  # True, False, or list of rule IDs
+    recommended: bool = True  # Include recommended rules (opt out with false)
 
 
 # =============================================================================

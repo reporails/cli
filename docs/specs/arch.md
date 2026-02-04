@@ -304,6 +304,7 @@ ails check [PATH]              # Validate instruction files
 ails check [PATH] --refresh    # Force re-scan, ignore cache
 ails check [PATH] -f json      # Output as JSON (for MCP/scripts)
 ails check [PATH] -q           # Suppress semantic rules message
+# Note: recommended rules are included by default (opt out in .reporails/config.yml)
 
 # Management
 ails update                    # Update rules framework to latest
@@ -344,6 +345,9 @@ overrides:
     severity: low
   E6:
     severity: low
+
+# Opt out of recommended rules (included by default)
+recommended: false
 ```
 
 ## OpenGrep Integration

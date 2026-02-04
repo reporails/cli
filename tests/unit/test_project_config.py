@@ -17,6 +17,7 @@ class TestGetProjectConfig:
         assert config.disabled_rules == []
         assert config.framework_version is None
         assert config.experimental is False
+        assert config.recommended is True
 
     def test_loads_packages(self, tmp_path: Path, make_config_file) -> None:
         make_config_file("packages:\n  - recommended\n  - custom\n")
@@ -40,6 +41,16 @@ class TestGetProjectConfig:
         assert config.packages == ["recommended"]
         assert config.disabled_rules == ["S1"]
         assert config.experimental is True
+
+    def test_recommended_true_by_default(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("packages:\n  - custom\n")
+        config = get_project_config(tmp_path)
+        assert config.recommended is True
+
+    def test_recommended_opt_out(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("recommended: false\n")
+        config = get_project_config(tmp_path)
+        assert config.recommended is False
 
     def test_returns_defaults_on_malformed_yaml(self, tmp_path: Path, make_config_file) -> None:
         make_config_file(": : :\n  bad yaml [[[")

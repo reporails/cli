@@ -186,6 +186,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
             disabled_rules=data.get("disabled_rules", []),
             overrides=data.get("overrides", {}),
             experimental=data.get("experimental", False),
+            recommended=data.get("recommended", True),
         )
     except (yaml.YAMLError, OSError):
         return ProjectConfig()
