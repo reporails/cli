@@ -98,11 +98,6 @@ def check(
         "--agent",
         help="Agent identifier for template vars (claude, cursor, etc.)",
     ),
-    with_recommended: bool = typer.Option(
-        False,
-        "--with-recommended",
-        help="Include recommended rules package (auto-downloads if needed)",
-    ),
     experimental: bool = typer.Option(
         False,
         "--experimental",
@@ -134,19 +129,22 @@ def check(
     # Resolve rules directory
     rules_path = Path(rules_dir).resolve() if rules_dir else None
 
-    # Handle --with-recommended: auto-download and inject into project packages
-    if with_recommended:
-        from reporails_cli.core.init import download_recommended, is_recommended_installed
+    # Auto-download recommended rules if enabled (default) and not yet installed
+    from reporails_cli.core.bootstrap import get_project_config
+    from reporails_cli.core.init import download_recommended, is_recommended_installed
 
-        if not is_recommended_installed():
-            try:
-                if sys.stdout.isatty() and format not in ("json", "brief", "compact"):
-                    with console.status("[bold]Downloading recommended rules...[/bold]"):
-                        download_recommended()
-                else:
+    project_config = get_project_config(target)
+    use_recommended = project_config.recommended
+
+    if use_recommended and not is_recommended_installed():
+        try:
+            if sys.stdout.isatty() and format not in ("json", "brief", "compact"):
+                with console.status("[bold]Downloading recommended rules...[/bold]"):
                     download_recommended()
-            except Exception as e:
-                console.print(f"[yellow]Warning:[/yellow] Could not download recommended rules: {e}")
+            else:
+                download_recommended()
+        except Exception as e:
+            console.print(f"[yellow]Warning:[/yellow] Could not download recommended rules: {e}")
 
     # Early check for missing instruction files
     instruction_files = get_all_instruction_files(target)
@@ -163,8 +161,8 @@ def check(
     # Determine if we should show spinner (TTY + not explicitly JSON)
     show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact")
 
-    # Build extra packages list from flags
-    extra_packages = ["recommended"] if with_recommended else None
+    # Include recommended package unless opted out via config
+    extra_packages = ["recommended"] if use_recommended else None
 
     # Run validation with timing
     start_time = time.perf_counter()

@@ -3,6 +3,8 @@
 Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 [Why this exists](https://dev.to/cleverhoods/claudemd-lint-score-improve-repeat-2om5)
 
+### Pre-1.0 — moving fast, API still evolving, feedback welcome.
+
 ## Quick Start
 
 ### One-line install (npm)
@@ -90,35 +92,38 @@ Once installed, all commands use `ails` directly.
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
 ails check --strict             # Exit 1 if violations (for CI)
-ails check --with-recommended   # Include recommended rules
 ails explain S1                 # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
 ails update                     # Update rules framework
-ails update --check             # Check for rule updates
+ails update --cli               # Upgrade the CLI package itself
+ails update --check             # Check for updates
 ails dismiss C6                 # Dismiss a semantic finding
 ails version                    # Show version info
 ```
 
 ## Updating
 
-The **rules framework** updates separately from the CLI:
-
 ```bash
-ails update              # Update rules to latest
-ails update --check      # Check without installing
+ails update              # Update rules framework to latest
+ails update --cli        # Upgrade the CLI package itself
+ails update --check      # Check for updates without installing
 ```
 
-The **CLI itself** updates automatically with ephemeral runners (`uvx`, `npx`).
-Persistent installs: `pip install --upgrade reporails-cli` or `npm install -g @reporails/cli@latest`
+Ephemeral runners (`uvx`, `npx`) always use the latest CLI version automatically.
 
 ## Recommended Rules
 
-The `--with-recommended` flag adds community [recommended rules](https://github.com/reporails/recommended) on top of the core set. These are methodology-backed checks (AILS_ namespace) that are auto-downloaded on first use:
+[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
+
+```yaml
+recommended: false
+```
+
+To force re-fetch the latest recommended rules:
 
 ```bash
-ails check --with-recommended       # Include recommended rules
-ails update --recommended              # Re-fetch latest recommended rules
+ails update --recommended
 ```
 
 ## Prerequisites

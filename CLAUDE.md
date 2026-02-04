@@ -47,7 +47,8 @@ uv run ails map . --save   # Save backbone.yml
 | `ails map [PATH]` | Discover project structure |
 | `ails map --save` | Save backbone.yml to .reporails/ |
 | `ails explain RULE_ID` | Show rule details |
-| `ails update` | Update framework to latest |
+| `ails update` | Update rules framework to latest |
+| `ails update --cli` | Upgrade CLI package itself |
 | `ails version` | Show CLI and framework versions |
 
 ## Project Structure
