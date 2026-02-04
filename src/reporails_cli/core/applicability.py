@@ -63,8 +63,8 @@ def resolve_symlinked_files(target: Path) -> list[Path]:
             continue
         try:
             real_path = path.resolve(strict=True)
-        except OSError as exc:
-            if exc.errno == errno.ELOOP:
+        except (OSError, RuntimeError) as exc:
+            if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
                 logger.warning(
                     "Circular symlink detected: %s — file will be skipped",
                     path,
