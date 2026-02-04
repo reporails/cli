@@ -53,7 +53,7 @@ RECOMMENDED_ARCHIVE_URL = (
     f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{RECOMMENDED_VERSION}.tar.gz"
 )
 
-RULES_VERSION = "0.2.1"
+RULES_VERSION = "0.2.2"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 
