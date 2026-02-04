@@ -116,7 +116,7 @@ class TestCapabilityLevelDetermination:
             f"Minimal project should be L1-L2, got {result.level}"
         )
 
-    def test_level2_basic_project(self, level2_project: Path) -> None:
+    def test_level2_basic_project(self, level2_project: Path, opengrep_bin: Path) -> None:
         """Level 2 project should be detected as L2 or L3."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
@@ -136,7 +136,7 @@ class TestCapabilityLevelDetermination:
             f"Project with sections should be at least L2, got {result.level}"
         )
 
-    def test_level3_structured_project(self, level3_project: Path) -> None:
+    def test_level3_structured_project(self, level3_project: Path, opengrep_bin: Path) -> None:
         """Level 3 project should be detected as L3 or higher."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
@@ -156,7 +156,7 @@ class TestCapabilityLevelDetermination:
             f"Project with .claude/rules/ should be at least L3, got {result.level}"
         )
 
-    def test_level5_governed_project(self, level5_project: Path) -> None:
+    def test_level5_governed_project(self, level5_project: Path, opengrep_bin: Path) -> None:
         """Level 5 project should be detected as L5 or L6."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (

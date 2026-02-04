@@ -1,11 +1,16 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      # Release branches: run QA only (e.g. 0.1.4)
+      - "[0-9]*.[0-9]*.[0-9]*"
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 jobs:
-  test:
+  qa:
     name: QA gate
     runs-on: ubuntu-latest
     steps:
@@ -30,20 +35,53 @@ jobs:
       - name: Integration tests
         run: uv run poe test_integration
 
-  pypi:
-    name: Publish to PyPI
-    needs: test
+  publish:
+    name: Publish release
+    needs: qa
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.merged == true
+      && contains(github.event.pull_request.head.ref, '.')
     runs-on: ubuntu-latest
-    environment: release
     permissions:
-      contents: read
+      contents: write
       id-token: write
+    environment: release
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
+
+      - name: Extract version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION"
+
+      - name: Verify branch matches version
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ "$BRANCH" != "$VERSION" ]; then
+            echo "::error::Branch name ($BRANCH) does not match pyproject.toml version ($VERSION)"
+            exit 1
+          fi
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes
 
       - name: Build package
         run: uv cache clean reporails-cli && uv build
@@ -53,7 +91,7 @@ jobs:
 
   npm:
     name: Publish to npm
-    needs: pypi
+    needs: publish
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -70,9 +108,9 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Set version from release tag
+      - name: Set version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.publish.outputs.version }}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
