@@ -412,6 +412,11 @@ def update(
         "--recommended",
         help="Re-fetch recommended rules package",
     ),
+    cli: bool = typer.Option(
+        False,
+        "--cli",
+        help="Upgrade the CLI package itself (not just rules)",
+    ),
     check: bool = typer.Option(
         False,
         "--check",
@@ -419,7 +424,7 @@ def update(
         help="Check for updates without installing",
     ),
 ) -> None:
-    """Update rules framework to latest or specified version."""
+    """Update rules framework (or CLI with --cli) to latest or specified version."""
     from reporails_cli.core.bootstrap import get_installed_version
     from reporails_cli.core.init import get_latest_version, update_rules
 
@@ -434,6 +439,19 @@ def update(
         except Exception as e:
             console.print(f"[red]Error:[/red] Could not download recommended rules: {e}")
             raise typer.Exit(1) from None
+        return
+
+    if cli:
+        from reporails_cli.core.self_update import upgrade_cli
+
+        with console.status("[bold]Upgrading CLI...[/bold]"):
+            cli_result = upgrade_cli(target_version=version)
+
+        if cli_result.updated:
+            console.print(f"[green]CLI upgraded:[/green] {cli_result.previous_version} → {cli_result.new_version}")
+            console.print(f"[dim]Method: {cli_result.method.value}[/dim]")
+        else:
+            console.print(cli_result.message)
         return
 
     if check:
@@ -557,9 +575,12 @@ def show_version() -> None:
 
     installed = get_installed_version()
 
+    from reporails_cli.core.self_update import detect_install_method
+
     console.print(f"CLI:       {cli_version}")
     console.print(f"Framework: {installed or 'not installed'} (bundled: {RULES_VERSION})")
     console.print(f"OpenGrep:  {OPENGREP_VERSION}")
+    console.print(f"Install:   {detect_install_method().value}")
 
 
 def main() -> None:

@@ -1,6 +1,11 @@
 # Reporails CLI v0.1.3
 
-AI instruction validator. Validates instruction files against community-maintained rules.
+AI instruction validator & quality assurance provider. Validates instruction files against deterministic, mechanical and semantic rules.
+
+## Session Start
+
+1. Read `.reporails/backbone.yml` for project structure
+2. Read `docs/spec/arch.md` for architecture decisions
 
 ## Development Context
 

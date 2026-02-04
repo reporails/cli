@@ -18,7 +18,7 @@ This registers the MCP server with Claude Code. Then ask Claude: `What ails clau
 For full semantic analysis, add the MCP server:
 ```bash
 # Add the MCP and restart Claude
-claude mcp add reporails -- uvx reporails-cli ails-mcp
+claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp
 ```
 
 Then ask Claude:

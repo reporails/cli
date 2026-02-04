@@ -24,6 +24,7 @@ src/reporails_cli/
 │   ├── semantic.py       # Build JudgmentRequests
 │   ├── scorer.py         # Calculate score, level
 │   ├── cache.py          # Project + global cache, analytics
+│   ├── self_update.py    # CLI self-upgrade
 │   ├── models.py         # Dataclasses
 │   └── utils.py          # Shared helpers
 ├── bundled/
@@ -57,6 +58,8 @@ interfaces/ (CLI, MCP)
      │
      ▼
 engine.py (orchestration, sync)
+     │
+     ├──► self_update.py ──► update_check.py
      │
      ├──► init.py ──► bootstrap.py
      │
@@ -559,6 +562,44 @@ Project-local and global caching.
 
 ---
 
+## core/self_update.py
+
+CLI self-upgrade. Detects install method from package metadata and runs the appropriate upgrade subprocess.
+
+**Constants:**
+
+```python
+PKG_NAME = "reporails-cli"
+```
+
+**Enums:**
+
+- `InstallMethod`: uv, pip, pipx, dev, unknown
+
+**Dataclasses:**
+
+- `CliUpdateResult`: updated, previous_version, new_version, method, message
+
+**Functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `detect_install_method()` | `InstallMethod` | Detect how CLI was installed (metadata-based) |
+| `upgrade_cli(target_version)` | `CliUpdateResult` | Upgrade CLI package to target or latest |
+| `_build_upgrade_command(method, target)` | `list[str]` | Build subprocess command for method |
+| `_verify_installed_version()` | `str \| None` | Check installed version via fresh subprocess |
+
+**Detection Logic:**
+
+```
+1. Read direct_url.json → editable? → DEV
+2. Check dist location for "pipx" → PIPX
+3. Read INSTALLER metadata → "uv" → UV, "pip" → PIP
+4. Default → PIP
+```
+
+---
+
 ## core/models.py
 
 Dataclasses. Frozen where possible.
@@ -616,7 +657,8 @@ Typer CLI application.
 | `ails map [PATH]` | Discover project structure |
 | `ails map --save` | Save backbone.yml |
 | `ails explain RULE_ID` | Show rule details |
-| `ails update` | Update framework to latest |
+| `ails update` | Update rules framework to latest |
+| `ails update --cli` | Upgrade CLI package itself |
 | `ails update --version VERSION` | Update to specific version |
 | `ails update --check` | Check for updates without installing |
 | `ails update --force` | Force reinstall even if current |
@@ -760,6 +802,7 @@ Per [Principle 7](principles.md#7-module-size-discipline):
 | discover.py | 400 | 362 | ✓ |
 | cache.py | 400 | 352 | ✓ |
 | scorer.py | 200 | 182 | ✓ |
+| self_update.py | 150 | ~130 | ✓ |
 | main.py | 250 | ~200 | ✓ |
 | opengrep/runner.py | 250 | 203 | ✓ |
 | opengrep/templates.py | 150 | 138 | ✓ |
