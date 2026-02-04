@@ -2,16 +2,37 @@ name: Release
 
 on:
   push:
-    branches:
-      # Release branches: run QA only (e.g. 0.1.4)
-      - "[0-9]*.[0-9]*.[0-9]*"
-  pull_request:
-    types: [closed]
     branches: [main]
 
 jobs:
+  check-release:
+    name: Check if release commit
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect version branch merge
+        id: check
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          # Check if this push is a merge from a version branch
+          MERGE_BRANCH=$(git log -1 --pretty=%s | grep -oP 'Merge.*from.*\K[0-9]+\.[0-9]+\.[0-9]+' || true)
+          if [ "$MERGE_BRANCH" = "$VERSION" ]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Release detected: $VERSION"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Not a release merge (merge_branch=$MERGE_BRANCH, version=$VERSION)"
+          fi
+
   qa:
     name: QA gate
+    needs: check-release
+    if: needs.check-release.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,18 +61,12 @@ jobs:
 
   publish:
     name: Publish release
-    needs: qa
-    if: >-
-      github.event_name == 'pull_request'
-      && github.event.pull_request.merged == true
-      && contains(github.event.pull_request.head.ref, '.')
+    needs: [check-release, qa]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
     environment: release
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,27 +74,11 @@ jobs:
         with:
           version: "latest"
 
-      - name: Extract version from pyproject.toml
-        id: version
-        run: |
-          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing version: $VERSION"
-
-      - name: Verify branch matches version
-        run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          VERSION="${{ steps.version.outputs.version }}"
-          if [ "$BRANCH" != "$VERSION" ]; then
-            echo "::error::Branch name ($BRANCH) does not match pyproject.toml version ($VERSION)"
-            exit 1
-          fi
-
       - name: Create tag and GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.check-release.outputs.version }}"
           git tag "$VERSION"
           git push origin "$VERSION"
           gh release create "$VERSION" \
@@ -94,7 +93,7 @@ jobs:
 
   npm:
     name: Publish to npm
-    needs: publish
+    needs: [check-release, publish]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -113,7 +112,7 @@ jobs:
 
       - name: Set version
         run: |
-          VERSION="${{ needs.publish.outputs.version }}"
+          VERSION="${{ needs.check-release.outputs.version }}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
