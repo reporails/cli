@@ -1,4 +1,4 @@
-version: 2
+version: 3
 generator: manual
 
 depends_on:
@@ -21,11 +21,21 @@ modules:
 
 bundled:
   capability_patterns: src/reporails_cli/bundled/capability-patterns.yml
-  detection: src/reporails_cli/bundled/detection.yml
 
 artifacts:
   changelog: UNRELEASED.md
   specs: docs/specs/
+
+context:
+  role: developer
+  description: "You are developing the reporails CLI, not an end user."
+  personas:
+    developer: "Modify source, run tests, read specs"
+    cli_user: "Install package, run ails check"
+    mcp_user: "Use reporails via Claude Code MCP integration"
+
+meta:
+  version_file: VERSION
 
 skills:
   check:
