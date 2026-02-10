@@ -39,7 +39,7 @@ npx @reporails/cli check
 That's it. You'll get a score, capability level, and actionable violations.
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Governed (L5)    ║
+║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Maintained (L5)    ║
 ║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -83,7 +83,7 @@ Once installed, all commands use `ails` directly.
 | L2 | Basic | Has CLAUDE.md |
 | L3 | Structured | Sections, imports |
 | L4 | Abstracted | .claude/rules/ directory |
-| L5 | Governed | Shared files, 3+ components |
+| L5 | Maintained | Shared files, 3+ components |
 | L6 | Adaptive | Backbone + full governance |
 
 ## Commands
@@ -92,23 +92,31 @@ Once installed, all commands use `ails` directly.
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
 ails check --strict             # Exit 1 if violations (for CI)
-ails explain S1                 # Explain a rule
+ails check --no-update-check    # Skip pre-run update prompt
+ails check --exclude-dir vendor # Exclude directory from scanning
+ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
-ails update                     # Update rules framework
+ails update                     # Update rules framework + recommended
+ails update --check             # Check for updates without installing
+ails update --recommended       # Update recommended rules only
+ails update --force             # Force reinstall even if current
 ails update --cli               # Upgrade the CLI package itself
-ails update --check             # Check for updates
-ails dismiss C6                 # Dismiss a semantic finding
+ails dismiss CORE:C:0001        # Dismiss a semantic finding
 ails version                    # Show version info
 ```
 
 ## Updating
 
 ```bash
-ails update              # Update rules framework to latest
-ails update --cli        # Upgrade the CLI package itself
+ails update              # Update rules framework + recommended to latest
 ails update --check      # Check for updates without installing
+ails update --recommended  # Update recommended rules only
+ails update --force      # Force reinstall even if current
+ails update --cli        # Upgrade the CLI package itself
 ```
+
+Before each scan, the CLI checks for available updates and prompts to install. Use `--no-update-check` to skip.
 
 Ephemeral runners (`uvx`, `npx`) always use the latest CLI version automatically.
 
@@ -120,7 +128,7 @@ Ephemeral runners (`uvx`, `npx`) always use the latest CLI version automatically
 recommended: false
 ```
 
-To force re-fetch the latest recommended rules:
+To update recommended rules independently:
 
 ```bash
 ails update --recommended
@@ -143,4 +151,4 @@ Want to add or improve rules? Please follow [Contribute](https://github.com/repo
 
 ## License
 
-Apache 2.0
+BUSL 1.1
