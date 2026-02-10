@@ -32,8 +32,9 @@ CATEGORY_CODES: dict[str, Category] = {
 
 
 class RuleType(str, Enum):
-    """How the rule is detected. Two types only."""
+    """How the rule is detected. Three types."""
 
+    MECHANICAL = "mechanical"  # Python structural check
     DETERMINISTIC = "deterministic"  # OpenGrep pattern → direct violation
     SEMANTIC = "semantic"  # LLM judgment required
 
@@ -64,17 +65,6 @@ class PatternConfidence(str, Enum):
     VERY_LOW = "very_low"  # Placeholder or minimal pattern
 
 
-@dataclass(frozen=True)
-class BackedByEntry:
-    """A single evidence backing for a rule.
-
-    Maps to backed_by entries in rule frontmatter (schema v4).
-    """
-
-    source: str  # Source ID from sources.yml
-    claim: str  # Claim ID within that source
-
-
 class Level(str, Enum):
     """Capability levels from framework."""
 
@@ -83,17 +73,25 @@ class Level(str, Enum):
     L2 = "L2"  # Scoped
     L3 = "L3"  # Structured
     L4 = "L4"  # Abstracted
-    L5 = "L5"  # Governed
+    L5 = "L5"  # Maintained
     L6 = "L6"  # Adaptive
 
 
 @dataclass(frozen=True)
 class Check:
-    """A specific check within a rule. Maps to OpenGrep pattern."""
+    """A specific check within a rule.
 
-    id: str  # e.g., "S1-root-too-long"
-    name: str  # e.g., "Root file exceeds 200 lines"
+    Checks have a type matching their gate: mechanical (Python function),
+    deterministic (OpenGrep pattern), or semantic (LLM evaluation).
+    """
+
+    id: str  # e.g., "CORE:S:0001:check:0001"
     severity: Severity
+    type: str = "deterministic"  # "mechanical" | "deterministic" | "semantic"
+    name: str = ""  # Human-readable (optional)
+    check: str | None = None  # Mechanical function name
+    args: dict[str, Any] | None = None  # Mechanical check arguments
+    negate: bool = False  # If True, finding = pass (content present), no finding = violation
 
 
 @dataclass
@@ -101,13 +99,18 @@ class Rule:
     """A rule definition loaded from framework frontmatter."""
 
     # Required (from frontmatter)
-    id: str  # e.g., "S1"
-    title: str  # e.g., "Size Limits"
+    id: str  # e.g., "CORE:S:0001"
+    title: str  # e.g., "Instruction File Exists"
     category: Category
     type: RuleType
     level: str  # e.g., "L2" - minimum level this rule applies to
 
-    # Checks (deterministic rules)
+    # Identity
+    slug: str = ""  # e.g., "instruction-file-exists"
+    targets: str = ""  # e.g., "{{instruction_files}}"
+    supersedes: str | None = None  # Coordinate of rule this replaces
+
+    # Checks (all rule types)
     checks: list[Check] = field(default_factory=list)
 
     # Semantic fields (semantic rules)
@@ -120,15 +123,10 @@ class Rule:
     # References
     sources: list[str] = field(default_factory=list)
     see_also: list[str] = field(default_factory=list)
-    backed_by: list[BackedByEntry] = field(default_factory=list)
+    backed_by: list[str] = field(default_factory=list)  # Source IDs from sources.yml
 
     # Pattern quality
     pattern_confidence: PatternConfidence | None = None
-
-    # Legacy field names (for backward compatibility during transition)
-    detection: str | None = None
-    scoring: int = 0
-    validation: str | None = None
 
     # Paths (set after loading)
     md_path: Path | None = None
@@ -208,6 +206,14 @@ class DetectedFeatures:
 
     # Symlink resolution (for OpenGrep extra targets)
     resolved_symlinks: list[Path] = field(default_factory=list)
+
+    # L2 capabilities
+    is_size_controlled: bool = False  # Root instruction file under size threshold
+
+    # L6 capabilities
+    has_skills_dir: bool = False  # .claude/skills/ etc. with content
+    has_mcp_config: bool = False  # .mcp.json or similar
+    has_memory_dir: bool = False  # Memory/state persistence
 
     # === Phase 2: Content detection (OpenGrep) ===
 
@@ -289,6 +295,7 @@ class ProjectConfig:
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     experimental: bool | list[str] = False  # True, False, or list of rule IDs
     recommended: bool = True  # Include recommended rules (opt out with false)
+    exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
 
 
 # =============================================================================
