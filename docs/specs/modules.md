@@ -20,16 +20,20 @@ src/reporails_cli/
 │   │   ├── runner.py     # Binary execution, sync only
 │   │   ├── templates.py  # {{placeholder}} resolution
 │   │   └── semgrepignore.py  # .semgrepignore handling
+│   ├── mechanical/       # Mechanical checks (package)
+│   │   ├── __init__.py   # Public API re-exports
+│   │   ├── runner.py     # Orchestration
+│   │   └── checks.py     # Check implementations
 │   ├── sarif.py          # Parse SARIF → Violations
 │   ├── semantic.py       # Build JudgmentRequests
 │   ├── scorer.py         # Calculate score, level
 │   ├── cache.py          # Project + global cache, analytics
+│   ├── update_check.py   # Update staleness detection + pre-run prompt
 │   ├── self_update.py    # CLI self-upgrade
 │   ├── models.py         # Dataclasses
 │   └── utils.py          # Shared helpers
 ├── bundled/
-│   ├── capability-patterns.yml  # OpenGrep patterns for capability detection
-│   └── levels.yml               # Level definitions and rule mappings
+│   └── capability-patterns.yml  # OpenGrep patterns for capability detection
 ├── templates/            # CLI output templates
 │   └── __init__.py       # Template loader (load_template, render)
 ├── interfaces/
@@ -69,6 +73,10 @@ engine.py (orchestration, sync)
      │
      ├──► discover.py
      │
+     ├──► mechanical/ (package)
+     │       ├── runner.py
+     │       └── checks.py
+     │
      ├──► opengrep/ (package)
      │       ├── runner.py
      │       ├── templates.py
@@ -107,9 +115,10 @@ Path helpers and config loading. No I/O except config file reading.
 | `get_global_config()` | `GlobalConfig` | Load `~/.reporails/config.yml` |
 | `get_project_config(project_root)` | `ProjectConfig` | Load `.reporails/config.yml` from project |
 | `get_package_paths(project_root, packages)` | `list[Path]` | Resolve package names to `.reporails/packages/<name>/` dirs |
-| `get_package_level_rules(project_root, packages)` | `dict[str, list[str]]` | Load and merge level→rules mappings from package `levels.yml` files |
+| `get_recommended_package_path()` | `Path` | `~/.reporails/packages/recommended/` |
 | `is_initialized()` | `bool` | Check if OpenGrep + rules exist |
-| `get_installed_version()` | `str | None` | Read version file |
+| `get_installed_version()` | `str | None` | Read framework version file |
+| `get_installed_recommended_version()` | `str | None` | Read recommended package version file |
 
 **Constants:**
 
@@ -121,54 +130,17 @@ REPORAILS_HOME = Path.home() / ".reporails"
 
 ## core/levels.py
 
-Level configuration and rule-to-level mapping. Loaded from bundled config.
+Level configuration and gate-based level determination. Loaded from framework registry.
 
 **Functions:**
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `get_level_config()` | `LevelConfig` | Load bundled levels.yml |
-| `get_rules_for_level(level, extra_level_rules=None)` | `set[str]` | Rule IDs required at level (with optional package extras) |
-| `get_level_label(level)` | `str` | Human-readable label |
-| `get_level_includes(level)` | `list[Level]` | Levels included (inheritance) |
-| `detect_orphan_features(features, level)` | `bool` | Features above base level |
+| `get_level_labels()` | `dict[Level, str]` | All level human-readable labels |
+| `determine_level_from_gates(features)` | `Level` | Determine level via capability gates |
+| `detect_orphan_features(features, base_level)` | `bool` | Features above base level |
 
-**Bundled Config (`bundled/levels.yml`):**
-
-```yaml
-levels:
-  L1:
-    name: Absent
-    required_rules: []
-  L2:
-    name: Basic
-    includes: [L1]
-    required_rules: [S1, C1, C2, C4, C7, C8, C9, C10, C12, M5]
-  L3:
-    name: Structured
-    includes: [L2]
-    required_rules: [S2, S3, S7, C3, C6, C11, E6, E7, M1, M2]
-  L4:
-    name: Abstracted
-    includes: [L3]
-    required_rules: [S4, S5, E1, E3, E4, E5, E8, M7]
-  L5:
-    name: Governed
-    includes: [L4]
-    required_rules: [G1, G2, G3, G4, G8, M3, M4]
-  L6:
-    name: Adaptive
-    includes: [L5]
-    required_rules: [S6, C5, E2, G5, G6, G7, M6]
-
-detection:
-  L6: [has_backbone]
-  L5: [component_count_3plus, has_shared_files]
-  L4: [has_rules_dir]
-  L3: [has_imports, has_multiple_instruction_files]
-  L2: [has_instruction_file]
-  L1: []
-```
+**Source:** Framework `registry/levels.yml` (downloaded to `~/.reporails/rules/registry/levels.yml`).
 
 ---
 
@@ -180,9 +152,11 @@ Downloads OpenGrep binary and framework rules tarball on first run. Handles upda
 
 ```python
 OPENGREP_VERSION = "1.15.1"
-RULES_VERSION = "0.2.1"
+RULES_VERSION = "0.3.0"
+RECOMMENDED_VERSION = "0.1.0"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
+RECOMMENDED_API_URL = "https://api.github.com/repos/reporails/recommended/releases/latest"
 ```
 
 **Dataclasses:**
@@ -202,8 +176,11 @@ RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 | `copy_bundled_yml_files(dest)` | `int` | Copy bundled .yml files |
 | `copy_local_framework(source)` | `tuple[Path, int]` | Copy from local path (dev mode) |
 | `get_platform()` | `tuple[str, str]` | Get OS and arch |
-| `get_latest_version()` | `str \| None` | Fetch latest version from GitHub API |
+| `get_latest_version()` | `str \| None` | Fetch latest framework version from GitHub API |
+| `get_latest_recommended_version()` | `str \| None` | Fetch latest recommended version from GitHub API |
 | `update_rules(version, force)` | `UpdateResult` | Update rules to version (or latest) |
+| `update_recommended(version, force)` | `UpdateResult` | Update recommended to version (or latest) |
+| `download_recommended(version)` | `Path` | Download recommended rules (version-aware) |
 | `write_version_file(version)` | `None` | Write version to ~/.reporails/version |
 
 **Download Flow:**
@@ -251,7 +228,7 @@ Loads rules from framework and project packages, applies tier filtering and disa
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `load_rules(rules_dir, include_experimental, project_root, agent)` | `dict[str, Rule]` | Load and resolve all rules |
+| `load_rules(rules_paths, include_experimental, project_root, agent, scan_root)` | `dict[str, Rule]` | Load and resolve all rules |
 | `get_experimental_rules(rules_dir)` | `dict[str, Rule]` | Get experimental-tier rules (for skip reporting) |
 | `build_rule(frontmatter, md_path, yml_path)` | `Rule` | Build Rule from parsed frontmatter (pure) |
 | `derive_tier(backed_by)` | `Tier` | Derive core/experimental from source weights |
@@ -262,13 +239,12 @@ Loads rules from framework and project packages, applies tier filtering and disa
 **Resolution Order:**
 
 ```
-1. ~/.reporails/rules/core/              # Framework core
-2. ~/.reporails/rules/agents/            # Framework agent
+1. Primary path: core/ and agents/ rules (default: ~/.reporails/rules/)
+2. Additional paths: loaded flat (e.g., recommended package)
 3. Agent excludes (remove rule IDs)
 4. Agent overrides (adjust check severity, disable checks)
-5. .reporails/packages/<name>/           # Project packages (override by rule ID)
-6. Filter: tier (core vs experimental)
-7. Filter: disabled_rules removal
+5. Filter: tier (core vs experimental)
+6. Filter: disabled_rules removal (merged from project_root + scan_root configs)
 ```
 
 ---
@@ -282,7 +258,7 @@ Detects project features (filesystem) and filters applicable rules.
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `detect_features_filesystem(target)` | `DetectedFeatures` | Scan directories/files |
-| `get_applicable_rules(rules, level, extra_level_rules=None)` | `dict[str, Rule]` | Filter rules by level (with optional package extras) |
+| `get_applicable_rules(rules, level)` | `dict[str, Rule]` | Filter rules by level |
 | `get_feature_summary(features)` | `str` | Human-readable summary |
 
 **Filesystem Detection:**
@@ -290,10 +266,10 @@ Detects project features (filesystem) and filters applicable rules.
 | Feature | Detection Method |
 |---------|------------------|
 | `has_instruction_file` | Any instruction file exists |
-| `has_rules_dir` | `.claude/rules/`, `.cursor/rules/`, etc. |
+| `is_abstracted` | `.claude/rules/`, `.claude/skills/`, etc. |
 | `has_shared_files` | `.shared/`, `shared/` exists |
 | `has_backbone` | `.reporails/backbone.yml` exists |
-| `component_count` | From discovery |
+| `component_count` | From backbone discovery |
 | `detected_agents` | From file patterns |
 
 ---
@@ -392,7 +368,7 @@ def run_validation(target: Path, agent: str = "claude", ...) -> ValidationResult
     features = detect_features_filesystem(project_root)
 
     # 4. Load rules, estimate preliminary level for filtering
-    rules = load_rules(rules_dir)
+    rules = load_rules(rules_paths)
     prelim_level = estimate_preliminary_level(features)
     applicable = get_applicable_rules(rules, prelim_level)
 
@@ -491,7 +467,7 @@ Parses SARIF output into domain objects. Pure functions.
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `parse_sarif(sarif, rules)` | `list[Violation]` | Parse to violations |
-| `extract_rule_id(sarif_rule_id)` | `str` | Extract short ID (e.g., "S1") |
+| `extract_rule_id(sarif_rule_id)` | `str` | Extract rule ID (e.g., "CORE:S:0001") |
 | `extract_check_slug(sarif_rule_id)` | `str | None` | Extract check slug |
 | `get_location(result)` | `str` | Format location string |
 | `get_severity(rule, check_slug)` | `Severity` | Lookup severity |
@@ -600,6 +576,55 @@ PKG_NAME = "reporails-cli"
 
 ---
 
+## core/update_check.py
+
+Update staleness detection and pre-run prompt. Checks CLI, framework, and recommended versions against GitHub releases with a 24-hour cached check.
+
+**Dataclasses:**
+
+- `UpdateNotification`: cli_current/latest, rules_current/latest, recommended_current/latest + `has_cli_update`, `has_rules_update`, `has_recommended_update`, `has_any_update` properties
+
+**Functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `check_for_updates()` | `UpdateNotification \| None` | Check all components for updates (cached 24h) |
+| `format_update_message(notification)` | `str` | Format update details for display |
+| `prompt_for_updates(console, no_update_check)` | `bool` | Interactive pre-run prompt; returns True if updates installed |
+
+**Cache:** `~/.reporails/cache/update-check.json` (24h TTL)
+
+**Prompt behavior:**
+- Skipped if `no_update_check=True`, config disabled, or non-TTY
+- CLI updates shown as hint only (not auto-installed)
+- Rules + recommended auto-installed on user accept
+- EOFError/KeyboardInterrupt treated as "no"
+
+---
+
+## core/mechanical/ (package)
+
+Mechanical rule checks — Python-native checks that don't require OpenGrep. Handles rule types like `file_exists`, `line_count`, `byte_size`, etc.
+
+### Package Structure
+
+```
+core/mechanical/
+├── __init__.py       # Public API re-exports
+├── runner.py         # Orchestration, runs checks for each rule
+└── checks.py        # Individual check implementations
+```
+
+**Public API:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `run_mechanical_checks(rules, target, template_vars)` | `list[Violation]` | Run all mechanical rules against target |
+
+**Available checks:** `file_exists`, `directory_exists`, `directory_contains`, `git_tracked`, `frontmatter_key`, `file_count`, `line_count`, `byte_size`, `path_resolves`, `extract_imports`, `aggregate_byte_size`, `import_depth`, `directory_file_types`, `frontmatter_valid_glob`, `content_absent`
+
+---
+
 ## core/models.py
 
 Dataclasses. Frozen where possible.
@@ -654,15 +679,18 @@ Typer CLI application.
 | `ails check --refresh` | Force re-scan |
 | `ails check --strict` | Exit 1 on violations (CI) |
 | `ails check --quiet-semantic` | Suppress semantic message |
+| `ails check --no-update-check` | Skip pre-run update prompt |
+| `ails check --exclude-dir NAME` | Exclude directory (repeatable) |
 | `ails map [PATH]` | Discover project structure |
 | `ails map --save` | Save backbone.yml |
 | `ails explain RULE_ID` | Show rule details |
-| `ails update` | Update rules framework to latest |
+| `ails update` | Update rules framework + recommended |
+| `ails update --recommended` | Update recommended rules only |
 | `ails update --cli` | Upgrade CLI package itself |
-| `ails update --version VERSION` | Update to specific version |
+| `ails update --version VERSION` | Update framework to specific version |
 | `ails update --check` | Check for updates without installing |
 | `ails update --force` | Force reinstall even if current |
-| `ails version` | Show CLI and framework versions |
+| `ails version` | Show CLI, framework, and recommended versions |
 
 ---
 
@@ -688,9 +716,9 @@ Tool implementations.
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `validate_tool(path)` | `dict` | Run validation, format for MCP |
-| `validate_tool_text(path)` | `str` | Run validation, text format |
-| `score_tool(path)` | `dict` | Quick score |
+| `validate_tool(path)` | `dict` | Run validation (incl. recommended), format for MCP |
+| `validate_tool_text(path)` | `str` | Run validation (incl. recommended), text format |
+| `score_tool(path)` | `dict` | Quick score (incl. recommended) |
 | `explain_tool(rule_id)` | `dict` | Rule details |
 
 ---
@@ -728,7 +756,7 @@ from reporails_cli.templates import render
 
 output = render("cli_violation.txt",
     icon="●",
-    rule_id="S1.root-too-long",
+    rule_id="CORE:S:0001.root-too-long",
     line="45",
     message="Root file exceeds 200 lines",
 )

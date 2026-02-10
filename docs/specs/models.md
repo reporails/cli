@@ -49,7 +49,7 @@ class Level(str, Enum):
     L2 = "L2"  # Basic
     L3 = "L3"  # Structured
     L4 = "L4"  # Abstracted
-    L5 = "L5"  # Governed
+    L5 = "L5"  # Maintained
     L6 = "L6"  # Adaptive
 ```
 
@@ -64,9 +64,13 @@ A specific check within a rule. Maps to OpenGrep pattern.
 ```python
 @dataclass(frozen=True)
 class Check:
-    id: str          # e.g., "S1-root-too-long"
-    name: str        # e.g., "Root file exceeds 200 lines"
+    id: str          # e.g., "CORE:S:0001:check:0001"
     severity: Severity
+    type: str = "deterministic"  # "mechanical" | "deterministic" | "semantic"
+    name: str = ""
+    check: str | None = None    # Mechanical function name
+    args: dict[str, Any] | None = None
+    negate: bool = False
 ```
 
 ### Rule
@@ -77,26 +81,32 @@ A rule definition loaded from framework frontmatter.
 @dataclass
 class Rule:
     # Required (from frontmatter)
-    id: str              # e.g., "S1"
-    title: str           # e.g., "Size Limits"
+    id: str              # e.g., "CORE:S:0001"
+    title: str           # e.g., "Instruction File Exists"
     category: Category
     type: RuleType
-    level: Level         # Minimum level this rule applies to
-    
-    # Checks (deterministic rules)
+    level: str           # e.g., "L2" - minimum level this rule applies to
+
+    # Identity
+    slug: str = ""       # e.g., "instruction-file-exists"
+    targets: str = ""    # e.g., "{{instruction_files}}"
+    supersedes: str | None = None
+
+    # Checks (all rule types)
     checks: list[Check] = field(default_factory=list)
-    
+
     # Semantic fields (semantic rules)
     question: str | None = None
-    criteria: list[dict] | None = None  # [{key, check}, ...]
-    choices: list[dict] | None = None   # [{value, label}, ...]
+    criteria: list[dict[str, str]] | str | None = None
+    choices: list[dict[str, str]] | list[str] | None = None
     pass_value: str | None = None
-    examples: dict | None = None        # {good: [...], bad: [...]}
-    
+    examples: dict[str, list[str]] | None = None
+
     # References
     sources: list[str] = field(default_factory=list)
     see_also: list[str] = field(default_factory=list)
-    
+    backed_by: list[str] = field(default_factory=list)
+
     # Paths (set after loading)
     md_path: Path | None = None
     yml_path: Path | None = None

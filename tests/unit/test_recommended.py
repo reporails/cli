@@ -95,7 +95,7 @@ class TestDownloadRecommended:
             ),
             patch("reporails_cli.core.init.httpx.Client", return_value=mock_client),
         ):
-            result = download_recommended()
+            result = download_recommended(version=RECOMMENDED_VERSION)
 
         assert result == pkg_dir
         assert (pkg_dir / "levels.yml").exists()
@@ -131,7 +131,7 @@ class TestDownloadRecommended:
             ),
             patch("reporails_cli.core.init.httpx.Client", return_value=mock_client),
         ):
-            download_recommended()
+            download_recommended(version=RECOMMENDED_VERSION)
 
         assert not (pkg_dir / "old_file.txt").exists()
         assert (pkg_dir / "new_file.yml").exists()
@@ -157,6 +157,6 @@ class TestDownloadRecommended:
             ),
             patch("reporails_cli.core.init.httpx.Client", return_value=mock_client),
         ):
-            download_recommended()
+            download_recommended(version=RECOMMENDED_VERSION)
 
         mock_client.get.assert_called_once_with(RECOMMENDED_ARCHIVE_URL)

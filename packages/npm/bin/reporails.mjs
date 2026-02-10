@@ -16,7 +16,11 @@ Usage:
   reporails uninstall [--scope user|project] Remove MCP server from Claude Code
   reporails check [PATH] [OPTIONS]           Validate instruction files
   reporails explain RULE_ID                  Show rule details
-  reporails update                           Update rules framework
+  reporails map [PATH] [--save]              Discover project structure
+  reporails update                           Update rules framework + recommended
+  reporails update --check                   Check for updates without installing
+  reporails update --recommended             Update recommended rules only
+  reporails update --cli                     Upgrade CLI package itself
   reporails dismiss RULE_ID                  Dismiss a semantic finding
   reporails version                          Show version info
   reporails <command> [args...]              Proxy any command to ails CLI
@@ -24,8 +28,8 @@ Usage:
 Examples:
   npx @reporails/cli install          # Add MCP server (user scope)
   npx @reporails/cli check            # Score your setup
-  npx @reporails/cli explain S1       # Explain a rule
-  npx @reporails/cli update           # Update rules
+  npx @reporails/cli explain CORE:S:0001  # Explain a rule
+  npx @reporails/cli update           # Update rules + recommended
 
 Prerequisites:
   Node.js >= 18 (uv is auto-installed if missing)
@@ -97,7 +101,7 @@ function install(args) {
   ensureUv();
 
   const scope = parseScope(args);
-  const cmd = `claude mcp add --scope ${scope} reporails -- uvx --from ${PYPI_PACKAGE} ${MCP_COMMAND}`;
+  const cmd = `claude mcp add --scope ${scope} reporails -- uvx --refresh --from ${PYPI_PACKAGE} ${MCP_COMMAND}`;
   console.log(`Registering MCP server (scope: ${scope})...`);
 
   try {
@@ -133,7 +137,7 @@ function uninstall(args) {
 function proxy(args) {
   ensureUv();
 
-  const child = spawn("uvx", ["--from", PYPI_PACKAGE, CLI_COMMAND, ...args], {
+  const child = spawn("uvx", ["--refresh", "--from", PYPI_PACKAGE, CLI_COMMAND, ...args], {
     stdio: "inherit",
   });
 

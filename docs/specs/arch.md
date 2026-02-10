@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> Version 0.1.4 | AI Instruction Validator
+> Version 0.2.0 | AI Instruction Validator
 
 ## Overview
 
@@ -62,7 +62,7 @@ Reporails validates AI coding agent instruction files against community-maintain
 reporails-cli/
 ├── src/reporails_cli/
 │   ├── core/
-│   │   ├── init.py           # Download OpenGrep + framework
+│   │   ├── init.py           # Download OpenGrep + framework + recommended
 │   │   ├── bootstrap.py      # Path helpers
 │   │   ├── levels.py         # Level config, rule mapping
 │   │   ├── discover.py       # Project discovery
@@ -71,14 +71,15 @@ reporails-cli/
 │   │   ├── scorer.py         # Score calculation
 │   │   ├── models.py         # Data models
 │   │   ├── cache.py          # Caching + analytics
+│   │   ├── update_check.py   # Update staleness detection + pre-run prompt
+│   │   ├── mechanical/       # Mechanical rule checks (package)
 │   │   ├── opengrep/         # OpenGrep execution (package)
 │   │   │   ├── runner.py     # Binary execution
 │   │   │   ├── templates.py  # {{placeholder}} resolution
 │   │   │   └── semgrepignore.py
 │   │   └── sarif.py          # SARIF parsing
 │   ├── bundled/              # CLI-owned config (not downloaded)
-│   │   ├── capability-patterns.yml
-│   │   └── levels.yml
+│   │   └── capability-patterns.yml
 │   ├── templates/            # CLI output templates
 │   ├── interfaces/
 │   │   ├── mcp/server.py     # MCP server
@@ -103,15 +104,16 @@ reporails-cli/
 |---------|----------|--------|---------|
 | **Bundled** | `src/bundled/` | CLI package | Orchestration logic |
 | **Downloaded** | `~/.reporails/rules/` | Framework release | Rule definitions |
+| **Downloaded** | `~/.reporails/packages/recommended/` | Recommended release | Additional rules |
 
 **Bundled (CLI-owned):**
 - `capability-patterns.yml` — OpenGrep patterns for feature detection
-- `levels.yml` — Level definitions, rule-to-level mapping
 
 **Downloaded (Framework-owned):**
 - `core/` — Rule definitions (.md + .yml)
 - `agents/` — Agent-specific rules
 - `schemas/` — Rule schema definitions
+- `registry/` — Levels, capabilities, coordinate map
 - `docs/` — Reference documentation
 
 This separation ensures:
@@ -141,6 +143,11 @@ This separation ensures:
 │       ├── capability-levels.md
 │       ├── methodology-thresholds.md
 │       └── sources.yml
+├── packages/                     # Downloaded rule packages
+│   └── recommended/              # Recommended rules (AILS_ namespace)
+│       └── .version              # Installed recommended version
+├── cache/
+│   └── update-check.json         # Update staleness cache (24h TTL)
 ├── config.yml                    # Global user config (optional)
 └── version                       # Installed framework version
 ```
@@ -158,7 +165,7 @@ project/
 │   │   ├── my-rule.md
 │   │   └── my-rule.yml
 │   └── overrides/                # Override framework rules
-│       └── S1-size-limits.yml    # Different threshold
+│       └── CORE-S-0001.yml       # Different threshold
 └── .reporails/.cache/            # Gitignored
     ├── file-map.json
     └── judgment-cache.json
@@ -214,7 +221,7 @@ Rules are resolved in priority order (later overrides earlier):
 
 **Resolution logic:**
 
-- Rules matched by ID (e.g., `S1`)
+- Rules matched by ID (e.g., `CORE:S:0001`)
 - Override replaces entire rule (not merge)
 - Custom rules add to rule set
 - Disabled rules removed from set
@@ -224,21 +231,22 @@ Rules are resolved in priority order (later overrides earlier):
 ```yaml
 # .reporails/config.yml
 disabled_rules:
-  - S1          # Disable size limits entirely
-  - C7          # Disable emphasis discipline
+  - CORE:S:0001     # Disable size limits entirely
+  - CORE:C:0007     # Disable emphasis discipline
 
 overrides:
-  S3:
+  CORE:S:0003:
     severity: low   # Demote code block check
 ```
 
 ## Rule Types
 
-Two rule types (defined in framework `schemas/rule.schema.yml`):
+Three rule types (defined in framework `schemas/rule.schema.yml`):
 
 | Type | Detection | LLM | Output |
 |------|-----------|-----|--------|
 | **Deterministic** | OpenGrep pattern → direct result | No | `Violation` |
+| **Mechanical** | Python structural check → direct result | No | `Violation` |
 | **Semantic** | Content extraction → LLM evaluation | Yes | `JudgmentRequest` |
 
 ### Deterministic Flow
@@ -254,6 +262,21 @@ OpenGrep runs .yml pattern
     │       │
     ▼       ▼
   Pass    Violation
+```
+
+### Mechanical Flow
+
+```
+Python function dispatched
+        │
+        ▼
+    CheckResult
+        │
+    ┌───┴───┐
+  Pass     Fail
+            │
+            ▼
+        Violation
 ```
 
 ### Semantic Flow
@@ -304,16 +327,21 @@ ails check [PATH]              # Validate instruction files
 ails check [PATH] --refresh    # Force re-scan, ignore cache
 ails check [PATH] -f json      # Output as JSON (for MCP/scripts)
 ails check [PATH] -q           # Suppress semantic rules message
+ails check [PATH] --no-update-check  # Skip pre-run update prompt
+ails check [PATH] --exclude-dir vendor  # Exclude directory (repeatable)
 # Note: recommended rules are included by default (opt out in .reporails/config.yml)
 
 # Management
-ails update                    # Update rules framework to latest
+ails update                    # Update rules framework + recommended
+ails update --check            # Check for updates without installing
+ails update --recommended      # Update recommended rules only
+ails update --force            # Force reinstall even if current
+ails update --version 0.1.0    # Update framework to specific version
 ails update --cli              # Upgrade CLI package itself
-ails update --version 0.1.0    # Update to specific version
 
 # Information
 ails explain RULE_ID           # Show rule details
-ails version                   # Show CLI and framework versions
+ails version                   # Show CLI, framework, and recommended versions
 ```
 
 ## Configuration
@@ -336,14 +364,14 @@ framework_version: "0.0.1"
 
 # Disable rules
 disabled_rules:
-  - S1
-  - C7
+  - CORE:S:0001
+  - CORE:C:0007
 
 # Override severity
 overrides:
-  S3:
+  CORE:S:0003:
     severity: low
-  E6:
+  CORE:E:0006:
     severity: low
 
 # Opt out of recommended rules (included by default)

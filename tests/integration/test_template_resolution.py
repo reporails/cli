@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import create_temp_rule_file
 
 
@@ -256,6 +258,8 @@ class TestTemplateContextLoading:
         from reporails_cli.core.bootstrap import get_agent_vars
 
         result = get_agent_vars("claude")
+        if not result:
+            pytest.skip("Framework not installed (no agent config available)")
         assert "instruction_files" in result, (
             "Claude agent config missing 'instruction_files' - "
             "this will cause template resolution to fail silently"
@@ -283,6 +287,7 @@ class TestEngineTemplateIntegration:
         self,
         level2_project: Path,
         opengrep_bin: Path,
+        dev_rules_dir: Path,
     ) -> None:
         """run_validation must pass template_context to run_opengrep.
 
@@ -295,6 +300,7 @@ class TestEngineTemplateIntegration:
         result = run_validation_sync(
             level2_project,
             agent="claude",
+            rules_paths=[dev_rules_dir],
         )
 
         # Should complete without error
