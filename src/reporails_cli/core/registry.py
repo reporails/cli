@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -10,13 +9,11 @@ import yaml
 
 from reporails_cli.core.bootstrap import (
     get_agent_config,
-    get_package_paths,
     get_project_config,
     get_rules_path,
 )
 from reporails_cli.core.models import (
     AgentConfig,
-    BackedByEntry,
     Category,
     Check,
     PatternConfidence,
@@ -41,38 +38,64 @@ def get_rules_dir() -> Path:
     return get_rules_path()
 
 
-@lru_cache(maxsize=1)
-def _load_source_weights() -> dict[str, float]:
-    """Load source weights from downloaded sources.yml.
+def _parse_sources_yml(path: Path) -> dict[str, float]:
+    """Parse a single sources.yml file into id→weight map."""
+    if not path.exists():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not data:
+        return {}
+
+    weights: dict[str, float] = {}
+    sources_list: list[dict[str, Any]] = []
+    if isinstance(data, list):
+        sources_list = data
+    elif isinstance(data, dict):
+        for scope_sources in data.values():
+            if isinstance(scope_sources, list):
+                sources_list.extend(scope_sources)
+
+    for src in sources_list:
+        if isinstance(src, dict) and "id" in src and "weight" in src:
+            weights[src["id"]] = src["weight"]
+    return weights
+
+
+def _load_source_weights(
+    rules_dir: Path | None = None,
+    extra_source_dirs: list[Path] | None = None,
+) -> dict[str, float]:
+    """Load source weights from sources.yml files.
+
+    Reads from the rules directory and any additional package directories.
+    Each package may have its own docs/sources.yml with package-specific sources.
+
+    Args:
+        rules_dir: Rules directory (uses default if None)
+        extra_source_dirs: Additional directories containing docs/sources.yml
 
     Returns:
         Dict mapping source ID to weight
     """
-    sources_path = get_rules_path() / "docs" / "sources.yml"
-    if not sources_path.exists():
-        return {}
+    base = rules_dir or get_rules_path()
+    weights = _parse_sources_yml(base / "docs" / "sources.yml")
 
-    content = sources_path.read_text(encoding="utf-8")
-    data = yaml.safe_load(content) or {}
-
-    weights: dict[str, float] = {}
-    for scope_sources in data.values():
-        if isinstance(scope_sources, list):
-            for src in scope_sources:
-                if isinstance(src, dict) and "id" in src and "weight" in src:
-                    weights[src["id"]] = src["weight"]
+    if extra_source_dirs:
+        for pkg_dir in extra_source_dirs:
+            weights.update(_parse_sources_yml(pkg_dir / "docs" / "sources.yml"))
 
     return weights
 
 
-def derive_tier(backed_by: list[BackedByEntry]) -> Tier:
+def derive_tier(backed_by: list[str], source_weights: dict[str, float] | None = None) -> Tier:
     """Derive rule tier from its backing source weights.
 
     Core: max(backing_source_weights) >= 0.8
     Experimental: max(backing_source_weights) < 0.8 or no backing
 
     Args:
-        backed_by: Rule's backed_by entries
+        backed_by: Source IDs from sources.yml
+        source_weights: Pre-loaded weights (avoids repeated file reads)
 
     Returns:
         Tier.CORE or Tier.EXPERIMENTAL
@@ -80,9 +103,10 @@ def derive_tier(backed_by: list[BackedByEntry]) -> Tier:
     if not backed_by:
         return Tier.EXPERIMENTAL
 
-    source_weights = _load_source_weights()
+    if source_weights is None:
+        source_weights = _load_source_weights()
     max_weight = max(
-        (source_weights.get(entry.source, 0.0) for entry in backed_by),
+        (source_weights.get(source_id, 0.0) for source_id in backed_by),
         default=0.0,
     )
 
@@ -105,7 +129,11 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
     if not path.exists():
         return rules
 
-    for md_path in path.rglob("*.md"):
+    for md_path in path.rglob("rule.md"):
+        # Skip test fixtures (tests/pass/, tests/fail/ directories)
+        if "tests" in md_path.parts:
+            continue
+
         try:
             content = md_path.read_text(encoding="utf-8")
             frontmatter = parse_frontmatter(content)
@@ -128,47 +156,62 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
 
 
 def load_rules(
-    rules_dir: Path | None = None,
+    rules_paths: list[Path] | None = None,
     include_experimental: bool = False,
     project_root: Path | None = None,
     agent: str = "",
-    extra_packages: list[str] | None = None,
+    scan_root: Path | None = None,
 ) -> dict[str, Rule]:
-    """Load rules from framework, project packages, filtered by tier and config.
+    """Load rules from one or more directories, filtered by tier and config.
 
     Resolution order:
-    1. Framework core/ and agents/ rules
-    2. Agent excludes (remove rule IDs)
-    3. Agent overrides (adjust check severity, disable checks)
-    4. Project packages (.reporails/packages/<name>/) — override by rule ID
+    1. Primary path: core/ and agents/ rules
+    2. Additional paths: loaded via _load_from_path (flat scan)
+    3. Agent excludes (remove rule IDs)
+    4. Agent overrides (adjust check severity, disable checks)
     5. Tier filter (core vs experimental)
-    6. disabled_rules removal
+    6. disabled_rules removal (merged from project_root + scan_root configs)
 
     Args:
-        rules_dir: Path to rules directory (default: ~/.reporails/rules/)
+        rules_paths: List of directories containing rules. First = primary
+            framework (provides core/, agents/, docs/sources.yml). Subsequent
+            paths = additional rule sources. Defaults to [~/.reporails/rules/].
         include_experimental: If True, include experimental-tier rules
-        project_root: Project root for loading project config and packages
+        project_root: Project root for loading project config
         agent: Agent identifier for loading agent config (empty = no agent processing)
+        scan_root: Directory being scanned (may differ from project_root in monorepos)
 
     Returns:
         Dict mapping rule ID to Rule object
     """
-    if rules_dir is None:
-        rules_dir = get_rules_dir()
+    if not rules_paths:
+        rules_paths = [get_rules_dir()]
 
-    if not rules_dir.exists():
+    primary = rules_paths[0]
+    extra_paths = rules_paths[1:]
+
+    if not primary.exists():
         return {}
 
     rules: dict[str, Rule] = {}
 
-    # 1. Load framework rules (core + agents)
-    core_path = rules_dir / "core"
+    # 1. Load framework rules from primary path (core + selected agent)
+    core_path = primary / "core"
     rules.update(_load_from_path(core_path))
 
-    agents_path = rules_dir / "agents"
-    rules.update(_load_from_path(agents_path))
+    if agent:
+        agent_rules_path = primary / "agents" / agent / "rules"
+        rules.update(_load_from_path(agent_rules_path))
+    else:
+        agents_path = primary / "agents"
+        rules.update(_load_from_path(agents_path))
 
-    # 2-3. Apply agent excludes and overrides
+    # 2. Load additional rule sources
+    for extra in extra_paths:
+        if extra.exists():
+            rules.update(_load_from_path(extra))
+
+    # 3-4. Apply agent excludes and overrides
     agent_config = get_agent_config(agent) if agent else AgentConfig()
     if agent_config.excludes:
         excluded = set(agent_config.excludes)
@@ -176,26 +219,42 @@ def load_rules(
     if agent_config.overrides:
         rules = _apply_agent_overrides(rules, agent_config.overrides)
 
-    # 4. Load project packages (override framework rules by ID)
-    config = _load_project_config(project_root)
-    packages = list(config.packages)
-    if extra_packages:
-        for pkg in extra_packages:
-            if pkg not in packages:
-                packages.append(pkg)
-    for pkg_path in get_package_paths(project_root or Path(), packages):
-        rules.update(_load_from_path(pkg_path))
+    # 4b. Filter rules by agent namespace
+    if agent:
+        agent_prefix = agent.upper()
+        rules = {
+            k: v for k, v in rules.items()
+            if not _is_other_agent_rule(k, agent_prefix)
+        }
 
     # 5. Filter by tier if experimental not included
     if not include_experimental:
-        rules = {k: v for k, v in rules.items() if derive_tier(v.backed_by) == Tier.CORE}
+        weights = _load_source_weights(primary, extra_paths or None)
+        rules = {k: v for k, v in rules.items() if derive_tier(v.backed_by, weights) == Tier.CORE}
 
-    # 6. Remove disabled rules
-    if config.disabled_rules:
-        disabled = set(config.disabled_rules)
+    # 6. Remove disabled rules (merge from project_root + scan_root configs)
+    config = _load_project_config(project_root)
+    disabled: set[str] = set(config.disabled_rules)
+    if scan_root and scan_root != project_root:
+        scan_config = _load_project_config(scan_root)
+        disabled |= set(scan_config.disabled_rules)
+    if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
 
     return rules
+
+
+def _is_other_agent_rule(rule_id: str, agent_prefix: str) -> bool:
+    """Check if a rule belongs to a different agent.
+
+    Agent-agnostic namespaces (CORE, RRAILS) are always kept.
+    Agent-specific namespaces (CLAUDE, CODEX, RRAILS_CLAUDE, etc.)
+    are kept only if they contain the selected agent's prefix.
+    """
+    namespace = rule_id.split(":")[0]
+    if namespace in ("CORE", "RRAILS"):
+        return False
+    return agent_prefix not in namespace
 
 
 def _apply_agent_overrides(
@@ -224,8 +283,12 @@ def _apply_agent_overrides(
             if new_severity:
                 new_checks.append(Check(
                     id=check.id,
-                    name=check.name,
                     severity=Severity(new_severity),
+                    type=check.type,
+                    name=check.name,
+                    check=check.check,
+                    args=check.args,
+                    negate=check.negate,
                 ))
             else:
                 new_checks.append(check)
@@ -273,7 +336,8 @@ def get_experimental_rules(rules_dir: Path | None = None) -> dict[str, Rule]:
     agents_path = rules_dir / "agents"
     all_rules.update(_load_from_path(agents_path))
 
-    return {k: v for k, v in all_rules.items() if derive_tier(v.backed_by) == Tier.EXPERIMENTAL}
+    weights = _load_source_weights(rules_dir)
+    return {k: v for k, v in all_rules.items() if derive_tier(v.backed_by, weights) == Tier.EXPERIMENTAL}
 
 
 def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None) -> Rule:
@@ -293,23 +357,25 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         KeyError: If required fields missing
         ValueError: If field values invalid
     """
-    # Parse checks (formerly antipatterns)
+    # Parse checks (enriched format with type, check, args)
     checks = []
-    # Support both "checks" and legacy "antipatterns" field names
-    check_data = frontmatter.get("checks", frontmatter.get("antipatterns", []))
-    for item in check_data:
+    for item in frontmatter.get("checks", []):
         check = Check(
             id=item.get("id", ""),
-            name=item.get("name", ""),
             severity=Severity(item.get("severity", "medium")),
+            type=item.get("type", "deterministic"),
+            name=item.get("name", ""),
+            check=item.get("check"),
+            args=item.get("args"),
+            negate=item.get("negate", False),
         )
         checks.append(check)
 
-    # Parse backed_by entries
-    backed_by = []
+    # Parse backed_by — plain string list (source IDs)
+    backed_by: list[str] = []
     for entry in frontmatter.get("backed_by", []):
-        if isinstance(entry, dict) and "source" in entry and "claim" in entry:
-            backed_by.append(BackedByEntry(source=entry["source"], claim=entry["claim"]))
+        if isinstance(entry, str):
+            backed_by.append(entry)
 
     # Parse pattern_confidence
     raw_confidence = frontmatter.get("pattern_confidence")
@@ -320,15 +386,15 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         title=frontmatter["title"],
         category=Category(frontmatter["category"]),
         type=RuleType(frontmatter["type"]),
-        level=frontmatter.get("level", "L2"),  # Default to L2 (Basic) if not specified
+        level=frontmatter.get("level", "L2"),
+        slug=frontmatter.get("slug", ""),
+        targets=frontmatter.get("targets", ""),
+        supersedes=frontmatter.get("supersedes"),
         checks=checks,
-        detection=frontmatter.get("detection"),
         sources=frontmatter.get("sources", []),
         see_also=frontmatter.get("see_also", []),
         backed_by=backed_by,
         pattern_confidence=pattern_confidence,
-        scoring=frontmatter.get("scoring", 0),
-        validation=frontmatter.get("validation"),
         question=frontmatter.get("question"),
         criteria=frontmatter.get("criteria"),
         choices=frontmatter.get("choices"),

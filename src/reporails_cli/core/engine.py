@@ -15,8 +15,6 @@ from reporails_cli.core.applicability import detect_features_filesystem, get_app
 from reporails_cli.core.bootstrap import (
     get_agent_vars,
     get_opengrep_bin,
-    get_package_level_rules,
-    get_project_config,
     is_initialized,
 )
 from reporails_cli.core.cache import ProjectCache, content_hash, record_scan
@@ -25,6 +23,7 @@ from reporails_cli.core.capability import (
     determine_capability_level,
 )
 from reporails_cli.core.init import run_init
+from reporails_cli.core.mechanical import run_mechanical_checks
 from reporails_cli.core.models import (
     Category,
     CategoryStats,
@@ -41,6 +40,32 @@ from reporails_cli.core.registry import get_experimental_rules, load_rules
 from reporails_cli.core.sarif import dedupe_violations, parse_sarif
 from reporails_cli.core.scorer import calculate_score, estimate_friction
 from reporails_cli.core.semantic import build_semantic_requests
+
+
+def _find_project_root(target: Path) -> Path:
+    """Walk up from target to find the project root.
+
+    Prefers a coordination backbone (.reporails/backbone.yml with children
+    or repos keys) as the definitive root — this handles monorepos where
+    child directories have their own .git. Falls back to nearest .git,
+    then to target itself.
+    """
+    current = target if target.is_dir() else target.parent
+    first_git = None
+    while current != current.parent:
+        if (current / ".git").exists() and first_git is None:
+            first_git = current
+        backbone = current / ".reporails" / "backbone.yml"
+        if backbone.exists():
+            try:
+                text = backbone.read_text(encoding="utf-8")
+                if "\nchildren:" in text or "\nrepos:" in text:
+                    return current
+            except OSError:
+                pass
+        current = current.parent
+    return first_git or target
+
 
 _SEVERITY_ORDER = {
     Severity.CRITICAL: 0,
@@ -115,12 +140,12 @@ def run_validation(
     target: Path,
     rules: dict[str, Rule] | None = None,
     opengrep_path: Path | None = None,
-    rules_dir: Path | None = None,
+    rules_paths: list[Path] | None = None,
     use_cache: bool = True,
     record_analytics: bool = True,
     agent: str = "",
     include_experimental: bool = False,
-    extra_packages: list[str] | None = None,
+    exclude_dirs: list[str] | None = None,
 ) -> ValidationResult:
     """Run full validation on target directory.
 
@@ -130,15 +155,18 @@ def run_validation(
 
     Args:
         target: Directory or file to validate
-        rules: Pre-loaded rules (optional, loads from rules_dir if not provided)
+        rules: Pre-loaded rules (optional, loads from rules_paths if not provided)
         opengrep_path: Path to OpenGrep binary (optional, auto-detects)
-        rules_dir: Directory containing rules (optional)
+        rules_paths: Directories containing rules (first = primary framework)
         use_cache: Whether to use cached results
         record_analytics: Whether to record scan analytics
         agent: Agent identifier for loading template vars (empty = no agent-specific vars)
+        include_experimental: Include experimental-tier rules
+        exclude_dirs: Directory names to exclude from scanning
     """
     start_time = time.perf_counter()
-    project_root = target.parent if target.is_file() else target
+    scan_root = target.parent if target.is_file() else target
+    project_root = _find_project_root(scan_root)
 
     # Auto-init if needed
     if not is_initialized():
@@ -151,12 +179,12 @@ def run_validation(
 
     # Load rules if not provided
     if rules is None:
-        rules = load_rules(rules_dir, include_experimental=include_experimental, project_root=project_root, agent=agent, extra_packages=extra_packages)
+        rules = load_rules(rules_paths, include_experimental=include_experimental, project_root=project_root, agent=agent, scan_root=scan_root)
 
     # Track skipped experimental rules (for display when not included)
     skipped_experimental = None
     if not include_experimental:
-        exp_rules = get_experimental_rules(rules_dir)
+        exp_rules = get_experimental_rules(rules_paths[0] if rules_paths else None)
         if exp_rules:
             skipped_experimental = SkippedExperimental(
                 rule_count=len(exp_rules),
@@ -173,20 +201,19 @@ def run_validation(
     # Content feature detection via OpenGrep (capability patterns only)
     extra_targets = features.resolved_symlinks or None
 
-    # Compute instruction files once — pass directly to OpenGrep to avoid
-    # scanning the entire project tree (major perf win on large repos)
-    instruction_files = get_all_instruction_files(project_root) or None
-    if instruction_files and extra_targets:
+    # Project-scoped instruction files for capability detection
+    project_instruction_files = get_all_instruction_files(project_root) or None
+    if project_instruction_files and extra_targets:
         # Merge resolved symlinks into instruction files (deduped in runner)
-        instruction_files = list(instruction_files) + list(extra_targets)
+        project_instruction_files = list(project_instruction_files) + list(extra_targets)
 
     capability_patterns = get_capability_patterns_path()
     capability_sarif = {}
     if capability_patterns.exists():
         capability_sarif = run_opengrep(
-            [capability_patterns], target, opengrep_path, template_context,
+            [capability_patterns], project_root, opengrep_path, template_context,
             extra_targets=extra_targets,
-            instruction_files=instruction_files,
+            instruction_files=project_instruction_files,
         )
 
     content_features = detect_features_content(capability_sarif)
@@ -199,41 +226,102 @@ def run_validation(
     # PASS 2: Rule Validation (filtered by final level)
     # =========================================================================
 
-    # Load package level mappings for applicability filtering
-    config = get_project_config(project_root) if project_root else None
-    packages = list(config.packages) if config else []
-    if extra_packages:
-        for pkg in extra_packages:
-            if pkg not in packages:
-                packages.append(pkg)
-    package_level_rules = (
-        get_package_level_rules(project_root, packages)
-        if packages
-        else {}
+    # Filter rules by FINAL level — rule.level ≤ project_level
+    applicable_rules = get_applicable_rules(rules, final_level)
+
+    # Target-scoped instruction files for rule validation
+    target_instruction_files = get_all_instruction_files(scan_root) or None
+    if target_instruction_files and exclude_dirs:
+        exclude_set = set(exclude_dirs)
+        target_instruction_files = [
+            f for f in target_instruction_files
+            if not (exclude_set & set(f.relative_to(scan_root).parts))
+        ]
+    if target_instruction_files and extra_targets:
+        target_instruction_files = list(target_instruction_files) + list(extra_targets)
+
+    # Run mechanical checks from ALL rules (runner filters by check.type).
+    # Rule.type is a dispatch ceiling, not a bucket: deterministic and semantic
+    # rules can contain mechanical checks that run before their other gates.
+    violations: list[Violation] = run_mechanical_checks(
+        applicable_rules, scan_root, template_context,
+        instruction_files=target_instruction_files,
     )
 
-    # Filter rules by FINAL level - this ensures scoring matches displayed level
-    applicable_rules = get_applicable_rules(rules, final_level, extra_level_rules=package_level_rules or None)
-
-    # Run OpenGrep on applicable rules only
-    rule_yml_paths = get_rule_yml_paths(applicable_rules)
-    rule_sarif = {}
-    if rule_yml_paths:
-        rule_sarif = run_opengrep(
-            rule_yml_paths, target, opengrep_path, template_context,
-            extra_targets=extra_targets,
-            instruction_files=instruction_files,
-        )
-
-    # Split by type
+    # Run OpenGrep on rules with .yml patterns (deterministic + semantic types)
     deterministic = {k: v for k, v in applicable_rules.items() if v.type == RuleType.DETERMINISTIC}
     semantic = {k: v for k, v in applicable_rules.items() if v.type == RuleType.SEMANTIC}
+    opengrep_rules = {**deterministic, **semantic}
+    rule_yml_paths = get_rule_yml_paths(opengrep_rules)
+    rule_sarif: dict[str, object] = {}
+    if rule_yml_paths:
+        rule_sarif = run_opengrep(
+            rule_yml_paths, scan_root, opengrep_path, template_context,
+            extra_targets=extra_targets,
+            instruction_files=target_instruction_files,
+            exclude_dirs=exclude_dirs,
+        )
 
-    # Parse violations from rule SARIF (only deterministic rules)
-    violations = parse_sarif(rule_sarif, deterministic)
+    # Parse violations from deterministic rule SARIF
+    det_violations = parse_sarif(rule_sarif, deterministic)
 
-    # Build semantic requests from rule SARIF (only semantic rules)
-    judgment_requests = build_semantic_requests(rule_sarif, semantic, project_root)
+    # Handle negated deterministic checks:
+    # - finding exists → PASS (content present, remove from violations)
+    # - no finding → FAIL (content missing, add violation)
+    negated_check_ids: set[str] = set()
+    for rule in deterministic.values():
+        for check in rule.checks:
+            if check.negate:
+                negated_check_ids.add(check.id)
+
+    if negated_check_ids:
+        # Track which negated check IDs had findings (= pass)
+        # Scope match by rule_id to avoid cross-rule collisions (check:0001 is common)
+        negated_with_findings: set[str] = set()
+        for v in det_violations:
+            if v.check_id:
+                for nid in negated_check_ids:
+                    if nid.startswith(v.rule_id + ":") and nid.endswith(v.check_id):
+                        negated_with_findings.add(nid)
+
+        # Remove false violations from negated checks that found content
+        filtered: list[Violation] = []
+        for v in det_violations:
+            is_negated = False
+            if v.check_id:
+                for nid in negated_check_ids:
+                    if nid.startswith(v.rule_id + ":") and nid.endswith(v.check_id):
+                        is_negated = True
+                        break
+            if not is_negated:
+                filtered.append(v)
+        det_violations = filtered
+
+        # Add violations for negated checks with NO findings (content missing)
+        for rule in deterministic.values():
+            for check in rule.checks:
+                if check.negate and check.id not in negated_with_findings:
+                    # Resolve template in targets for display (e.g. {{instruction_files}} → **/CLAUDE.md)
+                    display_target = rule.targets
+                    if "{{" in display_target and template_context:
+                        for key, val in template_context.items():
+                            placeholder = "{{" + key + "}}"
+                            if placeholder in display_target:
+                                resolved = ", ".join(val) if isinstance(val, list) else str(val)
+                                display_target = display_target.replace(placeholder, resolved)
+                    det_violations.append(Violation(
+                        rule_id=rule.id,
+                        rule_title=rule.title,
+                        location=f"{display_target}:0",
+                        message="Expected content not found",
+                        severity=check.severity,
+                        check_id=check.id.split(":")[-1] if ":" in check.id else None,
+                    ))
+
+    violations.extend(det_violations)
+
+    # Build semantic requests from semantic rule SARIF
+    judgment_requests = build_semantic_requests(rule_sarif, semantic, scan_root)
 
     # =========================================================================
     # Semantic Cache: filter already-evaluated judgments
@@ -243,14 +331,19 @@ def run_validation(
         cache = ProjectCache(project_root)
         filtered_requests = []
         for jr in judgment_requests:
-            file_path = jr.location.rsplit(":", 1)[0] if ":" in jr.location else jr.location
+            raw_path = jr.location.rsplit(":", 1)[0] if ":" in jr.location else jr.location
+            # Normalize to relative path for cache key consistency
             try:
-                file_hash = content_hash(project_root / file_path)
+                rel_path = str(Path(raw_path).relative_to(scan_root))
+            except ValueError:
+                rel_path = raw_path
+            try:
+                file_hash = content_hash(scan_root / rel_path)
             except OSError:
                 filtered_requests.append(jr)
                 continue
 
-            cached = cache.get_cached_judgment(file_path, file_hash)
+            cached = cache.get_cached_judgment(rel_path, file_hash)
             if cached and jr.rule_id in cached:
                 verdict = cached[jr.rule_id]
                 if verdict.get("verdict") == jr.pass_value:
@@ -317,19 +410,15 @@ def run_validation_sync(
     target: Path,
     rules: dict[str, Rule] | None = None,
     opengrep_path: Path | None = None,
-    rules_dir: Path | None = None,
+    rules_paths: list[Path] | None = None,
     use_cache: bool = True,
     record_analytics: bool = True,
     agent: str = "",
-    checks_dir: Path | None = None,  # Legacy alias
     include_experimental: bool = False,
-    extra_packages: list[str] | None = None,
+    exclude_dirs: list[str] | None = None,
 ) -> ValidationResult:
-    """Legacy alias for run_validation (now sync)."""
-    # Support legacy checks_dir parameter
-    if checks_dir is not None and rules_dir is None:
-        rules_dir = checks_dir
+    """Synchronous entry point for run_validation."""
     return run_validation(
-        target, rules, opengrep_path, rules_dir, use_cache,
-        record_analytics, agent, include_experimental, extra_packages
+        target, rules, opengrep_path, rules_paths, use_cache,
+        record_analytics, agent, include_experimental, exclude_dirs,
     )

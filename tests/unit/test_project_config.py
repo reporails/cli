@@ -63,6 +63,16 @@ class TestGetProjectConfig:
         config = get_project_config(tmp_path)
         assert config.packages == []
 
+    def test_loads_exclude_dirs(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("exclude_dirs:\n  - tests\n  - vendor\n")
+        config = get_project_config(tmp_path)
+        assert config.exclude_dirs == ["tests", "vendor"]
+
+    def test_exclude_dirs_defaults_empty(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("packages:\n  - custom\n")
+        config = get_project_config(tmp_path)
+        assert config.exclude_dirs == []
+
 
 class TestGetPackagePaths:
     """Test get_package_paths resolution."""
@@ -139,17 +149,18 @@ class TestGetPackagePaths:
         assert paths[1] == global_pkg
 
 
-# Helper to create a minimal rule .md file with frontmatter
+# Helper to create a minimal rule.md file with frontmatter (new coordinate format)
 RULE_MD_TEMPLATE = """\
 ---
-id: {rule_id}
+id: "{rule_id}"
 title: {title}
 category: structure
 type: deterministic
 level: L2
+slug: {slug}
+targets: '{{{{instruction_files}}}}'
 backed_by:
-  - source: anthropic-docs
-    claim: test
+  - anthropic-docs
 ---
 
 # {title}
@@ -159,33 +170,29 @@ Test rule content.
 
 
 def _create_rule(directory: Path, rule_id: str, title: str) -> None:
-    """Create a minimal rule .md file in directory."""
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{rule_id}.md").write_text(
-        RULE_MD_TEMPLATE.format(rule_id=rule_id, title=title)
+    """Create a minimal rule.md file in a slug directory."""
+    slug = title.lower().replace(" ", "-")
+    rule_dir = directory / slug
+    rule_dir.mkdir(parents=True, exist_ok=True)
+    (rule_dir / "rule.md").write_text(
+        RULE_MD_TEMPLATE.format(rule_id=rule_id, title=title, slug=slug)
     )
 
 
 class TestLoadRulesWithPackages:
     """Test load_rules with project packages and disabled rules."""
 
-    def test_package_rule_overrides_framework(self, tmp_path: Path) -> None:
+    def test_additional_path_overrides_framework(self, tmp_path: Path) -> None:
         from reporails_cli.core.registry import load_rules
 
         # Create framework rules dir
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
-        _create_rule(core_dir, "S1", "Framework S1")
+        _create_rule(core_dir, "CORE:S:0001", "Framework S1")
 
-        # Create project with package that overrides S1
-        project = tmp_path / "project"
-        project.mkdir()
-        pkg_dir = project / ".reporails" / "packages" / "custom"
-        _create_rule(pkg_dir, "S1", "Custom S1")
-
-        # Config referencing the package
-        config_dir = project / ".reporails"
-        (config_dir / "config.yml").write_text("packages:\n  - custom\n")
+        # Create custom package with rule that overrides CORE:S:0001
+        pkg_dir = tmp_path / "custom"
+        _create_rule(pkg_dir, "CORE:S:0001", "Custom S1")
 
         # Also need sources.yml for tier derivation
         docs_dir = rules_dir / "docs"
@@ -194,13 +201,13 @@ class TestLoadRulesWithPackages:
             "general:\n  - id: anthropic-docs\n    weight: 1.0\n"
         )
 
+        # Additional paths override primary framework rules
         rules = load_rules(
-            rules_dir=rules_dir,
+            rules_paths=[rules_dir, pkg_dir],
             include_experimental=True,
-            project_root=project,
         )
-        assert "S1" in rules
-        assert rules["S1"].title == "Custom S1"
+        assert "CORE:S:0001" in rules
+        assert rules["CORE:S:0001"].title == "Custom S1"
 
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
         from reporails_cli.core.registry import load_rules
@@ -208,8 +215,8 @@ class TestLoadRulesWithPackages:
         # Create framework rules
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
-        _create_rule(core_dir, "S1", "Size Limits")
-        _create_rule(core_dir, "S2", "Other Rule")
+        _create_rule(core_dir, "CORE:S:0001", "Size Limits")
+        _create_rule(core_dir, "CORE:S:0002", "Other Rule")
 
         # Sources for tier
         docs_dir = rules_dir / "docs"
@@ -218,26 +225,26 @@ class TestLoadRulesWithPackages:
             "general:\n  - id: anthropic-docs\n    weight: 1.0\n"
         )
 
-        # Project config disabling S1
+        # Project config disabling CORE:S:0001
         project = tmp_path / "project"
         config_dir = project / ".reporails"
         config_dir.mkdir(parents=True)
-        (config_dir / "config.yml").write_text("disabled_rules:\n  - S1\n")
+        (config_dir / "config.yml").write_text("disabled_rules:\n  - \"CORE:S:0001\"\n")
 
         rules = load_rules(
-            rules_dir=rules_dir,
+            rules_paths=[rules_dir],
             include_experimental=True,
             project_root=project,
         )
-        assert "S1" not in rules
-        assert "S2" in rules
+        assert "CORE:S:0001" not in rules
+        assert "CORE:S:0002" in rules
 
     def test_disabled_nonexistent_rule_harmless(self, tmp_path: Path) -> None:
         from reporails_cli.core.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
-        _create_rule(core_dir, "S1", "Size Limits")
+        _create_rule(core_dir, "CORE:S:0001", "Size Limits")
 
         docs_dir = rules_dir / "docs"
         docs_dir.mkdir(parents=True)
@@ -251,18 +258,18 @@ class TestLoadRulesWithPackages:
         (config_dir / "config.yml").write_text("disabled_rules:\n  - NOPE\n")
 
         rules = load_rules(
-            rules_dir=rules_dir,
+            rules_paths=[rules_dir],
             include_experimental=True,
             project_root=project,
         )
-        assert "S1" in rules
+        assert "CORE:S:0001" in rules
 
     def test_no_project_root_backward_compat(self, tmp_path: Path) -> None:
         from reporails_cli.core.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
-        _create_rule(core_dir, "S1", "Size Limits")
+        _create_rule(core_dir, "CORE:S:0001", "Size Limits")
 
         docs_dir = rules_dir / "docs"
         docs_dir.mkdir(parents=True)
@@ -271,5 +278,5 @@ class TestLoadRulesWithPackages:
         )
 
         # No project_root — backward compatible
-        rules = load_rules(rules_dir=rules_dir, include_experimental=True)
-        assert "S1" in rules
+        rules = load_rules(rules_paths=[rules_dir], include_experimental=True)
+        assert "CORE:S:0001" in rules

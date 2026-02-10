@@ -10,53 +10,81 @@ from typing import Any
 
 from reporails_cli.core.models import Rule, Severity, Violation
 
-# Severity weights for scoring
-SEVERITY_WEIGHTS: dict[Severity, float] = {
-    Severity.CRITICAL: 5.5,
-    Severity.HIGH: 4.0,
-    Severity.MEDIUM: 2.5,
-    Severity.LOW: 1.0,
-}
+# Matches the start of a rule coordinate: NAMESPACE.CATEGORY.SLOT
+# Namespace: uppercase letters + optional underscore (CORE, CLAUDE, RRAILS_CLAUDE, etc.)
+# Category: single uppercase letter (S, C, E, M, G)
+# Slot: exactly 4 digits
+_COORDINATE_RE = re.compile(r"^[A-Z][A-Z_]*\.[A-Z]\.\d{4}")
+
+
+def _find_coordinate_start(parts: list[str]) -> int:
+    """Find the index where the rule coordinate starts in dot-split parts.
+
+    OpenGrep may prefix the rule ID with temp directory path components
+    when template-resolved yml files are used (e.g., tmp.tmpXXXXXX.CORE.S.0001...).
+    This function locates the actual coordinate start by matching the
+    NAMESPACE.CATEGORY.SLOT pattern.
+
+    Args:
+        parts: Dot-split segments of the SARIF ruleId
+
+    Returns:
+        Index of the first coordinate segment, or 0 if no prefix detected
+    """
+    for i in range(len(parts) - 2):
+        candidate = ".".join(parts[i : i + 3])
+        if _COORDINATE_RE.match(candidate):
+            return i
+    return 0
 
 
 def extract_rule_id(sarif_rule_id: str) -> str:
-    """Extract short rule ID from OpenGrep SARIF ruleId.
+    """Extract rule coordinate from SARIF ruleId.
 
-    OpenGrep formats rule IDs as: checks.{category}.{id}-{slug}
-    Example: checks.structure.S1-many-h2-headings -> S1
+    OpenGrep rule IDs use dots (colons are invalid in OpenGrep IDs).
+    Dot-format: REGISTRY.CATEGORY.SLOT.check.NNNN -> REGISTRY:CATEGORY:SLOT
 
-    Handles prefixed IDs: AILS_E4, CLAUDE_S2, AILS_CLAUDE_M1
+    When template resolution writes yml to a temp directory, OpenGrep may
+    prefix the ruleId with path components (e.g., tmp.tmpXXX.CORE.S.0001...).
+    This function strips the prefix by locating the coordinate pattern.
+
+    Example: CORE.S.0001.check.0001 -> CORE:S:0001
+    Example: tmp.tmpXXX.CORE.S.0001.check.0001 -> CORE:S:0001
+    Example: RRAILS_CLAUDE.S.0002.check.0001 -> RRAILS_CLAUDE:S:0002
 
     Args:
-        sarif_rule_id: Full ruleId from SARIF output
+        sarif_rule_id: Full ruleId from SARIF output (dot-separated)
 
     Returns:
-        Short rule ID (e.g., S1, C10, AILS_E4, CLAUDE_S2)
+        Rule coordinate in colon format (e.g., CORE:S:0001)
     """
-    # Pattern: optional AILS_ and/or CLAUDE_ prefix, then letter + digits
-    match = re.search(r"\.((?:AILS_)?(?:CLAUDE_)?[A-Z]\d+)-", sarif_rule_id)
-    if match:
-        return match.group(1)
+    parts = sarif_rule_id.split(".")
+    start = _find_coordinate_start(parts)
+    if start + 3 <= len(parts):
+        return ":".join(parts[start : start + 3])
     return sarif_rule_id
 
 
-def extract_check_slug(sarif_rule_id: str) -> str | None:
-    """Extract check slug from OpenGrep SARIF ruleId.
+def extract_check_id(sarif_rule_id: str) -> str | None:
+    """Extract check ID suffix from SARIF ruleId.
 
-    OpenGrep formats rule IDs as: checks.{category}.{id}-{slug}
-    Example: checks.structure.S1-many-sections -> many-sections
+    OpenGrep rule IDs use dots. Returns colon-format for internal use.
+    Handles temp directory prefix in the same way as extract_rule_id.
 
-    Handles prefixed IDs: AILS_E4-slug, CLAUDE_S2-slug, AILS_CLAUDE_M1-slug
+    Example: CORE.S.0001.check.0001 -> check:0001
+    Example: tmp.tmpXXX.CORE.S.0001.check.0001 -> check:0001
 
     Args:
-        sarif_rule_id: Full ruleId from SARIF output
+        sarif_rule_id: Full ruleId from SARIF output (dot-separated)
 
     Returns:
-        Check slug (e.g., "many-sections") or None
+        Check suffix in colon format (e.g., "check:0001") or None
     """
-    match = re.search(r"\.(?:AILS_)?(?:CLAUDE_)?[A-Z]\d+-(.+)$", sarif_rule_id)
-    if match:
-        return match.group(1)
+    parts = sarif_rule_id.split(".")
+    start = _find_coordinate_start(parts)
+    suffix_start = start + 3
+    if suffix_start < len(parts):
+        return ":".join(parts[suffix_start:])
     return None
 
 
@@ -80,14 +108,14 @@ def get_location(result: dict[str, Any]) -> str:
     return f"{artifact}:{line}"
 
 
-def get_severity(rule: Rule | None, check_slug: str | None) -> Severity:
+def get_severity(rule: Rule | None, check_id: str | None) -> Severity:
     """Get severity for a violation.
 
-    Looks up severity from rule's checks list, falls back to MEDIUM.
+    Looks up severity from rule's checks list by check ID suffix, falls back to MEDIUM.
 
     Args:
         rule: Rule object (may be None)
-        check_slug: Check slug from SARIF (may be None)
+        check_id: Check ID suffix from SARIF (e.g., "check:0001")
 
     Returns:
         Severity level
@@ -95,12 +123,14 @@ def get_severity(rule: Rule | None, check_slug: str | None) -> Severity:
     if rule is None:
         return Severity.MEDIUM
 
-    # Try to find matching check
+    # Try to find matching check by ID suffix
     for check in rule.checks:
-        if check_slug and check_slug in check.id:
+        if check_id and check.id.endswith(check_id):
             return check.severity
-        # Return first check's severity as default
-        return check.severity
+
+    # Fall back to first check's severity
+    if rule.checks:
+        return rule.checks[0].severity
 
     return Severity.MEDIUM
 
@@ -136,26 +166,26 @@ def parse_sarif(sarif: dict[str, Any], rules: dict[str, Rule]) -> list[Violation
             if rule_level in ("note", "none"):
                 continue
 
-            short_rule_id = extract_rule_id(sarif_rule_id)
-            check_slug = extract_check_slug(sarif_rule_id)
+            rule_id = extract_rule_id(sarif_rule_id)
+            check_id = extract_check_id(sarif_rule_id)
             message = result.get("message", {}).get("text", "")
             location = get_location(result)
 
             # Get rule metadata — skip results not in the provided rules dict
-            rule = rules.get(short_rule_id)
+            rule = rules.get(rule_id)
             if rule is None:
                 continue
             title = rule.title
-            severity = get_severity(rule, check_slug)
+            severity = get_severity(rule, check_id)
 
             violations.append(
                 Violation(
-                    rule_id=short_rule_id,
+                    rule_id=rule_id,
                     rule_title=title,
                     location=location,
                     message=message,
                     severity=severity,
-                    check_id=check_slug,
+                    check_id=check_id,
                 )
             )
 
@@ -163,9 +193,10 @@ def parse_sarif(sarif: dict[str, Any], rules: dict[str, Rule]) -> list[Violation
 
 
 def dedupe_violations(violations: list[Violation]) -> list[Violation]:
-    """Deduplicate violations by (file, rule_id).
+    """Deduplicate violations by (file, rule_id, check_id).
 
-    Keeps first occurrence of each unique (file, rule_id) pair.
+    Keeps first occurrence of each unique (file, rule_id, check_id) tuple.
+    Multi-check rules produce distinct findings per check.
 
     Args:
         violations: List of violations (may have duplicates)
@@ -173,12 +204,12 @@ def dedupe_violations(violations: list[Violation]) -> list[Violation]:
     Returns:
         Deduplicated list of violations
     """
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str | None]] = set()
     result: list[Violation] = []
 
     for v in violations:
         file_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
-        key = (file_path, v.rule_id)
+        key = (file_path, v.rule_id, v.check_id)
 
         if key not in seen:
             seen.add(key)

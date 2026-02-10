@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.models import FrictionEstimate, Level, Severity, Violation
+from reporails_cli.core.models import FrictionEstimate, Severity, Violation
 
 # Severity weights for scoring (higher = more impact)
 SEVERITY_WEIGHTS: dict[Severity, float] = {
@@ -15,22 +15,12 @@ SEVERITY_WEIGHTS: dict[Severity, float] = {
 # Default weight for rules (used when calculating total possible points)
 DEFAULT_RULE_WEIGHT: float = 2.5
 
-# Level labels - must match levels.yml
-LEVEL_LABELS: dict[Level, str] = {
-    Level.L0: "Absent",
-    Level.L1: "Basic",
-    Level.L2: "Scoped",
-    Level.L3: "Structured",
-    Level.L4: "Abstracted",
-    Level.L5: "Governed",
-    Level.L6: "Adaptive",
-}
-
 
 def dedupe_violations(violations: list[Violation]) -> list[Violation]:
-    """Deduplicate violations by (file, rule_id).
+    """Deduplicate violations by (file, rule_id, check_id).
 
-    Keeps first occurrence of each unique (file, rule_id) pair.
+    Keeps first occurrence of each unique (file, rule_id, check_id) tuple.
+    Multi-check rules produce distinct findings per check.
 
     Args:
         violations: List of violations (may have duplicates)
@@ -38,12 +28,12 @@ def dedupe_violations(violations: list[Violation]) -> list[Violation]:
     Returns:
         Deduplicated list of violations
     """
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str | None]] = set()
     result: list[Violation] = []
 
     for v in violations:
         file_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
-        key = (file_path, v.rule_id)
+        key = (file_path, v.rule_id, v.check_id)
 
         if key not in seen:
             seen.add(key)
@@ -143,18 +133,6 @@ def estimate_friction(violations: list[Violation]) -> FrictionEstimate:
     return FrictionEstimate(level=level)
 
 
-def get_level_label(level: Level) -> str:
-    """Get human-readable label for level.
-
-    Args:
-        level: Maturity level
-
-    Returns:
-        Label string (e.g., "Abstracted")
-    """
-    return LEVEL_LABELS.get(level, "Unknown")
-
-
 def has_critical_violations(violations: list[Violation]) -> bool:
     """Check if any violation is critical.
 
@@ -165,15 +143,3 @@ def has_critical_violations(violations: list[Violation]) -> bool:
         True if any violation has CRITICAL severity
     """
     return any(v.severity == Severity.CRITICAL for v in violations)
-
-
-# Legacy compatibility
-def get_severity_points(severity: Severity) -> int:
-    """Legacy: Get point deduction for a severity level."""
-    points_map = {
-        Severity.CRITICAL: -25,
-        Severity.HIGH: -15,
-        Severity.MEDIUM: -10,
-        Severity.LOW: -5,
-    }
-    return points_map.get(severity, -5)

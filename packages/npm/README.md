@@ -23,7 +23,7 @@ npx @reporails/cli check
 That's it. You'll get a score, capability level, and actionable violations.
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Governed (L5)    ║
+║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Maintained (L5)    ║
 ║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -64,7 +64,7 @@ Once installed, all commands use `ails` directly.
 | L2 | Basic | Has CLAUDE.md |
 | L3 | Structured | Sections, imports |
 | L4 | Abstracted | .claude/rules/ directory |
-| L5 | Governed | Shared files, 3+ components |
+| L5 | Maintained | Shared files, 3+ components |
 | L6 | Adaptive | Backbone + full governance |
 
 ## Commands
@@ -73,13 +73,17 @@ Once installed, all commands use `ails` directly.
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
 ails check --strict             # Exit 1 if violations (for CI)
-ails check --with-recommended   # Include recommended rules
-ails explain S1                 # Explain a rule
+ails check --no-update-check    # Skip pre-run update prompt
+ails check --exclude-dir vendor # Exclude directory from scanning
+ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
-ails update                     # Update rules framework
-ails update --check             # Check for rule updates
-ails dismiss C6                 # Dismiss a semantic finding
+ails update                     # Update rules framework + recommended
+ails update --check             # Check for updates without installing
+ails update --recommended       # Update recommended rules only
+ails update --force             # Force reinstall even if current
+ails update --cli               # Upgrade the CLI package itself
+ails dismiss CORE:C:0001        # Dismiss a semantic finding
 ails version                    # Show version info
 ```
 
@@ -90,29 +94,37 @@ ails version                    # Show version info
 | `check [PATH]` | Validate instruction files |
 | `explain RULE_ID` | Show rule details |
 | `map [PATH]` | Discover project structure |
-| `update` | Update rules framework |
+| `update` | Update rules framework + recommended |
 | `dismiss RULE_ID` | Dismiss a semantic finding |
 | `version` | Show version info |
 
 ## Updating
 
-The **rules framework** updates separately from the CLI:
-
 ```bash
-ails update              # Update rules to latest
-ails update --check      # Check without installing
+ails update              # Update rules framework + recommended to latest
+ails update --check      # Check for updates without installing
+ails update --recommended  # Update recommended rules only
+ails update --force      # Force reinstall even if current
+ails update --cli        # Upgrade the CLI package itself
 ```
+
+Before each scan, the CLI prompts when updates are available. Use `--no-update-check` to skip.
 
 The **CLI itself** updates automatically — `npx @reporails/cli` always fetches the latest version.
 Persistent installs: `npm install -g @reporails/cli@latest`
 
 ## Recommended Rules
 
-The `--with-recommended` flag adds community [recommended rules](https://github.com/reporails/recommended) on top of the core set. These are methodology-backed checks (AILS_ namespace) that are auto-downloaded on first use:
+[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
+
+```yaml
+recommended: false
+```
+
+To update recommended rules independently:
 
 ```bash
-ails check --with-recommended       # Include recommended rules
-ails update --recommended              # Re-fetch latest recommended rules
+ails update --recommended
 ```
 
 ## Prerequisites
@@ -134,4 +146,4 @@ Want to add or improve rules? Please follow [Contribute](https://github.com/repo
 
 ## License
 
-Apache-2.0
+BUSL 1.1
