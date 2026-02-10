@@ -179,34 +179,34 @@ class TestLoadRulesExcludes:
 
     def test_excludes_removes_rules(self, tmp_path: Path) -> None:
         """Excluded rule IDs are filtered out."""
-        # Create a minimal rules dir with two rules
-        core_dir = tmp_path / "core" / "structure"
-        core_dir.mkdir(parents=True)
-        for rule_id in ("S1", "S2"):
-            (core_dir / f"{rule_id}.md").write_text(
-                f"---\nid: {rule_id}\ntitle: Rule {rule_id}\ncategory: structure\n"
-                f"type: deterministic\nlevel: L2\nbacked_by:\n"
-                f"  - source: anthropic-docs\n    claim: test\n---\n"
+        # Create a minimal rules dir with two rules (new format: rule.md in slug dirs)
+        for slug, coord in (("rule-a", "CORE:S:0001"), ("rule-b", "CORE:S:0002")):
+            rule_dir = tmp_path / "core" / "structure" / slug
+            rule_dir.mkdir(parents=True)
+            (rule_dir / "rule.md").write_text(
+                f"---\nid: \"{coord}\"\ntitle: Rule {coord}\ncategory: structure\n"
+                f"type: deterministic\nlevel: L2\nslug: {slug}\n"
+                f"targets: '{{{{instruction_files}}}}'\nbacked_by:\n  - anthropic-docs\n---\n"
             )
 
-        agent_config = AgentConfig(agent="test", excludes=["S1"])
+        agent_config = AgentConfig(agent="test", excludes=["CORE:S:0001"])
         with (
             patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config),
             patch("reporails_cli.core.registry._load_source_weights", return_value={"anthropic-docs": 1.0}),
         ):
-            rules = load_rules(tmp_path, include_experimental=False, agent="test")
+            rules = load_rules([tmp_path], include_experimental=False, agent="test")
 
-        assert "S1" not in rules
-        assert "S2" in rules
+        assert "CORE:S:0001" not in rules
+        assert "CORE:S:0002" in rules
 
     def test_excludes_nonexistent_rule_is_noop(self, tmp_path: Path) -> None:
         """Excluding a rule ID that doesn't exist is harmless."""
-        core_dir = tmp_path / "core" / "structure"
-        core_dir.mkdir(parents=True)
-        (core_dir / "S1.md").write_text(
-            "---\nid: S1\ntitle: Rule S1\ncategory: structure\n"
-            "type: deterministic\nlevel: L2\nbacked_by:\n"
-            "  - source: anthropic-docs\n    claim: test\n---\n"
+        rule_dir = tmp_path / "core" / "structure" / "rule-a"
+        rule_dir.mkdir(parents=True)
+        (rule_dir / "rule.md").write_text(
+            "---\nid: \"CORE:S:0001\"\ntitle: Rule CORE:S:0001\ncategory: structure\n"
+            "type: deterministic\nlevel: L2\nslug: rule-a\n"
+            "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )
 
         agent_config = AgentConfig(agent="test", excludes=["NONEXISTENT"])
@@ -214,21 +214,21 @@ class TestLoadRulesExcludes:
             patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config),
             patch("reporails_cli.core.registry._load_source_weights", return_value={"anthropic-docs": 1.0}),
         ):
-            rules = load_rules(tmp_path, include_experimental=False, agent="test")
+            rules = load_rules([tmp_path], include_experimental=False, agent="test")
 
-        assert "S1" in rules
+        assert "CORE:S:0001" in rules
 
     def test_no_agent_skips_processing(self, tmp_path: Path) -> None:
         """Empty agent string skips agent config loading entirely."""
-        core_dir = tmp_path / "core" / "structure"
-        core_dir.mkdir(parents=True)
-        (core_dir / "S1.md").write_text(
-            "---\nid: S1\ntitle: Rule S1\ncategory: structure\n"
-            "type: deterministic\nlevel: L2\nbacked_by:\n"
-            "  - source: anthropic-docs\n    claim: test\n---\n"
+        rule_dir = tmp_path / "core" / "structure" / "rule-a"
+        rule_dir.mkdir(parents=True)
+        (rule_dir / "rule.md").write_text(
+            "---\nid: \"CORE:S:0001\"\ntitle: Rule CORE:S:0001\ncategory: structure\n"
+            "type: deterministic\nlevel: L2\nslug: rule-a\n"
+            "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )
 
         with patch("reporails_cli.core.registry._load_source_weights", return_value={"anthropic-docs": 1.0}):
-            rules = load_rules(tmp_path, include_experimental=False, agent="")
+            rules = load_rules([tmp_path], include_experimental=False, agent="")
 
-        assert "S1" in rules
+        assert "CORE:S:0001" in rules

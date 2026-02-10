@@ -5,7 +5,7 @@ from __future__ import annotations
 from reporails_cli.core.models import Category, Check, Rule, RuleType, Severity, Violation
 from reporails_cli.core.sarif import (
     dedupe_violations,
-    extract_check_slug,
+    extract_check_id,
     extract_rule_id,
     get_location,
     get_severity,
@@ -13,45 +13,69 @@ from reporails_cli.core.sarif import (
 )
 
 # ---------------------------------------------------------------------------
-# extract_rule_id
+# extract_rule_id (coordinate format)
 # ---------------------------------------------------------------------------
 
 
 class TestExtractRuleId:
-    def test_standard_format(self) -> None:
-        assert extract_rule_id("checks.structure.S1-many-h2-headings") == "S1"
+    def test_core_coordinate(self) -> None:
+        assert extract_rule_id("CORE.S.0001.check.0001") == "CORE:S:0001"
 
-    def test_multi_digit_id(self) -> None:
-        assert extract_rule_id("checks.content.C10-no-examples") == "C10"
+    def test_claude_coordinate(self) -> None:
+        assert extract_rule_id("CLAUDE.S.0002.check.0001") == "CLAUDE:S:0002"
 
-    def test_ails_prefix(self) -> None:
-        assert extract_rule_id("checks.efficiency.AILS_E4-some-slug") == "AILS_E4"
+    def test_rrails_claude_coordinate(self) -> None:
+        assert extract_rule_id("RRAILS_CLAUDE.S.0002.check.0001") == "RRAILS_CLAUDE:S:0002"
 
-    def test_claude_prefix(self) -> None:
-        assert extract_rule_id("checks.structure.CLAUDE_S2-some-slug") == "CLAUDE_S2"
+    def test_coordinate_without_check_suffix(self) -> None:
+        assert extract_rule_id("CORE.C.0010") == "CORE:C:0010"
 
-    def test_ails_claude_prefix(self) -> None:
-        assert extract_rule_id("checks.maintenance.AILS_CLAUDE_M1-slug") == "AILS_CLAUDE_M1"
-
-    def test_no_match_returns_original(self) -> None:
-        raw = "some.unexpected.format"
+    def test_no_dots_returns_original(self) -> None:
+        raw = "some-unexpected-format"
         assert extract_rule_id(raw) == raw
 
+    # Temp path prefix handling (template-resolved yml files)
+
+    def test_temp_prefix_stripped_core(self) -> None:
+        """OpenGrep prefixes ruleId with temp dir path components."""
+        assert extract_rule_id("tmp.tmpbb5ongfm.CORE.C.0006.check.0001") == "CORE:C:0006"
+
+    def test_temp_prefix_stripped_claude(self) -> None:
+        assert extract_rule_id("tmp.tmpXXXXXX.CLAUDE.S.0005.check.0001") == "CLAUDE:S:0005"
+
+    def test_temp_prefix_stripped_rrails(self) -> None:
+        assert extract_rule_id("tmp.abc123.RRAILS.C.0001.check.0001") == "RRAILS:C:0001"
+
+    def test_temp_prefix_stripped_rrails_claude(self) -> None:
+        assert extract_rule_id("tmp.xyz.RRAILS_CLAUDE.S.0002.check.0001") == "RRAILS_CLAUDE:S:0002"
+
+    def test_temp_prefix_stripped_codex(self) -> None:
+        assert extract_rule_id("tmp.foo.CODEX.S.0001.check.0001") == "CODEX:S:0001"
+
 
 # ---------------------------------------------------------------------------
-# extract_check_slug
+# extract_check_id
 # ---------------------------------------------------------------------------
 
 
-class TestExtractCheckSlug:
-    def test_standard_slug(self) -> None:
-        assert extract_check_slug("checks.structure.S1-many-sections") == "many-sections"
+class TestExtractCheckId:
+    def test_standard_check_id(self) -> None:
+        assert extract_check_id("CORE.S.0001.check.0001") == "check:0001"
 
-    def test_prefixed_slug(self) -> None:
-        assert extract_check_slug("checks.efficiency.AILS_E4-no-grep") == "no-grep"
+    def test_no_check_suffix_returns_none(self) -> None:
+        assert extract_check_id("CORE.S.0001") is None
 
-    def test_no_match_returns_none(self) -> None:
-        assert extract_check_slug("no-dot-prefix") is None
+    def test_two_parts_returns_none(self) -> None:
+        assert extract_check_id("CORE.S") is None
+
+    # Temp path prefix handling
+
+    def test_temp_prefix_stripped(self) -> None:
+        assert extract_check_id("tmp.tmpbb5ongfm.CORE.C.0006.check.0001") == "check:0001"
+
+    def test_temp_prefix_stripped_no_check(self) -> None:
+        """Coordinate with temp prefix but no check suffix."""
+        assert extract_check_id("tmp.xyz.CORE.S.0001") is None
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +121,7 @@ class TestGetLocation:
 
 def _make_rule(checks: list[Check]) -> Rule:
     return Rule(
-        id="T1",
+        id="CORE:S:0001",
         title="Test",
         category=Category.STRUCTURE,
         type=RuleType.DETERMINISTIC,
@@ -108,21 +132,21 @@ def _make_rule(checks: list[Check]) -> Rule:
 
 class TestGetSeverity:
     def test_rule_none(self) -> None:
-        assert get_severity(None, "slug") == Severity.MEDIUM
+        assert get_severity(None, "check:0001") == Severity.MEDIUM
 
     def test_matching_check(self) -> None:
-        checks = [Check(id="T1-slug", name="Slug", severity=Severity.HIGH)]
+        checks = [Check(id="CORE:S:0001:check:0001", severity=Severity.HIGH)]
         rule = _make_rule(checks)
-        assert get_severity(rule, "slug") == Severity.HIGH
+        assert get_severity(rule, "check:0001") == Severity.HIGH
 
     def test_no_matching_check_returns_first(self) -> None:
-        checks = [Check(id="T1-other", name="Other", severity=Severity.LOW)]
+        checks = [Check(id="CORE:S:0001:check:0001", severity=Severity.LOW)]
         rule = _make_rule(checks)
-        assert get_severity(rule, "no-match") == Severity.LOW
+        assert get_severity(rule, "check:9999") == Severity.LOW
 
     def test_empty_checks_returns_medium(self) -> None:
         rule = _make_rule([])
-        assert get_severity(rule, "slug") == Severity.MEDIUM
+        assert get_severity(rule, "check:0001") == Severity.MEDIUM
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +162,7 @@ class TestParseSarif:
             category=Category.STRUCTURE,
             type=RuleType.DETERMINISTIC,
             level="L2",
-            checks=checks or [Check(id=f"{rule_id}-check", name="Check", severity=Severity.MEDIUM)],
+            checks=checks or [Check(id=f"{rule_id}:check:0001", severity=Severity.MEDIUM)],
         )
 
     def test_empty_runs(self) -> None:
@@ -152,13 +176,13 @@ class TestParseSarif:
                     "tool": {
                         "driver": {
                             "rules": [
-                                {"id": "checks.structure.S1-check", "defaultConfiguration": {"level": "note"}}
+                                {"id": "CORE.S.0001.check.0001", "defaultConfiguration": {"level": "note"}}
                             ]
                         }
                     },
                     "results": [
                         {
-                            "ruleId": "checks.structure.S1-check",
+                            "ruleId": "CORE.S.0001.check.0001",
                             "message": {"text": "info finding"},
                             "locations": [
                                 {"physicalLocation": {"artifactLocation": {"uri": "f.md"}, "region": {"startLine": 1}}}
@@ -168,7 +192,7 @@ class TestParseSarif:
                 }
             ]
         }
-        assert parse_sarif(sarif, {"S1": self._rule("S1")}) == []
+        assert parse_sarif(sarif, {"CORE:S:0001": self._rule("CORE:S:0001")}) == []
 
     def test_unknown_rules_skipped(self) -> None:
         sarif = {
@@ -177,7 +201,7 @@ class TestParseSarif:
                     "tool": {"driver": {"rules": []}},
                     "results": [
                         {
-                            "ruleId": "checks.structure.UNKNOWN1-check",
+                            "ruleId": "CORE.S.9999.check.0001",
                             "message": {"text": "msg"},
                             "locations": [
                                 {"physicalLocation": {"artifactLocation": {"uri": "f.md"}, "region": {"startLine": 1}}}
@@ -187,8 +211,7 @@ class TestParseSarif:
                 }
             ]
         }
-        # Rule not in provided dict → skipped
-        assert parse_sarif(sarif, {"S1": self._rule("S1")}) == []
+        assert parse_sarif(sarif, {"CORE:S:0001": self._rule("CORE:S:0001")}) == []
 
     def test_full_parse(self) -> None:
         sarif = {
@@ -197,13 +220,13 @@ class TestParseSarif:
                     "tool": {
                         "driver": {
                             "rules": [
-                                {"id": "checks.structure.S1-check", "defaultConfiguration": {"level": "warning"}}
+                                {"id": "CORE.S.0001.check.0001", "defaultConfiguration": {"level": "warning"}}
                             ]
                         }
                     },
                     "results": [
                         {
-                            "ruleId": "checks.structure.S1-check",
+                            "ruleId": "CORE.S.0001.check.0001",
                             "message": {"text": "violation msg"},
                             "locations": [
                                 {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 10}}}
@@ -213,18 +236,50 @@ class TestParseSarif:
                 }
             ]
         }
-        rules = {"S1": self._rule("S1")}
+        rules = {"CORE:S:0001": self._rule("CORE:S:0001")}
         violations = parse_sarif(sarif, rules)
 
         assert len(violations) == 1
         v = violations[0]
-        assert v.rule_id == "S1"
+        assert v.rule_id == "CORE:S:0001"
         assert v.location == "CLAUDE.md:10"
         assert v.message == "violation msg"
+        assert v.check_id == "check:0001"
+
+    def test_temp_prefixed_ruleid_parsed(self) -> None:
+        """SARIF ruleIds with temp directory prefix are matched to rules."""
+        sarif = {
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "rules": [
+                                {"id": "tmp.tmpXXX.CORE.C.0006.check.0001", "defaultConfiguration": {"level": "warning"}}
+                            ]
+                        }
+                    },
+                    "results": [
+                        {
+                            "ruleId": "tmp.tmpXXX.CORE.C.0006.check.0001",
+                            "message": {"text": "vague qualifier found"},
+                            "locations": [
+                                {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 7}}}
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        rules = {"CORE:C:0006": self._rule("CORE:C:0006")}
+        violations = parse_sarif(sarif, rules)
+
+        assert len(violations) == 1
+        assert violations[0].rule_id == "CORE:C:0006"
+        assert violations[0].check_id == "check:0001"
 
 
 # ---------------------------------------------------------------------------
-# dedupe_violations (moved from test_scoring.py)
+# dedupe_violations
 # ---------------------------------------------------------------------------
 
 
@@ -232,76 +287,89 @@ class TestViolationDeduplication:
     """Test that duplicate violations are handled correctly."""
 
     def test_duplicate_violations_deduped(self) -> None:
-        """Duplicate violations should be deduplicated."""
+        """Duplicate violations (same file, rule, check) should be deduplicated."""
         violations = [
             Violation(
-                rule_id="S1",
+                rule_id="CORE:S:0001",
                 rule_title="Test",
                 location="test.md:1",
                 message="Same violation",
                 severity=Severity.MEDIUM,
-                check_id="test",
+                check_id="check:0001",
             ),
             Violation(
-                rule_id="S1",
+                rule_id="CORE:S:0001",
                 rule_title="Test",
                 location="test.md:5",
                 message="Same violation",
                 severity=Severity.MEDIUM,
-                check_id="test",
+                check_id="check:0001",
             ),
         ]
-
-        deduped = dedupe_violations(violations)
-
-        assert len(deduped) == 1
+        assert len(dedupe_violations(violations)) == 1
 
     def test_different_files_not_deduped(self) -> None:
         """Same rule in different files should not be deduped."""
         violations = [
             Violation(
-                rule_id="S1",
+                rule_id="CORE:S:0001",
                 rule_title="Test",
                 location="a.md:1",
                 message="Violation",
                 severity=Severity.MEDIUM,
-                check_id="test",
+                check_id="check:0001",
             ),
             Violation(
-                rule_id="S1",
+                rule_id="CORE:S:0001",
                 rule_title="Test",
                 location="b.md:1",
                 message="Violation",
                 severity=Severity.MEDIUM,
-                check_id="test",
+                check_id="check:0001",
             ),
         ]
-
-        deduped = dedupe_violations(violations)
-
-        assert len(deduped) == 2
+        assert len(dedupe_violations(violations)) == 2
 
     def test_different_rules_not_deduped(self) -> None:
         """Different rules in same file should not be deduped."""
         violations = [
             Violation(
-                rule_id="S1",
+                rule_id="CORE:S:0001",
                 rule_title="Rule 1",
                 location="test.md:1",
                 message="Violation 1",
                 severity=Severity.MEDIUM,
-                check_id="test1",
+                check_id="check:0001",
             ),
             Violation(
-                rule_id="S2",
+                rule_id="CORE:S:0002",
                 rule_title="Rule 2",
                 location="test.md:1",
                 message="Violation 2",
                 severity=Severity.MEDIUM,
-                check_id="test2",
+                check_id="check:0001",
             ),
         ]
+        assert len(dedupe_violations(violations)) == 2
 
-        deduped = dedupe_violations(violations)
-
-        assert len(deduped) == 2
+    def test_different_checks_not_deduped(self) -> None:
+        """Different checks on same rule/file should not be deduped."""
+        violations = [
+            Violation(
+                rule_id="CORE:S:0001",
+                rule_title="Test",
+                location="test.md:1",
+                message="Check 1",
+                severity=Severity.MEDIUM,
+                check_id="check:0001",
+            ),
+            Violation(
+                rule_id="CORE:S:0001",
+                rule_title="Test",
+                location="test.md:5",
+                message="Check 2",
+                severity=Severity.HIGH,
+                check_id="check:0002",
+            ),
+        ]
+        assert len(dedupe_violations(violations)) == 2

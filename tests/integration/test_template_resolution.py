@@ -283,6 +283,7 @@ class TestEngineTemplateIntegration:
         self,
         level2_project: Path,
         opengrep_bin: Path,
+        dev_rules_dir: Path,
     ) -> None:
         """run_validation must pass template_context to run_opengrep.
 
@@ -295,6 +296,7 @@ class TestEngineTemplateIntegration:
         result = run_validation_sync(
             level2_project,
             agent="claude",
+            rules_paths=[dev_rules_dir],
         )
 
         # Should complete without error
