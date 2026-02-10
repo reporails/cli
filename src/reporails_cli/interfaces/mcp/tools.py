@@ -10,6 +10,28 @@ from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters import text as text_formatter
 
 
+def _resolve_recommended_rules_paths(target: Path) -> list[Path] | None:
+    """Build rules_paths including recommended package if enabled for target project."""
+    from reporails_cli.core.bootstrap import get_project_config, get_recommended_package_path
+    from reporails_cli.core.init import download_recommended, is_recommended_installed
+    from reporails_cli.core.registry import get_rules_dir
+
+    project_config = get_project_config(target)
+    if not project_config.recommended:
+        return None
+
+    if not is_recommended_installed():
+        try:
+            download_recommended()
+        except Exception:
+            return None
+
+    rec_path = get_recommended_package_path()
+    if rec_path.is_dir():
+        return [get_rules_dir(), rec_path]
+    return None
+
+
 def validate_tool(path: str = ".") -> dict[str, Any]:
     """
     Validate CLAUDE.md files at path.
@@ -31,7 +53,8 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path not found: {target}"}
 
     try:
-        result = run_validation(target, agent="claude")
+        rules_paths = _resolve_recommended_rules_paths(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return mcp_formatter.format_result(result)
     except FileNotFoundError as e:
         return {"error": str(e)}
@@ -58,7 +81,8 @@ def validate_tool_text(path: str = ".") -> str:
         return f"Error: Path not found: {target}"
 
     try:
-        result = run_validation(target, agent="claude")
+        rules_paths = _resolve_recommended_rules_paths(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return text_formatter.format_result(result, ascii_mode=True)
     except FileNotFoundError as e:
         return f"Error: {e}"
@@ -83,7 +107,8 @@ def score_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path not found: {target}"}
 
     try:
-        result = run_validation(target, agent="claude")
+        rules_paths = _resolve_recommended_rules_paths(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return mcp_formatter.format_score(result)
     except FileNotFoundError as e:
         return {"error": str(e)}
@@ -116,10 +141,10 @@ def explain_tool(rule_id: str) -> dict[str, Any]:
         "category": rule.category.value,
         "type": rule.type.value,
         "level": rule.level,
-        "scoring": rule.scoring,
-        "detection": rule.detection,
+        "slug": rule.slug,
+        "targets": rule.targets,
         "checks": [
-            {"id": c.id, "name": c.name, "severity": c.severity.value}
+            {"id": c.id, "type": c.type, "severity": c.severity.value}
             for c in rule.checks
         ],
         "see_also": rule.see_also,
