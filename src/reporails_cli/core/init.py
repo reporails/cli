@@ -55,7 +55,7 @@ RECOMMENDED_ARCHIVE_URL = (
 )
 RECOMMENDED_API_URL = "https://api.github.com/repos/reporails/recommended/releases/latest"
 
-RULES_VERSION = "0.3.0"
+RULES_VERSION = "0.3.1"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 

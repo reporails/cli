@@ -60,5 +60,5 @@ All `uvx` invocation strings now include `--refresh` to ensure users get the lat
 
 ### Dependencies
 
-- Rules framework 0.3.0
+- Rules framework 0.3.1
 - Recommended package 0.1.0
