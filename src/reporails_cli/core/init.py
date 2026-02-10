@@ -14,6 +14,7 @@ import httpx
 
 from reporails_cli.core.bootstrap import (
     get_global_config,
+    get_installed_recommended_version,
     get_installed_version,
     get_opengrep_bin,
     get_recommended_package_path,
@@ -48,21 +49,22 @@ OPENGREP_URLS: dict[tuple[str, str], str] = {
 }
 
 RECOMMENDED_REPO = "reporails/recommended"
-RECOMMENDED_VERSION = "0.0.1"
+RECOMMENDED_VERSION = "0.1.0"
 RECOMMENDED_ARCHIVE_URL = (
     f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{RECOMMENDED_VERSION}.tar.gz"
 )
+RECOMMENDED_API_URL = "https://api.github.com/repos/reporails/recommended/releases/latest"
 
-RULES_VERSION = "0.2.2"
+RULES_VERSION = "0.3.0"
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
 
 # Schema versions this CLI can consume (match on major.minor, ignore patch)
 # Only schemas the CLI reads directly — others are ignored
 REQUIRED_SCHEMAS: dict[str, str] = {
-    "rule": "0.0",
-    "levels": "0.0",
-    "agent": "0.0",
+    "rule": "0.1",
+    "levels": "0.1",
+    "agent": "0.1",
 }
 
 
@@ -353,17 +355,26 @@ def is_recommended_installed() -> bool:
     return any(pkg_path.iterdir())
 
 
-def download_recommended() -> Path:
+def download_recommended(version: str | None = None) -> Path:
     """Download recommended rules package from GitHub archive.
 
     Fetches the archive from reporails/recommended, extracts to
     ~/.reporails/packages/recommended/, stripping the top-level directory
     prefix that GitHub adds to archives.
 
+    Args:
+        version: Target version string. If None, resolves via API falling back to RECOMMENDED_VERSION.
+
     Returns:
         Path to the installed package directory
     """
     import tarfile
+
+    # Resolve version
+    if version is None:
+        version = get_latest_recommended_version() or RECOMMENDED_VERSION
+
+    archive_url = f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{version}.tar.gz"
 
     pkg_path = get_recommended_package_path()
 
@@ -374,7 +385,7 @@ def download_recommended() -> Path:
     pkg_path.mkdir(parents=True, exist_ok=True)
 
     with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-        response = client.get(RECOMMENDED_ARCHIVE_URL)
+        response = client.get(archive_url)
         response.raise_for_status()
 
         with TemporaryDirectory() as tmpdir:
@@ -405,7 +416,7 @@ def download_recommended() -> Path:
 
     # Write version marker
     version_file = pkg_path / ".version"
-    version_file.write_text(RECOMMENDED_VERSION + "\n", encoding="utf-8")
+    version_file.write_text(version + "\n", encoding="utf-8")
 
     return pkg_path
 
@@ -456,7 +467,7 @@ def get_latest_version() -> str | None:
     Fetch the latest release version from GitHub API.
 
     Returns:
-        Version string (e.g., "v0.1.1") or None if fetch fails
+        Version string (e.g., "0.3.0") or None if fetch fails
     """
     try:
         with httpx.Client(timeout=10.0) as client:
@@ -464,7 +475,24 @@ def get_latest_version() -> str | None:
             response.raise_for_status()
             data: dict[str, object] = response.json()
             tag_name = data.get("tag_name")
-            return str(tag_name) if tag_name else None
+            return str(tag_name).removeprefix("v") if tag_name else None
+    except (httpx.HTTPError, KeyError):
+        return None
+
+
+def get_latest_recommended_version() -> str | None:
+    """Fetch the latest recommended release version from GitHub API.
+
+    Returns:
+        Version string (e.g., "0.1.0") or None if fetch fails
+    """
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(RECOMMENDED_API_URL)
+            response.raise_for_status()
+            data: dict[str, object] = response.json()
+            tag_name = data.get("tag_name")
+            return str(tag_name).removeprefix("v") if tag_name else None
     except (httpx.HTTPError, KeyError):
         return None
 
@@ -473,8 +501,12 @@ def download_rules_version(version: str) -> tuple[Path, int]:
     """
     Download rules for a specific version.
 
+    Downloads to a staging directory first and verifies schema compatibility
+    before replacing the existing rules. This ensures incompatible rules
+    never overwrite a working installation.
+
     Args:
-        version: Version string (e.g., "v0.1.1")
+        version: Version string (e.g., "0.3.0")
 
     Returns:
         Tuple of (rules_path, total_file_count)
@@ -482,36 +514,35 @@ def download_rules_version(version: str) -> tuple[Path, int]:
     import tarfile
 
     rules_path = get_reporails_home() / "rules"
-
-    # Clear existing rules
-    if rules_path.exists():
-        shutil.rmtree(rules_path)
-
-    rules_path.mkdir(parents=True, exist_ok=True)
-
-    # 1. Copy bundled .yml files
-    yml_count = copy_bundled_yml_files(rules_path)
-
-    # 2. Download from GitHub release tarball
     url = RULES_TARBALL_URL.format(version=version)
 
-    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-        response = client.get(url)
-        response.raise_for_status()
+    with TemporaryDirectory() as tmpdir:
+        staging_path = Path(tmpdir) / "rules"
+        staging_path.mkdir()
 
-        with TemporaryDirectory() as tmpdir:
-            tarball_path = Path(tmpdir) / "rules.tar.gz"
+        # 1. Copy bundled .yml files to staging
+        yml_count = copy_bundled_yml_files(staging_path)
+
+        # 2. Download and extract to staging
+        tarball_path = Path(tmpdir) / "rules.tar.gz"
+
+        with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+            response = client.get(url)
+            response.raise_for_status()
             tarball_path.write_bytes(response.content)
 
-            # Extract
-            with tarfile.open(tarball_path, "r:gz") as tar:
-                tar.extractall(path=rules_path)
+        with tarfile.open(tarball_path, "r:gz") as tar:
+            tar.extractall(path=staging_path)
 
-            # Count files
-            tarball_count = sum(1 for _ in rules_path.rglob("*") if _.is_file())
+        # 3. Verify schema compatibility BEFORE replacing existing rules
+        check_manifest_compatibility(staging_path)
 
-    # Verify schema compatibility before committing
-    check_manifest_compatibility(rules_path)
+        # 4. Compatibility verified — swap in the new rules
+        if rules_path.exists():
+            shutil.rmtree(rules_path)
+        shutil.move(str(staging_path), str(rules_path))
+
+        tarball_count = sum(1 for _ in rules_path.rglob("*") if _.is_file())
 
     # Write version file
     write_version_file(version)
@@ -524,7 +555,7 @@ def update_rules(version: str | None = None, force: bool = False) -> UpdateResul
     Update rules to specified version or latest.
 
     Args:
-        version: Target version (e.g., "v0.1.1"). If None, uses latest.
+        version: Target version (e.g., "0.3.0"). If None, uses latest.
         force: Force update even if already at target version.
 
     Returns:
@@ -532,7 +563,7 @@ def update_rules(version: str | None = None, force: bool = False) -> UpdateResul
     """
     # Determine target version
     if version:
-        target_version = version if version.startswith("v") else f"v{version}"
+        target_version = version.removeprefix("v")
     else:
         latest = get_latest_version()
         if not latest:
@@ -586,6 +617,68 @@ def update_rules(version: str | None = None, force: bool = False) -> UpdateResul
         updated=True,
         rule_count=rule_count,
         message=f"Updated from {current_version or 'none'} to {target_version}.",
+    )
+
+
+def update_recommended(version: str | None = None, force: bool = False) -> UpdateResult:
+    """Update recommended package to specified version or latest.
+
+    Args:
+        version: Target version (e.g., "0.1.0"). If None, uses latest.
+        force: Force update even if already at target version.
+
+    Returns:
+        UpdateResult with details about the update
+    """
+    # Determine target version
+    if version:
+        target_version = version.removeprefix("v")
+    else:
+        latest = get_latest_recommended_version()
+        if not latest:
+            return UpdateResult(
+                previous_version=get_installed_recommended_version(),
+                new_version="unknown",
+                updated=False,
+                rule_count=0,
+                message="Failed to fetch latest recommended version from GitHub.",
+            )
+        target_version = latest
+
+    # Check current version
+    current_version = get_installed_recommended_version()
+
+    # Skip if already at target version (unless forced)
+    if current_version == target_version and not force:
+        return UpdateResult(
+            previous_version=current_version,
+            new_version=target_version,
+            updated=False,
+            rule_count=0,
+            message=f"Recommended already at version {target_version}.",
+        )
+
+    # Download and install
+    try:
+        pkg_path = download_recommended(version=target_version)
+        rule_count = sum(1 for _ in pkg_path.rglob("*") if _.is_file())
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return UpdateResult(
+                previous_version=current_version,
+                new_version=target_version,
+                updated=False,
+                rule_count=0,
+                message=f"Recommended version {target_version} not found.",
+            )
+        raise
+
+    return UpdateResult(
+        previous_version=current_version,
+        new_version=target_version,
+        updated=True,
+        rule_count=rule_count,
+        message=f"Recommended updated from {current_version or 'none'} to {target_version}.",
     )
 
 

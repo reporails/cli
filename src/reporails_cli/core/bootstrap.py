@@ -187,6 +187,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
             overrides=data.get("overrides", {}),
             experimental=data.get("experimental", False),
             recommended=data.get("recommended", True),
+            exclude_dirs=data.get("exclude_dirs", []),
         )
     except (yaml.YAMLError, OSError):
         return ProjectConfig()
@@ -221,39 +222,21 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
     return paths
 
 
-def get_package_level_rules(project_root: Path, packages: list[str]) -> dict[str, list[str]]:
-    """Load and merge level→rules mappings from packages.
-
-    Each package may have a levels.yml defining which levels its rules belong to.
-    Resolves package paths using the same project-local then global fallback
-    logic as get_package_paths().
-
-    Args:
-        project_root: Root directory of the project
-        packages: List of package names
-
-    Returns:
-        Dict mapping level key (e.g., "L2") to list of rule IDs
-    """
-    merged: dict[str, list[str]] = {}
-    for pkg_path in get_package_paths(project_root, packages):
-        levels_path = pkg_path / "levels.yml"
-        if not levels_path.exists():
-            continue
-        try:
-            data = yaml.safe_load(levels_path.read_text(encoding="utf-8")) or {}
-            for level_key, level_data in data.get("levels", {}).items():
-                if isinstance(level_data, dict):
-                    rules = level_data.get("rules", [])
-                    merged.setdefault(level_key, []).extend(rules)
-        except (yaml.YAMLError, OSError):
-            continue
-    return merged
-
 
 def get_installed_version() -> str | None:
     """Read installed framework version from ~/.reporails/version."""
     version_file = get_version_file()
+    if not version_file.exists():
+        return None
+    try:
+        return version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def get_installed_recommended_version() -> str | None:
+    """Read installed recommended package version from ~/.reporails/packages/recommended/.version."""
+    version_file = get_recommended_package_path() / ".version"
     if not version_file.exists():
         return None
     try:
