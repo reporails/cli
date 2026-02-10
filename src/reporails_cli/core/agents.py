@@ -34,7 +34,7 @@ KNOWN_AGENTS: dict[str, AgentType] = {
         name="Claude (Anthropic)",
         instruction_patterns=("CLAUDE.md", "**/CLAUDE.md"),
         config_patterns=(".claude/settings.json", ".claude/mcp.json"),
-        rule_patterns=(".claude/rules/*.md", ".claude/**/*.md"),
+        rule_patterns=(".claude/rules/*.md", ".claude/rules/**/*.md", ".claude/skills/**/*.md"),
         directory_patterns=(
             ("rules", ".claude/rules"),
             ("skills", ".claude/skills"),
