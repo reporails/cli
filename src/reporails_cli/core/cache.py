@@ -311,22 +311,33 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
     or dicts with rule_id, location, verdict, reason keys.
 
     Args:
-        target: Project root path
+        target: Project root path (scan root — project root resolved automatically)
         judgments: List of verdict strings or dicts
 
     Returns:
         Count of successfully recorded judgments
     """
-    cache = ProjectCache(target)
+    from reporails_cli.core.engine import _find_project_root
+
+    project_root = _find_project_root(target)
+    cache = ProjectCache(project_root)
     recorded = 0
 
     for j in judgments:
         if isinstance(j, str):
-            parts = j.split(":", 3)
+            parts = j.split(":")
             if len(parts) < 3:
                 continue
-            rule_id, location, verdict = parts[0], parts[1], parts[2]
-            reason = parts[3] if len(parts) > 3 else ""
+            # Detect coordinate-format rule IDs (NAMESPACE:CATEGORY:SLOT)
+            # Slot is always 4 digits (e.g. 0001)
+            if len(parts) >= 5 and parts[2].isdigit():
+                rule_id = ":".join(parts[:3])
+                location = parts[3]
+                verdict = parts[4]
+                reason = ":".join(parts[5:]) if len(parts) > 5 else ""
+            else:
+                rule_id, location, verdict = parts[0], parts[1], parts[2]
+                reason = ":".join(parts[3:]) if len(parts) > 3 else ""
         else:
             rule_id = j.get("rule_id", "")
             location = j.get("location", "")
