@@ -46,6 +46,7 @@ def run_opengrep(
     template_context: dict[str, str | list[str]] | None = None,
     extra_targets: list[Path] | None = None,
     instruction_files: list[Path] | None = None,
+    exclude_dirs: list[str] | None = None,
 ) -> dict[str, Any]:
     """Execute OpenGrep with specified rule configs.
 
@@ -61,6 +62,7 @@ def run_opengrep(
         instruction_files: Explicit list of files to scan. When provided, these
             are passed directly to OpenGrep instead of the target directory,
             avoiding a full tree walk.
+        exclude_dirs: Directory names to add to .semgrepignore (for directory scans)
 
     Returns:
         Parsed SARIF JSON output
@@ -112,17 +114,17 @@ def run_opengrep(
                 scan_targets.append(str(extra))
 
     # Ensure .semgrepignore exists for performance (only needed for directory scans)
-    created_semgrepignore = ensure_semgrepignore(target) if not use_file_targets else None
+    created_semgrepignore = ensure_semgrepignore(target, extra_excludes=exclude_dirs) if not use_file_targets else None
 
     try:
         # Resolve templates if context provided
         if template_context and temp_dir:
             resolved_paths: list[Path] = []
-            for yml_path in valid_paths:
+            for i, yml_path in enumerate(valid_paths):
                 if has_templates(yml_path):
-                    # Resolve and write to temp file
+                    # Resolve and write to temp file (unique name to avoid collisions)
                     resolved_content = resolve_templates(yml_path, template_context)
-                    temp_yml = Path(temp_dir.name) / yml_path.name
+                    temp_yml = Path(temp_dir.name) / f"{i}_{yml_path.name}"
                     temp_yml.write_text(resolved_content, encoding="utf-8")
                     resolved_paths.append(temp_yml)
                 else:
