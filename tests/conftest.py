@@ -49,10 +49,16 @@ def dev_rules_dir() -> Path:
 
 @pytest.fixture
 def agent_config() -> dict[str, str]:
-    """Return Claude agent template variables."""
+    """Return Claude agent template variables.
+
+    Skips when framework is not installed (CI without ~/.reporails/rules/).
+    """
     from reporails_cli.core.bootstrap import get_agent_vars
 
-    return get_agent_vars("claude")
+    result = get_agent_vars("claude")
+    if not result:
+        pytest.skip("Framework not installed (no agent config available)")
+    return result
 
 
 @pytest.fixture

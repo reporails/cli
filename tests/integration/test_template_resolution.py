@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import create_temp_rule_file
 
 
@@ -256,6 +258,8 @@ class TestTemplateContextLoading:
         from reporails_cli.core.bootstrap import get_agent_vars
 
         result = get_agent_vars("claude")
+        if not result:
+            pytest.skip("Framework not installed (no agent config available)")
         assert "instruction_files" in result, (
             "Claude agent config missing 'instruction_files' - "
             "this will cause template resolution to fail silently"
