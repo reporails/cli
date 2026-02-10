@@ -34,6 +34,20 @@ def opengrep_bin() -> Path:
 
 
 @pytest.fixture
+def dev_rules_dir() -> Path:
+    """Path to development rules directory (framework repo).
+
+    Skip if not available (CI environments without the monorepo).
+    """
+    # Walk up from cli/ to find rules/ sibling
+    cli_dir = Path(__file__).resolve().parents[1]  # cli/
+    rules_dir = cli_dir.parent / "rules"
+    if not rules_dir.exists() or not (rules_dir / "core").exists():
+        pytest.skip("Development rules directory not available")
+    return rules_dir
+
+
+@pytest.fixture
 def agent_config() -> dict[str, str]:
     """Return Claude agent template variables."""
     from reporails_cli.core.bootstrap import get_agent_vars

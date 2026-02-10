@@ -45,31 +45,41 @@ class TestBackboneGateNotAlwaysTrue:
     def test_backbone_gate_does_not_affect_level_when_absent(
         self, tmp_path: Path
     ) -> None:
-        """L4-level project without backbone should NOT reach L6."""
+        """L4-level project without backbone should NOT reach L5."""
         features = DetectedFeatures(
             has_instruction_file=True,
             has_explicit_constraints=True,
-            has_sections=True,
             has_imports=True,
             is_abstracted=True,
-            # No backbone, no shared files, no component count
+            # No backbone, no shared files, no component count → no L5
         )
         level = determine_level_from_gates(features)
 
-        assert level != Level.L6
+        assert level != Level.L5
         assert level == Level.L4
 
-    def test_backbone_gate_grants_l6_with_real_backbone(self) -> None:
-        """Full project with backbone → L6 when all other gates pass."""
+    def test_backbone_gate_grants_l5_navigation(self) -> None:
+        """Backbone contributes L5 (navigation). L6 needs skills/MCP/memory."""
         features = DetectedFeatures(
             has_instruction_file=True,
             has_explicit_constraints=True,
-            has_sections=True,
             has_imports=True,
             is_abstracted=True,
-            component_count=3,
-            has_shared_files=True,
-            has_backbone=True,
+            has_backbone=True,  # L5: navigation
+        )
+        level = determine_level_from_gates(features)
+
+        assert level == Level.L5
+
+    def test_backbone_plus_skills_grants_l6(self) -> None:
+        """Full project with backbone (L5) + skills (L6) → L6."""
+        features = DetectedFeatures(
+            has_instruction_file=True,
+            has_explicit_constraints=True,
+            has_imports=True,
+            is_abstracted=True,
+            has_backbone=True,  # L5: navigation
+            has_skills_dir=True,  # L6: dynamic_context
         )
         level = determine_level_from_gates(features)
 
