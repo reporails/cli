@@ -60,38 +60,46 @@ Violations are deduplicated by `(file, rule_id)` before scoring. Same rule viola
 
 ## Capability Levels
 
-Level is determined by **weighted feature scoring**, not by quality score.
+Level is determined by **capability gates**, not by quality score.
 
-### Feature Weights
+### Gate-Based Detection
 
-| Signal | Points | Detection Method |
-|--------|--------|------------------|
-| Has instruction file | +1 | File existence (any agent) |
-| Has sections/headers | +1 | Markdown H2+ detection |
-| Has @imports or file references | +1 | Regex for paths, @import |
-| Has explicit constraints (MUST/NEVER) | +1 | Keyword detection |
-| Has rules directory | +2 | `.claude/rules/`, `.cursor/rules/`, etc. |
-| Has path-scoped rules (frontmatter) | +1 | YAML frontmatter with `paths:` |
-| Has shared files | +1 | `.shared/`, `shared/`, cross-references |
-| Component count ≥ 3 | +1 | Discovery analysis |
-| Has backbone/manifest | +2 | `.reporails/backbone.yml` |
+Each level defines a set of capabilities (from framework `registry/levels.yml`). Detection uses a **cumulative ladder**: OR within each level, AND across levels.
 
-**Max possible: 12 points**
+A project is at the highest level where ALL levels L1 through N have at least one detected capability.
 
-### Score → Level Mapping
+### Level → Capabilities
 
-| Capability Score | Level | Label |
-|------------------|-------|-------|
-| 0 | L1 | Absent |
-| 1-2 | L2 | Basic |
-| 3-4 | L3 | Structured |
-| 5-6 | L4 | Abstracted |
-| 7-9 | L5 | Governed |
-| 10+ | L6 | Adaptive |
+| Level | Label | Capabilities (OR) |
+|-------|-------|--------------------|
+| L0 | Absent | (none) |
+| L1 | Basic | `instruction_file` |
+| L2 | Scoped | `project_constraints`, `size_controlled` |
+| L3 | Structured | `external_references`, `multiple_files` |
+| L4 | Abstracted | `path_scoping` |
+| L5 | Maintained | `structural_integrity`, `org_policy`, `navigation` |
+| L6 | Adaptive | `dynamic_context`, `extensibility`, `state_persistence` |
+
+**Source**: Framework `registry/levels.yml` with CLI fallback mapping.
+
+### Capability Detectors (CLI-owned)
+
+| Capability | Detection |
+|------------|-----------|
+| `instruction_file` | Any instruction file exists |
+| `project_constraints` | Has explicit constraints (MUST/NEVER) — content-based |
+| `size_controlled` | Root instruction file under size threshold |
+| `external_references` | Has @imports or file references |
+| `multiple_files` | Has multiple instruction files |
+| `path_scoping` | Has path-scoped rules or is abstracted — content-based |
+| `structural_integrity` | Not filesystem-detectable (always False) |
+| `org_policy` | Has shared files (.shared/, shared/) |
+| `navigation` | Has backbone or component count >= 3 |
+| `dynamic_context` | Has .claude/skills/ directory |
+| `extensibility` | Has MCP config |
+| `state_persistence` | Has memory directory |
 
 ### Detection Pipeline
-
-Capability detection runs in two phases:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -115,149 +123,50 @@ Capability detection runs in two phases:
                   │
                   ▼
 ┌─────────────────────────────────────────┐
-│  Scoring                                │
-│  - calculate_capability_score()         │
-│  - capability_score_to_level()          │
+│  Gate Walking (levels.py)               │
+│  - Load capabilities from registry      │
+│  - Walk L6→L1, find highest passing     │
+│  - determine_level_from_gates()         │
 └─────────────────┬───────────────────────┘
                   │
                   ▼
-            Level (L1-L6)
+            Level (L0-L6)
 ```
 
 ### Detection Logic
 
 ```python
-def determine_capability_level(target: Path) -> CapabilityResult:
-    # Phase 1: Filesystem detection
-    features = detect_features_filesystem(target)
-    
-    # Phase 2: Content detection (OpenGrep)
-    content_features = detect_features_content(target)
-    
-    # Merge content features into main features
-    features.has_sections = content_features.has_sections
-    features.has_imports = content_features.has_imports
-    features.has_explicit_constraints = content_features.has_explicit_constraints
-    features.has_path_scoped_rules = content_features.has_path_scoped_rules
-    
-    # Calculate score and level
-    score = calculate_capability_score(features)
-    level = capability_score_to_level(score)
-    
-    # Check for orphan features (features above base level)
-    has_orphan = detect_orphan_features(features, level)
-    
-    summary = get_feature_summary(features)
-    
-    return CapabilityResult(
-        features=features,
-        capability_score=score,
-        level=level,
-        has_orphan_features=has_orphan,
-        feature_summary=summary,
-    )
+def determine_level_from_gates(features: DetectedFeatures, skip_content: bool = False) -> Level:
+    level_caps = _load_level_capabilities()  # From registry/levels.yml
+
+    # Walk from L6 down to L1, find highest where all cumulative levels pass
+    for level in reversed(_LEVEL_ORDER):
+        if _all_levels_pass(features, level, level_caps, skip_content):
+            return level
+
+    return Level.L0
 
 
-def calculate_capability_score(features: DetectedFeatures) -> int:
-    score = 0
-    
-    # Phase 1 features (filesystem)
-    if features.has_instruction_file:
-        score += 1
-    if features.has_rules_dir:
-        score += 2
-    if features.has_shared_files:
-        score += 1
-    if features.component_count >= 3:
-        score += 1
-    if features.has_backbone:
-        score += 2
-    
-    # Phase 2 features (content)
-    if features.has_sections:
-        score += 1
-    if features.has_imports:
-        score += 1
-    if features.has_explicit_constraints:
-        score += 1
-    if features.has_path_scoped_rules:
-        score += 1
-    
-    return score
+def _all_levels_pass(features, target_level, level_caps, skip_content) -> bool:
+    """Check if all levels from L1 through target have at least one capability."""
+    target_index = _LEVEL_ORDER.index(target_level)
+    for lvl in _LEVEL_ORDER[:target_index + 1]:
+        if not _level_has_capability(features, lvl.value, level_caps, skip_content):
+            return False
+    return True
 
 
-def capability_score_to_level(score: int) -> Level:
-    if score >= 10:
-        return Level.L6
-    if score >= 7:
-        return Level.L5
-    if score >= 5:
-        return Level.L4
-    if score >= 3:
-        return Level.L3
-    if score >= 1:
-        return Level.L2
-    return Level.L1
-
-
-def detect_orphan_features(features: DetectedFeatures, base_level: Level) -> bool:
-    """Check if project has features from levels above base level.
-    
-    Example: L3 project with backbone.yml (L6 feature) → has_orphan = True
-    Display as "L3+" to indicate advanced features present.
-    """
-    level_features = {
-        Level.L6: [features.has_backbone],
-        Level.L5: [features.component_count >= 3, features.has_shared_files],
-        Level.L4: [features.has_rules_dir],
-        Level.L3: [features.has_imports],
-    }
-    
-    level_order = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
-    base_index = level_order.index(base_level)
-    
-    # Check features from levels above base
-    for level in level_order[base_index + 1:]:
-        if level in level_features:
-            if any(level_features[level]):
-                return True
-    
-    return False
+def _level_has_capability(features, level_key, level_caps, skip_content) -> bool:
+    """Check if at least one capability at this level is detected (OR)."""
+    capabilities = level_caps.get(level_key, [])
+    if not capabilities:
+        return True  # Level with no capabilities = passing
+    return any(_detect_capability(features, cap_id, skip_content) for cap_id in capabilities)
 ```
 
-### Level Labels
+### Orphan Features
 
-```python
-LEVEL_LABELS = {
-    Level.L1: "Absent",
-    Level.L2: "Basic",
-    Level.L3: "Structured",
-    Level.L4: "Abstracted",
-    Level.L5: "Governed",
-    Level.L6: "Adaptive",
-}
-```
-
-### Agent-Agnostic Detection
-
-Rules directory detection supports multiple agents:
-
-```python
-RULES_DIR_PATTERNS = [
-    ".claude/rules/",
-    ".cursor/rules/",
-    ".ai/rules/",
-]
-
-INSTRUCTION_FILE_PATTERNS = [
-    "CLAUDE.md",
-    "AGENTS.md", 
-    ".cursorrules",
-    ".windsurfrules",
-    ".github/copilot-instructions.md",
-    "CONVENTIONS.md",
-]
-```
+When a project has capabilities from levels above its base level (e.g., L3 project with skills directory), it's displayed as "L3+" to indicate advanced features are present but cumulative gates weren't met.
 
 ---
 
@@ -338,11 +247,12 @@ def estimate_friction(violations: list[Violation]) -> FrictionEstimate:
 
 ## Rule Types
 
-Two rule types with different detection methods:
+Three rule types with different detection methods:
 
 | Type | Detection | LLM Required | Output |
 |------|-----------|--------------|--------|
 | **Deterministic** | OpenGrep pattern | No | `Violation` |
+| **Mechanical** | Python structural check | No | `Violation` |
 | **Semantic** | Content extraction | Yes | `JudgmentRequest` |
 
 ### Deterministic Flow
@@ -359,6 +269,32 @@ OpenGrep runs .yml patterns
     ▼       ▼
   Pass    Violation
 ```
+
+### Mechanical Flow
+
+```
+Runner scans rule checks array
+        │
+        ▼
+  Filter type="mechanical"
+        │
+        ▼
+  Dispatch to Python function
+  (file_exists, line_count, etc.)
+        │
+        ▼
+    CheckResult
+        │
+    ┌───┴───┐
+  Pass     Fail (respects negate)
+            │
+            ▼
+        Violation
+```
+
+**Mechanical checks** are Python-native structural checks for things OpenGrep cannot detect (file existence, directory structure, byte sizes, import depth). Any rule type may contain mechanical checks — the runner filters by `check.type` internally.
+
+Available checks: `file_exists`, `directory_exists`, `directory_contains`, `git_tracked`, `frontmatter_key`, `file_count`, `line_count`, `byte_size`, `path_resolves`, `extract_imports`, `aggregate_byte_size`, `import_depth`, `directory_file_types`, `frontmatter_valid_glob`, `content_absent`.
 
 ### Semantic Flow
 
