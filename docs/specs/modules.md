@@ -15,6 +15,10 @@ src/reporails_cli/
 │   ├── capability.py     # Capability scoring (OpenGrep)
 │   ├── discover.py       # Find instruction files
 │   ├── engine.py         # Orchestration only (~170 lines)
+│   ├── engine_helpers.py  # Validation sub-functions
+│   ├── pipeline.py       # Pipeline state, target metadata
+│   ├── pipeline_exec.py  # Per-rule check execution
+│   ├── check_cache.py    # In-memory check result dedup
 │   ├── opengrep/         # OpenGrep execution (package)
 │   │   ├── __init__.py   # Public API re-exports
 │   │   ├── runner.py     # Binary execution, sync only
@@ -24,7 +28,7 @@ src/reporails_cli/
 │   │   ├── __init__.py   # Public API re-exports
 │   │   ├── runner.py     # Orchestration
 │   │   └── checks.py     # Check implementations
-│   ├── sarif.py          # Parse SARIF → Violations
+│   ├── sarif.py          # Parse SARIF → Violations + distribute by rule
 │   ├── semantic.py       # Build JudgmentRequests
 │   ├── scorer.py         # Calculate score, level
 │   ├── cache.py          # Project + global cache, analytics
@@ -81,6 +85,9 @@ engine.py (orchestration, sync)
      │       ├── runner.py
      │       ├── templates.py
      │       └── semgrepignore.py
+     │
+     ├──► pipeline.py ──► models.py
+     │       └──► pipeline_exec.py ──► mechanical/, sarif.py, semantic.py
      │
      ├──► sarif.py ──► models.py
      │
@@ -403,6 +410,64 @@ def run_validation(target: Path, agent: str = "claude", ...) -> ValidationResult
 
 ---
 
+## core/pipeline.py
+
+Pipeline state management. Holds shared mutable state for per-rule ordered check execution.
+
+**Dataclasses:**
+
+- `TargetMeta`: path, annotations, excluded, excluded_by
+- `PipelineState`: targets, findings, candidates, _sarif_by_rule, check_cache
+
+**Functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `PipelineState.active_targets()` | `list[TargetMeta]` | Non-excluded targets |
+| `PipelineState.exclude_target(path, check_id)` | `None` | Mark target as excluded |
+| `PipelineState.annotate_target(path, key, value)` | `None` | Attach metadata to target |
+| `PipelineState.get_rule_sarif(rule_id)` | `list[dict]` | Get pre-distributed SARIF for rule |
+| `build_initial_state(files, scan_root)` | `PipelineState` | Build state from instruction files |
+
+**Constants:**
+
+- `BLOCKING_CHECKS`: Checks that exclude targets globally (`file_exists`, `directory_exists`, `path_resolves`)
+- `CEILING`: Rule type → allowed check types (mechanical ⊂ deterministic ⊂ semantic)
+
+---
+
+## core/pipeline_exec.py
+
+Per-rule check execution against pipeline state. Walks each rule's ordered check sequence.
+
+**Functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `execute_rule_checks(rule, state, scan_root, template_vars, instruction_files)` | `list[JudgmentRequest]` | Execute a rule's ordered check sequence |
+
+**Internal Flow:**
+
+```
+For each check in rule.checks (ordered):
+    1. Verify check.type ≤ rule.type ceiling
+    2. mechanical → dispatch_single_check(), handle blocking/annotations
+    3. deterministic → read from state._sarif_by_rule, handle negation
+    4. semantic → short-circuit if no candidates, else build JudgmentRequest
+```
+
+---
+
+## core/check_cache.py
+
+In-memory deduplication for identical mechanical checks across rules within one validation run.
+
+**Classes:**
+
+- `CheckCache`: key/get/set with SHA-256 cache keys from (type, name, args, target_path)
+
+---
+
 ## core/opengrep/ (package)
 
 Runs OpenGrep binary. Isolated I/O. Sync-only (async removed in v0.1.0).
@@ -471,6 +536,8 @@ Parses SARIF output into domain objects. Pure functions.
 | `extract_check_slug(sarif_rule_id)` | `str | None` | Extract check slug |
 | `get_location(result)` | `str` | Format location string |
 | `get_severity(rule, check_slug)` | `Severity` | Lookup severity |
+| `distribute_sarif_by_rule(sarif, rules)` | `dict[str, list[dict]]` | Group SARIF results by rule ID |
+| `dedupe_violations(violations)` | `list[Violation]` | Remove duplicate violations |
 
 ---
 
@@ -484,6 +551,7 @@ Builds JudgmentRequests for semantic rules. Pure functions.
 |----------|---------|-------------|
 | `build_semantic_requests(rules, target)` | `list[JudgmentRequest]` | Build all requests |
 | `build_request(rule, content, location)` | `JudgmentRequest` | Build single request |
+| `build_request_from_sarif_result(rule, sarif_result, scan_root)` | `JudgmentRequest \| None` | Build request from single SARIF result |
 | `extract_content_for_rule(rule, file_content)` | `str` | Get relevant content |
 
 ---
@@ -620,6 +688,9 @@ core/mechanical/
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `run_mechanical_checks(rules, target, template_vars)` | `list[Violation]` | Run all mechanical rules against target |
+| `dispatch_single_check(check, rule, root, effective_vars, location)` | `tuple[Violation \| None, CheckResult \| None]` | Execute a single mechanical check |
+| `bind_instruction_files(rules, instruction_files)` | `dict[str, Rule]` | Bind instruction file paths to rules |
+| `resolve_location(rule, root, instruction_files)` | `str` | Resolve check target location |
 
 **Available checks:** `file_exists`, `directory_exists`, `directory_contains`, `git_tracked`, `frontmatter_key`, `file_count`, `line_count`, `byte_size`, `path_resolves`, `extract_imports`, `aggregate_byte_size`, `import_depth`, `directory_file_types`, `frontmatter_valid_glob`, `content_absent`
 
@@ -825,7 +896,11 @@ Per [Principle 7](principles.md#7-module-size-discipline):
 
 | Module | Max Lines | Current | Status |
 |--------|-----------|---------|--------|
-| engine.py | 200 | 173 | ✓ |
+| engine.py | 200 | ~170 | ✓ |
+| engine_helpers.py | 300 | ~240 | ✓ |
+| pipeline.py | 150 | ~105 | ✓ |
+| pipeline_exec.py | 300 | ~215 | ✓ |
+| check_cache.py | 150 | ~80 | ✓ |
 | registry.py | 150 | 155 | ✓ |
 | discover.py | 400 | 362 | ✓ |
 | cache.py | 400 | 352 | ✓ |

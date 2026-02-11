@@ -48,7 +48,11 @@ def extract_imports(
             except OSError:
                 continue
     if imports_found:
-        return CheckResult(passed=True, message=f"Found {len(imports_found)} import(s)")
+        return CheckResult(
+            passed=True,
+            message=f"Found {len(imports_found)} import(s)",
+            annotations={"discovered_imports": imports_found},
+        )
     return CheckResult(passed=False, message="No imports found")
 
 

@@ -209,3 +209,50 @@ def dedupe_violations(violations: list[Violation]) -> list[Violation]:
             result.append(v)
 
     return result
+
+
+def distribute_sarif_by_rule(
+    sarif: dict[str, Any],
+    rules: dict[str, Rule],
+) -> dict[str, list[dict[str, Any]]]:
+    """Group raw SARIF results by extracted rule_id.
+
+    Iterates over all SARIF results, extracts the rule coordinate from each
+    ruleId, and buckets results by rule_id. Only results whose rule_id appears
+    in the provided rules dict are included.
+
+    Args:
+        sarif: Raw SARIF output from OpenGrep.
+        rules: Dict of rules to filter by (rule_id -> Rule).
+
+    Returns:
+        Dict mapping rule_id to list of raw SARIF result dicts.
+    """
+    by_rule: dict[str, list[dict[str, Any]]] = {}
+
+    for run in sarif.get("runs", []):
+        # Build rule level lookup for INFO filtering
+        rule_levels: dict[str, str] = {}
+        tool = run.get("tool", {}).get("driver", {})
+        for rule_def in tool.get("rules", []):
+            rid = rule_def.get("id", "")
+            level = rule_def.get("defaultConfiguration", {}).get("level", "warning")
+            rule_levels[rid] = level
+
+        for result in run.get("results", []):
+            sarif_rule_id = result.get("ruleId", "")
+
+            # Skip INFO/note level findings (same as parse_sarif)
+            rule_level = rule_levels.get(sarif_rule_id, "warning")
+            if rule_level in ("note", "none"):
+                continue
+
+            rule_id = extract_rule_id(sarif_rule_id)
+            if rule_id not in rules:
+                continue
+
+            if rule_id not in by_rule:
+                by_rule[rule_id] = []
+            by_rule[rule_id].append(result)
+
+    return by_rule

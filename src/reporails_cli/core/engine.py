@@ -30,9 +30,6 @@ from reporails_cli.core.engine_helpers import (
     _find_project_root as _find_project_root,
 )
 from reporails_cli.core.engine_helpers import (
-    _handle_negated_checks as _handle_negated_checks,
-)
-from reporails_cli.core.engine_helpers import (
     _run_rule_validation as _run_rule_validation,
 )
 from reporails_cli.core.init import run_init
