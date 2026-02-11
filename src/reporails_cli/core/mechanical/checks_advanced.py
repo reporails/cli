@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from reporails_cli.core.mechanical.checks import (
     CheckResult,
     _expand_file_pattern,
@@ -133,8 +135,6 @@ def frontmatter_valid_glob(
     vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Check that YAML frontmatter path entries use valid glob syntax."""
-    import yaml
-
     path = _resolve_path(str(args.get("path", "")), vars)
     target = root / path
     if not target.is_dir():
@@ -160,7 +160,7 @@ def frontmatter_valid_glob(
                     return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
                 if p.count("[") != p.count("]"):
                     return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
-        except Exception:
+        except (OSError, yaml.YAMLError):
             continue
     return CheckResult(passed=True, message="All frontmatter path entries valid")
 
@@ -174,7 +174,10 @@ def content_absent(
     pattern = str(args.get("pattern", ""))
     if not pattern:
         return CheckResult(passed=False, message="content_absent: no pattern specified")
-    compiled = re.compile(pattern)
+    try:
+        compiled = re.compile(pattern)
+    except re.error as e:
+        return CheckResult(passed=False, message=f"content_absent: invalid regex: {e}")
     for fp in _get_target_patterns(args, vars):
         for match in _resolve_glob_targets(fp, root):
             if not match.is_file():

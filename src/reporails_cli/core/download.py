@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.resources
+import logging
 import platform
 import shutil
 import stat
+import tarfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -19,9 +21,7 @@ from reporails_cli.core.bootstrap import (
     get_version_file,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
 
 OPENGREP_VERSION = "1.15.1"
 
@@ -39,12 +39,35 @@ RECOMMENDED_VERSION = "0.1.0"
 RECOMMENDED_API_URL = "https://api.github.com/repos/reporails/recommended/releases/latest"
 
 RULES_VERSION = "0.3.1"
+RULES_EXPECTED_DIRS = ("core", "schemas")  # Minimum dirs after extraction
+
+
+def _safe_extractall(tar: tarfile.TarFile, dest: Path) -> None:
+    """Extract tarball with path traversal and symlink protection."""
+    for member in tar.getmembers():
+        # Block path traversal
+        if member.name.startswith("/") or ".." in member.name.split("/"):
+            msg = f"Unsafe path in archive: {member.name}"
+            raise RuntimeError(msg)
+        # Block symlinks pointing outside dest
+        if member.issym() or member.islnk():
+            target = member.linkname
+            if target.startswith("/") or ".." in target.split("/"):
+                msg = f"Unsafe symlink in archive: {member.name} -> {target}"
+                raise RuntimeError(msg)
+    tar.extractall(path=dest)
+
+
+def _validate_rules_structure(rules_path: Path) -> None:
+    """Verify extracted rules contain expected directories."""
+    for dir_name in RULES_EXPECTED_DIRS:
+        if not (rules_path / dir_name).is_dir():
+            msg = f"Missing expected directory after extraction: {dir_name}"
+            raise RuntimeError(msg)
+
+
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
-
-# ---------------------------------------------------------------------------
-# OpenGrep
-# ---------------------------------------------------------------------------
 
 
 def get_platform() -> tuple[str, str]:
@@ -97,11 +120,6 @@ def download_opengrep() -> Path:
     return bin_path
 
 
-# ---------------------------------------------------------------------------
-# Bundled checks helpers
-# ---------------------------------------------------------------------------
-
-
 def get_bundled_checks_path() -> Path | None:
     """Return path to bundled .yml files in the installed package."""
     try:
@@ -132,11 +150,6 @@ def copy_bundled_yml_files(dest: Path) -> int:
     return count
 
 
-# ---------------------------------------------------------------------------
-# Rules download (initial install)
-# ---------------------------------------------------------------------------
-
-
 def copy_local_framework(source: Path) -> tuple[Path, int]:
     """Copy rules from a local framework directory (dev mode)."""
     rules_path = get_reporails_home() / "rules"
@@ -164,8 +177,6 @@ def copy_local_framework(source: Path) -> tuple[Path, int]:
 
 def download_rules_tarball(dest: Path) -> int:
     """Download rules from GitHub release tarball into *dest*."""
-    import tarfile
-
     url = RULES_TARBALL_URL.format(version=RULES_VERSION)
 
     with httpx.Client(follow_redirects=True, timeout=120.0) as client:
@@ -177,7 +188,7 @@ def download_rules_tarball(dest: Path) -> int:
             tarball_path.write_bytes(response.content)
 
             with tarfile.open(tarball_path, "r:gz") as tar:
-                tar.extractall(path=dest)
+                _safe_extractall(tar, dest)
 
             count = sum(1 for _ in dest.rglob("*") if _.is_file())
 
@@ -194,6 +205,7 @@ def download_from_github() -> tuple[Path, int]:
 
     yml_count = copy_bundled_yml_files(rules_path)
     tarball_count = download_rules_tarball(rules_path)
+    _validate_rules_structure(rules_path)
     return rules_path, yml_count + tarball_count
 
 
@@ -203,11 +215,6 @@ def download_rules() -> tuple[Path, int]:
     if config.framework_path and config.framework_path.exists():
         return copy_local_framework(config.framework_path)
     return download_from_github()
-
-
-# ---------------------------------------------------------------------------
-# Recommended package
-# ---------------------------------------------------------------------------
 
 
 def is_recommended_installed() -> bool:
@@ -220,8 +227,6 @@ def is_recommended_installed() -> bool:
 
 def download_recommended(version: str | None = None) -> Path:
     """Download recommended rules package from GitHub archive."""
-    import tarfile
-
     if version is None:
         from reporails_cli.core.updater import get_latest_recommended_version
 
@@ -243,13 +248,16 @@ def download_recommended(version: str | None = None) -> Path:
             tarball_path.write_bytes(response.content)
 
             with tarfile.open(tarball_path, "r:gz") as tar:
-                tar.extractall(path=tmpdir)
+                _safe_extractall(tar, Path(tmpdir))
 
-            extracted_dirs = [
-                d
-                for d in Path(tmpdir).iterdir()
-                if d.is_dir() and d.name != "__MACOSX" and d.name.startswith("recommended-")
-            ]
+            extracted_dirs = sorted(
+                (
+                    d
+                    for d in Path(tmpdir).iterdir()
+                    if d.is_dir() and d.name != "__MACOSX" and d.name.startswith("recommended-")
+                ),
+                key=lambda d: d.name,
+            )
             if extracted_dirs:
                 source_dir = extracted_dirs[0]
                 for item in source_dir.iterdir():
@@ -260,16 +268,11 @@ def download_recommended(version: str | None = None) -> Path:
                         shutil.copy2(item, dest)
             else:
                 with tarfile.open(tarball_path, "r:gz") as tar:
-                    tar.extractall(path=pkg_path)
+                    _safe_extractall(tar, pkg_path)
 
     version_file = pkg_path / ".version"
     version_file.write_text(version + "\n", encoding="utf-8")
     return pkg_path
-
-
-# ---------------------------------------------------------------------------
-# Misc helpers
-# ---------------------------------------------------------------------------
 
 
 def sync_rules_to_local(local_checks_dir: Path) -> int:
