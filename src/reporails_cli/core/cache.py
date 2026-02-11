@@ -304,6 +304,53 @@ def get_previous_scan(target: Path) -> AnalyticsEntry | None:
     return analytics.history[-1]  # Last recorded scan
 
 
+_VALID_VERDICTS = {"pass", "fail"}
+
+
+def _parse_verdict_string(s: str) -> tuple[str, str, str, str]:
+    """Parse a compact verdict string into (rule_id, location, verdict, reason).
+
+    Handles both short IDs (``S1:CLAUDE.md:pass:reason``) and coordinate
+    IDs (``CORE:S:0001:CLAUDE.md:pass:reason``), including an optional
+    line-number suffix on the location (``CLAUDE.md:42``).
+
+    The verdict field is always ``pass`` or ``fail``; we scan for it to
+    resolve ambiguity introduced by colons in rule IDs or locations.
+
+    Returns ("", "", "", "") for unparseable input.
+    """
+    parts = s.split(":")
+    if len(parts) < 3:
+        return ("", "", "", "")
+
+    # Determine rule_id width: 3 parts for coordinate IDs, 1 for short
+    is_coordinate = (
+        len(parts) >= 5
+        and parts[0].isalpha()
+        and len(parts[2]) == 4
+        and parts[2].isdigit()
+    )
+    id_width = 3 if is_coordinate else 1
+
+    # Scan remaining parts for the verdict token (pass/fail)
+    rest = parts[id_width:]
+    verdict_idx = None
+    for i, p in enumerate(rest):
+        if p in _VALID_VERDICTS:
+            verdict_idx = i
+            break
+
+    if verdict_idx is None or verdict_idx < 1:
+        # No verdict found, or nothing before it for location
+        return ("", "", "", "")
+
+    rule_id = ":".join(parts[:id_width])
+    location = ":".join(rest[:verdict_idx])
+    verdict = rest[verdict_idx]
+    reason = ":".join(rest[verdict_idx + 1 :])
+    return (rule_id, location, verdict, reason)
+
+
 def cache_judgments(target: Path, judgments: list[Any]) -> int:
     """Cache semantic judgment verdicts for a project.
 
@@ -325,19 +372,7 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
 
     for j in judgments:
         if isinstance(j, str):
-            parts = j.split(":")
-            if len(parts) < 3:
-                continue
-            # Detect coordinate-format rule IDs (NAMESPACE:CATEGORY:SLOT)
-            # Slot is always 4 digits (e.g. 0001)
-            if len(parts) >= 5 and parts[2].isdigit():
-                rule_id = ":".join(parts[:3])
-                location = parts[3]
-                verdict = parts[4]
-                reason = ":".join(parts[5:]) if len(parts) > 5 else ""
-            else:
-                rule_id, location, verdict = parts[0], parts[1], parts[2]
-                reason = ":".join(parts[3:]) if len(parts) > 3 else ""
+            rule_id, location, verdict, reason = _parse_verdict_string(j)
         else:
             rule_id = j.get("rule_id", "")
             location = j.get("location", "")
@@ -349,10 +384,15 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
 
         # Strip line number from location to get file path
         file_path = location.rsplit(":", 1)[0] if ":" in location else location
-        full_path = target / file_path
+        full_path = (target / file_path).resolve()
 
+        # Guard: file must exist and be within the target directory
         if not full_path.exists():
             continue
+        try:
+            file_path = str(full_path.relative_to(target.resolve()))
+        except ValueError:
+            continue  # Path traversal — outside project root
 
         try:
             file_hash = content_hash(full_path)
