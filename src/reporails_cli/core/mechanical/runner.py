@@ -50,7 +50,7 @@ def dispatch_single_check(
         logger.exception("Mechanical check %s failed for rule %s", check.check, rule.id)
         return None, None
 
-    passed = result.passed if not args.get("negate") else not result.passed
+    passed = result.passed if not check.negate else not result.passed
     if not passed:
         violation = Violation(
             rule_id=rule.id,
