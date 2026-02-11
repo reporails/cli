@@ -2,6 +2,7 @@
 
 Provides rich, detailed output for interactive terminal use.
 """
+# pylint: disable=too-many-locals
 
 from __future__ import annotations
 
@@ -108,7 +109,7 @@ def format_result(
     result: ValidationResult,
     ascii_mode: bool | None = None,
     quiet_semantic: bool = False,
-    show_legend: bool = True,
+    _show_legend: bool = True,
     delta: ScanDelta | None = None,
     show_mcp_cta: bool = True,
 ) -> str:

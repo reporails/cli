@@ -119,7 +119,9 @@ class TestFindProjectRoot:
         (tmp_path / ".git").mkdir()
         backbone_dir = tmp_path / ".reporails"
         backbone_dir.mkdir()
-        (backbone_dir / "backbone.yml").write_text("version: 2\nchildren:\n  child:\n    backbone: child/.reporails/backbone.yml\n")
+        (backbone_dir / "backbone.yml").write_text(
+            "version: 2\nchildren:\n  child:\n    backbone: child/.reporails/backbone.yml\n"
+        )
         # Child with its own .git
         child = tmp_path / "child"
         child.mkdir()

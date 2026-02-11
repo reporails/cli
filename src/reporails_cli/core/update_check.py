@@ -40,9 +40,7 @@ class UpdateNotification:
     @property
     def has_recommended_update(self) -> bool:
         return bool(
-            self.recommended_current
-            and self.recommended_latest
-            and self.recommended_current != self.recommended_latest
+            self.recommended_current and self.recommended_latest and self.recommended_current != self.recommended_latest
         )
 
     @property
@@ -178,16 +176,40 @@ def format_update_message(notification: UpdateNotification) -> str:
     return f"[dim]Update available: {detail}. Run: {cmd}[/dim]"
 
 
-def prompt_for_updates(console: Any, no_update_check: bool = False) -> bool:
-    """Check for updates and prompt the user to install before validation.
+def _execute_updates(notification: UpdateNotification, console: Any) -> bool:
+    """Perform the actual update (framework + recommended).
 
     Args:
-        console: Rich Console instance for output and input.
-        no_update_check: If True, skip the check entirely.
+        notification: Update notification with version info.
+        console: Rich Console instance for output.
 
     Returns:
         True if anything was updated, False otherwise.
     """
+    from reporails_cli.core.init import update_recommended, update_rules
+
+    updated = False
+
+    if notification.has_rules_update:
+        result = update_rules()
+        if result.updated:
+            console.print(f"[green]Updated:[/green] framework {result.previous_version} → {result.new_version}")
+            updated = True
+
+    if notification.has_recommended_update:
+        result = update_recommended()
+        if result.updated:
+            console.print(f"[green]Updated:[/green] recommended {result.previous_version} → {result.new_version}")
+            updated = True
+
+    if updated:
+        console.print()
+
+    return updated
+
+
+def prompt_for_updates(console: Any, no_update_check: bool = False) -> bool:  # pylint: disable=too-many-return-statements
+    """Check for updates and prompt the user to install before validation."""
     if no_update_check:
         return False
 
@@ -232,24 +254,4 @@ def prompt_for_updates(console: Any, no_update_check: bool = False) -> bool:
     if answer.strip().lower() in ("n", "no"):
         return False
 
-    # Perform updates
-    from reporails_cli.core.init import update_recommended, update_rules
-
-    updated = False
-
-    if notification.has_rules_update:
-        result = update_rules()
-        if result.updated:
-            console.print(f"[green]Updated:[/green] framework {result.previous_version} → {result.new_version}")
-            updated = True
-
-    if notification.has_recommended_update:
-        result = update_recommended()
-        if result.updated:
-            console.print(f"[green]Updated:[/green] recommended {result.previous_version} → {result.new_version}")
-            updated = True
-
-    if updated:
-        console.print()
-
-    return updated
+    return _execute_updates(notification, console)

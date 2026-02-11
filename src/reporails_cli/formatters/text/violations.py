@@ -2,6 +2,7 @@
 
 Handles grouping, sorting, and rendering of violations.
 """
+# pylint: disable=too-many-locals,too-many-statements
 
 from __future__ import annotations
 
@@ -51,9 +52,7 @@ def format_violations_section(
     def file_sort_key(item: tuple[str, list[dict[str, Any]]]) -> tuple[int, int]:
         file_violations = item[1]
         severity_weights = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-        worst_severity = min(
-            severity_weights.get(v.get("severity", "low"), 3) for v in file_violations
-        )
+        worst_severity = min(severity_weights.get(v.get("severity", "low"), 3) for v in file_violations)
         return (worst_severity, -len(file_violations))
 
     sorted_files = sorted(grouped.items(), key=file_sort_key)
@@ -73,11 +72,14 @@ def format_violations_section(
                 unique_violations.append(v)
 
         issue_word = "issue" if len(unique_violations) == 1 else "issues"
-        lines.append(render("cli_file_header.txt",
-            filepath=display_path,
-            count=len(unique_violations),
-            issue_word=issue_word,
-        ))
+        lines.append(
+            render(
+                "cli_file_header.txt",
+                filepath=display_path,
+                count=len(unique_violations),
+                issue_word=issue_word,
+            )
+        )
         lines.append(separator)
         lines.append(col_labels)
 
@@ -105,12 +107,15 @@ def format_violations_section(
                 msg = msg[: max_msg_len - 3] + "..."
             msg = msg.ljust(max_msg_len)
 
-            lines.append(render("cli_violation.txt",
-                icon=icon,
-                line=line_field,
-                rule_id=rule_id,
-                message=msg,
-            ))
+            lines.append(
+                render(
+                    "cli_violation.txt",
+                    icon=icon,
+                    line=line_field,
+                    rule_id=rule_id,
+                    message=msg,
+                )
+            )
 
         lines.append(separator)
         lines.append("")

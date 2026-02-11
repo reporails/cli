@@ -25,7 +25,8 @@ def wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     subprocess.run(
         ["uv", "build", "--wheel", "--out-dir", str(dist_dir)],
         cwd=str(PROJECT_ROOT),
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     wheels = list(dist_dir.glob("*.whl"))
     assert wheels, "No wheel built"
@@ -37,7 +38,8 @@ def _create_venv(base: Path, name: str = "venv") -> Path:
     venv_dir = base / name
     subprocess.run(
         [sys.executable, "-m", "venv", str(venv_dir)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     python = venv_dir / "bin" / "python"
     assert python.exists(), f"venv python not found at {python}"
@@ -53,15 +55,19 @@ class TestSelfUpdateIntegration:
 
         subprocess.run(
             [str(python), "-m", "pip", "install", str(wheel)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         result = subprocess.run(
             [
-                str(python), "-c",
-                "from reporails_cli.core.self_update import detect_install_method; print(detect_install_method().value)",
+                str(python),
+                "-c",
+                "from reporails_cli.core.self_update import detect_install_method;"
+                " print(detect_install_method().value)",
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         method = result.stdout.strip()
@@ -73,12 +79,14 @@ class TestSelfUpdateIntegration:
 
         subprocess.run(
             [str(python), "-m", "pip", "install", str(wheel)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         result = subprocess.run(
             [
-                str(python), "-c",
+                str(python),
+                "-c",
                 (
                     "from reporails_cli.core.self_update import _build_upgrade_command, InstallMethod; "
                     "cmd = _build_upgrade_command(InstallMethod.PIP, '99.0.0'); "
@@ -86,7 +94,8 @@ class TestSelfUpdateIntegration:
                     "print('OK')"
                 ),
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "OK" in result.stdout
@@ -97,18 +106,29 @@ class TestSelfUpdateIntegration:
 
         # Install editable into the venv's own copy to avoid polluting project root
         work_dir = tmp_path / "project"
-        shutil.copytree(PROJECT_ROOT, work_dir, ignore=shutil.ignore_patterns(
-            ".venv", "__pycache__", "*.pyc", ".git", ".pytest_cache", "dist",
-        ))
+        shutil.copytree(
+            PROJECT_ROOT,
+            work_dir,
+            ignore=shutil.ignore_patterns(
+                ".venv",
+                "__pycache__",
+                "*.pyc",
+                ".git",
+                ".pytest_cache",
+                "dist",
+            ),
+        )
 
         subprocess.run(
             [str(python), "-m", "pip", "install", "-e", str(work_dir)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         result = subprocess.run(
             [
-                str(python), "-c",
+                str(python),
+                "-c",
                 (
                     "from reporails_cli.core.self_update import upgrade_cli; "
                     "r = upgrade_cli('99.0.0'); "
@@ -117,7 +137,8 @@ class TestSelfUpdateIntegration:
                     "print('OK')"
                 ),
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "OK" in result.stdout
@@ -128,7 +149,8 @@ class TestSelfUpdateIntegration:
 
         subprocess.run(
             [str(python), "-m", "pip", "install", str(wheel)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         venv_bin = tmp_path / "venv" / "bin" / "ails"
@@ -136,7 +158,8 @@ class TestSelfUpdateIntegration:
 
         result = subprocess.run(
             [str(venv_bin), "version"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "Install:" in result.stdout

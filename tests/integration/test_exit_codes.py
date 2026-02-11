@@ -46,15 +46,15 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
         )
 
         assert result.returncode == 0, (
-            f"Expected exit 0 for no findings, got {result.returncode}\n"
-            f"stderr: {result.stderr.decode()}"
+            f"Expected exit 0 for no findings, got {result.returncode}\nstderr: {result.stderr.decode()}"
         )
 
     def test_exit_0_with_findings_no_error_flag(
@@ -81,7 +81,8 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -89,8 +90,7 @@ rules:
 
         # Without --error flag, findings don't cause non-zero exit
         assert result.returncode == 0, (
-            f"Expected exit 0 (findings without --error), got {result.returncode}\n"
-            f"stderr: {result.stderr.decode()}"
+            f"Expected exit 0 (findings without --error), got {result.returncode}\nstderr: {result.stderr.decode()}"
         )
 
     def test_exit_1_with_error_flag_and_findings(
@@ -118,15 +118,15 @@ rules:
                 "scan",
                 "--sarif",
                 "--error",  # This flag makes findings return exit 1
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
         )
 
         assert result.returncode == 1, (
-            f"Expected exit 1 (findings with --error), got {result.returncode}\n"
-            f"stderr: {result.stderr.decode()}"
+            f"Expected exit 1 (findings with --error), got {result.returncode}\nstderr: {result.stderr.decode()}"
         )
 
     def test_exit_7_invalid_config(
@@ -148,15 +148,15 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
         )
 
         assert result.returncode == 7, (
-            f"Expected exit 7 for invalid config, got {result.returncode}\n"
-            f"stderr: {result.stderr.decode()}"
+            f"Expected exit 7 for invalid config, got {result.returncode}\nstderr: {result.stderr.decode()}"
         )
 
 
@@ -219,9 +219,7 @@ rules:
         if runs:
             results = runs[0].get("results", [])
             # Should have found the TODO
-            assert len(results) > 0, (
-                "Expected findings in SARIF output"
-            )
+            assert len(results) > 0, "Expected findings in SARIF output"
 
     def test_cli_handles_exit_7_gracefully(
         self,

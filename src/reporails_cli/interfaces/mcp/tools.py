@@ -175,10 +175,7 @@ def explain_tool(rule_id: str) -> dict[str, Any]:
         "level": rule.level,
         "slug": rule.slug,
         "targets": rule.targets,
-        "checks": [
-            {"id": c.id, "type": c.type, "severity": c.severity.value}
-            for c in rule.checks
-        ],
+        "checks": [{"id": c.id, "type": c.type, "severity": c.severity.value} for c in rule.checks],
         "see_also": rule.see_also,
     }
 

@@ -47,9 +47,15 @@ def detect_project_structure(target: Path) -> dict[str, Any]:
 
     # Config files at project root
     config_patterns = [
-        "pyproject.toml", "package.json", "Cargo.toml", "go.mod",
-        "Makefile", "Dockerfile", "docker-compose.yml",
-        "tsconfig.json", ".semgrepignore",
+        "pyproject.toml",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose.yml",
+        "tsconfig.json",
+        ".semgrepignore",
     ]
     config_files = [f for f in config_patterns if (target / f).exists()]
     if config_files:
@@ -79,16 +85,12 @@ def generate_backbone_yaml(target: Path, agents: list[DetectedAgent]) -> str:
         agent_data: dict[str, Any] = {}
 
         # Main instruction file (first root-level file)
-        root_files = [
-            f for f in agent.instruction_files
-            if f.parent == target
-        ]
+        root_files = [f for f in agent.instruction_files if f.parent == target]
         if root_files:
             agent_data["main_instruction_file"] = str(root_files[0].relative_to(target))
 
         # Detected directories
-        for label, dir_path in agent.detected_directories.items():
-            agent_data[label] = dir_path
+        agent_data.update(agent.detected_directories)
 
         # First config file
         if agent.config_files:

@@ -2,6 +2,7 @@
 
 Provides minimal output for non-TTY contexts and quick checks.
 """
+# pylint: disable=too-many-locals,too-many-statements
 
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from reporails_cli.formatters.text.components import (
 def format_compact(
     result: ValidationResult,
     ascii_mode: bool | None = None,
-    show_legend: bool = True,
+    _show_legend: bool = True,
     delta: ScanDelta | None = None,
 ) -> str:
     """Format validation result in compact form for Claude Code / non-TTY."""
@@ -50,7 +51,11 @@ def format_compact(
     deduped_grouped: dict[str, list[dict[str, Any]]] = {}
     for file_path, file_violations in grouped.items():
         seen: set[str] = set()
-        unique = [v for v in file_violations if not (v.get("rule_id", "") in seen or seen.add(v.get("rule_id", "")))]  # type: ignore[func-returns-value]
+        unique = [
+            v
+            for v in file_violations
+            if not (v.get("rule_id", "") in seen or seen.add(v.get("rule_id", "")))  # type: ignore[func-returns-value]
+        ]
         deduped_grouped[file_path] = unique
         deduped_count += len(unique)
 
@@ -59,10 +64,11 @@ def format_compact(
     level_delta_str = format_level_delta(delta, ascii_mode)
     violations_delta_str = format_violations_delta(delta, ascii_mode) if deduped_count > 0 else ""
     partial_marker = " (partial)" if is_partial else ""
+    header_base = f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}){partial_marker}"
     if deduped_count > 0:
-        lines.append(f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}){partial_marker} - {deduped_count} violations{violations_delta_str}")
+        lines.append(f"{header_base} - {deduped_count} violations{violations_delta_str}")
     else:
-        lines.append(f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}){partial_marker} {chars['check']} clean")
+        lines.append(f"{header_base} {chars['check']} clean")
         return "\n".join(lines)
 
     lines.append("")
@@ -100,7 +106,7 @@ def format_compact(
     return "\n".join(lines).rstrip()
 
 
-def format_score(result: ValidationResult, ascii_mode: bool | None = None) -> str:
+def format_score(result: ValidationResult, _ascii_mode: bool | None = None) -> str:
     """Format quick score summary for terminal."""
     level_label = get_level_labels().get(result.level, "Unknown")
     violation_count = len(result.violations)
@@ -109,4 +115,6 @@ def format_score(result: ValidationResult, ascii_mode: bool | None = None) -> st
     if violation_count == 0:
         return f"ails: {result.score:.1f}/10 {level_label} ({result.level.value}){partial}"
     else:
-        return f"ails: {result.score:.1f}/10 {level_label} ({result.level.value}){partial} - {violation_count} violations"
+        return (
+            f"ails: {result.score:.1f}/10 {level_label} ({result.level.value}){partial} - {violation_count} violations"
+        )

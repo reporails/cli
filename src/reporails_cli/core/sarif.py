@@ -135,18 +135,11 @@ def get_severity(rule: Rule | None, check_id: str | None) -> Severity:
     return Severity.MEDIUM
 
 
-def parse_sarif(sarif: dict[str, Any], rules: dict[str, Rule]) -> list[Violation]:
-    """Parse OpenGrep SARIF output into Violation objects.
-
-    Pure function — no I/O. Skips INFO/note level findings.
-
-    Args:
-        sarif: Parsed SARIF JSON
-        rules: Dict of rules for metadata lookup
-
-    Returns:
-        List of Violation objects
-    """
+def parse_sarif(  # pylint: disable=too-many-locals
+    sarif: dict[str, Any],
+    rules: dict[str, Rule],
+) -> list[Violation]:
+    """Parse OpenGrep SARIF output into Violation objects."""
     violations = []
 
     for run in sarif.get("runs", []):

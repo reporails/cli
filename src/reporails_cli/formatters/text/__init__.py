@@ -20,13 +20,12 @@ from reporails_cli.formatters.text.full import format_result
 from reporails_cli.formatters.text.rules import format_rule
 
 __all__ = [
-    "format_result",
-    "format_compact",
-    "format_score",
-    "format_rule",
-    "format_legend",
-    # Internal helpers exposed for tests
-    "_format_score_delta",
     "_format_level_delta",
+    "_format_score_delta",
     "_format_violations_delta",
+    "format_compact",
+    "format_legend",
+    "format_result",
+    "format_rule",
+    "format_score",
 ]

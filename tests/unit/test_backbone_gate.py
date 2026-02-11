@@ -34,17 +34,13 @@ class TestBackboneGateNotAlwaysTrue:
 
         reporails_dir = project / ".reporails"
         reporails_dir.mkdir()
-        (reporails_dir / "backbone.yml").write_text(
-            "version: 2\nagents:\n  claude:\n    rules: .claude/rules/\n"
-        )
+        (reporails_dir / "backbone.yml").write_text("version: 2\nagents:\n  claude:\n    rules: .claude/rules/\n")
 
         features = detect_features_filesystem(project)
 
         assert features.has_backbone is True
 
-    def test_backbone_gate_does_not_affect_level_when_absent(
-        self, tmp_path: Path
-    ) -> None:
+    def test_backbone_gate_does_not_affect_level_when_absent(self, tmp_path: Path) -> None:
         """L4-level project without backbone should NOT reach L5."""
         features = DetectedFeatures(
             has_instruction_file=True,
@@ -85,9 +81,7 @@ class TestBackboneGateNotAlwaysTrue:
 
         assert level == Level.L6
 
-    def test_placeholder_backbone_not_detected_before_creation(
-        self, tmp_path: Path
-    ) -> None:
+    def test_placeholder_backbone_not_detected_before_creation(self, tmp_path: Path) -> None:
         """Feature detection runs before backbone auto-creation.
 
         The .reporails/ directory should not exist before detection,
