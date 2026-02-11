@@ -113,8 +113,8 @@ class TestFindProjectRoot:
         target_file.touch()
         assert _find_project_root(target_file) == tmp_path
 
-    def test_coordination_backbone_preferred_over_child_git(self, tmp_path: Path) -> None:
-        """Monorepo: coordination backbone with children takes priority over child .git."""
+    def test_child_backbone_preferred_over_parent_coordination(self, tmp_path: Path) -> None:
+        """Child with its own backbone is a standalone project — don't walk past it."""
         # Parent coordination root
         (tmp_path / ".git").mkdir()
         backbone_dir = tmp_path / ".reporails"
@@ -122,14 +122,14 @@ class TestFindProjectRoot:
         (backbone_dir / "backbone.yml").write_text(
             "version: 2\nchildren:\n  child:\n    backbone: child/.reporails/backbone.yml\n"
         )
-        # Child with its own .git
+        # Child with its own backbone
         child = tmp_path / "child"
         child.mkdir()
         (child / ".git").mkdir()
         child_backbone = child / ".reporails"
         child_backbone.mkdir()
         (child_backbone / "backbone.yml").write_text("version: 3\ndepends_on:\n  rules: {}\n")
-        assert _find_project_root(child) == tmp_path
+        assert _find_project_root(child) == child
 
     def test_backbone_with_repos_preferred(self, tmp_path: Path) -> None:
         """Backbone with repos key is recognized as coordination root."""
