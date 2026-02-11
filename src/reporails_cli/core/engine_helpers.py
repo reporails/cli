@@ -8,7 +8,6 @@ from reporails_cli.bundled import get_capability_patterns_path
 from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.cache import ProjectCache, content_hash
 from reporails_cli.core.capability import detect_features_content, determine_capability_level
-from reporails_cli.core.mechanical import run_mechanical_checks
 from reporails_cli.core.models import (
     Category,
     CategoryStats,
@@ -19,9 +18,10 @@ from reporails_cli.core.models import (
     Violation,
 )
 from reporails_cli.core.opengrep import get_rule_yml_paths, run_opengrep
+from reporails_cli.core.pipeline import build_initial_state
+from reporails_cli.core.pipeline_exec import execute_rule_checks
 from reporails_cli.core.results import CapabilityResult, DetectedFeatures
-from reporails_cli.core.sarif import parse_sarif
-from reporails_cli.core.semantic import build_semantic_requests
+from reporails_cli.core.sarif import distribute_sarif_by_rule
 
 
 def _find_project_root(target: Path) -> Path:
@@ -117,65 +117,6 @@ def _compute_category_summary(
     return tuple(stats)
 
 
-def _matches_negated(violation: Violation, negated_ids: set[str]) -> bool:
-    """Check if a violation's check_id matches any negated check ID."""
-    if not violation.check_id:
-        return False
-    return any(nid.startswith(violation.rule_id + ":") and nid.endswith(violation.check_id) for nid in negated_ids)
-
-
-def _resolve_target_template(target: str, template_context: dict[str, str | list[str]]) -> str:
-    """Resolve {{placeholder}} tokens in a target string."""
-    if "{{" not in target or not template_context:
-        return target
-    for key, val in template_context.items():
-        placeholder = "{{" + key + "}}"
-        if placeholder in target:
-            resolved = ", ".join(val) if isinstance(val, list) else str(val)
-            target = target.replace(placeholder, resolved)
-    return target
-
-
-def _handle_negated_checks(
-    deterministic: dict[str, Rule],
-    det_violations: list[Violation],
-    template_context: dict[str, str | list[str]],
-) -> list[Violation]:
-    """Invert match semantics for negated checks. Returns filtered+augmented list."""
-    negated_check_ids: set[str] = {check.id for rule in deterministic.values() for check in rule.checks if check.negate}
-    if not negated_check_ids:
-        return det_violations
-
-    # Track which negated check IDs had findings (= pass)
-    negated_with_findings: set[str] = set()
-    for v in det_violations:
-        if _matches_negated(v, negated_check_ids):
-            negated_with_findings |= {
-                nid for nid in negated_check_ids if nid.startswith(v.rule_id + ":") and nid.endswith(v.check_id or "")
-            }
-
-    # Remove false violations from negated checks that found content
-    det_violations = [v for v in det_violations if not _matches_negated(v, negated_check_ids)]
-
-    # Add violations for negated checks with NO findings (content missing)
-    for rule in deterministic.values():
-        for check in rule.checks:
-            if check.negate and check.id not in negated_with_findings:
-                display_target = _resolve_target_template(rule.targets, template_context)
-                det_violations.append(
-                    Violation(
-                        rule_id=rule.id,
-                        rule_title=rule.title,
-                        location=f"{display_target}:0",
-                        message="Expected content not found",
-                        severity=check.severity,
-                        check_id=check.id.split(":")[-1] if ":" in check.id else None,
-                    )
-                )
-
-    return det_violations
-
-
 def _detect_capabilities(
     project_root: Path,
     opengrep_path: Path,
@@ -216,18 +157,13 @@ def _run_rule_validation(
     target_instruction_files: list[Path] | None,
     exclude_dirs: list[str] | None,
 ) -> tuple[list[Violation], list[JudgmentRequest]]:
-    """Run PASS 2: mechanical checks + OpenGrep + negated checks + semantic requests."""
-    violations: list[Violation] = run_mechanical_checks(
-        applicable_rules,
-        scan_root,
-        template_context,
-        instruction_files=target_instruction_files,
-    )
+    """Run PASS 2: batch OpenGrep gather, then per-rule ordered check iteration."""
+    state = build_initial_state(target_instruction_files, scan_root)
 
-    # Run OpenGrep on rules with .yml patterns (deterministic + semantic types)
-    deterministic = {k: v for k, v in applicable_rules.items() if v.type == RuleType.DETERMINISTIC}
-    semantic = {k: v for k, v in applicable_rules.items() if v.type == RuleType.SEMANTIC}
-    opengrep_rules = {**deterministic, **semantic}
+    # Batch OpenGrep: gather ALL deterministic + semantic yml paths
+    opengrep_rules = {
+        k: v for k, v in applicable_rules.items() if v.type in (RuleType.DETERMINISTIC, RuleType.SEMANTIC)
+    }
     rule_yml_paths = get_rule_yml_paths(opengrep_rules)
     rule_sarif: dict[str, object] = {}
     if rule_yml_paths:
@@ -240,13 +176,21 @@ def _run_rule_validation(
             instruction_files=target_instruction_files,
             exclude_dirs=exclude_dirs,
         )
+    state._sarif_by_rule = distribute_sarif_by_rule(rule_sarif, opengrep_rules)
 
-    det_violations = parse_sarif(rule_sarif, deterministic)
-    det_violations = _handle_negated_checks(deterministic, det_violations, template_context)
-    violations.extend(det_violations)
+    # Per-rule iteration (ordered check execution)
+    all_judgment_requests: list[JudgmentRequest] = []
+    for rule in applicable_rules.values():
+        jrs = execute_rule_checks(
+            rule,
+            state,
+            scan_root,
+            template_context,
+            target_instruction_files,
+        )
+        all_judgment_requests.extend(jrs)
 
-    judgment_requests = build_semantic_requests(rule_sarif, semantic, scan_root)
-    return violations, judgment_requests
+    return state.findings, all_judgment_requests
 
 
 def _filter_cached_judgments(

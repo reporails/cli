@@ -22,6 +22,7 @@ class CheckResult:
 
     passed: bool
     message: str
+    annotations: dict[str, Any] | None = None  # D->M metadata (e.g., discovered_imports)
 
 
 def _resolve_path(template: str, vars: dict[str, str | list[str]]) -> str:

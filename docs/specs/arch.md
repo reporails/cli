@@ -70,6 +70,9 @@ reporails-cli/
 │   │   ├── discover.py       # Project discovery
 │   │   ├── engine.py         # Validation orchestration
 │   │   ├── engine_helpers.py  # Validation sub-functions
+│   │   ├── pipeline.py       # Pipeline state, target metadata
+│   │   ├── pipeline_exec.py  # Per-rule check execution
+│   │   ├── check_cache.py    # In-memory check result dedup
 │   │   ├── registry.py       # Rule loading + resolution
 │   │   ├── rule_builder.py   # Rule construction + tier derivation
 │   │   ├── scorer.py         # Score calculation
@@ -316,6 +319,40 @@ Engine extracts content
             ▼
         Violation
 ```
+
+### Pipeline Architecture
+
+Rules execute through a per-rule ordered check pipeline with shared mutable state:
+
+```
+engine.py
+    │
+    ├──► PASS 1: Capability detection (OpenGrep capability patterns)
+    │
+    └──► PASS 2: Rule validation (pipeline engine)
+            │
+            ├── Batch OpenGrep (gather all deterministic+semantic .yml)
+            │         │
+            │         ▼
+            │   distribute_sarif_by_rule() → per-rule SARIF buckets
+            │
+            └── Per-rule iteration (ordered check sequence)
+                    │
+                    ├── Check type ≤ rule type ceiling?
+                    │       mechanical ⊂ deterministic ⊂ semantic
+                    │
+                    ├── mechanical → dispatch_single_check()
+                    │       blocking? → exclude target globally
+                    │       annotations? → attach to TargetMeta
+                    │
+                    ├── deterministic → read from pre-distributed SARIF
+                    │       negate? → invert match logic
+                    │
+                    └── semantic → short-circuit if no candidates
+                            → build JudgmentRequest
+```
+
+**Key design**: OpenGrep batching is preserved via gather-distribute. All deterministic+semantic rules run through one OpenGrep call (gather), then SARIF results are distributed to per-rule buckets. Per-rule iteration consumes pre-computed results.
 
 ## Agent Support
 
