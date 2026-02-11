@@ -339,8 +339,8 @@ class ScanDelta:
         score_delta = raw_score_delta if raw_score_delta != 0 else None
 
         # Level comparison (extract number from "L3" etc)
-        curr_num = int(current_level[1]) if current_level.startswith("L") else 0
-        prev_num = int(previous.level[1]) if previous.level.startswith("L") else 0
+        curr_num = int(current_level[1:]) if current_level.startswith("L") and current_level[1:].isdigit() else 0
+        prev_num = int(previous.level[1:]) if previous.level.startswith("L") and previous.level[1:].isdigit() else 0
         if curr_num != prev_num:
             level_previous = previous.level
             level_improved = curr_num > prev_num

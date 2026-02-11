@@ -121,8 +121,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         # Run validation once
         try:
             result = run_validation(target, agent="claude")
-        except FileNotFoundError as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {type(e).__name__}: {e}")]
 
         # Compute delta
         delta = ScanDelta.compute(
