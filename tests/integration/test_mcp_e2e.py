@@ -143,6 +143,16 @@ class TestValidateTool:
             text = _call_tool("validate", {"path": "."})
         assert "not initialized" in text.lower()
 
+    def test_runtime_error_returns_error_not_crash(self, level2_project: Path) -> None:
+        """RuntimeError from run_validation must return error text, not crash."""
+        with patch(
+            "reporails_cli.interfaces.mcp.server.run_validation",
+            side_effect=RuntimeError("Unsupported operating system"),
+        ):
+            text = _call_tool("validate", {"path": str(level2_project)})
+        assert "Error" in text
+        assert "RuntimeError" in text
+
 
 # ---------------------------------------------------------------------------
 # score tool
@@ -428,3 +438,70 @@ class TestVerdictParsing:
         rule_id, location, verdict, reason = self._parse("S1::pass:no loc")
         # location is empty string, which means downstream rejects it
         assert location == ""
+
+
+# ---------------------------------------------------------------------------
+# ScanDelta — corrupted cache resilience
+# ---------------------------------------------------------------------------
+
+
+class TestScanDeltaResilience:
+    """ScanDelta.compute must not crash on corrupted analytics cache."""
+
+    def _compute(self, prev_level: str) -> Any:
+        from reporails_cli.core.models import ScanDelta
+
+        class FakePrev:
+            score = 5.0
+            violations_count = 2
+
+        FakePrev.level = prev_level  # type: ignore[attr-defined]
+        return ScanDelta.compute(5.0, "L3", 2, FakePrev())  # type: ignore[arg-type]
+
+    def test_normal_level(self) -> None:
+        d = self._compute("L2")
+        assert d.level_improved is True
+
+    def test_truncated_level(self) -> None:
+        """'L' with no digit must not crash."""
+        d = self._compute("L")
+        assert d is not None  # No IndexError
+
+    def test_empty_level(self) -> None:
+        d = self._compute("")
+        assert d is not None
+
+    def test_garbage_level(self) -> None:
+        d = self._compute("garbage")
+        assert d is not None
+
+
+# ---------------------------------------------------------------------------
+# Cache atomicity
+# ---------------------------------------------------------------------------
+
+
+class TestCacheAtomicity:
+    """Judgment cache writes must use atomic temp+rename."""
+
+    def test_write_creates_no_partial_json(self, level2_project: Path) -> None:
+        """After caching verdicts, the cache file must be valid JSON."""
+        from reporails_cli.interfaces.mcp.tools import judge_tool
+
+        judge_tool(str(level2_project), ["S1:CLAUDE.md:pass:OK"])
+
+        cache_path = level2_project / ".reporails" / ".cache" / "judgment-cache.json"
+        assert cache_path.exists()
+        data = json.loads(cache_path.read_text())
+        assert "version" in data
+        assert "judgments" in data
+
+    def test_no_temp_file_left_behind(self, level2_project: Path) -> None:
+        """Atomic write must not leave .tmp files after completion."""
+        from reporails_cli.interfaces.mcp.tools import judge_tool
+
+        judge_tool(str(level2_project), ["S1:CLAUDE.md:pass:OK"])
+
+        cache_dir = level2_project / ".reporails" / ".cache"
+        tmp_files = list(cache_dir.glob("*.tmp"))
+        assert tmp_files == []
