@@ -222,7 +222,6 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
     return paths
 
 
-
 def get_installed_version() -> str | None:
     """Read installed framework version from ~/.reporails/version."""
     version_file = get_version_file()

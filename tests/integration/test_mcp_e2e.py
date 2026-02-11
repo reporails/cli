@@ -92,7 +92,7 @@ _SHELL_OUT_PATTERNS = [
     "via Bash",
     "via bash",
     "ails judge .",
-    "ails judge",      # bare CLI command reference
+    "ails judge",  # bare CLI command reference
     "npx ",
     "run this command",
     "shell command",
@@ -114,23 +114,15 @@ class TestValidateTool:
         """REGRESSION: validate must never tell the LLM to shell out."""
         text = _call_tool("validate", {"path": str(level2_project)})
         for pattern in _SHELL_OUT_PATTERNS:
-            assert pattern not in text, (
-                f"Shell-out pattern {pattern!r} found in validate response"
-            )
+            assert pattern not in text, f"Shell-out pattern {pattern!r} found in validate response"
 
     @requires_rules
-    def test_semantic_guidance_references_judge_tool(
-        self, level2_project: Path
-    ) -> None:
+    def test_semantic_guidance_references_judge_tool(self, level2_project: Path) -> None:
         """When semantic rules exist, guidance must reference the judge MCP tool."""
         text = _call_tool("validate", {"path": str(level2_project)})
         if "EVALUATE THESE SEMANTIC RULES" in text:
-            assert "judge tool" in text, (
-                "Semantic guidance must reference 'judge tool' (MCP native)"
-            )
-            assert "judge(verdicts=" in text, (
-                "Semantic guidance must show judge(verdicts=...) call example"
-            )
+            assert "judge tool" in text, "Semantic guidance must reference 'judge tool' (MCP native)"
+            assert "judge(verdicts=" in text, "Semantic guidance must show judge(verdicts=...) call example"
 
     def test_missing_path_returns_error(self) -> None:
         """Non-existent path should return an error message."""
@@ -207,10 +199,13 @@ class TestJudgeTool:
     def test_records_verdicts(self, level2_project: Path) -> None:
         """judge should record verdicts and return count."""
         verdicts = ["S1:CLAUDE.md:pass:File size OK"]
-        text = _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
         data = json.loads(text)
         assert "recorded" in data
         assert data["recorded"] == 1
@@ -221,20 +216,26 @@ class TestJudgeTool:
             "S1:CLAUDE.md:pass:File size OK",
             "C2:CLAUDE.md:fail:Missing section",
         ]
-        text = _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
         data = json.loads(text)
         assert data["recorded"] == 2
 
     def test_coordinate_rule_id(self, level2_project: Path) -> None:
         """Coordinate-format rule IDs (CORE:S:0001) should be parsed correctly."""
         verdicts = ["CORE:S:0001:CLAUDE.md:pass:Criteria met"]
-        text = _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
         data = json.loads(text)
         assert data["recorded"] == 1
 
@@ -243,10 +244,13 @@ class TestJudgeTool:
         from reporails_cli.core.cache import ProjectCache
 
         verdicts = ["S1:CLAUDE.md:pass:Looks good"]
-        _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
 
         cache = ProjectCache(level2_project)
         cache_data = cache.load_judgment_cache()
@@ -269,20 +273,26 @@ class TestJudgeTool:
     def test_invalid_verdict_format_records_zero(self, level2_project: Path) -> None:
         """Malformed verdict strings should not be recorded."""
         verdicts = ["garbage"]
-        text = _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
         data = json.loads(text)
         assert data["recorded"] == 0
 
     def test_nonexistent_file_in_verdict_records_zero(self, level2_project: Path) -> None:
         """Verdict referencing a nonexistent file should not be recorded."""
         verdicts = ["S1:no-such-file.md:pass:OK"]
-        text = _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
         data = json.loads(text)
         assert data["recorded"] == 0
 
@@ -295,20 +305,26 @@ class TestJudgeTool:
         (project / "CLAUDE.md").write_text("# Project\n")
         (sibling / "secrets.md").write_text("API_KEY=sk-secret\n")
 
-        text = _call_tool("judge", {
-            "path": str(project),
-            "verdicts": ["S1:../sibling/secrets.md:pass:Should be blocked"],
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(project),
+                "verdicts": ["S1:../sibling/secrets.md:pass:Should be blocked"],
+            },
+        )
         data = json.loads(text)
         assert data["recorded"] == 0
 
     def test_invalid_verdict_value_rejected(self, level2_project: Path) -> None:
         """Verdict must be 'pass' or 'fail'; other values are rejected."""
         verdicts = ["S1:CLAUDE.md:maybe:unsure"]
-        text = _call_tool("judge", {
-            "path": str(level2_project),
-            "verdicts": verdicts,
-        })
+        text = _call_tool(
+            "judge",
+            {
+                "path": str(level2_project),
+                "verdicts": verdicts,
+            },
+        )
         data = json.loads(text)
         assert data["recorded"] == 0
 
@@ -468,32 +484,32 @@ class TestVerdictParsing:
         assert self._parse("C2:CLAUDE.md:fail:Missing") == ("C2", "CLAUDE.md", "fail", "Missing")
 
     def test_coordinate_rule_id(self) -> None:
-        assert self._parse("CORE:S:0001:CLAUDE.md:pass:Good") == (
-            "CORE:S:0001", "CLAUDE.md", "pass", "Good"
-        )
+        assert self._parse("CORE:S:0001:CLAUDE.md:pass:Good") == ("CORE:S:0001", "CLAUDE.md", "pass", "Good")
 
     def test_coordinate_rule_id_fail(self) -> None:
         assert self._parse("AILS:C:0002:.claude/rules/foo.md:fail:Bad") == (
-            "AILS:C:0002", ".claude/rules/foo.md", "fail", "Bad"
+            "AILS:C:0002",
+            ".claude/rules/foo.md",
+            "fail",
+            "Bad",
         )
 
     def test_short_with_line_number(self) -> None:
         """Line number in location must not be confused with verdict."""
-        assert self._parse("S1:CLAUDE.md:42:pass:Has line") == (
-            "S1", "CLAUDE.md:42", "pass", "Has line"
-        )
+        assert self._parse("S1:CLAUDE.md:42:pass:Has line") == ("S1", "CLAUDE.md:42", "pass", "Has line")
 
     def test_coordinate_with_line_number(self) -> None:
         """Coordinate ID + line number in location must parse correctly."""
         assert self._parse("CORE:S:0001:CLAUDE.md:42:pass:Has line") == (
-            "CORE:S:0001", "CLAUDE.md:42", "pass", "Has line"
+            "CORE:S:0001",
+            "CLAUDE.md:42",
+            "pass",
+            "Has line",
         )
 
     def test_colons_in_reason(self) -> None:
         """Colons in the reason field should be preserved."""
-        assert self._parse("S1:CLAUDE.md:pass:reason:with:colons") == (
-            "S1", "CLAUDE.md", "pass", "reason:with:colons"
-        )
+        assert self._parse("S1:CLAUDE.md:pass:reason:with:colons") == ("S1", "CLAUDE.md", "pass", "reason:with:colons")
 
     def test_empty_string(self) -> None:
         assert self._parse("") == ("", "", "", "")
@@ -510,7 +526,7 @@ class TestVerdictParsing:
 
     def test_no_location(self) -> None:
         """Missing location should return empty."""
-        rule_id, location, verdict, reason = self._parse("S1::pass:no loc")
+        _rule_id, location, _verdict, _reason = self._parse("S1::pass:no loc")
         # location is empty string, which means downstream rejects it
         assert location == ""
 

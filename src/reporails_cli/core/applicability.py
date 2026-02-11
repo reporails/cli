@@ -22,15 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _count_components(backbone_data: dict) -> int:  # type: ignore[type-arg]
-    """Count distinct navigable areas declared in backbone.
-
-    A component is a top-level directory the backbone maps for the agent,
-    saving a discovery round. We walk all string values that look like
-    paths and collect their top-level directory.
-
-    v1: count entries in components dict (legacy).
-    v2+: count distinct top-level directories from all declared paths.
-    """
+    """Count distinct navigable areas declared in backbone."""
     version = backbone_data.get("version", 1)
     if version == 1:
         return len(backbone_data.get("components", {}))
@@ -57,18 +49,7 @@ def _collect_paths(data: object, top_dirs: set[str]) -> None:
 
 
 def resolve_symlinked_files(target: Path) -> list[Path]:
-    """Find instruction files that are symlinks pointing outside the scan directory.
-
-    OpenGrep skips symlinks whose resolved target is outside the scan directory.
-    This function detects those files so their resolved paths can be passed as
-    additional scan targets.
-
-    Args:
-        target: Project root path
-
-    Returns:
-        List of resolved (real) paths for symlinks pointing outside target
-    """
+    """Find instruction files that are symlinks pointing outside the scan directory."""
     resolved: list[Path] = []
     try:
         real_target = target.resolve()
@@ -95,6 +76,44 @@ def resolve_symlinked_files(target: Path) -> list[Path]:
             resolved.append(real_path)
 
     return resolved
+
+
+def _detect_l6_features(features: DetectedFeatures, target: Path) -> None:
+    """Detect L6 features: skills directory, MCP config, memory directory."""
+    # Check for skills directory (L6: dynamic_context)
+    skills_dirs = [".claude/skills", ".cursor/skills"]
+    for dirname in skills_dirs:
+        d = target / dirname
+        if d.exists() and any(d.iterdir()):
+            features.has_skills_dir = True
+            break
+
+    # Check for MCP configuration (L6: extensibility)
+    mcp_files = [".mcp.json", ".claude/mcp.json"]
+    for fname in mcp_files:
+        if (target / fname).exists():
+            features.has_mcp_config = True
+            break
+
+
+def _detect_hierarchy_features(
+    features: DetectedFeatures,
+    target: Path,
+) -> None:
+    """Detect hierarchical structure from instruction files across directory levels."""
+    from reporails_cli.core.agents import detect_agents
+
+    for detected in detect_agents(target):
+        names_at_root: set[str] = set()
+        has_nested = False
+        for f in detected.instruction_files:
+            if f.parent == target:
+                names_at_root.add(f.name)
+            else:
+                has_nested = True
+        if names_at_root and has_nested:
+            features.has_hierarchical_structure = True
+            break
 
 
 def detect_features_filesystem(target: Path) -> DetectedFeatures:
@@ -141,22 +160,8 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
     if features.instruction_file_count > 0:
         features.has_instruction_file = True
 
-    # Check for hierarchical structure: any agent with the same instruction
-    # file name appearing at multiple directory levels (e.g. root CLAUDE.md
-    # + nested src/CLAUDE.md).  Driven by detect_agents(), not hardcoded names.
-    from reporails_cli.core.agents import detect_agents
-
-    for detected in detect_agents(target):
-        names_at_root: set[str] = set()
-        has_nested = False
-        for f in detected.instruction_files:
-            if f.parent == target:
-                names_at_root.add(f.name)
-            else:
-                has_nested = True
-        if names_at_root and has_nested:
-            features.has_hierarchical_structure = True
-            break
+    # Check for hierarchical structure
+    _detect_hierarchy_features(features, target)
 
     # Check for @imports and size control (simple checks, full in Phase 2)
     if features.has_claude_md:
@@ -177,20 +182,8 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
             features.has_shared_files = True
             break
 
-    # Check for skills directory (L6: dynamic_context)
-    skills_dirs = [".claude/skills", ".cursor/skills"]
-    for dirname in skills_dirs:
-        d = target / dirname
-        if d.exists() and any(d.iterdir()):
-            features.has_skills_dir = True
-            break
-
-    # Check for MCP configuration (L6: extensibility)
-    mcp_files = [".mcp.json", ".claude/mcp.json"]
-    for fname in mcp_files:
-        if (target / fname).exists():
-            features.has_mcp_config = True
-            break
+    # L6 features: skills, MCP config
+    _detect_l6_features(features, target)
 
     # Count components from backbone if present
     if features.has_backbone:
@@ -248,14 +241,7 @@ def get_applicable_rules(
 
 
 def get_feature_summary(features: DetectedFeatures) -> str:
-    """Generate human-readable summary of detected features.
-
-    Args:
-        features: Detected project features
-
-    Returns:
-        Summary string for display
-    """
+    """Generate human-readable summary of detected features."""
     parts = []
 
     # File count
@@ -281,9 +267,3 @@ def get_feature_summary(features: DetectedFeatures) -> str:
         parts.append(" + ".join(feature_list))
 
     return ", ".join(parts) if parts else "No features detected"
-
-
-# Legacy alias for backward compatibility
-def detect_features(target: Path) -> DetectedFeatures:
-    """Legacy alias for detect_features_filesystem()."""
-    return detect_features_filesystem(target)

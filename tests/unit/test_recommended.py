@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from reporails_cli.core.init import (
-    RECOMMENDED_ARCHIVE_URL,
+    RECOMMENDED_REPO,
     RECOMMENDED_VERSION,
     download_recommended,
     is_recommended_installed,
@@ -42,7 +42,7 @@ class TestIsRecommendedInstalled:
 
     def test_not_installed_when_missing(self, tmp_path: Path) -> None:
         with patch(
-            "reporails_cli.core.init.get_recommended_package_path",
+            "reporails_cli.core.download.get_recommended_package_path",
             return_value=tmp_path / "packages" / "recommended",
         ):
             assert is_recommended_installed() is False
@@ -51,7 +51,7 @@ class TestIsRecommendedInstalled:
         pkg_dir = tmp_path / "packages" / "recommended"
         pkg_dir.mkdir(parents=True)
         with patch(
-            "reporails_cli.core.init.get_recommended_package_path",
+            "reporails_cli.core.download.get_recommended_package_path",
             return_value=pkg_dir,
         ):
             assert is_recommended_installed() is False
@@ -61,7 +61,7 @@ class TestIsRecommendedInstalled:
         pkg_dir.mkdir(parents=True)
         (pkg_dir / "levels.yml").write_text("levels: {}")
         with patch(
-            "reporails_cli.core.init.get_recommended_package_path",
+            "reporails_cli.core.download.get_recommended_package_path",
             return_value=pkg_dir,
         ):
             assert is_recommended_installed() is True
@@ -73,11 +73,13 @@ class TestDownloadRecommended:
     def test_extracts_and_strips_prefix(self, tmp_path: Path) -> None:
         """Archive with GitHub-style prefix is extracted correctly."""
         pkg_dir = tmp_path / "packages" / "recommended"
-        archive = _make_archive({
-            "levels.yml": "levels:\n  L2:\n    rules: [AILS_R1]\n",
-            "AILS_R1.md": "---\nid: AILS_R1\ntitle: Test\n---\n",
-            "AILS_R1.yml": "rules: []\n",
-        })
+        archive = _make_archive(
+            {
+                "levels.yml": "levels:\n  L2:\n    rules: [AILS_R1]\n",
+                "AILS_R1.md": "---\nid: AILS_R1\ntitle: Test\n---\n",
+                "AILS_R1.yml": "rules: []\n",
+            }
+        )
 
         mock_response = MagicMock()
         mock_response.content = archive
@@ -90,10 +92,10 @@ class TestDownloadRecommended:
 
         with (
             patch(
-                "reporails_cli.core.init.get_recommended_package_path",
+                "reporails_cli.core.download.get_recommended_package_path",
                 return_value=pkg_dir,
             ),
-            patch("reporails_cli.core.init.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
         ):
             result = download_recommended(version=RECOMMENDED_VERSION)
 
@@ -126,10 +128,10 @@ class TestDownloadRecommended:
 
         with (
             patch(
-                "reporails_cli.core.init.get_recommended_package_path",
+                "reporails_cli.core.download.get_recommended_package_path",
                 return_value=pkg_dir,
             ),
-            patch("reporails_cli.core.init.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
         ):
             download_recommended(version=RECOMMENDED_VERSION)
 
@@ -152,11 +154,12 @@ class TestDownloadRecommended:
 
         with (
             patch(
-                "reporails_cli.core.init.get_recommended_package_path",
+                "reporails_cli.core.download.get_recommended_package_path",
                 return_value=pkg_dir,
             ),
-            patch("reporails_cli.core.init.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
         ):
             download_recommended(version=RECOMMENDED_VERSION)
 
-        mock_client.get.assert_called_once_with(RECOMMENDED_ARCHIVE_URL)
+        expected_url = f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{RECOMMENDED_VERSION}.tar.gz"
+        mock_client.get.assert_called_once_with(expected_url)

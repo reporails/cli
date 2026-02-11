@@ -87,7 +87,9 @@ def _verify_installed_version() -> str | None:
     try:
         result = subprocess.run(
             [sys.executable, "-c", f"from importlib.metadata import version; print(version('{PKG_NAME}'))"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -96,12 +98,8 @@ def _verify_installed_version() -> str | None:
     return None
 
 
-def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:
-    """Upgrade the CLI package to target version (or latest).
-
-    Detects the install method from package metadata and runs the
-    appropriate upgrade command. Returns a result with success/failure info.
-    """
+def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:  # pylint: disable=too-many-return-statements
+    """Upgrade the CLI package to target version (or latest)."""
     from reporails_cli import __version__ as current_version
     from reporails_cli.core.update_check import _fetch_latest_cli_version, _is_newer
 
@@ -109,13 +107,18 @@ def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:
 
     if method == InstallMethod.DEV:
         return CliUpdateResult(
-            updated=False, previous_version=current_version, new_version=None,
-            method=method, message="Development install detected. Run `uv sync` to update.",
+            updated=False,
+            previous_version=current_version,
+            new_version=None,
+            method=method,
+            message="Development install detected. Run `uv sync` to update.",
         )
 
     if method == InstallMethod.UNKNOWN:
         return CliUpdateResult(
-            updated=False, previous_version=current_version, new_version=None,
+            updated=False,
+            previous_version=current_version,
+            new_version=None,
             method=method,
             message=f"Could not detect install method. Upgrade manually: pip install --upgrade {PKG_NAME}",
         )
@@ -126,14 +129,20 @@ def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:
         resolved_target = _fetch_latest_cli_version()
         if not resolved_target:
             return CliUpdateResult(
-                updated=False, previous_version=current_version, new_version=None,
-                method=method, message="Could not fetch latest version from PyPI.",
+                updated=False,
+                previous_version=current_version,
+                new_version=None,
+                method=method,
+                message="Could not fetch latest version from PyPI.",
             )
 
     if not _is_newer(current_version, resolved_target):
         return CliUpdateResult(
-            updated=False, previous_version=current_version, new_version=resolved_target,
-            method=method, message=f"Already at {current_version} (latest: {resolved_target}).",
+            updated=False,
+            previous_version=current_version,
+            new_version=resolved_target,
+            method=method,
+            message=f"Already at {current_version} (latest: {resolved_target}).",
         )
 
     cmd = _build_upgrade_command(method, resolved_target)
@@ -141,24 +150,35 @@ def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             return CliUpdateResult(
-                updated=False, previous_version=current_version, new_version=resolved_target,
-                method=method, message=f"Upgrade failed: {result.stderr.strip()[:200]}",
+                updated=False,
+                previous_version=current_version,
+                new_version=resolved_target,
+                method=method,
+                message=f"Upgrade failed: {result.stderr.strip()[:200]}",
             )
     except subprocess.TimeoutExpired:
         return CliUpdateResult(
-            updated=False, previous_version=current_version, new_version=resolved_target,
-            method=method, message="Upgrade timed out.",
+            updated=False,
+            previous_version=current_version,
+            new_version=resolved_target,
+            method=method,
+            message="Upgrade timed out.",
         )
     except Exception as e:
         return CliUpdateResult(
-            updated=False, previous_version=current_version, new_version=resolved_target,
-            method=method, message=f"Upgrade failed: {e}",
+            updated=False,
+            previous_version=current_version,
+            new_version=resolved_target,
+            method=method,
+            message=f"Upgrade failed: {e}",
         )
 
     # Verify
     new_ver = _verify_installed_version() or resolved_target
     return CliUpdateResult(
-        updated=True, previous_version=current_version, new_version=new_ver,
+        updated=True,
+        previous_version=current_version,
+        new_version=new_ver,
         method=method,
         message=f"Upgraded {current_version} -> {new_ver}. Restart your shell to use the new version.",
     )

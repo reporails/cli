@@ -77,24 +77,19 @@ class TestPipelineSmoke:
 
         # Mechanical violations should exist (not git-tracked, missing files, etc.)
         mechanical_violations = [
-            v for v in result.violations
-            if any(
-                r.type == RuleType.MECHANICAL
-                for r in _get_rules_for_violations(result, v.rule_id)
-            )
+            v
+            for v in result.violations
+            if any(r.type == RuleType.MECHANICAL for r in _get_rules_for_violations(result, v.rule_id))
         ]
         assert len(mechanical_violations) > 0, (
-            "Expected mechanical violations (e.g., not git-tracked) but got none. "
-            "Mechanical gate may not be running."
+            "Expected mechanical violations (e.g., not git-tracked) but got none. Mechanical gate may not be running."
         )
 
         # Deterministic violations should exist (vague qualifiers in fixture)
         deterministic_violations = [
-            v for v in result.violations
-            if any(
-                r.type == RuleType.DETERMINISTIC
-                for r in _get_rules_for_violations(result, v.rule_id)
-            )
+            v
+            for v in result.violations
+            if any(r.type == RuleType.DETERMINISTIC for r in _get_rules_for_violations(result, v.rule_id))
         ]
         assert len(deterministic_violations) > 0, (
             "Expected deterministic violations (vague qualifiers like 'clean', 'good') "
@@ -106,9 +101,7 @@ class TestPipelineSmoke:
             "Expected semantic judgment requests but got none. "
             "D→S handshake (OpenGrep → build_semantic_requests) may be broken."
         )
-        assert result.is_partial, (
-            "Result should be partial when semantic rules are pending."
-        )
+        assert result.is_partial, "Result should be partial when semantic rules are pending."
 
     def test_multiple_rules_checked(
         self,
@@ -163,18 +156,14 @@ class TestPipelineSmoke:
                 "Expected format: NAMESPACE:CATEGORY:SLOT (e.g., CORE:C:0006)."
             )
             namespace, category, slot = parts
-            assert namespace.isupper(), (
-                f"Namespace '{namespace}' in '{v.rule_id}' should be uppercase."
-            )
+            assert namespace.isupper(), f"Namespace '{namespace}' in '{v.rule_id}' should be uppercase."
             assert len(category) == 1 and category.isupper(), (
                 f"Category '{category}' in '{v.rule_id}' should be a single uppercase letter."
             )
-            assert slot.isdigit() and len(slot) == 4, (
-                f"Slot '{slot}' in '{v.rule_id}' should be 4 digits."
-            )
+            assert slot.isdigit() and len(slot) == 4, f"Slot '{slot}' in '{v.rule_id}' should be 4 digits."
 
 
-def _get_rules_for_violations(result, rule_id: str) -> list:  # noqa: ARG001
+def _get_rules_for_violations(result, rule_id: str) -> list:
     """Infer rule type from violation's rule_id category code.
 
     Structure (S) rules are mechanical; Content/other rules are deterministic.
@@ -184,13 +173,23 @@ def _get_rules_for_violations(result, rule_id: str) -> list:  # noqa: ARG001
     from reporails_cli.core.models import Category, Rule
 
     if category_code == "S":
-        return [Rule(
-            id=rule_id, title="", category=Category.STRUCTURE,
-            type=RuleType.MECHANICAL, level="L1",
-        )]
+        return [
+            Rule(
+                id=rule_id,
+                title="",
+                category=Category.STRUCTURE,
+                type=RuleType.MECHANICAL,
+                level="L1",
+            )
+        ]
     if category_code in ("C", "E", "M", "G"):
-        return [Rule(
-            id=rule_id, title="", category=Category.CONTENT,
-            type=RuleType.DETERMINISTIC, level="L1",
-        )]
+        return [
+            Rule(
+                id=rule_id,
+                title="",
+                category=Category.CONTENT,
+                type=RuleType.DETERMINISTIC,
+                level="L1",
+            )
+        ]
     return []

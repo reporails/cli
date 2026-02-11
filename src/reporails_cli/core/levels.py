@@ -34,10 +34,12 @@ _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
 
 # Capabilities whose detection depends on content analysis (OpenGrep Phase 2).
 # When skip_content=True, these are treated as detected (optimistic preliminary).
-CONTENT_CAPABILITIES: frozenset[str] = frozenset({
-    "project_constraints",
-    "path_scoping",
-})
+CONTENT_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "project_constraints",
+        "path_scoping",
+    }
+)
 
 # Fallback level→capability mapping when framework registry is unavailable.
 # Mirrors registry/levels.yml — updated when framework version bumps.
@@ -67,7 +69,7 @@ CAPABILITY_DETECTORS: dict[str, Callable[[DetectedFeatures], bool]] = {
     # L4
     "path_scoping": lambda f: f.has_path_scoped_rules or f.is_abstracted,
     # L5
-    "structural_integrity": lambda f: False,  # Not filesystem-detectable
+    "structural_integrity": lambda _f: False,  # Not filesystem-detectable
     "org_policy": lambda f: f.has_shared_files,
     "navigation": lambda f: f.has_backbone or f.component_count >= 3,
     # L6
@@ -163,10 +165,7 @@ def _level_has_capability(
     if not capabilities:
         # Level with no capabilities defined — treated as passing
         return True
-    return any(
-        _detect_capability(features, cap_id, skip_content)
-        for cap_id in capabilities
-    )
+    return any(_detect_capability(features, cap_id, skip_content) for cap_id in capabilities)
 
 
 def determine_level_from_gates(

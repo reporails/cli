@@ -75,21 +75,31 @@ class TestCheckCommand:
     @requires_rules
     def test_no_update_check_flag_accepted(self, level2_project: Path) -> None:
         """--no-update-check should be a valid flag that doesn't error."""
-        result = runner.invoke(app, [
-            "check", str(level2_project),
-            "--no-update-check",
-            "-q",
-            "-f", "text",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(level2_project),
+                "--no-update-check",
+                "-q",
+                "-f",
+                "text",
+            ],
+        )
         assert result.exit_code == 0, result.output
 
     def test_json_output_parseable(self, level2_project: Path) -> None:
         """JSON output should be valid JSON with expected keys."""
-        result = runner.invoke(app, [
-            "check", str(level2_project),
-            "-f", "json",
-            "--no-update-check",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(level2_project),
+                "-f",
+                "json",
+                "--no-update-check",
+            ],
+        )
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert "score" in data
@@ -99,39 +109,57 @@ class TestCheckCommand:
     @requires_rules
     def test_text_output_has_score(self, level2_project: Path) -> None:
         """Text output should contain score line."""
-        result = runner.invoke(app, [
-            "check", str(level2_project),
-            "--no-update-check",
-            "-q",
-            "-f", "text",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(level2_project),
+                "--no-update-check",
+                "-q",
+                "-f",
+                "text",
+            ],
+        )
         assert result.exit_code == 0, result.output
         assert "SCORE:" in result.output or "/ 10" in result.output
 
     def test_compact_output_works(self, level2_project: Path) -> None:
         """Compact format should produce output."""
-        result = runner.invoke(app, [
-            "check", str(level2_project),
-            "-f", "compact",
-            "--no-update-check",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(level2_project),
+                "-f",
+                "compact",
+                "--no-update-check",
+            ],
+        )
         assert result.exit_code == 0, result.output
         assert len(result.output.strip()) > 0
 
     def test_missing_path_errors(self) -> None:
         """Non-existent path should produce error and exit 1."""
-        result = runner.invoke(app, [
-            "check", "/tmp/definitely-not-a-real-path-xyz",
-            "--no-update-check",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                "/tmp/definitely-not-a-real-path-xyz",
+                "--no-update-check",
+            ],
+        )
         assert result.exit_code == 1
 
     def test_no_instruction_files_message(self, tmp_path: Path) -> None:
         """Empty directory should report no instruction files."""
-        result = runner.invoke(app, [
-            "check", str(tmp_path),
-            "--no-update-check",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(tmp_path),
+                "--no-update-check",
+            ],
+        )
         assert result.exit_code == 0
         assert "No instruction files found" in result.output
 
@@ -139,12 +167,17 @@ class TestCheckCommand:
     def test_strict_mode_exits_1_on_violations(self, level2_project: Path) -> None:
         """--strict should exit 1 when violations exist."""
         # Use level2 — more rules apply, more likely to have violations
-        result = runner.invoke(app, [
-            "check", str(level2_project),
-            "--strict",
-            "--no-update-check",
-            "-f", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(level2_project),
+                "--strict",
+                "--no-update-check",
+                "-f",
+                "json",
+            ],
+        )
         # If rules apply and violations exist, exit 1; otherwise check score
         data = json.loads(result.output)
         if data.get("violations"):
@@ -157,10 +190,15 @@ class TestCheckCommand:
         """JSON format should not trigger update prompt (even without --no-update-check)."""
         # CliRunner is non-TTY so prompt would be skipped anyway,
         # but json format adds another guard
-        result = runner.invoke(app, [
-            "check", str(level2_project),
-            "-f", "json",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(level2_project),
+                "-f",
+                "json",
+            ],
+        )
         assert result.exit_code == 0, result.output
         # Output should be valid JSON (no prompt text mixed in)
         data = json.loads(result.output)
