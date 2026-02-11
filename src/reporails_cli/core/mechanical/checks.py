@@ -150,7 +150,7 @@ def frontmatter_key(
                         fm = yaml.safe_load(content[3:end])
                         if isinstance(fm, dict) and key in fm:
                             return CheckResult(passed=True, message=f"Key '{key}' found")
-            except Exception:
+            except (OSError, ValueError):
                 continue
     return CheckResult(passed=False, message=f"Frontmatter key '{key}' not found")
 

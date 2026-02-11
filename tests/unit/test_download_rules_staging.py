@@ -30,6 +30,11 @@ def _make_rules_tarball(manifest_content: str | None = None) -> bytes:
         info.size = len(rule_data)
         tar.addfile(info, io.BytesIO(rule_data))
 
+        # Add schemas/ dir (expected by _validate_rules_structure)
+        schemas_dir = tarfile.TarInfo(name="schemas/")
+        schemas_dir.type = tarfile.DIRTYPE
+        tar.addfile(schemas_dir)
+
         if manifest_content is not None:
             manifest_data = manifest_content.encode()
             info = tarfile.TarInfo(name="manifest.yml")
