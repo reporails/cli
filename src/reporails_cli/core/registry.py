@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -163,7 +164,8 @@ def _apply_agent_overrides(
     overrides: dict[str, dict[str, Any]],
 ) -> dict[str, Rule]:
     """Apply agent check-level overrides (severity, disabled)."""
-    for rule in rules.values():
+    result = {}
+    for rule_id, rule in rules.items():
         new_checks = []
         for check in rule.checks:
             override = overrides.get(check.id)
@@ -187,8 +189,8 @@ def _apply_agent_overrides(
                 )
             else:
                 new_checks.append(check)
-        rule.checks = new_checks
-    return rules
+        result[rule_id] = replace(rule, checks=new_checks)
+    return result
 
 
 def _load_project_config(project_root: Path | None) -> ProjectConfig:

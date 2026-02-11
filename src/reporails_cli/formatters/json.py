@@ -96,6 +96,7 @@ def format_result(
                 "rule_id": jr.rule_id,
                 "rule_title": jr.rule_title,
                 "question": jr.question,
+                "content": jr.content,
                 "location": jr.location,
                 "criteria": jr.criteria,
                 "examples": jr.examples,

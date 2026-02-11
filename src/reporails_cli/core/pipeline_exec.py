@@ -47,7 +47,10 @@ def execute_rule_checks(  # pylint: disable=too-many-arguments
     Returns:
         List of JudgmentRequests for semantic checks (may be empty).
     """
-    allowed = CEILING.get(rule.type, frozenset())
+    allowed = CEILING.get(rule.type)
+    if allowed is None:
+        logger.warning("Unknown rule type '%s' for rule %s, skipping all checks", rule.type, rule.id)
+        return []
     effective_vars = bind_instruction_files(template_vars, scan_root, instruction_files)
     location = resolve_location(scan_root, rule, effective_vars)
     judgment_requests: list[JudgmentRequest] = []
@@ -82,7 +85,7 @@ def _handle_mechanical(
     location: str,
 ) -> None:
     """Process a mechanical check within per-rule iteration."""
-    violation, result = dispatch_single_check(check, rule, scan_root, effective_vars, location)
+    violation, raw_result = dispatch_single_check(check, rule, scan_root, effective_vars, location)
 
     if violation:
         state.findings.append(violation)
@@ -90,8 +93,8 @@ def _handle_mechanical(
             loc_path = violation.location.rsplit(":", 1)[0] if ":" in violation.location else "."
             state.exclude_target(loc_path, check.check or "unknown")
 
-    if result and result.annotations:
-        _propagate_annotations(result.annotations, state, location)
+    if raw_result and raw_result.annotations:
+        _propagate_annotations(raw_result.annotations, state, location)
 
 
 def _handle_deterministic(
@@ -139,22 +142,23 @@ def _handle_negated_deterministic(
     if check_results:
         return  # Content found -> pass
 
-    display_target = rule.targets
-    if "{{" in display_target and template_vars:
+    # Resolve targets for display — reuse resolve_location to stay consistent
+    display_targets = rule.targets
+    if "{{" in display_targets and template_vars:
         for key, val in template_vars.items():
             placeholder = "{{" + key + "}}"
-            if placeholder in display_target:
+            if placeholder in display_targets:
                 resolved = ", ".join(val) if isinstance(val, list) else str(val)
-                display_target = display_target.replace(placeholder, resolved)
+                display_targets = display_targets.replace(placeholder, resolved)
 
     state.findings.append(
         Violation(
             rule_id=rule.id,
             rule_title=rule.title,
-            location=f"{display_target}:0",
+            location=f"{display_targets}:0",
             message="Expected content not found",
             severity=check.severity,
-            check_id=check.id.split(":")[-1] if ":" in check.id else None,
+            check_id=":".join(check.id.split(":")[3:]) if check.id.count(":") >= 4 else check.id,
         )
     )
 
@@ -189,7 +193,8 @@ def _filter_sarif_for_check(
     if len(parts) >= 5:
         expected_suffix = ":".join(parts[3:])
     else:
-        return sarif_results  # No check suffix to filter on
+        # Rule-level check (no suffix) — return all results for this rule
+        return list(sarif_results)
 
     matched = []
     for result in sarif_results:
