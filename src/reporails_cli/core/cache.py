@@ -170,11 +170,13 @@ class ProjectCache:
             return {"version": 1, "judgments": {}}
 
     def save_judgment_cache(self, data: dict[str, Any]) -> None:
-        """Save judgment cache."""
+        """Save judgment cache atomically (write to temp, then rename)."""
         self.ensure_dir()
         data["version"] = 1
         data["updated_at"] = datetime.now(UTC).isoformat()
-        self.judgment_cache_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp = self.judgment_cache_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(self.judgment_cache_path)
 
     def get_cached_judgment(self, file_path: str, content_hash: str) -> dict[str, Any] | None:
         """Get cached judgment for a file if hash matches."""
@@ -285,7 +287,9 @@ def save_project_analytics(analytics: ProjectAnalytics) -> None:
             for e in analytics.history
         ],
     }
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def get_previous_scan(target: Path) -> AnalyticsEntry | None:
@@ -370,6 +374,10 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
     cache = ProjectCache(project_root)
     recorded = 0
 
+    # Load cache once, accumulate changes, save once (atomic)
+    cache_data = cache.load_judgment_cache()
+    cache_judgments_dict = cache_data.setdefault("judgments", {})
+
     for j in judgments:
         if isinstance(j, str):
             rule_id, location, verdict, reason = _parse_verdict_string(j)
@@ -399,14 +407,23 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
         except OSError:
             continue
 
-        # Load existing results for this file, merge in new verdict
-        existing = cache.get_cached_judgment(file_path, file_hash) or {}
-        existing[rule_id] = {
+        # Merge verdict into in-memory cache
+        entry = cache_judgments_dict.get(file_path, {})
+        if entry.get("content_hash") != file_hash:
+            # File changed — reset cached results for this file
+            entry = {"content_hash": file_hash, "results": {}}
+        results = entry.setdefault("results", {})
+        results[rule_id] = {
             "verdict": verdict,
             "reason": reason,
         }
-        cache.set_cached_judgment(file_path, file_hash, existing)
+        entry["content_hash"] = file_hash
+        entry["evaluated_at"] = datetime.now(UTC).isoformat()
+        cache_judgments_dict[file_path] = entry
         recorded += 1
+
+    if recorded > 0:
+        cache.save_judgment_cache(cache_data)
 
     return recorded
 

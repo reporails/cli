@@ -12,9 +12,13 @@ from reporails_cli.formatters import text as text_formatter
 
 def _resolve_recommended_rules_paths(target: Path) -> list[Path] | None:
     """Build rules_paths including recommended package if enabled for target project."""
+    import logging
+
     from reporails_cli.core.bootstrap import get_project_config, get_recommended_package_path
     from reporails_cli.core.init import download_recommended, is_recommended_installed
     from reporails_cli.core.registry import get_rules_dir
+
+    logger = logging.getLogger("reporails")
 
     project_config = get_project_config(target)
     if not project_config.recommended:
@@ -23,7 +27,8 @@ def _resolve_recommended_rules_paths(target: Path) -> list[Path] | None:
     if not is_recommended_installed():
         try:
             download_recommended()
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to download recommended rules: %s: %s", type(e).__name__, e)
             return None
 
     rec_path = get_recommended_package_path()
