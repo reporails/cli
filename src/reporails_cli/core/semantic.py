@@ -13,6 +13,28 @@ from reporails_cli.core.models import JudgmentRequest, Rule, RuleType, Severity
 from reporails_cli.core.sarif import extract_rule_id, get_location
 
 
+def build_request_from_sarif_result(
+    rule: Rule,
+    sarif_result: dict[str, Any],
+    target: Path,
+) -> JudgmentRequest | None:
+    """Build a JudgmentRequest from a single SARIF result for a semantic rule.
+
+    Args:
+        rule: Semantic rule definition.
+        sarif_result: Single SARIF result dict.
+        target: Project root for snippet extraction.
+
+    Returns:
+        JudgmentRequest, or None if snippet missing or rule lacks required fields.
+    """
+    location = get_location(sarif_result)
+    snippet = extract_snippet(sarif_result, target)
+    if not snippet:
+        return None
+    return build_request(rule, snippet, location)
+
+
 def build_semantic_requests(
     sarif: dict[str, Any],
     rules: dict[str, Rule],
@@ -28,18 +50,12 @@ def build_semantic_requests(
         for result in run.get("results", []):
             sarif_rule_id = result.get("ruleId", "")
             rule_id = extract_rule_id(sarif_rule_id)
-            location = get_location(result)
 
             rule = semantic_rules.get(rule_id)
             if not rule:
                 continue
 
-            # Extract snippet from SARIF (not whole file!)
-            snippet = extract_snippet(result, target)
-            if not snippet:
-                continue
-
-            request = build_request(rule, snippet, location)
+            request = build_request_from_sarif_result(rule, result, target)
             if request:
                 requests.append(request)
 
