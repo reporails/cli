@@ -22,6 +22,11 @@ from reporails_cli.interfaces.mcp.tools import (
 # Create MCP server
 server = Server("ails")
 
+# Circuit breaker: track validate calls per resolved path per session.
+# After threshold, inject stop signal to prevent infinite validate-fix-validate loops.
+_validate_call_counts: dict[str, int] = {}
+_VALIDATE_CALL_THRESHOLD = 2
+
 
 @server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def list_tools() -> list[Tool]:
@@ -107,6 +112,27 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     if name == "validate":
         path = arguments.get("path", ".")
         target = Path(path).resolve()
+
+        # Circuit breaker: prevent infinite validate-fix-validate loops
+        path_key = str(target)
+        _validate_call_counts[path_key] = _validate_call_counts.get(path_key, 0) + 1
+        call_count = _validate_call_counts[path_key]
+
+        if call_count > _VALIDATE_CALL_THRESHOLD:
+            return [TextContent(
+                type="text",
+                text=(
+                    "STOP — circuit breaker triggered.\n\n"
+                    f"You have already validated this path {call_count - 1} times in this session. "
+                    "Repeated validate-fix-validate cycles indicate a rule that cannot be "
+                    "resolved automatically (e.g., negated checks, conflicting rules, or "
+                    "rules requiring user decisions).\n\n"
+                    "DO NOT call validate again for this path. Instead:\n"
+                    "1. Report the remaining violations to the user\n"
+                    "2. Explain which ones you could not resolve and why\n"
+                    "3. Let the user decide how to proceed"
+                ),
+            )]
 
         # Check initialization
         if not is_initialized():
