@@ -114,6 +114,33 @@ def score_tool(path: str = ".") -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def judge_tool(path: str = ".", verdicts: list[str] | None = None) -> dict[str, Any]:
+    """
+    Cache semantic judgment verdicts so they persist across validation runs.
+
+    Args:
+        path: Project root directory (default: current directory)
+        verdicts: Verdict strings in rule_id:location:verdict:reason format
+
+    Returns:
+        Dict with recorded count or error
+    """
+    if not verdicts:
+        return {"error": "No verdicts provided"}
+
+    target = Path(path).resolve()
+    if not target.exists():
+        return {"error": f"Path not found: {target}"}
+
+    try:
+        from reporails_cli.core.cache import cache_judgments
+
+        recorded = cache_judgments(target, verdicts)
+        return {"recorded": recorded}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def explain_tool(rule_id: str) -> dict[str, Any]:
     """
     Get detailed info about a specific rule.
