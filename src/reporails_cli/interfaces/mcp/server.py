@@ -15,6 +15,7 @@ from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.mcp.tools import (
     explain_tool,
+    judge_tool,
     score_tool,
 )
 
@@ -73,6 +74,26 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["rule_id"],
+            },
+        ),
+        Tool(
+            name="judge",
+            description="Cache semantic rule verdicts so they persist across validation runs.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Project root directory",
+                        "default": ".",
+                    },
+                    "verdicts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Verdict strings in rule_id:location:verdict:reason format",
+                    },
+                },
+                "required": ["verdicts"],
             },
         ),
     ]
@@ -162,9 +183,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 "After evaluating semantic rules above, report the FINAL score. "
                 "If all semantic rules pass, the score remains the same but is now COMPLETE (not partial). "
                 "If any semantic rules fail, add those violations and recalculate.\n\n"
-                "IMPORTANT: Cache your verdicts via Bash so they persist across runs:\n"
-                '  ails judge . "C6:CLAUDE.md:pass:Criteria met" "M2:.claude/rules/foo.md:fail:Contradictions found"\n'
-                "Format: rule_id:location:verdict:reason"
+                "IMPORTANT: Cache your verdicts using the judge tool so they persist across runs.\n"
+                "Format each verdict as: rule_id:location:verdict:reason\n"
+                'Example: judge(verdicts=["C6:CLAUDE.md:pass:Criteria met", '
+                '"M2:.claude/rules/foo.md:fail:Contradictions found"])'
             )
 
         return [TextContent(type="text", text="\n".join(response_parts))]
@@ -176,6 +198,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         rule_id = arguments.get("rule_id", "")
         explain_result = explain_tool(rule_id)
         return [TextContent(type="text", text=json.dumps(explain_result, indent=2))]
+    elif name == "judge":
+        path = arguments.get("path", ".")
+        verdicts = arguments.get("verdicts", [])
+        judge_result = judge_tool(path, verdicts)
+        return [TextContent(type="text", text=json.dumps(judge_result, indent=2))]
     else:
         return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}, indent=2))]
 
