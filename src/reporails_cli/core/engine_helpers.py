@@ -25,7 +25,11 @@ from reporails_cli.core.sarif import distribute_sarif_by_rule
 
 
 def _find_project_root(target: Path) -> Path:
-    """Walk up from target to find project root (backbone > .git > target)."""
+    """Walk up from target to find project root (nearest backbone > .git > target).
+
+    Nearest backbone wins: if the target itself has a backbone.yml, that IS
+    the project root — don't walk past it to a parent coordination root.
+    """
     current = target if target.is_dir() else target.parent
     first_git = None
     while current != current.parent:
@@ -33,12 +37,7 @@ def _find_project_root(target: Path) -> Path:
             first_git = current
         backbone = current / ".reporails" / "backbone.yml"
         if backbone.exists():
-            try:
-                text = backbone.read_text(encoding="utf-8")
-                if "\nchildren:" in text or "\nrepos:" in text:
-                    return current
-            except OSError:
-                pass
+            return current
         current = current.parent
     return first_git or target
 
