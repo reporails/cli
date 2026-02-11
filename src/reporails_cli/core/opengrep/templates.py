@@ -107,7 +107,7 @@ def resolve_templates(yml_path: Path, context: dict[str, str | list[str]]) -> st
         if isinstance(value, list):
             # Find the line with the placeholder and its indentation
             lines = content.split("\n")
-            new_lines = []
+            new_lines: list[str] = []
             for line in lines:
                 if placeholder in line:
                     stripped = line.lstrip()
@@ -117,8 +117,7 @@ def resolve_templates(yml_path: Path, context: dict[str, str | list[str]]) -> st
                     # Check context: array (starts with -) or pattern-regex
                     if stripped.startswith("- "):
                         # Array context: expand to multiple list items
-                        for item in value:
-                            new_lines.append(f'{indent_str}- "{item}"')
+                        new_lines.extend(f'{indent_str}- "{item}"' for item in value)
                     elif "pattern-regex:" in line or "pattern-not-regex:" in line:
                         # Regex context: convert globs to regex, join with |
                         regex_patterns = [_glob_to_regex(g) for g in value]

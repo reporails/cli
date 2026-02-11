@@ -62,17 +62,26 @@ Reporails validates AI coding agent instruction files against community-maintain
 reporails-cli/
 ├── src/reporails_cli/
 │   ├── core/
-│   │   ├── init.py           # Download OpenGrep + framework + recommended
+│   │   ├── init.py           # Re-exports + run_init()
+│   │   ├── download.py       # Download OpenGrep, rules, recommended
+│   │   ├── updater.py        # Version fetching + update orchestration
 │   │   ├── bootstrap.py      # Path helpers
 │   │   ├── levels.py         # Level config, rule mapping
 │   │   ├── discover.py       # Project discovery
-│   │   ├── engine.py         # Validation orchestration (~170 lines)
+│   │   ├── engine.py         # Validation orchestration
+│   │   ├── engine_helpers.py  # Validation sub-functions
 │   │   ├── registry.py       # Rule loading + resolution
+│   │   ├── rule_builder.py   # Rule construction + tier derivation
 │   │   ├── scorer.py         # Score calculation
-│   │   ├── models.py         # Data models
-│   │   ├── cache.py          # Caching + analytics
+│   │   ├── models.py         # Core data models (enums, Rule, Violation)
+│   │   ├── results.py        # Result models (features, configs, ValidationResult)
+│   │   ├── cache.py          # Judgment caching
+│   │   ├── analytics.py      # Scan analytics + project identification
 │   │   ├── update_check.py   # Update staleness detection + pre-run prompt
+│   │   ├── self_update.py    # CLI self-upgrade
 │   │   ├── mechanical/       # Mechanical rule checks (package)
+│   │   │   ├── checks.py     # Simple checks + registry
+│   │   │   └── checks_advanced.py  # Complex checks
 │   │   ├── opengrep/         # OpenGrep execution (package)
 │   │   │   ├── runner.py     # Binary execution
 │   │   │   ├── templates.py  # {{placeholder}} resolution
@@ -83,13 +92,17 @@ reporails-cli/
 │   ├── templates/            # CLI output templates
 │   ├── interfaces/
 │   │   ├── mcp/server.py     # MCP server
-│   │   └── cli/main.py       # Typer CLI
+│   │   └── cli/
+│   │       ├── main.py       # check + explain commands
+│   │       ├── commands.py   # map, sync, update, judge, version
+│   │       └── helpers.py    # Shared CLI utilities
 │   └── formatters/
 │       ├── json.py           # Canonical format
 │       ├── text/             # Terminal display (package)
 │       │   ├── full.py       # Full output
 │       │   ├── compact.py    # Non-TTY output
 │       │   ├── box.py        # Assessment box
+│       │   ├── violations.py # Violation rendering
 │       │   └── ...
 │       └── mcp.py            # MCP wrapper
 ├── docs/specs/               # Architecture docs
@@ -400,7 +413,7 @@ Pattern matching powered by [OpenGrep](https://github.com/opengrep/opengrep).
 
 ## Quality Gates
 
-- `poe qa_fast` — lint, type check, unit tests (pre-commit)
+- `poe qa_fast` — format, lint, pylint structural, type check, unit tests (pre-commit)
 - `poe qa` — full QA including integration tests
 
 ## Related Docs

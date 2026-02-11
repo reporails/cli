@@ -102,7 +102,13 @@ class TestBuildRuleBasic:
             **MINIMAL_FRONTMATTER,
             "type": "mechanical",
             "checks": [
-                {"id": "CORE:S:0005:check:0001", "type": "mechanical", "check": "line_count", "args": {"max": 300}, "severity": "high"},
+                {
+                    "id": "CORE:S:0005:check:0001",
+                    "type": "mechanical",
+                    "check": "line_count",
+                    "args": {"max": 300},
+                    "severity": "high",
+                },
             ],
         }
         rule = build_rule(fm, Path("test.md"), None)

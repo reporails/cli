@@ -81,7 +81,7 @@ See `docs/specs/arch.md` for full architecture.
 
 ## QA Commands
 
-- `uv run poe qa_fast` — Lint, type check, unit tests (pre-commit)
+- `uv run poe qa_fast` — Format, lint, pylint structural, type check, unit tests (pre-commit)
 - `uv run poe qa` — Full QA including integration tests
 
 ## Architecture

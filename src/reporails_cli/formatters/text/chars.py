@@ -12,19 +12,41 @@ ASCII_MODE = os.environ.get("AILS_ASCII", "").lower() in ("1", "true", "yes")
 
 # Character sets for box drawing
 UNICODE_CHARS = {
-    "tl": "╔", "tr": "╗", "bl": "╚", "br": "╝",
-    "h": "═", "v": "║",
-    "filled": "▓", "empty": "░",
-    "check": "✓", "crit": "▲", "high": "!", "med": "○", "low": "·",
-    "up": "↑", "down": "↓", "sep": "─",
+    "tl": "╔",
+    "tr": "╗",
+    "bl": "╚",
+    "br": "╝",
+    "h": "═",
+    "v": "║",
+    "filled": "▓",
+    "empty": "░",
+    "check": "✓",
+    "crit": "▲",
+    "high": "!",
+    "med": "○",
+    "low": "·",
+    "up": "↑",
+    "down": "↓",
+    "sep": "─",
 }
 
 ASCII_CHARS = {
-    "tl": "+", "tr": "+", "bl": "+", "br": "+",
-    "h": "-", "v": "|",
-    "filled": "#", "empty": ".",
-    "check": "*", "crit": "!", "high": "!", "med": "o", "low": "-",
-    "up": "^", "down": "v", "sep": "-",
+    "tl": "+",
+    "tr": "+",
+    "bl": "+",
+    "br": "+",
+    "h": "-",
+    "v": "|",
+    "filled": "#",
+    "empty": ".",
+    "check": "*",
+    "crit": "!",
+    "high": "!",
+    "med": "o",
+    "low": "-",
+    "up": "^",
+    "down": "v",
+    "sep": "-",
 }
 
 

@@ -45,7 +45,7 @@ def dedupe_violations(violations: list[Violation]) -> list[Violation]:
 def calculate_score(rules_checked: int, violations: list[Violation]) -> float:
     """Calculate display score on 0-10 scale.
 
-    Score = (earned_points / possible_points) × 10
+    Score = (earned_points / possible_points) x 10
 
     Lost points are capped per rule - multiple violations of the same rule
     don't deduct more than the rule's weight (DEFAULT_RULE_WEIGHT).

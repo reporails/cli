@@ -119,7 +119,9 @@ def _bind_instruction_files(
 
 
 def _resolve_location(
-    target: Path, rule: Rule, template_vars: dict[str, str | list[str]],
+    target: Path,
+    rule: Rule,
+    template_vars: dict[str, str | list[str]],
 ) -> str:
     """Resolve a location string for mechanical violations.
 

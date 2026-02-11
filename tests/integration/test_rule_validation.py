@@ -30,7 +30,8 @@ class TestOpenGrepSchemaValidation:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -57,7 +58,8 @@ class TestOpenGrepSchemaValidation:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -87,8 +89,10 @@ class TestOpenGrepSchemaValidation:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--output", str(tmp_path / "out.sarif"),
-                "--config", str(rule_path),
+                "--output",
+                str(tmp_path / "out.sarif"),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -103,14 +107,9 @@ class TestOpenGrepSchemaValidation:
                 sarif = json.loads(sarif_path.read_text())
                 runs = sarif.get("runs", [])
                 if runs:
-                    notifications = (
-                        runs[0]
-                        .get("invocations", [{}])[0]
-                        .get("toolExecutionNotifications", [])
-                    )
+                    notifications = runs[0].get("invocations", [{}])[0].get("toolExecutionNotifications", [])
                     has_schema_error = any(
-                        "InvalidRuleSchemaError" in n.get("descriptor", {}).get("id", "")
-                        for n in notifications
+                        "InvalidRuleSchemaError" in n.get("descriptor", {}).get("id", "") for n in notifications
                     )
                     assert has_schema_error, (
                         "OpenGrep accepted invalid top-level pattern-not-regex!\n"
@@ -118,9 +117,7 @@ class TestOpenGrepSchemaValidation:
                     )
         else:
             # Non-zero exit code is expected for invalid config
-            assert result.returncode == 7, (
-                f"Expected exit code 7 for invalid config, got {result.returncode}"
-            )
+            assert result.returncode == 7, f"Expected exit code 7 for invalid config, got {result.returncode}"
 
     def test_correct_pattern_not_regex_in_patterns_block(
         self,
@@ -151,15 +148,15 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
         )
 
         assert result.returncode in (0, 1), (
-            f"Correct pattern-not-regex in patterns block rejected:\n"
-            f"stderr: {result.stderr.decode()}"
+            f"Correct pattern-not-regex in patterns block rejected:\nstderr: {result.stderr.decode()}"
         )
 
 
@@ -186,7 +183,8 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -216,7 +214,8 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -246,7 +245,8 @@ rules:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--config", str(rule_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -275,8 +275,10 @@ class TestSARIFErrorReporting:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--output", str(sarif_path),
-                "--config", str(rule_path),
+                "--output",
+                str(sarif_path),
+                "--config",
+                str(rule_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -289,21 +291,11 @@ class TestSARIFErrorReporting:
         assert runs, "SARIF has no runs"
 
         # Check for error notifications
-        notifications = (
-            runs[0]
-            .get("invocations", [{}])[0]
-            .get("toolExecutionNotifications", [])
-        )
+        notifications = runs[0].get("invocations", [{}])[0].get("toolExecutionNotifications", [])
 
-        error_messages = [
-            n.get("message", {}).get("text", "")
-            for n in notifications
-            if n.get("level") == "error"
-        ]
+        error_messages = [n.get("message", {}).get("text", "") for n in notifications if n.get("level") == "error"]
 
-        assert error_messages, (
-            "SARIF should contain error notifications for invalid rule"
-        )
+        assert error_messages, "SARIF should contain error notifications for invalid rule"
 
         # Error should mention the rule ID or schema issue
         combined_errors = " ".join(error_messages)
@@ -330,9 +322,7 @@ class TestCLIRuleValidation:
         - Overall result should indicate partial success
         """
         valid_path = create_temp_rule_file(tmp_path, valid_rule_yaml, "valid.yml")
-        invalid_path = create_temp_rule_file(
-            tmp_path, invalid_toplevel_pattern_not_regex_yaml, "invalid.yml"
-        )
+        invalid_path = create_temp_rule_file(tmp_path, invalid_toplevel_pattern_not_regex_yaml, "invalid.yml")
 
         sarif_path = tmp_path / "output.sarif"
 
@@ -341,9 +331,12 @@ class TestCLIRuleValidation:
                 str(opengrep_bin),
                 "scan",
                 "--sarif",
-                "--output", str(sarif_path),
-                "--config", str(valid_path),
-                "--config", str(invalid_path),
+                "--output",
+                str(sarif_path),
+                "--config",
+                str(valid_path),
+                "--config",
+                str(invalid_path),
                 str(tmp_path),
             ],
             capture_output=True,
@@ -356,13 +349,7 @@ class TestCLIRuleValidation:
         runs = sarif.get("runs", [])
 
         # Should have notifications about the invalid rule
-        notifications = (
-            runs[0]
-            .get("invocations", [{}])[0]
-            .get("toolExecutionNotifications", [])
-        )
+        notifications = runs[0].get("invocations", [{}])[0].get("toolExecutionNotifications", [])
 
         has_errors = any(n.get("level") == "error" for n in notifications)
-        assert has_errors, (
-            "Should report error for invalid rule in mixed config"
-        )
+        assert has_errors, "Should report error for invalid rule in mixed config"

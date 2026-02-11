@@ -26,31 +26,40 @@ from reporails_cli.core.update_check import (
 
 
 class TestUpdateNotification:
-    @pytest.mark.parametrize("current,latest,expected", [
-        ("0.1.0", "0.2.0", True),
-        ("0.1.0", "0.1.0", False),
-        (None, None, False),
-    ])
+    @pytest.mark.parametrize(
+        "current,latest,expected",
+        [
+            ("0.1.0", "0.2.0", True),
+            ("0.1.0", "0.1.0", False),
+            (None, None, False),
+        ],
+    )
     def test_has_cli_update(self, current: str | None, latest: str | None, expected: bool) -> None:
         n = UpdateNotification(cli_current=current, cli_latest=latest)
         assert n.has_cli_update is expected
 
-    @pytest.mark.parametrize("current,latest,expected", [
-        ("0.0.1", "0.0.2", True),
-        ("0.0.1", "0.0.1", False),
-        (None, None, False),
-    ])
+    @pytest.mark.parametrize(
+        "current,latest,expected",
+        [
+            ("0.0.1", "0.0.2", True),
+            ("0.0.1", "0.0.1", False),
+            (None, None, False),
+        ],
+    )
     def test_has_rules_update(self, current: str | None, latest: str | None, expected: bool) -> None:
         n = UpdateNotification(rules_current=current, rules_latest=latest)
         assert n.has_rules_update is expected
 
-    @pytest.mark.parametrize("current,latest,expected", [
-        ("0.1.0", "0.2.0", True),
-        ("0.1.0", "0.1.0", False),
-        (None, None, False),
-        ("0.1.0", None, False),
-        (None, "0.2.0", False),
-    ])
+    @pytest.mark.parametrize(
+        "current,latest,expected",
+        [
+            ("0.1.0", "0.2.0", True),
+            ("0.1.0", "0.1.0", False),
+            (None, None, False),
+            ("0.1.0", None, False),
+            (None, "0.2.0", False),
+        ],
+    )
     def test_has_recommended_update(self, current: str | None, latest: str | None, expected: bool) -> None:
         n = UpdateNotification(recommended_current=current, recommended_latest=latest)
         assert n.has_recommended_update is expected

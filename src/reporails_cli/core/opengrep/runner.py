@@ -39,7 +39,80 @@ def _log_timing(label: str, elapsed_ms: float) -> None:
         print(f"[perf] {label}: {elapsed_ms:.0f}ms", file=sys.stderr)
 
 
-def run_opengrep(
+def _resolve_scan_targets(
+    target: Path,
+    instruction_files: list[Path] | None,
+    extra_targets: list[Path] | None,
+) -> tuple[list[str], bool]:
+    """Build scan targets from instruction files or directory target.
+
+    Args:
+        target: Directory to scan (fallback when instruction_files not provided)
+        instruction_files: Explicit list of files to scan
+        extra_targets: Additional file paths to scan
+
+    Returns:
+        Tuple of (scan_targets list, use_file_targets flag)
+    """
+    use_file_targets = bool(instruction_files)
+    scan_targets: list[str] = []
+
+    if use_file_targets:
+        assert instruction_files is not None
+        seen: set[Path] = set()
+        for ifile in instruction_files:
+            resolved = ifile.resolve()
+            if resolved not in seen and resolved.exists():
+                seen.add(resolved)
+                scan_targets.append(str(resolved))
+        if extra_targets:
+            for extra in extra_targets:
+                resolved = extra.resolve()
+                if resolved not in seen and resolved.exists():
+                    seen.add(resolved)
+                    scan_targets.append(str(resolved))
+    else:
+        scan_targets.append(str(target))
+        if extra_targets:
+            scan_targets.extend(str(extra) for extra in extra_targets)
+
+    return scan_targets, use_file_targets
+
+
+def _parse_opengrep_output(
+    proc: subprocess.CompletedProcess[bytes],
+    sarif_path: Path,
+) -> dict[str, Any]:
+    """Handle return code checking, JSON parsing, and fallback error handling.
+
+    Args:
+        proc: Completed OpenGrep process
+        sarif_path: Path to the SARIF output file
+
+    Returns:
+        Parsed SARIF dict
+    """
+    # Check for errors (0 = no findings, 1 = findings found)
+    if proc.returncode not in (0, 1):
+        logger.warning(
+            "OpenGrep failed with code %d: %s",
+            proc.returncode,
+            proc.stderr.decode("utf-8", errors="replace")[:500],
+        )
+        return {"runs": []}
+
+    # Parse SARIF output
+    if sarif_path.exists():
+        try:
+            result: dict[str, Any] = json.loads(sarif_path.read_text(encoding="utf-8"))
+            return result
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid SARIF output from OpenGrep: %s", e)
+            return {"runs": []}
+    return {"runs": []}
+
+
+def run_opengrep(  # pylint: disable=too-many-locals,too-many-branches
     yml_paths: list[Path],
     target: Path,
     opengrep_path: Path | None = None,
@@ -48,25 +121,7 @@ def run_opengrep(
     instruction_files: list[Path] | None = None,
     exclude_dirs: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Execute OpenGrep with specified rule configs.
-
-    Shells out to OpenGrep, returns parsed SARIF.
-
-    Args:
-        yml_paths: List of .yml rule config files (must exist)
-        target: Directory to scan (used as fallback when instruction_files not provided)
-        opengrep_path: Path to OpenGrep binary (optional, auto-detects)
-        template_context: Optional dict for resolving {{placeholder}} in yml files
-        extra_targets: Additional file paths to scan (e.g. resolved symlinks
-            whose targets fall outside the scan directory)
-        instruction_files: Explicit list of files to scan. When provided, these
-            are passed directly to OpenGrep instead of the target directory,
-            avoiding a full tree walk.
-        exclude_dirs: Directory names to add to .semgrepignore (for directory scans)
-
-    Returns:
-        Parsed SARIF JSON output
-    """
+    """Execute OpenGrep with specified rule configs, returns parsed SARIF."""
     start_time = time.perf_counter()
 
     # Filter to only existing yml files - don't call OpenGrep with nothing to run
@@ -89,29 +144,13 @@ def run_opengrep(
     temp_dir = TemporaryDirectory() if template_context else None
 
     # Build scan targets: explicit files or directory
-    use_file_targets = bool(instruction_files)
-    scan_targets: list[str] = []
-    if use_file_targets:
-        assert instruction_files is not None
-        seen: set[Path] = set()
-        for ifile in instruction_files:
-            resolved = ifile.resolve()
-            if resolved not in seen and resolved.exists():
-                seen.add(resolved)
-                scan_targets.append(str(resolved))
-        if extra_targets:
-            for extra in extra_targets:
-                resolved = extra.resolve()
-                if resolved not in seen and resolved.exists():
-                    seen.add(resolved)
-                    scan_targets.append(str(resolved))
-        if not scan_targets:
-            return {"runs": []}
-    else:
-        scan_targets.append(str(target))
-        if extra_targets:
-            for extra in extra_targets:
-                scan_targets.append(str(extra))
+    scan_targets, use_file_targets = _resolve_scan_targets(
+        target,
+        instruction_files,
+        extra_targets,
+    )
+    if not scan_targets:
+        return {"runs": []}
 
     # Ensure .semgrepignore exists for performance (only needed for directory scans)
     created_semgrepignore = ensure_semgrepignore(target, extra_excludes=exclude_dirs) if not use_file_targets else None
@@ -155,24 +194,7 @@ def run_opengrep(
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         _log_timing(f"opengrep ({len(config_paths)} rules)", elapsed_ms)
 
-        # Check for errors (0 = no findings, 1 = findings found)
-        if proc.returncode not in (0, 1):
-            logger.warning(
-                "OpenGrep failed with code %d: %s",
-                proc.returncode,
-                proc.stderr.decode("utf-8", errors="replace")[:500],
-            )
-            return {"runs": []}
-
-        # Parse SARIF output
-        if sarif_path.exists():
-            try:
-                result: dict[str, Any] = json.loads(sarif_path.read_text(encoding="utf-8"))
-                return result
-            except json.JSONDecodeError as e:
-                logger.warning("Invalid SARIF output from OpenGrep: %s", e)
-                return {"runs": []}
-        return {"runs": []}
+        return _parse_opengrep_output(proc, sarif_path)
 
     finally:
         if sarif_path.exists():
@@ -208,7 +230,9 @@ def run_capability_detection(
         return {"runs": []}
 
     return run_opengrep(
-        [patterns_path], target, extra_targets=extra_targets,
+        [patterns_path],
+        target,
+        extra_targets=extra_targets,
         instruction_files=instruction_files,
     )
 
@@ -236,7 +260,9 @@ def run_rule_validation(
         return {"runs": []}
 
     return run_opengrep(
-        yml_paths, target, extra_targets=extra_targets,
+        yml_paths,
+        target,
+        extra_targets=extra_targets,
         instruction_files=instruction_files,
     )
 
@@ -250,7 +276,4 @@ def get_rule_yml_paths(rules: dict[str, Rule]) -> list[Path]:
     Returns:
         List of paths to existing .yml files
     """
-    return [
-        r.yml_path for r in rules.values()
-        if r.yml_path is not None and r.yml_path.exists()
-    ]
+    return [r.yml_path for r in rules.values() if r.yml_path is not None and r.yml_path.exists()]
