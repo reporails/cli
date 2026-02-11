@@ -70,7 +70,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
         opengrep_path = get_opengrep_bin()
 
     # Get template vars from agent config for yml placeholder resolution
-    template_context = get_agent_vars(agent) if agent else {}
+    template_context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
 
     # Load rules if not provided
     if rules is None:

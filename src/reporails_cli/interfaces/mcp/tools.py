@@ -146,17 +146,28 @@ def judge_tool(path: str = ".", verdicts: list[str] | None = None) -> dict[str, 
         return {"error": str(e)}
 
 
-def explain_tool(rule_id: str) -> dict[str, Any]:
+def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[str, Any]:
     """
     Get detailed info about a specific rule.
 
     Args:
         rule_id: Rule identifier (e.g., S1, C2)
+        rules_paths: Optional rules directories (for CLI/testing; MCP auto-resolves)
 
     Returns:
         Rule details dict
     """
-    rules = load_rules()
+    if rules_paths is None:
+        from reporails_cli.core.bootstrap import get_recommended_package_path
+        from reporails_cli.core.registry import get_rules_dir
+
+        # Auto-resolve: include recommended if available
+        rec_path = get_recommended_package_path()
+        if rec_path.is_dir():
+            rules_paths = [get_rules_dir(), rec_path]
+
+    # include_experimental=True so any rule can be explained
+    rules = load_rules(rules_paths, include_experimental=True)
 
     # Normalize rule ID
     rule_id_upper = rule_id.upper()
