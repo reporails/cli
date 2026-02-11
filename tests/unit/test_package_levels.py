@@ -47,8 +47,9 @@ class TestGetApplicableRulesLevelFiltering:
 
     def test_supersession_drops_superseded_rule(self) -> None:
         """If rule A supersedes rule B, and both are applicable, B is dropped."""
-        rule_a = _make_rule("CORE:S:0010", "L3")
-        rule_a.supersedes = "CORE:S:0001"
+        from dataclasses import replace
+
+        rule_a = replace(_make_rule("CORE:S:0010", "L3"), supersedes="CORE:S:0001")
         rules = {
             "CORE:S:0001": _make_rule("CORE:S:0001", "L2"),
             "CORE:S:0010": rule_a,

@@ -88,6 +88,12 @@ class TestContentAbsent:
         result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, _vars())
         assert not result.passed
 
+    def test_invalid_regex_returns_failure(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        result = content_absent(tmp_path, {"pattern": "[invalid"}, _vars())
+        assert not result.passed
+        assert "invalid regex" in result.message
+
 
 class TestRunMechanicalChecks:
     """Test the runner that dispatches rules to check functions."""

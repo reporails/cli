@@ -91,7 +91,7 @@ class Check:
     negate: bool = False  # If True, finding = pass (content present), no finding = violation
 
 
-@dataclass
+@dataclass(frozen=True)
 class Rule:  # pylint: disable=too-many-instance-attributes
     """A rule definition loaded from framework frontmatter."""
 

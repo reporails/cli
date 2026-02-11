@@ -18,6 +18,8 @@ from reporails_cli.core.download import (
     RECOMMENDED_API_URL,
     RULES_API_URL,
     RULES_TARBALL_URL,
+    _safe_extractall,
+    _validate_rules_structure,
     copy_bundled_yml_files,
     download_recommended,
     write_version_file,
@@ -95,13 +97,26 @@ def download_rules_version(version: str) -> tuple[Path, int]:
             tarball_path.write_bytes(response.content)
 
         with tarfile.open(tarball_path, "r:gz") as tar:
-            tar.extractall(path=staging_path)
+            _safe_extractall(tar, staging_path)
 
+        _validate_rules_structure(staging_path)
         check_manifest_compatibility(staging_path)
 
+        # Atomic-ish swap: rename old out, move new in, then remove old
+        old_backup = rules_path.with_suffix(".old")
+        if old_backup.exists():
+            shutil.rmtree(old_backup)
         if rules_path.exists():
-            shutil.rmtree(rules_path)
-        shutil.move(str(staging_path), str(rules_path))
+            rules_path.rename(old_backup)
+        try:
+            shutil.move(str(staging_path), str(rules_path))
+        except Exception:
+            # Restore old rules on failure
+            if old_backup.exists():
+                old_backup.rename(rules_path)
+            raise
+        if old_backup.exists():
+            shutil.rmtree(old_backup)
 
         tarball_count = sum(1 for _ in rules_path.rglob("*") if _.is_file())
 
