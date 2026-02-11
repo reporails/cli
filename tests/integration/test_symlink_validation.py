@@ -73,7 +73,9 @@ class TestSymlinkIntegration:
             pytest.skip("Capability patterns not available")
 
         sarif = run_opengrep(
-            [capability_patterns], project, opengrep_bin,
+            [capability_patterns],
+            project,
+            opengrep_bin,
             extra_targets=features.resolved_symlinks,
         )
 

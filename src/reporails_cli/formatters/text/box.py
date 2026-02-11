@@ -2,6 +2,7 @@
 
 Handles the main score/capability box at the top of output.
 """
+# pylint: disable=too-many-locals,too-many-statements
 
 from __future__ import annotations
 
@@ -61,7 +62,7 @@ def format_assessment_box(
     if gap < 3:
         # Truncate label if needed
         max_label = box_width - 3 - len(left) - 3 - len(f"CAPABILITY:  ({level_display}){level_delta_str}") - 3
-        level_label = level_label[:max(max_label, 3)] + "..."
+        level_label = level_label[: max(max_label, 3)] + "..."
         right = f"CAPABILITY: {level_label} ({level_display}){level_delta_str}"
         gap = box_width - 3 - len(left) - len(right) - 3
     score_text = f"{left}{' ' * gap}{right}"
@@ -122,7 +123,8 @@ def format_assessment_box(
     else:
         category_section = empty_line
 
-    return render("cli_box.txt",
+    return render(
+        "cli_box.txt",
         top_border=top_border,
         bottom_border=bottom_border,
         empty_line=empty_line,

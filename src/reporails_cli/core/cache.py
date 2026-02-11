@@ -14,18 +14,23 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.bootstrap import get_reporails_home
-
-
-def get_analytics_dir() -> Path:
-    """Get global analytics directory."""
-    return get_reporails_home() / "analytics" / "projects"
+# Re-exports for backward compatibility (explicit re-export via `as` for mypy)
+from reporails_cli.core.analytics import AnalyticsEntry as AnalyticsEntry
+from reporails_cli.core.analytics import ProjectAnalytics as ProjectAnalytics
+from reporails_cli.core.analytics import get_analytics_dir as get_analytics_dir
+from reporails_cli.core.analytics import get_git_remote as get_git_remote
+from reporails_cli.core.analytics import get_previous_scan as get_previous_scan
+from reporails_cli.core.analytics import get_project_analytics_path as get_project_analytics_path
+from reporails_cli.core.analytics import get_project_id as get_project_id
+from reporails_cli.core.analytics import get_project_name as get_project_name
+from reporails_cli.core.analytics import load_project_analytics as load_project_analytics
+from reporails_cli.core.analytics import record_scan as record_scan
+from reporails_cli.core.analytics import save_project_analytics as save_project_analytics
 
 
 def content_hash(path: Path) -> str:
@@ -34,53 +39,6 @@ def content_hash(path: Path) -> str:
     Returns a prefixed truncated hash suitable for cache keys.
     """
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-
-
-# =============================================================================
-# Project Identification
-# =============================================================================
-
-
-def get_git_remote(target: Path) -> str | None:
-    """Get git remote URL for project identification."""
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=target,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return None
-
-
-def get_project_id(target: Path) -> str:
-    """
-    Get unique project identifier.
-
-    Uses git remote URL hash for consistency across clones,
-    falls back to absolute path hash.
-
-    Args:
-        target: Project root
-
-    Returns:
-        12-character hex hash
-    """
-    # Try git remote first (consistent across clones), fallback to absolute path
-    remote = get_git_remote(target)
-    source = remote or str(target.resolve())
-
-    return hashlib.sha256(source.encode()).hexdigest()[:12]
-
-
-def get_project_name(target: Path) -> str:
-    """Get human-readable project name."""
-    return target.resolve().name
 
 
 # =============================================================================
@@ -162,9 +120,7 @@ class ProjectCache:
         if not self.judgment_cache_path.exists():
             return {"version": 1, "judgments": {}}
         try:
-            result: dict[str, Any] = json.loads(
-                self.judgment_cache_path.read_text(encoding="utf-8")
-            )
+            result: dict[str, Any] = json.loads(self.judgment_cache_path.read_text(encoding="utf-8"))
             return result
         except (json.JSONDecodeError, OSError):
             return {"version": 1, "judgments": {}}
@@ -193,9 +149,7 @@ class ProjectCache:
         results: dict[str, Any] | None = entry.get("results")
         return results
 
-    def set_cached_judgment(
-        self, file_path: str, content_hash: str, results: dict[str, Any]
-    ) -> None:
+    def set_cached_judgment(self, file_path: str, content_hash: str, results: dict[str, Any]) -> None:
         """Cache judgment results for a file."""
         cache = self.load_judgment_cache()
         cache.setdefault("judgments", {})[file_path] = {
@@ -207,106 +161,8 @@ class ProjectCache:
 
 
 # =============================================================================
-# Global Analytics Cache (~/.reporails/analytics/)
+# Verdict Parsing & Judgment Caching
 # =============================================================================
-
-
-@dataclass
-class AnalyticsEntry:
-    """Single analytics entry for a project scan."""
-
-    timestamp: str
-    score: float
-    level: str
-    violations_count: int
-    rules_checked: int
-    elapsed_ms: float
-    instruction_files: int
-
-
-@dataclass
-class ProjectAnalytics:
-    """Analytics for a single project."""
-
-    project_id: str
-    project_name: str
-    project_path: str
-    first_seen: str
-    last_seen: str
-    scan_count: int = 0
-    history: list[AnalyticsEntry] = field(default_factory=list)
-
-
-def get_project_analytics_path(project_id: str) -> Path:
-    """Get path to project's analytics file."""
-    return get_analytics_dir() / f"{project_id}.json"
-
-
-def load_project_analytics(project_id: str) -> ProjectAnalytics | None:
-    """Load analytics for a project."""
-    path = get_project_analytics_path(project_id)
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return ProjectAnalytics(
-            project_id=data["project_id"],
-            project_name=data["project_name"],
-            project_path=data["project_path"],
-            first_seen=data["first_seen"],
-            last_seen=data["last_seen"],
-            scan_count=data.get("scan_count", 0),
-            history=[AnalyticsEntry(**entry) for entry in data.get("history", [])],
-        )
-    except (json.JSONDecodeError, KeyError, OSError):
-        return None
-
-
-def save_project_analytics(analytics: ProjectAnalytics) -> None:
-    """Save project analytics."""
-    path = get_project_analytics_path(analytics.project_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    data = {
-        "project_id": analytics.project_id,
-        "project_name": analytics.project_name,
-        "project_path": analytics.project_path,
-        "first_seen": analytics.first_seen,
-        "last_seen": analytics.last_seen,
-        "scan_count": analytics.scan_count,
-        "history": [
-            {
-                "timestamp": e.timestamp,
-                "score": e.score,
-                "level": e.level,
-                "violations_count": e.violations_count,
-                "rules_checked": e.rules_checked,
-                "elapsed_ms": e.elapsed_ms,
-                "instruction_files": e.instruction_files,
-            }
-            for e in analytics.history
-        ],
-    }
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    tmp.replace(path)
-
-
-def get_previous_scan(target: Path) -> AnalyticsEntry | None:
-    """Get the most recent scan entry for comparison (before current run is recorded).
-
-    Args:
-        target: Project root
-
-    Returns:
-        Last AnalyticsEntry or None if no previous scan
-    """
-    project_id = get_project_id(target)
-    analytics = load_project_analytics(project_id)
-    if analytics is None or len(analytics.history) < 1:
-        return None
-    return analytics.history[-1]  # Last recorded scan
-
 
 _VALID_VERDICTS = {"pass", "fail"}
 
@@ -328,12 +184,7 @@ def _parse_verdict_string(s: str) -> tuple[str, str, str, str]:
         return ("", "", "", "")
 
     # Determine rule_id width: 3 parts for coordinate IDs, 1 for short
-    is_coordinate = (
-        len(parts) >= 5
-        and parts[0].isalpha()
-        and len(parts[2]) == 4
-        and parts[2].isdigit()
-    )
+    is_coordinate = len(parts) >= 5 and parts[0].isalpha() and len(parts[2]) == 4 and parts[2].isdigit()
     id_width = 3 if is_coordinate else 1
 
     # Scan remaining parts for the verdict token (pass/fail)
@@ -355,19 +206,8 @@ def _parse_verdict_string(s: str) -> tuple[str, str, str, str]:
     return (rule_id, location, verdict, reason)
 
 
-def cache_judgments(target: Path, judgments: list[Any]) -> int:
-    """Cache semantic judgment verdicts for a project.
-
-    Accepts verdicts as either compact strings ("rule_id:location:verdict:reason")
-    or dicts with rule_id, location, verdict, reason keys.
-
-    Args:
-        target: Project root path (scan root — project root resolved automatically)
-        judgments: List of verdict strings or dicts
-
-    Returns:
-        Count of successfully recorded judgments
-    """
+def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disable=too-many-locals
+    """Cache semantic judgment verdicts for a project."""
     from reporails_cli.core.engine import _find_project_root
 
     project_root = _find_project_root(target)
@@ -400,7 +240,7 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
         try:
             file_path = str(full_path.relative_to(target.resolve()))
         except ValueError:
-            continue  # Path traversal — outside project root
+            continue  # Path traversal -- outside project root
 
         try:
             file_hash = content_hash(full_path)
@@ -410,7 +250,7 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
         # Merge verdict into in-memory cache
         entry = cache_judgments_dict.get(file_path, {})
         if entry.get("content_hash") != file_hash:
-            # File changed — reset cached results for this file
+            # File changed -- reset cached results for this file
             entry = {"content_hash": file_hash, "results": {}}
         results = entry.setdefault("results", {})
         results[rule_id] = {
@@ -426,59 +266,3 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:
         cache.save_judgment_cache(cache_data)
 
     return recorded
-
-
-def record_scan(
-    target: Path,
-    score: float,
-    level: str,
-    violations_count: int,
-    rules_checked: int,
-    elapsed_ms: float,
-    instruction_files: int,
-) -> None:
-    """
-    Record a scan in global analytics (quiet collection).
-
-    Args:
-        target: Project root
-        score: Validation score
-        level: Capability level
-        violations_count: Number of violations
-        rules_checked: Number of rules checked
-        elapsed_ms: Scan duration
-        instruction_files: Number of instruction files scanned
-    """
-    project_id = get_project_id(target)
-    now = datetime.now(UTC).isoformat()
-
-    # Load or create analytics
-    analytics = load_project_analytics(project_id)
-    if analytics is None:
-        analytics = ProjectAnalytics(
-            project_id=project_id,
-            project_name=get_project_name(target),
-            project_path=str(target.resolve()),
-            first_seen=now,
-            last_seen=now,
-        )
-
-    # Update analytics
-    analytics.last_seen = now
-    analytics.scan_count += 1
-
-    # Add history entry (keep last 100)
-    entry = AnalyticsEntry(
-        timestamp=now,
-        score=score,
-        level=level,
-        violations_count=violations_count,
-        rules_checked=rules_checked,
-        elapsed_ms=elapsed_ms,
-        instruction_files=instruction_files,
-    )
-    analytics.history.append(entry)
-    analytics.history = analytics.history[-100:]  # Keep last 100
-
-    # Save
-    save_project_analytics(analytics)

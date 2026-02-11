@@ -184,7 +184,7 @@ class TestLoadRulesExcludes:
             rule_dir = tmp_path / "core" / "structure" / slug
             rule_dir.mkdir(parents=True)
             (rule_dir / "rule.md").write_text(
-                f"---\nid: \"{coord}\"\ntitle: Rule {coord}\ncategory: structure\n"
+                f'---\nid: "{coord}"\ntitle: Rule {coord}\ncategory: structure\n'
                 f"type: deterministic\nlevel: L2\nslug: {slug}\n"
                 f"targets: '{{{{instruction_files}}}}'\nbacked_by:\n  - anthropic-docs\n---\n"
             )
@@ -204,7 +204,7 @@ class TestLoadRulesExcludes:
         rule_dir = tmp_path / "core" / "structure" / "rule-a"
         rule_dir.mkdir(parents=True)
         (rule_dir / "rule.md").write_text(
-            "---\nid: \"CORE:S:0001\"\ntitle: Rule CORE:S:0001\ncategory: structure\n"
+            '---\nid: "CORE:S:0001"\ntitle: Rule CORE:S:0001\ncategory: structure\n'
             "type: deterministic\nlevel: L2\nslug: rule-a\n"
             "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )
@@ -223,7 +223,7 @@ class TestLoadRulesExcludes:
         rule_dir = tmp_path / "core" / "structure" / "rule-a"
         rule_dir.mkdir(parents=True)
         (rule_dir / "rule.md").write_text(
-            "---\nid: \"CORE:S:0001\"\ntitle: Rule CORE:S:0001\ncategory: structure\n"
+            '---\nid: "CORE:S:0001"\ntitle: Rule CORE:S:0001\ncategory: structure\n'
             "type: deterministic\nlevel: L2\nslug: rule-a\n"
             "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )

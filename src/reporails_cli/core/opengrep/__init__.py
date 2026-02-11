@@ -20,15 +20,13 @@ from reporails_cli.core.opengrep.templates import (
 resolve_yml_templates = resolve_templates
 
 __all__ = [
-    # Runner functions
-    "run_opengrep",
-    "run_capability_detection",
-    "run_rule_validation",
+    "TEMPLATE_PATTERN",
     "get_rule_yml_paths",
-    "set_debug_timing",
-    # Template functions
     "has_templates",
     "resolve_templates",
-    "resolve_yml_templates",  # Backward-compatible alias
-    "TEMPLATE_PATTERN",
+    "resolve_yml_templates",
+    "run_capability_detection",
+    "run_opengrep",
+    "run_rule_validation",
+    "set_debug_timing",
 ]

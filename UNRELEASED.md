@@ -5,6 +5,10 @@
 - [CORE]: MCP e2e test suite (53 tests)
 - [CLI]: Circuit breaker for validate-fix-validate loops
 
+### Changed
+- [CORE]: Split 7 oversized modules (models, cache, registry, init, engine, checks, cli/main)
+- [META]: Stricter tooling — ruff ARG/C90/PERF/RUF rules, pylint structural enforcement (300-line modules, 12 branches)
+
 ### Fixed
 - [CORE]: Verdict parser mangled coordinate IDs with line numbers
 - [CORE]: Validate guidance told LLM to shell out via Bash
