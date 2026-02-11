@@ -66,7 +66,7 @@ def execute_rule_checks(  # pylint: disable=too-many-arguments
         if check.type == "mechanical":
             _handle_mechanical(check, rule, state, scan_root, effective_vars, location)
         elif check.type == "deterministic":
-            det_candidate_count += _handle_deterministic(check, rule, state, template_vars)
+            det_candidate_count += _handle_deterministic(check, rule, state, effective_vars)
         elif check.type == "semantic":
             _handle_semantic(rule, state, scan_root, det_candidate_count, judgment_requests)
 
