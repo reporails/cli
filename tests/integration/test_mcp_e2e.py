@@ -328,6 +328,81 @@ class TestUnknownTool:
 
 
 # ---------------------------------------------------------------------------
+# Circuit breaker — validate call count limiter
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreaker:
+    """Circuit breaker must stop infinite validate-fix-validate loops."""
+
+    def _reset_counts(self) -> None:
+        from reporails_cli.interfaces.mcp import server
+
+        server._validate_call_counts.clear()
+
+    def setup_method(self) -> None:
+        self._reset_counts()
+
+    def teardown_method(self) -> None:
+        self._reset_counts()
+
+    @requires_rules
+    def test_first_call_succeeds(self, level2_project: Path) -> None:
+        """First validate call should return normal results."""
+        text = _call_tool("validate", {"path": str(level2_project)})
+        assert "circuit breaker" not in text.lower()
+
+    @requires_rules
+    def test_second_call_succeeds(self, level2_project: Path) -> None:
+        """Second validate call should still return normal results."""
+        _call_tool("validate", {"path": str(level2_project)})
+        text = _call_tool("validate", {"path": str(level2_project)})
+        assert "circuit breaker" not in text.lower()
+
+    @requires_rules
+    def test_third_call_triggers_breaker(self, level2_project: Path) -> None:
+        """Third validate call for same path must trigger circuit breaker."""
+        _call_tool("validate", {"path": str(level2_project)})
+        _call_tool("validate", {"path": str(level2_project)})
+        text = _call_tool("validate", {"path": str(level2_project)})
+        assert "STOP" in text
+        assert "circuit breaker" in text.lower()
+
+    @requires_rules
+    def test_breaker_message_says_do_not_call_again(self, level2_project: Path) -> None:
+        """Breaker message must instruct the LLM to stop calling validate."""
+        _call_tool("validate", {"path": str(level2_project)})
+        _call_tool("validate", {"path": str(level2_project)})
+        text = _call_tool("validate", {"path": str(level2_project)})
+        assert "DO NOT call validate again" in text
+
+    @requires_rules
+    def test_different_paths_independent(self, level2_project: Path, tmp_path: Path) -> None:
+        """Circuit breaker counts are per-path, not global."""
+        other = tmp_path / "other"
+        other.mkdir()
+        (other / "CLAUDE.md").write_text("# Other project\n")
+        (other / ".reporails").mkdir()
+
+        # Call level2_project twice (at threshold)
+        _call_tool("validate", {"path": str(level2_project)})
+        _call_tool("validate", {"path": str(level2_project)})
+
+        # Call other path — should NOT trigger breaker
+        text = _call_tool("validate", {"path": str(other)})
+        assert "circuit breaker" not in text.lower()
+
+    @requires_rules
+    def test_fourth_call_still_blocked(self, level2_project: Path) -> None:
+        """Calls beyond the threshold must all be blocked."""
+        for _ in range(3):
+            _call_tool("validate", {"path": str(level2_project)})
+        text = _call_tool("validate", {"path": str(level2_project)})
+        assert "STOP" in text
+        assert "circuit breaker" in text.lower()
+
+
+# ---------------------------------------------------------------------------
 # Tool helpers (tools.py) — direct sync tests
 # ---------------------------------------------------------------------------
 
