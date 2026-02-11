@@ -2,7 +2,8 @@
 
 ### Added
 - [CLI]: Native `judge` MCP tool for verdict caching
-- [CORE]: MCP e2e test suite (47 tests)
+- [CORE]: MCP e2e test suite (53 tests)
+- [CLI]: Circuit breaker for validate-fix-validate loops
 
 ### Fixed
 - [CORE]: Verdict parser mangled coordinate IDs with line numbers
