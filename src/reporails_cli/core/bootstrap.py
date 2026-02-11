@@ -86,32 +86,42 @@ def get_agent_config(agent: str) -> AgentConfig:
         return AgentConfig()
 
 
-def get_agent_vars(agent: str = "claude") -> dict[str, str | list[str]]:
+def get_agent_vars(
+    agent: str = "claude",
+    rules_paths: list[Path] | None = None,
+) -> dict[str, str | list[str]]:
     """Load template variables from agent config.
 
     Args:
         agent: Agent identifier (default: claude)
+        rules_paths: Optional rules directories to search first (before default path)
 
     Returns:
         Dict of template variables from the agent's config.yml vars section
     """
-    config_path = get_agent_config_path(agent)
-    if not config_path.exists():
-        return {}
+    # Build candidate config paths: explicit rules_paths first, then default
+    candidates: list[Path] = []
+    if rules_paths:
+        candidates.extend(rules_dir / "agents" / agent / "config.yml" for rules_dir in rules_paths)
+    candidates.append(get_agent_config_path(agent))
 
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        vars_data = data.get("vars", {})
-        # Ensure all values are str or list[str]
-        result: dict[str, str | list[str]] = {}
-        for key, value in vars_data.items():
-            if isinstance(value, list):
-                result[key] = [str(v) for v in value]
-            else:
-                result[key] = str(value)
-        return result
-    except (yaml.YAMLError, OSError):
-        return {}
+    for config_path in candidates:
+        if not config_path.exists():
+            continue
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            vars_data = data.get("vars", {})
+            # Ensure all values are str or list[str]
+            result: dict[str, str | list[str]] = {}
+            for key, value in vars_data.items():
+                if isinstance(value, list):
+                    result[key] = [str(v) for v in value]
+                else:
+                    result[key] = str(value)
+            return result
+        except (yaml.YAMLError, OSError):
+            continue
+    return {}
 
 
 def get_schemas_path() -> Path:

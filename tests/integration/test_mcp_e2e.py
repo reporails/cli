@@ -174,12 +174,11 @@ class TestScoreTool:
 
 
 class TestExplainTool:
-    @requires_rules
-    def test_known_rule_returns_details(self) -> None:
+    def test_known_rule_returns_details(self, dev_rules_dir: Path) -> None:
         """Explaining a known rule should return its details."""
-        # Use coordinate-format ID (registry format)
-        text = _call_tool("explain", {"rule_id": "CORE:S:0001"})
-        data = json.loads(text)
+        from reporails_cli.interfaces.mcp.tools import explain_tool
+
+        data = explain_tool("CORE:S:0001", rules_paths=[dev_rules_dir])
         assert "error" not in data
         assert "title" in data or "rule_id" in data
 
