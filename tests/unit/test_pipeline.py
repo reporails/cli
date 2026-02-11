@@ -410,6 +410,60 @@ class TestExecuteRuleChecks:
         assert CEILING[RuleType.DETERMINISTIC] == frozenset({"mechanical", "deterministic"})
         assert CEILING[RuleType.SEMANTIC] == frozenset({"mechanical", "deterministic", "semantic"})
 
+    def test_negated_deterministic_uses_effective_vars(self, tmp_path: Path) -> None:
+        """Negated deterministic violation location resolves {{instruction_files}} via effective_vars."""
+        (tmp_path / "CLAUDE.md").touch()
+        rule = _make_rule(
+            "CORE:C:0005",
+            RuleType.DETERMINISTIC,
+            checks=[
+                Check(
+                    id="CORE:C:0005:check:0001",
+                    severity=Severity.HIGH,
+                    type="deterministic",
+                    negate=True,
+                )
+            ],
+        )
+        rule = Rule(
+            id=rule.id,
+            title=rule.title,
+            category=rule.category,
+            type=rule.type,
+            level=rule.level,
+            checks=rule.checks,
+            targets="{{instruction_files}}",
+        )
+        state = PipelineState()
+        # Pass instruction_files so effective_vars binds concrete paths
+        jrs = execute_rule_checks(rule, state, tmp_path, {}, [tmp_path / "CLAUDE.md"])
+        assert jrs == []
+        assert len(state.findings) == 1
+        # Location must resolve to actual file, NOT raw placeholder
+        assert "{{" not in state.findings[0].location
+        assert "CLAUDE.md" in state.findings[0].location
+
+    def test_mechanical_negate_inverts_result(self, tmp_path: Path) -> None:
+        """Mechanical check with negate=True inverts pass/fail logic."""
+        (tmp_path / ".git").mkdir()
+        rule = _make_rule(
+            "CORE:S:0099",
+            RuleType.MECHANICAL,
+            checks=[
+                Check(
+                    id="CORE:S:0099:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="git_tracked",
+                    negate=True,
+                )
+            ],
+        )
+        state = PipelineState()
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+        # git_tracked normally passes (git exists) → negate inverts → violation
+        assert len(state.findings) == 1
+
     def test_check_cache_populated(self, tmp_path: Path) -> None:
         """Pipeline state check_cache is populated after mechanical dispatch."""
         (tmp_path / ".git").mkdir()
