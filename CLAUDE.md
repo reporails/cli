@@ -1,4 +1,4 @@
-# Reporails CLI v0.2.0
+# Reporails CLI v0.2.1
 
 AI instruction validator & quality assurance provider. Validates instruction files against deterministic, mechanical and semantic rules.
 
@@ -44,13 +44,18 @@ uv run ails map . --save   # Save backbone.yml
 | `ails check --quiet-semantic` | Suppress semantic rules message |
 | `ails check --no-update-check` | Skip pre-run update prompt |
 | `ails check --exclude-dir NAME` | Exclude directory from scanning (repeatable) |
+| `ails check --strict` | Exit code 1 on violations (CI) |
+| `ails check --experimental` | Include experimental-tier rules |
 | `ails check -f json` | JSON output (for scripts/MCP) |
 | `ails map [PATH]` | Discover project structure |
 | `ails map --save` | Save backbone.yml to .reporails/ |
 | `ails explain RULE_ID` | Show rule details |
+| `ails judge . "RULE:FILE:pass:reason"` | Cache semantic verdicts |
+| `ails dismiss RULE_ID` | Dismiss a semantic finding |
 | `ails update` | Update rules framework + recommended |
 | `ails update --check` | Check for updates without installing |
 | `ails update --recommended` | Update recommended rules only |
+| `ails update --version VERSION` | Update framework to specific version |
 | `ails update --force` | Force reinstall even if current |
 | `ails update --cli` | Upgrade CLI package itself |
 | `ails version` | Show CLI, framework, and recommended versions |

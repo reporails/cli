@@ -27,7 +27,8 @@ src/reporails_cli/
 │   ├── mechanical/       # Mechanical checks (package)
 │   │   ├── __init__.py   # Public API re-exports
 │   │   ├── runner.py     # Orchestration
-│   │   └── checks.py     # Check implementations
+│   │   ├── checks.py     # Simple checks + registry
+│   │   └── checks_advanced.py  # Complex checks (content, imports, aggregation)
 │   ├── sarif.py          # Parse SARIF → Violations + distribute by rule
 │   ├── semantic.py       # Build JudgmentRequests
 │   ├── scorer.py         # Calculate score, level
@@ -680,7 +681,8 @@ Mechanical rule checks — Python-native checks that don't require OpenGrep. Han
 core/mechanical/
 ├── __init__.py       # Public API re-exports
 ├── runner.py         # Orchestration, runs checks for each rule
-└── checks.py        # Individual check implementations
+├── checks.py         # Simple checks + registry
+└── checks_advanced.py  # Complex checks (content, imports, aggregation)
 ```
 
 **Public API:**
