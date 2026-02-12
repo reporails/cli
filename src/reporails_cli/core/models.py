@@ -32,7 +32,7 @@ class RuleType(str, Enum):
     """How the rule is detected. Three types."""
 
     MECHANICAL = "mechanical"  # Python structural check
-    DETERMINISTIC = "deterministic"  # OpenGrep pattern -> direct violation
+    DETERMINISTIC = "deterministic"  # Regex pattern -> direct violation
     SEMANTIC = "semantic"  # LLM judgment required
 
 
@@ -79,7 +79,7 @@ class Check:
     """A specific check within a rule.
 
     Checks have a type matching their gate: mechanical (Python function),
-    deterministic (OpenGrep pattern), or semantic (LLM evaluation).
+    deterministic (regex pattern), or semantic (LLM evaluation).
     """
 
     id: str  # e.g., "CORE:S:0001:check:0001"
@@ -137,7 +137,7 @@ class Violation:
     rule_id: str  # e.g., "S1"
     rule_title: str  # e.g., "Size Limits"
     location: str  # e.g., "CLAUDE.md:45"
-    message: str  # From OpenGrep
+    message: str  # From rule definition
     severity: Severity
     check_id: str | None = None  # e.g., "S1-root-too-long"
 

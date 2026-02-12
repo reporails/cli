@@ -1,4 +1,4 @@
-"""SARIF parsing - converts OpenGrep output to domain objects.
+"""SARIF parsing - converts regex engine output to domain objects.
 
 All functions are pure (no I/O).
 """
@@ -20,10 +20,10 @@ _COORDINATE_RE = re.compile(r"^[A-Z][A-Z_]*\.[A-Z]\.\d{4}")
 def _find_coordinate_start(parts: list[str]) -> int:
     """Find the index where the rule coordinate starts in dot-split parts.
 
-    OpenGrep may prefix the rule ID with temp directory path components
-    when template-resolved yml files are used (e.g., tmp.tmpXXXXXX.CORE.S.0001...).
-    This function locates the actual coordinate start by matching the
-    NAMESPACE.CATEGORY.SLOT pattern.
+    Rule IDs may be prefixed with path components when template-resolved
+    yml files are used (e.g., tmp.tmpXXXXXX.CORE.S.0001...). This function
+    locates the actual coordinate start by matching the NAMESPACE.CATEGORY.SLOT
+    pattern.
 
     Args:
         parts: Dot-split segments of the SARIF ruleId
@@ -41,12 +41,12 @@ def _find_coordinate_start(parts: list[str]) -> int:
 def extract_rule_id(sarif_rule_id: str) -> str:
     """Extract rule coordinate from SARIF ruleId.
 
-    OpenGrep rule IDs use dots (colons are invalid in OpenGrep IDs).
+    SARIF rule IDs use dots (colons are invalid in YAML rule IDs).
     Dot-format: REGISTRY.CATEGORY.SLOT.check.NNNN -> REGISTRY:CATEGORY:SLOT
 
-    When template resolution writes yml to a temp directory, OpenGrep may
-    prefix the ruleId with path components (e.g., tmp.tmpXXX.CORE.S.0001...).
-    This function strips the prefix by locating the coordinate pattern.
+    Rule IDs may be prefixed with path components when template resolution
+    is involved. This function strips the prefix by locating the coordinate
+    pattern.
 
     Example: CORE.S.0001.check.0001 -> CORE:S:0001
     Example: tmp.tmpXXX.CORE.S.0001.check.0001 -> CORE:S:0001
@@ -68,8 +68,8 @@ def extract_rule_id(sarif_rule_id: str) -> str:
 def extract_check_id(sarif_rule_id: str) -> str | None:
     """Extract check ID suffix from SARIF ruleId.
 
-    OpenGrep rule IDs use dots. Returns colon-format for internal use.
-    Handles temp directory prefix in the same way as extract_rule_id.
+    SARIF rule IDs use dots. Returns colon-format for internal use.
+    Handles path prefix in the same way as extract_rule_id.
 
     Example: CORE.S.0001.check.0001 -> check:0001
     Example: tmp.tmpXXX.CORE.S.0001.check.0001 -> check:0001
@@ -139,7 +139,7 @@ def parse_sarif(  # pylint: disable=too-many-locals
     sarif: dict[str, Any],
     rules: dict[str, Rule],
 ) -> list[Violation]:
-    """Parse OpenGrep SARIF output into Violation objects."""
+    """Parse SARIF output into Violation objects."""
     violations = []
 
     for run in sarif.get("runs", []):
@@ -222,7 +222,7 @@ def distribute_sarif_by_rule(
     in the provided rules dict are included.
 
     Args:
-        sarif: Raw SARIF output from OpenGrep.
+        sarif: Raw SARIF output from regex engine.
         rules: Dict of rules to filter by (rule_id -> Rule).
 
     Returns:

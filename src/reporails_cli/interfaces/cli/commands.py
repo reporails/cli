@@ -278,7 +278,7 @@ def show_version() -> None:
         get_installed_recommended_version,
         get_installed_version,
     )
-    from reporails_cli.core.init import OPENGREP_VERSION, RECOMMENDED_VERSION, RULES_VERSION
+    from reporails_cli.core.init import RECOMMENDED_VERSION, RULES_VERSION
 
     installed = get_installed_version()
     installed_rec = get_installed_recommended_version()
@@ -288,5 +288,4 @@ def show_version() -> None:
     console.print(f"CLI:         {cli_version}")
     console.print(f"Framework:   {installed or 'not installed'} (bundled: {RULES_VERSION})")
     console.print(f"Recommended: {installed_rec or 'not installed'} (bundled: {RECOMMENDED_VERSION})")
-    console.print(f"OpenGrep:    {OPENGREP_VERSION}")
     console.print(f"Install:     {detect_install_method().value}")

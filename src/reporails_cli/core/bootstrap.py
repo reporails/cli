@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,14 +19,6 @@ FRAMEWORK_RELEASE_URL = f"https://github.com/{FRAMEWORK_REPO}/releases/download"
 def get_reporails_home() -> Path:
     """Get ~/.reporails directory."""
     return REPORAILS_HOME
-
-
-def get_opengrep_bin() -> Path:
-    """Get path to OpenGrep binary."""
-    home = get_reporails_home()
-    if platform.system().lower() == "windows":
-        return home / "bin" / "opengrep.exe"
-    return home / "bin" / "opengrep"
 
 
 def get_rules_path() -> Path:
@@ -255,8 +246,8 @@ def get_installed_recommended_version() -> str | None:
 
 
 def is_initialized() -> bool:
-    """Check if reporails has been initialized (opengrep + rules)."""
-    return get_opengrep_bin().exists() and get_rules_path().exists()
+    """Check if reporails has been initialized (rules framework downloaded)."""
+    return get_rules_path().exists()
 
 
 # Legacy alias for backward compatibility

@@ -32,7 +32,7 @@ LEVEL_LABELS: dict[Level, str] = {
 # Ordered levels for walking (L1 → L6)
 _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
 
-# Capabilities whose detection depends on content analysis (OpenGrep Phase 2).
+# Capabilities whose detection depends on content analysis (regex Phase 2).
 # When skip_content=True, these are treated as detected (optimistic preliminary).
 CONTENT_CAPABILITIES: frozenset[str] = frozenset(
     {

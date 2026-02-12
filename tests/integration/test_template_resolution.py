@@ -1,6 +1,6 @@
 """Template resolution tests - CRITICAL for correctness.
 
-Every template variable must resolve before reaching semgrep/opengrep.
+Every template variable must resolve before reaching the regex engine.
 Unresolved templates cause silent failures that are hard to debug.
 """
 
@@ -14,7 +14,7 @@ from tests.conftest import create_temp_rule_file
 
 
 class TestTemplateResolution:
-    """Every template variable must resolve before reaching semgrep."""
+    """Every template variable must resolve before reaching the regex engine."""
 
     def test_instruction_files_resolves_to_glob(self, agent_config: dict[str, str]) -> None:
         """{{instruction_files}} must resolve to an actual glob pattern."""
@@ -46,10 +46,10 @@ class TestTemplateResolution:
         agent_config: dict[str, str],
     ) -> None:
         """Template placeholders must be replaced with actual values."""
-        from reporails_cli.core.opengrep import resolve_yml_templates
+        from reporails_cli.core.templates import resolve_templates
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_template_yaml)
-        resolved = resolve_yml_templates(rule_path, agent_config)
+        resolved = resolve_templates(rule_path, agent_config)
 
         assert "{{instruction_files}}" not in resolved, (
             f"Template {{{{instruction_files}}}} was not resolved!\nResolved content:\n{resolved}"
@@ -70,7 +70,7 @@ class TestTemplateResolution:
         valid_rule_yaml: str,
     ) -> None:
         """has_templates() must correctly identify files with placeholders."""
-        from reporails_cli.core.opengrep import has_templates
+        from reporails_cli.core.templates import has_templates
 
         with_template = create_temp_rule_file(tmp_path, rule_with_template_yaml, "with.yml")
         without_template = create_temp_rule_file(tmp_path, valid_rule_yaml, "without.yml")
@@ -88,86 +88,65 @@ class TestTemplateResolution:
         regression: Empty dict {} is falsy in Python, causing template
         resolution to be skipped entirely.
         """
-        from reporails_cli.core.opengrep import resolve_yml_templates
+        from reporails_cli.core.templates import resolve_templates
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_template_yaml)
 
         # With empty context, templates remain unresolved
-        resolved = resolve_yml_templates(rule_path, {})
+        resolved = resolve_templates(rule_path, {})
         assert "{{instruction_files}}" in resolved, "Empty context should leave templates unresolved"
 
-    def test_run_opengrep_resolves_templates_before_execution(
+    def test_run_regex_resolves_templates_before_execution(
         self,
         tmp_path: Path,
         temp_project: Path,
         rule_with_template_yaml: str,
         agent_config: dict[str, str],
-        opengrep_bin: Path,
     ) -> None:
-        """run_opengrep must resolve templates before passing to semgrep.
+        """run_validation must resolve templates before matching.
 
         This is the critical integration test - templates must be resolved
-        in the temp file that gets passed to the opengrep binary.
+        before regex patterns are compiled and executed.
         """
-        from reporails_cli.core.opengrep import run_opengrep
+        from reporails_cli.core.regex import run_validation
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_template_yaml)
 
         # Run with template context - should resolve
-        result = run_opengrep(
+        result = run_validation(
             [rule_path],
             temp_project,
-            opengrep_bin,
             template_context=agent_config,
         )
 
         # Should get valid SARIF (not empty due to template error)
         assert "runs" in result, f"Expected SARIF output, got: {result}"
-        # Note: May have 0 results if no matches, but should have valid structure
 
     # --- NEGATIVE TESTS ---
 
-    def test_literal_template_never_reaches_opengrep(
+    def test_unresolved_template_produces_no_matches(
         self,
         tmp_path: Path,
         temp_project: Path,
         rule_with_template_yaml: str,
-        opengrep_bin: Path,
     ) -> None:
-        """Literal {{...}} strings must never be passed to opengrep.
-
-        If templates aren't resolved, opengrep sees them as literal text
-        in the paths.include field, which won't match any files.
-        """
-        # Run WITHOUT template context - this should either:
-        # 1. Fail clearly, OR
-        # 2. Return empty results (no matches for literal "{{...}}")
-        # It should NOT silently succeed with wrong behavior
-
-        from reporails_cli.core.opengrep import run_opengrep
+        """Unresolved {{...}} templates should not match any files."""
+        from reporails_cli.core.regex import run_validation
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_template_yaml)
 
         # Run with empty context (simulates missing agent config)
-        result = run_opengrep(
+        result = run_validation(
             [rule_path],
             temp_project,
-            opengrep_bin,
             template_context={},  # Empty - no resolution
         )
 
-        # OpenGrep should report this as invalid (exit code 7)
-        # or return no results because "{{instruction_files}}" matches nothing
+        # Should return valid structure with no results (unresolved templates match nothing)
         runs = result.get("runs", [])
         if runs:
-            # Check for error notifications
-            invocations = runs[0].get("invocations", [{}])
-            notifications = invocations[0].get("toolExecutionNotifications", [])
-            # Should have errors about invalid config
-            has_errors = any(n.get("level") == "error" for n in notifications)
-            assert has_errors or not runs[0].get("results"), (
-                f"Unresolved template should cause error or no results, but got: {result}"
-            )
+            results = runs[0].get("results", [])
+            assert not results, f"Unresolved template should produce no results, but got: {results}"
 
     def test_unresolvable_template_leaves_placeholder(
         self,
@@ -176,11 +155,11 @@ class TestTemplateResolution:
         agent_config: dict[str, str],
     ) -> None:
         """Templates without matching context keys remain unresolved."""
-        from reporails_cli.core.opengrep import resolve_yml_templates
+        from reporails_cli.core.templates import resolve_templates
 
         rule_path = create_temp_rule_file(tmp_path, rule_with_unresolvable_template_yaml)
 
-        resolved = resolve_yml_templates(rule_path, agent_config)
+        resolved = resolve_templates(rule_path, agent_config)
 
         # {{nonexistent_variable}} should remain because it's not in context
         assert "{{nonexistent_variable}}" in resolved, "Unresolvable template was incorrectly modified"
@@ -203,10 +182,10 @@ rules:
         - "{{instruction_files}}"
         - "{{rules_dir}}/**/*.md"
 """
-        from reporails_cli.core.opengrep import resolve_yml_templates
+        from reporails_cli.core.templates import resolve_templates
 
         rule_path = create_temp_rule_file(tmp_path, multi_template_yaml)
-        resolved = resolve_yml_templates(rule_path, agent_config)
+        resolved = resolve_templates(rule_path, agent_config)
 
         assert "{{instruction_files}}" not in resolved
         assert "{{rules_dir}}" not in resolved
@@ -257,15 +236,14 @@ class TestTemplateContextLoading:
 
 
 class TestEngineTemplateIntegration:
-    """Test that engine.py correctly passes template context to opengrep."""
+    """Test that engine.py correctly passes template context to regex engine."""
 
     def test_engine_passes_template_context(
         self,
         level2_project: Path,
-        opengrep_bin: Path,
         dev_rules_dir: Path,
     ) -> None:
-        """run_validation must pass template_context to run_opengrep.
+        """run_validation must pass template_context to the regex engine.
 
         regression: If agent="" then template_context={} which is falsy,
         causing templates to not be resolved.

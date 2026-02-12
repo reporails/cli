@@ -1,12 +1,10 @@
-"""Download and install opengrep, rules, and recommended packages."""
+"""Download and install rules and recommended packages."""
 
 from __future__ import annotations
 
 import importlib.resources
 import logging
-import platform
 import shutil
-import stat
 import tarfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,24 +13,12 @@ import httpx
 
 from reporails_cli.core.bootstrap import (
     get_global_config,
-    get_opengrep_bin,
     get_recommended_package_path,
     get_reporails_home,
     get_version_file,
 )
 
 logger = logging.getLogger(__name__)
-
-OPENGREP_VERSION = "1.15.1"
-
-_OG_BASE = f"https://github.com/opengrep/opengrep/releases/download/v{OPENGREP_VERSION}"
-OPENGREP_URLS: dict[tuple[str, str], str] = {
-    ("linux", "x86_64"): f"{_OG_BASE}/opengrep_manylinux_x86",
-    ("linux", "aarch64"): f"{_OG_BASE}/opengrep_manylinux_aarch64",
-    ("darwin", "x86_64"): f"{_OG_BASE}/opengrep_osx_x86",
-    ("darwin", "arm64"): f"{_OG_BASE}/opengrep_osx_arm64",
-    ("windows", "x86_64"): f"{_OG_BASE}/opengrep-core_windows_x86.zip",
-}
 
 RECOMMENDED_REPO = "reporails/recommended"
 RECOMMENDED_VERSION = "0.1.0"
@@ -68,56 +54,6 @@ def _validate_rules_structure(rules_path: Path) -> None:
 
 RULES_TARBALL_URL = "https://github.com/reporails/rules/releases/download/{version}/reporails-rules-{version}.tar.gz"
 RULES_API_URL = "https://api.github.com/repos/reporails/rules/releases/latest"
-
-
-def get_platform() -> tuple[str, str]:
-    """Detect current OS and architecture."""
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-
-    if system == "darwin":
-        os_name = "darwin"
-    elif system == "linux":
-        os_name = "linux"
-    elif system == "windows":
-        os_name = "windows"
-    else:
-        msg = f"Unsupported operating system: {system}"
-        raise RuntimeError(msg)
-
-    if machine in ("x86_64", "amd64"):
-        arch = "x86_64"
-    elif machine in ("arm64", "aarch64"):
-        arch = "arm64" if os_name == "darwin" else "aarch64"
-    else:
-        msg = f"Unsupported architecture: {machine}"
-        raise RuntimeError(msg)
-
-    return os_name, arch
-
-
-def download_opengrep() -> Path:
-    """Download opengrep binary to ~/.reporails/bin/opengrep."""
-    os_name, arch = get_platform()
-    key = (os_name, arch)
-
-    if key not in OPENGREP_URLS:
-        msg = f"Unsupported platform: {os_name}/{arch}"
-        raise RuntimeError(msg)
-
-    url = OPENGREP_URLS[key]
-    bin_path = get_opengrep_bin()
-    bin_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-        response = client.get(url)
-        response.raise_for_status()
-        bin_path.write_bytes(response.content)
-
-        if os_name != "windows":
-            bin_path.chmod(bin_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    return bin_path
 
 
 def get_bundled_checks_path() -> Path | None:
