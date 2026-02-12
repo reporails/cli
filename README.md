@@ -77,14 +77,17 @@ Once installed, all commands use `ails` directly.
 
 ## Capability Levels
 
-| Level | Name | What it means |
-|-------|------|---------------|
-| L1 | Absent | No instruction file |
-| L2 | Basic | Has CLAUDE.md |
-| L3 | Structured | Sections, imports |
-| L4 | Abstracted | .claude/rules/ directory |
-| L5 | Maintained | Shared files, 3+ components |
-| L6 | Adaptive | Backbone + full governance |
+Capability levels describe what your AI instruction setup enables — not how "mature" it is. Different projects need different capabilities.
+
+| Level | Name | What It Enables |
+|-------|------|-----------------|
+| L0 | Absent | No instruction file — nothing to evaluate |
+| L1 | Basic | Reviewed, tracked instruction file |
+| L2 | Scoped | Project-specific constraints, size control |
+| L3 | Structured | External references, multiple files |
+| L4 | Abstracted | Path-scoped rules, context-aware loading |
+| L5 | Maintained | Structural integrity, governance, navigation |
+| L6 | Adaptive | Dynamic context, extensibility, persistence |
 
 ## Commands
 
