@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "deny": [
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Edit(**/credentials*)",
+      "Edit(**/*.pem)",
+      "Edit(**/*.key)",
+      "Write(**/.env)",
+      "Write(**/.env.*)",
+      "Write(**/credentials*)",
+      "Write(**/*.pem)",
+      "Write(**/*.key)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {

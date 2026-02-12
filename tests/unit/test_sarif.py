@@ -175,9 +175,7 @@ class TestParseSarif:
                 {
                     "tool": {
                         "driver": {
-                            "rules": [
-                                {"id": "CORE.S.0001.check.0001", "defaultConfiguration": {"level": "note"}}
-                            ]
+                            "rules": [{"id": "CORE.S.0001.check.0001", "defaultConfiguration": {"level": "note"}}]
                         }
                     },
                     "results": [
@@ -219,9 +217,7 @@ class TestParseSarif:
                 {
                     "tool": {
                         "driver": {
-                            "rules": [
-                                {"id": "CORE.S.0001.check.0001", "defaultConfiguration": {"level": "warning"}}
-                            ]
+                            "rules": [{"id": "CORE.S.0001.check.0001", "defaultConfiguration": {"level": "warning"}}]
                         }
                     },
                     "results": [
@@ -229,7 +225,12 @@ class TestParseSarif:
                             "ruleId": "CORE.S.0001.check.0001",
                             "message": {"text": "violation msg"},
                             "locations": [
-                                {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 10}}}
+                                {
+                                    "physicalLocation": {
+                                        "artifactLocation": {"uri": "CLAUDE.md"},
+                                        "region": {"startLine": 10},
+                                    }
+                                }
                             ],
                         }
                     ],
@@ -254,7 +255,10 @@ class TestParseSarif:
                     "tool": {
                         "driver": {
                             "rules": [
-                                {"id": "tmp.tmpXXX.CORE.C.0006.check.0001", "defaultConfiguration": {"level": "warning"}}
+                                {
+                                    "id": "tmp.tmpXXX.CORE.C.0006.check.0001",
+                                    "defaultConfiguration": {"level": "warning"},
+                                }
                             ]
                         }
                     },
@@ -263,7 +267,12 @@ class TestParseSarif:
                             "ruleId": "tmp.tmpXXX.CORE.C.0006.check.0001",
                             "message": {"text": "vague qualifier found"},
                             "locations": [
-                                {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 7}}}
+                                {
+                                    "physicalLocation": {
+                                        "artifactLocation": {"uri": "CLAUDE.md"},
+                                        "region": {"startLine": 7},
+                                    }
+                                }
                             ],
                         }
                     ],

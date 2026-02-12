@@ -42,9 +42,7 @@ class TestDetectInstallMethod:
         """Editable installs should return DEV."""
         mock_dist = MagicMock()
         mock_dist.read_text.side_effect = lambda name: (
-            json.dumps({"dir_info": {"editable": True}})
-            if name == "direct_url.json"
-            else None
+            json.dumps({"dir_info": {"editable": True}}) if name == "direct_url.json" else None
         )
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.DEV
@@ -81,7 +79,9 @@ class TestDetectInstallMethod:
         mock_file = MagicMock()
         mock_file.__str__ = lambda self: "reporails_cli/__init__.py"
         mock_dist.files = [mock_file]
-        mock_dist._path = "/home/user/.local/pipx/venvs/reporails-cli/lib/python3.12/site-packages/reporails_cli-0.1.3.dist-info"
+        mock_dist._path = (
+            "/home/user/.local/pipx/venvs/reporails-cli/lib/python3.12/site-packages/reporails_cli-0.1.3.dist-info"
+        )
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIPX
 
@@ -258,7 +258,10 @@ class TestUpgradeCli:
             patch("reporails_cli.__version__", "0.1.0"),
             patch("reporails_cli.core.update_check._fetch_latest_cli_version", return_value="0.2.0"),
             patch("reporails_cli.core.update_check._is_newer", return_value=True),
-            patch("reporails_cli.core.self_update.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=120)),
+            patch(
+                "reporails_cli.core.self_update.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=[], timeout=120),
+            ),
         ):
             result = upgrade_cli()
         assert result.updated is False
@@ -312,8 +315,10 @@ class TestFormatUpdateMessageCliFlag:
         from reporails_cli.core.update_check import UpdateNotification, format_update_message
 
         n = UpdateNotification(
-            cli_current="0.1.0", cli_latest="0.2.0",
-            rules_current="0.0.1", rules_latest="0.0.2",
+            cli_current="0.1.0",
+            cli_latest="0.2.0",
+            rules_current="0.0.1",
+            rules_latest="0.0.2",
         )
         msg = format_update_message(n)
         assert "ails update --cli" in msg

@@ -1,10 +1,10 @@
 [project]
 name = "reporails-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "Validate and score CLAUDE.md files — MCP-first AI context governance"
 readme = "README.md"
 license = { text = "BUSL-1.1" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Reporails Team" }]
 keywords = ["claude", "ai", "context", "validation", "mcp", "claude-code"]
 classifiers = [
@@ -12,7 +12,6 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: Other/Proprietary License",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Quality Assurance",
 ]
@@ -34,6 +33,7 @@ dev = [
     "mypy>=1.8.0",
     "types-PyYAML>=6.0.0",
     "ruff>=0.3.0",
+    "pylint>=3.0.0",
     "poethepoet>=0.25.0",
 ]
 
@@ -44,6 +44,7 @@ dev = [
     "mypy>=1.8.0",
     "types-PyYAML>=6.0.0",
     "ruff>=0.3.0",
+    "pylint>=3.0.0",
     "poethepoet>=0.25.0",
 ]
 
@@ -67,36 +68,68 @@ only-include = ["src/reporails_cli"]
 artifacts = ["src/reporails_cli/bundled/*.yml", "src/reporails_cli/bundled/.semgrepignore"]
 
 [tool.poe.tasks]
+fmt = "ruff format src/ tests/"
+lint_fix = "ruff check --fix src/ tests/"
 lint = "ruff check src/ tests/"
-format = "ruff format src/ tests/"
+pylint_struct = "pylint src/reporails_cli/ --disable=all --enable=R0902,R0904,R0911,R0912,R0913,R0914,R0915,R0916,C0301,C0302"
 type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v"
-qa_fast = ["lint", "type", "test_unit"]
-qa = ["lint", "type", "test_unit", "test_integration"]
+qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit"]
+qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
 
 [tool.ruff]
-target-version = "py311"
-line-length = 100
+target-version = "py312"
+line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "C90", "SIM", "ARG", "PERF", "RUF"]
+ignore = []
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ARG"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
+no_implicit_optional = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
 mypy_path = "src"
 packages = ["reporails_cli"]
 explicit_package_bases = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.pylint.main]
+max-module-lines = 300
+max-args = 8
+
+[tool.pylint.design]
+max-branches = 12
+max-statements = 50
+max-returns = 6
+max-locals = 15
+
+[tool.pylint.format]
+max-line-length = 120
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-markers"
 markers = [
     "unit: Fast, isolated unit tests",
     "integration: Cross-component tests (requires OpenGrep)",
+    "e2e: End-to-end tests",
 ]

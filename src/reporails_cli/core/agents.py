@@ -47,9 +47,7 @@ KNOWN_AGENTS: dict[str, AgentType] = {
         instruction_patterns=(".cursorrules", ".cursor/rules/*.md"),
         config_patterns=(".cursor/settings.json",),
         rule_patterns=(".cursor/rules/*.md",),
-        directory_patterns=(
-            ("rules", ".cursor/rules"),
-        ),
+        directory_patterns=(("rules", ".cursor/rules"),),
     ),
     "windsurf": AgentType(
         id="windsurf",
@@ -107,7 +105,7 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
     """
     detected: list[DetectedAgent] = []
 
-    for _agent_id, agent_type in KNOWN_AGENTS.items():
+    for agent_type in KNOWN_AGENTS.values():
         instruction_files: list[Path] = []
         config_files: list[Path] = []
         rule_files: list[Path] = []

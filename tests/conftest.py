@@ -82,9 +82,7 @@ def level1_project(tmp_path: Path) -> Generator[Path, None, None]:
     project = tmp_path / "level1"
     project.mkdir()
 
-    (project / "CLAUDE.md").write_text(
-        "# My Project\n\nA simple project.\n"
-    )
+    (project / "CLAUDE.md").write_text("# My Project\n\nA simple project.\n")
 
     yield project
 
@@ -215,6 +213,7 @@ agents:
 
 # --- Rule YAML Fixtures ---
 
+
 @pytest.fixture
 def valid_rule_yaml() -> str:
     """Return a valid OpenGrep rule YAML."""
@@ -301,6 +300,7 @@ rules:
 
 
 # --- Helper Functions ---
+
 
 def run_opengrep_validate(yml_path: Path, opengrep_bin: Path) -> tuple[int, str]:
     """Run opengrep scan and return (exit_code, stderr).

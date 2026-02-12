@@ -44,7 +44,6 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
     see_also = rule_data.get("see_also", [])
     if see_also:
         lines.append("See Also:")
-        for ref in see_also:
-            lines.append(f"  - {ref}")
+        lines.extend(f"  - {ref}" for ref in see_also)
 
     return "\n".join(lines)
