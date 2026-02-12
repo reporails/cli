@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Pre-commit hook: require UNRELEASED.md when staging src/ or tests/ changes.
+
+staged=$(git diff --cached --name-only)
+
+has_src=false
+for f in $staged; do
+    case "$f" in
+        src/*|tests/*) has_src=true; break ;;
+    esac
+done
+
+if $has_src; then
+    if ! echo "$staged" | grep -q '^UNRELEASED\.md$'; then
+        echo "ERROR: src/ or tests/ files are staged but UNRELEASED.md is not."
+        echo "Add changelog entries to UNRELEASED.md before committing."
+        exit 1
+    fi
+fi
