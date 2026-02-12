@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> Version 0.2.0 | AI Instruction Validator
+> Version 0.2.1 | AI Instruction Validator
 
 ## Overview
 
@@ -82,6 +82,11 @@ reporails-cli/
 │   │   ├── analytics.py      # Scan analytics + project identification
 │   │   ├── update_check.py   # Update staleness detection + pre-run prompt
 │   │   ├── self_update.py    # CLI self-upgrade
+│   │   ├── agents.py         # Agent detection + discovery
+│   │   ├── applicability.py  # Feature detection (filesystem)
+│   │   ├── capability.py     # Capability scoring (OpenGrep)
+│   │   ├── semantic.py       # Build JudgmentRequests from SARIF
+│   │   ├── utils.py          # Shared helpers (frontmatter, hashing)
 │   │   ├── mechanical/       # Mechanical rule checks (package)
 │   │   │   ├── checks.py     # Simple checks + registry
 │   │   │   └── checks_advanced.py  # Complex checks
@@ -94,7 +99,9 @@ reporails-cli/
 │   │   └── capability-patterns.yml
 │   ├── templates/            # CLI output templates
 │   ├── interfaces/
-│   │   ├── mcp/server.py     # MCP server
+│   │   ├── mcp/
+│   │   │   ├── server.py     # MCP server
+│   │   │   └── tools.py      # Tool implementations
 │   │   └── cli/
 │   │       ├── main.py       # check + explain commands
 │   │       ├── commands.py   # map, sync, update, judge, version
@@ -106,7 +113,9 @@ reporails-cli/
 │       │   ├── compact.py    # Non-TTY output
 │       │   ├── box.py        # Assessment box
 │       │   ├── violations.py # Violation rendering
-│       │   └── ...
+│       │   ├── components.py # Shared formatting helpers
+│       │   ├── chars.py      # Unicode/ASCII character sets
+│       │   └── rules.py      # Rule explanation formatting
 │       └── mcp.py            # MCP wrapper
 ├── docs/specs/               # Architecture docs
 └── tests/
@@ -356,7 +365,7 @@ engine.py
 
 ## Agent Support
 
-**Currently supported (v0.0.1):**
+**Currently supported:**
 - Claude: `CLAUDE.md`, `.claude/rules/*.md`
 
 **Discovery-ready (detection only, no validation rules yet):**

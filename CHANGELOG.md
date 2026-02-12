@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.2.1
+
+### Pipeline state engine
+
+Rules now execute through a per-rule ordered check pipeline with shared mutable state. OpenGrep batching is preserved via a gather-distribute pattern: all deterministic+semantic rules run through one OpenGrep call, then SARIF results are distributed to per-rule buckets for ordered check execution. Includes in-memory check result cache for cross-rule mechanical dedup and D→M annotation propagation.
+
+### MCP judge tool
+
+Native `judge` MCP tool enables verdict caching directly from Claude Code, with a circuit breaker to prevent infinite validate-fix-validate loops.
+
+### Module reorganization
+
+Split 7 oversized modules (models, cache, registry, init, engine, checks, cli/main) to stay under pylint structural limits. Stricter tooling: ruff ARG/C90/PERF/RUF rules, pylint 300-line module enforcement.
+
+### Security hardening
+
+- Tarball extraction now validates all archive members for path traversal and symlink attacks before extracting.
+- Rules update uses atomic swap: rename old out, move new in, restore on failure.
+- Post-extraction structure validation ensures expected directories (`core/`, `schemas/`) exist.
+- Path traversal fix in judgment cache writes.
+
+### Bug fixes
+
+- Pipeline silently swallowed unknown rule types instead of warning.
+- Negated check_id lost full coordinate format (split on last colon instead of preserving `check:NNNN`).
+- `content_absent` crashed on invalid regex patterns.
+- Broad `except Exception` in frontmatter checks swallowed unexpected errors.
+- `_apply_agent_overrides` mutated shared Rule objects (Rule now frozen).
+- JSON serializer omitted `content` field from JudgmentRequest output.
+- Nondeterministic directory selection in recommended extraction.
+- explain_tool returned empty rules (missing paths + tier filtering).
+- Template vars unresolved when engine uses custom rules_paths.
+- Verdict parser mangled coordinate IDs with line numbers.
+- MCP server crashed on RuntimeError from init/validation.
+- ScanDelta IndexError on corrupted level in analytics cache.
+- Concurrent judgment cache writes lost data (now atomic).
+- Recommended rules download failures silently swallowed.
+- `__version__` was hardcoded and drifted from package metadata.
+- `_find_project_root` walked past child backbone into parent coordination root.
+
 ## 0.2.0
 
 ### CLI self-upgrade
