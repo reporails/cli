@@ -19,10 +19,11 @@ class Category(str, Enum):
 
 ### RuleType
 
-Detection method. Two types only.
+Detection method. Three types.
 
 ```python
 class RuleType(str, Enum):
+    MECHANICAL = "mechanical"        # Python structural check
     DETERMINISTIC = "deterministic"  # OpenGrep pattern → direct violation
     SEMANTIC = "semantic"            # LLM judgment required
 ```
@@ -45,8 +46,9 @@ Capability levels from framework.
 
 ```python
 class Level(str, Enum):
-    L1 = "L1"  # Absent
-    L2 = "L2"  # Basic
+    L0 = "L0"  # Absent
+    L1 = "L1"  # Basic
+    L2 = "L2"  # Scoped
     L3 = "L3"  # Structured
     L4 = "L4"  # Abstracted
     L5 = "L5"  # Maintained
@@ -78,7 +80,7 @@ class Check:
 A rule definition loaded from framework frontmatter.
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Rule:
     # Required (from frontmatter)
     id: str              # e.g., "CORE:S:0001"
@@ -420,7 +422,7 @@ Used by `get_previous_scan()` to compute `ScanDelta` for progress tracking.
 |-----|-----|-------|
 | `Antipattern` | `Check` | Renamed |
 | `antipatterns: list[Antipattern]` | `checks: list[Check]` | Field renamed |
-| `RuleType.HEURISTIC` | Removed | Only deterministic + semantic |
+| `RuleType.HEURISTIC` | `RuleType.MECHANICAL` | Replaced with Python structural checks |
 | `points: int` | Removed from Check | Calculated from severity weight |
 | `criteria: str` | `criteria: list[dict]` | Structured format |
 | `choices: list[str]` | `choices: list[dict]` | Value + label |

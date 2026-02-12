@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> Version 0.2.0 | AI Instruction Validator
+> Version 0.2.1 | AI Instruction Validator
 
 ## Overview
 
@@ -62,17 +62,34 @@ Reporails validates AI coding agent instruction files against community-maintain
 reporails-cli/
 ├── src/reporails_cli/
 │   ├── core/
-│   │   ├── init.py           # Download OpenGrep + framework + recommended
+│   │   ├── init.py           # Re-exports + run_init()
+│   │   ├── download.py       # Download OpenGrep, rules, recommended
+│   │   ├── updater.py        # Version fetching + update orchestration
 │   │   ├── bootstrap.py      # Path helpers
 │   │   ├── levels.py         # Level config, rule mapping
 │   │   ├── discover.py       # Project discovery
-│   │   ├── engine.py         # Validation orchestration (~170 lines)
+│   │   ├── engine.py         # Validation orchestration
+│   │   ├── engine_helpers.py  # Validation sub-functions
+│   │   ├── pipeline.py       # Pipeline state, target metadata
+│   │   ├── pipeline_exec.py  # Per-rule check execution
+│   │   ├── check_cache.py    # In-memory check result dedup
 │   │   ├── registry.py       # Rule loading + resolution
+│   │   ├── rule_builder.py   # Rule construction + tier derivation
 │   │   ├── scorer.py         # Score calculation
-│   │   ├── models.py         # Data models
-│   │   ├── cache.py          # Caching + analytics
+│   │   ├── models.py         # Core data models (enums, Rule, Violation)
+│   │   ├── results.py        # Result models (features, configs, ValidationResult)
+│   │   ├── cache.py          # Judgment caching
+│   │   ├── analytics.py      # Scan analytics + project identification
 │   │   ├── update_check.py   # Update staleness detection + pre-run prompt
+│   │   ├── self_update.py    # CLI self-upgrade
+│   │   ├── agents.py         # Agent detection + discovery
+│   │   ├── applicability.py  # Feature detection (filesystem)
+│   │   ├── capability.py     # Capability scoring (OpenGrep)
+│   │   ├── semantic.py       # Build JudgmentRequests from SARIF
+│   │   ├── utils.py          # Shared helpers (frontmatter, hashing)
 │   │   ├── mechanical/       # Mechanical rule checks (package)
+│   │   │   ├── checks.py     # Simple checks + registry
+│   │   │   └── checks_advanced.py  # Complex checks
 │   │   ├── opengrep/         # OpenGrep execution (package)
 │   │   │   ├── runner.py     # Binary execution
 │   │   │   ├── templates.py  # {{placeholder}} resolution
@@ -82,15 +99,23 @@ reporails-cli/
 │   │   └── capability-patterns.yml
 │   ├── templates/            # CLI output templates
 │   ├── interfaces/
-│   │   ├── mcp/server.py     # MCP server
-│   │   └── cli/main.py       # Typer CLI
+│   │   ├── mcp/
+│   │   │   ├── server.py     # MCP server
+│   │   │   └── tools.py      # Tool implementations
+│   │   └── cli/
+│   │       ├── main.py       # check + explain commands
+│   │       ├── commands.py   # map, sync, update, judge, version
+│   │       └── helpers.py    # Shared CLI utilities
 │   └── formatters/
 │       ├── json.py           # Canonical format
 │       ├── text/             # Terminal display (package)
 │       │   ├── full.py       # Full output
 │       │   ├── compact.py    # Non-TTY output
 │       │   ├── box.py        # Assessment box
-│       │   └── ...
+│       │   ├── violations.py # Violation rendering
+│       │   ├── components.py # Shared formatting helpers
+│       │   ├── chars.py      # Unicode/ASCII character sets
+│       │   └── rules.py      # Rule explanation formatting
 │       └── mcp.py            # MCP wrapper
 ├── docs/specs/               # Architecture docs
 └── tests/
@@ -304,9 +329,43 @@ Engine extracts content
         Violation
 ```
 
+### Pipeline Architecture
+
+Rules execute through a per-rule ordered check pipeline with shared mutable state:
+
+```
+engine.py
+    │
+    ├──► PASS 1: Capability detection (OpenGrep capability patterns)
+    │
+    └──► PASS 2: Rule validation (pipeline engine)
+            │
+            ├── Batch OpenGrep (gather all deterministic+semantic .yml)
+            │         │
+            │         ▼
+            │   distribute_sarif_by_rule() → per-rule SARIF buckets
+            │
+            └── Per-rule iteration (ordered check sequence)
+                    │
+                    ├── Check type ≤ rule type ceiling?
+                    │       mechanical ⊂ deterministic ⊂ semantic
+                    │
+                    ├── mechanical → dispatch_single_check()
+                    │       blocking? → exclude target globally
+                    │       annotations? → attach to TargetMeta
+                    │
+                    ├── deterministic → read from pre-distributed SARIF
+                    │       negate? → invert match logic
+                    │
+                    └── semantic → short-circuit if no candidates
+                            → build JudgmentRequest
+```
+
+**Key design**: OpenGrep batching is preserved via gather-distribute. All deterministic+semantic rules run through one OpenGrep call (gather), then SARIF results are distributed to per-rule buckets. Per-rule iteration consumes pre-computed results.
+
 ## Agent Support
 
-**Currently supported (v0.0.1):**
+**Currently supported:**
 - Claude: `CLAUDE.md`, `.claude/rules/*.md`
 
 **Discovery-ready (detection only, no validation rules yet):**
@@ -400,7 +459,7 @@ Pattern matching powered by [OpenGrep](https://github.com/opengrep/opengrep).
 
 ## Quality Gates
 
-- `poe qa_fast` — lint, type check, unit tests (pre-commit)
+- `poe qa_fast` — format, lint, pylint structural, type check, unit tests (pre-commit)
 - `poe qa` — full QA including integration tests
 
 ## Related Docs

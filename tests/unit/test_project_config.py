@@ -31,10 +31,7 @@ class TestGetProjectConfig:
 
     def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
         make_config_file(
-            "framework_version: '0.1.0'\n"
-            "packages:\n  - recommended\n"
-            "disabled_rules:\n  - S1\n"
-            "experimental: true\n"
+            "framework_version: '0.1.0'\npackages:\n  - recommended\ndisabled_rules:\n  - S1\nexperimental: true\n"
         )
         config = get_project_config(tmp_path)
         assert config.framework_version == "0.1.0"
@@ -174,9 +171,7 @@ def _create_rule(directory: Path, rule_id: str, title: str) -> None:
     slug = title.lower().replace(" ", "-")
     rule_dir = directory / slug
     rule_dir.mkdir(parents=True, exist_ok=True)
-    (rule_dir / "rule.md").write_text(
-        RULE_MD_TEMPLATE.format(rule_id=rule_id, title=title, slug=slug)
-    )
+    (rule_dir / "rule.md").write_text(RULE_MD_TEMPLATE.format(rule_id=rule_id, title=title, slug=slug))
 
 
 class TestLoadRulesWithPackages:
@@ -197,9 +192,7 @@ class TestLoadRulesWithPackages:
         # Also need sources.yml for tier derivation
         docs_dir = rules_dir / "docs"
         docs_dir.mkdir(parents=True)
-        (docs_dir / "sources.yml").write_text(
-            "general:\n  - id: anthropic-docs\n    weight: 1.0\n"
-        )
+        (docs_dir / "sources.yml").write_text("general:\n  - id: anthropic-docs\n    weight: 1.0\n")
 
         # Additional paths override primary framework rules
         rules = load_rules(
@@ -221,15 +214,13 @@ class TestLoadRulesWithPackages:
         # Sources for tier
         docs_dir = rules_dir / "docs"
         docs_dir.mkdir(parents=True)
-        (docs_dir / "sources.yml").write_text(
-            "general:\n  - id: anthropic-docs\n    weight: 1.0\n"
-        )
+        (docs_dir / "sources.yml").write_text("general:\n  - id: anthropic-docs\n    weight: 1.0\n")
 
         # Project config disabling CORE:S:0001
         project = tmp_path / "project"
         config_dir = project / ".reporails"
         config_dir.mkdir(parents=True)
-        (config_dir / "config.yml").write_text("disabled_rules:\n  - \"CORE:S:0001\"\n")
+        (config_dir / "config.yml").write_text('disabled_rules:\n  - "CORE:S:0001"\n')
 
         rules = load_rules(
             rules_paths=[rules_dir],
@@ -248,9 +239,7 @@ class TestLoadRulesWithPackages:
 
         docs_dir = rules_dir / "docs"
         docs_dir.mkdir(parents=True)
-        (docs_dir / "sources.yml").write_text(
-            "general:\n  - id: anthropic-docs\n    weight: 1.0\n"
-        )
+        (docs_dir / "sources.yml").write_text("general:\n  - id: anthropic-docs\n    weight: 1.0\n")
 
         project = tmp_path / "project"
         config_dir = project / ".reporails"
@@ -273,9 +262,7 @@ class TestLoadRulesWithPackages:
 
         docs_dir = rules_dir / "docs"
         docs_dir.mkdir(parents=True)
-        (docs_dir / "sources.yml").write_text(
-            "general:\n  - id: anthropic-docs\n    weight: 1.0\n"
-        )
+        (docs_dir / "sources.yml").write_text("general:\n  - id: anthropic-docs\n    weight: 1.0\n")
 
         # No project_root — backward compatible
         rules = load_rules(rules_paths=[rules_dir], include_experimental=True)

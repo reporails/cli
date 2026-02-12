@@ -16,7 +16,8 @@ from reporails_cli.templates import render
 def format_legend(ascii_mode: bool | None = None) -> str:
     """Format severity legend for display."""
     chars = get_chars(ascii_mode)
-    return render("cli_legend.txt",
+    return render(
+        "cli_legend.txt",
         crit=chars["crit"],
         high=chars["high"],
         med=chars["med"],

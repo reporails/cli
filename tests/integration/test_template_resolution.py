@@ -19,8 +19,7 @@ class TestTemplateResolution:
     def test_instruction_files_resolves_to_glob(self, agent_config: dict[str, str]) -> None:
         """{{instruction_files}} must resolve to an actual glob pattern."""
         assert "instruction_files" in agent_config, (
-            "Agent config missing 'instruction_files' key - "
-            "templates using this will fail silently"
+            "Agent config missing 'instruction_files' key - templates using this will fail silently"
         )
         value = agent_config["instruction_files"]
         assert value, "instruction_files is empty"
@@ -28,20 +27,14 @@ class TestTemplateResolution:
         if isinstance(value, list):
             for item in value:
                 assert "{{" not in item, f"instruction_files contains unresolved template: {item}"
-                assert "*" in item or "/" in item, (
-                    f"instruction_files item doesn't look like a path pattern: {item}"
-                )
+                assert "*" in item or "/" in item, f"instruction_files item doesn't look like a path pattern: {item}"
         else:
             assert "{{" not in value, f"instruction_files contains unresolved template: {value}"
-            assert "*" in value or "/" in value, (
-                f"instruction_files doesn't look like a path pattern: {value}"
-            )
+            assert "*" in value or "/" in value, f"instruction_files doesn't look like a path pattern: {value}"
 
     def test_rules_dir_resolves(self, agent_config: dict[str, str]) -> None:
         """{{rules_dir}} must resolve to a directory path."""
-        assert "rules_dir" in agent_config, (
-            "Agent config missing 'rules_dir' key"
-        )
+        assert "rules_dir" in agent_config, "Agent config missing 'rules_dir' key"
         value = agent_config["rules_dir"]
         assert value, "rules_dir is empty"
         assert "{{" not in value, f"rules_dir contains unresolved template: {value}"
@@ -59,21 +52,16 @@ class TestTemplateResolution:
         resolved = resolve_yml_templates(rule_path, agent_config)
 
         assert "{{instruction_files}}" not in resolved, (
-            "Template {{instruction_files}} was not resolved!\n"
-            f"Resolved content:\n{resolved}"
+            f"Template {{{{instruction_files}}}} was not resolved!\nResolved content:\n{resolved}"
         )
         # Check that resolved values appear in output (as list items or regex)
         value = agent_config["instruction_files"]
         if isinstance(value, list):
             # At least one item should appear (as list item or in regex pattern)
             found = any(item in resolved or item.replace("**/", "") in resolved for item in value)
-            assert found, (
-                f"Expected resolved values from {value} not found in output:\n{resolved}"
-            )
+            assert found, f"Expected resolved values from {value} not found in output:\n{resolved}"
         else:
-            assert value in resolved, (
-                f"Expected resolved value '{value}' not found in output:\n{resolved}"
-            )
+            assert value in resolved, f"Expected resolved value '{value}' not found in output:\n{resolved}"
 
     def test_has_templates_detects_placeholders(
         self,
@@ -87,12 +75,8 @@ class TestTemplateResolution:
         with_template = create_temp_rule_file(tmp_path, rule_with_template_yaml, "with.yml")
         without_template = create_temp_rule_file(tmp_path, valid_rule_yaml, "without.yml")
 
-        assert has_templates(with_template), (
-            f"Failed to detect template in:\n{rule_with_template_yaml}"
-        )
-        assert not has_templates(without_template), (
-            f"False positive - detected template in:\n{valid_rule_yaml}"
-        )
+        assert has_templates(with_template), f"Failed to detect template in:\n{rule_with_template_yaml}"
+        assert not has_templates(without_template), f"False positive - detected template in:\n{valid_rule_yaml}"
 
     def test_empty_context_skips_resolution(
         self,
@@ -110,9 +94,7 @@ class TestTemplateResolution:
 
         # With empty context, templates remain unresolved
         resolved = resolve_yml_templates(rule_path, {})
-        assert "{{instruction_files}}" in resolved, (
-            "Empty context should leave templates unresolved"
-        )
+        assert "{{instruction_files}}" in resolved, "Empty context should leave templates unresolved"
 
     def test_run_opengrep_resolves_templates_before_execution(
         self,
@@ -182,12 +164,9 @@ class TestTemplateResolution:
             invocations = runs[0].get("invocations", [{}])
             notifications = invocations[0].get("toolExecutionNotifications", [])
             # Should have errors about invalid config
-            has_errors = any(
-                n.get("level") == "error" for n in notifications
-            )
+            has_errors = any(n.get("level") == "error" for n in notifications)
             assert has_errors or not runs[0].get("results"), (
-                "Unresolved template should cause error or no results, "
-                f"but got: {result}"
+                f"Unresolved template should cause error or no results, but got: {result}"
             )
 
     def test_unresolvable_template_leaves_placeholder(
@@ -204,9 +183,7 @@ class TestTemplateResolution:
         resolved = resolve_yml_templates(rule_path, agent_config)
 
         # {{nonexistent_variable}} should remain because it's not in context
-        assert "{{nonexistent_variable}}" in resolved, (
-            "Unresolvable template was incorrectly modified"
-        )
+        assert "{{nonexistent_variable}}" in resolved, "Unresolvable template was incorrectly modified"
 
     def test_multiple_templates_all_resolve(
         self,
@@ -261,8 +238,7 @@ class TestTemplateContextLoading:
         if not result:
             pytest.skip("Framework not installed (no agent config available)")
         assert "instruction_files" in result, (
-            "Claude agent config missing 'instruction_files' - "
-            "this will cause template resolution to fail silently"
+            "Claude agent config missing 'instruction_files' - this will cause template resolution to fail silently"
         )
 
     def test_get_agent_vars_unknown_agent_returns_empty(self) -> None:
@@ -306,6 +282,4 @@ class TestEngineTemplateIntegration:
         # Should complete without error
         assert result.score >= 0, "Validation should complete successfully"
         # Score should be reasonable (not 0 due to all rules failing)
-        assert result.rules_checked > 0, (
-            "No rules were checked - possibly all failed due to template issues"
-        )
+        assert result.rules_checked > 0, "No rules were checked - possibly all failed due to template issues"

@@ -112,9 +112,7 @@ class TestResolveSymlinkedFiles:
 class TestSymlinkFeatureDetection:
     """Test symlink handling in detect_features_filesystem."""
 
-    def test_symlinked_claude_md_detected_as_existing(
-        self, tmp_path: Path
-    ) -> None:
+    def test_symlinked_claude_md_detected_as_existing(self, tmp_path: Path) -> None:
         """Symlinked CLAUDE.md (external target) is detected as existing."""
         project = tmp_path / "project"
         project.mkdir()
@@ -130,9 +128,7 @@ class TestSymlinkFeatureDetection:
         assert features.has_claude_md is True
         assert features.has_instruction_file is True
 
-    def test_resolved_symlinks_stored_in_features(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolved_symlinks_stored_in_features(self, tmp_path: Path) -> None:
         """External symlinks are stored in features.resolved_symlinks."""
         project = tmp_path / "project"
         project.mkdir()
@@ -185,7 +181,9 @@ class TestOpenGrepExtraTargets:
             from reporails_cli.core.opengrep.runner import run_opengrep
 
             run_opengrep(
-                [yml_file], tmp_path, opengrep_bin,
+                [yml_file],
+                tmp_path,
+                opengrep_bin,
                 extra_targets=[extra],
             )
 

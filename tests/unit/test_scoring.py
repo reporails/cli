@@ -20,9 +20,7 @@ class TestScoreCalculation:
 
         score = calculate_score(rules_checked=10, violations=[])
 
-        assert score == 10.0, (
-            f"No violations should give 10.0, got {score}"
-        )
+        assert score == 10.0, f"No violations should give 10.0, got {score}"
 
     def test_violations_reduce_score(self) -> None:
         """Violations should reduce score from 10.0."""
@@ -41,12 +39,8 @@ class TestScoreCalculation:
 
         score = calculate_score(rules_checked=10, violations=violations)
 
-        assert score < 10.0, (
-            f"Violations should reduce score below 10.0, got {score}"
-        )
-        assert score >= 0.0, (
-            f"Score should not go below 0, got {score}"
-        )
+        assert score < 10.0, f"Violations should reduce score below 10.0, got {score}"
+        assert score >= 0.0, f"Score should not go below 0, got {score}"
 
     def test_more_violations_lower_score(self) -> None:
         """More violations should result in lower score."""
@@ -79,8 +73,7 @@ class TestScoreCalculation:
         score_three = calculate_score(rules_checked=10, violations=three_violations)
 
         assert score_three < score_one, (
-            f"More violations should give lower score: "
-            f"1 violation={score_one}, 3 violations={score_three}"
+            f"More violations should give lower score: 1 violation={score_one}, 3 violations={score_three}"
         )
 
     def test_higher_severity_more_impact(self) -> None:
@@ -113,8 +106,7 @@ class TestScoreCalculation:
         score_critical = calculate_score(rules_checked=10, violations=critical_violation)
 
         assert score_critical < score_low, (
-            f"Critical violation should impact more than low: "
-            f"LOW={score_low}, CRITICAL={score_critical}"
+            f"Critical violation should impact more than low: LOW={score_low}, CRITICAL={score_critical}"
         )
 
 
@@ -136,14 +128,9 @@ class TestScoreDeterminism:
             )
         ]
 
-        scores = [
-            calculate_score(rules_checked=10, violations=violations)
-            for _ in range(5)
-        ]
+        scores = [calculate_score(rules_checked=10, violations=violations) for _ in range(5)]
 
-        assert len(set(scores)) == 1, (
-            f"Same violations should give same score, got: {scores}"
-        )
+        assert len(set(scores)) == 1, f"Same violations should give same score, got: {scores}"
 
     def test_violation_order_does_not_affect_score(self) -> None:
         """Order of violations should not affect score."""
@@ -169,9 +156,7 @@ class TestScoreDeterminism:
         score_12 = calculate_score(rules_checked=10, violations=[v1, v2])
         score_21 = calculate_score(rules_checked=10, violations=[v2, v1])
 
-        assert score_12 == score_21, (
-            f"Violation order should not matter: [v1,v2]={score_12}, [v2,v1]={score_21}"
-        )
+        assert score_12 == score_21, f"Violation order should not matter: [v1,v2]={score_12}, [v2,v1]={score_21}"
 
 
 class TestScoreBounds:

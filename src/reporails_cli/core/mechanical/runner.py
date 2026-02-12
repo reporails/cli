@@ -9,10 +9,60 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS
-from reporails_cli.core.models import Rule, Violation
+from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
+from reporails_cli.core.models import Check, Rule, Violation
 
 logger = logging.getLogger(__name__)
+
+
+def dispatch_single_check(
+    check: Check,
+    rule: Rule,
+    root: Path,
+    effective_vars: dict[str, str | list[str]],
+    location: str,
+) -> tuple[Violation | None, CheckResult | None]:
+    """Dispatch a single mechanical check and return (violation, raw_result).
+
+    Args:
+        check: Check definition (must have type="mechanical" and check name).
+        rule: Parent rule for context (id, title).
+        root: Project root directory.
+        effective_vars: Template variables with concrete instruction file paths.
+        location: Pre-resolved location string for violation reporting.
+
+    Returns:
+        Tuple of (Violation if check failed else None, raw CheckResult or None on error).
+    """
+    if not check.check:
+        return None, None
+
+    fn = MECHANICAL_CHECKS.get(check.check)
+    if fn is None:
+        logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
+        return None, None
+
+    args: dict[str, Any] = check.args or {}
+
+    try:
+        result = fn(root, args, effective_vars)
+    except Exception:
+        logger.exception("Mechanical check %s failed for rule %s", check.check, rule.id)
+        return None, None
+
+    passed = result.passed if not check.negate else not result.passed
+    if not passed:
+        violation = Violation(
+            rule_id=rule.id,
+            rule_title=rule.title,
+            location=location,
+            message=result.message,
+            severity=check.severity,
+            check_id=check.id,
+        )
+        return violation, result
+
+    return None, result
 
 
 def run_mechanical_checks(
@@ -38,48 +88,22 @@ def run_mechanical_checks(
     Returns:
         List of Violation objects for failed checks
     """
-    # Replace glob patterns with concrete paths so checks don't re-glob
-    effective_vars = _bind_instruction_files(template_vars, target, instruction_files)
-
+    effective_vars = bind_instruction_files(template_vars, target, instruction_files)
     violations: list[Violation] = []
 
-    for rule_id, rule in rules.items():
-        location = _resolve_location(target, rule, effective_vars)
-
+    for rule in rules.values():
+        location = resolve_location(target, rule, effective_vars)
         for check in rule.checks:
-            if check.type != "mechanical" or not check.check:
+            if check.type != "mechanical":
                 continue
-
-            fn = MECHANICAL_CHECKS.get(check.check)
-            if fn is None:
-                logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule_id)
-                continue
-
-            args: dict[str, Any] = check.args or {}
-
-            try:
-                result = fn(target, args, effective_vars)
-            except Exception:
-                logger.exception("Mechanical check %s failed for rule %s", check.check, rule_id)
-                continue
-
-            passed = result.passed if not args.get("negate") else not result.passed
-            if not passed:
-                violations.append(
-                    Violation(
-                        rule_id=rule_id,
-                        rule_title=rule.title,
-                        location=location,
-                        message=result.message,
-                        severity=check.severity,
-                        check_id=check.id,
-                    )
-                )
+            violation, _result = dispatch_single_check(check, rule, target, effective_vars, location)
+            if violation:
+                violations.append(violation)
 
     return violations
 
 
-def _bind_instruction_files(
+def bind_instruction_files(
     template_vars: dict[str, str | list[str]],
     target: Path,
     instruction_files: list[Path] | None,
@@ -118,8 +142,10 @@ def _bind_instruction_files(
     return result
 
 
-def _resolve_location(
-    target: Path, rule: Rule, template_vars: dict[str, str | list[str]],
+def resolve_location(
+    target: Path,
+    rule: Rule,
+    template_vars: dict[str, str | list[str]],
 ) -> str:
     """Resolve a location string for mechanical violations.
 
