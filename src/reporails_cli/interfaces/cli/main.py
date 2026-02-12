@@ -12,7 +12,6 @@ from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.cache import get_previous_scan, record_scan
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
-from reporails_cli.core.opengrep import set_debug_timing
 from reporails_cli.core.registry import load_rules
 from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.cli.helpers import (
@@ -89,15 +88,8 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
         "--no-update-check",
         help="Skip pre-run update check prompt",
     ),
-    debug: bool = typer.Option(
-        False,
-        "--debug",
-        help="Show timing info for performance debugging",
-    ),
 ) -> None:
     """Validate CLAUDE.md files against reporails rules."""
-    if debug:
-        set_debug_timing(True)
     if legend:
         legend_text = text_formatter.format_legend(ascii_mode=ascii)
         print(f"Severity Legend: {legend_text}")

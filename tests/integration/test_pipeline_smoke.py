@@ -1,17 +1,16 @@
 """Pipeline smoke test — runs full validation with all three gate types.
 
 This is the integration test that catches composition bugs invisible to
-unit tests (which mock OpenGrep) and the rule harness (which tests one
+unit tests (which mock the regex engine) and the rule harness (which tests one
 rule at a time). It exercises:
 
-    template resolution → OpenGrep execution → SARIF parsing → rule matching
+    template resolution → regex execution → SARIF parsing → rule matching
 
 across multiple rules simultaneously, verifying mechanical, deterministic,
 and semantic gates all produce output.
 
 Regression coverage:
-- Temp filename collision (all rule.yml → same temp path, only last survives)
-- SARIF ruleId prefix (temp dir components prepended, extract_rule_id fails)
+- SARIF ruleId format (rule IDs must be valid coordinates)
 """
 
 from __future__ import annotations
@@ -57,19 +56,16 @@ class TestPipelineSmoke:
         self,
         vague_project: Path,
         dev_rules_dir: Path,
-        opengrep_bin: Path,
     ) -> None:
         """Mechanical + deterministic + semantic gates all fire.
 
         This is the composition test that catches:
-        - Temp filename collisions (multiple rule.yml in same temp dir)
-        - SARIF ruleId prefix corruption (temp path in rule ID)
+        - SARIF ruleId format corruption
         - Template resolution failures (unresolved {{placeholders}})
         """
         result = run_validation(
             vague_project,
             rules_paths=[dev_rules_dir],
-            opengrep_path=opengrep_bin,
             agent="claude",
             use_cache=False,
             record_analytics=False,
@@ -107,17 +103,11 @@ class TestPipelineSmoke:
         self,
         vague_project: Path,
         dev_rules_dir: Path,
-        opengrep_bin: Path,
     ) -> None:
-        """Multiple rules must be checked (catches temp file overwrite bug).
-
-        If all 25 templated rule.yml files overwrite each other in the temp
-        directory, only 1 survives and rules_checked will be low.
-        """
+        """Multiple rules must be checked."""
         result = run_validation(
             vague_project,
             rules_paths=[dev_rules_dir],
-            opengrep_path=opengrep_bin,
             agent="claude",
             use_cache=False,
             record_analytics=False,
@@ -133,17 +123,14 @@ class TestPipelineSmoke:
         self,
         vague_project: Path,
         dev_rules_dir: Path,
-        opengrep_bin: Path,
     ) -> None:
-        """Violation rule_ids must be valid coordinates (catches SARIF prefix bug).
+        """Violation rule_ids must be valid coordinates.
 
-        If temp directory components leak into rule IDs, violations will have
-        IDs like 'tmp:tmpXXX:CORE' instead of 'CORE:C:0006'.
+        Rule IDs must be in NAMESPACE:CATEGORY:SLOT format (e.g., CORE:C:0006).
         """
         result = run_validation(
             vague_project,
             rules_paths=[dev_rules_dir],
-            opengrep_path=opengrep_bin,
             agent="claude",
             use_cache=False,
             record_analytics=False,

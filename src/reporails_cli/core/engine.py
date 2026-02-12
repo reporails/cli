@@ -13,7 +13,6 @@ from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.applicability import detect_features_filesystem, get_applicable_rules
 from reporails_cli.core.bootstrap import (
     get_agent_vars,
-    get_opengrep_bin,
     is_initialized,
 )
 from reporails_cli.core.cache import record_scan
@@ -47,7 +46,6 @@ from reporails_cli.core.scorer import calculate_score, estimate_friction
 def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     target: Path,
     rules: dict[str, Rule] | None = None,
-    opengrep_path: Path | None = None,
     rules_paths: list[Path] | None = None,
     use_cache: bool = True,
     record_analytics: bool = True,
@@ -60,11 +58,9 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     scan_root = target.parent if target.is_file() else target
     project_root = _find_project_root(scan_root)
 
-    # Auto-init if needed
+    # Auto-init if needed (downloads rules framework)
     if not is_initialized():
         run_init()
-    if opengrep_path is None:
-        opengrep_path = get_opengrep_bin()
 
     # Get template vars from agent config for yml placeholder resolution
     template_context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
@@ -93,7 +89,6 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     features = detect_features_filesystem(project_root)
     capability, extra_targets = _detect_capabilities(
         project_root,
-        opengrep_path,
         template_context,
         features,
     )
@@ -112,11 +107,10 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     if target_instruction_files and extra_targets:
         target_instruction_files = list(target_instruction_files) + list(extra_targets)
 
-    # PASS 2: Rule Validation (mechanical + OpenGrep + semantic)
+    # PASS 2: Rule Validation (mechanical + regex + semantic)
     violations, judgment_requests = _run_rule_validation(
         applicable_rules,
         scan_root,
-        opengrep_path,
         template_context,
         extra_targets,
         target_instruction_files,
@@ -185,7 +179,6 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
 def run_validation_sync(  # pylint: disable=too-many-arguments
     target: Path,
     rules: dict[str, Rule] | None = None,
-    opengrep_path: Path | None = None,
     rules_paths: list[Path] | None = None,
     use_cache: bool = True,
     record_analytics: bool = True,
@@ -197,7 +190,6 @@ def run_validation_sync(  # pylint: disable=too-many-arguments
     return run_validation(
         target,
         rules,
-        opengrep_path,
         rules_paths,
         use_cache,
         record_analytics,

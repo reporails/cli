@@ -1,6 +1,6 @@
 """Semantic rule request building - creates JudgmentRequests for LLM evaluation.
 
-Semantic rules require OpenGrep pattern matches before LLM evaluation.
+Semantic rules require regex pattern matches before LLM evaluation.
 No match = rule passes (nothing to evaluate).
 """
 

@@ -1,4 +1,4 @@
-"""Template resolution for OpenGrep rule files.
+"""Template resolution for rule YAML files.
 
 Handles {{placeholder}} substitution in .yml rule configs.
 """

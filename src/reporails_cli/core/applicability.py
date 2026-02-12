@@ -72,7 +72,7 @@ def resolve_symlinked_files(target: Path) -> list[Path]:
         try:
             real_path.relative_to(real_target)
         except ValueError:
-            # Outside the scan directory — OpenGrep will miss this
+            # Outside the scan directory — regex engine scans as extra target
             resolved.append(real_path)
 
     return resolved
@@ -194,7 +194,7 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
         except (yaml.YAMLError, OSError):
             pass
 
-    # Resolve symlinked instruction files (for OpenGrep extra targets)
+    # Resolve symlinked instruction files (for regex engine extra targets)
     features.resolved_symlinks = resolve_symlinked_files(target)
 
     return features

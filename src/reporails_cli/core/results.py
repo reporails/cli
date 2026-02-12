@@ -24,7 +24,7 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
 
     Populated in two phases:
     - Phase 1: Filesystem detection (applicability.py)
-    - Phase 2: Content detection (capability.py via OpenGrep)
+    - Phase 2: Content detection (capability.py via regex)
     """
 
     # === Phase 1: Filesystem detection ===
@@ -45,7 +45,7 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
     has_hierarchical_structure: bool = False  # nested CLAUDE.md files
     detected_agents: list[str] = field(default_factory=list)
 
-    # Symlink resolution (for OpenGrep extra targets)
+    # Symlink resolution (for regex engine extra targets)
     resolved_symlinks: list[Path] = field(default_factory=list)
 
     # L2 capabilities
@@ -56,7 +56,7 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
     has_mcp_config: bool = False  # .mcp.json or similar
     has_memory_dir: bool = False  # Memory/state persistence
 
-    # === Phase 2: Content detection (OpenGrep) ===
+    # === Phase 2: Content detection (regex) ===
 
     # Content analysis
     has_sections: bool = False  # Has H2+ headers
@@ -67,7 +67,7 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
 
 @dataclass(frozen=True)
 class ContentFeatures:
-    """Intermediate result from OpenGrep content analysis."""
+    """Intermediate result from regex content analysis."""
 
     has_sections: bool = False
     has_imports: bool = False
@@ -240,7 +240,6 @@ class InitResult:
     """Result of initialization."""
 
     success: bool
-    opengrep_path: Path | None
     rules_path: Path | None
     framework_version: str | None
     errors: list[str] = field(default_factory=list)

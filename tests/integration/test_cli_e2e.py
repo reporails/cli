@@ -44,13 +44,12 @@ requires_rules = pytest.mark.skipif(
 
 class TestVersionCommand:
     def test_shows_all_component_lines(self) -> None:
-        """ails version should show CLI, Framework, Recommended, OpenGrep, Install."""
+        """ails version should show CLI, Framework, Recommended, Install."""
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0, result.output
         assert "CLI:" in result.output
         assert "Framework:" in result.output
         assert "Recommended:" in result.output
-        assert "OpenGrep:" in result.output
         assert "Install:" in result.output
 
     def test_shows_recommended_version(self) -> None:

@@ -2,14 +2,13 @@
 
 Ensures that instruction files which are symlinks pointing outside
 the project are detected and their resolved paths collected for
-OpenGrep extra targets.
+regex engine extra targets.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -155,67 +154,68 @@ class TestSymlinkFeatureDetection:
         assert features.resolved_symlinks == []
 
 
-class TestOpenGrepExtraTargets:
-    """Test extra_targets parameter in run_opengrep."""
+class TestRegexExtraTargets:
+    """Test extra_targets parameter in regex run_validation."""
 
-    def test_extra_targets_appended_to_command(self, tmp_path: Path) -> None:
-        """Extra targets are appended after the main target in the command."""
-        from unittest.mock import MagicMock
-
-        # Create a dummy yml file
+    def test_extra_targets_scanned(self, tmp_path: Path) -> None:
+        """Extra targets should be included in the scan."""
+        # Create a rule that matches "SHARED_CONTENT"
         yml_file = tmp_path / "test.yml"
-        yml_file.write_text("rules: []")
+        yml_file.write_text("""\
+rules:
+  - id: test.extra
+    message: "Found shared content"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "SHARED_CONTENT"
+    paths:
+      include:
+        - "**/*.md"
+""")
 
-        # Create a dummy opengrep binary path
-        opengrep_bin = tmp_path / "opengrep"
-        opengrep_bin.write_text("#!/bin/sh\n")
-        opengrep_bin.chmod(0o755)
+        # Create main project
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Nothing here\n")
 
-        extra = Path("/some/external/file.md")
+        # Create external file with matching content
+        external = tmp_path / "shared" / "external.md"
+        external.parent.mkdir()
+        external.write_text("SHARED_CONTENT is here\n")
 
-        with patch("reporails_cli.core.opengrep.runner.subprocess.run") as mock_run:
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
+        from reporails_cli.core.regex import run_validation
 
-            from reporails_cli.core.opengrep.runner import run_opengrep
+        sarif = run_validation(
+            [yml_file],
+            project,
+            extra_targets=[external],
+        )
 
-            run_opengrep(
-                [yml_file],
-                tmp_path,
-                opengrep_bin,
-                extra_targets=[extra],
-            )
-
-            # Verify command includes extra target
-            cmd = mock_run.call_args[0][0]
-            assert str(extra) in cmd
-            # Main target should come before extra target
-            main_idx = cmd.index(str(tmp_path))
-            extra_idx = cmd.index(str(extra))
-            assert main_idx < extra_idx
+        results = sarif.get("runs", [{}])[0].get("results", [])
+        assert len(results) > 0, "Extra target file should be scanned and matched"
 
     def test_extra_targets_none_is_noop(self, tmp_path: Path) -> None:
-        """No extra_targets → command has single target only."""
-        from unittest.mock import MagicMock
-
+        """No extra_targets → only main target scanned."""
         yml_file = tmp_path / "test.yml"
-        yml_file.write_text("rules: []")
+        yml_file.write_text("""\
+rules:
+  - id: test.main
+    message: "Found content"
+    severity: WARNING
+    languages: [generic]
+    pattern-regex: "Hello"
+    paths:
+      include:
+        - "**/*.md"
+""")
 
-        opengrep_bin = tmp_path / "opengrep"
-        opengrep_bin.write_text("#!/bin/sh\n")
-        opengrep_bin.chmod(0o755)
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "test.md").write_text("Hello World\n")
 
-        with patch("reporails_cli.core.opengrep.runner.subprocess.run") as mock_run:
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
+        from reporails_cli.core.regex import run_validation
 
-            from reporails_cli.core.opengrep.runner import run_opengrep
+        sarif = run_validation([yml_file], project)
 
-            run_opengrep([yml_file], tmp_path, opengrep_bin)
-
-            cmd = mock_run.call_args[0][0]
-            # Only one path argument after all --config flags
-            # The target should be the last element
-            assert cmd[-1] == str(tmp_path)
+        results = sarif.get("runs", [{}])[0].get("results", [])
+        assert len(results) > 0, "Main target should still be scanned"

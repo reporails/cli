@@ -52,16 +52,15 @@ class TestFilesystemFeatureDetection:
 
 
 class TestContentFeatureDetection:
-    """Test Phase 2: content-based feature detection via OpenGrep."""
+    """Test Phase 2: content-based feature detection via regex engine."""
 
     def test_detect_sections_in_content(
         self,
         level2_project: Path,
-        opengrep_bin: Path,
     ) -> None:
         """Detect markdown sections (## headings) in content."""
         from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         sarif = run_capability_detection(level2_project)
         content_features = detect_features_content(sarif)
@@ -71,11 +70,10 @@ class TestContentFeatureDetection:
     def test_detect_explicit_constraints(
         self,
         level2_project: Path,
-        opengrep_bin: Path,
     ) -> None:
         """Detect MUST/NEVER constraints in content."""
         from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         sarif = run_capability_detection(level2_project)
         content_features = detect_features_content(sarif)
@@ -93,7 +91,7 @@ class TestCapabilityLevelDetermination:
             detect_features_content,
             determine_capability_level,
         )
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         features = detect_features_filesystem(level1_project)
         sarif = run_capability_detection(level1_project)
@@ -104,14 +102,14 @@ class TestCapabilityLevelDetermination:
         # Minimal project should be L1 or L2
         assert result.level in (Level.L1, Level.L2), f"Minimal project should be L1-L2, got {result.level}"
 
-    def test_level2_basic_project(self, level2_project: Path, opengrep_bin: Path) -> None:
+    def test_level2_basic_project(self, level2_project: Path) -> None:
         """Level 2 project should be detected as L2 or L3."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
             detect_features_content,
             determine_capability_level,
         )
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         features = detect_features_filesystem(level2_project)
         sarif = run_capability_detection(level2_project)
@@ -122,14 +120,14 @@ class TestCapabilityLevelDetermination:
         # Basic project with sections should be at least L2
         assert result.level.value >= Level.L2.value, f"Project with sections should be at least L2, got {result.level}"
 
-    def test_level3_structured_project(self, level3_project: Path, opengrep_bin: Path) -> None:
+    def test_level3_structured_project(self, level3_project: Path) -> None:
         """Level 3 project should be detected as L3 or higher."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
             detect_features_content,
             determine_capability_level,
         )
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         features = detect_features_filesystem(level3_project)
         sarif = run_capability_detection(level3_project)
@@ -142,14 +140,14 @@ class TestCapabilityLevelDetermination:
             f"Project with .claude/rules/ should be at least L3, got {result.level}"
         )
 
-    def test_level5_governed_project(self, level5_project: Path, opengrep_bin: Path) -> None:
+    def test_level5_governed_project(self, level5_project: Path) -> None:
         """Level 5 project should be detected as L5 or L6."""
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import (
             detect_features_content,
             determine_capability_level,
         )
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         features = detect_features_filesystem(level5_project)
         sarif = run_capability_detection(level5_project)
@@ -169,7 +167,7 @@ class TestCapabilityLevelDetermination:
             detect_features_content,
             determine_capability_level,
         )
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         # Create minimal structure
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
@@ -194,7 +192,7 @@ class TestLevelDeterminism:
             detect_features_content,
             determine_capability_level,
         )
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         results = []
         for _ in range(3):
@@ -214,7 +212,7 @@ class TestLevelDeterminism:
             merge_content_features,
         )
         from reporails_cli.core.levels import determine_level_from_gates
-        from reporails_cli.core.opengrep import run_capability_detection
+        from reporails_cli.core.regex import run_capability_detection
 
         features = detect_features_filesystem(level3_project)
         sarif = run_capability_detection(level3_project)

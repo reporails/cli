@@ -17,9 +17,10 @@ from reporails_cli.core.models import (
     Severity,
     Violation,
 )
-from reporails_cli.core.opengrep import get_rule_yml_paths, run_opengrep
 from reporails_cli.core.pipeline import build_initial_state
 from reporails_cli.core.pipeline_exec import execute_rule_checks
+from reporails_cli.core.regex import get_rule_yml_paths
+from reporails_cli.core.regex import run_validation as run_regex_validation
 from reporails_cli.core.results import CapabilityResult, DetectedFeatures
 from reporails_cli.core.sarif import distribute_sarif_by_rule
 
@@ -118,7 +119,6 @@ def _compute_category_summary(
 
 def _detect_capabilities(
     project_root: Path,
-    opengrep_path: Path,
     template_context: dict[str, str | list[str]],
     features: DetectedFeatures,
 ) -> tuple[CapabilityResult, list[Path] | None]:
@@ -133,10 +133,9 @@ def _detect_capabilities(
     capability_patterns = get_capability_patterns_path()
     capability_sarif: dict[str, object] = {}
     if capability_patterns.exists():
-        capability_sarif = run_opengrep(
+        capability_sarif = run_regex_validation(
             [capability_patterns],
             project_root,
-            opengrep_path,
             template_context,
             extra_targets=extra_targets,
             instruction_files=project_instruction_files,
@@ -150,32 +149,28 @@ def _detect_capabilities(
 def _run_rule_validation(
     applicable_rules: dict[str, Rule],
     scan_root: Path,
-    opengrep_path: Path,
     template_context: dict[str, str | list[str]],
     extra_targets: list[Path] | None,
     target_instruction_files: list[Path] | None,
     exclude_dirs: list[str] | None,
 ) -> tuple[list[Violation], list[JudgmentRequest]]:
-    """Run PASS 2: batch OpenGrep gather, then per-rule ordered check iteration."""
+    """Run PASS 2: batch regex gather, then per-rule ordered check iteration."""
     state = build_initial_state(target_instruction_files, scan_root)
 
-    # Batch OpenGrep: gather ALL deterministic + semantic yml paths
-    opengrep_rules = {
-        k: v for k, v in applicable_rules.items() if v.type in (RuleType.DETERMINISTIC, RuleType.SEMANTIC)
-    }
-    rule_yml_paths = get_rule_yml_paths(opengrep_rules)
+    # Batch regex: gather ALL deterministic + semantic yml paths
+    regex_rules = {k: v for k, v in applicable_rules.items() if v.type in (RuleType.DETERMINISTIC, RuleType.SEMANTIC)}
+    rule_yml_paths = get_rule_yml_paths(regex_rules)
     rule_sarif: dict[str, object] = {}
     if rule_yml_paths:
-        rule_sarif = run_opengrep(
+        rule_sarif = run_regex_validation(
             rule_yml_paths,
             scan_root,
-            opengrep_path,
             template_context,
             extra_targets=extra_targets,
             instruction_files=target_instruction_files,
             exclude_dirs=exclude_dirs,
         )
-    state._sarif_by_rule = distribute_sarif_by_rule(rule_sarif, opengrep_rules)
+    state._sarif_by_rule = distribute_sarif_by_rule(rule_sarif, regex_rules)
 
     # Per-rule iteration (ordered check execution)
     all_judgment_requests: list[JudgmentRequest] = []
