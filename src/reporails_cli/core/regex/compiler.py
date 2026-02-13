@@ -163,7 +163,7 @@ def compile_rules(
                 content = yml_path.read_text(encoding="utf-8")
 
             data = yaml.safe_load(content)
-            if not data or "rules" not in data:
+            if not data or "rules" not in data or not isinstance(data["rules"], list):
                 continue
 
             for rule_entry in data["rules"]:

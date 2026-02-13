@@ -210,7 +210,7 @@ def _filter_cached_judgments(
             full_file = scan_root / rel_path
             file_hash = content_hash(full_file)
             struct_hash = structural_hash(full_file)
-        except OSError:
+        except (OSError, ValueError):
             filtered_requests.append(jr)
             continue
 
