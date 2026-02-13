@@ -49,9 +49,16 @@ def _format_pending_section(
     for rule_id in ps.rules:
         title, severity = seen.get(rule_id, ("", ""))
         icon = severity_icons.get(severity, "") if severity else ""
-        # Truncate title to fit: 17 (rule) + 29 (title) + icon
+        # Word-boundary truncation for title
         max_title = 29
-        display_title = title[:max_title] if len(title) > max_title else title
+        if len(title) > max_title:
+            truncated = title[: max_title - 3]
+            last_space = truncated.rfind(" ")
+            if last_space > max_title // 2:
+                truncated = truncated[:last_space]
+            display_title = truncated.rstrip() + "..."
+        else:
+            display_title = title
         row = f"{rule_id:<17}{display_title:<29}{icon}"
         rule_lines.append(pad_line(row, box_width, chars["v"]))
 
@@ -83,26 +90,14 @@ def _format_cta(
     result: ValidationResult,
     ascii_mode: bool | None = None,
 ) -> str:
-    """Format MCP call-to-action box for partial evaluation."""
+    """Format MCP call-to-action for partial evaluation."""
     if not result.is_partial:
         return ""
 
-    chars = get_chars(ascii_mode)
-    width = 64
-    border = chars["h"] * width
-
-    msg = "For complete analysis, add reporails MCP to your agent:"
-    cmd = "claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp"
-
-    lines = [
-        border,
-        "",
-        msg.center(width),
-        cmd.center(width),
-        "",
-        border,
-    ]
-    return "\n".join(lines)
+    _chars = get_chars(ascii_mode)
+    return (
+        "[dim]For full semantic analysis: claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp[/dim]"
+    )
 
 
 def format_result(

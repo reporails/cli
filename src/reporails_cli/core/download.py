@@ -115,18 +115,22 @@ def download_rules_tarball(dest: Path) -> int:
     """Download rules from GitHub release tarball into *dest*."""
     url = RULES_TARBALL_URL.format(version=RULES_VERSION)
 
-    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-        response = client.get(url)
-        response.raise_for_status()
+    try:
+        with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+            response = client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError as e:
+        msg = f"Could not download rules. Check your internet connection. ({e})"
+        raise RuntimeError(msg) from e
 
-        with TemporaryDirectory() as tmpdir:
-            tarball_path = Path(tmpdir) / "rules.tar.gz"
-            tarball_path.write_bytes(response.content)
+    with TemporaryDirectory() as tmpdir:
+        tarball_path = Path(tmpdir) / "rules.tar.gz"
+        tarball_path.write_bytes(response.content)
 
-            with tarfile.open(tarball_path, "r:gz") as tar:
-                _safe_extractall(tar, dest)
+        with tarfile.open(tarball_path, "r:gz") as tar:
+            _safe_extractall(tar, dest)
 
-            count = sum(1 for _ in dest.rglob("*") if _.is_file())
+        count = sum(1 for _ in dest.rglob("*") if _.is_file())
 
     return count
 
@@ -161,7 +165,7 @@ def is_recommended_installed() -> bool:
     return any(pkg_path.iterdir())
 
 
-def download_recommended(version: str | None = None) -> Path:
+def download_recommended(version: str | None = None) -> Path:  # pylint: disable=too-many-locals
     """Download recommended rules package from GitHub archive."""
     if version is None:
         from reporails_cli.core.updater import get_latest_recommended_version
@@ -175,36 +179,40 @@ def download_recommended(version: str | None = None) -> Path:
         shutil.rmtree(pkg_path)
     pkg_path.mkdir(parents=True, exist_ok=True)
 
-    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-        response = client.get(archive_url)
-        response.raise_for_status()
+    try:
+        with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+            response = client.get(archive_url)
+            response.raise_for_status()
+    except httpx.HTTPError as e:
+        msg = f"Could not download recommended rules. Check your internet connection. ({e})"
+        raise RuntimeError(msg) from e
 
-        with TemporaryDirectory() as tmpdir:
-            tarball_path = Path(tmpdir) / "recommended.tar.gz"
-            tarball_path.write_bytes(response.content)
+    with TemporaryDirectory() as tmpdir:
+        tarball_path = Path(tmpdir) / "recommended.tar.gz"
+        tarball_path.write_bytes(response.content)
 
+        with tarfile.open(tarball_path, "r:gz") as tar:
+            _safe_extractall(tar, Path(tmpdir))
+
+        extracted_dirs = sorted(
+            (
+                d
+                for d in Path(tmpdir).iterdir()
+                if d.is_dir() and d.name != "__MACOSX" and d.name.startswith("recommended-")
+            ),
+            key=lambda d: d.name,
+        )
+        if extracted_dirs:
+            source_dir = extracted_dirs[0]
+            for item in source_dir.iterdir():
+                dest = pkg_path / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+        else:
             with tarfile.open(tarball_path, "r:gz") as tar:
-                _safe_extractall(tar, Path(tmpdir))
-
-            extracted_dirs = sorted(
-                (
-                    d
-                    for d in Path(tmpdir).iterdir()
-                    if d.is_dir() and d.name != "__MACOSX" and d.name.startswith("recommended-")
-                ),
-                key=lambda d: d.name,
-            )
-            if extracted_dirs:
-                source_dir = extracted_dirs[0]
-                for item in source_dir.iterdir():
-                    dest = pkg_path / item.name
-                    if item.is_dir():
-                        shutil.copytree(item, dest)
-                    else:
-                        shutil.copy2(item, dest)
-            else:
-                with tarfile.open(tarball_path, "r:gz") as tar:
-                    _safe_extractall(tar, pkg_path)
+                _safe_extractall(tar, pkg_path)
 
     version_file = pkg_path / ".version"
     version_file.write_text(version + "\n", encoding="utf-8")
