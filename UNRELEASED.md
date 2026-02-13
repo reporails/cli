@@ -76,3 +76,4 @@
 - [TEST]: Updated MCP e2e tests for JSON output, content-aware circuit breaker, and semantic workflow
 - [TEST]: MCP e2e test includes `heal` tool in expected tool set
 - [TEST]: Scan scope containment tests — nested projects, backbone walk-up, agent bypass (10 tests)
+- [TEST]: Behavioral contract tests — exit codes, JSON schema, scan scope, text output, flags, map, dismiss, judge, explain, version, config, heal, delta (48 tests)
