@@ -11,6 +11,7 @@
 - [HOOKS]: PostToolUse auto-validation hook for instruction file edits
 
 ### Changed
+- [REPO]: Gitignore development internals (docs/specs, CLAUDE.md, .claude/rules, hooks, skills, settings)
 - [CORE]: Scan targets now include config files for path-filtered rules (`get_all_scannable_files`)
 - [JSON]: `pending_semantic` and `skipped_experimental` omitted from JSON output when absent (avoids null-chaining)
 - [META]: Version bump to 0.3.0
