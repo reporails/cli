@@ -3,10 +3,17 @@
 ### Added
 - [CORE]: Pure Python regex engine replacing OpenGrep binary
 - [CORE]: Adversarial test suite for regex engine (76 tests)
+- [HOOKS]: PostToolUse auto-validation hook for instruction file edits
 
 ### Changed
 - [META]: Version bump to 0.3.0
 - [DOCS]: Updated all specs to reflect regex engine migration
+- [MCP]: Validate tool returns structured JSON instead of formatted text
+- [MCP]: Semantic judgment requests now carry full file content (up to 8KB) instead of 5-line snippets
+- [MCP]: Replaced `_instructions` text blob with structured `_semantic_workflow` object for agent consumption
+- [MCP]: Rewrote all tool descriptions with output format info and usage guidance
+- [MCP]: Content-aware circuit breaker tracks file mtimes instead of blunt call counter (allows edit-validate cycles)
+- [MCP]: Error responses now return structured JSON with `error` and `message` keys
 
 ### Removed
 - [CORE]: OpenGrep binary dependency and download pipeline
@@ -36,3 +43,4 @@
 - [TEST]: Added unit tests for applicability detection and rule filtering (14 tests)
 - [TEST]: Added unit tests for engine helper cache filtering (6 tests)
 - [TEST]: Added type safety tests for mechanical checks with string/invalid args
+- [TEST]: Updated MCP e2e tests for JSON output, content-aware circuit breaker, and semantic workflow

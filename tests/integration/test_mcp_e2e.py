@@ -2,11 +2,12 @@
 
 Covers:
   - Tool listing: all expected tools present with correct schemas
-  - validate: returns text report, no shell-out guidance (regression)
+  - validate: returns JSON with score, violations, judgment workflow
   - score: returns JSON with score/level keys
   - explain: returns rule details or error for unknown rules
   - judge: caches verdicts, returns recorded count
   - judge: path traversal blocked, coordinate IDs parsed correctly
+  - Circuit breaker: content-aware mtime tracking
   - Unknown tool: returns error
 """
 
@@ -86,13 +87,12 @@ class TestListTools:
 # validate tool
 # ---------------------------------------------------------------------------
 
-# Shell-out patterns that must NEVER appear in validate guidance.
-# If someone reintroduces a Bash shell-out, at least one of these will match.
+# Shell-out patterns that must NEVER appear in validate output.
 _SHELL_OUT_PATTERNS = [
     "via Bash",
     "via bash",
     "ails judge .",
-    "ails judge",  # bare CLI command reference
+    "ails judge",
     "npx ",
     "run this command",
     "shell command",
@@ -104,10 +104,35 @@ _SHELL_OUT_PATTERNS = [
 
 class TestValidateTool:
     @requires_rules
-    def test_returns_score_in_output(self, level2_project: Path) -> None:
-        """validate should return text containing a score."""
+    def test_returns_valid_json(self, level2_project: Path) -> None:
+        """validate must return parseable JSON."""
         text = _call_tool("validate", {"path": str(level2_project)})
-        assert "SCORE:" in text or "/ 10" in text
+        data = json.loads(text)  # Must not raise
+        assert isinstance(data, dict)
+
+    @requires_rules
+    def test_json_has_score(self, level2_project: Path) -> None:
+        """validate JSON must contain a score key."""
+        text = _call_tool("validate", {"path": str(level2_project)})
+        data = json.loads(text)
+        assert "score" in data
+        assert isinstance(data["score"], (int, float))
+
+    @requires_rules
+    def test_json_has_violations_array(self, level2_project: Path) -> None:
+        """validate JSON must contain violations as a list."""
+        text = _call_tool("validate", {"path": str(level2_project)})
+        data = json.loads(text)
+        assert "violations" in data
+        assert isinstance(data["violations"], list)
+
+    @requires_rules
+    def test_json_has_level(self, level2_project: Path) -> None:
+        """validate JSON must contain level."""
+        text = _call_tool("validate", {"path": str(level2_project)})
+        data = json.loads(text)
+        assert "level" in data
+        assert data["level"].startswith("L")
 
     @requires_rules
     def test_no_shell_out_guidance(self, level2_project: Path) -> None:
@@ -117,33 +142,42 @@ class TestValidateTool:
             assert pattern not in text, f"Shell-out pattern {pattern!r} found in validate response"
 
     @requires_rules
-    def test_semantic_guidance_references_judge_tool(self, level2_project: Path) -> None:
-        """When semantic rules exist, guidance must reference the judge MCP tool."""
+    def test_semantic_workflow_when_pending(self, level2_project: Path) -> None:
+        """When semantic rules exist, JSON must contain _semantic_workflow."""
         text = _call_tool("validate", {"path": str(level2_project)})
-        if "EVALUATE THESE SEMANTIC RULES" in text:
-            assert "judge tool" in text, "Semantic guidance must reference 'judge tool' (MCP native)"
-            assert "judge(verdicts=" in text, "Semantic guidance must show judge(verdicts=...) call example"
+        data = json.loads(text)
+        if data.get("judgment_requests"):
+            assert "_semantic_workflow" in data
+            workflow = data["_semantic_workflow"]
+            assert workflow["action"] == "evaluate_and_judge"
+            assert "steps" in workflow
+            assert "verdict_format" in workflow
+            assert "example_call" in workflow
 
-    def test_missing_path_returns_error(self) -> None:
-        """Non-existent path should return an error message."""
+    def test_missing_path_returns_error_json(self) -> None:
+        """Non-existent path should return JSON error."""
         text = _call_tool("validate", {"path": "/tmp/no-such-path-xyz-mcp-test"})
-        assert "Error" in text
+        data = json.loads(text)
+        assert "error" in data
 
-    def test_uninitialized_returns_error(self) -> None:
-        """When framework is not initialized, should return init error."""
+    def test_uninitialized_returns_error_json(self) -> None:
+        """When framework is not initialized, should return JSON error."""
         with patch("reporails_cli.interfaces.mcp.server.is_initialized", return_value=False):
             text = _call_tool("validate", {"path": "."})
-        assert "not initialized" in text.lower()
+        data = json.loads(text)
+        assert "error" in data
+        assert data["error"] == "not_initialized"
 
-    def test_runtime_error_returns_error_not_crash(self, level2_project: Path) -> None:
-        """RuntimeError from run_validation must return error text, not crash."""
+    def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
+        """RuntimeError from run_validation must return JSON error, not crash."""
         with patch(
             "reporails_cli.interfaces.mcp.server.run_validation",
             side_effect=RuntimeError("Unsupported operating system"),
         ):
             text = _call_tool("validate", {"path": str(level2_project)})
-        assert "Error" in text
-        assert "RuntimeError" in text
+        data = json.loads(text)
+        assert "error" in data
+        assert data["error"] == "RuntimeError"
 
 
 # ---------------------------------------------------------------------------
@@ -343,45 +377,67 @@ class TestUnknownTool:
 
 
 # ---------------------------------------------------------------------------
-# Circuit breaker — validate call count limiter
+# Circuit breaker — content-aware mtime tracking
 # ---------------------------------------------------------------------------
 
 
 class TestCircuitBreaker:
-    """Circuit breaker must stop infinite validate-fix-validate loops."""
+    """Circuit breaker uses content-aware mtime tracking.
 
-    def _reset_counts(self) -> None:
+    Files unchanged between calls increment consecutive_unchanged.
+    Files changed between calls reset consecutive_unchanged.
+    """
+
+    def _reset_states(self) -> None:
         from reporails_cli.interfaces.mcp import server
 
-        server._validate_call_counts.clear()
+        server._validate_states.clear()
 
     def setup_method(self) -> None:
-        self._reset_counts()
+        self._reset_states()
 
     def teardown_method(self) -> None:
-        self._reset_counts()
+        self._reset_states()
 
     @requires_rules
     def test_first_call_succeeds(self, level2_project: Path) -> None:
-        """First validate call should return normal results."""
+        """First validate call should return normal JSON results."""
         text = _call_tool("validate", {"path": str(level2_project)})
-        assert "circuit breaker" not in text.lower()
+        data = json.loads(text)
+        assert "error" not in data
+        assert "score" in data
 
     @requires_rules
     def test_second_call_succeeds(self, level2_project: Path) -> None:
-        """Second validate call should still return normal results."""
+        """Second validate call (unchanged files) should still succeed."""
         _call_tool("validate", {"path": str(level2_project)})
         text = _call_tool("validate", {"path": str(level2_project)})
-        assert "circuit breaker" not in text.lower()
+        data = json.loads(text)
+        assert "error" not in data
+        assert "score" in data
 
     @requires_rules
-    def test_third_call_triggers_breaker(self, level2_project: Path) -> None:
-        """Third validate call for same path must trigger circuit breaker."""
+    def test_third_unchanged_triggers_breaker(self, level2_project: Path) -> None:
+        """Third call without file changes must trigger circuit breaker."""
         _call_tool("validate", {"path": str(level2_project)})
         _call_tool("validate", {"path": str(level2_project)})
         text = _call_tool("validate", {"path": str(level2_project)})
-        assert "STOP" in text
-        assert "circuit breaker" in text.lower()
+        data = json.loads(text)
+        assert data.get("error") == "circuit_breaker"
+
+    @requires_rules
+    def test_edit_between_calls_resets_breaker(self, level2_project: Path) -> None:
+        """Editing a file between validate calls should reset the breaker."""
+        _call_tool("validate", {"path": str(level2_project)})
+        _call_tool("validate", {"path": str(level2_project)})
+        # Edit the instruction file to change mtime
+        claude_md = level2_project / "CLAUDE.md"
+        claude_md.write_text(claude_md.read_text() + "\n## New Section\n")
+        # Third call should NOT trigger breaker because file changed
+        text = _call_tool("validate", {"path": str(level2_project)})
+        data = json.loads(text)
+        assert "error" not in data
+        assert "score" in data
 
     @requires_rules
     def test_breaker_message_says_do_not_call_again(self, level2_project: Path) -> None:
@@ -389,11 +445,12 @@ class TestCircuitBreaker:
         _call_tool("validate", {"path": str(level2_project)})
         _call_tool("validate", {"path": str(level2_project)})
         text = _call_tool("validate", {"path": str(level2_project)})
-        assert "DO NOT call validate again" in text
+        data = json.loads(text)
+        assert "DO NOT call validate again" in data.get("message", "")
 
     @requires_rules
     def test_different_paths_independent(self, level2_project: Path, tmp_path: Path) -> None:
-        """Circuit breaker counts are per-path, not global."""
+        """Circuit breaker states are per-path, not global."""
         other = tmp_path / "other"
         other.mkdir()
         (other / "CLAUDE.md").write_text("# Other project\n")
@@ -405,16 +462,34 @@ class TestCircuitBreaker:
 
         # Call other path — should NOT trigger breaker
         text = _call_tool("validate", {"path": str(other)})
-        assert "circuit breaker" not in text.lower()
+        data = json.loads(text)
+        assert "error" not in data or data.get("error") != "circuit_breaker"
 
     @requires_rules
-    def test_fourth_call_still_blocked(self, level2_project: Path) -> None:
+    def test_fourth_unchanged_still_blocked(self, level2_project: Path) -> None:
         """Calls beyond the threshold must all be blocked."""
         for _ in range(3):
             _call_tool("validate", {"path": str(level2_project)})
         text = _call_tool("validate", {"path": str(level2_project)})
-        assert "STOP" in text
-        assert "circuit breaker" in text.lower()
+        data = json.loads(text)
+        assert data.get("error") == "circuit_breaker"
+
+    @requires_rules
+    def test_absolute_ceiling(self, level2_project: Path) -> None:
+        """After MAX_CALLS total calls, breaker triggers regardless of file changes."""
+        from reporails_cli.interfaces.mcp import server
+
+        claude_md = level2_project / "CLAUDE.md"
+        original = claude_md.read_text()
+        # Make MAX_CALLS calls, editing file each time to avoid unchanged breaker
+        for i in range(server._MAX_CALLS):
+            claude_md.write_text(original + f"\n## Edit {i}\n")
+            _call_tool("validate", {"path": str(level2_project)})
+        # Next call should be blocked by absolute ceiling
+        claude_md.write_text(original + "\n## Final\n")
+        text = _call_tool("validate", {"path": str(level2_project)})
+        data = json.loads(text)
+        assert data.get("error") == "circuit_breaker"
 
 
 # ---------------------------------------------------------------------------
