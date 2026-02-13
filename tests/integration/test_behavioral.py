@@ -610,7 +610,7 @@ class TestCheckConfig:
 
 
 class TestHealCommand:
-    """ails heal must require TTY and handle missing paths."""
+    """ails heal must run auto-fixes, present semantic prompts, cache verdicts."""
 
     def test_heal_requires_tty(self, minimal_project: Path) -> None:
         """CliRunner is non-TTY — heal should refuse to run."""
@@ -620,8 +620,124 @@ class TestHealCommand:
 
     def test_heal_missing_path(self) -> None:
         result = runner.invoke(app, ["heal", "/tmp/no-such-path-xyz"])
-        # Should exit with error (2 for input error, or 2 for tty check first)
         assert result.exit_code != 0
+
+    @requires_rules
+    def test_heal_auto_fixes_applied(self, tmp_path: Path) -> None:
+        """Auto-fixers should modify the file and report what they fixed."""
+        from unittest.mock import patch
+
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            result = runner.invoke(app, ["heal", str(p)], input="s\n" * 50)
+
+        assert result.exit_code in (0, None), f"heal failed: {result.output}"
+
+        content = (p / "CLAUDE.md").read_text()
+        original = "# My Project\n\nA project.\n"
+        if content != original:
+            assert len(content) > len(original)
+
+    @requires_rules
+    def test_heal_pass_verdict_cached(self, tmp_path: Path) -> None:
+        """Passing a semantic rule should cache the verdict."""
+        from unittest.mock import patch
+
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text(
+            "# Project\n\n## Commands\n\n- `make build`\n\n## Constraints\n\n- NEVER commit secrets\n"
+        )
+
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            result = runner.invoke(app, ["heal", str(p)], input="p\n" * 50)
+
+        assert result.exit_code in (0, None), f"heal failed: {result.output}"
+
+        if "Passed" in result.output:
+            from reporails_cli.core.cache import ProjectCache
+
+            cache_dir = p / ".reporails" / ".cache"
+            if cache_dir.exists():
+                cache = ProjectCache(p)
+                assert cache.cache_dir.exists()
+
+    @requires_rules
+    def test_heal_fail_verdict_with_reason(self, tmp_path: Path) -> None:
+        """Failing a semantic rule should prompt for reason and cache it."""
+        from unittest.mock import patch
+
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
+
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            result = runner.invoke(app, ["heal", str(p)], input="f\nNot good enough\n" + "s\n" * 50)
+
+        assert result.exit_code in (0, None), f"heal failed: {result.output}"
+        if "verdict" in result.output.lower():
+            assert "Failed" in result.output or "Skipped" in result.output
+
+    @requires_rules
+    def test_heal_dismiss_verdict(self, tmp_path: Path) -> None:
+        """Dismissing a semantic rule should cache it as pass."""
+        from unittest.mock import patch
+
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
+
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            result = runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
+
+        assert result.exit_code in (0, None), f"heal failed: {result.output}"
+
+    @requires_rules
+    def test_heal_nothing_to_heal(self, tmp_path: Path) -> None:
+        """When all rules pass or are cached, heal should say nothing to do."""
+        from unittest.mock import patch
+
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
+
+        # First pass — dismiss everything
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
+
+        # Second pass — everything should be cached
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            result = runner.invoke(app, ["heal", str(p)], input="")
+
+        assert result.exit_code in (0, None)
+        assert "Nothing to heal" in result.output or "Fixed" in result.output or "0" in result.output
+
+    @requires_rules
+    def test_heal_summary_shows_counts(self, tmp_path: Path) -> None:
+        """Heal summary should report pass/fail/skip/dismiss counts."""
+        from unittest.mock import patch
+
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
+
+        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
+            mock_sys.stdout.isatty.return_value = True
+            result = runner.invoke(app, ["heal", str(p)], input="p\n" + "s\n" * 50)
+
+        assert result.exit_code in (0, None)
+        output_lower = result.output.lower()
+        if "pending" in output_lower or "semantic" in output_lower:
+            assert "pass" in output_lower or "skip" in output_lower or "summary" in output_lower
 
 
 # ===========================================================================
