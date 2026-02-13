@@ -141,8 +141,9 @@ async def list_tools() -> list[Tool]:
                 "Cache semantic rule verdicts so they persist across validation runs."
                 " Call after evaluating judgment_requests from validate."
                 " Verdict format: RULE_ID:FILENAME:pass|fail:reason."
-                " Examples: 'C6:CLAUDE.md:pass:Content is specific',"
-                " 'CORE:C:0017:CLAUDE.md:fail:Generic advice'."
+                " Keep reason BRIEF (under 40 chars)."
+                " Examples: 'CORE:C:0017:CLAUDE.md:pass:Repo-specific paths',"
+                " 'CORE:S:0012:CLAUDE.md:fail:3 inlined procedures'."
             ),
             inputSchema={
                 "type": "object",
