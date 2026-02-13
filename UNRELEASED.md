@@ -30,6 +30,7 @@
 
 ### Fixed
 - [CORE]: Content rule violations now attributed to root instruction file (`CLAUDE.md`) instead of skill files or scoped snippets
+- [CORE]: Per-file size violations (`line_count`, `byte_size`) now attributed to the violating file, not the rule-level target
 - [CORE]: Compiler crash on binary YAML files (UnicodeDecodeError)
 - [CORE]: Mechanical checks crash on string args from YAML (type coercion via `_safe_float`)
 - [CORE]: Invalid severity in agent config no longer crashes registry (logs warning, keeps original)

@@ -70,6 +70,11 @@ class TestLineCount:
         result = line_count(tmp_path, {"max": 10}, _vars())
         assert not result.passed
 
+    def test_exceeds_max_has_location(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("\n".join(f"line{i}" for i in range(50)))
+        result = line_count(tmp_path, {"max": 10}, _vars())
+        assert result.location == "CLAUDE.md:0"
+
 
 class TestByteSize:
     def test_within_bounds(self, tmp_path: Path) -> None:
@@ -81,6 +86,11 @@ class TestByteSize:
         (tmp_path / "CLAUDE.md").write_text("x" * 1000)
         result = byte_size(tmp_path, {"max": 100}, _vars())
         assert not result.passed
+
+    def test_exceeds_max_has_location(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("x" * 1000)
+        result = byte_size(tmp_path, {"max": 100}, _vars())
+        assert result.location == "CLAUDE.md:0"
 
 
 class TestContentAbsent:
@@ -154,6 +164,21 @@ class TestRunMechanicalChecks:
         violations = run_mechanical_checks(rules, tmp_path, _vars())
         assert len(violations) == 1
         assert violations[0].rule_id == "CORE:S:0004"
+
+    def test_check_location_overrides_rule_location(self, tmp_path: Path) -> None:
+        """Size checks should use the violating file's path, not the rule-level location."""
+        (tmp_path / "CLAUDE.md").write_text("short")
+        sub = tmp_path / ".claude" / "rules"
+        sub.mkdir(parents=True)
+        (sub / "big.md").write_text("\n".join(f"line{i}" for i in range(50)))
+        rules = {"CORE:S:0005": self._rule("CORE:S:0005", "line_count", {"max": 10})}
+        vars = {
+            "instruction_files": ["CLAUDE.md", ".claude/rules/big.md"],
+            "main_instruction_file": ["CLAUDE.md"],
+        }
+        violations = run_mechanical_checks(rules, tmp_path, vars)
+        assert len(violations) == 1
+        assert violations[0].location == ".claude/rules/big.md:0"
 
 
 class TestSafeFloat:
