@@ -229,13 +229,9 @@ def byte_size(
             rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
             size = match.stat().st_size
             if size > max_bytes:
-                return CheckResult(
-                    passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0"
-                )
+                return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0")
             if size < min_bytes:
-                return CheckResult(
-                    passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0"
-                )
+                return CheckResult(passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0")
     return CheckResult(passed=True, message="File sizes within bounds")
 
 

@@ -35,6 +35,7 @@
 - [CORE]: Feature merge in capability detection used overwrite instead of OR — filesystem-detected features could be lost
 - [CORE]: Regex compiler crash on malformed rule YAML with non-list `rules` field
 - [CORE]: Removed duplicate `dedupe_violations` from scorer (canonical copy lives in sarif module)
+- [CORE]: Regex engine SARIF locations now relative to scan root instead of absolute paths (fixes ugly `../../` display for out-of-CWD projects)
 - [CORE]: Compiler crash on binary YAML files (UnicodeDecodeError)
 - [CORE]: Mechanical checks crash on string args from YAML (type coercion via `_safe_float`)
 - [CORE]: Invalid severity in agent config no longer crashes registry (logs warning, keeps original)

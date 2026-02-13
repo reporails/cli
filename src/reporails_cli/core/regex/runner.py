@@ -256,7 +256,7 @@ def _scan_combined(
 
 def _scan_file(
     file_path: Path,
-    _scan_root: Path,
+    scan_root: Path,
     checks: list[CompiledCheck],
     results: list[dict[str, Any]],
     rule_defs: dict[str, dict[str, Any]],
@@ -270,7 +270,10 @@ def _scan_file(
     except (OSError, UnicodeDecodeError):
         return
 
-    file_uri = str(file_path)
+    try:
+        file_uri = str(file_path.relative_to(scan_root))
+    except ValueError:
+        file_uri = str(file_path)
 
     # Use combined patterns for simple checks
     if combined_patterns:
