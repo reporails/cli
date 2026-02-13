@@ -31,6 +31,7 @@ class CheckResult:
     passed: bool
     message: str
     annotations: dict[str, Any] | None = None  # D->M metadata (e.g., discovered_imports)
+    location: str | None = None  # Per-file location override (e.g., "SKILL.md:0")
 
 
 def _resolve_path(template: str, vars: dict[str, str | list[str]]) -> str:
@@ -194,16 +195,19 @@ def line_count(
             if not match.is_file():
                 continue
             try:
+                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
                 count = len(match.read_text(encoding="utf-8").splitlines())
                 if count > max_lines:
                     return CheckResult(
                         passed=False,
                         message=f"{match.name}: {count} lines exceeds max {max_lines}",
+                        location=f"{rel}:0",
                     )
                 if count < min_lines:
                     return CheckResult(
                         passed=False,
                         message=f"{match.name}: {count} lines below min {min_lines}",
+                        location=f"{rel}:0",
                     )
             except OSError as e:
                 return CheckResult(passed=False, message=f"Error reading {match.name}: {e}")
@@ -222,11 +226,16 @@ def byte_size(
         for match in _resolve_glob_targets(pattern, root):
             if not match.is_file():
                 continue
+            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
             size = match.stat().st_size
             if size > max_bytes:
-                return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max")
+                return CheckResult(
+                    passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0"
+                )
             if size < min_bytes:
-                return CheckResult(passed=False, message=f"{match.name}: {size}B below min")
+                return CheckResult(
+                    passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0"
+                )
     return CheckResult(passed=True, message="File sizes within bounds")
 
 

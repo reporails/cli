@@ -55,7 +55,7 @@ def dispatch_single_check(
         violation = Violation(
             rule_id=rule.id,
             rule_title=rule.title,
-            location=location,
+            location=result.location or location,
             message=result.message,
             severity=check.severity,
             check_id=check.id,
