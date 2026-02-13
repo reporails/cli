@@ -6,7 +6,7 @@ from pathlib import Path
 
 from reporails_cli.bundled import get_capability_patterns_path
 from reporails_cli.core.agents import get_all_instruction_files
-from reporails_cli.core.cache import ProjectCache, content_hash
+from reporails_cli.core.cache import ProjectCache, content_hash, structural_hash
 from reporails_cli.core.capability import detect_features_content, determine_capability_level
 from reporails_cli.core.models import (
     Category,
@@ -207,12 +207,14 @@ def _filter_cached_judgments(
         except ValueError:
             rel_path = raw_path
         try:
-            file_hash = content_hash(scan_root / rel_path)
+            full_file = scan_root / rel_path
+            file_hash = content_hash(full_file)
+            struct_hash = structural_hash(full_file)
         except OSError:
             filtered_requests.append(jr)
             continue
 
-        cached = cache.get_cached_judgment(rel_path, file_hash)
+        cached = cache.get_cached_judgment(rel_path, file_hash, structural_hash=struct_hash)
         if cached and jr.rule_id in cached:
             verdict = cached[jr.rule_id]
             if verdict.get("verdict") == jr.pass_value:
