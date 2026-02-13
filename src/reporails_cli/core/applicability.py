@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from reporails_cli.core.agents import get_all_instruction_files
+from reporails_cli.core.agents import DetectedAgent, get_all_instruction_files
 from reporails_cli.core.models import DetectedFeatures, Level, Rule
 
 # Ordered levels for comparison (index = ordinal)
@@ -48,7 +48,7 @@ def _collect_paths(data: object, top_dirs: set[str]) -> None:
             top_dirs.add(top)
 
 
-def resolve_symlinked_files(target: Path) -> list[Path]:
+def resolve_symlinked_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
     """Find instruction files that are symlinks pointing outside the scan directory."""
     resolved: list[Path] = []
     try:
@@ -56,7 +56,7 @@ def resolve_symlinked_files(target: Path) -> list[Path]:
     except OSError:
         return resolved
 
-    for path in get_all_instruction_files(target):
+    for path in get_all_instruction_files(target, agents=agents):
         if not path.is_symlink():
             continue
         try:
@@ -99,11 +99,15 @@ def _detect_l6_features(features: DetectedFeatures, target: Path) -> None:
 def _detect_hierarchy_features(
     features: DetectedFeatures,
     target: Path,
+    agents: list[DetectedAgent] | None = None,
 ) -> None:
     """Detect hierarchical structure from instruction files across directory levels."""
-    from reporails_cli.core.agents import detect_agents
+    if agents is None:
+        from reporails_cli.core.agents import detect_agents
 
-    for detected in detect_agents(target):
+        agents = detect_agents(target)
+
+    for detected in agents:
         names_at_root: set[str] = set()
         has_nested = False
         for f in detected.instruction_files:
@@ -116,13 +120,14 @@ def _detect_hierarchy_features(
             break
 
 
-def detect_features_filesystem(target: Path) -> DetectedFeatures:
+def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None = None) -> DetectedFeatures:
     """Detect project features from file structure.
 
     Phase 1 of capability detection - filesystem only, no content analysis.
 
     Args:
         target: Project root path
+        agents: Pre-detected agents (avoids redundant filesystem scan)
 
     Returns:
         DetectedFeatures with filesystem-based indicators
@@ -153,7 +158,7 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
     features.has_backbone = backbone_path.exists()
 
     # Count instruction files (all agents, not just CLAUDE.md)
-    all_instruction_files = get_all_instruction_files(target)
+    all_instruction_files = get_all_instruction_files(target, agents=agents)
     features.instruction_file_count = len(all_instruction_files)
     features.has_multiple_instruction_files = len(all_instruction_files) > 1
 
@@ -161,7 +166,7 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
         features.has_instruction_file = True
 
     # Check for hierarchical structure
-    _detect_hierarchy_features(features, target)
+    _detect_hierarchy_features(features, target, agents=agents)
 
     # Check for @imports and size control (simple checks, full in Phase 2)
     if features.has_claude_md:
@@ -195,7 +200,7 @@ def detect_features_filesystem(target: Path) -> DetectedFeatures:
             pass
 
     # Resolve symlinked instruction files (for regex engine extra targets)
-    features.resolved_symlinks = resolve_symlinked_files(target)
+    features.resolved_symlinks = resolve_symlinked_files(target, agents=agents)
 
     return features
 

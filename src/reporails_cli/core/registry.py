@@ -45,6 +45,15 @@ from reporails_cli.core.utils import parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for loaded rules — framework rules don't change between
+# MCP invocations (only ails update changes them).
+_path_cache: dict[str, dict[str, Rule]] = {}
+
+
+def clear_rule_cache() -> None:
+    """Clear the rule loading cache. Called by --refresh and after ails update."""
+    _path_cache.clear()
+
 
 def get_rules_dir() -> Path:
     """Get rules directory (~/.reporails/rules/)."""
@@ -52,7 +61,16 @@ def get_rules_dir() -> Path:
 
 
 def _load_from_path(path: Path) -> dict[str, Rule]:
-    """Load rules from a single directory, returning {id: Rule}."""
+    """Load rules from a single directory, returning {id: Rule}.
+
+    Results are cached per path string for MCP performance — framework
+    rules don't change between invocations.
+    """
+    path_key = str(path)
+    cached = _path_cache.get(path_key)
+    if cached is not None:
+        return dict(cached)  # shallow copy to prevent mutation
+
     rules: dict[str, Rule] = {}
 
     if not path.exists():
@@ -81,6 +99,7 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
             # Skip files without valid frontmatter
             continue
 
+    _path_cache[path_key] = dict(rules)  # cache a copy
     return rules
 
 

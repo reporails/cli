@@ -56,8 +56,17 @@
 - [CORE]: `detect_orphan_features` crash on L0 projects (no instruction files) — MCP validate returned cryptic error
 - [CLI]: Double analytics recording — engine and check command both called `record_scan` on every run
 - [CLI]: `dismiss` command wrote to wrong cache when run from subdirectory (used target instead of project root)
-- [PERF]: Path-based pre-grouping avoids O(files x checks) inner loop for path-filtered checks
-- [PERF]: Combined regex patterns batch simple checks into alternation with named groups (~10-50x speedup)
+- [PERF]: Agent detection called once per validation and cached across MCP invocations — eliminates redundant recursive glob scans
+- [PERF]: Rule loading cached across MCP invocations — eliminates repeated frontmatter YAML parsing
+- [PERF]: Template variable binding hoisted out of per-rule loop (39 → 1 call)
+- [PERF]: Glob target resolution cached per session (579 → ~5 unique glob calls)
+- [PERF]: Path-based pre-grouping avoids O(files × checks) inner loop for path-filtered checks
+- [PERF]: Combined regex patterns batch simple checks into alternation with named groups
+- [PERF]: Combined pattern builder now accepts inline-flag and either-pattern checks
+- [PERF]: Non-matching files skipped before I/O (text check + read deferred until path filter matches)
+- [PERF]: Redundant `bind_instruction_files` call eliminated when vars already bound
+- [PERF]: CSafeLoader used for YAML parsing when C extension available (~3x faster)
+- [PERF]: Template resolution reads file once instead of twice (has_templates + resolve)
 - [PERF]: Capability detection uses first-match-only early exit
 - [TEST]: Added unit tests for semantic request building (12 tests)
 - [TEST]: Added unit tests for applicability detection and rule filtering (14 tests)
