@@ -58,7 +58,10 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="score",
-            description="Quick score check for CLAUDE.md files without full violation details.",
+            description=(
+                "Quick score check for CLAUDE.md files without full violation details."
+                " Returns JSON with score, level, and summary."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -72,7 +75,10 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="explain",
-            description=("Explain a specific rule. Use when user asks about a rule ID like S1, C2, E3, etc."),
+            description=(
+                "Explain a specific rule."
+                " Use when user asks about a rule ID (e.g., CORE:S:0001, CORE:C:0006, or short forms S1, C6)."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -86,7 +92,10 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="judge",
-            description="Cache semantic rule verdicts so they persist across validation runs.",
+            description=(
+                "Cache semantic rule verdicts so they persist across validation runs."
+                " Verdict format: 'RULE:FILE:pass|fail:reason' (e.g., 'C6:CLAUDE.md:pass:Criteria met')."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -141,6 +150,8 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
 
     if not target.exists():
         return [TextContent(type="text", text=f"Error: Path not found: {target}")]
+    if not target.is_dir():
+        return [TextContent(type="text", text=f"Error: Path is not a directory: {target}")]
 
     # Get previous scan BEFORE validation (for delta comparison)
     previous_scan = get_previous_scan(target)
@@ -148,7 +159,7 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
     # Run validation once
     try:
         result = run_validation(target, agent="claude")
-    except Exception as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return [TextContent(type="text", text=f"Error: {type(e).__name__}: {e}")]
 
     # Compute delta

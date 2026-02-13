@@ -25,3 +25,7 @@
 - [CLI]: User-friendly error wrapping for download failures (httpx)
 - [CLI]: Word-boundary truncation for level labels, violation messages, and semantic rule titles
 - [CLI]: JSON output returns valid structure when no instruction files found
+- [MCP]: Narrowed exception handling from broad `Exception` to specific types
+- [MCP]: Added `is_dir()` validation to all tool handlers
+- [MCP]: Improved tool descriptions with output format info and examples
+- [MCP]: Judge tool returns detailed `{recorded, failed}` feedback instead of silent `{recorded: 0}`
