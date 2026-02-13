@@ -231,7 +231,7 @@ class TestExplainTool:
 class TestJudgeTool:
     def test_records_verdicts(self, level2_project: Path) -> None:
         """judge should record verdicts and return count."""
-        verdicts = ["S1:CLAUDE.md:pass:File size OK"]
+        verdicts = ["CORE:S:0001:CLAUDE.md:pass:File size OK"]
         text = _call_tool(
             "judge",
             {
@@ -246,8 +246,8 @@ class TestJudgeTool:
     def test_records_multiple_verdicts(self, level2_project: Path) -> None:
         """judge should handle multiple verdicts."""
         verdicts = [
-            "S1:CLAUDE.md:pass:File size OK",
-            "C2:CLAUDE.md:fail:Missing section",
+            "CORE:S:0001:CLAUDE.md:pass:File size OK",
+            "CORE:C:0002:CLAUDE.md:fail:Missing section",
         ]
         text = _call_tool(
             "judge",
@@ -276,7 +276,7 @@ class TestJudgeTool:
         """Verdicts should be persisted in the judgment cache file."""
         from reporails_cli.core.cache import ProjectCache
 
-        verdicts = ["S1:CLAUDE.md:pass:Looks good"]
+        verdicts = ["CORE:S:0001:CLAUDE.md:pass:Looks good"]
         _call_tool(
             "judge",
             {
@@ -289,7 +289,7 @@ class TestJudgeTool:
         cache_data = cache.load_judgment_cache()
         judgments = cache_data.get("judgments", {})
         assert "CLAUDE.md" in judgments
-        assert "S1" in judgments["CLAUDE.md"].get("results", {})
+        assert "CORE:S:0001" in judgments["CLAUDE.md"].get("results", {})
 
     def test_empty_verdicts_returns_error(self) -> None:
         """Empty verdicts list should return an error."""
@@ -318,7 +318,7 @@ class TestJudgeTool:
 
     def test_nonexistent_file_in_verdict_records_zero(self, level2_project: Path) -> None:
         """Verdict referencing a nonexistent file should not be recorded."""
-        verdicts = ["S1:no-such-file.md:pass:OK"]
+        verdicts = ["CORE:S:0001:no-such-file.md:pass:OK"]
         text = _call_tool(
             "judge",
             {
@@ -342,7 +342,7 @@ class TestJudgeTool:
             "judge",
             {
                 "path": str(project),
-                "verdicts": ["S1:../sibling/secrets.md:pass:Should be blocked"],
+                "verdicts": ["CORE:S:0001:../sibling/secrets.md:pass:Should be blocked"],
             },
         )
         data = json.loads(text)
@@ -350,7 +350,7 @@ class TestJudgeTool:
 
     def test_invalid_verdict_value_rejected(self, level2_project: Path) -> None:
         """Verdict must be 'pass' or 'fail'; other values are rejected."""
-        verdicts = ["S1:CLAUDE.md:maybe:unsure"]
+        verdicts = ["CORE:S:0001:CLAUDE.md:maybe:unsure"]
         text = _call_tool(
             "judge",
             {
@@ -500,11 +500,12 @@ class TestCircuitBreaker:
 class TestJudgeToolHelper:
     """Test the judge_tool helper function directly."""
 
-    def test_returns_recorded_count(self, level2_project: Path) -> None:
+    def test_returns_recorded_count_and_details(self, level2_project: Path) -> None:
         from reporails_cli.interfaces.mcp.tools import judge_tool
 
-        result = judge_tool(str(level2_project), ["S1:CLAUDE.md:pass:OK"])
-        assert result == {"recorded": 1}
+        result = judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
+        assert result["recorded"] == 1
+        assert result["verdicts"] == [{"rule": "CORE:S:0001", "file": "CLAUDE.md", "verdict": "pass", "reason": "OK"}]
 
     def test_none_verdicts_returns_error(self) -> None:
         from reporails_cli.interfaces.mcp.tools import judge_tool
@@ -515,7 +516,7 @@ class TestJudgeToolHelper:
     def test_missing_path_returns_error(self) -> None:
         from reporails_cli.interfaces.mcp.tools import judge_tool
 
-        result = judge_tool("/tmp/no-such-path-xyz-mcp-test", ["S1:x.md:pass:OK"])
+        result = judge_tool("/tmp/no-such-path-xyz-mcp-test", ["CORE:S:0001:x.md:pass:OK"])
         assert "error" in result
 
 
@@ -653,7 +654,7 @@ class TestCacheAtomicity:
         """After caching verdicts, the cache file must be valid JSON."""
         from reporails_cli.interfaces.mcp.tools import judge_tool
 
-        judge_tool(str(level2_project), ["S1:CLAUDE.md:pass:OK"])
+        judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
 
         cache_path = level2_project / ".reporails" / ".cache" / "judgment-cache.json"
         assert cache_path.exists()
@@ -665,7 +666,7 @@ class TestCacheAtomicity:
         """Atomic write must not leave .tmp files after completion."""
         from reporails_cli.interfaces.mcp.tools import judge_tool
 
-        judge_tool(str(level2_project), ["S1:CLAUDE.md:pass:OK"])
+        judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
 
         cache_dir = level2_project / ".reporails" / ".cache"
         tmp_files = list(cache_dir.glob("*.tmp"))

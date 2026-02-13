@@ -29,8 +29,8 @@ That's it. You'll get a score, capability level, and actionable violations.
 
 Violations:
   CLAUDE.md (7 issues)
-    ○ MED C4.no-antipatterns :1    No NEVER or AVOID statements found
-    · LOW C12.no-version     :1    No version or date marker found
+    ○ :1    No NEVER or AVOID statements found       RRAILS:C:0003
+    · :1    No version or date marker found           CORE:C:0012
     ...
 ```
 

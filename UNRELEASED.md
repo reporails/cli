@@ -11,11 +11,12 @@
 - [HOOKS]: PostToolUse auto-validation hook for instruction file edits
 
 ### Changed
+- [META]: Check skill uses MCP tools instead of shelling out to `uv run ails`
 - [REPO]: Gitignore development internals (docs/specs, CLAUDE.md, .claude/rules, hooks, skills, settings)
 - [CORE]: Scan targets now include config files for path-filtered rules (`get_all_scannable_files`)
 - [JSON]: `pending_semantic` and `skipped_experimental` omitted from JSON output when absent (avoids null-chaining)
 - [META]: Version bump to 0.3.0
-- [DOCS]: Updated all specs to reflect regex engine migration
+- [DOCS]: Updated all specs and README to reflect v0.3.0 (regex engine, new commands, current module structure)
 - [MCP]: Validate tool returns structured JSON instead of formatted text
 - [MCP]: Semantic judgment requests now carry full file content (up to 8KB) instead of 5-line snippets
 - [MCP]: Replaced `_instructions` text blob with structured `_semantic_workflow` object for agent consumption
@@ -29,6 +30,10 @@
 - [CLI]: OpenGrep version display from `ails version`
 
 ### Fixed
+- [MCP]: Judge tool output now includes parsed verdict details (rule, file, verdict, reason) instead of bare count
+- [MCP]: Judge tool rejects path-traversal verdicts referencing files outside the project directory
+- [DOCS]: Replaced all short rule IDs (S1, C4, etc.) with full coordinate format (CORE:S:0005, CORE:C:0004) across READMEs, specs, source comments, and tests
+- [DOCS]: Updated modules.md levels section — framework uses capabilities (not required_rules)
 - [CORE]: File discovery used project root instead of scan root — agent detection and feature scanning now scoped to target directory
 - [CORE]: Content rule violations now attributed to root instruction file (`CLAUDE.md`) instead of skill files or scoped snippets
 - [CORE]: Per-file size violations (`line_count`, `byte_size`) now attributed to the violating file, not the rule-level target

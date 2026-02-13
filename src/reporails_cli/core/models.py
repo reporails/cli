@@ -134,12 +134,12 @@ class Rule:  # pylint: disable=too-many-instance-attributes
 class Violation:
     """A rule violation found during analysis."""
 
-    rule_id: str  # e.g., "S1"
-    rule_title: str  # e.g., "Size Limits"
+    rule_id: str  # e.g., "CORE:S:0005"
+    rule_title: str  # e.g., "Instruction File Size Limit"
     location: str  # e.g., "CLAUDE.md:45"
     message: str  # From rule definition
     severity: Severity
-    check_id: str | None = None  # e.g., "S1-root-too-long"
+    check_id: str | None = None  # e.g., "CORE:S:0005:check:0001"
 
 
 @dataclass(frozen=True)
