@@ -69,7 +69,7 @@ def execute_rule_checks(  # pylint: disable=too-many-arguments
         if check.type == "mechanical":
             _handle_mechanical(check, rule, state, scan_root, effective_vars, location)
         elif check.type == "deterministic":
-            det_candidate_count += _handle_deterministic(check, rule, state, effective_vars)
+            det_candidate_count += _handle_deterministic(check, rule, state, effective_vars, scan_root)
         elif check.type == "semantic":
             _handle_semantic(rule, state, scan_root, det_candidate_count, judgment_requests)
 
@@ -102,13 +102,14 @@ def _handle_deterministic(
     rule: Rule,
     state: PipelineState,
     template_vars: dict[str, str | list[str]],
+    scan_root: Path,
 ) -> int:
     """Process a deterministic check. Returns candidate count."""
     sarif_results = state.get_rule_sarif(rule.id)
     check_results = _filter_sarif_for_check(sarif_results, check)
 
     if check.negate:
-        _handle_negated_deterministic(check, rule, state, check_results, template_vars)
+        _handle_negated_deterministic(check, rule, state, check_results, template_vars, scan_root)
         return 0
 
     for result in check_results:
@@ -137,25 +138,19 @@ def _handle_negated_deterministic(
     state: PipelineState,
     check_results: list[dict[str, Any]],
     template_vars: dict[str, str | list[str]],
+    scan_root: Path,
 ) -> None:
     """Handle negated deterministic check (finding = pass, no finding = violation)."""
     if check_results:
         return  # Content found -> pass
 
-    # Resolve targets for display — reuse resolve_location to stay consistent
-    display_targets = rule.targets
-    if "{{" in display_targets and template_vars:
-        for key, val in template_vars.items():
-            placeholder = "{{" + key + "}}"
-            if placeholder in display_targets:
-                resolved = ", ".join(val) if isinstance(val, list) else str(val)
-                display_targets = display_targets.replace(placeholder, resolved)
+    location = resolve_location(scan_root, rule, template_vars)
 
     state.findings.append(
         Violation(
             rule_id=rule.id,
             rule_title=rule.title,
-            location=f"{display_targets}:0",
+            location=location,
             message="Expected content not found",
             severity=check.severity,
             check_id=":".join(check.id.split(":")[3:]) if check.id.count(":") >= 4 else check.id,

@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Any
 
 
+def _safe_float(value: Any, default: float = float("inf")) -> float:
+    """Safely convert a value to float, returning default on failure."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass(frozen=True)
 class CheckResult:
     """Result of a single mechanical check."""
@@ -162,7 +170,7 @@ def file_count(
 ) -> CheckResult:
     """Check that file count is within bounds."""
     min_count = int(args.get("min", 0))
-    max_count = args.get("max", float("inf"))
+    max_count = _safe_float(args.get("max"), float("inf"))
     raw_pattern = str(args.get("pattern", "**/*"))
     all_files: set[Path] = set()
     for pattern in _expand_file_pattern(raw_pattern, vars):
@@ -179,7 +187,7 @@ def line_count(
     vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Check that file line count is within bounds."""
-    max_lines = args.get("max", float("inf"))
+    max_lines = _safe_float(args.get("max"), float("inf"))
     min_lines = int(args.get("min", 0))
     for pattern in _get_target_patterns(args, vars):
         for match in _resolve_glob_targets(pattern, root):
@@ -208,8 +216,8 @@ def byte_size(
     vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Check that file size is within bounds."""
-    max_bytes = args.get("max", float("inf"))
-    min_bytes = int(args.get("min", 0))
+    max_bytes = _safe_float(args.get("max"), float("inf"))
+    min_bytes = int(_safe_float(args.get("min", 0), 0))
     for pattern in _get_target_patterns(args, vars):
         for match in _resolve_glob_targets(pattern, root):
             if not match.is_file():
