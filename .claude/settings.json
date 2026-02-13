@@ -1,4 +1,23 @@
 {
+  "permissions": {
+    "deny": [
+      "Read(src/reporails_cli/.env)",
+      "Edit(src/reporails_cli/.env)",
+      "Write(src/reporails_cli/.env)",
+      "Read(**/.env.*)",
+      "Edit(**/.env.*)",
+      "Write(**/.env.*)",
+      "Read(**/credentials*)",
+      "Edit(**/credentials*)",
+      "Write(**/credentials*)",
+      "Read(**/*.pem)",
+      "Edit(**/*.pem)",
+      "Write(**/*.pem)",
+      "Read(**/*.key)",
+      "Edit(**/*.key)",
+      "Write(**/*.key)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {

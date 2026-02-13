@@ -146,8 +146,10 @@ def judge_tool(path: str = ".", verdicts: list[str] | None = None) -> dict[str, 
         return {"error": f"Path is not a directory: {target}"}
 
     try:
-        recorded, failed = cache_judgments_with_errors(target, verdicts)
-        result: dict[str, Any] = {"recorded": recorded}
+        recorded_verdicts, failed = cache_judgments_with_details(target, verdicts)
+        result: dict[str, Any] = {"recorded": len(recorded_verdicts)}
+        if recorded_verdicts:
+            result["verdicts"] = recorded_verdicts
         if failed:
             result["failed"] = failed
         return result
@@ -155,15 +157,16 @@ def judge_tool(path: str = ".", verdicts: list[str] | None = None) -> dict[str, 
         return {"error": str(e)}
 
 
-def cache_judgments_with_errors(target: Path, verdicts: list[str]) -> tuple[int, list[str]]:
-    """Cache judgments and return (recorded_count, failed_reasons)."""
+def cache_judgments_with_details(target: Path, verdicts: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+    """Cache judgments and return (recorded_verdict_details, failed_reasons)."""
     from reporails_cli.core.cache import _parse_verdict_string, cache_judgments
 
     # Pre-validate verdicts to report failures
     failed: list[str] = []
     valid_verdicts: list[str] = []
+    parsed: list[dict[str, str]] = []
     for v in verdicts:
-        rule_id, location, verdict, _reason = _parse_verdict_string(v)
+        rule_id, location, verdict, reason = _parse_verdict_string(v)
         if not rule_id or not location:
             failed.append(f"Invalid format (need RULE:FILE:verdict:reason): {v}")
             continue
@@ -172,13 +175,18 @@ def cache_judgments_with_errors(target: Path, verdicts: list[str]) -> tuple[int,
             continue
         file_path = location.rsplit(":", 1)[0] if ":" in location else location
         full_path = (target / file_path).resolve()
+        if not full_path.is_relative_to(target):
+            failed.append(f"Path traversal blocked: {file_path}")
+            continue
         if not full_path.exists():
             failed.append(f"File not found: {file_path}")
             continue
         valid_verdicts.append(v)
+        parsed.append({"rule": rule_id, "file": file_path, "verdict": verdict, "reason": reason})
 
-    recorded = cache_judgments(target, valid_verdicts) if valid_verdicts else 0
-    return recorded, failed
+    if valid_verdicts:
+        cache_judgments(target, valid_verdicts)
+    return parsed, failed
 
 
 def heal_tool(path: str = ".") -> dict[str, Any]:

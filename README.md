@@ -13,7 +13,7 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 npx @reporails/cli install
 ```
 
-This registers the MCP server with Claude Code. Then ask Claude: `What ails claude?`
+This registers the MCP server with Claude Code. Then run `ails check`.
 
 ### MCP Integration (manual)
 
@@ -23,10 +23,7 @@ For full semantic analysis, add the MCP server:
 claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp
 ```
 
-Then ask Claude:
-```
-❯ What ails claude?
-```
+Then run `ails check`.
 
 ### CLI path (only deterministic rules)
 ```bash
@@ -45,8 +42,8 @@ That's it. You'll get a score, capability level, and actionable violations.
 
 Violations:
   CLAUDE.md (7 issues)
-    ○ MED C4.no-antipatterns :1    No NEVER or AVOID statements found
-    · LOW C12.no-version     :1    No version or date marker found
+    ○ :1    No NEVER or AVOID statements found       RRAILS:C:0003
+    · :1    No version or date marker found           CORE:C:0012
     ...
 ```
 
@@ -55,17 +52,19 @@ Fix the issues, run again, watch your score and your experience improve.
 ## Install
 
 ```bash
-# Ephemeral (no install, always latest)
-uvx reporails-cli check
-npx @reporails/cli check
-
-# Persistent (adds `ails` to PATH)
 pip install reporails-cli
 # or
 npm install -g @reporails/cli
 ```
 
-Once installed, all commands use `ails` directly.
+This adds `ails` to your PATH. All commands below assume a global install.
+
+**Try without installing:**
+```bash
+uvx reporails-cli check
+# or
+npx @reporails/cli check
+```
 
 ## What It Checks
 
@@ -97,6 +96,7 @@ ails check -f json              # JSON output (for CI)
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
+ails heal                       # Interactive auto-fix + semantic evaluation
 ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
@@ -106,6 +106,7 @@ ails update --recommended       # Update recommended rules only
 ails update --force             # Force reinstall even if current
 ails update --cli               # Upgrade the CLI package itself
 ails dismiss CORE:C:0001        # Dismiss a semantic finding
+ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
 ails version                    # Show version info
 ```
 
