@@ -56,6 +56,8 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
 
     if not target.exists():
         return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
@@ -84,6 +86,8 @@ def validate_tool_text(path: str = ".") -> str:
 
     if not target.exists():
         return f"Error: Path not found: {target}"
+    if not target.is_dir():
+        return f"Error: Path is not a directory: {target}"
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
@@ -110,6 +114,8 @@ def score_tool(path: str = ".") -> dict[str, Any]:
 
     if not target.exists():
         return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
@@ -136,14 +142,43 @@ def judge_tool(path: str = ".", verdicts: list[str] | None = None) -> dict[str, 
     target = Path(path).resolve()
     if not target.exists():
         return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
 
     try:
-        from reporails_cli.core.cache import cache_judgments
-
-        recorded = cache_judgments(target, verdicts)
-        return {"recorded": recorded}
-    except Exception as e:
+        recorded, failed = cache_judgments_with_errors(target, verdicts)
+        result: dict[str, Any] = {"recorded": recorded}
+        if failed:
+            result["failed"] = failed
+        return result
+    except (ValueError, OSError) as e:
         return {"error": str(e)}
+
+
+def cache_judgments_with_errors(target: Path, verdicts: list[str]) -> tuple[int, list[str]]:
+    """Cache judgments and return (recorded_count, failed_reasons)."""
+    from reporails_cli.core.cache import _parse_verdict_string, cache_judgments
+
+    # Pre-validate verdicts to report failures
+    failed: list[str] = []
+    valid_verdicts: list[str] = []
+    for v in verdicts:
+        rule_id, location, verdict, _reason = _parse_verdict_string(v)
+        if not rule_id or not location:
+            failed.append(f"Invalid format (need RULE:FILE:verdict:reason): {v}")
+            continue
+        if verdict not in ("pass", "fail"):
+            failed.append(f"Invalid verdict value (need pass/fail): {v}")
+            continue
+        file_path = location.rsplit(":", 1)[0] if ":" in location else location
+        full_path = (target / file_path).resolve()
+        if not full_path.exists():
+            failed.append(f"File not found: {file_path}")
+            continue
+        valid_verdicts.append(v)
+
+    recorded = cache_judgments(target, valid_verdicts) if valid_verdicts else 0
+    return recorded, failed
 
 
 def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[str, Any]:
