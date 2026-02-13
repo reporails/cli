@@ -82,10 +82,10 @@ def merge_content_features(
     Returns:
         Updated DetectedFeatures
     """
-    features.has_sections = content_features.has_sections
+    features.has_sections = features.has_sections or content_features.has_sections
     features.has_imports = features.has_imports or content_features.has_imports
-    features.has_explicit_constraints = content_features.has_explicit_constraints
-    features.has_path_scoped_rules = content_features.has_path_scoped_rules
+    features.has_explicit_constraints = features.has_explicit_constraints or content_features.has_explicit_constraints
+    features.has_path_scoped_rules = features.has_path_scoped_rules or content_features.has_path_scoped_rules
     return features
 
 
