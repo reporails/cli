@@ -59,12 +59,12 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
 
 class TestListTools:
     def test_all_tools_present(self) -> None:
-        """list_tools should return all four tools."""
+        """list_tools should return all five tools."""
         from reporails_cli.interfaces.mcp.server import list_tools
 
         tools = _run_async(list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "score", "explain", "judge"}
+        assert names == {"validate", "score", "explain", "judge", "heal"}
 
     def test_judge_tool_has_required_verdicts(self) -> None:
         """judge tool schema should require the verdicts parameter."""

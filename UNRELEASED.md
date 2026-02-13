@@ -53,3 +53,4 @@
 - [TEST]: Added unit tests for engine helper cache filtering (6 tests)
 - [TEST]: Added type safety tests for mechanical checks with string/invalid args
 - [TEST]: Updated MCP e2e tests for JSON output, content-aware circuit breaker, and semantic workflow
+- [TEST]: MCP e2e test includes `heal` tool in expected tool set
