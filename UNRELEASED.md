@@ -29,6 +29,7 @@
 - [CLI]: OpenGrep version display from `ails version`
 
 ### Fixed
+- [CORE]: File discovery used project root instead of scan root — agent detection and feature scanning now scoped to target directory
 - [CORE]: Content rule violations now attributed to root instruction file (`CLAUDE.md`) instead of skill files or scoped snippets
 - [CORE]: Per-file size violations (`line_count`, `byte_size`) now attributed to the violating file, not the rule-level target
 - [CORE]: Cache hash crash on non-UTF8 instruction files (`UnicodeDecodeError` now caught)

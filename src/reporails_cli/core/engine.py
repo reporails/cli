@@ -90,13 +90,14 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
             )
 
     # Detect agents once — reuse for all file lookups (avoids redundant recursive globs)
-    agents = detect_agents(project_root)
-    instruction_files = get_all_instruction_files(project_root, agents=agents)
+    # Use scan_root (not project_root) so only files inside the target are scanned
+    agents = detect_agents(scan_root)
+    instruction_files = get_all_instruction_files(scan_root, agents=agents)
 
     # PASS 1: Capability Detection (determines final level)
-    features = detect_features_filesystem(project_root, agents=agents)
+    features = detect_features_filesystem(scan_root, agents=agents)
     capability, extra_targets = _detect_capabilities(
-        project_root,
+        scan_root,
         template_context,
         features,
         instruction_files=instruction_files or None,
