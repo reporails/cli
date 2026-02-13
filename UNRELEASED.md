@@ -53,6 +53,9 @@
 - [MCP]: Added `is_dir()` validation to all tool handlers
 - [MCP]: Improved tool descriptions with output format info and examples
 - [MCP]: Judge tool returns detailed `{recorded, failed}` feedback instead of silent `{recorded: 0}`
+- [CORE]: `detect_orphan_features` crash on L0 projects (no instruction files) — MCP validate returned cryptic error
+- [CLI]: Double analytics recording — engine and check command both called `record_scan` on every run
+- [CLI]: `dismiss` command wrote to wrong cache when run from subdirectory (used target instead of project root)
 - [PERF]: Path-based pre-grouping avoids O(files x checks) inner loop for path-filtered checks
 - [PERF]: Combined regex patterns batch simple checks into alternation with named groups (~10-50x speedup)
 - [PERF]: Capability detection uses first-match-only early exit

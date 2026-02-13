@@ -217,7 +217,11 @@ def dismiss(
         raise typer.Exit(1)
 
     rule_id_upper = rule_id.upper()
-    cache = ProjectCache(target)
+
+    from reporails_cli.core.engine import _find_project_root
+
+    project_root = _find_project_root(target)
+    cache = ProjectCache(project_root)
 
     files = [Path(file)] if file else [f.relative_to(target) for f in get_all_instruction_files(target)]
 

@@ -233,6 +233,9 @@ def detect_orphan_features(features: DetectedFeatures, base_level: Level) -> boo
     Returns:
         True if capabilities above base level are detected
     """
+    if base_level not in _LEVEL_ORDER:
+        return False
+
     level_caps = _load_level_capabilities()
 
     base_index = _LEVEL_ORDER.index(base_level)
