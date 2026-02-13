@@ -51,7 +51,12 @@ def execute_rule_checks(  # pylint: disable=too-many-arguments
     if allowed is None:
         logger.warning("Unknown rule type '%s' for rule %s, skipping all checks", rule.type, rule.id)
         return []
-    effective_vars = bind_instruction_files(template_vars, scan_root, instruction_files)
+    # Skip bind when instruction_files is None — caller already bound vars
+    effective_vars = (
+        bind_instruction_files(template_vars, scan_root, instruction_files)
+        if instruction_files is not None
+        else template_vars
+    )
     location = resolve_location(scan_root, rule, effective_vars)
     judgment_requests: list[JudgmentRequest] = []
     det_candidate_count = 0

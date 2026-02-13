@@ -47,10 +47,19 @@ def _resolve_path(template: str, vars: dict[str, str | list[str]]) -> str:
     return result
 
 
+_glob_cache: dict[tuple[str, str], list[Path]] = {}
+
+
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
-    """Resolve a glob pattern relative to root."""
+    """Resolve a glob pattern relative to root (cached per session)."""
+    key = (pattern, str(root))
+    cached = _glob_cache.get(key)
+    if cached is not None:
+        return cached
     resolved = str(root / pattern)
-    return [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    result = [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    _glob_cache[key] = result
+    return result
 
 
 def _get_target_patterns(

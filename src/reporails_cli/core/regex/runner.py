@@ -18,7 +18,6 @@ from reporails_cli.core.models import Rule
 from reporails_cli.core.regex.compiler import (
     CombinedPattern,
     CompiledCheck,
-    _is_simple_check,
     build_combined_patterns,
     compile_rules,
 )
@@ -333,22 +332,29 @@ def run_validation(  # pylint: disable=too-many-locals
     results: list[dict[str, Any]] = []
     rule_defs: dict[str, dict[str, Any]] = {}
 
-    # Build combined patterns for simple universal checks
+    # Partition checks into universal (no path filter) and path-filtered groups
     universal, by_pattern = _partition_checks(ruleset.checks)
-    combined = build_combined_patterns(universal)
-    # Complex checks = universal checks not eligible for batching
-    complex_universal = [c for c in universal if not _is_simple_check(c)]
+
+    # Build combined patterns for universal checks only — path-filtered checks
+    # run individually (combined alternation is slower for complex/flagged patterns)
+    combined, complex_universal = build_combined_patterns(universal)
 
     for file_path in scan_targets:
         if not file_path.is_file():
             continue
         if _should_exclude(file_path, scan_root, exclude_dirs):
             continue
-        if not _is_text_file(file_path):
-            continue
-        # Path-filtered checks are always run individually
+
+        # Get path-filtered checks applicable to this file
         path_checks = _get_applicable_checks(file_path, scan_root, [], by_pattern)
         individual = complex_universal + path_checks
+
+        # Skip files with no applicable checks
+        if not individual and not combined:
+            continue
+
+        if not _is_text_file(file_path):
+            continue
         _scan_file(
             file_path,
             scan_root,
@@ -398,14 +404,19 @@ def run_capability_detection(  # pylint: disable=too-many-locals
     results: list[dict[str, Any]] = []
     rule_defs: dict[str, dict[str, Any]] = {}
     universal, by_pattern = _partition_checks(ruleset.checks)
-    combined = build_combined_patterns(universal)
-    complex_universal = [c for c in universal if not _is_simple_check(c)]
+    combined, complex_universal = build_combined_patterns(universal)
 
     for file_path in scan_targets:
-        if not file_path.is_file() or not _is_text_file(file_path):
+        if not file_path.is_file():
             continue
+
         path_checks = _get_applicable_checks(file_path, scan_root, [], by_pattern)
         individual = complex_universal + path_checks
+
+        if not individual and not combined:
+            continue
+        if not _is_text_file(file_path):
+            continue
         _scan_file(
             file_path,
             scan_root,

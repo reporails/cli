@@ -14,7 +14,13 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.templates import has_templates, resolve_templates
+from reporails_cli.core.templates import TEMPLATE_PATTERN, resolve_templates_str
+
+# Use C YAML loader when available
+try:
+    from yaml import CSafeLoader as _YamlLoader
+except ImportError:
+    from yaml import SafeLoader as _YamlLoader  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -156,13 +162,14 @@ def compile_rules(
             continue
 
         try:
-            # Resolve templates if needed
-            if template_context and has_templates(yml_path):
-                content = resolve_templates(yml_path, template_context)
+            # Read file once — check for templates in memory (avoids double-read)
+            raw_content = yml_path.read_text(encoding="utf-8")
+            if template_context and TEMPLATE_PATTERN.search(raw_content):
+                content = resolve_templates_str(raw_content, template_context)
             else:
-                content = yml_path.read_text(encoding="utf-8")
+                content = raw_content
 
-            data = yaml.safe_load(content)
+            data = yaml.load(content, Loader=_YamlLoader)
             if not data or "rules" not in data or not isinstance(data["rules"], list):
                 continue
 
@@ -198,49 +205,96 @@ def compile_rules(
 _MAX_GROUPS_PER_BATCH = 99
 
 
-def _is_simple_check(check: CompiledCheck) -> bool:
-    """Check if a compiled check is simple enough for batched alternation.
+_INLINE_FLAGS_RE = re.compile(r"^\(\?([aiLmsux]+)\)")
 
-    Simple = single positive pattern, no negatives, no either, no inline flags.
+
+def _scope_inline_flags(pattern: str) -> str:
+    """Convert global inline flags to scoped flags for embedding in named groups.
+
+    Transforms ``(?i)pattern`` → ``(?i:pattern)`` so the flag is scoped to the
+    enclosing named group instead of being a global flag (which Python rejects
+    when not at position 0).
     """
-    if len(check.patterns) != 1 or check.negative_patterns or check.either_patterns:
-        return False
-    # Exclude patterns with inline flags (e.g., (?i)) that conflict with combined regex
-    pattern_str = check.patterns[0].pattern
-    return not re.search(r"\(\?[aiLmsux]", pattern_str)
+    m = _INLINE_FLAGS_RE.match(pattern)
+    if m:
+        flags = m.group(1)
+        rest = pattern[m.end() :]
+        return f"(?{flags}:{rest})"
+    return pattern
+
+
+def _get_combinable_pattern(check: CompiledCheck) -> str | None:
+    """Get a single embeddable pattern string for combined regex batching.
+
+    Returns None if the check cannot be combined (e.g., has negative patterns
+    or multiple AND patterns). Handles:
+    - Single patterns (with or without inline flags like (?i))
+    - Either-pattern alternatives (joined as alternation)
+    """
+    if check.negative_patterns:
+        return None  # Can't batch negatives (require all-must-not-match logic)
+
+    if check.patterns and not check.either_patterns:
+        if len(check.patterns) == 1:
+            return _scope_inline_flags(check.patterns[0].pattern)
+        return None  # Multiple AND patterns can't be combined into alternation
+
+    if check.either_patterns and not check.patterns:
+        parts = [_scope_inline_flags(p.pattern) for p in check.either_patterns]
+        return "|".join(f"(?:{p})" for p in parts)
+
+    return None
 
 
 @dataclass(frozen=True)
 class CombinedPattern:
-    """A batched alternation of simple checks with named groups."""
+    """A batched alternation of checks with named groups."""
 
     regex: re.Pattern[str]
     group_to_check: dict[str, CompiledCheck]
 
 
-def build_combined_patterns(checks: list[CompiledCheck]) -> list[CombinedPattern]:
-    """Combine simple pattern-regex checks into batched alternation patterns.
+def build_combined_patterns(
+    checks: list[CompiledCheck],
+) -> tuple[list[CombinedPattern], list[CompiledCheck]]:
+    """Combine eligible checks into batched alternation patterns with named groups.
 
-    Groups up to _MAX_GROUPS_PER_BATCH simple checks per combined regex.
-    Returns list of CombinedPattern objects.
+    Accepts single-pattern checks (with or without inline flags) and
+    either-pattern checks. Checks with negative patterns or multiple AND
+    patterns are returned as remaining individual checks.
+
+    Args:
+        checks: List of compiled checks to partition
+
+    Returns:
+        Tuple of (combined_patterns, remaining_individual_checks)
     """
-    simple = [c for c in checks if _is_simple_check(c)]
-    if not simple:
-        return []
+    combinable: list[tuple[CompiledCheck, str]] = []
+    remaining: list[CompiledCheck] = []
+
+    for check in checks:
+        pat = _get_combinable_pattern(check)
+        if pat is not None:
+            combinable.append((check, pat))
+        else:
+            remaining.append(check)
+
+    if not combinable:
+        return [], remaining
 
     combined: list[CombinedPattern] = []
-    for batch_start in range(0, len(simple), _MAX_GROUPS_PER_BATCH):
-        batch = simple[batch_start : batch_start + _MAX_GROUPS_PER_BATCH]
+    for batch_start in range(0, len(combinable), _MAX_GROUPS_PER_BATCH):
+        batch = combinable[batch_start : batch_start + _MAX_GROUPS_PER_BATCH]
         parts: list[str] = []
         group_map: dict[str, CompiledCheck] = {}
-        for i, check in enumerate(batch):
+        for i, (check, pat) in enumerate(batch):
             group_name = f"g{i}"
-            # Use the original pattern string from the compiled pattern
-            parts.append(f"(?P<{group_name}>{check.patterns[0].pattern})")
+            parts.append(f"(?P<{group_name}>{pat})")
             group_map[group_name] = check
         try:
             combined_re = re.compile("|".join(parts), re.MULTILINE | re.DOTALL)
             combined.append(CombinedPattern(regex=combined_re, group_to_check=group_map))
         except re.error as e:
             logger.warning("Failed to build combined pattern: %s", e)
-    return combined
+            remaining.extend(check for check, _ in batch)
+    return combined, remaining

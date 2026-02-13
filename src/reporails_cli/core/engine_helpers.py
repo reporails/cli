@@ -121,12 +121,13 @@ def _detect_capabilities(
     project_root: Path,
     template_context: dict[str, str | list[str]],
     features: DetectedFeatures,
+    instruction_files: list[Path] | None = None,
 ) -> tuple[CapabilityResult, list[Path] | None]:
     """Run PASS 1: capability detection and return (capability_result, extra_targets)."""
     extra_targets = features.resolved_symlinks or None
 
     # Project-scoped instruction files for capability detection
-    project_instruction_files = get_all_instruction_files(project_root) or None
+    project_instruction_files = instruction_files or get_all_instruction_files(project_root) or None
     if project_instruction_files and extra_targets:
         project_instruction_files = list(project_instruction_files) + list(extra_targets)
 
@@ -172,6 +173,11 @@ def _run_rule_validation(
         )
     state._sarif_by_rule = distribute_sarif_by_rule(rule_sarif, regex_rules)
 
+    # Pre-compute bound template vars once (avoids re-computing per rule)
+    from reporails_cli.core.mechanical.runner import bind_instruction_files
+
+    effective_vars = bind_instruction_files(template_context, scan_root, target_instruction_files)
+
     # Per-rule iteration (ordered check execution)
     all_judgment_requests: list[JudgmentRequest] = []
     for rule in applicable_rules.values():
@@ -179,8 +185,8 @@ def _run_rule_validation(
             rule,
             state,
             scan_root,
-            template_context,
-            target_instruction_files,
+            effective_vars,
+            None,  # instruction_files already bound in effective_vars
         )
         all_judgment_requests.extend(jrs)
 
