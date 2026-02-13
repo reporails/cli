@@ -10,7 +10,7 @@ import logging
 import time
 from pathlib import Path
 
-from reporails_cli.core.agents import get_all_instruction_files
+from reporails_cli.core.agents import get_all_scannable_files
 from reporails_cli.core.applicability import detect_features_filesystem, get_applicable_rules
 from reporails_cli.core.bootstrap import (
     get_agent_vars,
@@ -101,8 +101,8 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     # Filter rules by FINAL level
     applicable_rules = get_applicable_rules(rules, final_level)
 
-    # Target-scoped instruction files for rule validation
-    target_instruction_files = get_all_instruction_files(scan_root) or None
+    # Target-scoped files for rule validation (includes config files for path-filtered rules)
+    target_instruction_files = get_all_scannable_files(scan_root) or None
     if target_instruction_files and exclude_dirs:
         exclude_set = set(exclude_dirs)
         target_instruction_files = [

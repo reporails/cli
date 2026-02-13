@@ -110,9 +110,15 @@ def format_result(
         # Evaluation completeness
         "evaluation": "partial" if result.is_partial else "complete",
         "is_partial": result.is_partial,
-        "pending_semantic": _format_pending_semantic(result.pending_semantic),
-        "skipped_experimental": _format_skipped_experimental(result.skipped_experimental),
     }
+
+    # Optional fields — omit when absent to avoid null-chaining bugs in consumers
+    pending = _format_pending_semantic(result.pending_semantic)
+    if pending is not None:
+        data["pending_semantic"] = pending
+    skipped = _format_skipped_experimental(result.skipped_experimental)
+    if skipped is not None:
+        data["skipped_experimental"] = skipped
 
     # Add delta fields (null if no previous run or unchanged)
     if delta is not None:
