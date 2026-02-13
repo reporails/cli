@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.mechanical.checks import (
+    _safe_float,
     byte_size,
     content_absent,
     directory_exists,
@@ -148,3 +149,53 @@ class TestRunMechanicalChecks:
         violations = run_mechanical_checks(rules, tmp_path, _vars())
         assert len(violations) == 1
         assert violations[0].rule_id == "CORE:S:0004"
+
+
+class TestSafeFloat:
+    """Tests for _safe_float type coercion helper."""
+
+    def test_string_number(self) -> None:
+        assert _safe_float("100") == 100.0
+
+    def test_int_value(self) -> None:
+        assert _safe_float(42) == 42.0
+
+    def test_float_value(self) -> None:
+        assert _safe_float(3.14) == 3.14
+
+    def test_invalid_string_returns_default(self) -> None:
+        assert _safe_float("invalid") == float("inf")
+
+    def test_invalid_string_custom_default(self) -> None:
+        assert _safe_float("abc", 0.0) == 0.0
+
+    def test_none_returns_default(self) -> None:
+        assert _safe_float(None) == float("inf")
+
+    def test_none_custom_default(self) -> None:
+        assert _safe_float(None, 0.0) == 0.0
+
+
+class TestTypeSafetyInChecks:
+    """Verify mechanical checks handle string args from YAML without crashing."""
+
+    def test_byte_size_string_max(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("short")
+        result = byte_size(tmp_path, {"max": "100"}, _vars())
+        assert result.passed
+
+    def test_byte_size_invalid_max(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("short")
+        result = byte_size(tmp_path, {"max": "invalid"}, _vars())
+        # invalid → float("inf"), so any file passes
+        assert result.passed
+
+    def test_line_count_string_max(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("line1\nline2\n")
+        result = line_count(tmp_path, {"max": "100"}, _vars())
+        assert result.passed
+
+    def test_line_count_invalid_max(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("line1\nline2\n")
+        result = line_count(tmp_path, {"max": "invalid"}, _vars())
+        assert result.passed

@@ -32,3 +32,7 @@
 - [PERF]: Path-based pre-grouping avoids O(files x checks) inner loop for path-filtered checks
 - [PERF]: Combined regex patterns batch simple checks into alternation with named groups (~10-50x speedup)
 - [PERF]: Capability detection uses first-match-only early exit
+- [TEST]: Added unit tests for semantic request building (12 tests)
+- [TEST]: Added unit tests for applicability detection and rule filtering (14 tests)
+- [TEST]: Added unit tests for engine helper cache filtering (6 tests)
+- [TEST]: Added type safety tests for mechanical checks with string/invalid args
