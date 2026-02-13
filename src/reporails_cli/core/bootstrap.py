@@ -247,7 +247,8 @@ def get_installed_recommended_version() -> str | None:
 
 def is_initialized() -> bool:
     """Check if reporails has been initialized (rules framework downloaded)."""
-    return get_rules_path().exists()
+    rules_path = get_rules_path()
+    return rules_path.is_dir() and (rules_path / "core").is_dir()
 
 
 # Legacy alias for backward compatibility

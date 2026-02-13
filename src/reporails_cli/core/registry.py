@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from reporails_cli.core.rule_builder import (
     get_rules_by_type as get_rules_by_type,
 )
 from reporails_cli.core.utils import parse_frontmatter
+
+logger = logging.getLogger(__name__)
 
 
 def get_rules_dir() -> Path:
@@ -176,10 +179,16 @@ def _apply_agent_overrides(
                 continue  # Drop this check
             new_severity = override.get("severity")
             if new_severity:
+                try:
+                    parsed_severity = Severity(new_severity)
+                except ValueError:
+                    logger.warning("Invalid severity '%s' in override for %s, skipping", new_severity, check.id)
+                    new_checks.append(check)
+                    continue
                 new_checks.append(
                     Check(
                         id=check.id,
-                        severity=Severity(new_severity),
+                        severity=parsed_severity,
                         type=check.type,
                         name=check.name,
                         check=check.check,
