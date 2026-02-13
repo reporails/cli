@@ -33,6 +33,9 @@
 - [MCP]: Judge tool output now includes parsed verdict details (rule, file, verdict, reason) instead of bare count
 - [MCP]: Judge tool rejects path-traversal verdicts referencing files outside the project directory
 - [DOCS]: Replaced all short rule IDs (S1, C4, etc.) with full coordinate format (CORE:S:0005, CORE:C:0004) across READMEs, specs, source comments, and tests
+- [DOCS]: Removed stale OpenGrep references from capability-patterns.yml, checks-readonly.md, pyproject.toml
+- [DOCS]: Removed stale `levels.yml` from bundled config rule (removed from bundled in 0.3.0)
+- [MCP]: Explain tool description now requires full coordinate IDs (matching memory note)
 - [DOCS]: Updated modules.md levels section — framework uses capabilities (not required_rules)
 - [CORE]: File discovery used project root instead of scan root — agent detection and feature scanning now scoped to target directory
 - [CORE]: Content rule violations now attributed to root instruction file (`CLAUDE.md`) instead of skill files or scoped snippets

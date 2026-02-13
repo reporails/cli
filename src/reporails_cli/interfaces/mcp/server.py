@@ -102,7 +102,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Get details about a specific rule by ID."
                 " Returns JSON with title, category, type, level, description, checks."
-                " Accepts short IDs (S1, C6) or coordinate IDs (CORE:S:0001)."
+                " Use full coordinate IDs (e.g., CORE:S:0005, CLAUDE:S:0011)."
             ),
             inputSchema={
                 "type": "object",

@@ -130,6 +130,6 @@ testpaths = ["tests"]
 addopts = "--strict-markers"
 markers = [
     "unit: Fast, isolated unit tests",
-    "integration: Cross-component tests (requires OpenGrep)",
+    "integration: Cross-component tests",
     "e2e: End-to-end tests",
 ]

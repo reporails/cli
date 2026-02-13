@@ -1,11 +1,5 @@
-# OpenGrep patterns for capability detection
+# Regex patterns for capability detection
 # CLI-owned configuration for content analysis (Phase 2)
-#
-# TODO: Scope paths using {{instruction_files}} from agent config
-# instead of **/*.md to avoid scanning non-instruction markdown files.
-# Blocked by OpenGrep skipping symlinked instruction files (e.g.
-# CLAUDE.md -> AGENTS.md), which means template-scoped paths miss
-# the real file content. Needs symlink-aware path resolution first.
 
 rules:
   - id: capability.has-sections
