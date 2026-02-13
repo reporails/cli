@@ -6,6 +6,7 @@ Coordinates other modules to run validation. Helpers in engine_helpers.py.
 from __future__ import annotations
 
 import contextlib
+import logging
 import time
 from pathlib import Path
 
@@ -42,6 +43,8 @@ from reporails_cli.core.registry import get_experimental_rules, load_rules
 from reporails_cli.core.sarif import dedupe_violations
 from reporails_cli.core.scorer import calculate_score, estimate_friction
 
+logger = logging.getLogger(__name__)
+
 
 def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     target: Path,
@@ -60,6 +63,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Auto-init if needed (downloads rules framework)
     if not is_initialized():
+        logger.info("Downloading rules framework...")
         run_init()
 
     # Get template vars from agent config for yml placeholder resolution

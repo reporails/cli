@@ -60,9 +60,15 @@ def format_assessment_box(
     # 3-char left pad + left + gap + right + 3-char right pad = box_width
     gap = box_width - 3 - len(left) - len(right) - 3
     if gap < 3:
-        # Truncate label if needed
+        # Word-boundary truncation for level label
         max_label = box_width - 3 - len(left) - 3 - len(f"CAPABILITY:  ({level_display}){level_delta_str}") - 3
-        level_label = level_label[: max(max_label, 3)] + "..."
+        max_label = max(max_label, 3)
+        truncated = level_label[:max_label]
+        # Find last space for word boundary
+        last_space = truncated.rfind(" ")
+        if last_space > max_label // 2:
+            truncated = truncated[:last_space]
+        level_label = truncated.rstrip() + "..."
         right = f"CAPABILITY: {level_label} ({level_display}){level_delta_str}"
         gap = box_width - 3 - len(left) - len(right) - 3
     score_text = f"{left}{' ' * gap}{right}"

@@ -25,8 +25,8 @@ from reporails_cli.interfaces.cli.helpers import (
 
 
 @app.command()
-def check(  # pylint: disable=too-many-arguments,too-many-locals
-    path: str = typer.Argument(".", help="Directory to validate"),
+def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
+    path: str = typer.Argument(".", help="File or directory to validate"),
     format: str = typer.Option(
         None,
         "--format",
@@ -76,7 +76,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
     agent: str = typer.Option(
         "claude",
         "--agent",
-        help="Agent identifier for template vars (claude, cursor, etc.)",
+        help="Agent type for rule overrides and template vars (e.g., claude, cursor)",
     ),
     experimental: bool = typer.Option(
         False,
@@ -99,7 +99,8 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
 
     if not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
-        raise typer.Exit(1)
+        console.print("Run 'ails check .' to validate the current directory.")
+        raise typer.Exit(2)
 
     # Resolve --rules paths
     rules_paths = _resolve_rules_paths(rules, console)
@@ -127,12 +128,18 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
         prompt_for_updates(console, no_update_check=no_update_check)
 
     # Early check for missing instruction files
+    output_format = format if format else _default_format()
     instruction_files = get_all_instruction_files(target)
     if not instruction_files:
-        console.print("No instruction files found.")
-        console.print("Level: L1 (Absent)")
-        console.print()
-        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        if output_format == "json":
+            import json
+
+            print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
+        else:
+            console.print("No instruction files found.")
+            console.print("Level: L1 (Absent)")
+            console.print()
+            console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
         return
 
     # Get previous scan BEFORE running validation (for delta comparison)
@@ -165,7 +172,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
             )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1) from None
+        raise typer.Exit(2) from None
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
     # Compute delta from previous scan
@@ -175,9 +182,6 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
         current_violations=len(result.violations),
         previous=previous_scan,
     )
-
-    # Auto-detect format if not specified
-    output_format = format if format else _default_format()
 
     # Format output
     _format_output(result, delta, output_format, ascii, quiet_semantic, elapsed_ms, console)

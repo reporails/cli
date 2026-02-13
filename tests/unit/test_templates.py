@@ -111,7 +111,7 @@ class TestPartialEvaluation:
         result = self._make_result(is_partial=True)
         output = text_formatter.format_result(result)
 
-        assert "complete analysis" in output
+        assert "full semantic analysis" in output
 
     def test_complete_no_partial_marker(self) -> None:
         """Complete evaluation should not show MCP CTA."""
@@ -302,7 +302,7 @@ class TestMCPCallToAction:
         result = self._make_partial_result()
         output = text_formatter.format_result(result, quiet_semantic=False)
 
-        assert "For complete analysis" in output
+        assert "full semantic analysis" in output
         assert "claude mcp add" in output
 
     def test_cta_hidden_when_quiet_semantic(self) -> None:

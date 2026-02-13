@@ -253,7 +253,10 @@ def dismiss(
 @app.command()
 def judge(
     path: str = typer.Argument(".", help="Project root"),
-    verdicts: list[str] = typer.Argument(None, help="Verdict strings: rule_id:location:verdict:reason"),  # noqa: B008
+    verdicts: list[str] = typer.Argument(  # noqa: B008
+        None,
+        help="Verdict strings: RULE:FILE:verdict:reason (e.g., 'C6:CLAUDE.md:pass:Criteria met')",
+    ),
 ) -> None:
     """Cache semantic rule verdicts (batch, rule_id:location:verdict:reason format)."""
     target = Path(path).resolve()

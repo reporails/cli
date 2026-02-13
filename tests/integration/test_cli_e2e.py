@@ -138,7 +138,7 @@ class TestCheckCommand:
         assert len(result.output.strip()) > 0
 
     def test_missing_path_errors(self) -> None:
-        """Non-existent path should produce error and exit 1."""
+        """Non-existent path should produce error and exit 2 (input error)."""
         result = runner.invoke(
             app,
             [
@@ -147,7 +147,7 @@ class TestCheckCommand:
                 "--no-update-check",
             ],
         )
-        assert result.exit_code == 1
+        assert result.exit_code == 2
 
     def test_no_instruction_files_message(self, tmp_path: Path) -> None:
         """Empty directory should report no instruction files."""

@@ -37,7 +37,9 @@ def format_violations_section(
     line_col_w = 4
     prefix_w = 4 + 1 + 2 + line_col_w + 2  # 13
     suffix_gap = 2
-    col_labels = f"    {'':1}  {'line':<{line_col_w}}  {'issue':<{line_width - prefix_w - suffix_gap - 4}}  {'rule':>4}"
+    rule_col_w = 14
+    issue_w = line_width - prefix_w - suffix_gap - rule_col_w
+    col_labels = f"    {'':1}  {'line':<{line_col_w}}  {'issue':<{issue_w}}  {'rule':>{rule_col_w}}"
 
     # Group by file
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -100,11 +102,15 @@ def format_violations_section(
             line_str = f":{raw_line}" if raw_line and raw_line != "1" else ""
             line_field = line_str.ljust(line_col_w)
 
-            # Fit message within remaining space
+            # Fit message within remaining space with word-boundary truncation
             max_msg_len = line_width - prefix_w - suffix_gap - len(rule_id)
             max_msg_len = max(max_msg_len, 10)
             if len(msg) > max_msg_len:
-                msg = msg[: max_msg_len - 3] + "..."
+                truncated = msg[: max_msg_len - 3]
+                last_space = truncated.rfind(" ")
+                if last_space > max_msg_len // 2:
+                    truncated = truncated[:last_space]
+                msg = truncated.rstrip() + "..."
             msg = msg.ljust(max_msg_len)
 
             lines.append(
