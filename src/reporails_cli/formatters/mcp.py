@@ -29,14 +29,25 @@ def format_result(
     """
     data = json_formatter.format_result(result, delta)
 
-    # Add evaluation instructions if there are judgment requests
+    # Add structured workflow for semantic evaluation
     if data.get("judgment_requests"):
-        data["_instructions"] = (
-            "SEMANTIC RULE EVALUATION REQUIRED: "
-            "For each judgment_request, read the file content and evaluate "
-            "against the question and criteria provided. Report violations "
-            "where criteria are not met. Include these in your response to the user."
-        )
+        data["_semantic_workflow"] = {
+            "action": "evaluate_and_judge",
+            "steps": [
+                "For each judgment_request: read the content field and evaluate against question + criteria",
+                "Collect verdicts",
+                "Call the judge tool with verdicts to cache results",
+                "Report only failures to user; state pass count at end",
+            ],
+            "verdict_format": "RULE_ID:FILENAME:pass|fail:reason",
+            "example_call": {
+                "tool": "judge",
+                "arguments": {
+                    "path": ".",
+                    "verdicts": ["C6:CLAUDE.md:pass:Content is specific"],
+                },
+            },
+        }
 
     return data
 
