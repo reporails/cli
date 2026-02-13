@@ -161,3 +161,26 @@ def get_all_instruction_files(target: Path) -> list[Path]:
         all_files.update(detected.rule_files)
 
     return sorted(all_files)
+
+
+def get_all_scannable_files(target: Path) -> list[Path]:
+    """
+    Get all files the regex engine should scan: instruction, rule, and config files.
+
+    Config files (e.g. .claude/settings.json) are included so that rules with
+    explicit paths.include targeting them can match.
+
+    Args:
+        target: Project root to scan
+
+    Returns:
+        Deduplicated list of all scannable file paths
+    """
+    all_files: set[Path] = set()
+
+    for detected in detect_agents(target):
+        all_files.update(detected.instruction_files)
+        all_files.update(detected.rule_files)
+        all_files.update(detected.config_files)
+
+    return sorted(all_files)

@@ -6,6 +6,8 @@
 - [HOOKS]: PostToolUse auto-validation hook for instruction file edits
 
 ### Changed
+- [CORE]: Scan targets now include config files for path-filtered rules (`get_all_scannable_files`)
+- [JSON]: `pending_semantic` and `skipped_experimental` omitted from JSON output when absent (avoids null-chaining)
 - [META]: Version bump to 0.3.0
 - [DOCS]: Updated all specs to reflect regex engine migration
 - [MCP]: Validate tool returns structured JSON instead of formatted text

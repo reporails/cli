@@ -208,8 +208,8 @@ class TestPendingSemanticDisplay:
         assert data["pending_semantic"]["file_count"] == 5
         assert "C6" in data["pending_semantic"]["rules"]
 
-    def test_json_null_pending_when_complete(self) -> None:
-        """JSON output should have null pending when complete."""
+    def test_json_omits_pending_when_complete(self) -> None:
+        """JSON output should omit pending_semantic key when complete."""
         from reporails_cli.formatters import json as json_formatter
 
         result = ValidationResult(
@@ -227,7 +227,9 @@ class TestPendingSemanticDisplay:
         )
         data = json_formatter.format_result(result)
 
-        assert data["pending_semantic"] is None
+        assert "pending_semantic" not in data
+        # Consumer pattern should safely default
+        assert data.get("pending_semantic", {}).get("rule_count", 0) == 0
 
     def test_compact_shows_pending_summary(self) -> None:
         """Compact format should show pending summary."""
