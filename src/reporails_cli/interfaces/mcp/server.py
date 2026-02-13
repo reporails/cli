@@ -18,6 +18,7 @@ from reporails_cli.core.models import ScanDelta
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.interfaces.mcp.tools import (
     explain_tool,
+    heal_tool,
     judge_tool,
     score_tool,
 )
@@ -115,6 +116,26 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="heal",
+            description=(
+                "Auto-fix deterministic violations (adds missing sections) then returns"
+                " remaining semantic judgment_requests for you to evaluate."
+                " Use when user asks to fix, heal, or improve instruction files."
+                " Returns JSON with auto_fixed array and judgment_requests."
+                " After evaluating judgment_requests, call judge to cache verdicts."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to heal (default: current directory)",
+                        "default": ".",
+                    },
+                },
+            },
+        ),
+        Tool(
             name="judge",
             description=(
                 "Cache semantic rule verdicts so they persist across validation runs."
@@ -143,17 +164,19 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+def _json_response(data: dict[str, Any], indent: int = 2) -> list[TextContent]:
+    """Wrap a dict as a JSON TextContent response."""
+    return [TextContent(type="text", text=json.dumps(data, indent=indent))]
+
+
 async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle the 'validate' tool call."""
     path = arguments.get("path", ".")
     target = Path(path).resolve()
 
-    # Circuit breaker: update state first, then check thresholds.
-    # This ensures the current call's mtime comparison is included.
+    # Circuit breaker: update state, then check thresholds
     path_key = str(target)
     state = _validate_states.get(path_key, _CircuitState())
-
-    # Compute mtime hash and update consecutive_unchanged before threshold check
     mtime_hash = _compute_mtime_hash(target)
     if mtime_hash == state.last_mtime_hash and state.last_mtime_hash:
         state.consecutive_unchanged += 1
@@ -164,98 +187,61 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
     _validate_states[path_key] = state
 
     if state.call_count > _MAX_CALLS or state.consecutive_unchanged >= _MAX_UNCHANGED:
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(
-                    {
-                        "error": "circuit_breaker",
-                        "message": (
-                            "STOP — circuit breaker triggered. "
-                            f"Validated this path {state.call_count} times "
-                            f"({state.consecutive_unchanged} consecutive unchanged). "
-                            "DO NOT call validate again for this path. Instead: "
-                            "1. Report the remaining violations to the user. "
-                            "2. Explain which ones you could not resolve and why. "
-                            "3. Let the user decide how to proceed."
-                        ),
-                    },
-                    indent=2,
+        return _json_response(
+            {
+                "error": "circuit_breaker",
+                "message": (
+                    "STOP — circuit breaker triggered. "
+                    f"Validated this path {state.call_count} times "
+                    f"({state.consecutive_unchanged} consecutive unchanged). "
+                    "DO NOT call validate again for this path. Instead: "
+                    "1. Report the remaining violations to the user. "
+                    "2. Explain which ones you could not resolve and why. "
+                    "3. Let the user decide how to proceed."
                 ),
-            )
-        ]
+            }
+        )
 
-    # Check initialization
     if not is_initialized():
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(
-                    {
-                        "error": "not_initialized",
-                        "message": "Reporails not initialized. Run 'ails check' to auto-initialize.",
-                    }
-                ),
-            )
-        ]
-
+        return _json_response({"error": "not_initialized", "message": "Run 'ails check' to auto-initialize."})
     if not target.exists():
-        return [
-            TextContent(
-                type="text", text=json.dumps({"error": "path_not_found", "message": f"Path not found: {target}"})
-            )
-        ]
+        return _json_response({"error": "path_not_found", "message": f"Path not found: {target}"})
     if not target.is_dir():
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps({"error": "not_a_directory", "message": f"Path is not a directory: {target}"}),
-            )
-        ]
+        return _json_response({"error": "not_a_directory", "message": f"Not a directory: {target}"})
 
-    # Get previous scan BEFORE validation (for delta comparison)
     previous_scan = get_previous_scan(target)
-
-    # Run validation once
     try:
         result = run_validation(target, agent="claude")
     except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return [TextContent(type="text", text=json.dumps({"error": type(e).__name__, "message": str(e)}))]
+        return _json_response({"error": type(e).__name__, "message": str(e)})
 
-    # Compute delta
     delta = ScanDelta.compute(
         current_score=result.score,
         current_level=result.level.value,
         current_violations=len(result.violations),
         previous=previous_scan,
     )
-
-    # Format as structured JSON via MCP formatter
-    dict_result = mcp_formatter.format_result(result, delta=delta)
-
-    return [TextContent(type="text", text=json.dumps(dict_result, indent=2))]
+    return _json_response(mcp_formatter.format_result(result, delta=delta))
 
 
 async def _handle_score(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle the 'score' tool call."""
-    path = arguments.get("path", ".")
-    score_result = score_tool(path)
-    return [TextContent(type="text", text=json.dumps(score_result, indent=2))]
+    return _json_response(score_tool(arguments.get("path", ".")))
 
 
 async def _handle_explain(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle the 'explain' tool call."""
-    rule_id = arguments.get("rule_id", "")
-    explain_result = explain_tool(rule_id)
-    return [TextContent(type="text", text=json.dumps(explain_result, indent=2))]
+    return _json_response(explain_tool(arguments.get("rule_id", "")))
+
+
+async def _handle_heal(arguments: dict[str, Any]) -> list[TextContent]:
+    """Handle the 'heal' tool call."""
+    return _json_response(heal_tool(arguments.get("path", ".")))
 
 
 async def _handle_judge(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle the 'judge' tool call."""
-    path = arguments.get("path", ".")
-    verdicts = arguments.get("verdicts", [])
-    judge_result = judge_tool(path, verdicts)
-    return [TextContent(type="text", text=json.dumps(judge_result, indent=2))]
+    return _json_response(judge_tool(arguments.get("path", "."), arguments.get("verdicts", [])))
 
 
 @server.call_tool()  # type: ignore[untyped-decorator]
@@ -265,6 +251,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         "validate": _handle_validate,
         "explain": _handle_explain,
         "score": _handle_score,
+        "heal": _handle_heal,
         "judge": _handle_judge,
     }
     handler = handlers.get(name)

@@ -181,6 +181,43 @@ def cache_judgments_with_errors(target: Path, verdicts: list[str]) -> tuple[int,
     return recorded, failed
 
 
+def heal_tool(path: str = ".") -> dict[str, Any]:
+    """
+    Auto-fix deterministic violations and return remaining semantic requests.
+
+    Applies safe, additive fixes (append missing sections) then returns
+    a summary of fixes applied plus any pending judgment requests.
+
+    Args:
+        path: Directory to heal (default: current directory)
+
+    Returns:
+        Dict with auto_fixed list and remaining judgment_requests
+    """
+    if not is_initialized():
+        return {"error": "Reporails not initialized. Run 'ails check' first."}
+
+    target = Path(path).resolve()
+    if not target.exists():
+        return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
+
+    try:
+        from reporails_cli.core.fixers import apply_auto_fixes
+
+        rules_paths = _resolve_recommended_rules_paths(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+
+        # Phase 1: Auto-fix
+        fixes = apply_auto_fixes(list(result.violations), target)
+
+        # Phase 2: Return remaining semantic requests
+        return mcp_formatter.format_heal_result(fixes, list(result.judgment_requests))
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        return {"error": str(e)}
+
+
 def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[str, Any]:
     """
     Get detailed info about a specific rule.
