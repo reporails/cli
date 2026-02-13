@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from reporails_cli.core.agents import get_all_instruction_files
-from reporails_cli.core.cache import get_previous_scan, record_scan
+from reporails_cli.core.cache import get_previous_scan
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
 from reporails_cli.core.registry import load_rules
@@ -185,17 +185,6 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Format output
     _format_output(result, delta, output_format, ascii, quiet_semantic, elapsed_ms, console)
-
-    # Record scan in analytics (after display, so previous_scan was accurate)
-    record_scan(
-        target=target,
-        score=result.score,
-        level=result.level.value,
-        violations_count=len(result.violations),
-        rules_checked=result.rules_checked,
-        elapsed_ms=elapsed_ms,
-        instruction_files=result.rules_checked,  # Approximation
-    )
 
     # Exit with error only in strict mode
     if strict and result.violations:
