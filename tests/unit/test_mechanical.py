@@ -13,7 +13,12 @@ from reporails_cli.core.mechanical.checks import (
     git_tracked,
     line_count,
 )
-from reporails_cli.core.mechanical.runner import run_mechanical_checks
+from reporails_cli.core.mechanical.runner import (
+    _matches_any_pattern,
+    bind_instruction_files,
+    resolve_location,
+    run_mechanical_checks,
+)
 from reporails_cli.core.models import Category, Check, Rule, RuleType, Severity
 
 
@@ -199,3 +204,132 @@ class TestTypeSafetyInChecks:
         (tmp_path / "CLAUDE.md").write_text("line1\nline2\n")
         result = line_count(tmp_path, {"max": "invalid"}, _vars())
         assert result.passed
+
+
+class TestMatchesAnyPattern:
+    """Tests for _matches_any_pattern glob helper."""
+
+    def test_exact_match(self) -> None:
+        assert _matches_any_pattern("CLAUDE.md", ["CLAUDE.md"])
+
+    def test_double_star_glob(self) -> None:
+        assert _matches_any_pattern("CLAUDE.md", ["**/CLAUDE.md"])
+
+    def test_nested_path_matches_double_star(self) -> None:
+        assert _matches_any_pattern("docs/CLAUDE.md", ["**/CLAUDE.md"])
+
+    def test_no_match(self) -> None:
+        assert not _matches_any_pattern(".claude/skills/SKILL.md", ["**/CLAUDE.md"])
+
+    def test_multiple_patterns(self) -> None:
+        assert _matches_any_pattern("foo.md", ["*.txt", "*.md"])
+
+    def test_empty_patterns(self) -> None:
+        assert not _matches_any_pattern("CLAUDE.md", [])
+
+
+class TestBindInstructionFiles:
+    """Tests for bind_instruction_files main_instruction_file binding."""
+
+    def test_binds_main_instruction_file(self, tmp_path: Path) -> None:
+        files = [tmp_path / "CLAUDE.md", tmp_path / ".claude" / "rules" / "foo.md"]
+        vars = {
+            "instruction_files": ["**/CLAUDE.md", "**/.claude/rules/*.md"],
+            "main_instruction_file": ["**/CLAUDE.md"],
+        }
+        result = bind_instruction_files(vars, tmp_path, files)
+        assert result["instruction_files"] == ["CLAUDE.md", ".claude/rules/foo.md"]
+        assert result["main_instruction_file"] == ["CLAUDE.md"]
+
+    def test_main_excludes_skill_files(self, tmp_path: Path) -> None:
+        files = [
+            tmp_path / ".claude" / "skills" / "integrations" / "SKILL.md",
+            tmp_path / "CLAUDE.md",
+        ]
+        vars = {
+            "instruction_files": ["**/CLAUDE.md", "**/.claude/skills/**/*.md"],
+            "main_instruction_file": ["**/CLAUDE.md"],
+        }
+        result = bind_instruction_files(vars, tmp_path, files)
+        assert result["main_instruction_file"] == ["CLAUDE.md"]
+
+    def test_no_main_pattern_leaves_unchanged(self, tmp_path: Path) -> None:
+        files = [tmp_path / "CLAUDE.md"]
+        vars = {"instruction_files": ["**/CLAUDE.md"]}
+        result = bind_instruction_files(vars, tmp_path, files)
+        assert "main_instruction_file" not in result
+
+    def test_no_instruction_files_returns_original(self) -> None:
+        vars = {"instruction_files": ["**/CLAUDE.md"], "main_instruction_file": ["**/CLAUDE.md"]}
+        result = bind_instruction_files(vars, Path("/tmp"), None)
+        assert result is vars
+
+    def test_main_pattern_as_string(self, tmp_path: Path) -> None:
+        files = [tmp_path / "CLAUDE.md"]
+        vars = {
+            "instruction_files": ["**/CLAUDE.md"],
+            "main_instruction_file": "**/CLAUDE.md",
+        }
+        result = bind_instruction_files(vars, tmp_path, files)
+        assert result["main_instruction_file"] == ["CLAUDE.md"]
+
+    def test_no_main_match_keeps_original_patterns(self, tmp_path: Path) -> None:
+        files = [tmp_path / ".claude" / "rules" / "foo.md"]
+        vars = {
+            "instruction_files": ["**/.claude/rules/*.md"],
+            "main_instruction_file": ["**/CLAUDE.md"],
+        }
+        result = bind_instruction_files(vars, tmp_path, files)
+        # No files matched the main pattern, so it stays as original
+        assert result["main_instruction_file"] == ["**/CLAUDE.md"]
+
+
+class TestResolveLocationMainFile:
+    """Tests for resolve_location preferring main_instruction_file."""
+
+    def _rule_with_targets(self, targets: str) -> Rule:
+        return Rule(
+            id="CORE:C:0001",
+            title="Test rule",
+            category=Category.CONTENT,
+            type=RuleType.MECHANICAL,
+            level="L1",
+            targets=targets,
+            checks=[],
+        )
+
+    def test_prefers_main_instruction_file(self, tmp_path: Path) -> None:
+        rule = self._rule_with_targets("{{instruction_files}}")
+        vars = {
+            "instruction_files": [".claude/skills/integrations/SKILL.md", "CLAUDE.md"],
+            "main_instruction_file": ["CLAUDE.md"],
+        }
+        assert resolve_location(tmp_path, rule, vars) == "CLAUDE.md:0"
+
+    def test_prefers_main_for_main_target(self, tmp_path: Path) -> None:
+        rule = self._rule_with_targets("{{main_instruction_file}}")
+        vars = {
+            "instruction_files": [".claude/skills/SKILL.md", "CLAUDE.md"],
+            "main_instruction_file": ["CLAUDE.md"],
+        }
+        assert resolve_location(tmp_path, rule, vars) == "CLAUDE.md:0"
+
+    def test_falls_back_without_main(self, tmp_path: Path) -> None:
+        (tmp_path / ".claude" / "skills").mkdir(parents=True)
+        (tmp_path / ".claude" / "skills" / "SKILL.md").write_text("")
+        rule = self._rule_with_targets("{{instruction_files}}")
+        vars = {"instruction_files": [".claude/skills/SKILL.md", "CLAUDE.md"]}
+        # Falls through to generic resolution, picks first from list
+        assert resolve_location(tmp_path, rule, vars) == ".claude/skills/SKILL.md:0"
+
+    def test_no_targets_returns_dot(self, tmp_path: Path) -> None:
+        rule = self._rule_with_targets("")
+        vars = {"main_instruction_file": ["CLAUDE.md"]}
+        assert resolve_location(tmp_path, rule, vars) == ".:0"
+
+    def test_non_instruction_target_unchanged(self, tmp_path: Path) -> None:
+        (tmp_path / ".reporails").mkdir()
+        (tmp_path / ".reporails" / "config.yml").write_text("")
+        rule = self._rule_with_targets(".reporails/config.yml")
+        vars = {"main_instruction_file": ["CLAUDE.md"]}
+        assert resolve_location(tmp_path, rule, vars) == ".reporails/config.yml:0"
