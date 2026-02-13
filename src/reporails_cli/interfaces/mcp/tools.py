@@ -182,7 +182,9 @@ def cache_judgments_with_details(target: Path, verdicts: list[str]) -> tuple[lis
             failed.append(f"File not found: {file_path}")
             continue
         valid_verdicts.append(v)
-        parsed.append({"rule": rule_id, "file": file_path, "verdict": verdict, "reason": reason})
+        # Truncate reason for display (full reason still cached via cache_judgments)
+        brief = (reason[:37] + "...") if len(reason) > 40 else reason
+        parsed.append({"rule": rule_id, "file": file_path, "verdict": verdict, "reason": brief})
 
     if valid_verdicts:
         cache_judgments(target, valid_verdicts)

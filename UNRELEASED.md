@@ -59,6 +59,7 @@
 - [MCP]: Added `is_dir()` validation to all tool handlers
 - [MCP]: Improved tool descriptions with output format info and examples
 - [MCP]: Judge tool returns detailed `{recorded, failed}` feedback instead of silent `{recorded: 0}`
+- [MCP]: Judge tool truncates verdict reasons to 40 chars in response (full reason still cached); tool description and semantic workflow guide agents to use brief reasons
 - [CORE]: `detect_orphan_features` crash on L0 projects (no instruction files) — MCP validate returned cryptic error
 - [CLI]: Double analytics recording — engine and check command both called `record_scan` on every run
 - [CLI]: `dismiss` command wrote to wrong cache when run from subdirectory (used target instead of project root)

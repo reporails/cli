@@ -43,12 +43,12 @@ def format_result(
                 "Call the judge tool with verdicts to cache results",
                 "Report only failures to user; state pass count at end",
             ],
-            "verdict_format": "RULE_ID:FILENAME:pass|fail:reason",
+            "verdict_format": "RULE_ID:FILENAME:pass|fail:brief_reason (under 40 chars)",
             "example_call": {
                 "tool": "judge",
                 "arguments": {
                     "path": ".",
-                    "verdicts": ["C6:CLAUDE.md:pass:Content is specific"],
+                    "verdicts": ["CORE:C:0017:CLAUDE.md:pass:Repo-specific paths"],
                 },
             },
         }
@@ -119,7 +119,7 @@ def format_heal_result(
                 "Call the judge tool with verdicts to cache results",
                 "Report only failures to user; state pass count at end",
             ],
-            "verdict_format": "RULE_ID:FILENAME:pass|fail:reason",
+            "verdict_format": "RULE_ID:FILENAME:pass|fail:brief_reason (under 40 chars)",
         }
 
     return data
