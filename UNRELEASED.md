@@ -29,6 +29,7 @@
 - [CLI]: OpenGrep version display from `ails version`
 
 ### Fixed
+- [CORE]: Content rule violations now attributed to root instruction file (`CLAUDE.md`) instead of skill files or scoped snippets
 - [CORE]: Compiler crash on binary YAML files (UnicodeDecodeError)
 - [CORE]: Mechanical checks crash on string args from YAML (type coercion via `_safe_float`)
 - [CORE]: Invalid severity in agent config no longer crashes registry (logs warning, keeps original)
