@@ -192,3 +192,55 @@ def compile_rules(
             logger.warning("Failed to load rule file %s: %s", yml_path, e)
 
     return result
+
+
+# Maximum named groups per combined regex (Python re limit is ~100)
+_MAX_GROUPS_PER_BATCH = 99
+
+
+def _is_simple_check(check: CompiledCheck) -> bool:
+    """Check if a compiled check is simple enough for batched alternation.
+
+    Simple = single positive pattern, no negatives, no either, no inline flags.
+    """
+    if len(check.patterns) != 1 or check.negative_patterns or check.either_patterns:
+        return False
+    # Exclude patterns with inline flags (e.g., (?i)) that conflict with combined regex
+    pattern_str = check.patterns[0].pattern
+    return not re.search(r"\(\?[aiLmsux]", pattern_str)
+
+
+@dataclass(frozen=True)
+class CombinedPattern:
+    """A batched alternation of simple checks with named groups."""
+
+    regex: re.Pattern[str]
+    group_to_check: dict[str, CompiledCheck]
+
+
+def build_combined_patterns(checks: list[CompiledCheck]) -> list[CombinedPattern]:
+    """Combine simple pattern-regex checks into batched alternation patterns.
+
+    Groups up to _MAX_GROUPS_PER_BATCH simple checks per combined regex.
+    Returns list of CombinedPattern objects.
+    """
+    simple = [c for c in checks if _is_simple_check(c)]
+    if not simple:
+        return []
+
+    combined: list[CombinedPattern] = []
+    for batch_start in range(0, len(simple), _MAX_GROUPS_PER_BATCH):
+        batch = simple[batch_start : batch_start + _MAX_GROUPS_PER_BATCH]
+        parts: list[str] = []
+        group_map: dict[str, CompiledCheck] = {}
+        for i, check in enumerate(batch):
+            group_name = f"g{i}"
+            # Use the original pattern string from the compiled pattern
+            parts.append(f"(?P<{group_name}>{check.patterns[0].pattern})")
+            group_map[group_name] = check
+        try:
+            combined_re = re.compile("|".join(parts), re.MULTILINE | re.DOTALL)
+            combined.append(CombinedPattern(regex=combined_re, group_to_check=group_map))
+        except re.error as e:
+            logger.warning("Failed to build combined pattern: %s", e)
+    return combined

@@ -29,3 +29,6 @@
 - [MCP]: Added `is_dir()` validation to all tool handlers
 - [MCP]: Improved tool descriptions with output format info and examples
 - [MCP]: Judge tool returns detailed `{recorded, failed}` feedback instead of silent `{recorded: 0}`
+- [PERF]: Path-based pre-grouping avoids O(files x checks) inner loop for path-filtered checks
+- [PERF]: Combined regex patterns batch simple checks into alternation with named groups (~10-50x speedup)
+- [PERF]: Capability detection uses first-match-only early exit
