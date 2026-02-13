@@ -63,7 +63,7 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return mcp_formatter.format_result(result)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
 
@@ -93,7 +93,7 @@ def validate_tool_text(path: str = ".") -> str:
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return text_formatter.format_result(result, ascii_mode=True)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return f"Error: {e}"
 
 
@@ -121,7 +121,7 @@ def score_tool(path: str = ".") -> dict[str, Any]:
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return mcp_formatter.format_score(result)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
 
@@ -264,10 +264,13 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[st
 
     # Read description from markdown file if available
     if rule.md_path and rule.md_path.exists():
-        content = rule.md_path.read_text(encoding="utf-8")
-        # Extract content after frontmatter
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            rule_data["description"] = parts[2].strip()[:500]
+        try:
+            content = rule.md_path.read_text(encoding="utf-8")
+            # Extract content after frontmatter
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                rule_data["description"] = parts[2].strip()[:500]
+        except (OSError, ValueError):
+            pass  # Return rule data without description
 
     return mcp_formatter.format_rule(rule_id_upper, rule_data)
