@@ -5,10 +5,10 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 ## Quick Start
 
 ```bash
-npx @reporails/cli install
+npx @reporails/cli setup
 ```
 
-This registers the MCP server with Claude Code. Then ask Claude:
+This detects agents in your project and writes the MCP config. Then ask Claude:
 
 ```
 > What ails claude?
@@ -70,11 +70,35 @@ Capability levels describe what your AI instruction setup enables — not how "m
 | L5 | Maintained | Structural integrity, governance, navigation |
 | L6 | Adaptive | Dynamic context, extensibility, persistence |
 
+## GitHub Actions
+
+Add `ails check` as a CI gate with inline PR annotations:
+
+```yaml
+# .github/workflows/reporails.yml
+name: Reporails
+on:
+  pull_request:
+    paths: ['CLAUDE.md', '.claude/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: reporails/cli/action@v1
+        with:
+          min-score: '6.0'
+```
+
+See the [main README](https://github.com/reporails/cli#github-actions) for full action inputs/outputs.
+
 ## Commands
 
 ```bash
+ails setup                      # Set up MCP server for detected agents
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
+ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
@@ -92,8 +116,7 @@ ails version                    # Show version info
 
 | Command | Description |
 |---------|-------------|
-| `install [--scope user\|project]` | Register MCP server with Claude Code |
-| `uninstall [--scope user\|project]` | Remove MCP server from Claude Code |
+| `setup [PATH]` | Set up MCP server for detected agents |
 | `check [PATH]` | Validate instruction files |
 | `explain RULE_ID` | Show rule details |
 | `map [PATH]` | Discover project structure |
@@ -134,7 +157,7 @@ ails update --recommended
 
 - **Node.js >= 18**
 - **uv** — auto-installed if missing ([manual install](https://docs.astral.sh/uv/))
-- **Claude Code** — required for `install`/`uninstall` commands ([install](https://docs.anthropic.com/en/docs/claude-code))
+- **No additional dependencies** — `setup` writes config files directly
 
 ## How It Works
 

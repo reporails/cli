@@ -1,11 +1,10 @@
-# Reporails CLI v0.3.0
+# Reporails CLI
 
 AI instruction validator & quality assurance provider. Validates instruction files against deterministic, mechanical and semantic rules using a pure Python regex engine.
 
 ## Session Start
 
-1. Read `.reporails/backbone.yml` for project structure
-2. Read `docs/specs/arch.md` for architecture decisions
+Read `.reporails/backbone.yml` for project structure and `docs/specs/arch.md` for architecture decisions.
 
 ## Development Context
 
@@ -29,30 +28,14 @@ Don't conflate these when discussing features, delivery, or documentation.
 - Limit searches to `src/` or `tests/` directories when possible
 - Avoid grepping the entire repo; scope to relevant paths
 
-## Quick Start
-```bash
-uv sync                    # Install dependencies
-uv run ails check           # Validate (auto-downloads framework rules)
-uv run ails map . --save   # Save backbone.yml
-```
+## Quick Reference
 
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `ails check [PATH]` | Validate instruction files |
-| `ails check --refresh` | Force re-scan, ignore cache |
-| `ails check --quiet-semantic` | Suppress semantic rules message |
-| `ails check -f json` | JSON output (for scripts/MCP) |
-| `ails heal [PATH]` | Interactive auto-fix + semantic evaluation |
-| `ails dismiss RULE FILE` | Dismiss a semantic rule for a file |
-| `ails judge PATH VERDICTS...` | Cache semantic rule verdicts |
-| `ails map [PATH]` | Discover project structure |
-| `ails map --save` | Save backbone.yml to .reporails/ |
-| `ails explain RULE_ID` | Show rule details |
-| `ails update` | Update rules framework to latest |
-| `ails update --cli` | Upgrade CLI package itself |
-| `ails version` | Show CLI and framework versions |
+- `uv sync` to install dependencies
+- `uv run ails setup` to set up MCP server for detected agents
+- `uv run ails check` to validate instruction files
+- `uv run ails check -f json` for JSON output
+- `uv run ails heal` for interactive auto-fix
+- `uv run ails map . --save` to save backbone.yml
 
 ## Project Structure
 ```
@@ -60,20 +43,13 @@ src/reporails_cli/
 ├── core/           # Domain logic (regex/, mechanical/, pipeline, agents)
 ├── bundled/        # CLI-owned config (capability-patterns.yml)
 ├── interfaces/     # CLI and MCP entry points
-└── formatters/     # Output adapters
+└── formatters/     # Output adapters (json, github, text, mcp)
+action/             # GitHub Actions composite action
 ```
 
 Path-scoped rules in `.claude/rules/` — see those files for context-specific constraints.
 
 See `docs/specs/arch.md` for full architecture.
-
-## Framework vs CLI
-
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| Rules | Downloaded to `~/.reporails/rules/` | What to check |
-| Levels | Loaded from framework `registry/levels.yml` | How to score |
-| Regex Engine | Built-in pure Python | Pattern matching |
 
 ## Testing
 
@@ -86,16 +62,24 @@ See `docs/specs/arch.md` for full architecture.
 
 ## Conventions
 
-- Python 3.10+ with type annotations on public APIs
+- Requires Python >=3.10 with type annotations on public APIs
 - Use `ruff` for formatting and linting
 - Module layout: domain logic in `core/`, entry points in `interfaces/`, output in `formatters/`
 - Prefer dataclasses for data models (`pipeline.py`, `models.py`)
 - Keep modules focused — one concern per file
 - Use full rule IDs in code and config (e.g., `CORE:C:0004`, not `C4`)
+- When fixing bugs, explain the root cause and why the fix works
+- When making architectural decisions, document the tradeoffs considered
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `/check` | Self-validate this project's instruction files |
+| `/qa` | Run the full QA suite |
+| `/plan-feature` | Plan implementation of a new feature |
+| `/add-changelog-entry` | Add an entry to UNRELEASED.md |
 
 ## Architecture
 
 @docs/specs/arch.md for full architecture details.
-
-- **Pure Python Regex**: Deterministic pattern matching via built-in regex engine
-- **Framework Separation**: CLI orchestrates, framework defines rules
