@@ -5,49 +5,24 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
-
-if TYPE_CHECKING:
-    from rich.console import Console
 
 from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.cache import get_previous_scan
 from reporails_cli.core.engine import run_validation_sync
-from reporails_cli.core.models import ScanDelta, ValidationResult
+from reporails_cli.core.models import ScanDelta
 from reporails_cli.core.registry import load_rules
 from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.cli.helpers import (
     _default_format,
     _format_output,
+    _print_verbose,
     _resolve_recommended_rules,
     _resolve_rules_paths,
     app,
     console,
 )
-
-
-def _print_verbose(
-    rules_paths: list[Path] | None,
-    instruction_files: list[Path],
-    result: ValidationResult,
-    agent: str,
-    elapsed_ms: float,
-    con: Console,
-) -> None:
-    """Print verbose scan diagnostics."""
-    con.print()
-    con.print("[dim]Verbose:[/dim]")
-    if rules_paths:
-        for rp in rules_paths:
-            # Shorten home directory for readability
-            display = str(rp).replace(str(Path.home()), "~")
-            con.print(f"[dim]  source: {display}[/dim]")
-    con.print(f"[dim]  agent: {agent}[/dim]")
-    con.print(f"[dim]  files: {len(instruction_files)} instruction files[/dim]")
-    con.print(f"[dim]  rules: {result.rules_checked} checked[/dim]")
-    con.print(f"[dim]  time: {elapsed_ms:.0f}ms[/dim]")
 
 
 @app.command()
@@ -220,7 +195,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Verbose diagnostics (text formats only)
     if verbose and output_format not in ("json", "brief"):
-        _print_verbose(rules_paths, instruction_files, result, agent, elapsed_ms, console)
+        _print_verbose(rules_paths, instruction_files, result, agent, elapsed_ms, target, experimental, console)
 
     # Exit with error only in strict mode
     if strict and result.violations:

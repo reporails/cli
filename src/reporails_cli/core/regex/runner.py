@@ -430,6 +430,47 @@ def run_capability_detection(  # pylint: disable=too-many-locals
     return _build_sarif(results, list(rule_defs.values()))
 
 
+def checks_per_file(
+    yml_paths: list[Path],
+    scan_root: Path,
+    template_context: dict[str, str | list[str]] | None,
+    instruction_files: list[Path] | None,
+) -> dict[str, list[str]]:
+    """List compiled regex check IDs applicable to each file (path filter logic only, no matching).
+
+    Args:
+        yml_paths: Rule YAML paths
+        scan_root: Project root
+        template_context: Template variables
+        instruction_files: Files to count against
+
+    Returns:
+        Dict of relative file path -> list of check IDs
+    """
+    ruleset = compile_rules([p for p in yml_paths if p and p.exists()], template_context)
+    if not ruleset.checks:
+        return {}
+
+    universal, by_pattern = _partition_checks(ruleset.checks)
+    combined, complex_universal = build_combined_patterns(universal)
+    base_ids = [c.id for c in complex_universal]
+    for cp in combined:
+        base_ids.extend(c.id for c in cp.group_to_check.values())
+
+    result: dict[str, list[str]] = {}
+    for file_path in instruction_files or []:
+        if not file_path.is_file():
+            continue
+        try:
+            rel = str(file_path.relative_to(scan_root))
+        except ValueError:
+            rel = str(file_path)
+        path_ids = [c.id for c in _get_applicable_checks(file_path, scan_root, [], by_pattern)]
+        result[rel] = base_ids + path_ids
+
+    return result
+
+
 def get_rule_yml_paths(rules: dict[str, Rule]) -> list[Path]:
     """Get list of .yml paths for rules that have them and exist.
 
