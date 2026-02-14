@@ -7,23 +7,17 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ## Quick Start
 
-### One-line install (npm)
+### One-line setup
 
 ```bash
-npx @reporails/cli install
+# pip / uvx
+ails setup
+
+# or via npm (no Python install needed)
+npx @reporails/cli setup
 ```
 
-This registers the MCP server with Claude Code. Then run `ails check`.
-
-### MCP Integration (manual)
-
-For full semantic analysis, add the MCP server:
-```bash
-# Add the MCP and restart Claude
-claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp
-```
-
-Then run `ails check`.
+This detects agents in your project and writes the MCP config. Restart your editor, then run `ails check`.
 
 ### CLI path (only deterministic rules)
 ```bash
@@ -88,11 +82,56 @@ Capability levels describe what your AI instruction setup enables — not how "m
 | L5 | Maintained | Structural integrity, governance, navigation |
 | L6 | Adaptive | Dynamic context, extensibility, persistence |
 
+## GitHub Actions
+
+Add `ails check` as a CI gate with inline PR annotations:
+
+```yaml
+# .github/workflows/reporails.yml
+name: Reporails
+on:
+  pull_request:
+    paths: ['CLAUDE.md', '.claude/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: reporails/cli/action@v1
+        with:
+          min-score: '6.0'
+```
+
+Violations appear as inline annotations on the PR diff. The step summary shows score, level, and a violations table.
+
+**Action inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `path` | `.` | Path to validate |
+| `strict` | `false` | Fail on any violation |
+| `min-score` | | Minimum score threshold (0-10) |
+| `agent` | `claude` | Agent type |
+| `experimental` | `false` | Include experimental rules |
+| `version` | | CLI version to install (default: latest) |
+
+**Action outputs:** `score`, `level`, `violations`, `result` (full JSON).
+
+You can also use `--format github` directly in custom workflows:
+
+```bash
+ails check . --format github --strict
+```
+
+This emits `::error`/`::warning` workflow commands for each violation, plus a JSON summary line.
+
 ## Commands
 
 ```bash
+ails setup                      # Set up MCP server for detected agents
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
+ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
@@ -144,7 +183,7 @@ Depends on your install path:
 
 - **uvx/pip path**: [uv](https://docs.astral.sh/uv/) — no separate Python install needed
 - **npx/npm path**: Node.js >= 18 — uv is auto-installed if missing
-- **MCP install/uninstall**: [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- **MCP setup**: No dependencies — `ails setup` writes config files directly
 
 ## Rules
 
