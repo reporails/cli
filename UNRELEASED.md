@@ -1,6 +1,7 @@
 # Unreleased
 
 ### Added
+- [CORE]: `recommended_path` global config override — point CLI at a local recommended rules repo for development
 - [CLI]: `ails heal` auto-fix phase — silently applies safe fixes before semantic prompts
 - [CLI]: `ails heal` command for interactive semantic rule evaluation (pass/fail/skip/dismiss)
 - [CORE]: Auto-fixer registry with 5 additive fixers (constraints, commands, testing, sections, structure)

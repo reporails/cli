@@ -126,7 +126,14 @@ def get_global_packages_path() -> Path:
 
 
 def get_recommended_package_path() -> Path:
-    """Get path to recommended package (~/.reporails/packages/recommended/)."""
+    """Get path to recommended package.
+
+    Returns local override from global config if set, otherwise
+    ~/.reporails/packages/recommended/.
+    """
+    config = get_global_config()
+    if config.recommended_path and config.recommended_path.is_dir():
+        return config.recommended_path
     return get_global_packages_path() / "recommended"
 
 
@@ -154,8 +161,10 @@ def get_global_config() -> GlobalConfig:
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         framework_path = data.get("framework_path")
+        recommended_path = data.get("recommended_path")
         return GlobalConfig(
             framework_path=Path(framework_path) if framework_path else None,
+            recommended_path=Path(recommended_path) if recommended_path else None,
             auto_update_check=data.get("auto_update_check", True),
         )
     except (yaml.YAMLError, OSError):
