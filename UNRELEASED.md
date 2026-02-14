@@ -17,7 +17,7 @@
 
 ### Changed
 - [CLI]: Renamed MCP entry point `ails-mcp` → `reporails-mcp` (old name kept as deprecated alias, remove ~0.5.0)
-- [CLI]: MCP CTA in `ails check` output now points to `ails setup` instead of manual `claude mcp add` command
+- [CLI]: MCP CTA in `ails check` output and CTA template now point to `ails setup` instead of manual `claude mcp add` command
 - [CLI]: `ails update --cli` now prints hint to run `ails setup` after upgrade
 - [NPM]: Simplified npm wrapper — `install`/`uninstall` replaced by `setup` proxy (no `claude` CLI dependency)
 - [META]: Check skill uses MCP tools instead of shelling out to `uv run ails`
