@@ -134,6 +134,91 @@ def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | 
     return rules_paths
 
 
+def _compute_file_checks(
+    rules_paths: list[Path] | None,
+    target: Path,
+    instruction_files: list[Path],
+    agent: str,
+    experimental: bool,
+) -> tuple[dict[str, list[str]], list[str], dict[str, str]]:
+    """Compute per-file check ID lists (regex + mechanical) and rule titles.
+
+    Returns:
+        (file_path -> list of regex check IDs, list of mechanical check IDs, rule_id -> title)
+    """
+    from reporails_cli.core.bootstrap import get_agent_vars
+    from reporails_cli.core.models import RuleType
+    from reporails_cli.core.regex import checks_per_file, get_rule_yml_paths
+    from reporails_cli.core.registry import load_rules
+
+    rules = load_rules(
+        rules_paths, include_experimental=experimental, project_root=target, agent=agent, scan_root=target
+    )
+    yml_paths = get_rule_yml_paths(
+        {k: v for k, v in rules.items() if v.type in (RuleType.DETERMINISTIC, RuleType.SEMANTIC)}
+    )
+    context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
+    mechanical_ids = [c.id for r in rules.values() if r.type == RuleType.MECHANICAL for c in r.checks]
+    titles = {r.id: r.title for r in rules.values()}
+    return checks_per_file(yml_paths, target, context, instruction_files), mechanical_ids, titles
+
+
+def _check_id_to_rule_id(check_id: str) -> str:
+    """Extract rule ID from a check ID (e.g., 'CORE.S.0001.check.0001' -> 'CORE:S:0001')."""
+    parts = check_id.replace(".", ":").split(":")
+    return ":".join(parts[:3]) if len(parts) >= 3 else check_id
+
+
+def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
+    rules_paths: list[Path] | None,
+    instruction_files: list[Path],
+    result: ValidationResult,
+    agent: str,
+    elapsed_ms: float,
+    target: Path,
+    experimental: bool,
+    con: Console,
+) -> None:
+    """Print verbose scan diagnostics with per-file check lists."""
+    con.print()
+    con.print("[dim]Verbose:[/dim]")
+    if rules_paths:
+        for rp in rules_paths:
+            display = str(rp).replace(str(Path.home()), "~")
+            con.print(f"[dim]  source: {display}[/dim]")
+    con.print(f"[dim]  agent: {agent}, {result.rules_checked} rules, {elapsed_ms:.0f}ms[/dim]")
+
+    file_checks, mechanical_ids, titles = _compute_file_checks(
+        rules_paths,
+        target,
+        instruction_files,
+        agent,
+        experimental,
+    )
+
+    # Group violations by file and rule
+    failed_by_file: dict[str, set[str]] = {}
+    for v in result.violations:
+        viol_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
+        failed_by_file.setdefault(viol_path, set()).add(v.rule_id)
+
+    con.print("[dim]  files:[/dim]")
+    for ifile in sorted(instruction_files, key=lambda p: str(p)):
+        try:
+            rel = str(ifile.relative_to(target))
+        except ValueError:
+            rel = str(ifile)
+        regex_ids = file_checks.get(rel, [])
+        all_rule_ids = sorted({_check_id_to_rule_id(cid) for cid in regex_ids + mechanical_ids})
+        failed = failed_by_file.get(rel, set())
+        con.print(f"[dim]    {rel} ({len(all_rule_ids)} rules):[/dim]")
+        for rid in all_rule_ids:
+            if rid in failed:
+                con.print(f"[dim]      [red]FAIL[/red] {rid} {titles.get(rid, '')}[/dim]")
+            else:
+                con.print(f"[dim]      [green]PASS[/green] {rid} {titles.get(rid, '')}[/dim]")
+
+
 def _format_output(
     result: ValidationResult,
     delta: ScanDelta,
