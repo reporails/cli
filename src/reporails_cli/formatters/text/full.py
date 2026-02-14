@@ -95,9 +95,7 @@ def _format_cta(
         return ""
 
     _chars = get_chars(ascii_mode)
-    return (
-        "[dim]For full semantic analysis: claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp[/dim]"
-    )
+    return "[dim]For full semantic analysis: ails setup[/dim]"
 
 
 def format_result(

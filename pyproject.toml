@@ -50,7 +50,8 @@ dev = [
 
 [project.scripts]
 ails = "reporails_cli.interfaces.cli.main:app"
-ails-mcp = "reporails_cli.interfaces.mcp.server:main"
+reporails-mcp = "reporails_cli.interfaces.mcp.server:main"
+ails-mcp = "reporails_cli.interfaces.mcp.server:main"  # deprecated, remove ~0.5.0
 
 [project.urls]
 Homepage = "https://github.com/reporails/cli"

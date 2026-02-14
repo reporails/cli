@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 
 from reporails_cli.core.models import ScanDelta, ValidationResult
+from reporails_cli.formatters import github as github_formatter
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import text as text_formatter
 
@@ -62,7 +63,7 @@ def _resolve_recommended_rules(
 
     if use_recommended and not has_recommended and not is_recommended_installed():
         try:
-            if sys.stdout.isatty() and format not in ("json", "brief", "compact"):
+            if sys.stdout.isatty() and format not in ("json", "brief", "compact", "github"):
                 with con.status("[bold]Downloading recommended rules...[/bold]"):
                     download_recommended()
             else:
@@ -235,6 +236,9 @@ def _format_output(
         print(json.dumps(data, indent=2))
     elif output_format == "compact":
         output = text_formatter.format_compact(result, ascii_mode=ascii, delta=delta)
+        print(output)
+    elif output_format == "github":
+        output = github_formatter.format_result(result, delta)
         print(output)
     elif output_format == "brief":
         data = json_formatter.format_result(result, delta)
