@@ -123,6 +123,7 @@ class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml)."""
 
     framework_path: Path | None = None  # Local override (dev)
+    recommended_path: Path | None = None  # Local override (dev)
     auto_update_check: bool = True
 
 
