@@ -26,13 +26,44 @@ from reporails_cli.interfaces.cli.helpers import (
 
 
 @app.command()
+def setup(
+    path: str = typer.Argument(".", help="Project root"),
+) -> None:
+    """Set up the reporails MCP server for detected agents."""
+    from reporails_cli.core.mcp_install import detect_mcp_targets, write_mcp_config
+
+    target = Path(path).resolve()
+
+    if not target.exists():
+        console.print(f"[red]Error:[/red] Path not found: {target}")
+        raise typer.Exit(1)
+
+    targets = detect_mcp_targets(target)
+
+    if not targets:
+        console.print("[yellow]No supported agents detected.[/yellow]")
+        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        raise typer.Exit(1)
+
+    for agent_id, config_path in targets:
+        write_mcp_config(config_path)
+        try:
+            rel = config_path.relative_to(target)
+        except ValueError:
+            rel = config_path
+        console.print(f"  {agent_id}: {rel}")
+
+    console.print("\n[green]Restart your editor to activate.[/green]")
+
+
+@app.command()
 def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     path: str = typer.Argument(".", help="File or directory to validate"),
     format: str = typer.Option(
         None,
         "--format",
         "-f",
-        help="Output format: text, json (auto-detects: text for terminal, json for pipes/CI)",
+        help="Output format: text, json, github (auto-detects: text for terminal, json for pipes/CI)",
     ),
     rules: list[str] = typer.Option(  # noqa: B008
         None,
@@ -129,7 +160,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     rules_paths = _resolve_recommended_rules(rules_paths, project_config, format, console)
 
     # Pre-run update check (interactive TTY only, text format)
-    if format not in ("json", "brief", "compact"):
+    if format not in ("json", "brief", "compact", "github"):
         from reporails_cli.core.update_check import prompt_for_updates
 
         prompt_for_updates(console, no_update_check=no_update_check)
@@ -138,7 +169,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     output_format = format if format else _default_format()
     instruction_files = get_all_instruction_files(target)
     if not instruction_files:
-        if output_format == "json":
+        if output_format in ("json", "github"):
             import json
 
             print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
@@ -153,7 +184,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     previous_scan = get_previous_scan(target)
 
     # Determine if we should show spinner (TTY + not explicitly JSON)
-    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact")
+    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
 
     # Run validation with timing
     start_time = time.perf_counter()

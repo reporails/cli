@@ -1,6 +1,9 @@
 # Unreleased
 
 ### Added
+- [CLI]: `ails setup` command — auto-detects agents and writes MCP config (`.mcp.json`, `.vscode/mcp.json`, `.codex/mcp.json`)
+- [CLI]: `--format github` output — emits `::error`/`::warning` workflow commands for inline PR annotations in GitHub Actions
+- [CI]: Composite GitHub Action (`action/`) — installs CLI, runs check, writes step summary, gates on score/violations
 - [CORE]: `recommended_path` global config override — point CLI at a local recommended rules repo for development
 - [CLI]: `--verbose` / `-v` flag for `ails check` — shows per-file PASS/FAIL checks with rule titles
 - [CLI]: `ails heal` auto-fix phase — silently applies safe fixes before semantic prompts
@@ -13,6 +16,10 @@
 - [HOOKS]: PostToolUse auto-validation hook for instruction file edits
 
 ### Changed
+- [CLI]: Renamed MCP entry point `ails-mcp` → `reporails-mcp` (old name kept as deprecated alias, remove ~0.5.0)
+- [CLI]: MCP CTA in `ails check` output now points to `ails setup` instead of manual `claude mcp add` command
+- [CLI]: `ails update --cli` now prints hint to run `ails setup` after upgrade
+- [NPM]: Simplified npm wrapper — `install`/`uninstall` replaced by `setup` proxy (no `claude` CLI dependency)
 - [META]: Check skill uses MCP tools instead of shelling out to `uv run ails`
 - [REPO]: Gitignore development internals (docs/specs, CLAUDE.md, .claude/rules, hooks, skills, settings)
 - [CORE]: Scan targets now include config files for path-filtered rules (`get_all_scannable_files`)
