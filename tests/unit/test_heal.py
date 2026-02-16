@@ -200,3 +200,82 @@ class TestCacheVerdict:
         assert cached is not None
         assert cached["CORE:C:0019"]["verdict"] == "pass"
         assert "Dismissed" in cached["CORE:C:0019"]["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Non-interactive mode (JSON output)
+# ---------------------------------------------------------------------------
+
+
+class TestNonInteractiveMode:
+    """Test the --non-interactive flag for heal command."""
+
+    def test_json_format_with_no_fixes(self) -> None:
+        """Non-interactive mode outputs valid JSON when no fixes are needed."""
+        from reporails_cli.formatters.json import format_heal_result
+
+        result = format_heal_result([], [])
+        assert result["auto_fixed"] == []
+        assert result["judgment_requests"] == []
+        assert result["summary"]["auto_fixed_count"] == 0
+        assert result["summary"]["pending_judgments"] == 0
+
+    def test_json_format_with_auto_fixes(self) -> None:
+        """Non-interactive mode includes auto-fix details in JSON."""
+        from reporails_cli.formatters.json import format_heal_result
+
+        auto_fixed = [
+            {
+                "rule_id": "CORE:S:0001",
+                "file_path": "CLAUDE.md",
+                "description": "Added root instruction file",
+            }
+        ]
+        result = format_heal_result(auto_fixed, [])
+        assert len(result["auto_fixed"]) == 1
+        assert result["auto_fixed"][0]["rule_id"] == "CORE:S:0001"
+        assert result["summary"]["auto_fixed_count"] == 1
+
+    def test_json_format_with_judgment_requests(self) -> None:
+        """Non-interactive mode includes judgment requests in JSON."""
+        from reporails_cli.formatters.json import format_heal_result
+
+        judgment_requests = [
+            {
+                "rule_id": "CORE:C:0019",
+                "rule_title": "Navigability Aid",
+                "question": "Does this file include navigation aids?",
+                "content": "# Project",
+                "location": "CLAUDE.md:1",
+                "criteria": {"toc": "Has TOC"},
+                "examples": {"good": [], "bad": []},
+                "choices": ["pass", "fail"],
+                "pass_value": "pass",
+            }
+        ]
+        result = format_heal_result([], judgment_requests)
+        assert len(result["judgment_requests"]) == 1
+        assert result["judgment_requests"][0]["rule_id"] == "CORE:C:0019"
+        assert result["summary"]["pending_judgments"] == 1
+
+    def test_json_format_with_both(self) -> None:
+        """Non-interactive mode handles both auto-fixes and judgment requests."""
+        from reporails_cli.formatters.json import format_heal_result
+
+        auto_fixed = [{"rule_id": "CORE:S:0001", "file_path": "CLAUDE.md", "description": "Added file"}]
+        judgment_requests = [
+            {
+                "rule_id": "CORE:C:0019",
+                "rule_title": "Nav",
+                "question": "Good?",
+                "content": "# P",
+                "location": "CLAUDE.md:1",
+                "criteria": {},
+                "examples": {"good": [], "bad": []},
+                "choices": ["pass", "fail"],
+                "pass_value": "pass",
+            }
+        ]
+        result = format_heal_result(auto_fixed, judgment_requests)
+        assert result["summary"]["auto_fixed_count"] == 1
+        assert result["summary"]["pending_judgments"] == 1

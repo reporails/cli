@@ -60,15 +60,21 @@ def heal(  # pylint: disable=too-many-locals
         "--experimental",
         help="Include experimental rules",
     ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        "-n",
+        help="Non-interactive mode: auto-fix and output JSON (for scripts/agents)",
+    ),
 ) -> None:
     """Interactively evaluate pending semantic rules."""
-    if not sys.stdout.isatty():
+    if not non_interactive and not sys.stdout.isatty():
         console.print("[red]Error:[/red] ails heal requires an interactive terminal.")
         console.print()
-        console.print("[dim]Tip: If running from Claude Code or another agent:[/dim]")
-        console.print("[dim]  - The MCP 'heal' tool should be available directly[/dim]")
-        console.print("[dim]  - Ask: 'use the heal tool to fix violations'[/dim]")
-        console.print("[dim]  - Or run 'ails heal' in your actual terminal[/dim]")
+        console.print("[dim]Solutions:[/dim]")
+        console.print("[dim]  1. Run with --non-interactive flag: ails heal --non-interactive[/dim]")
+        console.print("[dim]  2. Use the MCP heal tool (Claude Code): 'use the heal tool'[/dim]")
+        console.print("[dim]  3. Run ails heal in your actual terminal[/dim]")
         raise typer.Exit(2)
 
     target = Path(path).resolve()
@@ -95,7 +101,7 @@ def heal(  # pylint: disable=too-many-locals
     rules_paths = _resolve_recommended_rules(rules_paths, project_config, "text", console)
 
     # Run validation to get pending judgment requests
-    with console.status("[bold]Scanning for pending semantic rules...[/bold]"):
+    if non_interactive or not sys.stdout.isatty():
         result = run_validation_sync(
             target,
             rules_paths=rules_paths,
@@ -105,14 +111,60 @@ def heal(  # pylint: disable=too-many-locals
             exclude_dirs=merged_excludes,
             record_analytics=False,
         )
+    else:
+        with console.status("[bold]Scanning for pending semantic rules...[/bold]"):
+            result = run_validation_sync(
+                target,
+                rules_paths=rules_paths,
+                use_cache=True,
+                agent=agent,
+                include_experimental=experimental,
+                exclude_dirs=merged_excludes,
+                record_analytics=False,
+            )
 
     # Phase 2: Auto-fix deterministic violations
     fixes = apply_auto_fixes(list(result.violations), target)
-    if fixes:
+    if fixes and not non_interactive:
         for fix in fixes:
             console.print(f"[green]Fixed:[/green] {fix.description}")
 
     requests = list(result.judgment_requests)
+
+    # Non-interactive mode: output JSON and exit
+    if non_interactive:
+        from reporails_cli.formatters import json as json_formatter
+
+        auto_fixed_data = [
+            {
+                "rule_id": fix.rule_id,
+                "file_path": str(fix.file_path.relative_to(target)) if fix.file_path.is_relative_to(target) else str(fix.file_path),
+                "description": fix.description,
+            }
+            for fix in fixes
+        ]
+
+        judgment_data = [
+            {
+                "rule_id": jr.rule_id,
+                "rule_title": jr.rule_title,
+                "question": jr.question,
+                "content": jr.content,
+                "location": jr.location,
+                "criteria": jr.criteria,
+                "examples": jr.examples,
+                "choices": jr.choices,
+                "pass_value": jr.pass_value,
+            }
+            for jr in requests
+        ]
+
+        import json
+        output = json_formatter.format_heal_result(auto_fixed_data, judgment_data)
+        print(json.dumps(output, indent=2))
+        return
+
+    # Interactive mode
     if not requests and not fixes:
         console.print("Nothing to heal. All rules pass or are cached.")
         return
