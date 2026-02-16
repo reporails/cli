@@ -176,3 +176,23 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
         "checks": rule_data.get("checks", rule_data.get("antipatterns", [])),
         "see_also": rule_data.get("see_also", []),
     }
+
+
+def format_heal_result(auto_fixed: list[dict[str, Any]], judgment_requests: list[dict[str, Any]]) -> dict[str, Any]:
+    """Format heal command results as JSON.
+
+    Args:
+        auto_fixed: List of auto-fix entries (rule_id, file_path, description)
+        judgment_requests: List of semantic judgment requests
+
+    Returns:
+        Dict with auto_fixed and judgment_requests
+    """
+    return {
+        "auto_fixed": auto_fixed,
+        "judgment_requests": judgment_requests,
+        "summary": {
+            "auto_fixed_count": len(auto_fixed),
+            "pending_judgments": len(judgment_requests),
+        },
+    }

@@ -8,6 +8,7 @@
 - [CLI]: `--verbose` / `-v` flag for `ails check` — shows per-file PASS/FAIL checks with rule titles
 - [CLI]: `ails heal` auto-fix phase — silently applies safe fixes before semantic prompts
 - [CLI]: `ails heal` command for interactive semantic rule evaluation (pass/fail/skip/dismiss)
+- [CLI]: `--non-interactive` flag for `ails heal` — outputs JSON for non-TTY environments (coding agents, scripts)
 - [CORE]: Auto-fixer registry with 5 additive fixers (constraints, commands, testing, sections, structure)
 - [MCP]: `heal` tool — applies auto-fixes and returns remaining semantic judgment requests
 - [CORE]: Structural hash for smarter cache invalidation — cosmetic edits no longer clear semantic verdicts
