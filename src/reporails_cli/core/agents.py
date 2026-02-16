@@ -91,11 +91,22 @@ class DetectedAgent:
     detected_directories: dict[str, str] = field(default_factory=dict)
 
 
+# Module-level cache for detected agents — glob scanning is expensive (~100ms
+# on large repos). Cache keyed on target path, cleared by clear_agent_cache().
+_agent_cache: dict[str, list[DetectedAgent]] = {}
+
+
+def clear_agent_cache() -> None:
+    """Clear the agent detection cache. Called by --refresh."""
+    _agent_cache.clear()
+
+
 def detect_agents(target: Path) -> list[DetectedAgent]:
     """
     Detect which coding agents are configured in the target directory.
 
     Scans for known file patterns and returns detected agents with their files.
+    Results are cached per target path for MCP performance.
 
     Args:
         target: Project root to scan
@@ -103,6 +114,11 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
     Returns:
         List of detected agents with their associated files
     """
+    cache_key = str(target)
+    cached = _agent_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     detected: list[DetectedAgent] = []
 
     for agent_type in KNOWN_AGENTS.values():
@@ -141,23 +157,63 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
                 )
             )
 
+    _agent_cache[cache_key] = detected
     return detected
 
 
-def get_all_instruction_files(target: Path) -> list[Path]:
+def filter_agents_by_id(agents: list[DetectedAgent], agent_id: str) -> list[DetectedAgent]:
+    """
+    Filter detected agents by agent ID.
+
+    Args:
+        agents: List of detected agents
+        agent_id: Agent identifier to filter by (e.g., "claude", "copilot")
+
+    Returns:
+        List containing only the specified agent if found, empty list otherwise
+    """
+    return [agent for agent in agents if agent.agent_type.id == agent_id]
+
+
+def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
     """
     Get all instruction files for all detected agents.
 
     Args:
         target: Project root to scan
+        agents: Pre-detected agents (avoids redundant filesystem scan)
 
     Returns:
         Deduplicated list of all instruction file paths
     """
     all_files: set[Path] = set()
 
-    for detected in detect_agents(target):
+    for detected in agents if agents is not None else detect_agents(target):
         all_files.update(detected.instruction_files)
         all_files.update(detected.rule_files)
+
+    return sorted(all_files)
+
+
+def get_all_scannable_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
+    """
+    Get all files the regex engine should scan: instruction, rule, and config files.
+
+    Config files (e.g. .claude/settings.json) are included so that rules with
+    explicit paths.include targeting them can match.
+
+    Args:
+        target: Project root to scan
+        agents: Pre-detected agents (avoids redundant filesystem scan)
+
+    Returns:
+        Deduplicated list of all scannable file paths
+    """
+    all_files: set[Path] = set()
+
+    for detected in agents if agents is not None else detect_agents(target):
+        all_files.update(detected.instruction_files)
+        all_files.update(detected.rule_files)
+        all_files.update(detected.config_files)
 
     return sorted(all_files)

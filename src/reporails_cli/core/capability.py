@@ -2,7 +2,7 @@
 
 Two-phase detection:
 1. Filesystem (applicability.py) - directory/file existence
-2. Content (this module) - OpenGrep pattern matching
+2. Content (this module) - regex pattern matching
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from reporails_cli.core.models import (
 
 
 def detect_features_content(sarif: dict[str, Any]) -> ContentFeatures:
-    """Parse OpenGrep SARIF output to detect content features.
+    """Parse SARIF output to detect content features.
 
     Args:
         sarif: SARIF output from capability pattern detection
@@ -58,7 +58,7 @@ def estimate_preliminary_level(features: DetectedFeatures) -> Level:
 
     Uses gate-based detection with skip_content=True, which treats
     content-only gates as passing (optimistic). This means slightly
-    more rules loaded for OpenGrep Pass 2, never fewer.
+    more rules loaded for regex Pass 2, never fewer.
 
     Args:
         features: Detected project features (filesystem only)
@@ -82,10 +82,10 @@ def merge_content_features(
     Returns:
         Updated DetectedFeatures
     """
-    features.has_sections = content_features.has_sections
+    features.has_sections = features.has_sections or content_features.has_sections
     features.has_imports = features.has_imports or content_features.has_imports
-    features.has_explicit_constraints = content_features.has_explicit_constraints
-    features.has_path_scoped_rules = content_features.has_path_scoped_rules
+    features.has_explicit_constraints = features.has_explicit_constraints or content_features.has_explicit_constraints
+    features.has_path_scoped_rules = features.has_path_scoped_rules or content_features.has_path_scoped_rules
     return features
 
 

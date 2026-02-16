@@ -1,10 +1,57 @@
 # Changelog
 
+## 0.3.0
+
+### Pure Python regex engine
+
+Replaced the OpenGrep binary dependency with a pure Python regex engine. No external binary to download, no semgrepignore, no platform-specific builds. Includes an adversarial test suite (76 tests) validating edge cases. SARIF locations are now relative to the scan root instead of absolute paths.
+
+### `ails heal` command
+
+Interactive auto-fix and semantic evaluation. The auto-fix phase silently applies safe structural fixes (constraints, commands, testing sections, structure) via a registry of 5 additive fixers. Remaining semantic rules are presented for interactive pass/fail/skip/dismiss judgment. `--non-interactive` outputs JSON for coding agents and scripts. The MCP `heal` tool provides the same flow for editor integrations.
+
+### `ails setup` command
+
+Auto-detects agents in the project (Claude, VS Code, Codex) and writes MCP config files (`.mcp.json`, `.vscode/mcp.json`, `.codex/mcp.json`). Replaces the manual `claude mcp add` workflow. The npm wrapper now proxies `setup` instead of `install`/`uninstall`.
+
+### GitHub Actions integration
+
+Composite GitHub Action (`action/`) installs the CLI, runs validation, writes a step summary, and gates on score or violation count. `--format github` emits `::error`/`::warning` workflow commands for inline PR annotations.
+
+### MCP overhaul
+
+Validate tool returns structured JSON instead of formatted text. Semantic judgment requests carry full file content (up to 8KB) instead of 5-line snippets. Replaced the `_instructions` text blob with a structured `_semantic_workflow` object. Content-aware circuit breaker tracks file mtimes instead of a blunt call counter, allowing edit-validate cycles. Error responses use structured JSON with `error` and `message` keys. All tool descriptions rewritten with output format info and usage guidance.
+
+### Performance
+
+Agent detection, rule loading, glob resolution, and template binding are now cached across MCP invocations. Path-based pre-grouping avoids O(files × checks) inner loops. Combined regex patterns batch simple checks into alternation with named groups. Non-matching files are skipped before I/O. CSafeLoader used for YAML parsing when available (~3x faster).
+
+### Bug fixes
+
+- File discovery used project root instead of scan root — agent detection and feature scanning now scoped to target directory.
+- Content rule violations attributed to root instruction file instead of skill files.
+- Per-file size violations attributed to the violating file, not the rule-level target.
+- Cache hash crash on non-UTF8 instruction files.
+- Feature merge in capability detection used overwrite instead of OR.
+- Regex compiler crash on malformed rule YAML and binary YAML files.
+- Mechanical checks crash on string args from YAML.
+- `detect_orphan_features` crash on L0 projects (no instruction files).
+- `dismiss` command wrote to wrong cache when run from subdirectory.
+- Double analytics recording — engine and check command both called `record_scan`.
+- MCP tools: narrowed exception handling, added `is_dir()` validation, graceful file read errors.
+- MCP judge: path-traversal rejection, detailed feedback, truncated reasons in response.
+- Exit code 2 for input errors, exit 1 for violations.
+
+### Dependencies
+
+- Rules framework 0.4.0
+- Recommended package 0.2.0
+
 ## 0.2.1
 
 ### Pipeline state engine
 
-Rules now execute through a per-rule ordered check pipeline with shared mutable state. OpenGrep batching is preserved via a gather-distribute pattern: all deterministic+semantic rules run through one OpenGrep call, then SARIF results are distributed to per-rule buckets for ordered check execution. Includes in-memory check result cache for cross-rule mechanical dedup and D→M annotation propagation.
+Rules now execute through a per-rule ordered check pipeline with shared mutable state. Deterministic+semantic rules run through a single regex pass, then SARIF results are distributed to per-rule buckets for ordered check execution. Includes in-memory check result cache for cross-rule mechanical dedup and D→M annotation propagation.
 
 ### MCP judge tool
 
@@ -72,7 +119,7 @@ MCP tools (`validate`, `validate_text`, `score`) now include recommended rules i
 
 ### Mechanical checks
 
-New rule type: mechanical checks are Python-native structural checks for things OpenGrep cannot detect — file existence, directory structure, byte sizes, import depth, and more. Rules of any type may contain mechanical checks alongside deterministic patterns.
+New rule type: mechanical checks are Python-native structural checks — file existence, directory structure, byte sizes, import depth, and more. Rules of any type may contain mechanical checks alongside deterministic patterns.
 
 ### Coordinate rule IDs
 
@@ -88,7 +135,7 @@ Rule IDs now use 3-part coordinate format (`CORE:S:0001`) instead of short IDs (
 
 ### Release pipeline
 
-Release workflow split into two stages: CI runs QA on version branches (e.g. `0.1.4`), and the release workflow triggers on merge to main — creating the tag, GitHub release, and publishing to PyPI and npm only after QA passes. OpenGrep is downloaded in CI so integration tests no longer skip.
+Release workflow split into two stages: CI runs QA on version branches (e.g. `0.1.4`), and the release workflow triggers on merge to main — creating the tag, GitHub release, and publishing to PyPI and npm only after QA passes.
 
 ### Cache-busting for uvx
 

@@ -44,13 +44,12 @@ requires_rules = pytest.mark.skipif(
 
 class TestVersionCommand:
     def test_shows_all_component_lines(self) -> None:
-        """ails version should show CLI, Framework, Recommended, OpenGrep, Install."""
+        """ails version should show CLI, Framework, Recommended, Install."""
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0, result.output
         assert "CLI:" in result.output
         assert "Framework:" in result.output
         assert "Recommended:" in result.output
-        assert "OpenGrep:" in result.output
         assert "Install:" in result.output
 
     def test_shows_recommended_version(self) -> None:
@@ -139,7 +138,7 @@ class TestCheckCommand:
         assert len(result.output.strip()) > 0
 
     def test_missing_path_errors(self) -> None:
-        """Non-existent path should produce error and exit 1."""
+        """Non-existent path should produce error and exit 2 (input error)."""
         result = runner.invoke(
             app,
             [
@@ -148,7 +147,7 @@ class TestCheckCommand:
                 "--no-update-check",
             ],
         )
-        assert result.exit_code == 1
+        assert result.exit_code == 2
 
     def test_no_instruction_files_message(self, tmp_path: Path) -> None:
         """Empty directory should report no instruction files."""
@@ -157,6 +156,8 @@ class TestCheckCommand:
             [
                 "check",
                 str(tmp_path),
+                "-f",
+                "text",
                 "--no-update-check",
             ],
         )
@@ -225,19 +226,19 @@ class TestUpdateCheckCommand:
         with (
             patch(
                 "reporails_cli.core.bootstrap.get_installed_version",
-                return_value="0.3.1",
+                return_value="0.4.0",
             ),
             patch(
                 "reporails_cli.core.init.get_latest_version",
-                return_value="0.3.1",
+                return_value="0.4.0",
             ),
             patch(
                 "reporails_cli.core.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
+                return_value="0.2.0",
             ),
             patch(
                 "reporails_cli.core.init.get_latest_recommended_version",
-                return_value="0.1.0",
+                return_value="0.2.0",
             ),
         ):
             result = runner.invoke(app, ["update", "--check"])

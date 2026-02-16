@@ -6,7 +6,7 @@ Produces Violation objects compatible with the scoring pipeline.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
@@ -55,7 +55,7 @@ def dispatch_single_check(
         violation = Violation(
             rule_id=rule.id,
             rule_title=rule.title,
-            location=location,
+            location=result.location or location,
             message=result.message,
             severity=check.severity,
             check_id=check.id,
@@ -103,6 +103,23 @@ def run_mechanical_checks(
     return violations
 
 
+def _matches_any_pattern(path: str, patterns: list[str]) -> bool:
+    """Check if a relative path matches any of the given glob patterns.
+
+    Uses PurePosixPath.match() for glob matching. For ``**/`` prefixed patterns,
+    also checks the tail to handle zero-directory matches (e.g., ``CLAUDE.md``
+    matching ``**/CLAUDE.md``).
+    """
+    p = PurePosixPath(path)
+    for pattern in patterns:
+        if p.match(pattern):
+            return True
+        # **/X should also match X at root (zero directories)
+        if pattern.startswith("**/") and p.match(pattern[3:]):
+            return True
+    return False
+
+
 def bind_instruction_files(
     template_vars: dict[str, str | list[str]],
     target: Path,
@@ -111,9 +128,9 @@ def bind_instruction_files(
     """Replace instruction_files glob patterns with concrete relative paths.
 
     When the engine provides pre-resolved instruction files, convert them to
-    relative paths and inject into template_vars. This ensures mechanical
-    checks operate on the same file set the engine discovered, avoiding
-    re-globbing that picks up test fixtures and other non-instruction files.
+    relative paths and inject into template_vars. Also binds main_instruction_file
+    by filtering discovered files against the original glob patterns from the
+    agent config (e.g., ``["**/CLAUDE.md"]``).
 
     Args:
         template_vars: Original template variables with glob patterns
@@ -121,7 +138,7 @@ def bind_instruction_files(
         instruction_files: Pre-resolved file paths, or None to keep patterns
 
     Returns:
-        Template vars with instruction_files replaced (or original if None)
+        Template vars with instruction_files and main_instruction_file replaced
     """
     if not instruction_files:
         return template_vars
@@ -139,6 +156,17 @@ def bind_instruction_files(
 
     result = dict(template_vars)
     result["instruction_files"] = relative
+
+    # Bind main_instruction_file by filtering against original glob patterns
+    main_patterns = template_vars.get("main_instruction_file")
+    if main_patterns is not None:
+        if isinstance(main_patterns, str):
+            main_patterns = [main_patterns]
+        if main_patterns:
+            main_matched = [r for r in relative if _matches_any_pattern(r, main_patterns)]
+            if main_matched:
+                result["main_instruction_file"] = main_matched
+
     return result
 
 
@@ -149,8 +177,10 @@ def resolve_location(
 ) -> str:
     """Resolve a location string for mechanical violations.
 
-    Uses the first instruction file from template_vars when targets reference
-    {{instruction_files}}. Falls back to the resolved pattern or ".".
+    For rules targeting ``{{instruction_files}}`` or ``{{main_instruction_file}}``,
+    prefers the first ``main_instruction_file`` entry so violations are attributed
+    to the root instruction file (e.g., ``CLAUDE.md``) rather than skill files
+    or scoped rule snippets.
 
     Args:
         target: Project root
@@ -162,6 +192,12 @@ def resolve_location(
     """
     if not rule.targets:
         return ".:0"
+
+    # For instruction_files targets, prefer main_instruction_file for location
+    if "{{instruction_files}}" in rule.targets or "{{main_instruction_file}}" in rule.targets:
+        main = template_vars.get("main_instruction_file")
+        if isinstance(main, list) and main:
+            return f"{main[0]}:0"
 
     # Resolve template variables
     resolved = rule.targets

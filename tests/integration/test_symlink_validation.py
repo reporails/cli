@@ -52,16 +52,14 @@ Modular design with clear boundaries.
 class TestSymlinkIntegration:
     """Integration tests for symlinked instruction file handling."""
 
-    def test_capability_detection_with_external_symlink(
-        self, symlink_project: tuple[Path, Path], opengrep_bin: Path
-    ) -> None:
+    def test_capability_detection_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md should have its content features detected."""
         project, _external = symlink_project
 
         from reporails_cli.bundled import get_capability_patterns_path
         from reporails_cli.core.applicability import detect_features_filesystem
         from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.opengrep.runner import run_opengrep
+        from reporails_cli.core.regex import run_validation
 
         features = detect_features_filesystem(project)
         assert features.has_claude_md is True
@@ -72,10 +70,9 @@ class TestSymlinkIntegration:
         if not capability_patterns.exists():
             pytest.skip("Capability patterns not available")
 
-        sarif = run_opengrep(
+        sarif = run_validation(
             [capability_patterns],
             project,
-            opengrep_bin,
             extra_targets=features.resolved_symlinks,
         )
 
@@ -85,9 +82,7 @@ class TestSymlinkIntegration:
         assert content_features.has_sections is True
         assert content_features.has_explicit_constraints is True
 
-    def test_rule_validation_with_external_symlink(
-        self, symlink_project: tuple[Path, Path], opengrep_bin: Path
-    ) -> None:
+    def test_rule_validation_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md with violations should have them detected."""
         project, external = symlink_project
 

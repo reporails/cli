@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,21 +21,19 @@ def get_reporails_home() -> Path:
     return REPORAILS_HOME
 
 
-def get_opengrep_bin() -> Path:
-    """Get path to OpenGrep binary."""
-    home = get_reporails_home()
-    if platform.system().lower() == "windows":
-        return home / "bin" / "opengrep.exe"
-    return home / "bin" / "opengrep"
-
-
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
-    Prefers local ./checks/ directory if it has .yml files (development mode),
+    Returns local override from global config if set, otherwise prefers
+    local ./checks/ directory if it has .yml files (development mode),
     otherwise uses ~/.reporails/rules/ (installed mode).
     """
-    # Check for local checks directory (development mode)
+    # Check for global config override (development mode)
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        return config.framework_path
+
+    # Check for local checks directory (legacy development mode)
     local_checks = Path.cwd() / "checks"
     if local_checks.exists() and any(local_checks.rglob("*.yml")):
         return local_checks
@@ -135,7 +132,14 @@ def get_global_packages_path() -> Path:
 
 
 def get_recommended_package_path() -> Path:
-    """Get path to recommended package (~/.reporails/packages/recommended/)."""
+    """Get path to recommended package.
+
+    Returns local override from global config if set, otherwise
+    ~/.reporails/packages/recommended/.
+    """
+    config = get_global_config()
+    if config.recommended_path and config.recommended_path.is_dir():
+        return config.recommended_path
     return get_global_packages_path() / "recommended"
 
 
@@ -163,8 +167,10 @@ def get_global_config() -> GlobalConfig:
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         framework_path = data.get("framework_path")
+        recommended_path = data.get("recommended_path")
         return GlobalConfig(
             framework_path=Path(framework_path) if framework_path else None,
+            recommended_path=Path(recommended_path) if recommended_path else None,
             auto_update_check=data.get("auto_update_check", True),
         )
     except (yaml.YAMLError, OSError):
@@ -255,8 +261,9 @@ def get_installed_recommended_version() -> str | None:
 
 
 def is_initialized() -> bool:
-    """Check if reporails has been initialized (opengrep + rules)."""
-    return get_opengrep_bin().exists() and get_rules_path().exists()
+    """Check if reporails has been initialized (rules framework downloaded)."""
+    rules_path = get_rules_path()
+    return rules_path.is_dir() and (rules_path / "core").is_dir()
 
 
 # Legacy alias for backward compatibility

@@ -4,8 +4,8 @@ paths: ["src/reporails_cli/bundled/**"]
 
 # Bundled Config Files
 
-NEVER modify bundled config files without explicit human instruction — instead, describe the intended change and let the user decide.
+NEVER modify bundled config files without explicit human instruction.
 
-- `capability-patterns.yml` — OpenGrep patterns for capability detection
+- `capability-patterns.yml` — Regex patterns for capability detection
 
-These are CLI-owned orchestration config, not framework rules.
+These are CLI-owned orchestration logic, not framework rules.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from reporails_cli.core.models import FrictionEstimate, Severity, Violation
+from reporails_cli.core.sarif import dedupe_violations
 
 # Severity weights for scoring (higher = more impact)
 SEVERITY_WEIGHTS: dict[Severity, float] = {
@@ -14,32 +15,6 @@ SEVERITY_WEIGHTS: dict[Severity, float] = {
 
 # Default weight for rules (used when calculating total possible points)
 DEFAULT_RULE_WEIGHT: float = 2.5
-
-
-def dedupe_violations(violations: list[Violation]) -> list[Violation]:
-    """Deduplicate violations by (file, rule_id, check_id).
-
-    Keeps first occurrence of each unique (file, rule_id, check_id) tuple.
-    Multi-check rules produce distinct findings per check.
-
-    Args:
-        violations: List of violations (may have duplicates)
-
-    Returns:
-        Deduplicated list of violations
-    """
-    seen: set[tuple[str, str, str | None]] = set()
-    result: list[Violation] = []
-
-    for v in violations:
-        file_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
-        key = (file_path, v.rule_id, v.check_id)
-
-        if key not in seen:
-            seen.add(key)
-            result.append(v)
-
-    return result
 
 
 def calculate_score(rules_checked: int, violations: list[Violation]) -> float:

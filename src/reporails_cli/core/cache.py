@@ -1,14 +1,4 @@
-"""Caching system - project-local for operations, global for analytics.
-
-Project-local (.reporails/):
-  - backbone.yml           # Project structure (committed)
-  - .cache/file-map.json   # Fast file lookup (gitignored)
-  - .cache/judgment-cache.json  # Semantic judgment results (gitignored)
-
-Global (~/.reporails/analytics/):
-  - projects/{hash}.json  # Per-project analytics
-  - aggregated.json       # Cross-project insights (future)
-"""
+"""Caching system — project-local cache and hash functions for cache invalidation."""
 
 from __future__ import annotations
 
@@ -34,11 +24,29 @@ from reporails_cli.core.analytics import save_project_analytics as save_project_
 
 
 def content_hash(path: Path) -> str:
-    """SHA256 hash of file content for cache invalidation.
-
-    Returns a prefixed truncated hash suitable for cache keys.
-    """
+    """SHA256 hash of file content, prefixed and truncated for cache keys."""
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def structural_hash(path: Path) -> str:
+    """Hash of semantic-relevant structure: headings, constraint lines, list items.
+
+    Cosmetic edits (whitespace, prose) keep the same structural hash, allowing
+    cached semantic verdicts to survive as stale-but-usable.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    structural_lines = [
+        line.strip()
+        for line in lines
+        if line.strip().startswith("#")
+        or "MUST" in line
+        or "NEVER" in line
+        or "ALWAYS" in line
+        or "IMPORTANT" in line
+        or line.strip().startswith("- ")
+    ]
+    blob = "\n".join(structural_lines).encode("utf-8")
+    return "struct:" + hashlib.sha256(blob).hexdigest()[:16]
 
 
 # =============================================================================
@@ -134,8 +142,13 @@ class ProjectCache:
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         tmp.replace(self.judgment_cache_path)
 
-    def get_cached_judgment(self, file_path: str, content_hash: str) -> dict[str, Any] | None:
-        """Get cached judgment for a file if hash matches."""
+    def get_cached_judgment(
+        self,
+        file_path: str,
+        content_hash: str,
+        structural_hash: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Three-tier lookup: content match (fresh) → structural match (stale) → None."""
         cache = self.load_judgment_cache()
         judgments = cache.get("judgments", {})
 
@@ -143,20 +156,37 @@ class ProjectCache:
             return None
 
         entry = judgments[file_path]
-        if entry.get("content_hash") != content_hash:
-            return None  # File changed, cache invalid
 
-        results: dict[str, Any] | None = entry.get("results")
-        return results
+        # Tier 1: exact content match (fresh)
+        if entry.get("content_hash") == content_hash:
+            results: dict[str, Any] | None = entry.get("results")
+            return results
 
-    def set_cached_judgment(self, file_path: str, content_hash: str, results: dict[str, Any]) -> None:
-        """Cache judgment results for a file."""
+        # Tier 2: structural match (stale but usable)
+        if structural_hash and entry.get("structural_hash") == structural_hash:
+            results = entry.get("results")
+            return results
+
+        # Tier 3: both differ — invalidated
+        return None
+
+    def set_cached_judgment(
+        self,
+        file_path: str,
+        content_hash: str,
+        results: dict[str, Any],
+        structural_hash: str | None = None,
+    ) -> None:
+        """Cache judgment results for a file (with optional structural hash)."""
         cache = self.load_judgment_cache()
-        cache.setdefault("judgments", {})[file_path] = {
+        entry: dict[str, Any] = {
             "content_hash": content_hash,
             "evaluated_at": datetime.now(UTC).isoformat(),
             "results": results,
         }
+        if structural_hash:
+            entry["structural_hash"] = structural_hash
+        cache.setdefault("judgments", {})[file_path] = entry
         self.save_judgment_cache(cache)
 
 
@@ -168,17 +198,7 @@ _VALID_VERDICTS = {"pass", "fail"}
 
 
 def _parse_verdict_string(s: str) -> tuple[str, str, str, str]:
-    """Parse a compact verdict string into (rule_id, location, verdict, reason).
-
-    Handles both short IDs (``S1:CLAUDE.md:pass:reason``) and coordinate
-    IDs (``CORE:S:0001:CLAUDE.md:pass:reason``), including an optional
-    line-number suffix on the location (``CLAUDE.md:42``).
-
-    The verdict field is always ``pass`` or ``fail``; we scan for it to
-    resolve ambiguity introduced by colons in rule IDs or locations.
-
-    Returns ("", "", "", "") for unparseable input.
-    """
+    """Parse ``rule_id:location:verdict:reason`` — supports short and coordinate IDs."""
     parts = s.split(":")
     if len(parts) < 3:
         return ("", "", "", "")
@@ -244,6 +264,7 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disab
 
         try:
             file_hash = content_hash(full_path)
+            struct_hash = structural_hash(full_path)
         except OSError:
             continue
 
@@ -251,13 +272,14 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disab
         entry = cache_judgments_dict.get(file_path, {})
         if entry.get("content_hash") != file_hash:
             # File changed -- reset cached results for this file
-            entry = {"content_hash": file_hash, "results": {}}
+            entry = {"content_hash": file_hash, "structural_hash": struct_hash, "results": {}}
         results = entry.setdefault("results", {})
         results[rule_id] = {
             "verdict": verdict,
             "reason": reason,
         }
         entry["content_hash"] = file_hash
+        entry["structural_hash"] = struct_hash
         entry["evaluated_at"] = datetime.now(UTC).isoformat()
         cache_judgments_dict[file_path] = entry
         recorded += 1

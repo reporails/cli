@@ -9,15 +9,15 @@ from pathlib import Path
 import typer
 
 from reporails_cli.core.agents import get_all_instruction_files
-from reporails_cli.core.cache import get_previous_scan, record_scan
+from reporails_cli.core.cache import get_previous_scan
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
-from reporails_cli.core.opengrep import set_debug_timing
 from reporails_cli.core.registry import load_rules
 from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.cli.helpers import (
     _default_format,
     _format_output,
+    _print_verbose,
     _resolve_recommended_rules,
     _resolve_rules_paths,
     app,
@@ -26,13 +26,13 @@ from reporails_cli.interfaces.cli.helpers import (
 
 
 @app.command()
-def check(  # pylint: disable=too-many-arguments,too-many-locals
-    path: str = typer.Argument(".", help="Directory to validate"),
+def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
+    path: str = typer.Argument(".", help="File or directory to validate"),
     format: str = typer.Option(
         None,
         "--format",
         "-f",
-        help="Output format: text, json (auto-detects: text for terminal, json for pipes/CI)",
+        help="Output format: text, json, github (auto-detects: text for terminal, json for pipes/CI)",
     ),
     rules: list[str] = typer.Option(  # noqa: B008
         None,
@@ -77,27 +77,26 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
     agent: str = typer.Option(
         "claude",
         "--agent",
-        help="Agent identifier for template vars (claude, cursor, etc.)",
+        help="Agent type for rule overrides and template vars (e.g., claude, cursor)",
     ),
     experimental: bool = typer.Option(
         False,
         "--experimental",
         help="Include experimental rules (methodology-backed, lower confidence)",
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show rule sources, file count, and scan details",
+    ),
     no_update_check: bool = typer.Option(
         False,
         "--no-update-check",
         help="Skip pre-run update check prompt",
     ),
-    debug: bool = typer.Option(
-        False,
-        "--debug",
-        help="Show timing info for performance debugging",
-    ),
 ) -> None:
     """Validate CLAUDE.md files against reporails rules."""
-    if debug:
-        set_debug_timing(True)
     if legend:
         legend_text = text_formatter.format_legend(ascii_mode=ascii)
         print(f"Severity Legend: {legend_text}")
@@ -107,7 +106,8 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
 
     if not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
-        raise typer.Exit(1)
+        console.print("Run 'ails check .' to validate the current directory.")
+        raise typer.Exit(2)
 
     # Resolve --rules paths
     rules_paths = _resolve_rules_paths(rules, console)
@@ -129,25 +129,36 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
     rules_paths = _resolve_recommended_rules(rules_paths, project_config, format, console)
 
     # Pre-run update check (interactive TTY only, text format)
-    if format not in ("json", "brief", "compact"):
+    if format not in ("json", "brief", "compact", "github"):
         from reporails_cli.core.update_check import prompt_for_updates
 
         prompt_for_updates(console, no_update_check=no_update_check)
 
     # Early check for missing instruction files
-    instruction_files = get_all_instruction_files(target)
+    output_format = format if format else _default_format()
+    # Filter to specified agent (default: claude) for file discovery
+    from reporails_cli.core.agents import detect_agents, filter_agents_by_id
+
+    all_detected_agents = detect_agents(target)
+    filtered_agents = filter_agents_by_id(all_detected_agents, agent) if agent else all_detected_agents
+    instruction_files = get_all_instruction_files(target, agents=filtered_agents)
     if not instruction_files:
-        console.print("No instruction files found.")
-        console.print("Level: L1 (Absent)")
-        console.print()
-        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        if output_format in ("json", "github"):
+            import json
+
+            print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
+        else:
+            console.print("No instruction files found.")
+            console.print("Level: L1 (Absent)")
+            console.print()
+            console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
         return
 
     # Get previous scan BEFORE running validation (for delta comparison)
     previous_scan = get_previous_scan(target)
 
     # Determine if we should show spinner (TTY + not explicitly JSON)
-    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact")
+    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
 
     # Run validation with timing
     start_time = time.perf_counter()
@@ -173,7 +184,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
             )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1) from None
+        raise typer.Exit(2) from None
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
     # Compute delta from previous scan
@@ -184,22 +195,12 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals
         previous=previous_scan,
     )
 
-    # Auto-detect format if not specified
-    output_format = format if format else _default_format()
-
     # Format output
     _format_output(result, delta, output_format, ascii, quiet_semantic, elapsed_ms, console)
 
-    # Record scan in analytics (after display, so previous_scan was accurate)
-    record_scan(
-        target=target,
-        score=result.score,
-        level=result.level.value,
-        violations_count=len(result.violations),
-        rules_checked=result.rules_checked,
-        elapsed_ms=elapsed_ms,
-        instruction_files=result.rules_checked,  # Approximation
-    )
+    # Verbose diagnostics (text formats only)
+    if verbose and output_format not in ("json", "brief"):
+        _print_verbose(rules_paths, instruction_files, result, agent, elapsed_ms, target, experimental, console)
 
     # Exit with error only in strict mode
     if strict and result.violations:
@@ -265,7 +266,9 @@ def main() -> None:
     app()
 
 
-import reporails_cli.interfaces.cli.commands  # noqa: F401, E402  # Register commands
+import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
+import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
+import reporails_cli.interfaces.cli.setup  # noqa: F401, E402  # Register setup command
 
 if __name__ == "__main__":
     main()

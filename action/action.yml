@@ -1,0 +1,126 @@
+name: 'Reporails Check'
+description: 'Validate AI instruction files against quality rules'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Path to validate'
+    default: '.'
+  strict:
+    description: 'Fail on any violation'
+    default: 'false'
+  min-score:
+    description: 'Minimum score threshold (0-10). Fails the step if score is below this value.'
+    default: ''
+  agent:
+    description: 'Agent type (e.g., claude, cursor)'
+    default: 'claude'
+  experimental:
+    description: 'Include experimental rules'
+    default: 'false'
+  version:
+    description: 'CLI version to install (e.g., 0.3.0). Defaults to latest.'
+    default: ''
+
+outputs:
+  score:
+    description: 'Validation score (0-10)'
+    value: ${{ steps.check.outputs.score }}
+  level:
+    description: 'Capability level (L0-L6)'
+    value: ${{ steps.check.outputs.level }}
+  violations:
+    description: 'Number of violations found'
+    value: ${{ steps.check.outputs.violations }}
+  result:
+    description: 'Full JSON result'
+    value: ${{ steps.check.outputs.result }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install reporails CLI
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install "reporails-cli==${{ inputs.version }}" --quiet
+        else
+          pip install reporails-cli --quiet
+        fi
+
+    - name: Run ails check
+      id: check
+      shell: bash
+      run: |
+        # Build command
+        CMD="ails check ${{ inputs.path }} --format github --ascii --no-update-check"
+
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          CMD="$CMD --strict"
+        fi
+
+        if [ "${{ inputs.agent }}" != "claude" ]; then
+          CMD="$CMD --agent ${{ inputs.agent }}"
+        fi
+
+        if [ "${{ inputs.experimental }}" = "true" ]; then
+          CMD="$CMD --experimental"
+        fi
+
+        # Run and capture output (annotations go to stdout for GitHub to pick up)
+        OUTPUT=$($CMD) || EXIT_CODE=$?
+        EXIT_CODE=${EXIT_CODE:-0}
+
+        echo "$OUTPUT"
+
+        # Parse JSON from last line
+        JSON_LINE=$(echo "$OUTPUT" | tail -n 1)
+        SCORE=$(echo "$JSON_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('score', 0))")
+        LEVEL=$(echo "$JSON_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('level', 'L0'))")
+        VIOLATIONS=$(echo "$JSON_LINE" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('violations', [])))")
+
+        echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+        echo "level=$LEVEL" >> "$GITHUB_OUTPUT"
+        echo "violations=$VIOLATIONS" >> "$GITHUB_OUTPUT"
+
+        # Store full JSON for downstream steps
+        {
+          echo "result<<REPORAILS_EOF"
+          echo "$JSON_LINE"
+          echo "REPORAILS_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        # Propagate strict exit code
+        if [ "$EXIT_CODE" -ne 0 ]; then
+          exit "$EXIT_CODE"
+        fi
+
+    - name: Apply min-score gate
+      if: inputs.min-score != ''
+      shell: bash
+      run: |
+        python3 -c "
+        import sys
+        score = float('${{ steps.check.outputs.score }}')
+        threshold = float('${{ inputs.min-score }}')
+        if score < threshold:
+            print(f'::error::Score {score:.1f} is below minimum threshold {threshold:.1f}')
+            sys.exit(1)
+        else:
+            print(f'Score {score:.1f} meets minimum threshold {threshold:.1f}')
+        "
+
+    - name: Write step summary
+      if: always()
+      shell: bash
+      run: |
+        python3 "${{ github.action_path }}/summary.py" \
+          '${{ steps.check.outputs.result }}' \
+          >> "$GITHUB_STEP_SUMMARY"

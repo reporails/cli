@@ -1,4 +1,4 @@
 {separator}
-For complete analysis, add reporails MCP to your coding agent:
-  claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp
+For complete analysis, set up the reporails MCP server:
+  ails setup
 {separator}
