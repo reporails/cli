@@ -10,9 +10,10 @@ Where T is dict for json/mcp, str for text.
 
 from __future__ import annotations
 
-from reporails_cli.formatters import json, mcp, text
+from reporails_cli.formatters import github, json, mcp, text
 
 __all__ = [
+    "github",
     "json",
     "mcp",
     "text",
