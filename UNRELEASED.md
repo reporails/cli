@@ -39,6 +39,8 @@
 - [CLI]: OpenGrep version display from `ails version`
 
 ### Fixed
+- [CORE]: Respect framework_path from global config for local development
+- [CORE]: Filter agent files — only validate specified agent's instruction files, not all detected agents
 - [MCP]: Judge tool output now includes parsed verdict details (rule, file, verdict, reason) instead of bare count
 - [MCP]: Judge tool rejects path-traversal verdicts referencing files outside the project directory
 - [DOCS]: Replaced all short rule IDs (S1, C4, etc.) with full coordinate format (CORE:S:0005, CORE:C:0004) across READMEs, specs, source comments, and tests
