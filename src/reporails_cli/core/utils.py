@@ -12,6 +12,17 @@ from typing import Any
 
 import yaml
 
+# Use C YAML loader when available (~3-5x faster than pure Python SafeLoader)
+try:
+    from yaml import CSafeLoader as _YamlLoader
+except ImportError:
+    from yaml import SafeLoader as _YamlLoader  # type: ignore[assignment]
+
+
+def fast_yaml_load(content: str) -> Any:
+    """Load YAML content using fastest available loader."""
+    return yaml.load(content, Loader=_YamlLoader)
+
 
 def parse_frontmatter(content: str) -> dict[str, Any]:
     """Parse YAML frontmatter from markdown content.
@@ -37,7 +48,7 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
 
     yaml_content = match.group(1)
     try:
-        return yaml.safe_load(yaml_content) or {}
+        return fast_yaml_load(yaml_content) or {}
     except yaml.YAMLError as e:
         msg = f"Invalid YAML in frontmatter: {e}"
         raise ValueError(msg) from e

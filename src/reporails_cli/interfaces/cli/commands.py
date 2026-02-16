@@ -171,6 +171,7 @@ def update(
         if cli_result.updated:
             console.print(f"[green]CLI upgraded:[/green] {cli_result.previous_version} -> {cli_result.new_version}")
             console.print(f"[dim]Method: {cli_result.method.value}[/dim]")
+            console.print("[dim]Run 'ails setup' to update your MCP server config.[/dim]")
         else:
             console.print(cli_result.message)
         return
@@ -217,7 +218,11 @@ def dismiss(
         raise typer.Exit(1)
 
     rule_id_upper = rule_id.upper()
-    cache = ProjectCache(target)
+
+    from reporails_cli.core.engine import _find_project_root
+
+    project_root = _find_project_root(target)
+    cache = ProjectCache(project_root)
 
     files = [Path(file)] if file else [f.relative_to(target) for f in get_all_instruction_files(target)]
 
@@ -253,7 +258,10 @@ def dismiss(
 @app.command()
 def judge(
     path: str = typer.Argument(".", help="Project root"),
-    verdicts: list[str] = typer.Argument(None, help="Verdict strings: rule_id:location:verdict:reason"),  # noqa: B008
+    verdicts: list[str] = typer.Argument(  # noqa: B008
+        None,
+        help="Verdict strings: RULE:FILE:verdict:reason (e.g., 'C6:CLAUDE.md:pass:Criteria met')",
+    ),
 ) -> None:
     """Cache semantic rule verdicts (batch, rule_id:location:verdict:reason format)."""
     target = Path(path).resolve()
@@ -278,7 +286,7 @@ def show_version() -> None:
         get_installed_recommended_version,
         get_installed_version,
     )
-    from reporails_cli.core.init import OPENGREP_VERSION, RECOMMENDED_VERSION, RULES_VERSION
+    from reporails_cli.core.init import RECOMMENDED_VERSION, RULES_VERSION
 
     installed = get_installed_version()
     installed_rec = get_installed_recommended_version()
@@ -288,5 +296,4 @@ def show_version() -> None:
     console.print(f"CLI:         {cli_version}")
     console.print(f"Framework:   {installed or 'not installed'} (bundled: {RULES_VERSION})")
     console.print(f"Recommended: {installed_rec or 'not installed'} (bundled: {RECOMMENDED_VERSION})")
-    console.print(f"OpenGrep:    {OPENGREP_VERSION}")
     console.print(f"Install:     {detect_install_method().value}")

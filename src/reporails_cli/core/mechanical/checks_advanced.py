@@ -18,6 +18,7 @@ from reporails_cli.core.mechanical.checks import (
     _get_target_patterns,
     _resolve_glob_targets,
     _resolve_path,
+    _safe_float,
 )
 
 
@@ -64,7 +65,7 @@ def aggregate_byte_size(
     vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Check total byte size of all matching files."""
-    max_bytes = args.get("max", float("inf"))
+    max_bytes = _safe_float(args.get("max"), float("inf"))
     raw_pattern = str(args.get("pattern", "**/*"))
     all_files: set[Path] = set()
     for pattern in _expand_file_pattern(raw_pattern, vars):

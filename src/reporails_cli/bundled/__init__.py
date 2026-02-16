@@ -1,8 +1,7 @@
 """Bundled configuration files for reporails CLI.
 
 This package contains CLI-owned configuration:
-- capability-patterns.yml: OpenGrep patterns for capability detection
-- .semgrepignore: Default ignore patterns for OpenGrep/Semgrep
+- capability-patterns.yml: Regex patterns for capability detection
 """
 
 from __future__ import annotations
@@ -18,8 +17,3 @@ def get_bundled_path() -> Path:
 def get_capability_patterns_path() -> Path:
     """Get path to bundled capability-patterns.yml."""
     return get_bundled_path() / "capability-patterns.yml"
-
-
-def get_semgrepignore_path() -> Path:
-    """Get path to bundled .semgrepignore."""
-    return get_bundled_path() / ".semgrepignore"

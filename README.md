@@ -7,26 +7,17 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ## Quick Start
 
-### One-line install (npm)
+### One-line setup
 
 ```bash
-npx @reporails/cli install
+# pip / uvx
+ails setup
+
+# or via npm (no Python install needed)
+npx @reporails/cli setup
 ```
 
-This registers the MCP server with Claude Code. Then ask Claude: `What ails claude?`
-
-### MCP Integration (manual)
-
-For full semantic analysis, add the MCP server:
-```bash
-# Add the MCP and restart Claude
-claude mcp add reporails -- uvx --refresh --from reporails-cli ails-mcp
-```
-
-Then ask Claude:
-```
-❯ What ails claude?
-```
+This detects agents in your project and writes the MCP config. Restart your editor, then run `ails check`.
 
 ### CLI path (only deterministic rules)
 ```bash
@@ -45,8 +36,8 @@ That's it. You'll get a score, capability level, and actionable violations.
 
 Violations:
   CLAUDE.md (7 issues)
-    ○ MED C4.no-antipatterns :1    No NEVER or AVOID statements found
-    · LOW C12.no-version     :1    No version or date marker found
+    ○ :1    No NEVER or AVOID statements found       RRAILS:C:0003
+    · :1    No version or date marker found           CORE:C:0012
     ...
 ```
 
@@ -55,17 +46,19 @@ Fix the issues, run again, watch your score and your experience improve.
 ## Install
 
 ```bash
-# Ephemeral (no install, always latest)
-uvx reporails-cli check
-npx @reporails/cli check
-
-# Persistent (adds `ails` to PATH)
 pip install reporails-cli
 # or
 npm install -g @reporails/cli
 ```
 
-Once installed, all commands use `ails` directly.
+This adds `ails` to your PATH. All commands below assume a global install.
+
+**Try without installing:**
+```bash
+uvx reporails-cli check
+# or
+npx @reporails/cli check
+```
 
 ## What It Checks
 
@@ -89,14 +82,62 @@ Capability levels describe what your AI instruction setup enables — not how "m
 | L5 | Maintained | Structural integrity, governance, navigation |
 | L6 | Adaptive | Dynamic context, extensibility, persistence |
 
+## GitHub Actions
+
+Add `ails check` as a CI gate with inline PR annotations:
+
+```yaml
+# .github/workflows/reporails.yml
+name: Reporails
+on:
+  pull_request:
+    paths: ['CLAUDE.md', '.claude/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: reporails/cli/action@v1
+        with:
+          min-score: '6.0'
+```
+
+Violations appear as inline annotations on the PR diff. The step summary shows score, level, and a violations table.
+
+**Action inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `path` | `.` | Path to validate |
+| `strict` | `false` | Fail on any violation |
+| `min-score` | | Minimum score threshold (0-10) |
+| `agent` | `claude` | Agent type |
+| `experimental` | `false` | Include experimental rules |
+| `version` | | CLI version to install (default: latest) |
+
+**Action outputs:** `score`, `level`, `violations`, `result` (full JSON).
+
+You can also use `--format github` directly in custom workflows:
+
+```bash
+ails check . --format github --strict
+```
+
+This emits `::error`/`::warning` workflow commands for each violation, plus a JSON summary line.
+
 ## Commands
 
 ```bash
+ails setup                      # Set up MCP server for detected agents
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
+ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
+ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
+ails heal                       # Interactive auto-fix + semantic evaluation
+ails heal --non-interactive     # JSON output for agents and scripts
 ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
@@ -106,6 +147,7 @@ ails update --recommended       # Update recommended rules only
 ails update --force             # Force reinstall even if current
 ails update --cli               # Upgrade the CLI package itself
 ails dismiss CORE:C:0001        # Dismiss a semantic finding
+ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
 ails version                    # Show version info
 ```
 
@@ -143,7 +185,7 @@ Depends on your install path:
 
 - **uvx/pip path**: [uv](https://docs.astral.sh/uv/) — no separate Python install needed
 - **npx/npm path**: Node.js >= 18 — uv is auto-installed if missing
-- **MCP install/uninstall**: [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- **MCP setup**: No dependencies — `ails setup` writes config files directly
 
 ## Rules
 

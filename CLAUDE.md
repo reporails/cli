@@ -1,20 +1,20 @@
-# Reporails CLI v0.2.1
+# Reporails CLI
 
-AI instruction validator & quality assurance provider. Validates instruction files against deterministic, mechanical and semantic rules.
+AI instruction validator & quality assurance provider. Validates instruction files against deterministic, mechanical and semantic rules using a pure Python regex engine.
 
-## Bootstrap
+## Session Start
 
-- Read `.reporails/backbone.yml` for project structure, then `docs/specs/arch.md` for architecture decisions
-
-## Structure
-
-Defined in `.reporails/backbone.yml` — the single source of truth for project topology, paths, and module locations.
-
-**BEFORE** running `find`, `grep`, `ls`, or glob to locate project files, you **MUST** read `.reporails/backbone.yml` first — it defines all project paths, avoiding stale exploratory searches. You **MUST NOT** use exploratory commands to discover paths that the backbone already provides — they produce inconsistent results and waste tokens.
+Read `.reporails/backbone.yml` for project structure and `docs/specs/arch.md` for architecture decisions.
 
 ## Development Context
 
-Defined in `.reporails/backbone.yml` under `context`. Don't conflate developer, CLI user, and MCP user personas when discussing features, delivery, or documentation.
+You are developing the reporails CLI, not an end user.
+
+- **You**: modify source, run tests, read specs
+- **CLI end users**: install package, run `ails check`
+- **MCP end users**: use reporails via Claude Code
+
+Don't conflate these when discussing features, delivery, or documentation.
 
 ## File Reading Strategy
 
@@ -28,88 +28,58 @@ Defined in `.reporails/backbone.yml` under `context`. Don't conflate developer, 
 - Limit searches to `src/` or `tests/` directories when possible
 - Avoid grepping the entire repo; scope to relevant paths
 
-## Quick Start
-```bash
-uv sync                    # Install dependencies
-uv run ails check .        # Validate (auto-downloads OpenGrep + framework)
-uv run ails map . --save   # Save backbone.yml
-```
+## Quick Reference
 
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `ails check [PATH]` | Validate instruction files |
-| `ails check --refresh` | Force re-scan, ignore cache |
-| `ails check --quiet-semantic` | Suppress semantic rules message |
-| `ails check --no-update-check` | Skip pre-run update prompt |
-| `ails check --exclude-dir NAME` | Exclude directory from scanning (repeatable) |
-| `ails check --strict` | Exit code 1 on violations (CI) |
-| `ails check --experimental` | Include experimental-tier rules |
-| `ails check -f json` | JSON output (for scripts/MCP) |
-| `ails map [PATH]` | Discover project structure |
-| `ails map --save` | Save backbone.yml to .reporails/ |
-| `ails explain RULE_ID` | Show rule details |
-| `ails judge . "RULE:FILE:pass:reason"` | Cache semantic verdicts |
-| `ails dismiss RULE_ID` | Dismiss a semantic finding |
-| `ails update` | Update rules framework + recommended |
-| `ails update --check` | Check for updates without installing |
-| `ails update --recommended` | Update recommended rules only |
-| `ails update --version VERSION` | Update framework to specific version |
-| `ails update --force` | Force reinstall even if current |
-| `ails update --cli` | Upgrade CLI package itself |
-| `ails version` | Show CLI, framework, and recommended versions |
+- `uv sync` to install dependencies
+- `uv run ails setup` to set up MCP server for detected agents
+- `uv run ails check` to validate instruction files
+- `uv run ails check -f json` for JSON output
+- `uv run ails heal` for interactive auto-fix
+- `uv run ails map . --save` to save backbone.yml
 
 ## Project Structure
 ```
 src/reporails_cli/
-├── core/           # Domain logic
+├── core/           # Domain logic (regex/, mechanical/, pipeline, agents)
 ├── bundled/        # CLI-owned config (capability-patterns.yml)
 ├── interfaces/     # CLI and MCP entry points
-└── formatters/     # Output adapters
+└── formatters/     # Output adapters (json, github, text, mcp)
+action/             # GitHub Actions composite action
 ```
 
 Path-scoped rules in `.claude/rules/` — see those files for context-specific constraints.
 
 See `docs/specs/arch.md` for full architecture.
 
-## Framework vs CLI
-
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| Rules | Downloaded to `~/.reporails/rules/` | What to check |
-| Recommended | Downloaded to `~/.reporails/packages/recommended/` | Additional rules (AILS_ namespace) |
-| Levels | Downloaded to `~/.reporails/rules/registry/levels.yml` | How to score |
-| Capability patterns | Bundled in `src/bundled/capability-patterns.yml` | Feature detection |
-| OpenGrep | Downloaded to `~/.reporails/bin/` | Pattern matching |
-
 ## Testing
 
-- `uv run poe qa_fast` — Format, lint, pylint structural, type check, unit tests (pre-commit)
-- `uv run poe qa` — Full QA including integration tests
-- Add unit tests in `tests/unit/` for new functions; add integration tests in `tests/integration/` when OpenGrep interaction changes
-- When requirements are ambiguous, ask for clarification rather than guessing
+- Run `uv run poe qa_fast` for lint + type check + unit tests (pre-commit gate)
+- Run `uv run poe qa` for full QA including integration tests
+- Unit tests in `tests/unit/`, integration tests in `tests/integration/`
+- Test files named `test_*.py`, test functions prefixed `test_`
+- Use `pytest` fixtures from `conftest.py` for shared setup
+- Never modify golden fixtures — update expected output alongside
 
-## Code Style
+## Conventions
 
-- Formatting and linting enforced by `ruff` (run via `poe qa_fast`) — do not manually reformat
-- Naming conventions: `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_CASE` for constants
-- Follow existing patterns in the module you're editing
-- Type annotations required on public function signatures
+- Requires Python >=3.10 with type annotations on public APIs
+- Use `ruff` for formatting and linting
+- Module layout: domain logic in `core/`, entry points in `interfaces/`, output in `formatters/`
+- Prefer dataclasses for data models (`pipeline.py`, `models.py`)
+- Keep modules focused — one concern per file
+- Use full rule IDs in code and config (e.g., `CORE:C:0004`, not `C4`)
+- When fixing bugs, explain the root cause and why the fix works
+- When making architectural decisions, document the tradeoffs considered
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `/check` | Self-validate this project's instruction files |
+| `/qa` | Run the full QA suite |
+| `/plan-feature` | Plan implementation of a new feature |
+| `/add-changelog-entry` | Add an entry to UNRELEASED.md |
 
 ## Architecture
 
 @docs/specs/arch.md for full architecture details.
-
-- **OpenGrep-Powered**: Deterministic pattern matching
-- **Framework Separation**: CLI orchestrates, framework defines rules
-
-## Constraints
-
-- NEVER execute destructive or irreversible operations without explicit user confirmation — data loss cannot be undone
-- NEVER write ad-hoc scripts — use the project's `uv`/`poe` toolchain (`uv run`, `uv run poe qa_fast`, etc.) to keep tooling consistent
-- ALWAYS run `uv run poe qa_fast` after code changes before considering work complete — it catches regressions early
-
-## Memory
-
-Consult auto-memory files in the project memory directory for decisions and patterns from prior sessions. Update memory when you discover stable conventions or resolve recurring issues.

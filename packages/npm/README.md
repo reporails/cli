@@ -5,10 +5,10 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 ## Quick Start
 
 ```bash
-npx @reporails/cli install
+npx @reporails/cli setup
 ```
 
-This registers the MCP server with Claude Code. Then ask Claude:
+This detects agents in your project and writes the MCP config. Then ask Claude:
 
 ```
 > What ails claude?
@@ -29,8 +29,8 @@ That's it. You'll get a score, capability level, and actionable violations.
 
 Violations:
   CLAUDE.md (7 issues)
-    ○ MED C4.no-antipatterns :1    No NEVER or AVOID statements found
-    · LOW C12.no-version     :1    No version or date marker found
+    ○ :1    No NEVER or AVOID statements found       RRAILS:C:0003
+    · :1    No version or date marker found           CORE:C:0012
     ...
 ```
 
@@ -70,14 +70,41 @@ Capability levels describe what your AI instruction setup enables — not how "m
 | L5 | Maintained | Structural integrity, governance, navigation |
 | L6 | Adaptive | Dynamic context, extensibility, persistence |
 
+## GitHub Actions
+
+Add `ails check` as a CI gate with inline PR annotations:
+
+```yaml
+# .github/workflows/reporails.yml
+name: Reporails
+on:
+  pull_request:
+    paths: ['CLAUDE.md', '.claude/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: reporails/cli/action@v1
+        with:
+          min-score: '6.0'
+```
+
+See the [main README](https://github.com/reporails/cli#github-actions) for full action inputs/outputs.
+
 ## Commands
 
 ```bash
+ails setup                      # Set up MCP server for detected agents
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
+ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
+ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
+ails heal                       # Interactive auto-fix + semantic evaluation
+ails heal --non-interactive     # JSON output for agents and scripts
 ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
@@ -87,18 +114,20 @@ ails update --recommended       # Update recommended rules only
 ails update --force             # Force reinstall even if current
 ails update --cli               # Upgrade the CLI package itself
 ails dismiss CORE:C:0001        # Dismiss a semantic finding
+ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
 ails version                    # Show version info
 ```
 
 | Command | Description |
 |---------|-------------|
-| `install [--scope user\|project]` | Register MCP server with Claude Code |
-| `uninstall [--scope user\|project]` | Remove MCP server from Claude Code |
+| `setup [PATH]` | Set up MCP server for detected agents |
 | `check [PATH]` | Validate instruction files |
+| `heal [PATH]` | Interactive auto-fix + semantic evaluation |
 | `explain RULE_ID` | Show rule details |
 | `map [PATH]` | Discover project structure |
 | `update` | Update rules framework + recommended |
 | `dismiss RULE_ID` | Dismiss a semantic finding |
+| `judge PATH VERDICTS` | Cache semantic verdicts |
 | `version` | Show version info |
 
 ## Updating
@@ -134,7 +163,7 @@ ails update --recommended
 
 - **Node.js >= 18**
 - **uv** — auto-installed if missing ([manual install](https://docs.astral.sh/uv/))
-- **Claude Code** — required for `install`/`uninstall` commands ([install](https://docs.anthropic.com/en/docs/claude-code))
+- **No additional dependencies** — `setup` writes config files directly
 
 ## How It Works
 

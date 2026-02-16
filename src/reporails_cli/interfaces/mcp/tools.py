@@ -56,12 +56,14 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
 
     if not target.exists():
         return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return mcp_formatter.format_result(result)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
 
@@ -84,12 +86,14 @@ def validate_tool_text(path: str = ".") -> str:
 
     if not target.exists():
         return f"Error: Path not found: {target}"
+    if not target.is_dir():
+        return f"Error: Path is not a directory: {target}"
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return text_formatter.format_result(result, ascii_mode=True)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return f"Error: {e}"
 
 
@@ -110,12 +114,14 @@ def score_tool(path: str = ".") -> dict[str, Any]:
 
     if not target.exists():
         return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
         return mcp_formatter.format_score(result)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
 
@@ -136,13 +142,89 @@ def judge_tool(path: str = ".", verdicts: list[str] | None = None) -> dict[str, 
     target = Path(path).resolve()
     if not target.exists():
         return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
 
     try:
-        from reporails_cli.core.cache import cache_judgments
+        recorded_verdicts, failed = cache_judgments_with_details(target, verdicts)
+        result: dict[str, Any] = {"recorded": len(recorded_verdicts)}
+        if recorded_verdicts:
+            result["verdicts"] = recorded_verdicts
+        if failed:
+            result["failed"] = failed
+        return result
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}
 
-        recorded = cache_judgments(target, verdicts)
-        return {"recorded": recorded}
-    except Exception as e:
+
+def cache_judgments_with_details(target: Path, verdicts: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+    """Cache judgments and return (recorded_verdict_details, failed_reasons)."""
+    from reporails_cli.core.cache import _parse_verdict_string, cache_judgments
+
+    # Pre-validate verdicts to report failures
+    failed: list[str] = []
+    valid_verdicts: list[str] = []
+    parsed: list[dict[str, str]] = []
+    for v in verdicts:
+        rule_id, location, verdict, reason = _parse_verdict_string(v)
+        if not rule_id or not location:
+            failed.append(f"Invalid format (need RULE:FILE:verdict:reason): {v}")
+            continue
+        if verdict not in ("pass", "fail"):
+            failed.append(f"Invalid verdict value (need pass/fail): {v}")
+            continue
+        file_path = location.rsplit(":", 1)[0] if ":" in location else location
+        full_path = (target / file_path).resolve()
+        if not full_path.is_relative_to(target):
+            failed.append(f"Path traversal blocked: {file_path}")
+            continue
+        if not full_path.exists():
+            failed.append(f"File not found: {file_path}")
+            continue
+        valid_verdicts.append(v)
+        # Truncate reason for display (full reason still cached via cache_judgments)
+        brief = (reason[:37] + "...") if len(reason) > 40 else reason
+        parsed.append({"rule": rule_id, "file": file_path, "verdict": verdict, "reason": brief})
+
+    if valid_verdicts:
+        cache_judgments(target, valid_verdicts)
+    return parsed, failed
+
+
+def heal_tool(path: str = ".") -> dict[str, Any]:
+    """
+    Auto-fix deterministic violations and return remaining semantic requests.
+
+    Applies safe, additive fixes (append missing sections) then returns
+    a summary of fixes applied plus any pending judgment requests.
+
+    Args:
+        path: Directory to heal (default: current directory)
+
+    Returns:
+        Dict with auto_fixed list and remaining judgment_requests
+    """
+    if not is_initialized():
+        return {"error": "Reporails not initialized. Run 'ails check' first."}
+
+    target = Path(path).resolve()
+    if not target.exists():
+        return {"error": f"Path not found: {target}"}
+    if not target.is_dir():
+        return {"error": f"Path is not a directory: {target}"}
+
+    try:
+        from reporails_cli.core.fixers import apply_auto_fixes
+
+        rules_paths = _resolve_recommended_rules_paths(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+
+        # Phase 1: Auto-fix
+        fixes = apply_auto_fixes(list(result.violations), target)
+
+        # Phase 2: Return remaining semantic requests
+        return mcp_formatter.format_heal_result(fixes, list(result.judgment_requests))
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
 
@@ -192,10 +274,13 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[st
 
     # Read description from markdown file if available
     if rule.md_path and rule.md_path.exists():
-        content = rule.md_path.read_text(encoding="utf-8")
-        # Extract content after frontmatter
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            rule_data["description"] = parts[2].strip()[:500]
+        try:
+            content = rule.md_path.read_text(encoding="utf-8")
+            # Extract content after frontmatter
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                rule_data["description"] = parts[2].strip()[:500]
+        except (OSError, ValueError):
+            pass  # Return rule data without description
 
     return mcp_formatter.format_rule(rule_id_upper, rule_data)

@@ -1,6 +1,6 @@
 """Semantic rule request building - creates JudgmentRequests for LLM evaluation.
 
-Semantic rules require OpenGrep pattern matches before LLM evaluation.
+Semantic rules require regex pattern matches before LLM evaluation.
 No match = rule passes (nothing to evaluate).
 """
 
@@ -26,13 +26,17 @@ def build_request_from_sarif_result(
         target: Project root for snippet extraction.
 
     Returns:
-        JudgmentRequest, or None if snippet missing or rule lacks required fields.
+        JudgmentRequest, or None if content missing or rule lacks required fields.
     """
     location = get_location(sarif_result)
-    snippet = extract_snippet(sarif_result, target)
-    if not snippet:
+    # Prefer full file content for semantic evaluation (capped at 8KB)
+    content = extract_full_content(sarif_result, target)
+    if not content:
+        # Fall back to snippet if full content unavailable
+        content = extract_snippet(sarif_result, target)
+    if not content:
         return None
-    return build_request(rule, snippet, location)
+    return build_request(rule, content, location)
 
 
 def build_semantic_requests(
@@ -60,6 +64,33 @@ def build_semantic_requests(
                 requests.append(request)
 
     return requests
+
+
+def extract_full_content(result: dict[str, Any], target: Path, max_chars: int = 8000) -> str | None:
+    """Extract full file content for semantic evaluation.
+
+    Reads the entire file referenced by the SARIF result location, capped at
+    max_chars to keep context manageable for LLM evaluation.
+
+    Args:
+        result: SARIF result dict with location info.
+        target: Project root directory.
+        max_chars: Maximum characters to return (default 8KB).
+
+    Returns:
+        File content string, or None if file cannot be read.
+    """
+    location = get_location(result)
+    if ":" not in location:
+        return None
+
+    file_path = location.rsplit(":", 1)[0]
+    full_path = target / file_path
+    try:
+        content = full_path.read_text(encoding="utf-8")
+        return content[:max_chars]
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def extract_snippet(result: dict[str, Any], target: Path) -> str | None:

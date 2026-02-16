@@ -1,7 +1,7 @@
-"""Init command - downloads opengrep and syncs rules.
+"""Init command - downloads rules framework.
 
 Core logic has been split into:
-- download.py: Download and install opengrep, rules, recommended packages
+- download.py: Download and install rules, recommended packages
 - updater.py: Update rules and recommended to latest/specific versions
 
 This module keeps run_init() and re-exports all public names for backward
@@ -23,12 +23,6 @@ from reporails_cli.core.bootstrap import (
 )
 from reporails_cli.core.bootstrap import (
     get_reporails_home as get_reporails_home,
-)
-from reporails_cli.core.download import (
-    OPENGREP_URLS as OPENGREP_URLS,
-)
-from reporails_cli.core.download import (
-    OPENGREP_VERSION as OPENGREP_VERSION,
 )
 from reporails_cli.core.download import (
     RECOMMENDED_API_URL as RECOMMENDED_API_URL,
@@ -58,9 +52,6 @@ from reporails_cli.core.download import (
     download_from_github as download_from_github,
 )
 from reporails_cli.core.download import (
-    download_opengrep as download_opengrep,
-)
-from reporails_cli.core.download import (
     download_recommended as download_recommended,
 )
 from reporails_cli.core.download import (
@@ -71,9 +62,6 @@ from reporails_cli.core.download import (
 )
 from reporails_cli.core.download import (
     get_bundled_checks_path as get_bundled_checks_path,
-)
-from reporails_cli.core.download import (
-    get_platform as get_platform,
 )
 from reporails_cli.core.download import (
     is_recommended_installed as is_recommended_installed,
@@ -116,24 +104,18 @@ from reporails_cli.core.updater import (
 def run_init() -> dict[str, str | int | Path]:
     """Run global initialization.
 
-    1. Download opengrep binary to ~/.reporails/bin/
-    2. Setup rules at ~/.reporails/rules/ (from local framework or GitHub)
+    Setup rules at ~/.reporails/rules/ (from local framework or GitHub).
 
     Returns dict with status info.
     """
     results: dict[str, str | int | Path] = {}
 
-    # 1. Download opengrep
-    bin_path = download_opengrep()
-    results["opengrep_path"] = bin_path
-    results["opengrep_version"] = OPENGREP_VERSION
-
-    # 2. Setup rules (check local framework_path first, then GitHub)
+    # Setup rules (check local framework_path first, then GitHub)
     rules_path, rule_count = download_rules()
     results["rules_path"] = rules_path
     results["rule_count"] = rule_count
 
-    # 3. Write version file
+    # Write version file
     write_version_file(RULES_VERSION)
     results["rules_version"] = RULES_VERSION
 

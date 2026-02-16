@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Any
 
 
+def _safe_float(value: Any, default: float = float("inf")) -> float:
+    """Safely convert a value to float, returning default on failure."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass(frozen=True)
 class CheckResult:
     """Result of a single mechanical check."""
@@ -23,6 +31,7 @@ class CheckResult:
     passed: bool
     message: str
     annotations: dict[str, Any] | None = None  # D->M metadata (e.g., discovered_imports)
+    location: str | None = None  # Per-file location override (e.g., "SKILL.md:0")
 
 
 def _resolve_path(template: str, vars: dict[str, str | list[str]]) -> str:
@@ -38,10 +47,19 @@ def _resolve_path(template: str, vars: dict[str, str | list[str]]) -> str:
     return result
 
 
+_glob_cache: dict[tuple[str, str], list[Path]] = {}
+
+
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
-    """Resolve a glob pattern relative to root."""
+    """Resolve a glob pattern relative to root (cached per session)."""
+    key = (pattern, str(root))
+    cached = _glob_cache.get(key)
+    if cached is not None:
+        return cached
     resolved = str(root / pattern)
-    return [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    result = [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    _glob_cache[key] = result
+    return result
 
 
 def _get_target_patterns(
@@ -162,7 +180,7 @@ def file_count(
 ) -> CheckResult:
     """Check that file count is within bounds."""
     min_count = int(args.get("min", 0))
-    max_count = args.get("max", float("inf"))
+    max_count = _safe_float(args.get("max"), float("inf"))
     raw_pattern = str(args.get("pattern", "**/*"))
     all_files: set[Path] = set()
     for pattern in _expand_file_pattern(raw_pattern, vars):
@@ -179,23 +197,26 @@ def line_count(
     vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Check that file line count is within bounds."""
-    max_lines = args.get("max", float("inf"))
+    max_lines = _safe_float(args.get("max"), float("inf"))
     min_lines = int(args.get("min", 0))
     for pattern in _get_target_patterns(args, vars):
         for match in _resolve_glob_targets(pattern, root):
             if not match.is_file():
                 continue
             try:
+                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
                 count = len(match.read_text(encoding="utf-8").splitlines())
                 if count > max_lines:
                     return CheckResult(
                         passed=False,
                         message=f"{match.name}: {count} lines exceeds max {max_lines}",
+                        location=f"{rel}:0",
                     )
                 if count < min_lines:
                     return CheckResult(
                         passed=False,
                         message=f"{match.name}: {count} lines below min {min_lines}",
+                        location=f"{rel}:0",
                     )
             except OSError as e:
                 return CheckResult(passed=False, message=f"Error reading {match.name}: {e}")
@@ -208,17 +229,18 @@ def byte_size(
     vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Check that file size is within bounds."""
-    max_bytes = args.get("max", float("inf"))
-    min_bytes = int(args.get("min", 0))
+    max_bytes = _safe_float(args.get("max"), float("inf"))
+    min_bytes = int(_safe_float(args.get("min", 0), 0))
     for pattern in _get_target_patterns(args, vars):
         for match in _resolve_glob_targets(pattern, root):
             if not match.is_file():
                 continue
+            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
             size = match.stat().st_size
             if size > max_bytes:
-                return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max")
+                return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0")
             if size < min_bytes:
-                return CheckResult(passed=False, message=f"{match.name}: {size}B below min")
+                return CheckResult(passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0")
     return CheckResult(passed=True, message="File sizes within bounds")
 
 

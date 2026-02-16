@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 import yaml
 
 from reporails_cli.core.bootstrap import get_agent_config
@@ -145,13 +144,14 @@ class TestApplyAgentOverrides:
 
         assert result["E2"].checks == []
 
-    def test_invalid_severity_raises(self) -> None:
+    def test_invalid_severity_skipped(self) -> None:
         checks = [Check(id="E2-check", name="Check", severity=Severity.HIGH)]
         rules = {"E2": _make_rule("E2", checks)}
 
         overrides = {"E2-check": {"severity": "bogus"}}
-        with pytest.raises(ValueError):
-            _apply_agent_overrides(rules, overrides)
+        result = _apply_agent_overrides(rules, overrides)
+        # Invalid severity is skipped — original check kept unchanged
+        assert result["E2"].checks[0].severity == Severity.HIGH
 
     def test_multiple_rules_overridden(self) -> None:
         rules = {

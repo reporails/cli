@@ -1,4 +1,4 @@
-"""Template resolution for OpenGrep rule files.
+"""Template resolution for rule YAML files.
 
 Handles {{placeholder}} substitution in .yml rule configs.
 """
@@ -81,6 +81,50 @@ def has_templates(yml_path: Path) -> bool:
         return False
 
 
+def resolve_templates_str(content: str, context: dict[str, str | list[str]]) -> str:
+    """Resolve template placeholders in yml content string.
+
+    Same as resolve_templates but takes content directly instead of reading
+    from a file path. Avoids double-read when caller already has the content.
+
+    Args:
+        content: Raw yml content with {{placeholder}} tokens
+        context: Dict mapping placeholder names to string or list values
+
+    Returns:
+        Resolved yml content
+    """
+    for key, value in context.items():
+        placeholder = "{{" + key + "}}"
+        if placeholder not in content:
+            continue
+
+        if isinstance(value, list):
+            lines = content.split("\n")
+            new_lines: list[str] = []
+            for line in lines:
+                if placeholder in line:
+                    stripped = line.lstrip()
+                    indent = len(line) - len(stripped)
+                    indent_str = " " * indent
+                    if stripped.startswith("- "):
+                        new_lines.extend(f'{indent_str}- "{item}"' for item in value)
+                    elif "pattern-regex:" in line or "pattern-not-regex:" in line:
+                        regex_patterns = [_glob_to_regex(g) for g in value]
+                        combined = "(" + "|".join(regex_patterns) + ")"
+                        new_lines.append(line.replace(placeholder, combined))
+                    else:
+                        first_item = value[0] if value else ""
+                        new_lines.append(line.replace(placeholder, first_item))
+                else:
+                    new_lines.append(line)
+            content = "\n".join(new_lines)
+        else:
+            content = content.replace(placeholder, str(value))
+
+    return content
+
+
 def resolve_templates(yml_path: Path, context: dict[str, str | list[str]]) -> str:
     """Resolve template placeholders in yml content.
 
@@ -98,40 +142,4 @@ def resolve_templates(yml_path: Path, context: dict[str, str | list[str]]) -> st
         Resolved yml content
     """
     content = yml_path.read_text(encoding="utf-8")
-
-    for key, value in context.items():
-        placeholder = "{{" + key + "}}"
-        if placeholder not in content:
-            continue
-
-        if isinstance(value, list):
-            # Find the line with the placeholder and its indentation
-            lines = content.split("\n")
-            new_lines: list[str] = []
-            for line in lines:
-                if placeholder in line:
-                    stripped = line.lstrip()
-                    indent = len(line) - len(stripped)
-                    indent_str = " " * indent
-
-                    # Check context: array (starts with -) or pattern-regex
-                    if stripped.startswith("- "):
-                        # Array context: expand to multiple list items
-                        new_lines.extend(f'{indent_str}- "{item}"' for item in value)
-                    elif "pattern-regex:" in line or "pattern-not-regex:" in line:
-                        # Regex context: convert globs to regex, join with |
-                        regex_patterns = [_glob_to_regex(g) for g in value]
-                        combined = "(" + "|".join(regex_patterns) + ")"
-                        new_lines.append(line.replace(placeholder, combined))
-                    else:
-                        # Other scalar context: use first item
-                        first_item = value[0] if value else ""
-                        new_lines.append(line.replace(placeholder, first_item))
-                else:
-                    new_lines.append(line)
-            content = "\n".join(new_lines)
-        else:
-            # Simple string substitution
-            content = content.replace(placeholder, str(value))
-
-    return content
+    return resolve_templates_str(content, context)

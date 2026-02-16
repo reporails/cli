@@ -6,7 +6,6 @@ capability detection, and scoring.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Generator
 from pathlib import Path
 
@@ -20,17 +19,6 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 def fixtures_dir() -> Path:
     """Return path to fixtures directory."""
     return FIXTURES_DIR
-
-
-@pytest.fixture
-def opengrep_bin() -> Path:
-    """Return path to OpenGrep binary, skip if not installed."""
-    from reporails_cli.core.bootstrap import get_opengrep_bin
-
-    bin_path = get_opengrep_bin()
-    if not bin_path.exists():
-        pytest.skip("OpenGrep not installed (run 'ails check' first to download)")
-    return bin_path
 
 
 @pytest.fixture
@@ -300,19 +288,6 @@ rules:
 
 
 # --- Helper Functions ---
-
-
-def run_opengrep_validate(yml_path: Path, opengrep_bin: Path) -> tuple[int, str]:
-    """Run opengrep scan and return (exit_code, stderr).
-
-    Note: opengrep doesn't have --validate, so we do a scan and check for errors.
-    """
-    result = subprocess.run(
-        [str(opengrep_bin), "scan", "--sarif", "--config", str(yml_path), "."],
-        capture_output=True,
-        cwd=yml_path.parent,
-    )
-    return result.returncode, result.stderr.decode("utf-8", errors="replace")
 
 
 def create_temp_rule_file(tmp_path: Path, content: str, name: str = "test-rule.yml") -> Path:

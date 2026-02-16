@@ -111,7 +111,7 @@ class TestPartialEvaluation:
         result = self._make_result(is_partial=True)
         output = text_formatter.format_result(result)
 
-        assert "complete analysis" in output
+        assert "full semantic analysis" in output
 
     def test_complete_no_partial_marker(self) -> None:
         """Complete evaluation should not show MCP CTA."""
@@ -208,8 +208,8 @@ class TestPendingSemanticDisplay:
         assert data["pending_semantic"]["file_count"] == 5
         assert "C6" in data["pending_semantic"]["rules"]
 
-    def test_json_null_pending_when_complete(self) -> None:
-        """JSON output should have null pending when complete."""
+    def test_json_omits_pending_when_complete(self) -> None:
+        """JSON output should omit pending_semantic key when complete."""
         from reporails_cli.formatters import json as json_formatter
 
         result = ValidationResult(
@@ -227,7 +227,9 @@ class TestPendingSemanticDisplay:
         )
         data = json_formatter.format_result(result)
 
-        assert data["pending_semantic"] is None
+        assert "pending_semantic" not in data
+        # Consumer pattern should safely default
+        assert data.get("pending_semantic", {}).get("rule_count", 0) == 0
 
     def test_compact_shows_pending_summary(self) -> None:
         """Compact format should show pending summary."""
@@ -302,8 +304,8 @@ class TestMCPCallToAction:
         result = self._make_partial_result()
         output = text_formatter.format_result(result, quiet_semantic=False)
 
-        assert "For complete analysis" in output
-        assert "claude mcp add" in output
+        assert "full semantic analysis" in output
+        assert "ails setup" in output
 
     def test_cta_hidden_when_quiet_semantic(self) -> None:
         """CTA should be hidden in quiet semantic mode."""

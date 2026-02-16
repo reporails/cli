@@ -32,7 +32,7 @@ LEVEL_LABELS: dict[Level, str] = {
 # Ordered levels for walking (L1 → L6)
 _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
 
-# Capabilities whose detection depends on content analysis (OpenGrep Phase 2).
+# Capabilities whose detection depends on content analysis (regex Phase 2).
 # When skip_content=True, these are treated as detected (optimistic preliminary).
 CONTENT_CAPABILITIES: frozenset[str] = frozenset(
     {
@@ -233,6 +233,9 @@ def detect_orphan_features(features: DetectedFeatures, base_level: Level) -> boo
     Returns:
         True if capabilities above base level are detected
     """
+    if base_level not in _LEVEL_ORDER:
+        return False
+
     level_caps = _load_level_capabilities()
 
     base_index = _LEVEL_ORDER.index(base_level)
