@@ -241,7 +241,7 @@ class TestCheckTextOutput:
         assert "CLAUDE.md" in result.output
 
     def test_no_files_shows_l1_message(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(empty_project), "--no-update-check"])
+        result = runner.invoke(app, ["check", str(empty_project), "-f", "text", "--no-update-check"])
         assert "No instruction files found" in result.output
         assert "L1" in result.output
 
