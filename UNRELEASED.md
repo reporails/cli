@@ -3,6 +3,7 @@
 ### Added
 - [CLI]: `ails setup` command — auto-detects agents and writes MCP config (`.mcp.json`, `.vscode/mcp.json`, `.codex/mcp.json`)
 - [CLI]: `--format github` output — emits `::error`/`::warning` workflow commands for inline PR annotations in GitHub Actions
+- [CLI]: Register `github` formatter module in package `__init__.py` (was missing, caused mypy error)
 - [CI]: Composite GitHub Action (`action/`) — installs CLI, runs check, writes step summary, gates on score/violations
 - [CORE]: `recommended_path` global config override — point CLI at a local recommended rules repo for development
 - [CLI]: `--verbose` / `-v` flag for `ails check` — shows per-file PASS/FAIL checks with rule titles
