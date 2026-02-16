@@ -29,8 +29,8 @@ jobs:
       - name: Unit tests
         run: uv run poe test_unit
 
-      - name: Download OpenGrep and rules
-        run: uv run python -c "from reporails_cli.core.init import download_opengrep, download_rules, download_recommended; download_opengrep(); download_rules(); download_recommended()"
+      - name: Download rules
+        run: uv run python -c "from reporails_cli.core.init import download_rules, download_recommended; download_rules(); download_recommended()"
 
       - name: Integration tests
         run: uv run poe test_integration
