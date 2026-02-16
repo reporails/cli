@@ -26,37 +26,6 @@ from reporails_cli.interfaces.cli.helpers import (
 
 
 @app.command()
-def setup(
-    path: str = typer.Argument(".", help="Project root"),
-) -> None:
-    """Set up the reporails MCP server for detected agents."""
-    from reporails_cli.core.mcp_install import detect_mcp_targets, write_mcp_config
-
-    target = Path(path).resolve()
-
-    if not target.exists():
-        console.print(f"[red]Error:[/red] Path not found: {target}")
-        raise typer.Exit(1)
-
-    targets = detect_mcp_targets(target)
-
-    if not targets:
-        console.print("[yellow]No supported agents detected.[/yellow]")
-        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
-        raise typer.Exit(1)
-
-    for agent_id, config_path in targets:
-        write_mcp_config(config_path)
-        try:
-            rel = config_path.relative_to(target)
-        except ValueError:
-            rel = config_path
-        console.print(f"  {agent_id}: {rel}")
-
-    console.print("\n[green]Restart your editor to activate.[/green]")
-
-
-@app.command()
 def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     path: str = typer.Argument(".", help="File or directory to validate"),
     format: str = typer.Option(
@@ -169,6 +138,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     output_format = format if format else _default_format()
     # Filter to specified agent (default: claude) for file discovery
     from reporails_cli.core.agents import detect_agents, filter_agents_by_id
+
     all_detected_agents = detect_agents(target)
     filtered_agents = filter_agents_by_id(all_detected_agents, agent) if agent else all_detected_agents
     instruction_files = get_all_instruction_files(target, agents=filtered_agents)
@@ -297,7 +267,8 @@ def main() -> None:
 
 
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
-import reporails_cli.interfaces.cli.heal  # noqa: F401, E402  # Register heal command
+import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
+import reporails_cli.interfaces.cli.setup  # noqa: F401, E402  # Register setup command
 
 if __name__ == "__main__":
     main()

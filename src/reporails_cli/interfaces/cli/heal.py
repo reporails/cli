@@ -138,7 +138,9 @@ def heal(  # pylint: disable=too-many-locals
         auto_fixed_data = [
             {
                 "rule_id": fix.rule_id,
-                "file_path": str(fix.file_path.relative_to(target)) if fix.file_path.is_relative_to(target) else str(fix.file_path),
+                "file_path": str(Path(fix.file_path).relative_to(target))
+                if Path(fix.file_path).is_relative_to(target)
+                else fix.file_path,
                 "description": fix.description,
             }
             for fix in fixes
@@ -160,6 +162,7 @@ def heal(  # pylint: disable=too-many-locals
         ]
 
         import json
+
         output = json_formatter.format_heal_result(auto_fixed_data, judgment_data)
         print(json.dumps(output, indent=2))
         return
