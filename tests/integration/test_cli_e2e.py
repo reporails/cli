@@ -156,7 +156,8 @@ class TestCheckCommand:
             [
                 "check",
                 str(tmp_path),
-                "-f", "text",
+                "-f",
+                "text",
                 "--no-update-check",
             ],
         )
@@ -225,19 +226,19 @@ class TestUpdateCheckCommand:
         with (
             patch(
                 "reporails_cli.core.bootstrap.get_installed_version",
-                return_value="0.3.1",
+                return_value="0.4.0",
             ),
             patch(
                 "reporails_cli.core.init.get_latest_version",
-                return_value="0.3.1",
+                return_value="0.4.0",
             ),
             patch(
                 "reporails_cli.core.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
+                return_value="0.2.0",
             ),
             patch(
                 "reporails_cli.core.init.get_latest_recommended_version",
-                return_value="0.1.0",
+                return_value="0.2.0",
             ),
         ):
             result = runner.invoke(app, ["update", "--check"])

@@ -27,6 +27,7 @@
 - [CORE]: Scan targets now include config files for path-filtered rules (`get_all_scannable_files`)
 - [JSON]: `pending_semantic` and `skipped_experimental` omitted from JSON output when absent (avoids null-chaining)
 - [META]: Version bump to 0.3.0
+- [META]: Bump bundled RULES_VERSION to 0.4.0, RECOMMENDED_VERSION to 0.2.0
 - [DOCS]: Updated all specs and README to reflect v0.3.0 (regex engine, new commands, current module structure)
 - [MCP]: Validate tool returns structured JSON instead of formatted text
 - [MCP]: Semantic judgment requests now carry full file content (up to 8KB) instead of 5-line snippets
