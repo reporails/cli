@@ -95,6 +95,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Filter to specific agent if requested (default behavior: only validate specified agent's files)
     from reporails_cli.core.agents import filter_agents_by_id
+
     agents = filter_agents_by_id(all_agents, agent) if agent else all_agents
 
     instruction_files = get_all_instruction_files(scan_root, agents=agents)

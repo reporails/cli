@@ -63,6 +63,8 @@
 - [CORE]: Invalid severity in agent config no longer crashes registry (logs warning, keeps original)
 - [CORE]: `is_initialized()` now checks for `core/` subdirectory, not just rules path existence
 - [CORE]: Negated deterministic handler reuses `resolve_location()` instead of inline template logic
+- [CLI]: Extract `setup` command to own module to stay within pylint module-size limit
+- [CLI]: Fix `heal` mypy errors — `FixResult.file_path` is `str`, not `Path`
 - [CLI]: Exit code 2 for input errors (bad path, missing args), exit 1 for violations
 - [CLI]: Improved help text for target and agent arguments
 - [CLI]: First-run feedback: logs "Downloading rules framework..." before auto-init
