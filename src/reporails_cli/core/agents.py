@@ -161,6 +161,20 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
     return detected
 
 
+def filter_agents_by_id(agents: list[DetectedAgent], agent_id: str) -> list[DetectedAgent]:
+    """
+    Filter detected agents by agent ID.
+
+    Args:
+        agents: List of detected agents
+        agent_id: Agent identifier to filter by (e.g., "claude", "copilot")
+
+    Returns:
+        List containing only the specified agent if found, empty list otherwise
+    """
+    return [agent for agent in agents if agent.agent_type.id == agent_id]
+
+
 def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
     """
     Get all instruction files for all detected agents.

@@ -24,10 +24,16 @@ def get_reporails_home() -> Path:
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
-    Prefers local ./checks/ directory if it has .yml files (development mode),
+    Returns local override from global config if set, otherwise prefers
+    local ./checks/ directory if it has .yml files (development mode),
     otherwise uses ~/.reporails/rules/ (installed mode).
     """
-    # Check for local checks directory (development mode)
+    # Check for global config override (development mode)
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        return config.framework_path
+
+    # Check for local checks directory (legacy development mode)
     local_checks = Path.cwd() / "checks"
     if local_checks.exists() and any(local_checks.rglob("*.yml")):
         return local_checks

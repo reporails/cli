@@ -91,7 +91,12 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Detect agents once — reuse for all file lookups (avoids redundant recursive globs)
     # Use scan_root (not project_root) so only files inside the target are scanned
-    agents = detect_agents(scan_root)
+    all_agents = detect_agents(scan_root)
+
+    # Filter to specific agent if requested (default behavior: only validate specified agent's files)
+    from reporails_cli.core.agents import filter_agents_by_id
+    agents = filter_agents_by_id(all_agents, agent) if agent else all_agents
+
     instruction_files = get_all_instruction_files(scan_root, agents=agents)
 
     # PASS 1: Capability Detection (determines final level)
