@@ -104,3 +104,4 @@
 - [TEST]: Behavioral contract tests — exit codes, JSON schema, scan scope, text output, flags, map, dismiss, judge, explain, version, config, delta (48 tests)
 - [TEST]: Heal command behavioral tests — auto-fix, pass/fail/dismiss/skip verdicts, cache persistence, summary counts (8 tests)
 - [TEST]: Fix 4 stale integration tests — align assertions with current rule count, scoring behavior, and level filtering
+- [TEST]: Fix 2 CI-only failures — add explicit `-f text` to tests asserting text output (non-TTY auto-detects to JSON)

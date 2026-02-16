@@ -156,6 +156,7 @@ class TestCheckCommand:
             [
                 "check",
                 str(tmp_path),
+                "-f", "text",
                 "--no-update-check",
             ],
         )
