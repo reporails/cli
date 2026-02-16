@@ -64,6 +64,11 @@ def heal(  # pylint: disable=too-many-locals
     """Interactively evaluate pending semantic rules."""
     if not sys.stdout.isatty():
         console.print("[red]Error:[/red] ails heal requires an interactive terminal.")
+        console.print()
+        console.print("[dim]Tip: If running from Claude Code or another agent:[/dim]")
+        console.print("[dim]  - The MCP 'heal' tool should be available directly[/dim]")
+        console.print("[dim]  - Ask: 'use the heal tool to fix violations'[/dim]")
+        console.print("[dim]  - Or run 'ails heal' in your actual terminal[/dim]")
         raise typer.Exit(2)
 
     target = Path(path).resolve()
