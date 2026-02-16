@@ -102,6 +102,9 @@ ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
+ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
+ails heal                       # Interactive auto-fix + semantic evaluation
+ails heal --non-interactive     # JSON output for agents and scripts
 ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
@@ -111,6 +114,7 @@ ails update --recommended       # Update recommended rules only
 ails update --force             # Force reinstall even if current
 ails update --cli               # Upgrade the CLI package itself
 ails dismiss CORE:C:0001        # Dismiss a semantic finding
+ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
 ails version                    # Show version info
 ```
 
@@ -118,10 +122,12 @@ ails version                    # Show version info
 |---------|-------------|
 | `setup [PATH]` | Set up MCP server for detected agents |
 | `check [PATH]` | Validate instruction files |
+| `heal [PATH]` | Interactive auto-fix + semantic evaluation |
 | `explain RULE_ID` | Show rule details |
 | `map [PATH]` | Discover project structure |
 | `update` | Update rules framework + recommended |
 | `dismiss RULE_ID` | Dismiss a semantic finding |
+| `judge PATH VERDICTS` | Cache semantic verdicts |
 | `version` | Show version info |
 
 ## Updating

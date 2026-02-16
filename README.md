@@ -135,7 +135,9 @@ ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
 ails check --exclude-dir vendor # Exclude directory from scanning
+ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
 ails heal                       # Interactive auto-fix + semantic evaluation
+ails heal --non-interactive     # JSON output for agents and scripts
 ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
