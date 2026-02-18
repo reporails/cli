@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.agents import clear_agent_cache
+from reporails_cli.core.agents import KNOWN_AGENTS, clear_agent_cache
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -45,10 +45,16 @@ def _clear_caches() -> None:
 
 @pytest.fixture
 def minimal_project(tmp_path: Path) -> Path:
-    """Bare CLAUDE.md — L2 project."""
+    """Bare project with both AGENTS.md and CLAUDE.md — L2 project.
+
+    AGENTS.md is scanned by the generic default (no --agent).
+    CLAUDE.md is scanned when tests pass --agent claude.
+    """
     p = tmp_path / "proj"
     p.mkdir()
-    (p / "CLAUDE.md").write_text("# My Project\n\nProject description.\n\n## Commands\n\n- `make build`\n")
+    content = "# My Project\n\nProject description.\n\n## Commands\n\n- `make build`\n"
+    (p / "AGENTS.md").write_text(content)
+    (p / "CLAUDE.md").write_text(content)
     return p
 
 
@@ -236,7 +242,9 @@ class TestCheckTextOutput:
 
     @requires_rules
     def test_violations_grouped_by_file(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "text", "-q", "--no-update-check"])
+        result = runner.invoke(
+            app, ["check", str(minimal_project), "--agent", "claude", "-f", "text", "-q", "--no-update-check"]
+        )
         assert result.exit_code == 0
         assert "CLAUDE.md" in result.output
 
@@ -543,6 +551,155 @@ class TestCheckFlags:
     def test_brief_format(self, minimal_project: Path) -> None:
         """-f brief should produce output."""
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "brief", "--no-update-check"])
+        assert result.exit_code == 0
+
+
+# ===========================================================================
+# CHECK COMMAND — Agent Flag
+# ===========================================================================
+
+
+class TestCheckAgentFlag:
+    """--agent flag must scope file discovery and adapt hints per agent."""
+
+    def test_no_agent_hints_agents_md(self, empty_project: Path) -> None:
+        """No --agent flag should hint AGENTS.md (agents.md standard)."""
+        result = runner.invoke(app, ["check", str(empty_project), "--no-update-check"])
+        assert "Create a AGENTS.md to get started" in result.output
+
+    def test_no_files_hint_claude(self, empty_project: Path) -> None:
+        """--agent claude should hint CLAUDE.md."""
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "claude", "--no-update-check"])
+        assert "Create a CLAUDE.md to get started" in result.output
+
+    def test_no_files_hint_codex(self, empty_project: Path) -> None:
+        """--agent codex should hint AGENTS.md, not CLAUDE.md."""
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "codex", "--no-update-check"])
+        assert "Create a AGENTS.md to get started" in result.output
+        assert "CLAUDE.md" not in result.output
+
+    def test_no_files_hint_cursor(self, empty_project: Path) -> None:
+        """--agent cursor should hint .cursorrules."""
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "cursor", "--no-update-check"])
+        assert "Create a .cursorrules to get started" in result.output
+
+    def test_no_files_hint_copilot(self, empty_project: Path) -> None:
+        """--agent copilot should hint its instruction file."""
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "copilot", "--no-update-check"])
+        assert "Create a .github/copilot-instructions.md to get started" in result.output
+
+    def test_unknown_agent_errors(self, empty_project: Path) -> None:
+        """Unknown agent must error with exit code 2 and list known agents."""
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "somefuture", "--no-update-check"])
+        assert result.exit_code == 2
+        assert "Unknown agent" in result.output
+        assert "claude" in result.output
+
+    def test_wrong_agent_no_false_positive(self, tmp_path: Path) -> None:
+        """--agent claude on a project with only AGENTS.md must NOT scan it."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
+        result = runner.invoke(app, ["check", str(p), "--agent", "claude", "--no-update-check"])
+        assert "No instruction files found" in result.output
+
+    @requires_rules
+    def test_codex_agent_scans_agents_md(self, tmp_path: Path) -> None:
+        """--agent codex should find and validate AGENTS.md."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "AGENTS.md").write_text("# Agents\n\nInstructions for Codex.\n")
+        result = runner.invoke(app, ["check", str(p), "--agent", "codex", "-f", "json", "--no-update-check"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "score" in data
+        assert data["level"] != "L1", "AGENTS.md should be detected, not L1 Absent"
+
+    @requires_rules
+    def test_no_agent_core_rules_fire(self, tmp_path: Path) -> None:
+        """No --agent must still apply core rules (not just file presence)."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
+        result = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["level"] != "L1"
+        # Core content/structure rules must fire, not just CORE:S:0001
+        checked = data.get("summary", {}).get("rules_checked", 0)
+        assert checked > 3, f"Only {checked} rules checked — core rules not resolving targets"
+
+
+# ===========================================================================
+# CHECK COMMAND — Agent Cross-Validation
+# ===========================================================================
+
+
+class TestAgentCrossValidation:
+    """KNOWN_AGENTS must stay in sync with the rules framework agent configs."""
+
+    @requires_rules
+    def test_framework_agents_in_known_agents(self) -> None:
+        """Every agent dir in the rules framework must have an entry in KNOWN_AGENTS."""
+        from reporails_cli.core.agents import KNOWN_AGENTS
+        from reporails_cli.core.bootstrap import get_rules_path
+
+        agents_dir = get_rules_path() / "agents"
+        if not agents_dir.is_dir():
+            pytest.skip("No agents directory in rules framework")
+
+        framework_agents = {d.name for d in agents_dir.iterdir() if d.is_dir() and (d / "config.yml").exists()}
+        missing = framework_agents - set(KNOWN_AGENTS)
+        assert not missing, (
+            f"Rules framework has agent configs not in KNOWN_AGENTS: {missing}. "
+            f"Add them to KNOWN_AGENTS in src/reporails_cli/core/agents.py"
+        )
+
+
+# ===========================================================================
+# CHECK COMMAND — Agent Matrix (derived from KNOWN_AGENTS, not manual)
+# ===========================================================================
+
+
+# Agents whose first instruction pattern is YAML, not markdown — skip file-detection
+# test since the rules engine expects markdown content.
+_YAML_AGENTS = {"aider"}
+
+
+class TestAgentMatrix:
+    """Every known agent must produce a valid check result against its instruction file.
+
+    Parametrized directly from KNOWN_AGENTS so new agents get coverage automatically.
+    """
+
+    @requires_rules
+    @pytest.mark.parametrize("agent_id", sorted(KNOWN_AGENTS))
+    def test_agent_check_finds_files(self, agent_id: str, tmp_path: Path) -> None:
+        """ails check --agent X must detect the agent's instruction file."""
+        if agent_id in _YAML_AGENTS:
+            pytest.skip(f"{agent_id} uses YAML instruction files")
+
+        agent_type = KNOWN_AGENTS[agent_id]
+        # Use first instruction pattern (strip glob wildcards for file creation)
+        filename = agent_type.instruction_patterns[0].replace("**/", "")
+        p = tmp_path / "proj"
+        p.mkdir()
+        target = p / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"# {agent_type.name}\n\nInstructions.\n")
+
+        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "-f", "json", "--no-update-check"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["level"] != "L1", f"--agent {agent_id} should detect {filename}, got L1 Absent"
+
+    @requires_rules
+    @pytest.mark.parametrize("agent_id", sorted(KNOWN_AGENTS))
+    def test_agent_check_no_crash(self, agent_id: str, tmp_path: Path) -> None:
+        """ails check --agent X must not crash on an empty project."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "--no-update-check"])
         assert result.exit_code == 0
 
 
