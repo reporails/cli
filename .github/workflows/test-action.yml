@@ -1,5 +1,6 @@
 # Regression tests for the composite action at action/.
 # Runs pass and fail scenarios to verify shell logic, output capture, and gates.
+# All jobs use from-source to test the action against the branch CLI, not PyPI.
 
 name: Test Action
 on:
@@ -16,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./action
         id: check
+        with:
+          from-source: "true"
       - name: Verify outputs
         env:
           SCORE: ${{ steps.check.outputs.score }}
@@ -40,10 +43,13 @@ jobs:
         with:
           agent: claude
           exclude-dir: "vendor,dist"
+          from-source: "true"
       - name: Verify agent was applied
+        env:
+          SCORE: ${{ steps.check.outputs.score }}
         run: |
-          echo "score=${{ steps.check.outputs.score }}"
-          [ "${{ steps.check.outputs.score }}" != "0" ] || { echo "FAIL: score is 0"; exit 1; }
+          echo "score=$SCORE"
+          [ "$SCORE" != "0" ] || { echo "FAIL: score is 0"; exit 1; }
 
   pass-min-score:
     name: "Pass: min-score gate"
@@ -53,6 +59,7 @@ jobs:
       - uses: ./action
         with:
           min-score: "5"
+          from-source: "true"
 
   # --- Fail scenarios ---
 
@@ -66,6 +73,7 @@ jobs:
         continue-on-error: true
         with:
           min-score: "11"
+          from-source: "true"
       - name: Verify failure
         if: steps.should-fail.outcome != 'failure'
         run: |
@@ -80,22 +88,27 @@ jobs:
       - name: Create fixture with violations
         run: |
           mkdir -p /tmp/bad-project
-          echo "# Instructions" > /tmp/bad-project/AGENTS.md
+          echo "# Instructions" > /tmp/bad-project/CLAUDE.md
       - uses: ./action
         id: should-fail
         continue-on-error: true
         with:
           path: /tmp/bad-project
+          agent: claude
           strict: "true"
+          from-source: "true"
       - name: Verify failure
+        env:
+          OUTCOME: ${{ steps.should-fail.outcome }}
+          VIOLATIONS: ${{ steps.should-fail.outputs.violations }}
         run: |
-          echo "outcome=${{ steps.should-fail.outcome }}"
-          echo "violations=${{ steps.should-fail.outputs.violations }}"
-          if [ "${{ steps.should-fail.outcome }}" != "failure" ]; then
-            echo "Expected failure from strict mode but got: ${{ steps.should-fail.outcome }}"
+          echo "outcome=$OUTCOME"
+          echo "violations=$VIOLATIONS"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "Expected failure from strict mode but got: $OUTCOME"
             exit 1
           fi
-          if [ "${{ steps.should-fail.outputs.violations }}" = "0" ]; then
+          if [ "$VIOLATIONS" = "0" ]; then
             echo "Expected violations > 0"
             exit 1
           fi
