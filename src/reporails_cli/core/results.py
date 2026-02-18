@@ -128,7 +128,7 @@ class GlobalConfig:
 
 
 @dataclass
-class ProjectConfig:
+class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     """Project-level configuration (.reporails/config.yml)."""
 
     framework_version: str | None = None  # Pin version
@@ -138,6 +138,7 @@ class ProjectConfig:
     experimental: bool | list[str] = False  # True, False, or list of rule IDs
     recommended: bool = True  # Include recommended rules (opt out with false)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
+    default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
 
 
 # =============================================================================

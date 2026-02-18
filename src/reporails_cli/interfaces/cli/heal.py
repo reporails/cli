@@ -24,6 +24,7 @@ from reporails_cli.formatters.text.heal import format_heal_summary, format_judgm
 from reporails_cli.interfaces.cli.helpers import (
     _resolve_recommended_rules,
     _resolve_rules_paths,
+    _validate_agent,
     app,
     console,
 )
@@ -51,9 +52,9 @@ def heal(  # pylint: disable=too-many-locals
         help="Use ASCII characters only (no Unicode box drawing)",
     ),
     agent: str = typer.Option(
-        "claude",
+        "",
         "--agent",
-        help="Agent type for rule overrides and template vars",
+        help="Agent type for rule overrides and template vars (e.g., claude, cursor, codex)",
     ),
     experimental: bool = typer.Option(
         False,
@@ -77,6 +78,9 @@ def heal(  # pylint: disable=too-many-locals
         console.print("[dim]  3. Run ails heal in your actual terminal[/dim]")
         raise typer.Exit(2)
 
+    # Normalize and validate agent
+    agent = _validate_agent(agent, console)
+
     target = Path(path).resolve()
     if not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
@@ -89,6 +93,10 @@ def heal(  # pylint: disable=too-many-locals
     from reporails_cli.core.bootstrap import get_project_config
 
     project_config = get_project_config(target)
+
+    # Resolve effective agent: CLI flag > config default_agent > engine defaults to generic
+    if not agent and project_config.default_agent:
+        agent = _validate_agent(project_config.default_agent, console)
 
     # Merge exclude_dirs
     merged_excludes: list[str] | None = None

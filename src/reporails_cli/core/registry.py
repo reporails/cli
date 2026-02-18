@@ -129,9 +129,6 @@ def load_rules(  # pylint: disable=too-many-locals
     if agent:
         agent_rules_path = primary / "agents" / agent / "rules"
         rules.update(_load_from_path(agent_rules_path))
-    else:
-        agents_path = primary / "agents"
-        rules.update(_load_from_path(agents_path))
 
     # 2. Load additional rule sources
     for extra in extra_paths:
