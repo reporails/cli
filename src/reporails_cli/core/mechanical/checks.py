@@ -140,8 +140,11 @@ def git_tracked(
     _args: dict[str, Any],
     _vars: dict[str, str | list[str]],
 ) -> CheckResult:
-    """Check that the project is git-tracked."""
-    if (root / ".git").exists():
+    """Check that the project is git-tracked.
+
+    In test fixtures, .git_marker stands in for .git (git cannot track .git paths).
+    """
+    if (root / ".git").exists() or (root / ".git_marker").exists():
         return CheckResult(passed=True, message="Git repository detected")
     return CheckResult(passed=False, message="Not a git repository")
 
