@@ -271,7 +271,8 @@ def main() -> None:
 
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
-import reporails_cli.interfaces.cli.setup  # noqa: F401, E402  # Register setup command
+import reporails_cli.interfaces.cli.setup  # noqa: E402  # Register setup command
+import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
 
 if __name__ == "__main__":
     main()
