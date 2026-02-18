@@ -793,7 +793,7 @@ class TestHealCommand:
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
         monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
-        result = runner.invoke(app, ["heal", str(p)], input="s\n" * 50, catch_exceptions=False)
+        result = runner.invoke(app, ["heal", str(p)], input="s\n" * 50)
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 

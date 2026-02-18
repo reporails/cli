@@ -39,3 +39,4 @@
 - Tests: Integration hint tests now force `-f text` (were failing in CI where `CI=true` defaults to JSON)
 - Tests: Heal tests use targeted `_is_interactive` mock instead of full `sys` mock (was causing TypeError in CI)
 - Action: Strict test fixture uses wall-of-prose CLAUDE.md that triggers core rule violations
+- Engine: Rule compiler crashes on `paths: include: null` in YAML rules — `dict.get()` returns `None` not default when key exists with null value (was `TypeError: 'NoneType' object is not iterable`)
