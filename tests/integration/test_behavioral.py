@@ -786,17 +786,14 @@ class TestHealCommand:
         assert result.exit_code != 0
 
     @requires_rules
-    def test_heal_auto_fixes_applied(self, tmp_path: Path) -> None:
+    def test_heal_auto_fixes_applied(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Auto-fixers should modify the file and report what they fixed."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="s\n" * 50)
+        monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
+        result = runner.invoke(app, ["heal", str(p)], input="s\n" * 50)
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 
@@ -806,19 +803,16 @@ class TestHealCommand:
             assert len(content) > len(original)
 
     @requires_rules
-    def test_heal_pass_verdict_cached(self, tmp_path: Path) -> None:
+    def test_heal_pass_verdict_cached(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Passing a semantic rule should cache the verdict."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text(
             "# Project\n\n## Commands\n\n- `make build`\n\n## Constraints\n\n- NEVER commit secrets\n"
         )
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="p\n" * 50)
+        monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
+        result = runner.invoke(app, ["heal", str(p)], input="p\n" * 50)
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 
@@ -831,71 +825,57 @@ class TestHealCommand:
                 assert cache.cache_dir.exists()
 
     @requires_rules
-    def test_heal_fail_verdict_with_reason(self, tmp_path: Path) -> None:
+    def test_heal_fail_verdict_with_reason(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Failing a semantic rule should prompt for reason and cache it."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="f\nNot good enough\n" + "s\n" * 50)
+        monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
+        result = runner.invoke(app, ["heal", str(p)], input="f\nNot good enough\n" + "s\n" * 50)
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
         if "verdict" in result.output.lower():
             assert "Failed" in result.output or "Skipped" in result.output
 
     @requires_rules
-    def test_heal_dismiss_verdict(self, tmp_path: Path) -> None:
+    def test_heal_dismiss_verdict(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Dismissing a semantic rule should cache it as pass."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
+        monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
+        result = runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 
     @requires_rules
-    def test_heal_nothing_to_heal(self, tmp_path: Path) -> None:
+    def test_heal_nothing_to_heal(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When all rules pass or are cached, heal should say nothing to do."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
         # First pass — dismiss everything
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
+        monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
+        runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
 
         # Second pass — everything should be cached
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="")
+        result = runner.invoke(app, ["heal", str(p)], input="")
 
         assert result.exit_code in (0, None)
         assert "Nothing to heal" in result.output or "Fixed" in result.output or "0" in result.output
 
     @requires_rules
-    def test_heal_summary_shows_counts(self, tmp_path: Path) -> None:
+    def test_heal_summary_shows_counts(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Heal summary should report pass/fail/skip/dismiss counts."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="p\n" + "s\n" * 50)
+        monkeypatch.setattr("reporails_cli.interfaces.cli.heal._is_interactive", lambda: True)
+        result = runner.invoke(app, ["heal", str(p)], input="p\n" + "s\n" * 50)
 
         assert result.exit_code in (0, None)
         output_lower = result.output.lower()
