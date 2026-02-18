@@ -36,3 +36,4 @@
 - Engine: Without `--agent`, was scanning all agent files with identical rules — now defaults to generic (AGENTS.md only)
 - Heal: Default `--agent` changed from `claude` to empty (matching `check` command)
 - Rules: Without `--agent`, no longer loads all agent rules indiscriminately — core rules only
+- Tests: Integration hint tests now force `-f text` (were failing in CI where `CI=true` defaults to JSON)
