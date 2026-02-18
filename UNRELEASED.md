@@ -5,7 +5,13 @@
 - Agents: Add generic agent config at rules level — targets AGENTS.md per agents.md convention
 - Config: Add `default_agent` option in `.reporails/config.yml` — sets agent when `--agent` not specified (CLI flag overrides)
 
+### Added
+- [META]: Add `.reporails/config.yml` with `default_agent`, `exclude_dirs`, and `disabled_rules`
+
 ### Changed
+- [DOCS]: Restructure CLAUDE.md for ails check compliance (Boundaries, Testing, Commands sections)
+- [DOCS]: Rephrase bare prohibitions in rule files to include actionable alternatives
+- [META]: Add templates module to backbone.yml
 - CLI: No `--agent` now defaults to "generic" (AGENTS.md only) instead of scanning all agents' files
 - Rules: No `--agent` flag loads core rules only; agent-specific rules require explicit `--agent`
 

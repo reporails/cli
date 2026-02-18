@@ -19,10 +19,9 @@ paths: ["src/**/*.py"]  # Optional: scope to specific files
 - Another instruction
 ```
 
-## Guidelines
+## Constraints
 
 - One concern per file (e.g., access control separate from styling)
-- Keep under 500 lines - everything consumes tokens
+- Keep under 500 lines — everything consumes tokens
 - Use descriptive filenames (`api-validation.md` not `rules1.md`)
-- Add `paths` frontmatter to reduce noise when not relevant
-- No paths = loads globally for all files
+- Add `paths` frontmatter to scope rules to relevant files; omit for global rules
