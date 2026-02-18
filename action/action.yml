@@ -26,6 +26,9 @@ inputs:
   version:
     description: 'CLI version to install (e.g., 0.3.0). Defaults to latest.'
     default: ''
+  from-source:
+    description: 'Install CLI from local checkout instead of PyPI (for CI testing of the action itself).'
+    default: 'false'
 
 outputs:
   score:
@@ -52,7 +55,9 @@ runs:
     - name: Install reporails CLI
       shell: bash
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
+        if [ "${{ inputs.from-source }}" = "true" ]; then
+          pip install "${{ github.workspace }}" --quiet
+        elif [ -n "${{ inputs.version }}" ]; then
           pip install "reporails-cli==${{ inputs.version }}" --quiet
         else
           pip install reporails-cli --quiet
