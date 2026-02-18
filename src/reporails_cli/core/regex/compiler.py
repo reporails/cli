@@ -79,7 +79,7 @@ def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
 
     # Extract path filters
     paths_config = rule_entry.get("paths", {})
-    path_includes = tuple(paths_config.get("include", []))
+    path_includes = tuple(paths_config.get("include") or [])
 
     operator = _get_operator(rule_entry)
 
