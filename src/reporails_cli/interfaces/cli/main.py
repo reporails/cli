@@ -147,11 +147,12 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Early check for missing instruction files
     output_format = format if format else _default_format()
-    from reporails_cli.core.agents import detect_agents, filter_agents_by_id
+    from reporails_cli.core.agents import detect_agents, filter_agents_by_exclude_dirs, filter_agents_by_id
 
     effective_agent = agent if agent else "generic"
     all_detected_agents = detect_agents(target)
     filtered_agents = filter_agents_by_id(all_detected_agents, effective_agent)
+    filtered_agents = filter_agents_by_exclude_dirs(filtered_agents, target, merged_excludes)
     instruction_files = get_all_instruction_files(target, agents=filtered_agents)
     if not instruction_files:
         _handle_no_instruction_files(effective_agent, output_format, console)
