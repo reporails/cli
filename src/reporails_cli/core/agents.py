@@ -185,6 +185,45 @@ def filter_agents_by_id(agents: list[DetectedAgent], agent_id: str) -> list[Dete
     return [agent for agent in agents if agent.agent_type.id == agent_id]
 
 
+def _path_parts(file: Path, target: Path) -> set[str]:
+    """Return the set of path components of file relative to target."""
+    try:
+        return set(file.relative_to(target).parts)
+    except ValueError:
+        return set()
+
+
+def filter_agents_by_exclude_dirs(
+    agents: list[DetectedAgent],
+    target: Path,
+    exclude_dirs: list[str] | None,
+) -> list[DetectedAgent]:
+    """Remove files in excluded directories from detected agents.
+
+    Applied after detect_agents() so the cache is unaffected. Filters
+    instruction_files and rule_files; drops agents with no remaining
+    instruction files.
+    """
+    if not exclude_dirs:
+        return agents
+    exclude_set = set(exclude_dirs)
+    filtered: list[DetectedAgent] = []
+    for agent in agents:
+        inst = [f for f in agent.instruction_files if not (_path_parts(f, target) & exclude_set)]
+        rules = [f for f in agent.rule_files if not (_path_parts(f, target) & exclude_set)]
+        if inst:  # Only keep agent if it still has instruction files
+            filtered.append(
+                DetectedAgent(
+                    agent_type=agent.agent_type,
+                    instruction_files=inst,
+                    config_files=agent.config_files,
+                    rule_files=rules,
+                    detected_directories=agent.detected_directories,
+                )
+            )
+    return filtered
+
+
 def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
     """
     Get all instruction files for all detected agents.
