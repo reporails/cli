@@ -564,28 +564,36 @@ class TestCheckAgentFlag:
 
     def test_no_agent_hints_agents_md(self, empty_project: Path) -> None:
         """No --agent flag should hint AGENTS.md (agents.md standard)."""
-        result = runner.invoke(app, ["check", str(empty_project), "--no-update-check"])
+        result = runner.invoke(app, ["check", str(empty_project), "-f", "text", "--no-update-check"])
         assert "Create a AGENTS.md to get started" in result.output
 
     def test_no_files_hint_claude(self, empty_project: Path) -> None:
         """--agent claude should hint CLAUDE.md."""
-        result = runner.invoke(app, ["check", str(empty_project), "--agent", "claude", "--no-update-check"])
+        result = runner.invoke(
+            app, ["check", str(empty_project), "--agent", "claude", "-f", "text", "--no-update-check"]
+        )
         assert "Create a CLAUDE.md to get started" in result.output
 
     def test_no_files_hint_codex(self, empty_project: Path) -> None:
         """--agent codex should hint AGENTS.md, not CLAUDE.md."""
-        result = runner.invoke(app, ["check", str(empty_project), "--agent", "codex", "--no-update-check"])
+        result = runner.invoke(
+            app, ["check", str(empty_project), "--agent", "codex", "-f", "text", "--no-update-check"]
+        )
         assert "Create a AGENTS.md to get started" in result.output
         assert "CLAUDE.md" not in result.output
 
     def test_no_files_hint_cursor(self, empty_project: Path) -> None:
         """--agent cursor should hint .cursorrules."""
-        result = runner.invoke(app, ["check", str(empty_project), "--agent", "cursor", "--no-update-check"])
+        result = runner.invoke(
+            app, ["check", str(empty_project), "--agent", "cursor", "-f", "text", "--no-update-check"]
+        )
         assert "Create a .cursorrules to get started" in result.output
 
     def test_no_files_hint_copilot(self, empty_project: Path) -> None:
         """--agent copilot should hint its instruction file."""
-        result = runner.invoke(app, ["check", str(empty_project), "--agent", "copilot", "--no-update-check"])
+        result = runner.invoke(
+            app, ["check", str(empty_project), "--agent", "copilot", "-f", "text", "--no-update-check"]
+        )
         assert "Create a .github/copilot-instructions.md to get started" in result.output
 
     def test_unknown_agent_errors(self, empty_project: Path) -> None:
@@ -600,7 +608,7 @@ class TestCheckAgentFlag:
         p = tmp_path / "proj"
         p.mkdir()
         (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
-        result = runner.invoke(app, ["check", str(p), "--agent", "claude", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(p), "--agent", "claude", "-f", "text", "--no-update-check"])
         assert "No instruction files found" in result.output
 
     @requires_rules

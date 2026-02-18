@@ -4,6 +4,8 @@
 
 name: Test Action
 on:
+  push:
+    branches: [main, 0.4.0]
   pull_request:
     branches: [main]
 
