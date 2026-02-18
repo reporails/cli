@@ -1,0 +1,694 @@
+"""E2E smoke tests — validate user-facing CLI behavior against realistic projects.
+
+These tests use committed fixture projects (not tmp_path stubs) to catch
+bugs that unit/integration tests miss: wrong default agent, cross-agent
+contamination, empty template context, hardcoded hints.
+
+Every test here maps to a real user-reported bug from the 0.3.0 cycle.
+
+Design principle: these tests are mutation-tested. Each assertion is chosen
+to FAIL when the corresponding bug is reintroduced. Tests that skip on
+zero violations are forbidden — zero violations from a fixture designed to
+produce them IS the bug.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from reporails_cli.core.agents import clear_agent_cache
+from reporails_cli.interfaces.cli.main import app
+
+runner = CliRunner()
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "projects"
+
+
+def _rules_installed() -> bool:
+    from reporails_cli.core.bootstrap import get_rules_path
+
+    return (get_rules_path() / "core").exists()
+
+
+requires_rules = pytest.mark.skipif(
+    not _rules_installed(),
+    reason="Rules framework not installed",
+)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_caches() -> None:
+    """Clear module-level caches between tests."""
+    clear_agent_cache()
+
+
+@pytest.fixture
+def claude_only() -> Path:
+    return FIXTURES / "claude_only"
+
+
+@pytest.fixture
+def codex_only() -> Path:
+    return FIXTURES / "codex_only"
+
+
+@pytest.fixture
+def copilot_only() -> Path:
+    return FIXTURES / "copilot_only"
+
+
+@pytest.fixture
+def multi_agent() -> Path:
+    return FIXTURES / "multi_agent"
+
+
+@pytest.fixture
+def generic_only() -> Path:
+    return FIXTURES / "generic_only"
+
+
+@pytest.fixture
+def nested_claude() -> Path:
+    return FIXTURES / "nested_claude"
+
+
+@pytest.fixture
+def config_only() -> Path:
+    return FIXTURES / "config_only"
+
+
+@pytest.fixture
+def multi_agent_with_config() -> Path:
+    return FIXTURES / "multi_agent_with_config"
+
+
+@pytest.fixture
+def empty_dir(tmp_path: Path) -> Path:
+    p = tmp_path / "empty"
+    p.mkdir()
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _check_json(path: Path, agent: str = "") -> dict:
+    """Run ails check and return parsed JSON output."""
+    args = ["check", str(path), "-f", "json", "--no-update-check"]
+    if agent:
+        args.extend(["--agent", agent])
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, f"check failed (exit {result.exit_code}):\n{result.output}"
+    return json.loads(result.output)
+
+
+def _check_text(path: Path, agent: str = "") -> str:
+    """Run ails check and return text output."""
+    args = ["check", str(path), "-f", "text", "--no-update-check"]
+    if agent:
+        args.extend(["--agent", agent])
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, f"check failed (exit {result.exit_code}):\n{result.output}"
+    return result.output
+
+
+def _violation_rule_ids(data: dict) -> set[str]:
+    """Extract all rule IDs from violations."""
+    return {v["rule_id"] for v in data["violations"]}
+
+
+def _violation_namespaces(data: dict) -> set[str]:
+    """Extract unique rule namespaces (prefix before first colon)."""
+    return {v["rule_id"].split(":")[0] for v in data["violations"]}
+
+
+def _violation_files(data: dict) -> set[str]:
+    """Extract unique file names from violation locations (strip line numbers)."""
+    return {v["location"].split(":")[0] for v in data["violations"]}
+
+
+# ===========================================================================
+# Default Agent — Core Rules Only
+#
+# Bug guarded: empty --agent default caused template context to be empty,
+# rules couldn't resolve {{instruction_files}}, zero violations on real
+# projects. The key assertion is violations > 0, NOT rules_checked > 0.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestDefaultAgentCoreOnly:
+    """No --agent flag must apply core rules and produce real violations."""
+
+    @requires_rules
+    def test_core_rules_produce_violations(self, generic_only: Path) -> None:
+        """Without --agent, core rules must produce violations on fixture content.
+
+        This catches Bug 3 (empty template context): rules_checked can be >0
+        even when templates don't resolve — but violations will be 0 because
+        no files match the unresolved {{instruction_files}} glob.
+        """
+        data = _check_json(generic_only)
+        assert len(data["violations"]) > 0, (
+            f"Zero violations on generic_only fixture — core rules not matching files. "
+            f"rules_checked={data.get('summary', {}).get('rules_checked', 0)}, "
+            f"score={data['score']}"
+        )
+
+    @requires_rules
+    def test_score_below_perfect(self, generic_only: Path) -> None:
+        """Fixture content has known gaps; score must not be 10.0.
+
+        A perfect score on imperfect content means rules aren't firing.
+        """
+        data = _check_json(generic_only)
+        assert data["score"] < 10.0, "Perfect score on generic_only fixture — rules are loaded but not matching content"
+
+    @requires_rules
+    def test_no_agent_namespaced_violations(self, generic_only: Path) -> None:
+        """Without --agent, no agent-specific rules should fire."""
+        data = _check_json(generic_only)
+        namespaces = _violation_namespaces(data)
+        for ns in ("CLAUDE", "CODEX", "COPILOT", "CURSOR", "WINDSURF"):
+            assert ns not in namespaces, f"Agent-specific namespace {ns} fired without --agent"
+
+    @requires_rules
+    def test_no_agent_fewer_rules_than_any_agent(self, claude_only: Path) -> None:
+        """Without --agent, rules_checked must be <= any specific agent's count.
+
+        This catches Bug 2 (all agent rules loaded without --agent): loading
+        all agents' rules inflates rules_checked above any single agent's count.
+        Core-only (no agent) must always check fewer rules than core+agent.
+        """
+        data_no_agent = _check_json(claude_only)
+        data_with_agent = _check_json(claude_only, agent="claude")
+        no_agent_count = data_no_agent.get("summary", {}).get("rules_checked", 0)
+        with_agent_count = data_with_agent.get("summary", {}).get("rules_checked", 0)
+        assert no_agent_count <= with_agent_count, (
+            f"No-agent checked {no_agent_count} rules but --agent claude checked {with_agent_count}. "
+            f"No-agent should check fewer (core only), not more (all agents loaded)."
+        )
+
+    @requires_rules
+    def test_files_detected(self, generic_only: Path) -> None:
+        """Without --agent, auto-detect must find AGENTS.md and not report L1."""
+        data = _check_json(generic_only)
+        assert data["level"] != "L1", "AGENTS.md should be detected, got L1 Absent"
+
+
+# ===========================================================================
+# Agent File Targeting
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestAgentFileTargeting:
+    """--agent flag must scope file discovery to the correct instruction file."""
+
+    @requires_rules
+    def test_claude_finds_claude_md(self, claude_only: Path) -> None:
+        data = _check_json(claude_only, agent="claude")
+        assert data["level"] != "L1", "--agent claude should detect CLAUDE.md"
+
+    @requires_rules
+    def test_codex_finds_agents_md(self, codex_only: Path) -> None:
+        data = _check_json(codex_only, agent="codex")
+        assert data["level"] != "L1", "--agent codex should detect AGENTS.md"
+
+    @requires_rules
+    def test_copilot_finds_its_file(self, copilot_only: Path) -> None:
+        data = _check_json(copilot_only, agent="copilot")
+        assert data["level"] != "L1", "--agent copilot should detect copilot-instructions.md"
+
+    def test_wrong_agent_claude_on_codex(self, codex_only: Path) -> None:
+        """--agent claude on a codex-only project must find no files."""
+        output = _check_text(codex_only, agent="claude")
+        assert "No instruction files found" in output
+
+    def test_wrong_agent_codex_on_claude(self, claude_only: Path) -> None:
+        """--agent codex on a claude-only project must find no files."""
+        output = _check_text(claude_only, agent="codex")
+        assert "No instruction files found" in output
+
+
+# ===========================================================================
+# Cross-Agent Contamination
+#
+# Bug guarded: loading all agent rules when no agent specified. The test
+# must assert violations exist AND contain only allowed namespaces.
+# Checking only namespaces on an empty violation list proves nothing.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestCrossAgentContamination:
+    """Agent-scoped validation must never leak rules from other agents."""
+
+    @requires_rules
+    def test_codex_no_claude_rules(self, codex_only: Path) -> None:
+        """--agent codex must produce violations, none from CLAUDE namespace."""
+        data = _check_json(codex_only, agent="codex")
+        assert len(data["violations"]) > 0, "Codex fixture must produce violations"
+        claude_rules = {r for r in _violation_rule_ids(data) if r.startswith("CLAUDE:")}
+        assert not claude_rules, f"CLAUDE rules fired under --agent codex: {claude_rules}"
+
+    @requires_rules
+    def test_claude_no_other_agent_rules(self, claude_only: Path) -> None:
+        """--agent claude must produce violations, none from other agent namespaces."""
+        data = _check_json(claude_only, agent="claude")
+        assert len(data["violations"]) > 0, "Claude fixture must produce violations"
+        foreign = {
+            r for r in _violation_rule_ids(data) if r.split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "WINDSURF")
+        }
+        assert not foreign, f"Foreign agent rules fired under --agent claude: {foreign}"
+
+    @requires_rules
+    def test_no_agent_multi_project_core_only(self, multi_agent: Path) -> None:
+        """No --agent on a multi-agent project must produce violations, only CORE/RRAILS."""
+        data = _check_json(multi_agent)
+        assert len(data["violations"]) > 0, "Multi-agent fixture must produce violations without --agent"
+        agent_ns = _violation_namespaces(data) - {"CORE", "RRAILS"}
+        assert not agent_ns, f"Agent-namespaced rules fired without --agent: {agent_ns}"
+
+
+# ===========================================================================
+# Hint Messages
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestHintMessages:
+    """Empty-project hints must name the correct instruction file per agent."""
+
+    def test_no_agent_hints_agents_md(self, empty_dir: Path) -> None:
+        output = _check_text(empty_dir)
+        assert "AGENTS.md" in output, "Default hint should reference AGENTS.md"
+        assert "CLAUDE.md" not in output, "Default hint must not reference CLAUDE.md"
+
+    def test_claude_hints_claude_md(self, empty_dir: Path) -> None:
+        output = _check_text(empty_dir, agent="claude")
+        assert "CLAUDE.md" in output
+
+    def test_codex_hints_agents_md(self, empty_dir: Path) -> None:
+        output = _check_text(empty_dir, agent="codex")
+        assert "AGENTS.md" in output
+
+    def test_copilot_hints_its_file(self, empty_dir: Path) -> None:
+        output = _check_text(empty_dir, agent="copilot")
+        assert "copilot-instructions.md" in output
+
+
+# ===========================================================================
+# Multi-Agent Project
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestMultiAgentProject:
+    """Multi-agent projects must scope correctly per --agent flag."""
+
+    @requires_rules
+    def test_no_agent_scans_generic_only(self, multi_agent: Path) -> None:
+        """Without --agent, only AGENTS.md (generic) is scanned — not all agents' files."""
+        data = _check_json(multi_agent)
+        assert data["level"] != "L1", "Multi-agent project should not be L1"
+        assert len(data["violations"]) > 0, "Multi-agent fixture must produce violations"
+        files = _violation_files(data)
+        assert files == {"AGENTS.md"}, f"No-agent should only scan AGENTS.md (generic), got: {files}"
+
+    @requires_rules
+    def test_agent_claude_scopes_to_claude_md(self, multi_agent: Path) -> None:
+        """--agent claude on multi-agent project should scope to CLAUDE.md."""
+        data = _check_json(multi_agent, agent="claude")
+        assert data["level"] != "L1"
+        assert len(data["violations"]) > 0, "Claude on multi-agent must produce violations"
+        namespaces = _violation_namespaces(data)
+        foreign = namespaces - {"CORE", "RRAILS", "CLAUDE"}
+        assert not foreign, f"Non-Claude rules fired with --agent claude: {foreign}"
+
+    @requires_rules
+    def test_agent_codex_scopes_to_agents_md(self, multi_agent: Path) -> None:
+        """--agent codex on multi-agent project should scope to AGENTS.md."""
+        data = _check_json(multi_agent, agent="codex")
+        assert data["level"] != "L1"
+        assert len(data["violations"]) > 0, "Codex on multi-agent must produce violations"
+        namespaces = _violation_namespaces(data)
+        foreign = namespaces - {"CORE", "RRAILS", "CODEX"}
+        assert not foreign, f"Non-Codex rules fired with --agent codex: {foreign}"
+
+
+# ===========================================================================
+# Violation Location Accuracy
+#
+# These tests MUST NOT skip on zero violations. The fixtures are designed
+# to produce violations. Zero violations means the engine is broken.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestViolationLocationAccuracy:
+    """Violation locations must reference the correct file, not a wrong one."""
+
+    @requires_rules
+    def test_claude_violations_reference_claude_md(self, claude_only: Path) -> None:
+        """--agent claude violations must all reference CLAUDE.md."""
+        data = _check_json(claude_only, agent="claude")
+        assert len(data["violations"]) > 0, "Claude fixture must produce violations"
+        files = _violation_files(data)
+        assert files == {"CLAUDE.md"}, f"Expected only CLAUDE.md, got: {files}"
+
+    @requires_rules
+    def test_codex_violations_reference_agents_md(self, codex_only: Path) -> None:
+        """--agent codex violations must all reference AGENTS.md."""
+        data = _check_json(codex_only, agent="codex")
+        assert len(data["violations"]) > 0, "Codex fixture must produce violations"
+        files = _violation_files(data)
+        assert files == {"AGENTS.md"}, f"Expected only AGENTS.md, got: {files}"
+
+    @requires_rules
+    def test_multi_agent_claude_only_claude_md(self, multi_agent: Path) -> None:
+        """--agent claude on multi-agent project: violations only from CLAUDE.md."""
+        data = _check_json(multi_agent, agent="claude")
+        assert len(data["violations"]) > 0, "Claude on multi-agent must produce violations"
+        files = _violation_files(data)
+        assert files == {"CLAUDE.md"}, f"Expected only CLAUDE.md, got: {files}"
+
+    @requires_rules
+    def test_multi_agent_codex_only_agents_md(self, multi_agent: Path) -> None:
+        """--agent codex on multi-agent project: violations only from AGENTS.md."""
+        data = _check_json(multi_agent, agent="codex")
+        assert len(data["violations"]) > 0, "Codex on multi-agent must produce violations"
+        files = _violation_files(data)
+        assert files == {"AGENTS.md"}, f"Expected only AGENTS.md, got: {files}"
+
+    @requires_rules
+    def test_generic_violations_reference_agents_md(self, generic_only: Path) -> None:
+        """No --agent on generic project: violations must exist and reference AGENTS.md."""
+        data = _check_json(generic_only)
+        assert len(data["violations"]) > 0, "Generic fixture must produce violations"
+        files = _violation_files(data)
+        assert "AGENTS.md" in files, f"Expected AGENTS.md in violation files, got: {files}"
+
+
+# ===========================================================================
+# Empty Agent String Edge Case
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestEmptyAgentString:
+    """--agent '' must behave identically to no --agent flag."""
+
+    @requires_rules
+    def test_empty_string_detects_files(self, generic_only: Path) -> None:
+        """--agent '' should auto-detect like no flag."""
+        data_no_flag = _check_json(generic_only)
+        data_empty = _check_json(generic_only, agent="")
+        assert data_no_flag["level"] == data_empty["level"]
+        assert data_no_flag["score"] == data_empty["score"]
+
+    @requires_rules
+    def test_empty_string_no_agent_rules(self, generic_only: Path) -> None:
+        """--agent '' must not load agent-specific rules."""
+        data = _check_json(generic_only, agent="")
+        namespaces = _violation_namespaces(data)
+        for ns in ("CLAUDE", "CODEX", "COPILOT", "CURSOR", "WINDSURF"):
+            assert ns not in namespaces, f"Agent namespace {ns} fired with --agent '': {namespaces}"
+
+    def test_empty_string_hint_agents_md(self, empty_dir: Path) -> None:
+        """--agent '' on empty project should hint AGENTS.md, not CLAUDE.md."""
+        output = _check_text(empty_dir, agent="")
+        assert "AGENTS.md" in output
+        assert "CLAUDE.md" not in output
+
+
+# ===========================================================================
+# Nested File Discovery
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestNestedFileDiscovery:
+    """Instruction files in subdirectories must be discovered and scanned."""
+
+    @requires_rules
+    def test_nested_claude_md_detected(self, nested_claude: Path) -> None:
+        """CLAUDE.md in a nested subdirectory must be found by --agent claude."""
+        data = _check_json(nested_claude, agent="claude")
+        assert len(data["violations"]) > 0, "Nested fixture must produce violations"
+        files = _violation_files(data)
+        assert "sub/deep/CLAUDE.md" in files, f"Nested sub/deep/CLAUDE.md not in violation locations: {files}"
+
+    @requires_rules
+    def test_nested_both_files_scanned(self, nested_claude: Path) -> None:
+        """Both root and nested CLAUDE.md must appear in violations."""
+        data = _check_json(nested_claude, agent="claude")
+        assert len(data["violations"]) > 0, "Nested fixture must produce violations"
+        files = _violation_files(data)
+        assert "CLAUDE.md" in files, f"Root CLAUDE.md missing from violations: {files}"
+        assert "sub/deep/CLAUDE.md" in files, f"Nested CLAUDE.md missing from violations: {files}"
+
+    @requires_rules
+    def test_nested_level_above_l1(self, nested_claude: Path) -> None:
+        """Project with nested CLAUDE.md files must not be L1."""
+        data = _check_json(nested_claude, agent="claude")
+        assert data["level"] != "L1"
+
+
+# ===========================================================================
+# Config-Only Project (No Instruction Files)
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestConfigOnlyProject:
+    """Config files (.claude/settings.json) without instruction files must not false-detect."""
+
+    def test_config_only_no_files_detected(self, config_only: Path) -> None:
+        """Project with only .claude/settings.json should report no instruction files."""
+        output = _check_text(config_only)
+        assert "No instruction files found" in output
+
+    def test_config_only_level_l1(self, config_only: Path) -> None:
+        """Config-only project should be L1 (Absent)."""
+        data = _check_json(config_only)
+        assert data["level"] == "L1"
+
+    def test_config_only_claude_agent_no_files(self, config_only: Path) -> None:
+        """--agent claude on config-only project should find no instruction files."""
+        output = _check_text(config_only, agent="claude")
+        assert "No instruction files found" in output
+        assert "CLAUDE.md" in output  # hint should suggest creating one
+
+
+# ===========================================================================
+# Violation Deduplication
+#
+# Bug: engine.py passed raw violations (with duplicates) into
+# ValidationResult instead of unique_violations. Formatters disagreed
+# on violation counts.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestViolationDeduplication:
+    """JSON output must not contain duplicate violations."""
+
+    @requires_rules
+    def test_no_duplicate_violations(self, claude_only: Path) -> None:
+        """Each (rule_id, location, check_id) tuple must appear at most once."""
+        data = _check_json(claude_only, agent="claude")
+        seen: set[tuple[str, str, str]] = set()
+        for v in data["violations"]:
+            key = (v["rule_id"], v["location"], v.get("check_id", ""))
+            assert key not in seen, f"Duplicate violation: {key}"
+            seen.add(key)
+
+    @requires_rules
+    def test_violation_count_matches_rules_failed(self, claude_only: Path) -> None:
+        """Number of unique rule_ids in violations must equal summary.rules_failed."""
+        data = _check_json(claude_only, agent="claude")
+        unique_rule_ids = {v["rule_id"] for v in data["violations"]}
+        rules_failed = data.get("summary", {}).get("rules_failed", -1)
+        assert len(unique_rule_ids) == rules_failed, (
+            f"Unique violated rules ({len(unique_rule_ids)}) != summary.rules_failed ({rules_failed})"
+        )
+
+
+# ===========================================================================
+# Generic Agent Template Resolution
+#
+# Bug: --agent generic returned empty template context because no
+# agents/generic/config.yml exists. Rules couldn't match files.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestGenericAgentTemplateResolution:
+    """--agent generic must resolve template vars from detected files."""
+
+    @requires_rules
+    def test_generic_agent_produces_violations(self, codex_only: Path) -> None:
+        """--agent generic on a project with AGENTS.md must produce violations."""
+        data = _check_json(codex_only, agent="generic")
+        assert len(data["violations"]) > 0, (
+            f"--agent generic produced 0 violations (score={data['score']}). "
+            "Template context likely empty — rules can't match files."
+        )
+
+    @requires_rules
+    def test_generic_agent_score_below_perfect(self, codex_only: Path) -> None:
+        """--agent generic must not produce a perfect score on imperfect content."""
+        data = _check_json(codex_only, agent="generic")
+        assert data["score"] < 10.0, "Perfect score with --agent generic — template context not resolving"
+
+
+# ===========================================================================
+# Unknown Agent Validation
+#
+# Bug: --agent doesnotexist silently returned score=0 level=L1 exit=0.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestUnknownAgentValidation:
+    """Unknown --agent values must produce an error, not silent failure."""
+
+    def test_unknown_agent_exits_2(self, claude_only: Path) -> None:
+        """--agent doesnotexist must exit with code 2."""
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(claude_only),
+                "--agent",
+                "doesnotexist",
+                "--no-update-check",
+            ],
+        )
+        assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
+        assert "Unknown agent" in result.output
+
+    def test_unknown_agent_shows_known_list(self, claude_only: Path) -> None:
+        """Error message must list valid agents."""
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(claude_only),
+                "--agent",
+                "doesnotexist",
+                "--no-update-check",
+            ],
+        )
+        assert "claude" in result.output
+        assert "codex" in result.output
+
+    def test_uppercase_agent_normalized(self, claude_only: Path) -> None:
+        """--agent CLAUDE (uppercase) must be normalized to lowercase and work."""
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(claude_only),
+                "--agent",
+                "CLAUDE",
+                "-f",
+                "json",
+                "--no-update-check",
+            ],
+        )
+        assert result.exit_code == 0, f"Uppercase agent failed: {result.output}"
+        data = json.loads(result.output)
+        assert data["level"] != "L1", "--agent CLAUDE should detect CLAUDE.md after normalization"
+
+
+# ===========================================================================
+# Format Validation
+#
+# Bug: -f sarif and other invalid format names silently fell through
+# to text format.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestFormatValidation:
+    """Invalid -f values must produce an error, not silent fallback."""
+
+    def test_invalid_format_exits_2(self, claude_only: Path) -> None:
+        """-f sarif must exit with code 2."""
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(claude_only),
+                "-f",
+                "sarif",
+                "--no-update-check",
+            ],
+        )
+        assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
+        assert "Unknown format" in result.output
+
+    def test_invalid_format_shows_valid_list(self, claude_only: Path) -> None:
+        """Error message must list valid formats."""
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                str(claude_only),
+                "-f",
+                "INVALID",
+                "--no-update-check",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "json" in result.output
+        assert "text" in result.output
+
+
+# ===========================================================================
+# Default Agent Config
+#
+# Users can set default_agent in .reporails/config.yml so they don't need
+# --agent on every invocation. CLI flag always overrides config.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestDefaultAgentConfig:
+    """default_agent in .reporails/config.yml must control agent scoping."""
+
+    @requires_rules
+    def test_config_default_agent_scopes_files(self, multi_agent_with_config: Path) -> None:
+        """default_agent: claude in config must scope to CLAUDE.md without --agent flag."""
+        data = _check_json(multi_agent_with_config)
+        files = _violation_files(data)
+        assert "AGENTS.md" not in files, f"default_agent: claude should not scan AGENTS.md, got: {files}"
+        assert "CLAUDE.md" in files, f"default_agent: claude should scan CLAUDE.md, got: {files}"
+
+    @requires_rules
+    def test_cli_flag_overrides_config(self, multi_agent_with_config: Path) -> None:
+        """--agent codex must override default_agent: claude from config."""
+        data = _check_json(multi_agent_with_config, agent="codex")
+        files = _violation_files(data)
+        assert "AGENTS.md" in files, f"--agent codex should scan AGENTS.md, got: {files}"
+        assert "CLAUDE.md" not in files, f"--agent codex should not scan CLAUDE.md, got: {files}"
+
+    @requires_rules
+    def test_no_config_defaults_to_generic(self, multi_agent: Path) -> None:
+        """Without config, no --agent must default to generic (AGENTS.md only)."""
+        data = _check_json(multi_agent)
+        files = _violation_files(data)
+        assert files == {"AGENTS.md"}, f"Without config, no-agent should scope to AGENTS.md (generic), got: {files}"
