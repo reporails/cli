@@ -3,10 +3,8 @@
 
 name: Test Action
 on:
-  push:
-    paths: [action/**]
   pull_request:
-    paths: [action/**]
+    branches: [main]
 
 jobs:
   # --- Pass scenarios ---
@@ -19,13 +17,18 @@ jobs:
       - uses: ./action
         id: check
       - name: Verify outputs
+        env:
+          SCORE: ${{ steps.check.outputs.score }}
+          LEVEL: ${{ steps.check.outputs.level }}
+          VIOLATIONS: ${{ steps.check.outputs.violations }}
+          RESULT: ${{ steps.check.outputs.result }}
         run: |
-          echo "score=${{ steps.check.outputs.score }}"
-          echo "level=${{ steps.check.outputs.level }}"
-          echo "violations=${{ steps.check.outputs.violations }}"
-          [ -n "${{ steps.check.outputs.score }}" ] || { echo "FAIL: no score output"; exit 1; }
-          [ -n "${{ steps.check.outputs.level }}" ] || { echo "FAIL: no level output"; exit 1; }
-          [ -n "${{ steps.check.outputs.result }}" ] || { echo "FAIL: no result output"; exit 1; }
+          echo "score=$SCORE"
+          echo "level=$LEVEL"
+          echo "violations=$VIOLATIONS"
+          [ -n "$SCORE" ] || { echo "FAIL: no score output"; exit 1; }
+          [ -n "$LEVEL" ] || { echo "FAIL: no level output"; exit 1; }
+          [ -n "$RESULT" ] || { echo "FAIL: no result output"; exit 1; }
 
   pass-explicit-agent:
     name: "Pass: explicit agent + exclude-dir"
