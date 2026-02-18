@@ -37,3 +37,5 @@
 - Heal: Default `--agent` changed from `claude` to empty (matching `check` command)
 - Rules: Without `--agent`, no longer loads all agent rules indiscriminately — core rules only
 - Tests: Integration hint tests now force `-f text` (were failing in CI where `CI=true` defaults to JSON)
+- Tests: Heal tests use targeted `_is_interactive` mock instead of full `sys` mock (was causing TypeError in CI)
+- Action: Strict test fixture uses wall-of-prose CLAUDE.md that triggers core rule violations

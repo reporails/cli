@@ -90,7 +90,10 @@ jobs:
       - name: Create fixture with violations
         run: |
           mkdir -p /tmp/bad-project
-          echo "# Instructions" > /tmp/bad-project/CLAUDE.md
+          # Wall of prose with no heading/structure — triggers CORE:S:0003 and CORE:C:0001
+          cat > /tmp/bad-project/CLAUDE.md << 'FIXTURE'
+          This is a project with no structure. You should do things correctly. Make sure to follow all the rules. Do not skip steps. Always verify your work. This is important. Remember to test everything. Do not forget to lint. Always use proper formatting. Keep the code clean. Follow best practices at all times.
+          FIXTURE
       - uses: ./action
         id: should-fail
         continue-on-error: true

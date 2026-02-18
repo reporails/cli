@@ -30,6 +30,11 @@ from reporails_cli.interfaces.cli.helpers import (
 )
 
 
+def _is_interactive() -> bool:
+    """Check if stdout is an interactive terminal."""
+    return sys.stdout.isatty()
+
+
 @app.command()
 def heal(  # pylint: disable=too-many-locals
     path: str = typer.Argument(".", help="Project root to heal"),
@@ -69,7 +74,7 @@ def heal(  # pylint: disable=too-many-locals
     ),
 ) -> None:
     """Interactively evaluate pending semantic rules."""
-    if not non_interactive and not sys.stdout.isatty():
+    if not non_interactive and not _is_interactive():
         console.print("[red]Error:[/red] ails heal requires an interactive terminal.")
         console.print()
         console.print("[dim]Solutions:[/dim]")
@@ -109,7 +114,7 @@ def heal(  # pylint: disable=too-many-locals
     rules_paths = _resolve_recommended_rules(rules_paths, project_config, "text", console)
 
     # Run validation to get pending judgment requests
-    if non_interactive or not sys.stdout.isatty():
+    if non_interactive or not _is_interactive():
         result = run_validation_sync(
             target,
             rules_paths=rules_paths,
