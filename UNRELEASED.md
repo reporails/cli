@@ -9,6 +9,11 @@
 - [META]: Add `.reporails/config.yml` with `default_agent`, `exclude_dirs`, and `disabled_rules`
 
 ### Changed
+- Action: Agent default changed from `claude` to empty (resolve via project config or generic fallback)
+- Action: Add `-q` (quiet-semantic) flag — no human to judge semantic rules in CI
+- Action: Add `exclude-dir` input for comma-separated directory exclusions
+- Action: Fix agent conditional — pass `--agent` whenever non-empty (was comparing against `claude`)
+- Descriptions: Replace "CLAUDE.md" with "AI instruction files" in CLI, MCP, and setup strings
 - [DOCS]: Restructure CLAUDE.md for ails check compliance (Boundaries, Testing, Commands sections)
 - [DOCS]: Rephrase bare prohibitions in rule files to include actionable alternatives
 - [META]: Add templates module to backbone.yml
@@ -17,6 +22,8 @@
 
 ### Testing
 - Smoke: Add mutation-tested E2E smoke layer (`tests/smoke/`, 46 tests) — covers agent scoping, cross-agent contamination, template context, hint messages, violation location accuracy, nested file discovery, empty agent edge case, config-only detection, deduplication, generic agent template, input validation, default_agent config
+- Unit: Add test coverage for `action/summary.py` (score table, status, categories, violations, CLI entry point)
+- CI: Add `test-action.yml` workflow — regression tests for GitHub Action (pass/fail scenarios, output verification)
 
 ### Fixed
 - CLI: Empty-files hint now shows the correct instruction file per agent (was hardcoded to CLAUDE.md)

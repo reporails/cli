@@ -52,7 +52,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     refresh: bool = typer.Option(
         False,
         "--refresh",
-        help="Refresh file map cache (re-scan for CLAUDE.md files)",
+        help="Refresh file map cache (re-scan for instruction files)",
     ),
     ascii: bool = typer.Option(
         False,
@@ -99,7 +99,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         help="Skip pre-run update check prompt",
     ),
 ) -> None:
-    """Validate CLAUDE.md files against reporails rules."""
+    """Validate AI instruction files against reporails rules."""
     if legend:
         legend_text = text_formatter.format_legend(ascii_mode=ascii)
         print(f"Severity Legend: {legend_text}")
