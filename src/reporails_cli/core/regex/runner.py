@@ -10,7 +10,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from reporails_cli.bundled import get_capability_patterns_path
@@ -37,24 +37,31 @@ def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
 
 
 def _file_matches_path_filter(file_path: str, path_includes: tuple[str, ...]) -> bool:
-    """Check if a file path matches any of the path include patterns."""
+    """Check if a file path matches any of the path include patterns.
+
+    Handles ``**`` as zero-or-more directory components (matching glob/OpenGrep
+    semantics) via PurePosixPath.match(), with fnmatch fallback for simple patterns.
+    """
     if not path_includes:
         return True
     filename = Path(file_path).name
     rel = file_path.lstrip("./")
+    p = PurePosixPath(rel)
     for pattern in path_includes:
         if "{{" in pattern:
             continue
-        # Handle **/ prefix: match against filename or any relative subpath
-        if pattern.startswith("**/"):
-            suffix = pattern[3:]  # e.g. "*.md" from "**/*.md"
-            if fnmatch.fnmatch(filename, suffix) or fnmatch.fnmatch(rel, suffix):
+        # PurePosixPath.match handles ** as zero-or-more directories (Python 3.12+)
+        if "**" in pattern:
+            clean_pattern = pattern.lstrip("./")
+            if p.match(clean_pattern):
                 return True
-        if fnmatch.fnmatch(file_path, pattern):
-            return True
-        if fnmatch.fnmatch(filename, pattern):
-            return True
-        if fnmatch.fnmatch(rel, pattern):
+            # Also check if ** should match zero directories
+            if "**/" in clean_pattern:
+                collapsed = clean_pattern.replace("**/", "")
+                if fnmatch.fnmatch(rel, collapsed) or fnmatch.fnmatch(filename, collapsed):
+                    return True
+            continue
+        if any(fnmatch.fnmatch(candidate, pattern) for candidate in (file_path, filename, rel)):
             return True
     return False
 

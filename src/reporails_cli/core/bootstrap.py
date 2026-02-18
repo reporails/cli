@@ -204,6 +204,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
             experimental=data.get("experimental", False),
             recommended=data.get("recommended", True),
             exclude_dirs=data.get("exclude_dirs", []),
+            default_agent=data.get("default_agent", ""),
         )
     except (yaml.YAMLError, OSError):
         return ProjectConfig()

@@ -17,9 +17,12 @@ from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.cli.helpers import (
     _default_format,
     _format_output,
+    _handle_no_instruction_files,
     _print_verbose,
     _resolve_recommended_rules,
     _resolve_rules_paths,
+    _validate_agent,
+    _validate_format,
     app,
     console,
 )
@@ -75,9 +78,9 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         help="Show severity legend only",
     ),
     agent: str = typer.Option(
-        "claude",
+        "",
         "--agent",
-        help="Agent type for rule overrides and template vars (e.g., claude, cursor)",
+        help="Agent type for rule overrides and template vars (e.g., claude, cursor, codex)",
     ),
     experimental: bool = typer.Option(
         False,
@@ -102,6 +105,10 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         print(f"Severity Legend: {legend_text}")
         return
 
+    # Validate inputs
+    agent = _validate_agent(agent, console)
+    _validate_format(format, console)
+
     target = Path(path).resolve()
 
     if not target.exists():
@@ -116,6 +123,10 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     from reporails_cli.core.bootstrap import get_project_config
 
     project_config = get_project_config(target)
+
+    # Resolve effective agent: CLI flag > config default_agent > engine defaults to generic
+    if not agent and project_config.default_agent:
+        agent = _validate_agent(project_config.default_agent, console)
 
     # Merge exclude_dirs: config + CLI flags
     merged_excludes: list[str] | None = None
@@ -136,22 +147,14 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Early check for missing instruction files
     output_format = format if format else _default_format()
-    # Filter to specified agent (default: claude) for file discovery
     from reporails_cli.core.agents import detect_agents, filter_agents_by_id
 
+    effective_agent = agent if agent else "generic"
     all_detected_agents = detect_agents(target)
-    filtered_agents = filter_agents_by_id(all_detected_agents, agent) if agent else all_detected_agents
+    filtered_agents = filter_agents_by_id(all_detected_agents, effective_agent)
     instruction_files = get_all_instruction_files(target, agents=filtered_agents)
     if not instruction_files:
-        if output_format in ("json", "github"):
-            import json
-
-            print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
-        else:
-            console.print("No instruction files found.")
-            console.print("Level: L1 (Absent)")
-            console.print()
-            console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        _handle_no_instruction_files(effective_agent, output_format, console)
         return
 
     # Get previous scan BEFORE running validation (for delta comparison)

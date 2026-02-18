@@ -70,6 +70,13 @@ KNOWN_AGENTS: dict[str, AgentType] = {
         config_patterns=(".aider.conf.yml",),
         rule_patterns=(),
     ),
+    "codex": AgentType(
+        id="codex",
+        name="OpenAI Codex",
+        instruction_patterns=("AGENTS.md",),
+        config_patterns=(),
+        rule_patterns=(),
+    ),
     "generic": AgentType(
         id="generic",
         name="Generic AI Instructions",
@@ -164,6 +171,9 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
 def filter_agents_by_id(agents: list[DetectedAgent], agent_id: str) -> list[DetectedAgent]:
     """
     Filter detected agents by agent ID.
+
+    Returns only the matching agent's files. If no match, returns empty list
+    so the caller can show "no instruction files found" with an appropriate hint.
 
     Args:
         agents: List of detected agents

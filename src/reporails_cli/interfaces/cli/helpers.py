@@ -117,6 +117,49 @@ def _handle_update_check(con: Console) -> None:
         con.print("\n[cyan]Run 'ails update' to update[/cyan]")
 
 
+VALID_FORMATS = {"text", "json", "compact", "brief", "github"}
+
+
+def _validate_agent(agent: str, con: Console) -> str:
+    """Normalize and validate --agent value. Returns normalized agent or exits."""
+    agent = agent.lower().strip()
+    if agent:
+        from reporails_cli.core.agents import KNOWN_AGENTS as _KNOWN
+
+        if agent not in _KNOWN:
+            con.print(f"[red]Error:[/red] Unknown agent: {agent}")
+            con.print(f"Known agents: {', '.join(sorted(_KNOWN))}")
+            raise typer.Exit(2)
+    return agent
+
+
+def _validate_format(format: str | None, con: Console) -> None:
+    """Validate --format value or exit."""
+    if format and format not in VALID_FORMATS:
+        con.print(f"[red]Error:[/red] Unknown format: {format}")
+        con.print(f"Valid formats: {', '.join(sorted(VALID_FORMATS))}")
+        raise typer.Exit(2)
+
+
+def _handle_no_instruction_files(
+    effective_agent: str,
+    output_format: str,
+    con: Console,
+) -> None:
+    """Print appropriate message when no instruction files are found, then exit."""
+    from reporails_cli.core.agents import KNOWN_AGENTS
+
+    agent_type = KNOWN_AGENTS.get(effective_agent)
+    hint_file = agent_type.instruction_patterns[0] if agent_type else "AGENTS.md"
+    if output_format in ("json", "github"):
+        print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
+    else:
+        con.print("No instruction files found.")
+        con.print("Level: L1 (Absent)")
+        con.print()
+        con.print(f"[dim]Create a {hint_file} to get started.[/dim]")
+
+
 def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | None:
     """Validate and resolve --rules CLI option paths.
 
@@ -147,7 +190,7 @@ def _compute_file_checks(
     Returns:
         (file_path -> list of regex check IDs, list of mechanical check IDs, rule_id -> title)
     """
-    from reporails_cli.core.bootstrap import get_agent_vars
+    from reporails_cli.core.engine import build_template_context
     from reporails_cli.core.models import RuleType
     from reporails_cli.core.regex import checks_per_file, get_rule_yml_paths
     from reporails_cli.core.registry import load_rules
@@ -158,7 +201,7 @@ def _compute_file_checks(
     yml_paths = get_rule_yml_paths(
         {k: v for k, v in rules.items() if v.type in (RuleType.DETERMINISTIC, RuleType.SEMANTIC)}
     )
-    context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
+    context = build_template_context(agent, instruction_files, rules_paths)
     mechanical_ids = [c.id for r in rules.values() if r.type == RuleType.MECHANICAL for c in r.checks]
     titles = {r.id: r.title for r in rules.values()}
     return checks_per_file(yml_paths, target, context, instruction_files), mechanical_ids, titles

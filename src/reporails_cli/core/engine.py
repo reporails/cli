@@ -46,6 +46,30 @@ from reporails_cli.core.scorer import calculate_score, estimate_friction
 logger = logging.getLogger(__name__)
 
 
+def build_template_context(
+    agent: str,
+    instruction_files: list[Path],
+    rules_paths: list[Path] | None = None,
+) -> dict[str, str | list[str]]:
+    """Build template context for rule placeholder resolution.
+
+    With an agent: loads vars from agent config (e.g., claude → CLAUDE.md patterns).
+    Without an agent: derives minimal vars from detected instruction files so
+    core rules can resolve {{instruction_files}} and {{main_instruction_file}}.
+    """
+    if agent:
+        vars = get_agent_vars(agent, rules_paths=rules_paths)
+        if vars:
+            return vars
+        # Agent has no config.yml — fall through to file-based derivation
+    # Derive from detected files so rules can resolve {{instruction_files}}
+    rel_patterns = [f"**/{f.name}" for f in instruction_files]
+    return {
+        "instruction_files": rel_patterns,
+        "main_instruction_file": rel_patterns[:1],
+    }
+
+
 def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     target: Path,
     rules: dict[str, Rule] | None = None,
@@ -66,8 +90,20 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
         logger.info("Downloading rules framework...")
         run_init()
 
-    # Get template vars from agent config for yml placeholder resolution
-    template_context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
+    # Detect agents once — reuse for all file lookups (avoids redundant recursive globs)
+    # Use scan_root (not project_root) so only files inside the target are scanned
+    all_agents = detect_agents(scan_root)
+
+    # Resolve effective agent: explicit flag or generic default (agents.md convention)
+    from reporails_cli.core.agents import filter_agents_by_id
+
+    effective_agent = agent if agent else "generic"
+    agents = filter_agents_by_id(all_agents, effective_agent)
+
+    instruction_files = get_all_instruction_files(scan_root, agents=agents)
+
+    # Get template vars for yml placeholder resolution
+    template_context = build_template_context(effective_agent, instruction_files, rules_paths)
 
     # Load rules if not provided
     if rules is None:
@@ -75,7 +111,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
             rules_paths,
             include_experimental=include_experimental,
             project_root=project_root,
-            agent=agent,
+            agent=effective_agent,
             scan_root=scan_root,
         )
 
@@ -88,17 +124,6 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
                 rule_count=len(exp_rules),
                 rules=tuple(sorted(exp_rules.keys())),
             )
-
-    # Detect agents once — reuse for all file lookups (avoids redundant recursive globs)
-    # Use scan_root (not project_root) so only files inside the target are scanned
-    all_agents = detect_agents(scan_root)
-
-    # Filter to specific agent if requested (default behavior: only validate specified agent's files)
-    from reporails_cli.core.agents import filter_agents_by_id
-
-    agents = filter_agents_by_id(all_agents, agent) if agent else all_agents
-
-    instruction_files = get_all_instruction_files(scan_root, agents=agents)
 
     # PASS 1: Capability Detection (determines final level)
     features = detect_features_filesystem(scan_root, agents=agents)
@@ -177,7 +202,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     return ValidationResult(
         score=score,
         level=final_level,
-        violations=tuple(violations),
+        violations=tuple(unique_violations),
         judgment_requests=tuple(judgment_requests),
         rules_checked=len(applicable_rules),
         rules_passed=len(applicable_rules) - rules_failed,
