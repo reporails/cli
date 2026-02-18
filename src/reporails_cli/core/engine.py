@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from reporails_cli.core.agents import (
+    clear_agent_cache,
     detect_agents,
     filter_agents_by_exclude_dirs,
     get_all_instruction_files,
@@ -44,7 +45,7 @@ from reporails_cli.core.models import (
     SkippedExperimental,
     ValidationResult,
 )
-from reporails_cli.core.registry import get_experimental_rules, load_rules
+from reporails_cli.core.registry import clear_rule_cache, get_experimental_rules, load_rules
 from reporails_cli.core.sarif import dedupe_violations
 from reporails_cli.core.scorer import calculate_score, estimate_friction
 
@@ -89,6 +90,11 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     start_time = time.perf_counter()
     scan_root = target.parent if target.is_file() else target
     project_root = _find_project_root(scan_root)
+
+    # Clear file-discovery and rule caches when refresh requested
+    if not use_cache:
+        clear_agent_cache()
+        clear_rule_cache()
 
     # Auto-init if needed (downloads rules framework)
     if not is_initialized():

@@ -41,3 +41,4 @@
 - Action: Strict test fixture uses wall-of-prose CLAUDE.md that triggers core rule violations
 - Engine: Rule compiler crashes on `paths: include: null` in YAML rules — `dict.get()` returns `None` not default when key exists with null value (was `TypeError: 'NoneType' object is not iterable`)
 - Engine: `exclude_dirs` config not applied during agent file discovery — test fixtures were scanned as real instruction files
+- Engine: `--refresh` flag did not clear agent or rule caches — only affected semantic judgment cache
