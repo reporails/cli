@@ -26,7 +26,7 @@ def setup(
 
     if not targets:
         console.print("[yellow]No supported agents detected.[/yellow]")
-        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        console.print("[dim]Create an instruction file to get started.[/dim]")
         raise typer.Exit(1)
 
     for agent_id, config_path in targets:

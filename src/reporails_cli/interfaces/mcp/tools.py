@@ -39,7 +39,7 @@ def _resolve_recommended_rules_paths(target: Path) -> list[Path] | None:
 
 def validate_tool(path: str = ".") -> dict[str, Any]:
     """
-    Validate CLAUDE.md files at path.
+    Validate AI instruction files at path.
 
     Returns violations, score, level, and JudgmentRequests for semantic rules.
 
@@ -69,7 +69,7 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
 
 def validate_tool_text(path: str = ".") -> str:
     """
-    Validate CLAUDE.md files at path, returning text format.
+    Validate AI instruction files at path, returning text format.
 
     Returns human-readable text report with score, violations, and friction.
 
@@ -99,7 +99,7 @@ def validate_tool_text(path: str = ".") -> str:
 
 def score_tool(path: str = ".") -> dict[str, Any]:
     """
-    Quick score check for CLAUDE.md files.
+    Quick score check for AI instruction files.
 
     Args:
         path: Directory to score (default: current directory)

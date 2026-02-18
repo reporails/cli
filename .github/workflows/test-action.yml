@@ -1,0 +1,98 @@
+# Regression tests for the composite action at action/.
+# Runs pass and fail scenarios to verify shell logic, output capture, and gates.
+
+name: Test Action
+on:
+  push:
+    paths: [action/**]
+  pull_request:
+    paths: [action/**]
+
+jobs:
+  # --- Pass scenarios ---
+
+  pass-default:
+    name: "Pass: default agent"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        id: check
+      - name: Verify outputs
+        run: |
+          echo "score=${{ steps.check.outputs.score }}"
+          echo "level=${{ steps.check.outputs.level }}"
+          echo "violations=${{ steps.check.outputs.violations }}"
+          [ -n "${{ steps.check.outputs.score }}" ] || { echo "FAIL: no score output"; exit 1; }
+          [ -n "${{ steps.check.outputs.level }}" ] || { echo "FAIL: no level output"; exit 1; }
+          [ -n "${{ steps.check.outputs.result }}" ] || { echo "FAIL: no result output"; exit 1; }
+
+  pass-explicit-agent:
+    name: "Pass: explicit agent + exclude-dir"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        id: check
+        with:
+          agent: claude
+          exclude-dir: "vendor,dist"
+      - name: Verify agent was applied
+        run: |
+          echo "score=${{ steps.check.outputs.score }}"
+          [ "${{ steps.check.outputs.score }}" != "0" ] || { echo "FAIL: score is 0"; exit 1; }
+
+  pass-min-score:
+    name: "Pass: min-score gate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        with:
+          min-score: "5"
+
+  # --- Fail scenarios ---
+
+  fail-min-score:
+    name: "Fail: min-score gate rejects low score"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        id: should-fail
+        continue-on-error: true
+        with:
+          min-score: "11"
+      - name: Verify failure
+        if: steps.should-fail.outcome != 'failure'
+        run: |
+          echo "Expected failure from min-score=11 but got: ${{ steps.should-fail.outcome }}"
+          exit 1
+
+  fail-strict:
+    name: "Fail: strict mode on violations"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create fixture with violations
+        run: |
+          mkdir -p /tmp/bad-project
+          echo "# Instructions" > /tmp/bad-project/AGENTS.md
+      - uses: ./action
+        id: should-fail
+        continue-on-error: true
+        with:
+          path: /tmp/bad-project
+          strict: "true"
+      - name: Verify failure
+        run: |
+          echo "outcome=${{ steps.should-fail.outcome }}"
+          echo "violations=${{ steps.should-fail.outputs.violations }}"
+          if [ "${{ steps.should-fail.outcome }}" != "failure" ]; then
+            echo "Expected failure from strict mode but got: ${{ steps.should-fail.outcome }}"
+            exit 1
+          fi
+          if [ "${{ steps.should-fail.outputs.violations }}" = "0" ]; then
+            echo "Expected violations > 0"
+            exit 1
+          fi

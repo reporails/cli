@@ -18,7 +18,7 @@ from reporails_cli.formatters import text as text_formatter
 
 app = typer.Typer(
     name="ails",
-    help="Validate and score CLAUDE.md files - what ails your repo?",
+    help="Validate and score AI instruction files - what ails your repo?",
     no_args_is_help=True,
 )
 console = Console(emoji=False)
