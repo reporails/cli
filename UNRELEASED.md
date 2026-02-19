@@ -4,11 +4,24 @@
 - Agents: Add OpenAI Codex agent (`--agent codex`) with AGENTS.md instruction pattern
 - Agents: Add generic agent config at rules level — targets AGENTS.md per agents.md convention
 - Config: Add `default_agent` option in `.reporails/config.yml` — sets agent when `--agent` not specified (CLI flag overrides)
-
-### Added
+- CLI: Add `ails config set/get/list` commands for managing `.reporails/config.yml` without manual editing
+- CLI: Add agent hint — when running with generic agent and a specific agent is detected, suggest setting `default_agent`
 - [META]: Add `.reporails/config.yml` with `default_agent`, `exclude_dirs`, and `disabled_rules`
 
+- CLI: Interactive heal for all violation types — three-phase flow (auto-fix, manual violations, semantic judgments) with dismiss/skip for deterministic violations
+- Engine: Dismissed violations filtered from `ails check` output (cached as pass verdicts, reset with `--refresh`)
+
 ### Changed
+- CLI: Rename "(partial)" label to "(awaiting semantic)" across all output formats — clearer meaning for pending semantic evaluation
+- CLI: JSON `evaluation` field changed from `"partial"` to `"awaiting_semantic"` (breaking: consumers checking this value need updating)
+- CLI: `explain` unknown rule now shows rules grouped by namespace with counts instead of flat list
+- CLI: `heal` verdict prompt shows legend on first prompt explaining [p]ass/[f]ail/[s]kip/[d]ismiss
+- CLI: `heal` prints "Run 'ails check' to see your updated score" after completion
+- CLI: Wrap raw exceptions in user-friendly error messages (FileNotFoundError, RuntimeError, download failures)
+- CLI: Exit code 2 for input errors in `explain` (unknown rule) and `--rules` (dir not found) — was exit 1
+- [DOCS]: Add Configuration and Exit Codes sections to README
+- [DOCS]: Consolidate duplicate command sections in npm README
+- CLI: Scorecard layout — capability moved to own line below score, elapsed time shown in top-right
 - CLI: Semantic color output — score, bar, capability level, violations, friction, and category table use green/yellow/red based on values (ASCII mode disables all colors)
 - Action: Agent default changed from `claude` to empty (resolve via project config or generic fallback)
 - Action: Add `-q` (quiet-semantic) flag — no human to judge semantic rules in CI
