@@ -140,6 +140,7 @@ def format_assessment_box(
     data: dict[str, Any],
     ascii_mode: bool | None = None,
     delta: ScanDelta | None = None,
+    elapsed_ms: float | None = None,
 ) -> str:
     """Format the visual assessment box using templates."""
     chars = get_chars(ascii_mode)
@@ -177,36 +178,32 @@ def format_assessment_box(
     bottom_border = chars["bl"] + chars["h"] * box_width + chars["br"]
     empty_line = chars["v"] + " " * box_width + chars["v"]
 
-    # Score line: left = score, right = capability (right-aligned)
-    # Use plain strings for width calculation
+    # Score line: left = score + delta, right = elapsed time (dim)
     left_plain = f"SCORE: {score:.1f} / 10{score_delta_plain}"
-    right_plain = f"CAPABILITY: {level_label} ({level_display}){level_delta_plain}"
+    elapsed_plain = f"{elapsed_ms:.0f}ms" if elapsed_ms is not None else ""
+    score_gap = box_width - 3 - len(left_plain) - len(elapsed_plain) - 3
 
-    gap = box_width - 3 - len(left_plain) - len(right_plain) - 3
-    if gap < 3:
-        # Word-boundary truncation for level label
-        max_label = box_width - 3 - len(left_plain) - 3 - len(f"CAPABILITY:  ({level_display}){level_delta_plain}") - 3
-        max_label = max(max_label, 3)
-        truncated = level_label[:max_label]
-        last_space = truncated.rfind(" ")
-        if last_space > max_label // 2:
-            truncated = truncated[:last_space]
-        level_label = truncated.rstrip() + "..."
-        right_plain = f"CAPABILITY: {level_label} ({level_display}){level_delta_plain}"
-        gap = box_width - 3 - len(left_plain) - len(right_plain) - 3
-
-    # Build the rich or plain score text
     if colored:
         sc = _score_color(score)
-        lc = _level_color(level)
         left_rich = f"SCORE: [bold {sc}]{score:.1f}[/bold {sc}] / 10{score_delta_rich}"
-        right_rich = f"CAPABILITY: [{lc}]{level_label} ({level_display})[/{lc}]{level_delta_rich}"
-        score_text = f"{left_rich}{' ' * gap}{right_rich}"
-        score_extra = len(score_text) - len(left_plain) - gap - len(right_plain)
+        elapsed_rich = f"[dim]{elapsed_plain}[/dim]" if elapsed_plain else ""
+        score_text = f"{left_rich}{' ' * score_gap}{elapsed_rich}"
+        score_extra = len(score_text) - len(left_plain) - score_gap - len(elapsed_plain)
     else:
-        score_text = f"{left_plain}{' ' * gap}{right_plain}"
+        score_text = f"{left_plain}{' ' * score_gap}{elapsed_plain}"
         score_extra = 0
     score_line = pad_line(score_text, box_width + score_extra, chars["v"])
+
+    # Capability line: LEVEL: label (Lx) + level delta
+    cap_plain = f"LEVEL: {level_label} ({level_display}){level_delta_plain}"
+    if colored:
+        lc = _level_color(level)
+        cap_rich = f"LEVEL: [{lc}]{level_label} ({level_display})[/{lc}]{level_delta_rich}"
+        cap_extra = len(cap_rich) - len(cap_plain)
+    else:
+        cap_rich = cap_plain
+        cap_extra = 0
+    capability_line = pad_line(cap_rich, box_width + cap_extra, chars["v"])
 
     # Progress bar
     bar, bar_extra = build_score_bar(score, ascii_mode, colored)
@@ -231,6 +228,7 @@ def format_assessment_box(
         bottom_border=bottom_border,
         empty_line=empty_line,
         score_line=score_line,
+        capability_line=capability_line,
         bar_line=bar_line,
         setup_line=setup_line,
         summary_line=summary_line,

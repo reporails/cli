@@ -90,7 +90,7 @@ def _format_cta(
     result: ValidationResult,
     ascii_mode: bool | None = None,
 ) -> str:
-    """Format MCP call-to-action for partial evaluation."""
+    """Format MCP call-to-action for awaiting semantic evaluation."""
     if not result.is_partial:
         return ""
 
@@ -105,6 +105,7 @@ def format_result(
     _show_legend: bool = True,
     delta: ScanDelta | None = None,
     show_mcp_cta: bool = True,
+    elapsed_ms: float | None = None,
 ) -> str:
     """Format validation result for terminal output."""
     data = json_formatter.format_result(result, delta)
@@ -114,7 +115,7 @@ def format_result(
     sections = []
 
     # Assessment box
-    sections.append(format_assessment_box(data, ascii_mode, delta))
+    sections.append(format_assessment_box(data, ascii_mode, delta, elapsed_ms=elapsed_ms))
     sections.append("")
 
     # Violations
