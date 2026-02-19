@@ -214,16 +214,19 @@ def heal_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path is not a directory: {target}"}
 
     try:
-        from reporails_cli.core.fixers import apply_auto_fixes
+        from reporails_cli.core.fixers import apply_auto_fixes, partition_violations
 
         rules_paths = _resolve_recommended_rules_paths(target)
         result = run_validation(target, agent="claude", rules_paths=rules_paths)
 
-        # Phase 1: Auto-fix
-        fixes = apply_auto_fixes(list(result.violations), target)
+        # Partition violations into fixable and non-fixable
+        fixable, non_fixable = partition_violations(list(result.violations))
 
-        # Phase 2: Return remaining semantic requests
-        return mcp_formatter.format_heal_result(fixes, list(result.judgment_requests))
+        # Phase 1: Auto-fix
+        fixes = apply_auto_fixes(fixable, target)
+
+        # Phase 2: Return fixes, non-fixable violations, and semantic requests
+        return mcp_formatter.format_heal_result(fixes, list(result.judgment_requests), non_fixable=non_fixable)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 

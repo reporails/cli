@@ -12,11 +12,14 @@ from pathlib import Path
 
 from reporails_cli.core.fixers import (
     apply_auto_fixes,
+    apply_single_fix,
+    describe_fix,
     fix_add_commands,
     fix_add_constraints,
     fix_add_sections,
     fix_add_structure,
     fix_add_testing,
+    partition_violations,
 )
 from reporails_cli.core.models import Severity, Violation
 
@@ -269,3 +272,84 @@ class TestApplyAutoFixes:
 
         assert len(results) == 1
         assert results[0].file_path == "CLAUDE.md"
+
+
+# ---------------------------------------------------------------------------
+# partition_violations
+# ---------------------------------------------------------------------------
+
+
+class TestPartitionViolations:
+    def test_splits_fixable_and_non_fixable(self, tmp_path: Path) -> None:
+        fixable_v = _make_violation("CORE:C:0003", str(tmp_path / "CLAUDE.md"))
+        non_fixable_v = _make_violation("CORE:S:0003", str(tmp_path / "CLAUDE.md"))
+
+        fixable, non_fixable = partition_violations([fixable_v, non_fixable_v])
+
+        assert len(fixable) == 1
+        assert fixable[0].rule_id == "CORE:C:0003"
+        assert len(non_fixable) == 1
+        assert non_fixable[0].rule_id == "CORE:S:0003"
+
+    def test_empty_list(self) -> None:
+        fixable, non_fixable = partition_violations([])
+        assert fixable == []
+        assert non_fixable == []
+
+    def test_all_fixable(self, tmp_path: Path) -> None:
+        violations = [
+            _make_violation("CORE:C:0003", str(tmp_path / "CLAUDE.md")),
+            _make_violation("CORE:C:0010", str(tmp_path / "CLAUDE.md")),
+        ]
+        fixable, non_fixable = partition_violations(violations)
+        assert len(fixable) == 2
+        assert len(non_fixable) == 0
+
+    def test_all_non_fixable(self, tmp_path: Path) -> None:
+        violations = [
+            _make_violation("CORE:S:0003", str(tmp_path / "CLAUDE.md")),
+            _make_violation("CORE:S:0005", str(tmp_path / "CLAUDE.md")),
+        ]
+        fixable, non_fixable = partition_violations(violations)
+        assert len(fixable) == 0
+        assert len(non_fixable) == 2
+
+
+# ---------------------------------------------------------------------------
+# describe_fix
+# ---------------------------------------------------------------------------
+
+
+class TestDescribeFix:
+    def test_returns_description_for_fixable(self) -> None:
+        v = _make_violation("CORE:C:0003", "CLAUDE.md")
+        desc = describe_fix(v)
+        assert desc is not None
+        assert "Commands" in desc
+
+    def test_returns_none_for_non_fixable(self) -> None:
+        v = _make_violation("CORE:S:0003", "CLAUDE.md")
+        desc = describe_fix(v)
+        assert desc is None
+
+
+# ---------------------------------------------------------------------------
+# apply_single_fix
+# ---------------------------------------------------------------------------
+
+
+class TestApplySingleFix:
+    def test_applies_fix(self, tmp_path: Path) -> None:
+        md = tmp_path / "CLAUDE.md"
+        md.write_text("# My Project\n\nSome content.\n")
+        v = _make_violation("CORE:C:0010", str(md))
+
+        result = apply_single_fix(v, tmp_path)
+
+        assert result is not None
+        assert "Constraints" in result.description
+
+    def test_returns_none_for_unknown_rule(self, tmp_path: Path) -> None:
+        v = _make_violation("CORE:S:0003", str(tmp_path / "CLAUDE.md"))
+        result = apply_single_fix(v, tmp_path)
+        assert result is None
