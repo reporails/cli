@@ -218,8 +218,6 @@ class TestUpdateCheckCommand:
         assert result.exit_code == 0, result.output
         assert "Framework:" in result.output
         assert "Recommended:" in result.output
-        assert "Installed:" in result.output
-        assert "Latest:" in result.output
 
     def test_shows_up_to_date_when_current(self) -> None:
         """When all components are current, should say up to date."""

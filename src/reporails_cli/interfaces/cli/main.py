@@ -18,6 +18,8 @@ from reporails_cli.interfaces.cli.helpers import (
     _default_format,
     _format_output,
     _handle_no_instruction_files,
+    _maybe_show_agent_hint,
+    _print_unknown_rule,
     _print_verbose,
     _resolve_recommended_rules,
     _resolve_rules_paths,
@@ -187,7 +189,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
                 exclude_dirs=merged_excludes,
             )
     except FileNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] File not found during validation: {e.filename or e}")
         raise typer.Exit(2) from None
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -201,6 +203,9 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Format output
     _format_output(result, delta, output_format, ascii, quiet_semantic, elapsed_ms, console)
+
+    # Agent hint: suggest setting default_agent when generic is used but specific agents detected
+    _maybe_show_agent_hint(effective_agent, output_format, all_detected_agents)
 
     # Verbose diagnostics (text formats only)
     if verbose and output_format not in ("json", "brief"):
@@ -238,9 +243,8 @@ def explain(
     rule_id_upper = rule_id.upper()
 
     if rule_id_upper not in loaded_rules:
-        console.print(f"[red]Error:[/red] Unknown rule: {rule_id}")
-        console.print(f"Available rules: {', '.join(sorted(loaded_rules.keys()))}")
-        raise typer.Exit(1)
+        _print_unknown_rule(rule_id, loaded_rules)
+        raise typer.Exit(2)
 
     rule = loaded_rules[rule_id_upper]
     rule_data = {
@@ -274,6 +278,9 @@ import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
 import reporails_cli.interfaces.cli.setup  # noqa: E402  # Register setup command
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
+from reporails_cli.interfaces.cli.config_command import config_app  # noqa: E402
+
+app.add_typer(config_app)
 
 if __name__ == "__main__":
     main()

@@ -110,7 +110,7 @@ def sync(
         count = sync_rules_to_local(target)
         console.print(f"[green]Synced {count} rule definition(s)[/green]")
     except RuntimeError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] Failed to sync rules: {e}")
         raise typer.Exit(1) from None
 
 
