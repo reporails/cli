@@ -18,7 +18,7 @@ SEVERITY_COLORS: dict[str, str] = {
     "critical": "red",
     "high": "red",
     "medium": "yellow",
-    "low": "green",
+    "low": "yellow",
 }
 
 
@@ -77,7 +77,7 @@ def format_legend(ascii_mode: bool | None = None, colored: bool = False) -> str:
             crit=f"[red]{chars['crit']}[/red]",
             high=f"[red]{chars['high']}[/red]",
             med=f"[yellow]{chars['med']}[/yellow]",
-            low=f"[green]{chars['low']}[/green]",
+            low=f"[yellow]{chars['low']}[/yellow]",
         )
     return render(
         "cli_legend.txt",

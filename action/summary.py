@@ -29,6 +29,8 @@ def generate_summary(result: dict) -> str:
     violations = result.get("violations", [])
     category_summary = result.get("category_summary", [])
     evaluation = result.get("evaluation", "complete")
+    # Display-friendly label for GitHub summary
+    evaluation_display = "awaiting semantic" if evaluation == "awaiting_semantic" else evaluation
     score_delta = result.get("score_delta")
 
     # Status icon
@@ -54,7 +56,7 @@ def generate_summary(result: dict) -> str:
     lines.append(f"| Score | **{score_display}** |")
     lines.append(f"| Level | **{level}** {capability} |")
     lines.append(f"| Status | {status} |")
-    lines.append(f"| Evaluation | {evaluation} |")
+    lines.append(f"| Evaluation | {evaluation_display} |")
     lines.append("")
 
     # Category summary

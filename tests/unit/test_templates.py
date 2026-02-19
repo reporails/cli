@@ -129,7 +129,7 @@ class TestPartialEvaluation:
         result = self._make_result(is_partial=True)
         data = json_formatter.format_result(result)
 
-        assert data["evaluation"] == "partial"
+        assert data["evaluation"] == "awaiting_semantic"
         assert data["is_partial"] is True
 
     def test_json_complete_evaluation(self) -> None:
@@ -142,14 +142,14 @@ class TestPartialEvaluation:
         assert data["evaluation"] == "complete"
         assert data["is_partial"] is False
 
-    def test_compact_shows_partial(self) -> None:
-        """Compact format should show partial marker."""
+    def test_compact_shows_awaiting_semantic(self) -> None:
+        """Compact format should show awaiting semantic marker."""
         from reporails_cli.formatters import text as text_formatter
 
         result = self._make_result(is_partial=True)
         output = text_formatter.format_compact(result)
 
-        assert "(partial)" in output
+        assert "(awaiting semantic)" in output
 
 
 class TestPendingSemanticDisplay:
@@ -360,10 +360,10 @@ class TestFormatScore:
         )
         output = text_formatter.format_score(result)
 
-        assert "(partial)" in output
+        assert "(awaiting semantic)" in output
 
-    def test_no_partial_marker_when_complete(self) -> None:
-        """Score summary should not show partial marker when complete."""
+    def test_no_awaiting_semantic_marker_when_complete(self) -> None:
+        """Score summary should not show awaiting semantic marker when complete."""
         from reporails_cli.formatters import text as text_formatter
 
         result = ValidationResult(
@@ -381,4 +381,4 @@ class TestFormatScore:
         )
         output = text_formatter.format_score(result)
 
-        assert "(partial)" not in output
+        assert "(awaiting semantic)" not in output
