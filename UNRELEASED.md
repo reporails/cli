@@ -57,3 +57,4 @@
 - Engine: `exclude_dirs` config not applied during agent file discovery — test fixtures were scanned as real instruction files
 - Engine: `--refresh` flag did not clear agent or rule caches — only affected semantic judgment cache
 
+

@@ -458,7 +458,7 @@ class TestExplainCommand:
 
     def test_unknown_rule(self) -> None:
         result = runner.invoke(app, ["explain", "ZZZZZ99"])
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Unknown rule" in result.output or "Error" in result.output
 
 

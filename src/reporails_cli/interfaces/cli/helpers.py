@@ -68,8 +68,8 @@ def _resolve_recommended_rules(
                     download_recommended()
             else:
                 download_recommended()
-        except Exception as e:
-            con.print(f"[yellow]Warning:[/yellow] Could not download recommended rules: {e}")
+        except Exception:
+            con.print("[yellow]Warning:[/yellow] Could not download recommended rules. Using bundled version.")
 
     if use_recommended and not has_recommended:
         from reporails_cli.core.bootstrap import get_recommended_package_path
@@ -89,29 +89,15 @@ def _resolve_recommended_rules(
 
 def _handle_update_check(con: Console) -> None:
     """Print installed vs latest versions for framework and recommended."""
-    from reporails_cli.core.bootstrap import (
-        get_installed_recommended_version,
-        get_installed_version,
-    )
+    from reporails_cli.core.bootstrap import get_installed_recommended_version, get_installed_version
     from reporails_cli.core.init import get_latest_recommended_version, get_latest_version
 
-    current = get_installed_version()
-    current_rec = get_installed_recommended_version()
+    current, current_rec = get_installed_version(), get_installed_recommended_version()
     with con.status("[bold]Checking for updates...[/bold]"):
-        latest = get_latest_version()
-        latest_rec = get_latest_recommended_version()
-
-    con.print("[bold]Framework:[/bold]")
-    con.print(f"  Installed: {current or 'not installed'}")
-    con.print(f"  Latest:    {latest or 'unknown'}")
-
-    con.print("[bold]Recommended:[/bold]")
-    con.print(f"  Installed: {current_rec or 'not installed'}")
-    con.print(f"  Latest:    {latest_rec or 'unknown'}")
-
-    rules_current = latest and current == latest
-    rec_current = latest_rec and current_rec == latest_rec
-    if rules_current and rec_current:
+        latest, latest_rec = get_latest_version(), get_latest_recommended_version()
+    con.print(f"[bold]Framework:[/bold]  {current or 'not installed'} → {latest or 'unknown'}")
+    con.print(f"[bold]Recommended:[/bold] {current_rec or 'not installed'} → {latest_rec or 'unknown'}")
+    if (latest and current == latest) and (latest_rec and current_rec == latest_rec):
         con.print("\n[green]You are up to date.[/green]")
     else:
         con.print("\n[cyan]Run 'ails update' to update[/cyan]")
@@ -141,6 +127,31 @@ def _validate_format(format: str | None, con: Console) -> None:
         raise typer.Exit(2)
 
 
+def _maybe_show_agent_hint(effective_agent: str, output_format: str, detected_agents: list[Any]) -> None:
+    """Show hint to set default_agent if generic is used but specific agents detected."""
+    if effective_agent != "generic" or output_format not in ("text", "compact") or not sys.stdout.isatty():
+        return
+    non_generic = [a for a in detected_agents if a.agent_type.name != "generic"]
+    if non_generic:
+        name = non_generic[0].agent_type.name
+        console.print(f"\n[dim]Tip: Detected {name} agent. Set as default: ails config set default_agent {name}[/dim]")
+
+
+def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
+    """Print grouped available rules when an unknown rule ID is given."""
+    console.print(f"[red]Error:[/red] Unknown rule: {rule_id}")
+    grouped: dict[str, list[str]] = {}
+    for rid in sorted(loaded_rules.keys()):
+        ns = rid.rsplit(":", 1)[0] if ":" in rid else rid
+        grouped.setdefault(ns, []).append(rid.rsplit(":", 1)[-1] if ":" in rid else rid)
+    console.print(f"Available rules ({len(loaded_rules)} total):")
+    for ns, ids in sorted(grouped.items()):
+        preview = ", ".join(ids[:5])
+        remaining = len(ids) - 5
+        suffix = f" ... ({remaining} more)" if remaining > 0 else ""
+        console.print(f"  {ns}: {preview}{suffix}")
+
+
 def _handle_no_instruction_files(
     effective_agent: str,
     output_format: str,
@@ -161,11 +172,7 @@ def _handle_no_instruction_files(
 
 
 def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | None:
-    """Validate and resolve --rules CLI option paths.
-
-    Returns resolved Path list, or None if no --rules were provided.
-    Exits with error if any path does not exist.
-    """
+    """Validate and resolve --rules CLI option paths. Exits if any path missing."""
     if not rules:
         return None
     rules_paths: list[Path] = []
@@ -173,7 +180,7 @@ def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | 
         rp = Path(r).resolve()
         if not rp.is_dir():
             con.print(f"[red]Error:[/red] Rules directory not found: {rp}")
-            raise typer.Exit(1)
+            raise typer.Exit(2)
         rules_paths.append(rp)
     return rules_paths
 
@@ -228,10 +235,8 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
     con.print("[dim]Verbose:[/dim]")
     if rules_paths:
         for rp in rules_paths:
-            display = str(rp).replace(str(Path.home()), "~")
-            con.print(f"[dim]  source: {display}[/dim]")
+            con.print(f"[dim]  source: {str(rp).replace(str(Path.home()), '~')}[/dim]")
     con.print(f"[dim]  agent: {agent}, {result.rules_checked} rules, {elapsed_ms:.0f}ms[/dim]")
-
     file_checks, mechanical_ids, titles = _compute_file_checks(
         rules_paths,
         target,
@@ -239,13 +244,10 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
         agent,
         experimental,
     )
-
-    # Group violations by file and rule
     failed_by_file: dict[str, set[str]] = {}
     for v in result.violations:
         viol_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
         failed_by_file.setdefault(viol_path, set()).add(v.rule_id)
-
     con.print("[dim]  files:[/dim]")
     for ifile in sorted(instruction_files, key=lambda p: str(p)):
         try:
@@ -257,10 +259,8 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
         failed = failed_by_file.get(rel, set())
         con.print(f"[dim]    {rel} ({len(all_rule_ids)} rules):[/dim]")
         for rid in all_rule_ids:
-            if rid in failed:
-                con.print(f"[dim]      [red]FAIL[/red] {rid} {titles.get(rid, '')}[/dim]")
-            else:
-                con.print(f"[dim]      [green]PASS[/green] {rid} {titles.get(rid, '')}[/dim]")
+            status_tag = "[red]FAIL[/red]" if rid in failed else "[green]PASS[/green]"
+            con.print(f"[dim]      {status_tag} {rid} {titles.get(rid, '')}[/dim]")
 
 
 def _format_output(
@@ -293,6 +293,7 @@ def _format_output(
         status = check_mark if violations == 0 else f"{cross_mark} {violations} violations"
         print(f"ails: {score:.1f}/10 ({level}) {status}")
     else:
-        output = text_formatter.format_result(result, ascii_mode=ascii, quiet_semantic=quiet_semantic, delta=delta)
+        output = text_formatter.format_result(
+            result, ascii_mode=ascii, quiet_semantic=quiet_semantic, delta=delta, elapsed_ms=elapsed_ms
+        )
         con.print(output)
-        con.print(f"\n[dim]Completed in {elapsed_ms:.0f}ms[/dim]")
