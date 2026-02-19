@@ -204,13 +204,42 @@ def apply_auto_fixes(violations: list[Violation], scan_root: Path) -> list[FixRe
     """Apply all available auto-fixes. Returns list of successful fixes."""
     results: list[FixResult] = []
     for v in violations:
-        fixer = FIXERS.get(v.rule_id)
-        if fixer is None:
-            continue
-        fix = fixer(v, scan_root)
+        fix = apply_single_fix(v, scan_root)
         if fix is not None:
             results.append(fix)
     return results
+
+
+def apply_single_fix(violation: Violation, scan_root: Path) -> FixResult | None:
+    """Apply a single fixer for one violation. Returns None if no fixer or fix failed."""
+    fixer = FIXERS.get(violation.rule_id)
+    if fixer is None:
+        return None
+    return fixer(violation, scan_root)
+
+
+def describe_fix(violation: Violation) -> str | None:
+    """Return a human-readable description of what the fixer would do, or None if not fixable."""
+    descriptions: dict[str, str] = {
+        "CORE:C:0010": "Append a ## Constraints section with placeholder",
+        "CORE:C:0003": "Append a ## Commands section with placeholder",
+        "CORE:C:0004": "Append a ## Testing section with placeholder",
+        "CORE:C:0015": "Append ## Overview and ## Getting Started sections",
+        "CORE:C:0002": "Append a ## Project Structure section with placeholder",
+    }
+    return descriptions.get(violation.rule_id)
+
+
+def partition_violations(violations: list[Violation]) -> tuple[list[Violation], list[Violation]]:
+    """Split violations into (fixable, non_fixable) based on FIXERS registry."""
+    fixable: list[Violation] = []
+    non_fixable: list[Violation] = []
+    for v in violations:
+        if v.rule_id in FIXERS:
+            fixable.append(v)
+        else:
+            non_fixable.append(v)
+    return fixable, non_fixable
 
 
 # ---------------------------------------------------------------------------

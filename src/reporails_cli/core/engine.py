@@ -33,6 +33,9 @@ from reporails_cli.core.engine_helpers import (
     _filter_cached_judgments as _filter_cached_judgments,
 )
 from reporails_cli.core.engine_helpers import (
+    _filter_dismissed_violations as _filter_dismissed_violations,
+)
+from reporails_cli.core.engine_helpers import (
     _find_project_root as _find_project_root,
 )
 from reporails_cli.core.engine_helpers import (
@@ -173,6 +176,9 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
         project_root,
         use_cache,
     )
+
+    # Dismissed violations: filter deterministic violations cached as 'pass'
+    violations = _filter_dismissed_violations(violations, scan_root, project_root, use_cache)
 
     # Scoring
     unique_violations = dedupe_violations(violations)

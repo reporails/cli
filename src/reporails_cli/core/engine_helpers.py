@@ -193,6 +193,47 @@ def _run_rule_validation(
     return state.findings, all_judgment_requests
 
 
+def _filter_dismissed_violations(
+    violations: list[Violation],
+    scan_root: Path,
+    project_root: Path,
+    use_cache: bool,
+) -> list[Violation]:
+    """Filter out dismissed violations (cached as 'pass' in judgment cache).
+
+    Deterministic violations dismissed via ``ails heal`` are cached with
+    verdict='pass'. This removes them so ``ails check`` also hides them.
+    When ``use_cache=False`` (--refresh), all violations pass through.
+    """
+    if not violations or not use_cache:
+        return violations
+
+    cache = ProjectCache(project_root)
+    filtered: list[Violation] = []
+    for v in violations:
+        raw_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
+        try:
+            rel_path = str(Path(raw_path).relative_to(scan_root))
+        except ValueError:
+            rel_path = raw_path
+
+        try:
+            full_file = scan_root / rel_path
+            file_hash = content_hash(full_file)
+            struct_hash = structural_hash(full_file)
+        except (OSError, ValueError):
+            filtered.append(v)
+            continue
+
+        cached = cache.get_cached_judgment(rel_path, file_hash, structural_hash=struct_hash)
+        if cached and v.rule_id in cached:
+            verdict = cached[v.rule_id]
+            if verdict.get("verdict") == "pass":
+                continue  # Dismissed — skip
+        filtered.append(v)
+    return filtered
+
+
 def _filter_cached_judgments(
     judgment_requests: list[JudgmentRequest],
     violations: list[Violation],

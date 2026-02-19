@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.models import JudgmentRequest
+from pathlib import Path
+
+from reporails_cli.core.models import JudgmentRequest, Violation
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.components import get_severity_label
 
@@ -77,6 +79,121 @@ def _append_content_section(
     lines.append(sep)
 
 
+def extract_violation_snippet(
+    location: str,
+    scan_root: Path,
+    context_lines: int = 2,
+) -> str | None:
+    """Read file and return lines around the violation with a >> marker.
+
+    Returns None on read error or if the location has no line number.
+    """
+    parts = location.rsplit(":", 1)
+    if len(parts) != 2 or not parts[1].isdigit():
+        return None
+
+    file_part, line_str = parts
+    target_line = int(line_str)
+    file_path = Path(file_part)
+    if not file_path.is_absolute():
+        file_path = scan_root / file_path
+
+    try:
+        all_lines = file_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    if target_line < 1 or target_line > len(all_lines):
+        return None
+
+    start = max(0, target_line - 1 - context_lines)
+    end = min(len(all_lines), target_line + context_lines)
+    snippet_lines: list[str] = []
+    for i in range(start, end):
+        line_num = i + 1
+        marker = ">>" if line_num == target_line else "  "
+        snippet_lines.append(f"{marker} {line_num:>4} | {all_lines[i]}")
+    return "\n".join(snippet_lines)
+
+
+def format_fixable_violation_prompt(
+    violation: Violation,
+    fix_description: str,
+    index: int,
+    total: int,
+    ascii_mode: bool | None = None,
+) -> str:
+    """Render a prompt box for a fixable violation with proposed fix."""
+    chars = get_chars(ascii_mode)
+    w = 64
+    v = chars["v"]
+    lines: list[str] = []
+
+    lines.append(f"{chars['tl']}{chars['h'] * w}{chars['tr']}")
+
+    header = f"Fix {index}/{total}: {violation.rule_id} — {violation.rule_title}"
+    lines.append(_pad(header, get_severity_label(violation.severity.value, chars), w, v))
+    lines.append(_empty(w, v))
+
+    lines.extend(_padl(ml, w, v) for ml in _wrap(violation.message, w - 6))
+    lines.append(_empty(w, v))
+
+    file_path = violation.location.rsplit(":", 1)[0] if ":" in violation.location else violation.location
+    lines.append(_padl(f"File: {file_path}", w, v))
+    lines.append(_empty(w, v))
+
+    lines.append(_padl("Proposed fix:", w, v))
+    lines.extend(_padl(fl, w, v) for fl in _wrap(f"  {chars['med']} {fix_description}", w - 6))
+    lines.append(_empty(w, v))
+
+    lines.append(_padl("[a]pply  [s]kip  [d]ismiss", w, v))
+    lines.append(_empty(w, v))
+
+    lines.append(f"{chars['bl']}{chars['h'] * w}{chars['br']}")
+    return "\n".join(lines)
+
+
+def format_violation_prompt(
+    violation: Violation,
+    index: int,
+    total: int,
+    snippet: str | None = None,
+    ascii_mode: bool | None = None,
+) -> str:
+    """Render a prompt box for a non-fixable violation with content snippet."""
+    chars = get_chars(ascii_mode)
+    w = 64
+    v = chars["v"]
+    lines: list[str] = []
+
+    lines.append(f"{chars['tl']}{chars['h'] * w}{chars['tr']}")
+
+    header = f"Violation {index}/{total}: {violation.rule_id} — {violation.rule_title}"
+    lines.append(_pad(header, get_severity_label(violation.severity.value, chars), w, v))
+    lines.append(_empty(w, v))
+
+    lines.extend(_padl(ml, w, v) for ml in _wrap(violation.message, w - 6))
+    lines.append(_empty(w, v))
+
+    file_path = violation.location.rsplit(":", 1)[0] if ":" in violation.location else violation.location
+    lines.append(_padl(f"File: {file_path}", w, v))
+
+    if snippet:
+        sep = f"{v}   {chars['sep'] * (w - 6)}   {v}"
+        lines.append(sep)
+        for sl in snippet.splitlines():
+            display = sl[: w - 8] + "..." if len(sl) > w - 8 else sl
+            lines.append(_padl(f"  {display}", w, v))
+        lines.append(sep)
+
+    lines.append(_empty(w, v))
+    lines.append(_padl("[d]ismiss  [s]kip", w, v))
+    lines.append(_empty(w, v))
+
+    lines.append(f"{chars['bl']}{chars['h'] * w}{chars['br']}")
+    return "\n".join(lines)
+
+
 def format_heal_summary(
     passed: int,
     failed: int,
@@ -84,20 +201,25 @@ def format_heal_summary(
     dismissed: int,
     *,
     auto_fixed: int = 0,
+    violations_dismissed: int = 0,
+    violations_skipped: int = 0,
 ) -> str:
     """Format the end-of-heal summary line."""
     parts = []
     if auto_fixed:
-        parts.append(f"{auto_fixed} auto-fixed")
+        parts.append(f"{auto_fixed} applied")
+    if violations_dismissed or dismissed:
+        total_dismissed = violations_dismissed + dismissed
+        parts.append(f"{total_dismissed} dismissed")
+    if violations_skipped:
+        parts.append(f"{violations_skipped} violations skipped")
     if passed:
         parts.append(f"{passed} passed")
     if failed:
         parts.append(f"{failed} failed")
     if skipped:
         parts.append(f"{skipped} skipped")
-    if dismissed:
-        parts.append(f"{dismissed} dismissed")
-    return "Heal complete: " + ", ".join(parts) if parts else "No semantic rules to evaluate."
+    return "Heal complete: " + ", ".join(parts) if parts else "Nothing to heal."
 
 
 # ---------------------------------------------------------------------------
