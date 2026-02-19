@@ -23,7 +23,7 @@ npx @reporails/cli check
 That's it. You'll get a score, capability level, and actionable violations.
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Maintained (L5)    ║
+║   SCORE: 8.1 / 10 (awaiting semantic)  |  CAPABILITY: Maintained (L5)    ║
 ║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -94,30 +94,6 @@ See the [main README](https://github.com/reporails/cli#github-actions) for full 
 
 ## Commands
 
-```bash
-ails setup                      # Set up MCP server for detected agents
-ails check                      # Score your setup
-ails check -f json              # JSON output (for CI)
-ails check -f github            # GitHub Actions annotations
-ails check --strict             # Exit 1 if violations (for CI)
-ails check --no-update-check    # Skip pre-run update prompt
-ails check --exclude-dir vendor # Exclude directory from scanning
-ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
-ails heal                       # Interactive auto-fix + semantic evaluation
-ails heal --non-interactive     # JSON output for agents and scripts
-ails explain CORE:S:0001        # Explain a rule
-ails map                        # Show project structure
-ails map --save                 # Generate backbone.yml
-ails update                     # Update rules framework + recommended
-ails update --check             # Check for updates without installing
-ails update --recommended       # Update recommended rules only
-ails update --force             # Force reinstall even if current
-ails update --cli               # Upgrade the CLI package itself
-ails dismiss CORE:C:0001        # Dismiss a semantic finding
-ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
-ails version                    # Show version info
-```
-
 | Command | Description |
 |---------|-------------|
 | `setup [PATH]` | Set up MCP server for detected agents |
@@ -126,9 +102,14 @@ ails version                    # Show version info
 | `explain RULE_ID` | Show rule details |
 | `map [PATH]` | Discover project structure |
 | `update` | Update rules framework + recommended |
+| `config set KEY VALUE` | Set a project config value |
+| `config get KEY` | Show a config value |
+| `config list` | Show all config |
 | `dismiss RULE_ID` | Dismiss a semantic finding |
 | `judge PATH VERDICTS` | Cache semantic verdicts |
 | `version` | Show version info |
+
+See the [main README](https://github.com/reporails/cli#commands) for full flag reference.
 
 ## Updating
 

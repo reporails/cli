@@ -30,7 +30,7 @@ npx @reporails/cli check
 That's it. You'll get a score, capability level, and actionable violations.
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Maintained (L5)    ║
+║   SCORE: 8.1 / 10 (awaiting semantic)  |  CAPABILITY: Maintained (L5)    ║
 ║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -134,6 +134,8 @@ ails check -f json              # JSON output (for CI)
 ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations (for CI)
 ails check --no-update-check    # Skip pre-run update prompt
+ails check --agent claude       # Agent-specific rules
+ails check --experimental       # Include experimental rules
 ails check --exclude-dir vendor # Exclude directory from scanning
 ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
 ails heal                       # Interactive auto-fix + semantic evaluation
@@ -146,6 +148,9 @@ ails update --check             # Check for updates without installing
 ails update --recommended       # Update recommended rules only
 ails update --force             # Force reinstall even if current
 ails update --cli               # Upgrade the CLI package itself
+ails config set default_agent claude  # Set default agent
+ails config get default_agent   # Show current value
+ails config list                # Show all config
 ails dismiss CORE:C:0001        # Dismiss a semantic finding
 ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
 ails version                    # Show version info
@@ -178,6 +183,28 @@ To update recommended rules independently:
 ```bash
 ails update --recommended
 ```
+
+## Configuration
+
+Project config in `.reporails/config.yml`:
+
+```yaml
+default_agent: claude          # Default agent (run: ails config set default_agent claude)
+exclude_dirs: [vendor, dist]   # Directories to skip
+disabled_rules: [CORE:C:0010]  # Rules to disable
+experimental: false            # Include experimental rules
+recommended: true              # Include recommended rules (AILS_ namespace)
+```
+
+Set values via CLI: `ails config set <key> <value>`
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Violations found (strict mode) |
+| 2 | Invalid input (bad path, unknown agent/format/rule) |
 
 ## Prerequisites
 
