@@ -1,25 +1,27 @@
 """Unit tests for heal command formatting and verdict caching.
 
 Tests cover:
-- format_judgment_prompt rendering
-- format_heal_summary
-- _cache_verdict integration with cache_judgments
+- format_heal_summary rendering (autoheal output)
+- cache_verdict integration with cache_judgments
+- cache_violation_dismissal
+- extract_violation_snippet
+- Non-interactive JSON output (format_heal_result)
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.cache import ProjectCache, content_hash, structural_hash
-from reporails_cli.core.models import JudgmentRequest, Severity, Violation
-from reporails_cli.formatters.text.heal import (
-    extract_violation_snippet,
-    format_fixable_violation_prompt,
-    format_heal_summary,
-    format_judgment_prompt,
-    format_violation_prompt,
+from reporails_cli.core.cache import (
+    ProjectCache,
+    cache_verdict,
+    cache_violation_dismissal,
+    content_hash,
+    structural_hash,
 )
-from reporails_cli.interfaces.cli.heal_prompts import cache_verdict, cache_violation_dismissal
+from reporails_cli.core.fixers import FixResult
+from reporails_cli.core.models import JudgmentRequest, Severity, Violation
+from reporails_cli.formatters.text.heal import extract_violation_snippet, format_heal_summary
 
 
 def _make_request(
@@ -45,88 +47,24 @@ def _make_request(
 
 
 # ---------------------------------------------------------------------------
-# format_judgment_prompt
+# Violation helpers
 # ---------------------------------------------------------------------------
 
 
-class TestFormatJudgmentPrompt:
-    def test_contains_rule_info(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 2, 5)
-        assert "Rule 2/5" in output
-        assert "CORE:C:0019" in output
-        assert "Navigability Aid" in output
-
-    def test_contains_question(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 1, 1)
-        assert "Does this file include navigation aids?" in output
-
-    def test_contains_criteria(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 1, 1)
-        assert "Has table of contents" in output
-        assert "Section headers provide navigation" in output
-
-    def test_contains_action_prompt(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 1, 1)
-        assert "[p]ass" in output
-        assert "[f]ail" in output
-        assert "[s]kip" in output
-        assert "[d]ismiss" in output
-
-    def test_contains_file_path(self) -> None:
-        jr = _make_request(location="CLAUDE.md:42")
-        output = format_judgment_prompt(jr, 1, 1)
-        assert "CLAUDE.md" in output
-
-    def test_contains_content_snippet(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 1, 1)
-        assert "# My Project" in output
-        assert "Section 1" in output
-
-    def test_ascii_mode(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 1, 1, ascii_mode=True)
-        # ASCII mode uses + for corners, - for horizontal
-        assert "+" in output
-        assert "-" in output
-        # Should NOT contain Unicode box chars
-        assert "\u2554" not in output  # ╔
-
-    def test_unicode_mode(self) -> None:
-        jr = _make_request()
-        output = format_judgment_prompt(jr, 1, 1, ascii_mode=False)
-        assert "\u2554" in output  # ╔
-
-    def test_severity_shown(self) -> None:
-        jr = _make_request(severity=Severity.HIGH)
-        output = format_judgment_prompt(jr, 1, 1)
-        assert "HIGH" in output
-
-    def test_truncates_long_content(self) -> None:
-        long_content = "\n".join(f"Line {i}" for i in range(100))
-        jr = JudgmentRequest(
-            rule_id="C6",
-            rule_title="Test",
-            content=long_content,
-            location="CLAUDE.md:1",
-            question="Is it good?",
-            criteria={"check": "test"},
-            examples={"good": [], "bad": []},
-            choices=["pass", "fail"],
-            pass_value="pass",
-            severity=Severity.MEDIUM,
-            points_if_fail=-10,
-        )
-        output = format_judgment_prompt(jr, 1, 1, max_content_lines=10)
-        assert "first 10 lines" in output
-        # Should contain early lines
-        assert "Line 0" in output
-        # Should NOT contain lines beyond the limit
-        assert "Line 50" not in output
+def _make_violation(
+    rule_id: str = "CORE:S:0003",
+    rule_title: str = "Wall of Prose",
+    location: str = "CLAUDE.md:17",
+    message: str = "Paragraph exceeds 5 lines without structure",
+    severity: Severity = Severity.MEDIUM,
+) -> Violation:
+    return Violation(
+        rule_id=rule_id,
+        rule_title=rule_title,
+        location=location,
+        message=message,
+        severity=severity,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -135,41 +73,53 @@ class TestFormatJudgmentPrompt:
 
 
 class TestFormatHealSummary:
-    def test_all_actions(self) -> None:
-        summary = format_heal_summary(passed=3, failed=1, skipped=1, dismissed=2)
-        assert "3 passed" in summary
-        assert "1 failed" in summary
-        assert "1 skipped" in summary
-        assert "2 dismissed" in summary
-        assert summary.startswith("Heal complete:")
+    def test_applied_fixes_shown(self) -> None:
+        fixes = [
+            FixResult(
+                rule_id="CORE:C:0003", file_path="CLAUDE.md", description="Added ## Commands section to CLAUDE.md"
+            ),
+        ]
+        summary = format_heal_summary(fixes, [], [])
+        assert "Applied 1 fix(es):" in summary
+        assert "CORE:C:0003" in summary
+        assert "Added ## Commands section" in summary
 
-    def test_only_passed(self) -> None:
-        summary = format_heal_summary(passed=5, failed=0, skipped=0, dismissed=0)
-        assert "5 passed" in summary
-        assert "failed" not in summary
-        assert "skipped" not in summary
+    def test_remaining_violations_shown(self) -> None:
+        violations = [_make_violation()]
+        summary = format_heal_summary([], violations, [])
+        assert "1 remaining violation(s):" in summary
+        assert "CORE:S:0003" in summary
+        assert "CLAUDE.md:17" in summary
 
-    def test_no_actions(self) -> None:
-        summary = format_heal_summary(passed=0, failed=0, skipped=0, dismissed=0)
+    def test_pending_semantic_shown(self) -> None:
+        requests = [_make_request()]
+        summary = format_heal_summary([], [], requests)
+        assert "1 semantic rule(s) pending evaluation:" in summary
+        assert "CORE:C:0019" in summary
+        assert "Navigability Aid" in summary
+
+    def test_nothing_to_heal(self) -> None:
+        summary = format_heal_summary([], [], [])
         assert "Nothing to heal" in summary
 
-    def test_with_auto_fixed(self) -> None:
-        summary = format_heal_summary(passed=0, failed=0, skipped=0, dismissed=0, auto_fixed=3)
-        assert "3 applied" in summary
-        assert summary.startswith("Heal complete:")
+    def test_all_sections(self) -> None:
+        fixes = [FixResult(rule_id="CORE:C:0003", file_path="CLAUDE.md", description="Added ## Commands")]
+        violations = [_make_violation()]
+        requests = [_make_request()]
+        summary = format_heal_summary(fixes, violations, requests)
+        assert "Applied 1 fix(es):" in summary
+        assert "1 remaining violation(s):" in summary
+        assert "1 semantic rule(s) pending evaluation:" in summary
 
-    def test_with_violations_dismissed(self) -> None:
-        summary = format_heal_summary(passed=1, failed=0, skipped=0, dismissed=1, violations_dismissed=2)
-        assert "3 dismissed" in summary  # 2 violations + 1 semantic
-        assert "1 passed" in summary
-
-    def test_with_violations_skipped(self) -> None:
-        summary = format_heal_summary(passed=0, failed=0, skipped=0, dismissed=0, violations_skipped=3)
-        assert "3 violations skipped" in summary
+    def test_ascii_mode_uses_plus(self) -> None:
+        fixes = [FixResult(rule_id="CORE:C:0003", file_path="CLAUDE.md", description="Added ## Commands")]
+        summary = format_heal_summary(fixes, [], [], ascii_mode=True)
+        assert "+" in summary
+        assert "\u2713" not in summary  # No Unicode checkmark
 
 
 # ---------------------------------------------------------------------------
-# _cache_verdict
+# cache_verdict
 # ---------------------------------------------------------------------------
 
 
@@ -228,10 +178,10 @@ class TestCacheVerdict:
 
 
 class TestNonInteractiveMode:
-    """Test the --non-interactive flag for heal command."""
+    """Test the JSON formatter for heal command."""
 
     def test_json_format_with_no_fixes(self) -> None:
-        """Non-interactive mode outputs valid JSON when no fixes are needed."""
+        """JSON output is valid when no fixes are needed."""
         from reporails_cli.formatters.json import format_heal_result
 
         result = format_heal_result([], [])
@@ -241,7 +191,7 @@ class TestNonInteractiveMode:
         assert result["summary"]["pending_judgments"] == 0
 
     def test_json_format_with_auto_fixes(self) -> None:
-        """Non-interactive mode includes auto-fix details in JSON."""
+        """JSON output includes auto-fix details."""
         from reporails_cli.formatters.json import format_heal_result
 
         auto_fixed = [
@@ -257,7 +207,7 @@ class TestNonInteractiveMode:
         assert result["summary"]["auto_fixed_count"] == 1
 
     def test_json_format_with_judgment_requests(self) -> None:
-        """Non-interactive mode includes judgment requests in JSON."""
+        """JSON output includes judgment requests."""
         from reporails_cli.formatters.json import format_heal_result
 
         judgment_requests = [
@@ -279,7 +229,7 @@ class TestNonInteractiveMode:
         assert result["summary"]["pending_judgments"] == 1
 
     def test_json_format_with_both(self) -> None:
-        """Non-interactive mode handles both auto-fixes and judgment requests."""
+        """JSON output handles both auto-fixes and judgment requests."""
         from reporails_cli.formatters.json import format_heal_result
 
         auto_fixed = [{"rule_id": "CORE:S:0001", "file_path": "CLAUDE.md", "description": "Added file"}]
@@ -301,7 +251,7 @@ class TestNonInteractiveMode:
         assert result["summary"]["pending_judgments"] == 1
 
     def test_json_format_with_violations(self) -> None:
-        """Non-interactive mode includes non-fixable violations in JSON."""
+        """JSON output includes non-fixable violations."""
         from reporails_cli.formatters.json import format_heal_result
 
         violations = [
@@ -317,27 +267,6 @@ class TestNonInteractiveMode:
         assert "violations" in result
         assert len(result["violations"]) == 1
         assert result["summary"]["violations_count"] == 1
-
-
-# ---------------------------------------------------------------------------
-# Violation helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_violation(
-    rule_id: str = "CORE:S:0003",
-    rule_title: str = "Wall of Prose",
-    location: str = "CLAUDE.md:17",
-    message: str = "Paragraph exceeds 5 lines without structure",
-    severity: Severity = Severity.MEDIUM,
-) -> Violation:
-    return Violation(
-        rule_id=rule_id,
-        rule_title=rule_title,
-        location=location,
-        message=message,
-        severity=severity,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -384,77 +313,7 @@ class TestExtractViolationSnippet:
 
 
 # ---------------------------------------------------------------------------
-# format_fixable_violation_prompt
-# ---------------------------------------------------------------------------
-
-
-class TestFormatFixableViolationPrompt:
-    def test_contains_rule_info(self) -> None:
-        v = _make_violation(rule_id="CORE:C:0003", rule_title="Has Commands")
-        output = format_fixable_violation_prompt(v, "Append a ## Commands section", 1, 3)
-        assert "Fix 1/3" in output
-        assert "CORE:C:0003" in output
-        assert "Has Commands" in output
-
-    def test_contains_fix_description(self) -> None:
-        v = _make_violation()
-        output = format_fixable_violation_prompt(v, "Append a ## Commands section", 1, 1)
-        assert "Proposed fix:" in output
-        assert "Append a ## Commands section" in output
-
-    def test_contains_action_prompt(self) -> None:
-        v = _make_violation()
-        output = format_fixable_violation_prompt(v, "fix it", 1, 1)
-        assert "[a]pply" in output
-        assert "[s]kip" in output
-        assert "[d]ismiss" in output
-
-    def test_ascii_mode(self) -> None:
-        v = _make_violation()
-        output = format_fixable_violation_prompt(v, "fix", 1, 1, ascii_mode=True)
-        assert "+" in output
-        assert "\u2554" not in output  # No Unicode
-
-
-# ---------------------------------------------------------------------------
-# format_violation_prompt
-# ---------------------------------------------------------------------------
-
-
-class TestFormatViolationPrompt:
-    def test_contains_rule_info(self) -> None:
-        v = _make_violation()
-        output = format_violation_prompt(v, 2, 5)
-        assert "Violation 2/5" in output
-        assert "CORE:S:0003" in output
-        assert "Wall of Prose" in output
-
-    def test_contains_message(self) -> None:
-        v = _make_violation(message="Too long paragraph")
-        output = format_violation_prompt(v, 1, 1)
-        assert "Too long paragraph" in output
-
-    def test_contains_action_prompt(self) -> None:
-        v = _make_violation()
-        output = format_violation_prompt(v, 1, 1)
-        assert "[d]ismiss" in output
-        assert "[s]kip" in output
-
-    def test_with_snippet(self) -> None:
-        v = _make_violation()
-        snippet = "  >> 17 | This is the offending line"
-        output = format_violation_prompt(v, 1, 1, snippet=snippet)
-        assert "offending line" in output
-
-    def test_without_snippet(self) -> None:
-        v = _make_violation()
-        output = format_violation_prompt(v, 1, 1, snippet=None)
-        assert "File:" in output
-        # Should still render without error
-
-
-# ---------------------------------------------------------------------------
-# _cache_violation_dismissal
+# cache_violation_dismissal
 # ---------------------------------------------------------------------------
 
 

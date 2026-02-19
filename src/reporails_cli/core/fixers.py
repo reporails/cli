@@ -218,18 +218,6 @@ def apply_single_fix(violation: Violation, scan_root: Path) -> FixResult | None:
     return fixer(violation, scan_root)
 
 
-def describe_fix(violation: Violation) -> str | None:
-    """Return a human-readable description of what the fixer would do, or None if not fixable."""
-    descriptions: dict[str, str] = {
-        "CORE:C:0010": "Append a ## Constraints section with placeholder",
-        "CORE:C:0003": "Append a ## Commands section with placeholder",
-        "CORE:C:0004": "Append a ## Testing section with placeholder",
-        "CORE:C:0015": "Append ## Overview and ## Getting Started sections",
-        "CORE:C:0002": "Append a ## Project Structure section with placeholder",
-    }
-    return descriptions.get(violation.rule_id)
-
-
 def partition_violations(violations: list[Violation]) -> tuple[list[Violation], list[Violation]]:
     """Split violations into (fixable, non_fixable) based on FIXERS registry."""
     fixable: list[Violation] = []

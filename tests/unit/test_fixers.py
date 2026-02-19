@@ -13,7 +13,6 @@ from pathlib import Path
 from reporails_cli.core.fixers import (
     apply_auto_fixes,
     apply_single_fix,
-    describe_fix,
     fix_add_commands,
     fix_add_constraints,
     fix_add_sections,
@@ -313,24 +312,6 @@ class TestPartitionViolations:
         fixable, non_fixable = partition_violations(violations)
         assert len(fixable) == 0
         assert len(non_fixable) == 2
-
-
-# ---------------------------------------------------------------------------
-# describe_fix
-# ---------------------------------------------------------------------------
-
-
-class TestDescribeFix:
-    def test_returns_description_for_fixable(self) -> None:
-        v = _make_violation("CORE:C:0003", "CLAUDE.md")
-        desc = describe_fix(v)
-        assert desc is not None
-        assert "Commands" in desc
-
-    def test_returns_none_for_non_fixable(self) -> None:
-        v = _make_violation("CORE:S:0003", "CLAUDE.md")
-        desc = describe_fix(v)
-        assert desc is None
 
 
 # ---------------------------------------------------------------------------
