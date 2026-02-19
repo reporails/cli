@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.formatters.text.chars import get_chars
+from reporails_cli.formatters.text.chars import ASCII_MODE, get_chars
 from reporails_cli.formatters.text.components import (
     format_legend,
     get_severity_icons,
@@ -26,7 +26,9 @@ def format_violations_section(
         return "No violations found."
 
     chars = get_chars(ascii_mode)
-    legend = format_legend(ascii_mode)
+    use_ascii = ascii_mode if ascii_mode is not None else ASCII_MODE
+    colored = not use_ascii
+    legend = format_legend(ascii_mode, colored)
     line_width = 64
     separator = "-" * line_width
     header = f"Violations{legend:>{line_width - len('Violations')}}"
@@ -59,7 +61,7 @@ def format_violations_section(
 
     sorted_files = sorted(grouped.items(), key=file_sort_key)
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    severity_icons = get_severity_icons(chars)
+    severity_icons = get_severity_icons(chars, colored)
 
     for file_path, file_violations in sorted_files:
         display_path = normalize_path(file_path)
