@@ -21,7 +21,7 @@ app = typer.Typer(
     help="Validate and score AI instruction files - what ails your repo?",
     no_args_is_help=True,
 )
-console = Console(emoji=False)
+console = Console(emoji=False, highlight=False)
 
 
 def _is_ci() -> bool:

@@ -9,6 +9,7 @@
 - [META]: Add `.reporails/config.yml` with `default_agent`, `exclude_dirs`, and `disabled_rules`
 
 ### Changed
+- CLI: Semantic color output — score, bar, capability level, violations, friction, and category table use green/yellow/red based on values (ASCII mode disables all colors)
 - Action: Agent default changed from `claude` to empty (resolve via project config or generic fallback)
 - Action: Add `-q` (quiet-semantic) flag — no human to judge semantic rules in CI
 - Action: Add `exclude-dir` input for comma-separated directory exclusions

@@ -59,10 +59,10 @@ def format_compact(
         deduped_grouped[file_path] = unique
         deduped_count += len(unique)
 
-    # Header line with delta indicators
-    score_delta_str = format_score_delta(delta, ascii_mode)
-    level_delta_str = format_level_delta(delta, ascii_mode)
-    violations_delta_str = format_violations_delta(delta, ascii_mode) if deduped_count > 0 else ""
+    # Header line with delta indicators (compact never uses colors)
+    score_delta_str, _ = format_score_delta(delta, ascii_mode)
+    level_delta_str, _ = format_level_delta(delta, ascii_mode)
+    violations_delta_str, _ = format_violations_delta(delta, ascii_mode) if deduped_count > 0 else ("", 0)
     partial_marker = " (partial)" if is_partial else ""
     header_base = f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}){partial_marker}"
     if deduped_count > 0:
