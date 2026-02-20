@@ -172,6 +172,8 @@ def get_global_config() -> GlobalConfig:
             framework_path=Path(framework_path) if framework_path else None,
             recommended_path=Path(recommended_path) if recommended_path else None,
             auto_update_check=data.get("auto_update_check", True),
+            default_agent=data.get("default_agent", ""),
+            recommended=data.get("recommended", True),
         )
     except (yaml.YAMLError, OSError):
         return GlobalConfig()
@@ -192,11 +194,16 @@ def get_project_config(project_root: Path) -> ProjectConfig:
 
     config_path = project_root / ".reporails" / "config.yml"
     if not config_path.exists():
-        return ProjectConfig()
+        global_cfg = get_global_config()
+        return ProjectConfig(
+            default_agent=global_cfg.default_agent,
+            recommended=global_cfg.recommended,
+        )
 
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        return ProjectConfig(
+        has_recommended = "recommended" in data
+        config = ProjectConfig(
             framework_version=data.get("framework_version"),
             packages=data.get("packages", []),
             disabled_rules=data.get("disabled_rules", []),
@@ -206,6 +213,13 @@ def get_project_config(project_root: Path) -> ProjectConfig:
             exclude_dirs=data.get("exclude_dirs", []),
             default_agent=data.get("default_agent", ""),
         )
+        # Apply global defaults where project doesn't override
+        global_cfg = get_global_config()
+        if not config.default_agent:
+            config.default_agent = global_cfg.default_agent
+        if not has_recommended:
+            config.recommended = global_cfg.recommended
+        return config
     except (yaml.YAMLError, OSError):
         return ProjectConfig()
 

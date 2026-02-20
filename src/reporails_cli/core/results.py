@@ -125,6 +125,8 @@ class GlobalConfig:
     framework_path: Path | None = None  # Local override (dev)
     recommended_path: Path | None = None  # Local override (dev)
     auto_update_check: bool = True
+    default_agent: str = ""
+    recommended: bool = True
 
 
 @dataclass
