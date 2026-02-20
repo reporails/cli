@@ -46,7 +46,7 @@
 
 ### Testing
 - [SMOKE]: Add mutation-tested E2E smoke layer (`tests/smoke/`, 46 tests) — covers agent scoping, cross-agent contamination, template context, hint messages, violation location accuracy, nested file discovery, empty agent edge case, config-only detection, deduplication, generic agent template, input validation, default_agent config
-- [SMOKE]: Add E2E tests for `ails config` commands (17 tests) — set/get/list round-trips, `--global` flag, global fallback annotation, global defaults flowing through to `ails check`
+- [SMOKE]: Add E2E tests for all CLI commands (60 tests) — version, explain, heal, map, dismiss, judge, install, update --check, config set/get/list with --global, check flags (--strict, --verbose, --ascii, --exclude-dir, -f json)
 - [UNIT]: Add test coverage for `action/summary.py` (score table, status, categories, violations, CLI entry point)
 - [CI]: Add `test-action.yml` workflow — regression tests for GitHub Action (pass/fail scenarios, output verification)
 
