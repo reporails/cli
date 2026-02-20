@@ -692,3 +692,231 @@ class TestDefaultAgentConfig:
         data = _check_json(multi_agent)
         files = _violation_files(data)
         assert files == {"AGENTS.md"}, f"Without config, no-agent should scope to AGENTS.md (generic), got: {files}"
+
+
+# ===========================================================================
+# Config Commands — set/get/list with --global flag
+#
+# E2E tests for `ails config` subcommands. Uses tmp_path for isolated
+# project and global config directories. Global config path is patched
+# to avoid touching the real ~/.reporails/config.yml.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestConfigSetGet:
+    """ails config set/get round-trips values correctly."""
+
+    def test_set_then_get(self, tmp_path: Path) -> None:
+        """set + get round-trip for a string key."""
+        project = tmp_path / "project"
+        project.mkdir()
+        result = runner.invoke(app, ["config", "set", "default_agent", "claude", "--path", str(project)])
+        assert result.exit_code == 0, f"set failed:\n{result.output}"
+
+        result = runner.invoke(app, ["config", "get", "default_agent", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "claude" in result.output
+
+    def test_set_bool(self, tmp_path: Path) -> None:
+        """set + get round-trip for a boolean key."""
+        project = tmp_path / "project"
+        project.mkdir()
+        runner.invoke(app, ["config", "set", "recommended", "false", "--path", str(project)])
+
+        result = runner.invoke(app, ["config", "get", "recommended", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "False" in result.output
+
+    def test_set_list(self, tmp_path: Path) -> None:
+        """set + get round-trip for a list key."""
+        project = tmp_path / "project"
+        project.mkdir()
+        runner.invoke(app, ["config", "set", "exclude_dirs", "vendor,dist", "--path", str(project)])
+
+        result = runner.invoke(app, ["config", "get", "exclude_dirs", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "vendor" in result.output
+
+    def test_get_unset_key(self, tmp_path: Path) -> None:
+        """get on an unset known key shows (not set)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        result = runner.invoke(app, ["config", "get", "default_agent", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "not set" in result.output
+
+    def test_set_unknown_key(self, tmp_path: Path) -> None:
+        """set with an unknown key exits with code 2."""
+        project = tmp_path / "project"
+        project.mkdir()
+        result = runner.invoke(app, ["config", "set", "bogus_key", "val", "--path", str(project)])
+        assert result.exit_code == 2
+        assert "Unknown config key" in result.output
+
+    def test_get_unknown_key(self, tmp_path: Path) -> None:
+        """get with an unknown key exits with code 2."""
+        project = tmp_path / "project"
+        project.mkdir()
+        result = runner.invoke(app, ["config", "get", "bogus_key", "--path", str(project)])
+        assert result.exit_code == 2
+        assert "Unknown config key" in result.output
+
+
+@pytest.mark.e2e
+class TestConfigList:
+    """ails config list shows all values."""
+
+    def test_list_empty(self, tmp_path: Path) -> None:
+        """list with no config shows empty message."""
+        project = tmp_path / "project"
+        project.mkdir()
+        result = runner.invoke(app, ["config", "list", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "No configuration set" in result.output
+
+    def test_list_shows_values(self, tmp_path: Path) -> None:
+        """list after setting values shows them."""
+        project = tmp_path / "project"
+        project.mkdir()
+        runner.invoke(app, ["config", "set", "default_agent", "cursor", "--path", str(project)])
+        runner.invoke(app, ["config", "set", "recommended", "false", "--path", str(project)])
+
+        result = runner.invoke(app, ["config", "list", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "default_agent: cursor" in result.output
+        assert "recommended: False" in result.output
+
+
+@pytest.mark.e2e
+class TestConfigGlobal:
+    """ails config --global reads/writes ~/.reporails/config.yml."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_global(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Redirect global config to tmp_path so tests never touch real home."""
+        self.global_home = tmp_path / "fake_home" / ".reporails"
+        self.global_home.mkdir(parents=True)
+        monkeypatch.setattr(
+            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            lambda: self.global_home / "config.yml",
+        )
+
+    def test_global_set_then_get(self) -> None:
+        """--global set + get round-trip."""
+        result = runner.invoke(app, ["config", "set", "--global", "default_agent", "claude"])
+        assert result.exit_code == 0, f"global set failed:\n{result.output}"
+        assert "global" in result.output
+
+        result = runner.invoke(app, ["config", "get", "--global", "default_agent"])
+        assert result.exit_code == 0
+        assert "claude" in result.output
+
+    def test_global_set_recommended(self) -> None:
+        """--global set works for boolean key."""
+        result = runner.invoke(app, ["config", "set", "--global", "recommended", "false"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(app, ["config", "get", "--global", "recommended"])
+        assert result.exit_code == 0
+        assert "False" in result.output
+
+    def test_global_rejects_non_global_key(self) -> None:
+        """--global set with a project-only key errors."""
+        result = runner.invoke(app, ["config", "set", "--global", "exclude_dirs", "vendor"])
+        assert result.exit_code == 2
+        assert "not supported in global config" in result.output
+
+    def test_global_list(self) -> None:
+        """--global list shows only global config."""
+        runner.invoke(app, ["config", "set", "--global", "default_agent", "claude"])
+
+        result = runner.invoke(app, ["config", "list", "--global"])
+        assert result.exit_code == 0
+        assert "default_agent: claude" in result.output
+
+    def test_global_list_empty(self) -> None:
+        """--global list with no config shows empty message."""
+        result = runner.invoke(app, ["config", "list", "--global"])
+        assert result.exit_code == 0
+        assert "No global configuration set" in result.output
+
+    def test_list_annotates_global_fallback(self, tmp_path: Path) -> None:
+        """project list shows global values annotated with (global)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        runner.invoke(app, ["config", "set", "exclude_dirs", "vendor", "--path", str(project)])
+        runner.invoke(app, ["config", "set", "--global", "default_agent", "claude"])
+
+        result = runner.invoke(app, ["config", "list", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "default_agent: claude (global)" in result.output
+        assert "exclude_dirs:" in result.output
+        # exclude_dirs line must NOT be annotated as global
+        for line in result.output.splitlines():
+            if line.startswith("exclude_dirs:"):
+                assert "(global)" not in line, f"exclude_dirs should not be global: {line}"
+
+    def test_project_overrides_global_in_list(self, tmp_path: Path) -> None:
+        """project value wins over global — no (global) annotation."""
+        project = tmp_path / "project"
+        project.mkdir()
+        runner.invoke(app, ["config", "set", "default_agent", "cursor", "--path", str(project)])
+        runner.invoke(app, ["config", "set", "--global", "default_agent", "claude"])
+
+        result = runner.invoke(app, ["config", "list", "--path", str(project)])
+        assert result.exit_code == 0
+        assert "default_agent: cursor" in result.output
+        assert "(global)" not in result.output
+
+
+@pytest.mark.e2e
+class TestGlobalDefaultsInCheck:
+    """Global config defaults must flow through to ails check."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_global(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Redirect global config to tmp_path."""
+        self.global_home = tmp_path / "fake_home" / ".reporails"
+        self.global_home.mkdir(parents=True)
+        monkeypatch.setattr(
+            "reporails_cli.core.bootstrap.get_global_config_path",
+            lambda: self.global_home / "config.yml",
+        )
+
+    @requires_rules
+    def test_global_default_agent_scopes_check(self, tmp_path: Path) -> None:
+        """Global default_agent: claude scopes ails check to CLAUDE.md."""
+        # Write global config
+        (self.global_home / "config.yml").write_text("default_agent: claude\n")
+
+        # Create project with both CLAUDE.md and AGENTS.md, no project config
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nMinimal content.\n")
+        (project / "AGENTS.md").write_text("# Agents\n\nMinimal content.\n")
+
+        data = _check_json(project)
+        files = _violation_files(data)
+        assert "CLAUDE.md" in files, f"global default_agent: claude should scan CLAUDE.md, got: {files}"
+        assert "AGENTS.md" not in files, f"global default_agent: claude should not scan AGENTS.md, got: {files}"
+
+    @requires_rules
+    def test_project_default_agent_overrides_global(self, tmp_path: Path) -> None:
+        """Project default_agent overrides global — check uses project value."""
+        (self.global_home / "config.yml").write_text("default_agent: claude\n")
+
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nMinimal content.\n")
+        (project / "AGENTS.md").write_text("# Agents\n\nMinimal content.\n")
+
+        # Project config overrides global
+        cfg_dir = project / ".reporails"
+        cfg_dir.mkdir()
+        (cfg_dir / "config.yml").write_text("default_agent: codex\n")
+
+        data = _check_json(project)
+        files = _violation_files(data)
+        # Project says codex → scopes to AGENTS.md, NOT CLAUDE.md
+        assert "CLAUDE.md" not in files, f"project default_agent: codex should not scan CLAUDE.md, got: {files}"
