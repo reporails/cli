@@ -171,7 +171,7 @@ def update(
         if cli_result.updated:
             console.print(f"[green]CLI upgraded:[/green] {cli_result.previous_version} -> {cli_result.new_version}")
             console.print(f"[dim]Method: {cli_result.method.value}[/dim]")
-            console.print("[dim]Run 'ails setup' to update your MCP server config.[/dim]")
+            console.print("[dim]Run 'ails install' to update your MCP server config.[/dim]")
         else:
             console.print(cli_result.message)
         return

@@ -5,7 +5,7 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 ## Quick Start
 
 ```bash
-npx @reporails/cli setup
+npx @reporails/cli install
 ```
 
 This detects agents in your project and writes the MCP config. Then ask Claude:
@@ -96,7 +96,7 @@ See the [main README](https://github.com/reporails/cli#github-actions) for full 
 
 | Command | Description |
 |---------|-------------|
-| `setup [PATH]` | Set up MCP server for detected agents |
+| `install [PATH]` | Install MCP server for detected agents |
 | `check [PATH]` | Validate instruction files |
 | `heal [PATH]` | Interactive auto-fix + semantic evaluation |
 | `explain RULE_ID` | Show rule details |
@@ -144,7 +144,7 @@ ails update --recommended
 
 - **Node.js >= 18**
 - **uv** — auto-installed if missing ([manual install](https://docs.astral.sh/uv/))
-- **No additional dependencies** — `setup` writes config files directly
+- **No additional dependencies** — `install` writes config files directly
 
 ## How It Works
 

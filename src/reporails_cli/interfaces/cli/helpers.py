@@ -152,11 +152,7 @@ def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
         console.print(f"  {ns}: {preview}{suffix}")
 
 
-def _handle_no_instruction_files(
-    effective_agent: str,
-    output_format: str,
-    con: Console,
-) -> None:
+def _handle_no_instruction_files(effective_agent: str, output_format: str, con: Console) -> None:
     """Print appropriate message when no instruction files are found, then exit."""
     from reporails_cli.core.agents import KNOWN_AGENTS
 
@@ -192,11 +188,7 @@ def _compute_file_checks(
     agent: str,
     experimental: bool,
 ) -> tuple[dict[str, list[str]], list[str], dict[str, str]]:
-    """Compute per-file check ID lists (regex + mechanical) and rule titles.
-
-    Returns:
-        (file_path -> list of regex check IDs, list of mechanical check IDs, rule_id -> title)
-    """
+    """Compute per-file check ID lists (regex + mechanical) and rule titles."""
     from reporails_cli.core.engine import build_template_context
     from reporails_cli.core.models import RuleType
     from reporails_cli.core.regex import checks_per_file, get_rule_yml_paths
@@ -263,7 +255,7 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
             con.print(f"[dim]      {status_tag} {rid} {titles.get(rid, '')}[/dim]")
 
 
-def _format_output(
+def _format_output(  # pylint: disable=too-many-locals
     result: ValidationResult,
     delta: ScanDelta,
     output_format: str,
@@ -271,6 +263,7 @@ def _format_output(
     quiet_semantic: bool,
     elapsed_ms: float,
     con: Console,
+    surface: dict[str, Any] | None = None,
 ) -> None:
     """Dispatch output formatting based on the chosen format."""
     if output_format == "json":
@@ -294,6 +287,11 @@ def _format_output(
         print(f"ails: {score:.1f}/10 ({level}) {status}")
     else:
         output = text_formatter.format_result(
-            result, ascii_mode=ascii, quiet_semantic=quiet_semantic, delta=delta, elapsed_ms=elapsed_ms
+            result,
+            ascii_mode=ascii,
+            quiet_semantic=quiet_semantic,
+            delta=delta,
+            elapsed_ms=elapsed_ms,
+            surface=surface,
         )
         con.print(output)

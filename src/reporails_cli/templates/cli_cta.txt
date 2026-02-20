@@ -1,4 +1,4 @@
 {separator}
 For complete analysis, set up the reporails MCP server:
-  ails setup
+  ails install
 {separator}

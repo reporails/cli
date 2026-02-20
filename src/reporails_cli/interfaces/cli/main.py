@@ -201,8 +201,22 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         previous=previous_scan,
     )
 
+    # Build surface summary from agent detection for display
+    from reporails_cli.formatters.text.box import build_surface_summary
+
+    surface = build_surface_summary(filtered_agents, target)
+
     # Format output
-    _format_output(result, delta, output_format, ascii, quiet_semantic, elapsed_ms, console)
+    _format_output(
+        result,
+        delta,
+        output_format,
+        ascii,
+        quiet_semantic,
+        elapsed_ms,
+        console,
+        surface=surface,
+    )
 
     # Agent hint: suggest setting default_agent when generic is used but specific agents detected
     _maybe_show_agent_hint(effective_agent, output_format, all_detected_agents)
@@ -276,7 +290,7 @@ def main() -> None:
 
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
-import reporails_cli.interfaces.cli.setup  # noqa: E402  # Register setup command
+import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
 from reporails_cli.interfaces.cli.config_command import config_app  # noqa: E402
 

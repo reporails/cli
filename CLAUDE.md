@@ -19,7 +19,7 @@
 ## Commands
 
 - `uv sync` — install dependencies
-- `uv run ails setup` — set up MCP server for detected agents
+- `uv run ails install` — install MCP server for detected agents
 - `uv run ails check` — validate instruction files
 - `uv run ails check -f json` — JSON output
 - `uv run ails heal` — interactive auto-fix
