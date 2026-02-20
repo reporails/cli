@@ -9,7 +9,7 @@ import typer
 from reporails_cli.interfaces.cli.helpers import app, console
 
 
-@app.command()
+@app.command(rich_help_panel="Commands")
 def install(
     path: str = typer.Argument(".", help="Project root"),
 ) -> None:

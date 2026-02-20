@@ -12,7 +12,7 @@ import typer
 from reporails_cli.interfaces.cli.helpers import app, console
 
 
-@app.command("test")
+@app.command("test", rich_help_panel="Development")
 def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
     path: str = typer.Argument(None, help="Filter by path prefix (e.g., core/structure/)"),
     rule: str = typer.Option(
