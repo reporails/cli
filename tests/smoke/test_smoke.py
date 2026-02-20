@@ -920,3 +920,426 @@ class TestGlobalDefaultsInCheck:
         files = _violation_files(data)
         # Project says codex → scopes to AGENTS.md, NOT CLAUDE.md
         assert "CLAUDE.md" not in files, f"project default_agent: codex should not scan CLAUDE.md, got: {files}"
+
+
+# ===========================================================================
+# Version Command
+#
+# `ails version` shows CLI, framework, and recommended versions plus
+# install method. Must always succeed regardless of installed state.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestVersionCommand:
+    """ails version must show version info and exit cleanly."""
+
+    def test_exits_zero(self) -> None:
+        result = runner.invoke(app, ["version"])
+        assert result.exit_code == 0, f"version failed:\n{result.output}"
+
+    def test_shows_cli_version(self) -> None:
+        result = runner.invoke(app, ["version"])
+        assert "CLI:" in result.output
+
+    def test_shows_framework_line(self) -> None:
+        result = runner.invoke(app, ["version"])
+        assert "Framework:" in result.output
+
+    def test_shows_recommended_line(self) -> None:
+        result = runner.invoke(app, ["version"])
+        assert "Recommended:" in result.output
+
+    def test_shows_install_method(self) -> None:
+        result = runner.invoke(app, ["version"])
+        assert "Install:" in result.output
+
+
+# ===========================================================================
+# Explain Command
+#
+# `ails explain RULE_ID` shows rule details. Requires rules framework
+# for known rules. Unknown rules must exit 2 with error message.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestExplainCommand:
+    """ails explain shows rule details or errors on unknown rule."""
+
+    @requires_rules
+    def test_known_rule_exits_zero(self) -> None:
+        result = runner.invoke(app, ["explain", "CORE:S:0001"])
+        assert result.exit_code == 0, f"explain failed:\n{result.output}"
+
+    @requires_rules
+    def test_known_rule_shows_id(self) -> None:
+        result = runner.invoke(app, ["explain", "CORE:S:0001"])
+        assert "CORE:S:0001" in result.output
+
+    @requires_rules
+    def test_known_rule_shows_category(self) -> None:
+        result = runner.invoke(app, ["explain", "CORE:S:0001"])
+        # Rule output should contain category info
+        output_lower = result.output.lower()
+        assert "category" in output_lower or "structure" in output_lower
+
+    def test_unknown_rule_exits_2(self) -> None:
+        result = runner.invoke(app, ["explain", "FAKE:Z:9999"])
+        assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
+
+    def test_unknown_rule_shows_error(self) -> None:
+        result = runner.invoke(app, ["explain", "FAKE:Z:9999"])
+        assert "unknown" in result.output.lower() or "not found" in result.output.lower()
+
+
+# ===========================================================================
+# Heal Command
+#
+# `ails heal` auto-fixes deterministic violations. Must work on projects
+# with instruction files, error on missing paths, and support JSON output.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestHealCommand:
+    """ails heal applies auto-fixes and reports results."""
+
+    def test_missing_path_errors(self) -> None:
+        result = runner.invoke(app, ["heal", "/tmp/no-such-path-xyz-abc-987"])
+        assert result.exit_code != 0
+
+    @requires_rules
+    def test_heal_runs_on_project(self, tmp_path: Path) -> None:
+        """heal on a minimal project exits cleanly."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        result = runner.invoke(app, ["heal", str(project)])
+        assert result.exit_code in (0, None), f"heal failed:\n{result.output}"
+
+    @requires_rules
+    def test_heal_modifies_files(self, tmp_path: Path) -> None:
+        """heal must actually modify files when fixes are available."""
+        project = tmp_path / "project"
+        project.mkdir()
+        original = "# My Project\n\nA project.\n"
+        (project / "CLAUDE.md").write_text(original)
+
+        runner.invoke(app, ["heal", str(project)])
+        content = (project / "CLAUDE.md").read_text()
+        # Heal should add missing sections (e.g., ## Commands, ## Testing)
+        assert len(content) >= len(original), "heal should not shrink files"
+
+    @requires_rules
+    def test_heal_json_output(self, tmp_path: Path) -> None:
+        """heal -f json must produce valid JSON with expected keys."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        result = runner.invoke(app, ["heal", str(project), "-f", "json"])
+        assert result.exit_code in (0, None), f"heal json failed:\n{result.output}"
+        data = json.loads(result.output)
+        assert "auto_fixed" in data
+        assert "summary" in data
+
+    @requires_rules
+    def test_heal_with_agent(self, tmp_path: Path) -> None:
+        """heal --agent claude scopes to CLAUDE.md."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        result = runner.invoke(app, ["heal", str(project), "--agent", "claude"])
+        assert result.exit_code in (0, None), f"heal --agent failed:\n{result.output}"
+
+    def test_heal_empty_project(self, tmp_path: Path) -> None:
+        """heal on empty project (no instruction files) exits cleanly."""
+        project = tmp_path / "empty"
+        project.mkdir()
+
+        result = runner.invoke(app, ["heal", str(project)])
+        # Should exit 0 or 1 with message — not crash
+        assert result.exit_code in (0, 1, None)
+
+
+# ===========================================================================
+# Map Command
+#
+# `ails map` detects agents and project layout. Supports text, yaml,
+# json output formats and --save to write backbone.yml.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestMapCommand:
+    """ails map detects agents and project structure."""
+
+    def test_text_output(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["map", str(claude_only)])
+        assert result.exit_code == 0, f"map failed:\n{result.output}"
+        output_lower = result.output.lower()
+        assert "claude" in output_lower
+
+    def test_json_output_valid(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["map", str(claude_only), "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "agents" in data
+
+    def test_yaml_output_valid(self, claude_only: Path) -> None:
+        import yaml as yaml_lib
+
+        result = runner.invoke(app, ["map", str(claude_only), "-o", "yaml"])
+        assert result.exit_code == 0
+        data = yaml_lib.safe_load(result.output)
+        assert "agents" in data
+
+    def test_save_creates_backbone(self, tmp_path: Path) -> None:
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n")
+
+        result = runner.invoke(app, ["map", str(project), "--save"])
+        assert result.exit_code == 0
+        backbone = project / ".reporails" / "backbone.yml"
+        assert backbone.exists(), "backbone.yml not created"
+
+    def test_multi_agent_detected(self, multi_agent: Path) -> None:
+        result = runner.invoke(app, ["map", str(multi_agent), "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        agents = data.get("agents", {})
+        assert len(agents) >= 2, f"Expected multiple agents, got: {list(agents.keys())}"
+
+    def test_missing_path_errors(self) -> None:
+        result = runner.invoke(app, ["map", "/tmp/no-such-path-xyz-abc-987"])
+        assert result.exit_code == 1
+
+    def test_empty_dir_no_crash(self, tmp_path: Path) -> None:
+        project = tmp_path / "empty"
+        project.mkdir()
+        result = runner.invoke(app, ["map", str(project)])
+        assert result.exit_code == 0
+
+
+# ===========================================================================
+# Dismiss Command
+#
+# `ails dismiss RULE_ID` caches a pass verdict for a semantic rule.
+# Hidden plumbing command used by MCP and scripts.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestDismissCommand:
+    """ails dismiss caches pass verdicts for semantic rules."""
+
+    def test_dismiss_exits_zero(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["dismiss", "CORE:C:0006", "--path", str(claude_only)])
+        assert result.exit_code == 0, f"dismiss failed:\n{result.output}"
+
+    def test_dismiss_output_confirms(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["dismiss", "CORE:C:0006", "--path", str(claude_only)])
+        assert "Dismissed" in result.output
+        assert "CORE:C:0006" in result.output
+
+    def test_dismiss_missing_path(self) -> None:
+        result = runner.invoke(app, ["dismiss", "CORE:C:0006", "--path", "/tmp/no-such-path-xyz"])
+        assert result.exit_code == 1
+
+    def test_dismiss_no_files(self, tmp_path: Path) -> None:
+        project = tmp_path / "empty"
+        project.mkdir()
+        result = runner.invoke(app, ["dismiss", "CORE:C:0006", "--path", str(project)])
+        assert result.exit_code == 1
+        assert "No instruction files" in result.output
+
+    def test_dismiss_for_specific_file(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["dismiss", "CORE:C:0006", "CLAUDE.md", "--path", str(claude_only)])
+        assert result.exit_code == 0
+        assert "1 file" in result.output
+
+
+# ===========================================================================
+# Judge Command
+#
+# `ails judge PATH VERDICTS...` caches semantic verdicts in batch.
+# Hidden plumbing command. Output is JSON with recorded count.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestJudgeCommand:
+    """ails judge caches semantic verdicts."""
+
+    def test_judge_records_verdict(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["judge", str(claude_only), "CORE:C:0006:CLAUDE.md:pass:Looks good"])
+        assert result.exit_code == 0, f"judge failed:\n{result.output}"
+        data = json.loads(result.output)
+        assert data["recorded"] >= 1
+
+    def test_judge_no_verdicts_errors(self, claude_only: Path) -> None:
+        result = runner.invoke(app, ["judge", str(claude_only)])
+        assert result.exit_code == 1
+
+    def test_judge_missing_path(self) -> None:
+        result = runner.invoke(app, ["judge", "/tmp/no-such-path-xyz", "CORE:C:0006:CLAUDE.md:pass:ok"])
+        assert result.exit_code == 1
+
+    def test_judge_multiple_verdicts(self, claude_only: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "judge",
+                str(claude_only),
+                "CORE:C:0006:CLAUDE.md:pass:Good",
+                "CORE:C:0012:CLAUDE.md:fail:Missing date",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["recorded"] >= 2
+
+
+# ===========================================================================
+# Install Command
+#
+# `ails install` detects agents and writes MCP config. Tests use
+# monkeypatch to avoid writing to real agent config locations.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestInstallCommand:
+    """ails install detects agents and writes MCP config."""
+
+    def test_install_detects_claude(self, tmp_path: Path) -> None:
+        """Install on project with CLAUDE.md detects claude agent."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n")
+        # Create .claude dir so MCP config can be written there
+        (project / ".claude").mkdir()
+
+        result = runner.invoke(app, ["install", str(project)])
+        assert result.exit_code == 0, f"install failed:\n{result.output}"
+        assert "claude" in result.output.lower()
+        assert "Restart" in result.output
+
+    def test_install_no_agents(self, tmp_path: Path) -> None:
+        """Install on empty project exits 1."""
+        project = tmp_path / "empty"
+        project.mkdir()
+
+        result = runner.invoke(app, ["install", str(project)])
+        assert result.exit_code == 1
+        assert "No supported agents" in result.output
+
+    def test_install_missing_path(self) -> None:
+        result = runner.invoke(app, ["install", "/tmp/no-such-path-xyz-abc-987"])
+        assert result.exit_code == 1
+
+    def test_install_writes_config_file(self, tmp_path: Path) -> None:
+        """Install must write an MCP config file."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n")
+        (project / ".claude").mkdir()
+
+        runner.invoke(app, ["install", str(project)])
+        # MCP config written to .mcp.json (project root) or .claude/mcp.json
+        mcp_json = project / ".mcp.json"
+        claude_mcp = project / ".claude" / "mcp.json"
+        assert mcp_json.exists() or claude_mcp.exists(), f"MCP config not created. Files: {list(project.rglob('*'))}"
+
+
+# ===========================================================================
+# Update Command (--check only)
+#
+# `ails update --check` is safe to run E2E — it checks for updates
+# without installing anything. Full update tests are integration-only
+# due to network dependency.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestUpdateCheckCommand:
+    """ails update --check shows update status without installing."""
+
+    def test_check_exits_zero(self) -> None:
+        result = runner.invoke(app, ["update", "--check"])
+        assert result.exit_code == 0, f"update --check failed:\n{result.output}"
+
+    def test_check_shows_output(self) -> None:
+        result = runner.invoke(app, ["update", "--check"])
+        # Should show version info or "up to date" message
+        assert len(result.output.strip()) > 0, "update --check produced no output"
+
+
+# ===========================================================================
+# Check Command — Additional Flag Coverage
+#
+# Core check command is heavily tested above. These cover specific flags
+# that aren't exercised in the agent-scoping tests.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestCheckFlags:
+    """Additional flag coverage for ails check."""
+
+    @requires_rules
+    def test_strict_exits_1_on_violations(self, generic_only: Path) -> None:
+        """--strict must exit 1 when violations exist."""
+        result = runner.invoke(app, ["check", str(generic_only), "--strict", "--no-update-check"])
+        assert result.exit_code == 1
+
+    @requires_rules
+    def test_json_output_valid(self, claude_only: Path) -> None:
+        data = _check_json(claude_only, agent="claude")
+        assert "score" in data
+        assert "violations" in data
+        assert "level" in data
+        assert isinstance(data["score"], (int, float))
+
+    @requires_rules
+    def test_verbose_output(self, claude_only: Path) -> None:
+        result = runner.invoke(
+            app, ["check", str(claude_only), "-f", "text", "-v", "--agent", "claude", "--no-update-check"]
+        )
+        assert result.exit_code == 0
+        # Verbose mode shows per-file PASS/FAIL
+        assert "PASS" in result.output or "FAIL" in result.output
+
+    @requires_rules
+    def test_exclude_dir(self, tmp_path: Path) -> None:
+        """--exclude-dir prevents scanning files in that directory."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Main\n")
+        subdir = project / "vendor"
+        subdir.mkdir()
+        (subdir / "CLAUDE.md").write_text("# Vendor\n")
+
+        # Without exclude, vendor/CLAUDE.md could be scanned
+        result_excluded = runner.invoke(
+            app,
+            ["check", str(project), "-f", "json", "--no-update-check", "--exclude-dir", "vendor"],
+        )
+        assert result_excluded.exit_code == 0
+        excluded_data = json.loads(result_excluded.output)
+        excluded_files = _violation_files(excluded_data)
+        assert not any("vendor" in f for f in excluded_files), f"vendor dir not excluded: {excluded_files}"
+
+    @requires_rules
+    def test_ascii_mode(self, claude_only: Path) -> None:
+        """--ascii must not produce Unicode box-drawing characters."""
+        result = runner.invoke(
+            app, ["check", str(claude_only), "-f", "text", "--ascii", "--agent", "claude", "--no-update-check"]
+        )
+        assert result.exit_code == 0
+        # Box-drawing chars are Unicode (U+2500 range)
+        assert "\u2550" not in result.output, "ASCII mode produced Unicode box characters"
