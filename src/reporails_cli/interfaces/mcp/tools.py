@@ -50,7 +50,7 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
         Validation result dict
     """
     if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails init' first."}
+        return {"error": "Reporails not initialized. Run 'ails install' first."}
 
     target = Path(path).resolve()
 
@@ -80,7 +80,7 @@ def validate_tool_text(path: str = ".") -> str:
         Text-formatted validation report
     """
     if not is_initialized():
-        return "Error: Reporails not initialized. Run 'ails init' first."
+        return "Error: Reporails not initialized. Run 'ails install' first."
 
     target = Path(path).resolve()
 
@@ -108,7 +108,7 @@ def score_tool(path: str = ".") -> dict[str, Any]:
         Score summary dict
     """
     if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails init' first."}
+        return {"error": "Reporails not initialized. Run 'ails install' first."}
 
     target = Path(path).resolve()
 
