@@ -14,7 +14,7 @@ from reporails_cli.core.discover import generate_backbone_yaml, save_backbone
 from reporails_cli.interfaces.cli.helpers import _handle_update_check, app, console
 
 
-@app.command()
+@app.command(rich_help_panel="Development")
 def map(  # pylint: disable=too-many-locals
     path: str = typer.Argument(".", help="Project root to analyze"),
     output: str = typer.Option(
@@ -88,7 +88,7 @@ def map(  # pylint: disable=too-many-locals
         console.print(f"[green]Saved:[/green] {backbone_path}")
 
 
-@app.command()
+@app.command(rich_help_panel="Development")
 def sync(
     rules_dir: str = typer.Argument(
         "checks",
@@ -114,7 +114,7 @@ def sync(
         raise typer.Exit(1) from None
 
 
-@app.command()
+@app.command(rich_help_panel="Configuration")
 def update(
     version: str = typer.Option(
         None,
@@ -204,7 +204,7 @@ def update(
             console.print(f"[dim]{rec_result.message}[/dim]")
 
 
-@app.command()
+@app.command(hidden=True)
 def dismiss(
     rule_id: str = typer.Argument(..., help="Rule ID to dismiss (e.g., C6, M4)"),
     file: str = typer.Argument(None, help="Specific file to dismiss for (default: all instruction files)"),
@@ -255,7 +255,7 @@ def dismiss(
     console.print(f"[green]Dismissed[/green] {rule_id_upper} for {dismissed} file(s)")
 
 
-@app.command()
+@app.command(hidden=True)
 def judge(
     path: str = typer.Argument(".", help="Project root"),
     verdicts: list[str] = typer.Argument(  # noqa: B008
@@ -278,7 +278,7 @@ def judge(
     print(json.dumps({"recorded": recorded}))
 
 
-@app.command("version")
+@app.command("version", rich_help_panel="Configuration")
 def show_version() -> None:
     """Show CLI and framework versions."""
     from reporails_cli import __version__ as cli_version

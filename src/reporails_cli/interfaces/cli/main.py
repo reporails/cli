@@ -30,7 +30,7 @@ from reporails_cli.interfaces.cli.helpers import (
 )
 
 
-@app.command()
+@app.command(rich_help_panel="Commands")
 def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     path: str = typer.Argument(".", help="File or directory to validate"),
     format: str = typer.Option(
@@ -230,7 +230,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(rich_help_panel="Commands")
 def explain(
     rule_id: str = typer.Argument(..., help="Rule ID (e.g., S1, C2)"),
     rules: list[str] = typer.Option(  # noqa: B008
@@ -294,7 +294,7 @@ import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install co
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
 from reporails_cli.interfaces.cli.config_command import config_app  # noqa: E402
 
-app.add_typer(config_app)
+app.add_typer(config_app, rich_help_panel="Configuration")
 
 if __name__ == "__main__":
     main()

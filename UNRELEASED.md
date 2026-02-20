@@ -37,6 +37,7 @@
 - [DOCS]: Rephrase bare prohibitions in rule files to include actionable alternatives
 - [META]: Add templates module to backbone.yml
 - CLI: No `--agent` now defaults to "generic" (AGENTS.md only) instead of scanning all agents' files
+- CLI: `--help` groups commands into panels (Commands, Configuration, Development) — `dismiss` and `judge` hidden as plumbing
 - Rules: No `--agent` flag loads core rules only; agent-specific rules require explicit `--agent`
 
 ### Testing

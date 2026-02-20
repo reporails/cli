@@ -82,7 +82,7 @@ def _serialize_heal_json(
     )
 
 
-@app.command()
+@app.command(rich_help_panel="Commands")
 def heal(  # pylint: disable=too-many-locals
     path: str = typer.Argument(".", help="Project root to heal"),
     rules: list[str] = typer.Option(  # noqa: B008
