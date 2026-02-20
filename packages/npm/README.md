@@ -103,8 +103,9 @@ See the [main README](https://github.com/reporails/cli#github-actions) for full 
 | `map [PATH]` | Discover project structure |
 | `update` | Update rules framework + recommended |
 | `config set KEY VALUE` | Set a project config value |
+| `config set --global KEY VALUE` | Set a global default |
 | `config get KEY` | Show a config value |
-| `config list` | Show all config |
+| `config list` | Show all config (project + global) |
 | `dismiss RULE_ID` | Dismiss a semantic finding |
 | `judge PATH VERDICTS` | Cache semantic verdicts |
 | `version` | Show version info |
@@ -128,10 +129,11 @@ Persistent installs: `npm install -g @reporails/cli@latest`
 
 ## Recommended Rules
 
-[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
+[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out:
 
-```yaml
-recommended: false
+```bash
+ails config set recommended false            # This project only
+ails config set --global recommended false   # All projects
 ```
 
 To update recommended rules independently:

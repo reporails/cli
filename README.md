@@ -7,31 +7,33 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ## Quick Start
 
-### One-line setup
+### MCP setup (recommended)
 
 ```bash
-# pip / uvx
-ails install
-
-# or via npm (no Python install needed)
+uvx reporails-cli install
+# or
 npx @reporails/cli install
 ```
 
-This detects agents in your project and writes the MCP config. Restart your editor, then run `ails check`.
+This detects agents in your project and writes the MCP config. Restart your editor — you'll get validation, scoring, and semantic evaluation via MCP tools.
 
-### CLI path (only deterministic rules)
+### CLI-only
+
 ```bash
-# No install needed — run directly
 uvx reporails-cli check
 # or
 npx @reporails/cli check
 ```
 
-That's it. You'll get a score, capability level, and actionable violations.
+You'll get a score, capability level, and actionable violations:
+
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 8.1 / 10 (awaiting semantic)  |  CAPABILITY: Maintained (L5)    ║
-║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
+║                                                              ║
+║   SCORE: 8.1 / 10 (awaiting semantic)                        ║
+║   LEVEL: Maintained (L5)                                     ║
+║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░        ║
+║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 
 Violations:
@@ -41,7 +43,7 @@ Violations:
     ...
 ```
 
-Fix the issues, run again, watch your score and your experience improve.
+Fix the issues, run again, watch your score improve.
 
 ## Install
 
@@ -53,34 +55,95 @@ npm install -g @reporails/cli
 
 This adds `ails` to your PATH. All commands below assume a global install.
 
-**Try without installing:**
+Depends on your install path:
+
+- **uvx/pip**: [uv](https://docs.astral.sh/uv/) — no separate Python install needed
+- **npx/npm**: Node.js >= 18 — uv is auto-installed if missing
+- **MCP install**: No dependencies — `ails install` writes config files directly
+
+## Commands
+
+### Validate
+
 ```bash
-uvx reporails-cli check
-# or
-npx @reporails/cli check
+ails check                      # Score your setup
+ails check -f json              # JSON output
+ails check -f github            # GitHub Actions annotations
+ails check --strict             # Exit 1 if violations
+ails check --agent claude       # Agent-specific rules
+ails check --experimental       # Include experimental rules
+ails check --exclude-dir vendor # Exclude directory from scanning
+ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
+ails check --no-update-check    # Skip pre-run update prompt
 ```
 
-## What It Checks
+### Fix
 
-- **Structure** — File organization, size limits
-- **Content** — Clarity, completeness, anti-patterns
-- **Efficiency** — Token usage, context management
-- **Maintenance** — Versioning, review processes
-- **Governance** — Ownership, security policies
+```bash
+ails heal                       # Auto-fix violations
+ails heal -f json               # JSON output for agents and scripts
+ails explain CORE:S:0001        # Explain a rule
+ails dismiss CORE:C:0001        # Dismiss a semantic finding
+```
 
-## Capability Levels
+### Configure
 
-Capability levels describe what your AI instruction setup enables — not how "mature" it is. Different projects need different capabilities.
+```bash
+ails install                    # Install MCP server for detected agents
+ails config set default_agent claude  # Set default agent
+ails config set --global default_agent claude  # Set global default
+ails config get default_agent   # Show current value
+ails config list                # Show all config (project + global)
+ails map                        # Show project structure
+ails map --save                 # Generate backbone.yml
+```
 
-| Level | Name | What It Enables |
-|-------|------|-----------------|
-| L0 | Absent | No instruction file — nothing to evaluate |
-| L1 | Basic | Reviewed, tracked instruction file |
-| L2 | Scoped | Project-specific constraints, size control |
-| L3 | Structured | External references, multiple files |
-| L4 | Abstracted | Path-scoped rules, context-aware loading |
-| L5 | Maintained | Structural integrity, governance, navigation |
-| L6 | Adaptive | Dynamic context, extensibility, persistence |
+### Update
+
+```bash
+ails update                     # Update rules framework + recommended
+ails update --check             # Check for updates without installing
+ails update --recommended       # Update recommended rules only
+ails update --force             # Force reinstall even if current
+ails update --cli               # Upgrade the CLI package itself
+```
+
+Before each scan, the CLI checks for available updates and prompts to install. Use `--no-update-check` to skip. Ephemeral runners (`uvx`, `npx`) always use the latest version automatically.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Violations found (strict mode) |
+| 2 | Invalid input (bad path, unknown agent/format/rule) |
+
+## Configuration
+
+Project config in `.reporails/config.yml`:
+
+```yaml
+default_agent: claude          # Default agent (run: ails config set default_agent claude)
+exclude_dirs: [vendor, dist]   # Directories to skip
+disabled_rules: [CORE:C:0010]  # Rules to disable
+experimental: false            # Include experimental rules
+recommended: true              # Include recommended rules (RRAILS_ namespace)
+```
+
+Set values via CLI: `ails config set <key> <value>`
+
+### Global defaults
+
+Global config in `~/.reporails/config.yml` applies to all projects. Project config overrides global.
+
+```bash
+ails config set --global default_agent claude   # Use claude everywhere
+ails config set --global recommended false      # Opt out globally
+```
+
+Supported global keys: `default_agent`, `recommended`.
+
+[Recommended rules](https://github.com/reporails/recommended) (RRAILS_ namespace) are included by default. To opt out: `ails config set recommended false`
 
 ## GitHub Actions
 
@@ -125,103 +188,33 @@ You can also use `--format github` directly in custom workflows:
 ails check . --format github --strict
 ```
 
-This emits `::error`/`::warning` workflow commands for each violation, plus a JSON summary line.
+## What It Checks
 
-## Commands
+- **Structure** — File organization, size limits
+- **Content** — Clarity, completeness, anti-patterns
+- **Efficiency** — Token usage, context management
+- **Maintenance** — Versioning, review processes
+- **Governance** — Ownership, security policies
 
-```bash
-ails install                    # Install MCP server for detected agents
-ails check                      # Score your setup
-ails check -f json              # JSON output (for CI)
-ails check -f github            # GitHub Actions annotations
-ails check --strict             # Exit 1 if violations (for CI)
-ails check --no-update-check    # Skip pre-run update prompt
-ails check --agent claude       # Agent-specific rules
-ails check --experimental       # Include experimental rules
-ails check --exclude-dir vendor # Exclude directory from scanning
-ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
-ails heal                       # Auto-fix violations
-ails heal -f json               # JSON output for agents and scripts
-ails explain CORE:S:0001        # Explain a rule
-ails map                        # Show project structure
-ails map --save                 # Generate backbone.yml
-ails update                     # Update rules framework + recommended
-ails update --check             # Check for updates without installing
-ails update --recommended       # Update recommended rules only
-ails update --force             # Force reinstall even if current
-ails update --cli               # Upgrade the CLI package itself
-ails config set default_agent claude  # Set default agent
-ails config get default_agent   # Show current value
-ails config list                # Show all config
-ails dismiss CORE:C:0001        # Dismiss a semantic finding
-ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
-ails version                    # Show version info
-```
+## Capability Levels
 
-## Updating
+Capability levels describe what your AI instruction setup enables — not how "mature" it is. Different projects need different capabilities.
 
-```bash
-ails update              # Update rules framework + recommended to latest
-ails update --check      # Check for updates without installing
-ails update --recommended  # Update recommended rules only
-ails update --force      # Force reinstall even if current
-ails update --cli        # Upgrade the CLI package itself
-```
-
-Before each scan, the CLI checks for available updates and prompts to install. Use `--no-update-check` to skip.
-
-Ephemeral runners (`uvx`, `npx`) always use the latest CLI version automatically.
-
-## Recommended Rules
-
-[Recommended rules](https://github.com/reporails/recommended) (RRAILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
-
-```yaml
-recommended: false
-```
-
-To update recommended rules independently:
-
-```bash
-ails update --recommended
-```
-
-## Configuration
-
-Project config in `.reporails/config.yml`:
-
-```yaml
-default_agent: claude          # Default agent (run: ails config set default_agent claude)
-exclude_dirs: [vendor, dist]   # Directories to skip
-disabled_rules: [CORE:C:0010]  # Rules to disable
-experimental: false            # Include experimental rules
-recommended: true              # Include recommended rules (RRAILS_ namespace)
-```
-
-Set values via CLI: `ails config set <key> <value>`
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | Violations found (strict mode) |
-| 2 | Invalid input (bad path, unknown agent/format/rule) |
-
-## Prerequisites
-
-Depends on your install path:
-
-- **uvx/pip path**: [uv](https://docs.astral.sh/uv/) — no separate Python install needed
-- **npx/npm path**: Node.js >= 18 — uv is auto-installed if missing
-- **MCP install**: No dependencies — `ails install` writes config files directly
+| Level | Name | What It Enables |
+|-------|------|-----------------|
+| L1 | Basic | A non-trivial, tracked instruction file exists |
+| L2 | Scoped | Project-specific constraints defined, file is focused |
+| L3 | Structured | Guidance is modular with external references |
+| L4 | Abstracted | Instructions adapt based on code location |
+| L5 | Maintained | Instruction system is structurally sound, governed, and navigable |
+| L6 | Adaptive | Agent dynamically discovers context and extends capabilities |
 
 ## Rules
 
 Core rules are maintained at [reporails/rules](https://github.com/reporails/rules).
 Recommended rules at [reporails/recommended](https://github.com/reporails/recommended).
 
-Want to add or improve rules? Please follow [Contribute](https://github.com/reporails/rules/blob/main/CONTRIBUTING.md) guide in the [Core repo](https://github.com/reporails/rules).
+Want to add or improve rules? See the [Contributing guide](https://github.com/reporails/rules/blob/main/CONTRIBUTING.md).
 
 ## License
 
