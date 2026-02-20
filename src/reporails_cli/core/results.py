@@ -212,7 +212,7 @@ class SkippedExperimental:
     """Summary of skipped experimental rules."""
 
     rule_count: int  # Number of experimental rules skipped
-    rules: tuple[str, ...]  # Rule IDs (e.g., "E2", "S3")
+    rules: tuple[str, ...]  # Rule IDs (e.g., "CORE:C:0004")
 
 
 @dataclass(frozen=True)

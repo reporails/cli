@@ -16,6 +16,36 @@ from reporails_cli.formatters.text.components import (
 )
 from reporails_cli.templates import render
 
+# Severities that are informational (not real issues)
+_INFO_SEVERITIES = {"pending"}
+
+_SEVERITY_ORDER = {
+    "critical": 0,
+    "high": 1,
+    "medium": 2,
+    "low": 3,
+    "pending": 4,
+}
+
+
+def _format_file_header(
+    display_path: str,
+    unique_violations: list[dict[str, Any]],
+) -> str:
+    """Format file header with issue and info-severity counts."""
+    real_count = sum(1 for v in unique_violations if v.get("severity") not in _INFO_SEVERITIES)
+    pending_count = sum(1 for v in unique_violations if v.get("severity") == "pending")
+    issue_word = "issue" if real_count == 1 else "issues"
+
+    if pending_count > 0:
+        return f"  {display_path} ({real_count} {issue_word}, {pending_count} awaiting semantic)"
+    return render(
+        "cli_file_header.txt",
+        filepath=display_path,
+        count=real_count,
+        issue_word=issue_word,
+    )
+
 
 def format_violations_section(
     violations: list[dict[str, Any]],
@@ -29,10 +59,12 @@ def format_violations_section(
     use_ascii = ascii_mode if ascii_mode is not None else ASCII_MODE
     colored = not use_ascii
     legend = format_legend(ascii_mode, colored)
+    plain_legend = format_legend(ascii_mode, colored=False)
     line_width = 64
     separator = "-" * line_width
-    header = f"Violations{legend:>{line_width - len('Violations')}}"
-    lines = [header, separator]
+    gap = line_width - len("Violations") - len(plain_legend)
+    header = f"Violations{' ' * max(gap, 1)}{legend}"
+    lines = ["", separator, header, separator]
 
     # Fixed column widths:  "    " (4) + icon (1) + "  " (2) + line (4) + "  " (2) = 13 prefix
     # suffix: "  " (2) + rule_id
@@ -54,13 +86,10 @@ def format_violations_section(
 
     # Sort files by worst severity
     def file_sort_key(item: tuple[str, list[dict[str, Any]]]) -> tuple[int, int]:
-        file_violations = item[1]
-        severity_weights = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-        worst_severity = min(severity_weights.get(v.get("severity", "low"), 3) for v in file_violations)
-        return (worst_severity, -len(file_violations))
+        worst = min(_SEVERITY_ORDER.get(v.get("severity", "low"), 3) for v in item[1])
+        return (worst, -len(item[1]))
 
     sorted_files = sorted(grouped.items(), key=file_sort_key)
-    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     severity_icons = get_severity_icons(chars, colored)
 
     for file_path, file_violations in sorted_files:
@@ -75,21 +104,13 @@ def format_violations_section(
                 seen_rules.add(rule_id)
                 unique_violations.append(v)
 
-        issue_word = "issue" if len(unique_violations) == 1 else "issues"
-        lines.append(
-            render(
-                "cli_file_header.txt",
-                filepath=display_path,
-                count=len(unique_violations),
-                issue_word=issue_word,
-            )
-        )
+        lines.append(_format_file_header(display_path, unique_violations))
         lines.append(separator)
         lines.append(col_labels)
 
         sorted_violations = sorted(
             unique_violations,
-            key=lambda v: (severity_order.get(v.get("severity", ""), 9), v.get("location", "")),
+            key=lambda v: (_SEVERITY_ORDER.get(v.get("severity", ""), 9), v.get("location", "")),
         )
 
         for v in sorted_violations:

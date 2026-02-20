@@ -11,6 +11,8 @@
 - Engine: Dismissed violations filtered from `ails check` output (cached as pass verdicts, reset with `--refresh`)
 
 ### Changed
+- CLI: Pending semantic checks shown inline with violations (was separate box below scorecard) — uses `?` icon, file headers show "N awaiting semantic"
+- CLI: Experimental rules no longer displayed in output (was dim text below scorecard)
 - CLI: Scorecard moved to bottom of output — violations shown first, score as conclusion
 - CLI: Assessment box "Setup:" line replaced with "Scope:" — shows instruction files categorized by agent directory labels (rules, skills, etc.)
 - CLI: `setup` command renamed to `install` — `setup` kept as hidden alias
