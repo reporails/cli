@@ -86,16 +86,22 @@ def _format_experimental_section(
     return f"[dim]Experimental rules not checked: {se.rule_count}\n  Use --experimental to include: {rule_list}[/dim]"
 
 
-def _format_cta(
+def _format_semantic_cta(
     result: ValidationResult,
-    ascii_mode: bool | None = None,
 ) -> str:
-    """Format MCP call-to-action for awaiting semantic evaluation."""
+    """Format semantic CTA for installed users with partial results."""
     if not result.is_partial:
         return ""
+    return "[dim]For full semantic analysis: ails install[/dim]"
 
-    _chars = get_chars(ascii_mode)
-    return "[dim]For full semantic analysis: ails setup[/dim]"
+
+def _format_install_cta() -> str:
+    """CTA for ephemeral (npx/uvx) users to install permanently."""
+    from reporails_cli.core.self_update import is_ephemeral_install
+
+    if not is_ephemeral_install():
+        return ""
+    return "[dim]Run ails install to enable MCP scoring and faster checks.[/dim]"
 
 
 def format_result(
@@ -106,6 +112,7 @@ def format_result(
     delta: ScanDelta | None = None,
     show_mcp_cta: bool = True,
     elapsed_ms: float | None = None,
+    surface: dict[str, object] | None = None,
 ) -> str:
     """Format validation result for terminal output."""
     data = json_formatter.format_result(result, delta)
@@ -114,14 +121,16 @@ def format_result(
 
     sections = []
 
-    # Assessment box
-    sections.append(format_assessment_box(data, ascii_mode, delta, elapsed_ms=elapsed_ms))
-    sections.append("")
-
-    # Violations
+    # Violations first
     sections.append(format_violations_section(violations, ascii_mode))
 
-    # Pending semantic
+    # Spacer before scorecard
+    sections.append("")
+
+    # Assessment box (scorecard at bottom)
+    sections.append(format_assessment_box(data, ascii_mode, delta, elapsed_ms=elapsed_ms, surface=surface))
+
+    # Pending semantic (below scorecard)
     pending = _format_pending_section(result, quiet_semantic, ascii_mode)
     if pending:
         sections.append(pending)
@@ -132,11 +141,16 @@ def format_result(
         sections.append("")
         sections.append(experimental)
 
-    # MCP CTA (only if partial, not quiet, and CTA enabled)
-    if show_mcp_cta and result.is_partial and not quiet_semantic:
-        cta = _format_cta(result, ascii_mode)
-        if cta:
+    # CTA: ephemeral install CTA takes priority over semantic CTA
+    if show_mcp_cta:
+        install_cta = _format_install_cta()
+        if install_cta:
             sections.append("")
-            sections.append(cta)
+            sections.append(install_cta)
+        elif result.is_partial and not quiet_semantic:
+            cta = _format_semantic_cta(result)
+            if cta:
+                sections.append("")
+                sections.append(cta)
 
     return "\n".join(sections)

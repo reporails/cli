@@ -11,7 +11,7 @@ const HELP = `
 reporails — Score your CLAUDE.md files
 
 Usage:
-  reporails setup [PATH]                   Set up MCP server for detected agents
+  reporails install [PATH]                 Install MCP server for detected agents
   reporails check [PATH] [OPTIONS]           Validate instruction files
   reporails explain RULE_ID                  Show rule details
   reporails map [PATH] [--save]              Discover project structure
@@ -24,7 +24,7 @@ Usage:
   reporails <command> [args...]              Proxy any command to ails CLI
 
 Examples:
-  npx @reporails/cli setup            # Set up MCP server
+  npx @reporails/cli install           # Install MCP server
   npx @reporails/cli check            # Score your setup
   npx @reporails/cli explain CORE:S:0001  # Explain a rule
   npx @reporails/cli update           # Update rules + recommended

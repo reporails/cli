@@ -11,6 +11,11 @@
 - Engine: Dismissed violations filtered from `ails check` output (cached as pass verdicts, reset with `--refresh`)
 
 ### Changed
+- CLI: Scorecard moved to bottom of output — violations shown first, score as conclusion
+- CLI: Assessment box "Setup:" line replaced with "Scope:" — shows instruction files categorized by agent directory labels (rules, skills, etc.)
+- CLI: `setup` command renamed to `install` — `setup` kept as hidden alias
+- CLI: Install CTA shown for ephemeral (npx/uvx) users below scorecard
+- CLI: Semantic CTA updated: `ails setup` → `ails install`
 - CLI: `heal` command simplified to autoheal — silently applies all fixes, reports remaining violations and pending semantic rules (removed interactive prompts)
 - CLI: `heal` adds `--format`/`-f` option (text/json) replacing `--non-interactive` flag
 - CLI: Rename "(partial)" label to "(awaiting semantic)" across all output formats — clearer meaning for pending semantic evaluation

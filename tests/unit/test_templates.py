@@ -305,7 +305,7 @@ class TestMCPCallToAction:
         output = text_formatter.format_result(result, quiet_semantic=False)
 
         assert "full semantic analysis" in output
-        assert "ails setup" in output
+        assert "ails install" in output
 
     def test_cta_hidden_when_quiet_semantic(self) -> None:
         """CTA should be hidden in quiet semantic mode."""

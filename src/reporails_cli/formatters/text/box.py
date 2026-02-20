@@ -1,15 +1,19 @@
 """Assessment box formatting.
 
-Handles the main score/capability box at the top of output.
+Handles the main score/capability box in output.
 """
 # pylint: disable=too-many-locals,too-many-statements
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from reporails_cli.core.levels import get_level_labels
 from reporails_cli.core.models import ScanDelta
+
+if TYPE_CHECKING:
+    from reporails_cli.core.agents import DetectedAgent
 from reporails_cli.formatters.text.chars import ASCII_MODE, get_chars
 from reporails_cli.formatters.text.components import (
     _category_result_color,
@@ -136,11 +140,58 @@ def _format_friction_line(
     return pad_line(friction_rich, box_width + markup_extra, chars["v"])
 
 
+def build_surface_summary(agents: list[DetectedAgent], target: Path) -> dict[str, Any]:
+    """Build a scope summary from detected agents for display."""
+    root_files: list[str] = []
+    dir_counts: dict[str, int] = {}
+
+    for agent in agents:
+        for f in agent.instruction_files:
+            try:
+                rel = str(f.relative_to(target))
+            except ValueError:
+                rel = str(f)
+            if rel not in root_files:
+                root_files.append(rel)
+
+        # Count files per detected directory label
+        for label, dir_path in agent.detected_directories.items():
+            dir_full = target / dir_path.rstrip("/")
+            count = sum(1 for rf in agent.rule_files if rf.is_relative_to(dir_full))
+            dir_counts[label] = dir_counts.get(label, 0) + count
+
+    # Main file = shortest root instruction file
+    main = min(root_files, key=len) if root_files else ""
+    # Extra root instruction files (e.g. tests/CLAUDE.md, nested CLAUDE.md)
+    extra_instructions = len(root_files) - 1
+
+    counts: dict[str, int] = {}
+    if extra_instructions > 0:
+        counts["instructions"] = extra_instructions
+    # Add directory-label counts (rules, skills, tasks, etc.)
+    counts.update({label: count for label, count in sorted(dir_counts.items()) if count > 0})
+
+    return {"main": main, "counts": counts}
+
+
+def _format_scope_line(surface: dict[str, Any] | None, box_width: int, chars: dict[str, str]) -> str:
+    """Format the scope line inside the box."""
+    if not surface or not surface.get("main"):
+        return pad_line("Scope: (none detected)", box_width, chars["v"])
+    main = surface["main"]
+    counts: dict[str, int] = surface.get("counts", {})
+    if not counts:
+        return pad_line(f"Scope: {main}", box_width, chars["v"])
+    parts = [f"{ct} {lb if ct != 1 else lb.rstrip('s')}" for lb, ct in counts.items()]
+    return pad_line(f"Scope: {main} + {', '.join(parts)}", box_width, chars["v"])
+
+
 def format_assessment_box(
     data: dict[str, Any],
     ascii_mode: bool | None = None,
     delta: ScanDelta | None = None,
     elapsed_ms: float | None = None,
+    surface: dict[str, Any] | None = None,
 ) -> str:
     """Format the visual assessment box using templates."""
     chars = get_chars(ascii_mode)
@@ -152,7 +203,6 @@ def format_assessment_box(
 
     score = data.get("score", 0.0)
     level = data.get("level", "L1")
-    feature_summary = data.get("feature_summary", "")
     summary_info = data.get("summary", {})
     rules_checked = summary_info.get("rules_checked", 0)
     violations = data.get("violations", [])
@@ -209,9 +259,8 @@ def format_assessment_box(
     bar, bar_extra = build_score_bar(score, ascii_mode, colored)
     bar_line = pad_line(bar, box_width + bar_extra, chars["v"])
 
-    # Setup line
-    setup_text = f"Setup: {feature_summary}"
-    setup_line = pad_line(setup_text, box_width, chars["v"])
+    # Scope line (replaces setup line)
+    surface_line = _format_scope_line(surface, box_width, chars)
 
     summary_line = _format_summary_line(
         violations, rules_checked, viol_delta_plain, viol_delta_rich, colored, box_width, chars
@@ -230,7 +279,7 @@ def format_assessment_box(
         score_line=score_line,
         capability_line=capability_line,
         bar_line=bar_line,
-        setup_line=setup_line,
+        surface_line=surface_line,
         summary_line=summary_line,
         friction_line=friction_line,
         category_section=category_section,

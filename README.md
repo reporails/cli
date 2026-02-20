@@ -11,10 +11,10 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 
 ```bash
 # pip / uvx
-ails setup
+ails install
 
 # or via npm (no Python install needed)
-npx @reporails/cli setup
+npx @reporails/cli install
 ```
 
 This detects agents in your project and writes the MCP config. Restart your editor, then run `ails check`.
@@ -128,7 +128,7 @@ This emits `::error`/`::warning` workflow commands for each violation, plus a JS
 ## Commands
 
 ```bash
-ails setup                      # Set up MCP server for detected agents
+ails install                    # Install MCP server for detected agents
 ails check                      # Score your setup
 ails check -f json              # JSON output (for CI)
 ails check -f github            # GitHub Actions annotations
@@ -212,7 +212,7 @@ Depends on your install path:
 
 - **uvx/pip path**: [uv](https://docs.astral.sh/uv/) — no separate Python install needed
 - **npx/npm path**: Node.js >= 18 — uv is auto-installed if missing
-- **MCP setup**: No dependencies — `ails setup` writes config files directly
+- **MCP install**: No dependencies — `ails install` writes config files directly
 
 ## Rules
 
