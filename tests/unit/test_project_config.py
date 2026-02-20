@@ -55,6 +55,18 @@ class TestGetProjectConfig:
         assert config.packages == []
         assert config.disabled_rules == []
 
+    def test_malformed_yaml_inherits_global(self, tmp_path: Path, make_config_file) -> None:
+        from reporails_cli.core.models import GlobalConfig
+
+        make_config_file(": : :\n  bad yaml [[[")
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(default_agent="claude", recommended=False),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.default_agent == "claude"
+        assert config.recommended is False
+
     def test_returns_defaults_on_empty_file(self, tmp_path: Path, make_config_file) -> None:
         make_config_file("")
         config = get_project_config(tmp_path)

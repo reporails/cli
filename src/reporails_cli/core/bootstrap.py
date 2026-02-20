@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from reporails_cli.core.models import AgentConfig, GlobalConfig, ProjectConfig
@@ -79,7 +82,8 @@ def get_agent_config(agent: str) -> AgentConfig:
             excludes=data.get("excludes", []),
             overrides=data.get("overrides", {}),
         )
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse agent config %s: %s", config_path, exc)
         return AgentConfig()
 
 
@@ -116,7 +120,8 @@ def get_agent_vars(
                 else:
                     result[key] = str(value)
             return result
-        except (yaml.YAMLError, OSError):
+        except (yaml.YAMLError, OSError) as exc:
+            logger.warning("Failed to parse agent vars %s: %s", config_path, exc)
             continue
     return {}
 
@@ -175,7 +180,8 @@ def get_global_config() -> GlobalConfig:
             default_agent=data.get("default_agent", ""),
             recommended=data.get("recommended", True),
         )
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse global config %s: %s", config_path, exc)
         return GlobalConfig()
 
 
@@ -220,8 +226,13 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         if not has_recommended:
             config.recommended = global_cfg.recommended
         return config
-    except (yaml.YAMLError, OSError):
-        return ProjectConfig()
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse project config %s: %s", config_path, exc)
+        global_cfg = get_global_config()
+        return ProjectConfig(
+            default_agent=global_cfg.default_agent,
+            recommended=global_cfg.recommended,
+        )
 
 
 def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:

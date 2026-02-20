@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ import typer
 import yaml
 
 from reporails_cli.interfaces.cli.helpers import console
+
+logger = logging.getLogger(__name__)
 
 config_app = typer.Typer(
     name="config",
@@ -46,7 +49,8 @@ def _load_config(path: Path) -> dict[str, Any]:
         return {}
     try:
         return yaml.safe_load(cp.read_text(encoding="utf-8")) or {}
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse project config %s: %s", cp, exc)
         return {}
 
 
@@ -56,7 +60,8 @@ def _load_global_config() -> dict[str, Any]:
         return {}
     try:
         return yaml.safe_load(cp.read_text(encoding="utf-8")) or {}
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse global config %s: %s", cp, exc)
         return {}
 
 

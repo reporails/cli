@@ -161,4 +161,4 @@ Want to add or improve rules? Please follow [Contribute](https://github.com/repo
 
 ## License
 
-BUSL 1.1
+BUSL 1.1 — converts to Apache 2.0 on 2029-02-20 or at 1.0, whichever comes first.

@@ -50,6 +50,8 @@
 - [CI]: Add `test-action.yml` workflow — regression tests for GitHub Action (pass/fail scenarios, output verification)
 
 ### Fixed
+- [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
+- [CONFIG]: Malformed project config now applies global defaults (was returning hardcoded defaults)
 - [CLI]: Empty-files hint now shows the correct instruction file per agent (was hardcoded to CLAUDE.md)
 - [CLI]: Unknown `--agent` values now error with exit code 2 and list known agents (was silently ignored)
 - [CLI]: `--agent` values are now case-insensitive (`Claude` → `claude`)

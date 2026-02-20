@@ -218,4 +218,6 @@ Want to add or improve rules? See the [Contributing guide](https://github.com/re
 
 ## License
 
-BUSL 1.1
+BUSL 1.1 — converts to Apache 2.0 on 2029-02-20 or at 1.0, whichever comes first.
+
+Rules and Recommended rules package are [CC BY-SA 4.0](https://github.com/reporails/rules/blob/main/LICENSE) — always open, always forkable.
