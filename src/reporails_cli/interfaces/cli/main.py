@@ -202,7 +202,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     )
 
     # Build surface summary from agent detection for display
-    from reporails_cli.formatters.text.box import build_surface_summary
+    from reporails_cli.formatters.text.components import build_surface_summary
 
     surface = build_surface_summary(filtered_agents, target)
 

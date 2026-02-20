@@ -6,14 +6,10 @@ Handles the main score/capability box in output.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from reporails_cli.core.levels import get_level_labels
 from reporails_cli.core.models import ScanDelta
-
-if TYPE_CHECKING:
-    from reporails_cli.core.agents import DetectedAgent
 from reporails_cli.formatters.text.chars import ASCII_MODE, get_chars
 from reporails_cli.formatters.text.components import (
     _category_result_color,
@@ -25,10 +21,26 @@ from reporails_cli.formatters.text.components import (
     format_level_delta,
     format_score_delta,
     format_violations_delta,
-    get_severity_icons,
     pad_line,
 )
 from reporails_cli.templates import render
+
+
+def _build_category_bar(
+    passed: int, total: int, chars: dict[str, str], bar_width: int, colored: bool
+) -> tuple[str, int]:
+    """Build a mini score bar for a category. Returns (bar_string, markup_extra)."""
+    ratio = passed / total if total else 0
+    filled = int(ratio * bar_width)
+    filled = min(filled, bar_width)
+    filled_str = chars["filled"] * filled
+    empty_str = chars["empty"] * (bar_width - filled)
+    if colored and filled_str:
+        color = _category_result_color(passed, total)
+        rich = f"[{color}]{filled_str}[/{color}][dim]{empty_str}[/dim]"
+        plain_len = len(filled_str) + len(empty_str)
+        return (rich, len(rich) - plain_len)
+    return (filled_str + empty_str, 0)
 
 
 def _format_category_table(
@@ -38,41 +50,52 @@ def _format_category_table(
     empty_line: str,
     colored: bool,
 ) -> str:
-    """Format the category table inside the assessment box."""
-    if not any(cs["total"] > 0 for cs in cat_summary):
+    """Format category bars inside the assessment box."""
+    active = [cs for cs in cat_summary if cs["total"] > 0]
+    if not active:
         return empty_line
 
+    # Category section spans full content width (box_width - 6 = 56)
+    # name(14) + bar(28) + gap(2) + stat(7) + gap(2) + sev(3) = 56
+    content_width = box_width - 6
+    name_col = 14
+    bar_width = 28
+    stat_col = 7
+    sev_col = 3
     sev_key_map = {"critical": "crit", "high": "high", "medium": "med", "low": "low"}
-    severity_icons = get_severity_icons(chars, colored)
     cat_lines = []
-    cat_lines.append(pad_line("Check            Result    Severity", box_width, chars["v"]))
-    cat_lines.append(pad_line(chars["sep"] * 35, box_width, chars["v"]))
-    for cs in cat_summary:
+    header = f"{'Category':<{name_col}}{'Result':<{bar_width}}  {'Checks':^{stat_col}}  {'Sev':^{sev_col}}"
+    cat_lines.append(pad_line(header, box_width, chars["v"]))
+    cat_lines.append(pad_line(chars["sep"] * content_width, box_width, chars["v"]))
+    for cs in active:
         name = cs["name"].title()
-        if cs["total"]:
-            stat_plain = f"{cs['passed']}/{cs['total']}"
-            icon_plain = chars.get(sev_key_map.get(cs["worst_severity"] or "", ""), "") if cs["worst_severity"] else ""
-            icon = severity_icons.get(cs["worst_severity"], "") if cs["worst_severity"] else ""
-            if colored:
-                rc = _category_result_color(cs["passed"], cs["total"])
-                stat_rich = f"[{rc}]{stat_plain}[/{rc}]"
-                stat_extra = len(stat_rich) - len(stat_plain)
-                icon_extra = len(icon) - len(icon_plain) if icon else 0
-            else:
-                stat_rich = stat_plain
-                stat_extra = 0
-                icon_extra = 0
-            row = f"{name:<17}{stat_rich:<{10 + stat_extra}}{icon}"
-            row_extra = stat_extra + icon_extra
+        stat_plain = f"{cs['passed']}/{cs['total']}"
+        bar, bar_extra = _build_category_bar(cs["passed"], cs["total"], chars, bar_width, colored)
+
+        # Status icon: ✓ for all-pass, severity icon for failures
+        if cs["passed"] == cs["total"]:
+            icon_plain = chars["check"]
+            icon = f"[green]{icon_plain}[/green]" if colored else icon_plain
         else:
-            if colored:
-                stat_rich = "[dim]\u2013[/dim]"
-                stat_extra = len(stat_rich) - 1  # plain is just en-dash
-            else:
-                stat_rich = "\u2013"
-                stat_extra = 0
-            row = f"{name:<17}{stat_rich:<{10 + stat_extra}}"
-            row_extra = stat_extra
+            sev = cs.get("worst_severity", "")
+            icon_plain = chars.get(sev_key_map.get(sev, ""), "")
+            sc = _category_result_color(cs["passed"], cs["total"]) if colored else ""
+            icon = f"[{sc}]{icon_plain}[/{sc}]" if sc else icon_plain
+        icon_extra = len(icon) - len(icon_plain)
+
+        if colored:
+            rc = _category_result_color(cs["passed"], cs["total"])
+            stat_rich = f"[{rc}]{stat_plain}[/{rc}]"
+            stat_extra = len(stat_rich) - len(stat_plain)
+        else:
+            stat_rich = stat_plain
+            stat_extra = 0
+
+        icon_left = (sev_col - len(icon_plain)) // 2
+        icon_right = sev_col - len(icon_plain) - icon_left
+        icon_str = f"{' ' * icon_left}{icon}{' ' * icon_right}"
+        row = f"{name:<{name_col}}{bar}  {stat_rich:^{stat_col + stat_extra}}  {icon_str}"
+        row_extra = bar_extra + stat_extra + icon_extra
         cat_lines.append(pad_line(row, box_width + row_extra, chars["v"]))
     cat_lines.append(empty_line)
     return "\n".join(cat_lines)
@@ -140,40 +163,6 @@ def _format_friction_line(
     return pad_line(friction_rich, box_width + markup_extra, chars["v"])
 
 
-def build_surface_summary(agents: list[DetectedAgent], target: Path) -> dict[str, Any]:
-    """Build a scope summary from detected agents for display."""
-    root_files: list[str] = []
-    dir_counts: dict[str, int] = {}
-
-    for agent in agents:
-        for f in agent.instruction_files:
-            try:
-                rel = str(f.relative_to(target))
-            except ValueError:
-                rel = str(f)
-            if rel not in root_files:
-                root_files.append(rel)
-
-        # Count files per detected directory label
-        for label, dir_path in agent.detected_directories.items():
-            dir_full = target / dir_path.rstrip("/")
-            count = sum(1 for rf in agent.rule_files if rf.is_relative_to(dir_full))
-            dir_counts[label] = dir_counts.get(label, 0) + count
-
-    # Main file = shortest root instruction file
-    main = min(root_files, key=len) if root_files else ""
-    # Extra root instruction files (e.g. tests/CLAUDE.md, nested CLAUDE.md)
-    extra_instructions = len(root_files) - 1
-
-    counts: dict[str, int] = {}
-    if extra_instructions > 0:
-        counts["instructions"] = extra_instructions
-    # Add directory-label counts (rules, skills, tasks, etc.)
-    counts.update({label: count for label, count in sorted(dir_counts.items()) if count > 0})
-
-    return {"main": main, "counts": counts}
-
-
 def _format_scope_line(surface: dict[str, Any] | None, box_width: int, chars: dict[str, str]) -> str:
     """Format the scope line inside the box."""
     if not surface or not surface.get("main"):
@@ -231,7 +220,9 @@ def format_assessment_box(
     # Score line: left = score + delta, right = elapsed time (dim)
     left_plain = f"SCORE: {score:.1f} / 10{score_delta_plain}"
     elapsed_plain = f"{elapsed_ms:.0f}ms" if elapsed_ms is not None else ""
-    score_gap = box_width - 3 - len(left_plain) - len(elapsed_plain) - 3
+    # Align elapsed to right edge of content area (3 left + 3 right margin)
+    content_width = box_width - 6
+    score_gap = max(content_width - len(left_plain) - len(elapsed_plain), 1)
 
     if colored:
         sc = _score_color(score)

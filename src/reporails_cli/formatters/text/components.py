@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import contextlib
 import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from reporails_cli.core.models import ScanDelta
+
+if TYPE_CHECKING:
+    from reporails_cli.core.agents import DetectedAgent
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.templates import render
 
@@ -78,6 +83,7 @@ def format_legend(ascii_mode: bool | None = None, colored: bool = False) -> str:
             high=f"[red]{chars['high']}[/red]",
             med=f"[yellow]{chars['med']}[/yellow]",
             low=f"[yellow]{chars['low']}[/yellow]",
+            pending=f"[dim]{chars['pending']}[/dim]",
         )
     return render(
         "cli_legend.txt",
@@ -85,6 +91,7 @@ def format_legend(ascii_mode: bool | None = None, colored: bool = False) -> str:
         high=chars["high"],
         med=chars["med"],
         low=chars["low"],
+        pending=chars["pending"],
     )
 
 
@@ -113,7 +120,7 @@ def build_score_bar(score: float, ascii_mode: bool | None = None, colored: bool 
     of invisible Rich markup characters added.
     """
     chars = get_chars(ascii_mode)
-    bar_width = 50
+    bar_width = 56
     filled = int((score / 10) * bar_width)
     filled = min(filled, bar_width)
     filled_str = chars["filled"] * filled
@@ -232,7 +239,46 @@ def get_severity_icons(chars: dict[str, str], colored: bool = False) -> dict[str
         "high": chars["high"],
         "medium": chars["med"],
         "low": chars["low"],
+        "pending": chars["pending"],
     }
     if colored:
-        return {sev: f"[{SEVERITY_COLORS[sev]}]{icon}[/{SEVERITY_COLORS[sev]}]" for sev, icon in icons.items()}
+        colored_icons = {}
+        for sev, icon in icons.items():
+            if sev in SEVERITY_COLORS:
+                c = SEVERITY_COLORS[sev]
+                colored_icons[sev] = f"[{c}]{icon}[/{c}]"
+            else:
+                colored_icons[sev] = f"[dim]{icon}[/dim]"
+        return colored_icons
     return icons
+
+
+def build_surface_summary(agents: list[DetectedAgent], target: Path) -> dict[str, Any]:
+    """Build a scope summary from detected agents for display."""
+    root_files: list[str] = []
+    dir_counts: dict[str, int] = {}
+
+    for agent in agents:
+        for f in agent.instruction_files:
+            with contextlib.suppress(ValueError):
+                rel = str(f.relative_to(target))
+                if rel not in root_files:
+                    root_files.append(rel)
+                    continue
+            if str(f) not in root_files:
+                root_files.append(str(f))
+
+        for label, dir_path in agent.detected_directories.items():
+            dir_full = target / dir_path.rstrip("/")
+            count = sum(1 for rf in agent.rule_files if rf.is_relative_to(dir_full))
+            dir_counts[label] = dir_counts.get(label, 0) + count
+
+    main = min(root_files, key=len) if root_files else ""
+    extra_instructions = len(root_files) - 1
+
+    counts: dict[str, int] = {}
+    if extra_instructions > 0:
+        counts["instructions"] = extra_instructions
+    counts.update({label: count for label, count in sorted(dir_counts.items()) if count > 0})
+
+    return {"main": main, "counts": counts}
