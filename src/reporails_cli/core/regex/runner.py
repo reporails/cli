@@ -260,6 +260,9 @@ def _scan_combined(
                     break
 
 
+_MAX_FILE_SIZE = 1_048_576  # 1 MB — skip files larger than this
+
+
 def _scan_file(
     file_path: Path,
     scan_root: Path,
@@ -272,6 +275,9 @@ def _scan_file(
 ) -> None:
     """Scan a single file against compiled checks, appending to results."""
     try:
+        if file_path.stat().st_size > _MAX_FILE_SIZE:
+            logger.debug("Skipping oversized file: %s", file_path)
+            return
         content = file_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return

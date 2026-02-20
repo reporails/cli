@@ -111,7 +111,9 @@ Violations appear as inline annotations on the PR diff. The step summary shows s
 | `path` | `.` | Path to validate |
 | `strict` | `false` | Fail on any violation |
 | `min-score` | | Minimum score threshold (0-10) |
-| `agent` | `claude` | Agent type |
+| `agent` | | Agent type (resolve from project config or generic fallback) |
+| `exclude-dir` | | Comma-separated directory names to exclude from scanning |
+| `from-source` | `false` | Install CLI from local checkout (for CI testing) |
 | `experimental` | `false` | Include experimental rules |
 | `version` | | CLI version to install (default: latest) |
 
@@ -138,8 +140,8 @@ ails check --agent claude       # Agent-specific rules
 ails check --experimental       # Include experimental rules
 ails check --exclude-dir vendor # Exclude directory from scanning
 ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
-ails heal                       # Interactive auto-fix + semantic evaluation
-ails heal --non-interactive     # JSON output for agents and scripts
+ails heal                       # Auto-fix violations
+ails heal -f json               # JSON output for agents and scripts
 ails explain CORE:S:0001        # Explain a rule
 ails map                        # Show project structure
 ails map --save                 # Generate backbone.yml
@@ -172,7 +174,7 @@ Ephemeral runners (`uvx`, `npx`) always use the latest CLI version automatically
 
 ## Recommended Rules
 
-[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
+[Recommended rules](https://github.com/reporails/recommended) (RRAILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
 
 ```yaml
 recommended: false
@@ -193,7 +195,7 @@ default_agent: claude          # Default agent (run: ails config set default_age
 exclude_dirs: [vendor, dist]   # Directories to skip
 disabled_rules: [CORE:C:0010]  # Rules to disable
 experimental: false            # Include experimental rules
-recommended: true              # Include recommended rules (AILS_ namespace)
+recommended: true              # Include recommended rules (RRAILS_ namespace)
 ```
 
 Set values via CLI: `ails config set <key> <value>`
