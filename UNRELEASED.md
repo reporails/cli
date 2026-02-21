@@ -52,6 +52,7 @@
 - [UNIT]: Add tests for mechanical check gaps — blocking behavior across rules, M→D→S interleaved sequence, content_absent multi-file, negate on file_exists/directory_exists (17 tests)
 - [SMOKE]: Add E2E tests for mechanical checks through `ails check` — violations, locations, metadata, text output, oversized files (6 tests)
 - [UNIT]: Refactor test suite — parametrize duplicated cases, add boundary/edge-case tests, relocate pure unit tests from integration/
+- [INTEGRATION]: Add golden snapshot tests — run full pipeline against committed fixtures, assert JSON output stability with `--update-golden` regeneration flag
 
 ### Fixed
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
@@ -72,3 +73,4 @@
 - [ENGINE]: Rule compiler crashes on `paths: include: null` in YAML rules — `dict.get()` returns `None` not default when key exists with null value (was `TypeError: 'NoneType' object is not iterable`)
 - [ENGINE]: `exclude_dirs` config not applied during agent file discovery — test fixtures were scanned as real instruction files
 - [ENGINE]: `--refresh` flag did not clear agent or rule caches — only affected semantic judgment cache
+
