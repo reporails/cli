@@ -1,0 +1,100 @@
+{
+  "category_summary": [
+    {
+      "code": "S",
+      "failed": 1,
+      "name": "Structure",
+      "passed": 4,
+      "total": 5,
+      "worst_severity": "medium"
+    },
+    {
+      "code": "C",
+      "failed": 0,
+      "name": "Content",
+      "passed": 5,
+      "total": 5,
+      "worst_severity": null
+    },
+    {
+      "code": "E",
+      "failed": 0,
+      "name": "Efficiency",
+      "passed": 0,
+      "total": 0,
+      "worst_severity": null
+    },
+    {
+      "code": "M",
+      "failed": 0,
+      "name": "Maintenance",
+      "passed": 1,
+      "total": 1,
+      "worst_severity": null
+    },
+    {
+      "code": "G",
+      "failed": 1,
+      "name": "Governance",
+      "passed": 0,
+      "total": 1,
+      "worst_severity": "medium"
+    }
+  ],
+  "evaluation": "awaiting_semantic",
+  "friction": "small",
+  "is_partial": true,
+  "judgment_requests": [
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:18",
+      "pass_value": "pass",
+      "rule_id": "CORE:G:0001"
+    }
+  ],
+  "level": "L5",
+  "pending_semantic": {
+    "file_count": 1,
+    "rule_count": 1,
+    "rules": [
+      "CORE:G:0001"
+    ]
+  },
+  "score": 8.3,
+  "skipped_experimental": {
+    "rule_count": 2,
+    "rules": [
+      "CORE:C:0004",
+      "CORE:M:0001"
+    ]
+  },
+  "summary": {
+    "rules_checked": 12,
+    "rules_failed": 2,
+    "rules_passed": 10
+  },
+  "violations": [
+    {
+      "check_id": "agent-specific-syntax",
+      "location": "CLAUDE.md:18",
+      "rule_id": "CORE:G:0001",
+      "severity": "medium"
+    },
+    {
+      "check_id": "wall-of-prose",
+      "location": "CLAUDE.md:7",
+      "rule_id": "CORE:S:0003",
+      "severity": "medium"
+    }
+  ]
+}

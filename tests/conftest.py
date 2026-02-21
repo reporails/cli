@@ -11,6 +11,23 @@ from pathlib import Path
 
 import pytest
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register custom CLI options."""
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="Regenerate golden snapshot expected.json files",
+    )
+
+
+@pytest.fixture
+def update_golden(request: pytest.FixtureRequest) -> bool:
+    """Whether to update golden snapshot files instead of comparing."""
+    return bool(request.config.getoption("--update-golden"))
+
+
 # Path to test fixtures
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
