@@ -52,7 +52,7 @@
 - [UNIT]: Add tests for mechanical check gaps — blocking behavior across rules, M→D→S interleaved sequence, content_absent multi-file, negate on file_exists/directory_exists (17 tests)
 - [SMOKE]: Add E2E tests for mechanical checks through `ails check` — violations, locations, metadata, text output, oversized files (6 tests)
 - [UNIT]: Refactor test suite — parametrize duplicated cases, add boundary/edge-case tests, relocate pure unit tests from integration/
-- [INTEGRATION]: Add golden snapshot tests — run full pipeline against committed fixtures, assert JSON output stability with `--update-golden` regeneration flag
+- [INTEGRATION]: Add pipeline output stability tests — run full validation against committed fixtures, assert deterministic fields with regeneration flag
 
 ### Fixed
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
