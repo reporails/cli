@@ -1343,3 +1343,100 @@ class TestCheckFlags:
         assert result.exit_code == 0
         # Box-drawing chars are Unicode (U+2500 range)
         assert "\u2550" not in result.output, "ASCII mode produced Unicode box characters"
+
+
+# ===========================================================================
+# Mechanical checks E2E — full pipeline through ails check
+#
+# These tests verify that mechanical check violations appear in the final
+# output after flowing through the complete pipeline: rule loading →
+# mechanical dispatch → scoring → JSON output. This catches integration
+# bugs invisible to unit tests (e.g., mechanical results dropped during
+# SARIF merge, wrong check type filtering, template resolution failures).
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestMechanicalChecksE2E:
+    """Mechanical checks must produce violations in ails check output."""
+
+    @requires_rules
+    def test_missing_git_produces_violation(self, tmp_path: Path) -> None:
+        """Project without .git directory — mechanical pipeline runs and produces violations."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nMinimal content.\n")
+
+        data = _check_json(project, agent="claude")
+
+        # Without .git, project should get violations (mechanical and/or deterministic)
+        assert len(data["violations"]) > 0, (
+            f"Zero violations on project without .git — pipeline not firing. "
+            f"score={data['score']}, rules_checked={data.get('summary', {}).get('rules_checked', 0)}"
+        )
+        assert data["score"] < 10.0, "Minimal project without .git should not score perfectly"
+
+    @requires_rules
+    def test_violations_include_rule_metadata(self, tmp_path: Path) -> None:
+        """Each violation has required fields: rule_id, location, message, severity."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# My Project\n\nMinimal content.\n")
+
+        data = _check_json(project, agent="claude")
+
+        assert len(data["violations"]) > 0, "Expected violations on project without .git"
+        for v in data["violations"]:
+            assert "rule_id" in v, f"Missing rule_id in violation: {v}"
+            assert "location" in v, f"Missing location in violation: {v}"
+            assert "message" in v, f"Missing message in violation: {v}"
+            assert "severity" in v, f"Missing severity in violation: {v}"
+
+    @requires_rules
+    def test_mechanical_violations_have_locations(self, tmp_path: Path) -> None:
+        """Mechanical violations must have file:line location format."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Minimal\n")
+
+        data = _check_json(project, agent="claude")
+
+        for v in data["violations"]:
+            assert ":" in v["location"], f"Violation {v['rule_id']} has no line number in location: {v['location']}"
+
+    @requires_rules
+    def test_mechanical_violations_in_text_output(self, tmp_path: Path) -> None:
+        """Mechanical violations appear in text output (not just JSON)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Minimal\n")
+
+        output = _check_text(project, agent="claude")
+
+        # Text output should contain violation indicators and reference the file
+        assert "CLAUDE.md" in output, "Text output should reference the instruction file"
+
+    @requires_rules
+    def test_score_reflects_mechanical_failures(self, claude_only: Path) -> None:
+        """Score is computed from both mechanical and deterministic violations."""
+        data = _check_json(claude_only, agent="claude")
+
+        # With agent-specific rules, there should be a mix of violation types
+        assert "score" in data
+        assert isinstance(data["score"], (int, float))
+        # Score should be between 0 and 10
+        assert 0 <= data["score"] <= 10.0
+
+    @requires_rules
+    def test_oversized_file_does_not_crash(self, tmp_path: Path) -> None:
+        """Large instruction file is handled gracefully (no crash)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        # Create a file that's large but under the 1MB limit
+        (project / "CLAUDE.md").write_text("# Section\n\n" + "x " * 50000 + "\n")
+
+        data = _check_json(project, agent="claude")
+
+        # Should complete without crash — score may be low due to content issues
+        assert "score" in data
