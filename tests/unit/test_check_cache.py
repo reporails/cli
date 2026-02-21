@@ -53,3 +53,21 @@ class TestCheckCache:
         cached = cache.get(key)
         assert cached is not None
         assert cached.annotations == {"imports": ["x"]}
+
+    def test_arg_key_order_does_not_affect_cache_key(self) -> None:
+        """sort_keys=True in json.dumps should make key order irrelevant."""
+        cache = CheckCache()
+        k1 = cache.key("mechanical", "check", {"a": 1, "b": 2}, ".:0")
+        k2 = cache.key("mechanical", "check", {"b": 2, "a": 1}, ".:0")
+        assert k1 == k2
+
+    def test_overwrite_existing_entry(self) -> None:
+        """Setting a key twice should overwrite the previous result."""
+        cache = CheckCache()
+        key = cache.key("mechanical", "file_exists", None, ".:0")
+        first = CheckResult(passed=True, message="ok")
+        second = CheckResult(passed=False, message="gone")
+        cache.set(key, first)
+        cache.set(key, second)
+        assert cache.get(key) is second
+        assert len(cache) == 1

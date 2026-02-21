@@ -116,36 +116,8 @@ def multi_file_project(tmp_path: Path) -> Path:
 
 
 # ===========================================================================
-# CHECK COMMAND — Exit Codes
-# ===========================================================================
-
-
-class TestCheckExitCodes:
-    """Exit code contract: 0=ok, 1=strict+violations, 2=input error."""
-
-    @requires_rules
-    def test_exit_0_with_violations_no_strict(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
-        assert result.exit_code == 0
-
-    @requires_rules
-    def test_exit_1_strict_with_violations(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "--strict", "-f", "json", "--no-update-check"])
-        data = json.loads(result.output)
-        if data["violations"]:
-            assert result.exit_code == 1, "strict mode must exit 1 when violations exist"
-
-    def test_exit_2_missing_path(self) -> None:
-        result = runner.invoke(app, ["check", "/tmp/no-such-path-xyz-abc", "--no-update-check"])
-        assert result.exit_code == 2
-
-    def test_exit_0_no_instruction_files(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(empty_project), "--no-update-check"])
-        assert result.exit_code == 0
-
-
-# ===========================================================================
 # CHECK COMMAND — JSON Output Schema
+# (Exit codes covered by smoke tests: strict, missing path, no files)
 # ===========================================================================
 
 
@@ -322,63 +294,8 @@ class TestCheckScoreConsistency:
 
 
 # ===========================================================================
-# MAP COMMAND
-# ===========================================================================
-
-
-class TestMapCommand:
-    """ails map must detect agents and project structure."""
-
-    def test_text_output_shows_agent(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(minimal_project)])
-        assert result.exit_code == 0
-        assert "Claude" in result.output or "claude" in result.output.lower()
-
-    def test_yaml_output_valid(self, minimal_project: Path) -> None:
-        import yaml
-
-        result = runner.invoke(app, ["map", str(minimal_project), "-o", "yaml"])
-        assert result.exit_code == 0
-        data = yaml.safe_load(result.output)
-        assert isinstance(data, dict)
-        assert "agents" in data
-
-    def test_json_output_valid(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(minimal_project), "-o", "json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert isinstance(data, dict)
-        assert "agents" in data
-
-    def test_save_creates_backbone(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(minimal_project), "--save"])
-        assert result.exit_code == 0
-
-        backbone = minimal_project / ".reporails" / "backbone.yml"
-        assert backbone.exists(), "backbone.yml should be created"
-
-        import yaml
-
-        data = yaml.safe_load(backbone.read_text())
-        assert "agents" in data
-
-    def test_missing_path_errors(self) -> None:
-        result = runner.invoke(app, ["map", "/tmp/no-such-path-xyz-abc"])
-        assert result.exit_code == 1
-
-    def test_empty_dir_no_crash(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(empty_project)])
-        assert result.exit_code == 0
-
-    def test_multi_agent_detected(self, multi_file_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(multi_file_project), "-o", "json"])
-        data = json.loads(result.output)
-        agents = data.get("agents", {})
-        assert len(agents) >= 2, f"Should detect Claude + Generic, got: {list(agents.keys())}"
-
-
-# ===========================================================================
 # DISMISS COMMAND
+# (Map command covered by smoke tests)
 # ===========================================================================
 
 
@@ -406,84 +323,13 @@ class TestDismissCommand:
         assert "C6" in judgment
         assert judgment["C6"]["verdict"] == "pass"
 
-    def test_dismiss_missing_path(self) -> None:
-        result = runner.invoke(app, ["dismiss", "C6", "--path", "/tmp/no-such-path-xyz"])
-        assert result.exit_code == 1
-
-    def test_dismiss_no_files(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["dismiss", "C6", "--path", str(empty_project)])
-        assert result.exit_code == 1
-        assert "No instruction files" in result.output
+    # Error paths (missing path, no files) covered by smoke tests
 
 
 # ===========================================================================
-# JUDGE COMMAND
+# CHECK COMMAND — Flags
+# (Version and Explain commands covered by smoke tests)
 # ===========================================================================
-
-
-class TestJudgeCommand:
-    """ails judge must cache verdicts in batch."""
-
-    def test_judge_records_verdict(self, minimal_project: Path) -> None:
-        result = runner.invoke(
-            app,
-            ["judge", str(minimal_project), "C6:CLAUDE.md:pass:Looks good"],
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert data["recorded"] >= 1
-
-    def test_judge_no_verdicts_errors(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["judge", str(minimal_project)])
-        assert result.exit_code == 1
-
-    def test_judge_missing_path(self) -> None:
-        result = runner.invoke(app, ["judge", "/tmp/no-such-path-xyz", "C6:CLAUDE.md:pass:ok"])
-        assert result.exit_code == 1
-
-
-# ===========================================================================
-# EXPLAIN COMMAND
-# ===========================================================================
-
-
-class TestExplainCommand:
-    """ails explain must show rule details."""
-
-    @requires_rules
-    def test_known_rule(self) -> None:
-        result = runner.invoke(app, ["explain", "CORE:S:0001"])
-        assert result.exit_code == 0
-        assert "CORE:S:0001" in result.output or "structure" in result.output.lower()
-
-    def test_unknown_rule(self) -> None:
-        result = runner.invoke(app, ["explain", "ZZZZZ99"])
-        assert result.exit_code == 2
-        assert "Unknown rule" in result.output or "Error" in result.output
-
-
-# ===========================================================================
-# VERSION COMMAND
-# ===========================================================================
-
-
-class TestVersionCommand:
-    """ails version must show component versions."""
-
-    def test_shows_cli_version(self) -> None:
-        result = runner.invoke(app, ["version"])
-        assert result.exit_code == 0
-        assert "CLI:" in result.output
-
-    def test_shows_framework_version(self) -> None:
-        result = runner.invoke(app, ["version"])
-        assert result.exit_code == 0
-        assert "Framework:" in result.output
-
-    def test_shows_recommended_version(self) -> None:
-        result = runner.invoke(app, ["version"])
-        assert result.exit_code == 0
-        assert "Recommended:" in result.output
 
 
 # ===========================================================================
@@ -502,37 +348,7 @@ class TestCheckFlags:
         data = json.loads(result.output)
         assert "score" in data
 
-    @requires_rules
-    def test_exclude_dir_reduces_scan(self, tmp_path: Path) -> None:
-        """--exclude-dir should prevent scanning excluded directories."""
-        p = tmp_path / "proj"
-        p.mkdir()
-        (p / "CLAUDE.md").write_text("# Main\n\nMain project.\n")
-
-        # Create a subdir with its own CLAUDE.md
-        sub = p / "vendor"
-        sub.mkdir()
-        (sub / "CLAUDE.md").write_text("# Vendor\n\nVendor code.\n")
-
-        # Without exclude — should find both
-        r1 = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
-        d1 = json.loads(r1.output)
-
-        # With exclude — should skip vendor
-        r2 = runner.invoke(app, ["check", str(p), "--exclude-dir", "vendor", "-f", "json", "--no-update-check"])
-        d2 = json.loads(r2.output)
-
-        # Fewer or equal violations with exclude
-        assert len(d2["violations"]) <= len(d1["violations"])
-
-    @requires_rules
-    def test_ascii_flag_no_unicode(self, minimal_project: Path) -> None:
-        """--ascii should produce output without Unicode box drawing."""
-        result = runner.invoke(app, ["check", str(minimal_project), "--ascii", "-q", "--no-update-check"])
-        assert result.exit_code == 0
-        # Unicode box chars should not appear
-        for char in "\u2550\u2551\u2554\u2557\u255a\u255d":
-            assert char not in result.output, f"Unicode char {char!r} found with --ascii"
+    # --exclude-dir and --ascii covered by smoke tests
 
     def test_legend_flag_shows_legend(self) -> None:
         """--legend should show severity legend and exit."""
@@ -562,25 +378,8 @@ class TestCheckFlags:
 class TestCheckAgentFlag:
     """--agent flag must scope file discovery and adapt hints per agent."""
 
-    def test_no_agent_hints_agents_md(self, empty_project: Path) -> None:
-        """No --agent flag should hint AGENTS.md (agents.md standard)."""
-        result = runner.invoke(app, ["check", str(empty_project), "-f", "text", "--no-update-check"])
-        assert "Create a AGENTS.md to get started" in result.output
-
-    def test_no_files_hint_claude(self, empty_project: Path) -> None:
-        """--agent claude should hint CLAUDE.md."""
-        result = runner.invoke(
-            app, ["check", str(empty_project), "--agent", "claude", "-f", "text", "--no-update-check"]
-        )
-        assert "Create a CLAUDE.md to get started" in result.output
-
-    def test_no_files_hint_codex(self, empty_project: Path) -> None:
-        """--agent codex should hint AGENTS.md, not CLAUDE.md."""
-        result = runner.invoke(
-            app, ["check", str(empty_project), "--agent", "codex", "-f", "text", "--no-update-check"]
-        )
-        assert "Create a AGENTS.md to get started" in result.output
-        assert "CLAUDE.md" not in result.output
+    # Hint message tests (no agent, claude, codex, copilot) covered by
+    # smoke TestHintMessages. Keep agent-specific behavior tests below.
 
     def test_no_files_hint_cursor(self, empty_project: Path) -> None:
         """--agent cursor should hint .cursorrules."""
@@ -775,9 +574,7 @@ class TestCheckConfig:
 class TestHealCommand:
     """ails heal must auto-fix and report remaining violations."""
 
-    def test_heal_missing_path(self) -> None:
-        result = runner.invoke(app, ["heal", "/tmp/no-such-path-xyz"])
-        assert result.exit_code != 0
+    # test_heal_missing_path covered by smoke tests
 
     @requires_rules
     def test_heal_auto_fixes_applied(self, tmp_path: Path) -> None:

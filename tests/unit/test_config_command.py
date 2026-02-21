@@ -149,3 +149,34 @@ class TestListMerge:
         assert result.exit_code == 0
         assert "default_agent: cursor" in result.output
         assert "(global)" not in result.output
+
+
+class TestConfigEdgeCases:
+    """Edge cases for config commands."""
+
+    def test_set_overwrites_existing_value(self, tmp_path: Path) -> None:
+        """Setting a key twice should persist the second value, not the first."""
+        global_home = tmp_path / ".reporails"
+        with patch(
+            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            return_value=global_home / "config.yml",
+        ):
+            runner.invoke(config_app, ["set", "--global", "default_agent", "claude"])
+            result = runner.invoke(config_app, ["set", "--global", "default_agent", "cursor"])
+
+        assert result.exit_code == 0
+        data = yaml.safe_load((global_home / "config.yml").read_text())
+        assert data["default_agent"] == "cursor", f"Second set should overwrite first, got {data['default_agent']}"
+
+    def test_malformed_global_config_handled(self, tmp_path: Path) -> None:
+        """Malformed YAML in global config should not crash config list."""
+        global_home = tmp_path / ".reporails"
+        _write_global_config(global_home, "default_agent: [unclosed\n  bad: yaml: :\n")
+
+        with patch(
+            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            return_value=global_home / "config.yml",
+        ):
+            result = runner.invoke(config_app, ["list", "--global"])
+
+        assert result.exit_code == 0, f"Should not crash on malformed YAML, got: {result.output}"

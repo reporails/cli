@@ -200,3 +200,34 @@ class TestBuildRequestFromSarifResult:
         }
         result = build_request_from_sarif_result(rule, sarif_result, Path("/tmp/does-not-exist"))
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Edge cases appended to existing classes
+# ---------------------------------------------------------------------------
+
+
+class TestParseCriteriaEdges:
+    def test_empty_list_returns_default(self) -> None:
+        """An empty list should fall back to the default dict."""
+        result = _parse_criteria([])
+        assert result == {"pass_condition": "Evaluate based on context"}
+
+
+class TestParseChoicesEdges:
+    def test_empty_list_returns_empty(self) -> None:
+        """An empty list hits the falsy guard and returns the default."""
+        result = _parse_choices([])
+        assert result == ["pass", "fail"]
+
+
+class TestBuildRequestEdges:
+    def test_empty_checks_returns_none(self) -> None:
+        """A rule with checks=[] should still return a JudgmentRequest (default severity)."""
+        rule = _make_rule(checks=[])
+        result = build_request(rule, "some content", "CLAUDE.md:1")
+
+        # build_request only returns None when question is missing.
+        # Empty checks means severity defaults to MEDIUM.
+        assert isinstance(result, JudgmentRequest)
+        assert result.severity == Severity.MEDIUM

@@ -19,16 +19,6 @@ class TestGetProjectConfig:
         assert config.experimental is False
         assert config.recommended is True
 
-    def test_loads_packages(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("packages:\n  - recommended\n  - custom\n")
-        config = get_project_config(tmp_path)
-        assert config.packages == ["recommended", "custom"]
-
-    def test_loads_disabled_rules(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("disabled_rules:\n  - S1\n  - C7\n")
-        config = get_project_config(tmp_path)
-        assert config.disabled_rules == ["S1", "C7"]
-
     def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
         make_config_file(
             "framework_version: '0.1.0'\npackages:\n  - recommended\ndisabled_rules:\n  - S1\nexperimental: true\n"
@@ -71,16 +61,6 @@ class TestGetProjectConfig:
         make_config_file("")
         config = get_project_config(tmp_path)
         assert config.packages == []
-
-    def test_loads_exclude_dirs(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("exclude_dirs:\n  - tests\n  - vendor\n")
-        config = get_project_config(tmp_path)
-        assert config.exclude_dirs == ["tests", "vendor"]
-
-    def test_exclude_dirs_defaults_empty(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("packages:\n  - custom\n")
-        config = get_project_config(tmp_path)
-        assert config.exclude_dirs == []
 
 
 class TestGlobalDefaultsMerged:

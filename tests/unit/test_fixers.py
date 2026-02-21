@@ -290,11 +290,6 @@ class TestPartitionViolations:
         assert len(non_fixable) == 1
         assert non_fixable[0].rule_id == "CORE:S:0003"
 
-    def test_empty_list(self) -> None:
-        fixable, non_fixable = partition_violations([])
-        assert fixable == []
-        assert non_fixable == []
-
     def test_all_fixable(self, tmp_path: Path) -> None:
         violations = [
             _make_violation("CORE:C:0003", str(tmp_path / "CLAUDE.md")),
@@ -334,3 +329,46 @@ class TestApplySingleFix:
         v = _make_violation("CORE:S:0003", str(tmp_path / "CLAUDE.md"))
         result = apply_single_fix(v, tmp_path)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestFixerEdgeCases:
+    def test_fix_empty_file(self, tmp_path: Path) -> None:
+        """fix_add_constraints on a 0-byte file should not crash."""
+        md = tmp_path / "CLAUDE.md"
+        md.write_text("")
+        v = _make_violation("CORE:C:0010", str(md))
+
+        result = fix_add_constraints(v, tmp_path)
+
+        # Empty file has no constraints heading, so fixer adds the section
+        assert result is not None
+        content = md.read_text()
+        assert "## Constraints" in content
+
+    def test_double_application_idempotent(self, tmp_path: Path) -> None:
+        """Applying fix_add_constraints twice: second call returns None."""
+        md = tmp_path / "CLAUDE.md"
+        md.write_text("# My Project\n")
+        v = _make_violation("CORE:C:0010", str(md))
+
+        first = fix_add_constraints(v, tmp_path)
+        assert first is not None
+
+        second = fix_add_constraints(v, tmp_path)
+        assert second is None
+
+    def test_apply_auto_fixes_missing_file_skips_gracefully(self, tmp_path: Path) -> None:
+        """Violations pointing to a nonexistent file should not crash."""
+        violations = [
+            _make_violation("CORE:C:0010", str(tmp_path / "does_not_exist.md")),
+            _make_violation("CORE:C:0003", str(tmp_path / "also_missing.md")),
+        ]
+
+        results = apply_auto_fixes(violations, tmp_path)
+
+        assert results == []

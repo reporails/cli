@@ -51,6 +51,7 @@
 - [CI]: Add `test-action.yml` workflow — regression tests for GitHub Action (pass/fail scenarios, output verification)
 - [UNIT]: Add tests for mechanical check gaps — blocking behavior across rules, M→D→S interleaved sequence, content_absent multi-file, negate on file_exists/directory_exists (17 tests)
 - [SMOKE]: Add E2E tests for mechanical checks through `ails check` — violations, locations, metadata, text output, oversized files (6 tests)
+- [UNIT]: Refactor test suite — parametrize duplicated cases, add boundary/edge-case tests, relocate pure unit tests from integration/
 
 ### Fixed
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
