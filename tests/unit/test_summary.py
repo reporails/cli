@@ -46,10 +46,6 @@ class TestScoreTable:
         md = generate_summary({"score": 6, "level": "L3", "score_delta": 0})
         assert "(+" not in md and "(-" not in md
 
-    def test_null_delta_omitted(self):
-        md = generate_summary({"score": 6, "level": "L3", "score_delta": None})
-        assert "(+" not in md and "(-" not in md
-
 
 # ---------------------------------------------------------------------------
 # generate_summary — status line

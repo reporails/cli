@@ -230,3 +230,29 @@ class TestGetApplicableRules:
         result = get_applicable_rules({}, Level.L3)
 
         assert result == {}
+
+    def test_invalid_level_string_skipped(self) -> None:
+        """A rule with an invalid level string should be silently skipped."""
+        from reporails_cli.core.applicability import get_applicable_rules
+
+        rules = {
+            "R1": _make_rule(rule_id="R1", level="L2"),
+            "BAD": _make_rule(rule_id="BAD", level="invalid"),
+        }
+
+        result = get_applicable_rules(rules, Level.L3)
+
+        assert "R1" in result
+        assert "BAD" not in result
+
+    def test_supersedes_nonexistent_rule_ignored(self) -> None:
+        """A rule that supersedes a rule ID not in the dict should not crash."""
+        from reporails_cli.core.applicability import get_applicable_rules
+
+        rules = {
+            "S1": _make_rule(rule_id="S1", level="L1", supersedes="DOES_NOT_EXIST"),
+        }
+
+        result = get_applicable_rules(rules, Level.L3)
+
+        assert "S1" in result

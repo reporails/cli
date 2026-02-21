@@ -368,11 +368,11 @@ class TestSemanticChecks:
         )
 
         result = run_rule(info, {"instruction_files": ["**/*.md"]})
-        # Semantic-only rules pass (no M/D to detect failure in fail fixture),
-        # but fail fixture gets no violation → FAILED
-        # This is correct: semantic-only rules need at least one M/D pre-check.
-        # The status depends on whether fail fixture has a violation from any check.
-        assert result.status in (HarnessStatus.PASSED, HarnessStatus.FAILED)
+        # Semantic-only rules have no M/D checks to detect violations in the
+        # fail fixture, so the harness reports FAILED because the fail fixture
+        # produced no violations (a harness failure — the fail case should be
+        # caught but semantic-only rules can't detect it without M/D pre-checks).
+        assert result.status == HarnessStatus.FAILED
 
 
 # ── Batch runner tests ───────────────────────────────────────────────

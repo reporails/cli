@@ -42,11 +42,17 @@ class TestTemplateLoader:
 
     def test_render_substitutes_variables(self) -> None:
         """Should substitute variables in template."""
-        from reporails_cli.templates import render
+        from reporails_cli.templates import load_template, render
 
-        result = render("cli_legend.txt", crit="!", high="!", med="o", low="-", pending="?", experimental="~")
-        assert "!" in result
-        assert "o" in result
+        result = render("cli_legend.txt", crit="X", high="H", med="M", low="L", pending="?", experimental="~")
+        raw = load_template("cli_legend.txt")
+        # Rendered output should differ from raw template (substitution happened)
+        assert result != raw
+        # Placeholder tokens should be gone
+        assert "{crit}" not in result
+        assert "{high}" not in result
+        assert "{med}" not in result
+        assert "{low}" not in result
 
     def test_render_missing_variable_raises(self) -> None:
         """Should raise KeyError for missing variables."""
@@ -121,7 +127,8 @@ class TestPartialEvaluation:
         result = self._make_result(is_partial=False)
         output = text_formatter.format_result(result)
 
-        assert "complete analysis" not in output
+        assert "full semantic analysis" not in output
+        assert "(awaiting semantic)" not in output
 
     def test_json_includes_evaluation_field(self) -> None:
         """JSON output should include evaluation completeness field."""

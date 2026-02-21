@@ -69,10 +69,6 @@ class TestLineCount:
         (tmp_path / "CLAUDE.md").write_text("\n".join(f"line{i}" for i in range(50)))
         result = line_count(tmp_path, {"max": 10}, _vars())
         assert not result.passed
-
-    def test_exceeds_max_has_location(self, tmp_path: Path) -> None:
-        (tmp_path / "CLAUDE.md").write_text("\n".join(f"line{i}" for i in range(50)))
-        result = line_count(tmp_path, {"max": 10}, _vars())
         assert result.location == "CLAUDE.md:0"
 
 
@@ -86,10 +82,6 @@ class TestByteSize:
         (tmp_path / "CLAUDE.md").write_text("x" * 1000)
         result = byte_size(tmp_path, {"max": 100}, _vars())
         assert not result.passed
-
-    def test_exceeds_max_has_location(self, tmp_path: Path) -> None:
-        (tmp_path / "CLAUDE.md").write_text("x" * 1000)
-        result = byte_size(tmp_path, {"max": 100}, _vars())
         assert result.location == "CLAUDE.md:0"
 
 

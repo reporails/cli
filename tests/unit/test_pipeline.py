@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.models import Category, Check, Rule, RuleType, Severity
-from reporails_cli.core.pipeline import CEILING, PipelineState, TargetMeta, build_initial_state
+from reporails_cli.core.pipeline import PipelineState, TargetMeta, build_initial_state
 from reporails_cli.core.pipeline_exec import execute_rule_checks
 from reporails_cli.core.sarif import distribute_sarif_by_rule
 
@@ -403,12 +403,6 @@ class TestExecuteRuleChecks:
         # No SARIF results -> short-circuit
         jrs = execute_rule_checks(rule, state, tmp_path, {}, None)
         assert jrs == []
-
-    def test_ceiling_constant(self) -> None:
-        """Verify CEILING mapping is correct."""
-        assert CEILING[RuleType.MECHANICAL] == frozenset({"mechanical"})
-        assert CEILING[RuleType.DETERMINISTIC] == frozenset({"mechanical", "deterministic"})
-        assert CEILING[RuleType.SEMANTIC] == frozenset({"mechanical", "deterministic", "semantic"})
 
     def test_negated_deterministic_uses_effective_vars(self, tmp_path: Path) -> None:
         """Negated deterministic violation location resolves {{instruction_files}} via effective_vars."""

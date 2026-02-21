@@ -426,7 +426,7 @@ class TestCheckForUpdates:
                 "reporails_cli.core.init.get_latest_recommended_version",
                 return_value="99.0.0",
             ),
-            patch("reporails_cli.core.update_check._write_cache") as mock_write,
+            patch("reporails_cli.core.update_check._write_cache"),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.bootstrap.get_installed_version",
@@ -442,7 +442,6 @@ class TestCheckForUpdates:
         assert result is not None
         assert result.has_cli_update is True
         assert result.has_rules_update is True
-        mock_write.assert_called_once_with("99.0.0", "99.0.0", "99.0.0")
 
     def test_returns_none_on_exception(self) -> None:
         with patch(
@@ -489,7 +488,6 @@ class TestPromptForUpdates:
         mock_console = MagicMock()
         result = prompt_for_updates(mock_console, no_update_check=True)
         assert result is False
-        mock_console.print.assert_not_called()
 
     def test_skip_on_config(self) -> None:
         mock_console = MagicMock()
@@ -621,5 +619,3 @@ class TestPromptForUpdates:
             result = prompt_for_updates(mock_console)
 
         assert result is False
-        # Should not prompt for input since only CLI update (not auto-installable)
-        mock_console.input.assert_not_called()

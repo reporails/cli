@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from reporails_cli.core.models import Category, Check, Rule, RuleType, Severity, Violation
 from reporails_cli.core.sarif import (
     dedupe_violations,
@@ -18,39 +20,24 @@ from reporails_cli.core.sarif import (
 
 
 class TestExtractRuleId:
-    def test_core_coordinate(self) -> None:
-        assert extract_rule_id("CORE.S.0001.check.0001") == "CORE:S:0001"
-
-    def test_claude_coordinate(self) -> None:
-        assert extract_rule_id("CLAUDE.S.0002.check.0001") == "CLAUDE:S:0002"
-
-    def test_rrails_claude_coordinate(self) -> None:
-        assert extract_rule_id("RRAILS_CLAUDE.S.0002.check.0001") == "RRAILS_CLAUDE:S:0002"
-
-    def test_coordinate_without_check_suffix(self) -> None:
-        assert extract_rule_id("CORE.C.0010") == "CORE:C:0010"
-
-    def test_no_dots_returns_original(self) -> None:
-        raw = "some-unexpected-format"
-        assert extract_rule_id(raw) == raw
-
-    # Temp path prefix handling (template-resolved yml files)
-
-    def test_temp_prefix_stripped_core(self) -> None:
-        """OpenGrep prefixes ruleId with temp dir path components."""
-        assert extract_rule_id("tmp.tmpbb5ongfm.CORE.C.0006.check.0001") == "CORE:C:0006"
-
-    def test_temp_prefix_stripped_claude(self) -> None:
-        assert extract_rule_id("tmp.tmpXXXXXX.CLAUDE.S.0005.check.0001") == "CLAUDE:S:0005"
-
-    def test_temp_prefix_stripped_rrails(self) -> None:
-        assert extract_rule_id("tmp.abc123.RRAILS.C.0001.check.0001") == "RRAILS:C:0001"
-
-    def test_temp_prefix_stripped_rrails_claude(self) -> None:
-        assert extract_rule_id("tmp.xyz.RRAILS_CLAUDE.S.0002.check.0001") == "RRAILS_CLAUDE:S:0002"
-
-    def test_temp_prefix_stripped_codex(self) -> None:
-        assert extract_rule_id("tmp.foo.CODEX.S.0001.check.0001") == "CODEX:S:0001"
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("CORE.S.0001.check.0001", "CORE:S:0001"),
+            ("CLAUDE.S.0002.check.0001", "CLAUDE:S:0002"),
+            ("RRAILS_CLAUDE.S.0002.check.0001", "RRAILS_CLAUDE:S:0002"),
+            ("CORE.C.0010", "CORE:C:0010"),  # no check suffix
+            ("some-unexpected-format", "some-unexpected-format"),  # no dots
+            # Temp path prefix handling (template-resolved yml files)
+            ("tmp.tmpbb5ongfm.CORE.C.0006.check.0001", "CORE:C:0006"),
+            ("tmp.tmpXXXXXX.CLAUDE.S.0005.check.0001", "CLAUDE:S:0005"),
+            ("tmp.abc123.RRAILS.C.0001.check.0001", "RRAILS:C:0001"),
+            ("tmp.xyz.RRAILS_CLAUDE.S.0002.check.0001", "RRAILS_CLAUDE:S:0002"),
+            ("tmp.foo.CODEX.S.0001.check.0001", "CODEX:S:0001"),
+        ],
+    )
+    def test_extract_rule_id(self, raw: str, expected: str) -> None:
+        assert extract_rule_id(raw) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -131,22 +118,23 @@ def _make_rule(checks: list[Check]) -> Rule:
 
 
 class TestGetSeverity:
-    def test_rule_none(self) -> None:
-        assert get_severity(None, "check:0001") == Severity.MEDIUM
-
-    def test_matching_check(self) -> None:
-        checks = [Check(id="CORE:S:0001:check:0001", severity=Severity.HIGH)]
-        rule = _make_rule(checks)
-        assert get_severity(rule, "check:0001") == Severity.HIGH
-
-    def test_no_matching_check_returns_first(self) -> None:
-        checks = [Check(id="CORE:S:0001:check:0001", severity=Severity.LOW)]
-        rule = _make_rule(checks)
-        assert get_severity(rule, "check:9999") == Severity.LOW
-
-    def test_empty_checks_returns_medium(self) -> None:
-        rule = _make_rule([])
-        assert get_severity(rule, "check:0001") == Severity.MEDIUM
+    @pytest.mark.parametrize(
+        "checks, check_id, expected",
+        [
+            (None, "check:0001", Severity.MEDIUM),  # rule=None fallback
+            ([Check(id="CORE:S:0001:check:0001", severity=Severity.HIGH)], "check:0001", Severity.HIGH),
+            (
+                [Check(id="CORE:S:0001:check:0001", severity=Severity.LOW)],
+                "check:9999",
+                Severity.LOW,
+            ),  # no match → first
+            ([], "check:0001", Severity.MEDIUM),  # empty checks fallback
+        ],
+        ids=["rule-none", "matching-check", "no-match-returns-first", "empty-checks"],
+    )
+    def test_severity_resolution(self, checks: list[Check] | None, check_id: str, expected: Severity) -> None:
+        rule = _make_rule(checks) if checks is not None else None
+        assert get_severity(rule, check_id) == expected
 
 
 # ---------------------------------------------------------------------------

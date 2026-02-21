@@ -329,7 +329,7 @@ class TestDeltaInFormatters:
         output = text_formatter.format_result(result, delta=None)
 
         # Should not contain delta indicators
-        assert "↑" not in output or "from L" not in output
+        assert "↑" not in output and "from L" not in output
         assert "↓" not in output
 
 
