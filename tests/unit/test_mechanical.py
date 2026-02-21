@@ -111,6 +111,72 @@ class TestContentAbsent:
         assert "invalid regex" in result.message
 
 
+class TestContentAbsentMultiFile:
+    """content_absent scanning across multiple instruction files."""
+
+    def test_pattern_found_in_one_of_two_files(self, tmp_path: Path) -> None:
+        """Fails when forbidden pattern appears in any file."""
+        (tmp_path / "CLAUDE.md").write_text("# Clean content")
+        sub = tmp_path / ".claude" / "rules"
+        sub.mkdir(parents=True)
+        (sub / "bad.md").write_text("# Has FORBIDDEN pattern")
+        vars = {"instruction_files": ["CLAUDE.md", ".claude/rules/bad.md"]}
+
+        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, vars)
+
+        assert not result.passed
+        assert "bad.md" in result.message
+
+    def test_pattern_absent_in_all_files(self, tmp_path: Path) -> None:
+        """Passes when forbidden pattern absent from all files."""
+        (tmp_path / "CLAUDE.md").write_text("# Clean")
+        sub = tmp_path / ".claude" / "rules"
+        sub.mkdir(parents=True)
+        (sub / "also_clean.md").write_text("# Also clean")
+        vars = {"instruction_files": ["CLAUDE.md", ".claude/rules/also_clean.md"]}
+
+        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, vars)
+
+        assert result.passed
+
+    def test_pattern_found_in_all_files(self, tmp_path: Path) -> None:
+        """Fails on first match (short-circuit) when all files contain pattern."""
+        (tmp_path / "CLAUDE.md").write_text("# Has FORBIDDEN")
+        sub = tmp_path / ".claude" / "rules"
+        sub.mkdir(parents=True)
+        (sub / "also_bad.md").write_text("# Also FORBIDDEN")
+        vars = {"instruction_files": ["CLAUDE.md", ".claude/rules/also_bad.md"]}
+
+        result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, vars)
+
+        assert not result.passed
+        # Short-circuits on first match — reports the first offending file
+        assert "CLAUDE.md" in result.message
+
+    def test_regex_pattern_across_files(self, tmp_path: Path) -> None:
+        """Regex pattern (not just literal) works across multiple files."""
+        (tmp_path / "CLAUDE.md").write_text("# Section\nAll fine here.")
+        sub = tmp_path / ".claude" / "rules"
+        sub.mkdir(parents=True)
+        (sub / "risky.md").write_text("# Rules\napi_key = sk-12345")
+        vars = {"instruction_files": ["CLAUDE.md", ".claude/rules/risky.md"]}
+
+        result = content_absent(tmp_path, {"pattern": r"api_key\s*=\s*\S+"}, vars)
+
+        assert not result.passed
+        assert "risky.md" in result.message
+
+    def test_empty_files_pass(self, tmp_path: Path) -> None:
+        """Empty instruction files pass content_absent (no content to match)."""
+        (tmp_path / "CLAUDE.md").write_text("")
+        (tmp_path / "AGENTS.md").write_text("")
+        vars = {"instruction_files": ["CLAUDE.md", "AGENTS.md"]}
+
+        result = content_absent(tmp_path, {"pattern": "anything"}, vars)
+
+        assert result.passed
+
+
 class TestRunMechanicalChecks:
     """Test the runner that dispatches rules to check functions."""
 

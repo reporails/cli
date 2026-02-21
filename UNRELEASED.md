@@ -49,6 +49,8 @@
 - [SMOKE]: Add E2E tests for all CLI commands (60 tests) — version, explain, heal, map, dismiss, judge, install, update --check, config set/get/list with --global, check flags (--strict, --verbose, --ascii, --exclude-dir, -f json)
 - [UNIT]: Add test coverage for `action/summary.py` (score table, status, categories, violations, CLI entry point)
 - [CI]: Add `test-action.yml` workflow — regression tests for GitHub Action (pass/fail scenarios, output verification)
+- [UNIT]: Add tests for mechanical check gaps — blocking behavior across rules, M→D→S interleaved sequence, content_absent multi-file, negate on file_exists/directory_exists (17 tests)
+- [SMOKE]: Add E2E tests for mechanical checks through `ails check` — violations, locations, metadata, text output, oversized files (6 tests)
 
 ### Fixed
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
