@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.agents import (
@@ -52,6 +53,8 @@ from reporails_cli.core.registry import clear_rule_cache, get_experimental_rules
 from reporails_cli.core.sarif import dedupe_violations
 from reporails_cli.core.scorer import calculate_score, estimate_friction
 
+ProgressCallback = Callable[[str, int, int], None]
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +82,7 @@ def build_template_context(
     }
 
 
-def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
+def run_validation(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     target: Path,
     rules: dict[str, Rule] | None = None,
     rules_paths: list[Path] | None = None,
@@ -88,9 +91,12 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     agent: str = "",
     include_experimental: bool = False,
     exclude_dirs: list[str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> ValidationResult:
     """Run full validation: capability detection then rule validation."""
     start_time = time.perf_counter()
+    _notify = on_progress or (lambda *_: None)
+    _notify("Loading rules", 1, 3)
     scan_root = target.parent if target.is_file() else target
     project_root = _find_project_root(scan_root)
 
@@ -140,6 +146,8 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
                 rules=tuple(sorted(exp_rules.keys())),
             )
 
+    _notify("Checking files", 2, 3)
+
     # PASS 1: Capability Detection (determines final level)
     features = detect_features_filesystem(scan_root, agents=agents)
     capability, extra_targets = _detect_capabilities(
@@ -179,6 +187,8 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Dismissed violations: filter deterministic violations cached as 'pass'
     violations = _filter_dismissed_violations(violations, scan_root, project_root, use_cache)
+
+    _notify("Scoring", 3, 3)
 
     # Scoring
     unique_violations = dedupe_violations(violations)
@@ -239,6 +249,7 @@ def run_validation_sync(  # pylint: disable=too-many-arguments
     agent: str = "",
     include_experimental: bool = False,
     exclude_dirs: list[str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> ValidationResult:
     """Synchronous entry point for run_validation."""
     return run_validation(
@@ -250,4 +261,5 @@ def run_validation_sync(  # pylint: disable=too-many-arguments
         agent,
         include_experimental,
         exclude_dirs,
+        on_progress,
     )

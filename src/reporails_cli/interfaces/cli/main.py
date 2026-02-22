@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import typer
@@ -128,12 +129,8 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         agent = _validate_agent(project_config.default_agent, console)
 
     # Merge exclude_dirs: config + CLI flags
-    merged_excludes: list[str] | None = None
-    config_excludes = set(project_config.exclude_dirs)
-    cli_excludes = set(exclude_dir or [])
-    all_excludes = config_excludes | cli_excludes
-    if all_excludes:
-        merged_excludes = sorted(all_excludes)
+    all_excludes = set(project_config.exclude_dirs) | set(exclude_dir or [])
+    merged_excludes: list[str] | None = sorted(all_excludes) if all_excludes else None
 
     # Auto-include recommended rules if needed
     rules_paths = _resolve_recommended_rules(rules_paths, project_config, format, console)
@@ -169,13 +166,15 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     previous_scan = get_previous_scan(target)
 
     # Run validation with timing
-    from contextlib import nullcontext
-
     show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
-    ctx = console.status("[bold]Scanning instruction files...[/bold]") if show_spinner else nullcontext()
+    if show_spinner:
+        spinner = console.status("[bold]Loading rules...[/bold]")
+        progress_cb = lambda phase, _c, _t: spinner.update(f"[bold]{phase}...[/bold]")  # noqa: E731
+    else:
+        spinner, progress_cb = nullcontext(), None  # type: ignore[assignment]
     start_time = time.perf_counter()
     try:
-        with ctx:
+        with spinner:
             result = run_validation_sync(
                 target,
                 rules_paths=rules_paths,
@@ -183,6 +182,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
                 agent=agent,
                 include_experimental=experimental,
                 exclude_dirs=merged_excludes,
+                on_progress=progress_cb,
             )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] File not found during validation: {e.filename or e}")
