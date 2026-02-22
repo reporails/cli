@@ -1,6 +1,7 @@
 # Unreleased
 
 ### Added
+- [CLI]: Phased progress spinner — shows "Loading rules..." / "Checking files..." / "Scoring..." during validation
 - [ENGINE]: Add `metadata_keys` field to Check model — D checks write matched texts to pipeline annotations, M checks read them as injected args
 - [ENGINE]: Add `count_at_most`, `count_at_least`, `check_import_targets_exist`, `filename_matches_pattern` mechanical probes
 - [ENGINE]: Add signal catalog aliases: `glob_match`→`file_exists`, `max_line_count`→`line_count`, `glob_count`→`file_count`
