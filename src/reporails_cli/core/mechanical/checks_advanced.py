@@ -166,6 +166,108 @@ def frontmatter_valid_glob(
     return CheckResult(passed=True, message="All frontmatter path entries valid")
 
 
+def count_at_most(
+    _root: Path,
+    args: dict[str, Any],
+    _vars: dict[str, str | list[str]],
+) -> CheckResult:
+    """Check that a metadata list has at most N entries.
+
+    Reads a named metadata key from args (injected by pipeline from annotations).
+    Args: threshold (int, default 0), plus the metadata key name -> list.
+    """
+    threshold = int(args.get("threshold", 0))
+    # Find the metadata list — it's injected as args[key] by the pipeline
+    items: list[str] = []
+    for value in args.values():
+        if isinstance(value, list):
+            items = value
+            break
+    if len(items) <= threshold:
+        return CheckResult(passed=True, message=f"Count {len(items)} within limit ({threshold})")
+    return CheckResult(passed=False, message=f"Count {len(items)} exceeds max {threshold}")
+
+
+def count_at_least(
+    _root: Path,
+    args: dict[str, Any],
+    _vars: dict[str, str | list[str]],
+) -> CheckResult:
+    """Check that a metadata list has at least N entries.
+
+    Reads a named metadata key from args (injected by pipeline from annotations).
+    Args: threshold (int, default 1), plus the metadata key name -> list.
+    """
+    threshold = int(args.get("threshold", 1))
+    items: list[str] = []
+    for value in args.values():
+        if isinstance(value, list):
+            items = value
+            break
+    if len(items) >= threshold:
+        return CheckResult(passed=True, message=f"Count {len(items)} meets minimum ({threshold})")
+    return CheckResult(passed=False, message=f"Count {len(items)} below minimum {threshold}")
+
+
+def check_import_targets_exist(
+    root: Path,
+    args: dict[str, Any],
+    _vars: dict[str, str | list[str]],
+) -> CheckResult:
+    """Check that all @import paths from metadata resolve to existing files.
+
+    Reads import paths from args (injected by pipeline from D check annotations).
+    Each path is resolved relative to the target instruction file's directory.
+    """
+    import_paths: list[str] = []
+    for value in args.values():
+        if isinstance(value, list):
+            import_paths = value
+            break
+    if not import_paths:
+        return CheckResult(passed=True, message="No import paths to check")
+    missing: list[str] = []
+    for ref in import_paths:
+        # Strip leading @ if present
+        clean = ref.lstrip("@")
+        if not (root / clean).exists():
+            missing.append(clean)
+    if missing:
+        return CheckResult(
+            passed=False,
+            message=f"Unresolved imports: {', '.join(missing[:5])}",
+        )
+    return CheckResult(passed=True, message=f"All {len(import_paths)} import(s) resolve")
+
+
+def filename_matches_pattern(
+    root: Path,
+    args: dict[str, Any],
+    vars: dict[str, str | list[str]],
+) -> CheckResult:
+    """Check that target filenames match a regex pattern.
+
+    Args: pattern (regex string), path (optional glob for file targets).
+    """
+    pattern = str(args.get("pattern", ""))
+    if not pattern:
+        return CheckResult(passed=False, message="filename_matches_pattern: no pattern specified")
+    try:
+        compiled = re.compile(pattern)
+    except re.error as e:
+        return CheckResult(passed=False, message=f"filename_matches_pattern: invalid regex: {e}")
+    for fp in _get_target_patterns(args, vars):
+        for match in _resolve_glob_targets(fp, root):
+            if not match.is_file():
+                continue
+            if not compiled.search(match.name):
+                return CheckResult(
+                    passed=False,
+                    message=f"{match.name}: does not match pattern {pattern}",
+                )
+    return CheckResult(passed=True, message="All filenames match pattern")
+
+
 def content_absent(
     root: Path,
     args: dict[str, Any],

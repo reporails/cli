@@ -894,3 +894,221 @@ class TestNegateBlockingChecks:
         execute_rule_checks(rule, state, tmp_path, {}, None)
 
         assert state.findings == []
+
+
+# ---------------------------------------------------------------------------
+# D→M metadata propagation via metadata_keys
+# ---------------------------------------------------------------------------
+
+
+class TestMetadataKeysPropagation:
+    """D checks with metadata_keys write to annotations; M checks read them."""
+
+    def test_deterministic_writes_annotations(self, tmp_path: Path) -> None:
+        """D check with metadata_keys stores match texts in state annotations."""
+        rule = Rule(
+            id="CORE:C:0050",
+            title="D→annotations test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            checks=[
+                Check(
+                    id="CORE:C:0050:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                    metadata_keys=["found_items"],
+                )
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state._sarif_by_rule = {
+            "CORE:C:0050": [
+                {
+                    "ruleId": "CORE.C.0050.check.0001",
+                    "message": {"text": "match alpha"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 1}}}
+                    ],
+                },
+                {
+                    "ruleId": "CORE.C.0050.check.0001",
+                    "message": {"text": "match beta"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 5}}}
+                    ],
+                },
+            ]
+        }
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        # Violations created as normal
+        assert len(state.findings) == 2
+        # Annotations written to target
+        assert "found_items" in state.targets["CLAUDE.md"].annotations
+        assert state.targets["CLAUDE.md"].annotations["found_items"] == ["match alpha", "match beta"]
+
+    def test_deterministic_no_results_no_annotations(self, tmp_path: Path) -> None:
+        """D check with metadata_keys but no SARIF matches writes nothing."""
+        rule = Rule(
+            id="CORE:C:0051",
+            title="D→annotations empty test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            checks=[
+                Check(
+                    id="CORE:C:0051:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                    metadata_keys=["items"],
+                )
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        assert state.findings == []
+        assert state.targets["CLAUDE.md"].annotations == {}
+
+    def test_mechanical_reads_annotations(self, tmp_path: Path) -> None:
+        """M check with metadata_keys gets annotations injected into args."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = Rule(
+            id="CORE:C:0052",
+            title="D→M metadata test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:C:0052:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                    metadata_keys=["style_rules"],
+                ),
+                Check(
+                    id="CORE:C:0052:check:0002",
+                    severity=Severity.HIGH,
+                    type="mechanical",
+                    check="count_at_most",
+                    args={"threshold": 0},
+                    metadata_keys=["style_rules"],
+                ),
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state._sarif_by_rule = {
+            "CORE:C:0052": [
+                {
+                    "ruleId": "CORE.C.0052.check.0001",
+                    "message": {"text": "indent with 4 spaces"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 3}}}
+                    ],
+                },
+                {
+                    "ruleId": "CORE.C.0052.check.0001",
+                    "message": {"text": "use tabs for indent"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 7}}}
+                    ],
+                },
+            ]
+        }
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # D check produced 2 violations + annotations
+        det_findings = [f for f in state.findings if "check:0001" in (f.check_id or "")]
+        assert len(det_findings) == 2
+
+        # M check (count_at_most threshold=0) consumed the 2-item list → violation
+        mech_findings = [f for f in state.findings if f.check_id == "CORE:C:0052:check:0002"]
+        assert len(mech_findings) == 1
+        assert "exceeds" in mech_findings[0].message
+
+    def test_d_to_m_pass_when_within_threshold(self, tmp_path: Path) -> None:
+        """D→M chain: count_at_most passes when items within threshold."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = Rule(
+            id="CORE:C:0053",
+            title="D→M pass test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:C:0053:check:0001",
+                    severity=Severity.LOW,
+                    type="deterministic",
+                    metadata_keys=["items"],
+                ),
+                Check(
+                    id="CORE:C:0053:check:0002",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="count_at_most",
+                    args={"threshold": 5},
+                    metadata_keys=["items"],
+                ),
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state._sarif_by_rule = {
+            "CORE:C:0053": [
+                {
+                    "ruleId": "CORE.C.0053.check.0001",
+                    "message": {"text": "item 1"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 1}}}
+                    ],
+                },
+            ]
+        }
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # D violation exists, but M check passes (1 item <= 5 threshold)
+        mech_findings = [f for f in state.findings if f.check_id == "CORE:C:0053:check:0002"]
+        assert len(mech_findings) == 0
+
+    def test_metadata_keys_without_annotations_m_sees_empty(self, tmp_path: Path) -> None:
+        """M check with metadata_keys but no prior D annotations gets empty args — no crash."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = Rule(
+            id="CORE:C:0054",
+            title="M without prior D test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:C:0054:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="count_at_most",
+                    args={"threshold": 0},
+                    metadata_keys=["nonexistent_key"],
+                ),
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # count_at_most with no metadata → empty list → passes (0 <= 0)
+        assert not any(f.check_id == "CORE:C:0054:check:0001" for f in state.findings)

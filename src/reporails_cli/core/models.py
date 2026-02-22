@@ -75,7 +75,7 @@ class Level(str, Enum):
 
 
 @dataclass(frozen=True)
-class Check:
+class Check:  # pylint: disable=too-many-instance-attributes
     """A specific check within a rule.
 
     Checks have a type matching their gate: mechanical (Python function),
@@ -89,6 +89,7 @@ class Check:
     check: str | None = None  # Mechanical function name
     args: dict[str, Any] | None = None  # Mechanical check arguments
     negate: bool = False  # If True, finding = pass (content present), no finding = violation
+    metadata_keys: list[str] = field(default_factory=list)  # D→M metadata bus keys
 
 
 @dataclass(frozen=True)

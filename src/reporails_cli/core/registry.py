@@ -210,6 +210,7 @@ def _apply_agent_overrides(
                         check=check.check,
                         args=check.args,
                         negate=check.negate,
+                        metadata_keys=check.metadata_keys,
                     )
                 )
             else:
