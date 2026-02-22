@@ -1,7 +1,4 @@
-"""Assessment box formatting.
-
-Handles the main score/capability box in output.
-"""
+"""Assessment box formatting — main score/capability box in output."""
 # pylint: disable=too-many-locals,too-many-statements
 
 from __future__ import annotations
@@ -67,6 +64,7 @@ def _format_category_table(
     header = f"{'Category':<{name_col}}{'Result':<{bar_width}}  {'Checks':^{stat_col}}  {'Sev':^{sev_col}}"
     cat_lines.append(pad_line(header, box_width, chars["v"]))
     cat_lines.append(pad_line(chars["sep"] * content_width, box_width, chars["v"]))
+    cat_lines.append(empty_line)
     for cs in active:
         name = cs["name"].title()
         stat_plain = f"{cs['passed']}/{cs['total']}"
@@ -97,7 +95,7 @@ def _format_category_table(
         row = f"{name:<{name_col}}{bar}  {stat_rich:^{stat_col + stat_extra}}  {icon_str}"
         row_extra = bar_extra + stat_extra + icon_extra
         cat_lines.append(pad_line(row, box_width + row_extra, chars["v"]))
-    cat_lines.append(empty_line)
+        cat_lines.append(empty_line)
     return "\n".join(cat_lines)
 
 
@@ -161,6 +159,27 @@ def _format_friction_line(
         friction_rich = f"Friction: [underline]{friction_level.title()}[/underline]"
     markup_extra = len(friction_rich) - len(friction_plain)
     return pad_line(friction_rich, box_width + markup_extra, chars["v"])
+
+
+def _format_agent_line(
+    surface: dict[str, Any] | None,
+    box_width: int,
+    chars: dict[str, str],
+    empty_line: str,
+) -> str:
+    """Format the detected-agent line inside the box. Empty if only generic."""
+    if not surface:
+        return empty_line
+    non_generic = [a for a in surface.get("detected_agents", []) if a != "generic"]
+    if not non_generic:
+        return empty_line
+    effective = surface.get("effective_agent", "generic")
+    if effective != "generic" and effective in non_generic:
+        suffix = " (assumed)" if surface.get("assumed") else ""
+        text = f"Agent: {effective}{suffix}"
+    else:
+        text = f"Agents: {', '.join(non_generic)}"
+    return pad_line(text, box_width, chars["v"])
 
 
 def _format_scope_line(surface: dict[str, Any] | None, box_width: int, chars: dict[str, str]) -> str:
@@ -250,7 +269,8 @@ def format_assessment_box(
     bar, bar_extra = build_score_bar(score, ascii_mode, colored)
     bar_line = pad_line(bar, box_width + bar_extra, chars["v"])
 
-    # Scope line (replaces setup line)
+    # Agent + scope lines
+    agent_line = _format_agent_line(surface, box_width, chars, empty_line)
     surface_line = _format_scope_line(surface, box_width, chars)
 
     summary_line = _format_summary_line(
@@ -270,6 +290,7 @@ def format_assessment_box(
         score_line=score_line,
         capability_line=capability_line,
         bar_line=bar_line,
+        agent_line=agent_line,
         surface_line=surface_line,
         summary_line=summary_line,
         friction_line=friction_line,

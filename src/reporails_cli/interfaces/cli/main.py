@@ -18,11 +18,11 @@ from reporails_cli.interfaces.cli.helpers import (
     _default_format,
     _format_output,
     _handle_no_instruction_files,
-    _maybe_show_agent_hint,
     _print_unknown_rule,
     _print_verbose,
     _resolve_recommended_rules,
     _resolve_rules_paths,
+    _show_agent_auto_detect_hint,
     _validate_agent,
     _validate_format,
     app,
@@ -107,12 +107,9 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         print(f"Severity Legend: {legend_text}")
         return
 
-    # Validate inputs
     agent = _validate_agent(agent, console)
     _validate_format(format, console)
-
     target = Path(path).resolve()
-
     if not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
         console.print("Run 'ails check .' to validate the current directory.")
@@ -149,10 +146,18 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Early check for missing instruction files
     output_format = format if format else _default_format()
-    from reporails_cli.core.agents import detect_agents, filter_agents_by_exclude_dirs, filter_agents_by_id
+    from reporails_cli.core.agents import (
+        detect_agents,
+        filter_agents_by_exclude_dirs,
+        filter_agents_by_id,
+        resolve_agent,
+    )
 
-    effective_agent = agent if agent else "generic"
     all_detected_agents = detect_agents(target)
+
+    # Resolution chain: CLI flag > config > auto-detect > generic
+    agent, assumed, mixed_signals = resolve_agent(agent, all_detected_agents)
+    effective_agent = agent if agent else "generic"
     filtered_agents = filter_agents_by_id(all_detected_agents, effective_agent)
     filtered_agents = filter_agents_by_exclude_dirs(filtered_agents, target, merged_excludes)
     instruction_files = get_all_instruction_files(target, agents=filtered_agents)
@@ -163,23 +168,14 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     # Get previous scan BEFORE running validation (for delta comparison)
     previous_scan = get_previous_scan(target)
 
-    # Determine if we should show spinner (TTY + not explicitly JSON)
-    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
-
     # Run validation with timing
+    from contextlib import nullcontext
+
+    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
+    ctx = console.status("[bold]Scanning instruction files...[/bold]") if show_spinner else nullcontext()
     start_time = time.perf_counter()
     try:
-        if show_spinner:
-            with console.status("[bold]Scanning instruction files...[/bold]"):
-                result = run_validation_sync(
-                    target,
-                    rules_paths=rules_paths,
-                    use_cache=not refresh,
-                    agent=agent,
-                    include_experimental=experimental,
-                    exclude_dirs=merged_excludes,
-                )
-        else:
+        with ctx:
             result = run_validation_sync(
                 target,
                 rules_paths=rules_paths,
@@ -204,7 +200,11 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     # Build surface summary from agent detection for display
     from reporails_cli.formatters.text.components import build_surface_summary
 
-    surface = build_surface_summary(filtered_agents, target)
+    surface = build_surface_summary(filtered_agents, target) | {
+        "detected_agents": [a.agent_type.id for a in all_detected_agents],
+        "effective_agent": effective_agent,
+        "assumed": assumed,
+    }
 
     # Format output
     _format_output(
@@ -218,8 +218,8 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         surface=surface,
     )
 
-    # Agent hint: suggest setting default_agent when generic is used but specific agents detected
-    _maybe_show_agent_hint(effective_agent, output_format, all_detected_agents)
+    # Agent auto-detect messaging
+    _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed_signals, all_detected_agents)
 
     # Verbose diagnostics (text formats only)
     if verbose and output_format not in ("json", "brief"):

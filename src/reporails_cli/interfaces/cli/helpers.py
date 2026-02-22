@@ -45,10 +45,7 @@ def _resolve_recommended_rules(
     format: str | None,
     con: Console,
 ) -> list[Path] | None:
-    """Download recommended rules if needed and append the package path.
-
-    Returns the updated rules_paths (may be mutated or newly created).
-    """
+    """Download recommended rules if needed and append the package path."""
     from reporails_cli.core.init import download_recommended, is_recommended_installed
 
     use_recommended = project_config.recommended
@@ -62,14 +59,15 @@ def _resolve_recommended_rules(
     )
 
     if use_recommended and not has_recommended and not is_recommended_installed():
+        show = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
         try:
-            if sys.stdout.isatty() and format not in ("json", "brief", "compact", "github"):
+            if show:
                 with con.status("[bold]Downloading recommended rules...[/bold]"):
                     download_recommended()
             else:
                 download_recommended()
         except Exception:
-            con.print("[yellow]Warning:[/yellow] Could not download recommended rules. Using bundled version.")
+            con.print("[yellow]Warning:[/yellow] Could not download recommended rules.")
 
     if use_recommended and not has_recommended:
         from reporails_cli.core.bootstrap import get_recommended_package_path
@@ -97,10 +95,8 @@ def _handle_update_check(con: Console) -> None:
         latest, latest_rec = get_latest_version(), get_latest_recommended_version()
     con.print(f"[bold]Framework:[/bold]  {current or 'not installed'} → {latest or 'unknown'}")
     con.print(f"[bold]Recommended:[/bold] {current_rec or 'not installed'} → {latest_rec or 'unknown'}")
-    if (latest and current == latest) and (latest_rec and current_rec == latest_rec):
-        con.print("\n[green]You are up to date.[/green]")
-    else:
-        con.print("\n[cyan]Run 'ails update' to update[/cyan]")
+    up_to_date = (latest and current == latest) and (latest_rec and current_rec == latest_rec)
+    con.print("\n[green]You are up to date.[/green]" if up_to_date else "\n[cyan]Run 'ails update' to update[/cyan]")
 
 
 VALID_FORMATS = {"text", "json", "compact", "brief", "github"}
@@ -108,14 +104,13 @@ VALID_FORMATS = {"text", "json", "compact", "brief", "github"}
 
 def _validate_agent(agent: str, con: Console) -> str:
     """Normalize and validate --agent value. Returns normalized agent or exits."""
-    agent = agent.lower().strip()
-    if agent:
-        from reporails_cli.core.agents import KNOWN_AGENTS as _KNOWN
+    from reporails_cli.core.agents import KNOWN_AGENTS as _KNOWN
 
-        if agent not in _KNOWN:
-            con.print(f"[red]Error:[/red] Unknown agent: {agent}")
-            con.print(f"Known agents: {', '.join(sorted(_KNOWN))}")
-            raise typer.Exit(2)
+    agent = agent.lower().strip()
+    if agent and agent not in _KNOWN:
+        con.print(f"[red]Error:[/red] Unknown agent: {agent}")
+        con.print(f"Known agents: {', '.join(sorted(_KNOWN))}")
+        raise typer.Exit(2)
     return agent
 
 
@@ -127,58 +122,68 @@ def _validate_format(format: str | None, con: Console) -> None:
         raise typer.Exit(2)
 
 
-def _maybe_show_agent_hint(effective_agent: str, output_format: str, detected_agents: list[Any]) -> None:
-    """Show hint to set default_agent if generic is used but specific agents detected."""
-    if effective_agent != "generic" or output_format not in ("text", "compact") or not sys.stdout.isatty():
+def _show_agent_auto_detect_hint(
+    effective_agent: str,
+    output_format: str,
+    assumed: bool,
+    mixed_signals: bool,
+    detected_agents: list[Any],
+) -> None:
+    """Show auto-detect or generic-fallback hint for agent resolution."""
+    if output_format not in ("text", "compact") or not sys.stdout.isatty():
         return
-    non_generic = [a for a in detected_agents if a.agent_type.name != "generic"]
-    if non_generic:
-        name = non_generic[0].agent_type.name
-        console.print(f"\n[dim]Tip: Detected {name} agent. Set as default: ails config set default_agent {name}[/dim]")
+    cmd = "ails config set default_agent"
+    w = 64  # scorecard width
+    non_generic = [a.agent_type.id for a in detected_agents if a.agent_type.id != "generic"]
+    lines: list[str] = []
+    if assumed:
+        lines.append(f"Assumed {effective_agent} — lock in: {cmd} {effective_agent}")
+    elif mixed_signals:
+        lines.append(f"Lock in an agent: {cmd} <name>")
+        lines.append("Add --global to set for all projects")
+        lines.append(f"Available: {', '.join(non_generic)}")
+    elif effective_agent == "generic" and non_generic:
+        lines.append(f"Lock in: {cmd} {non_generic[0]}")
+    if lines:
+        for line in lines:
+            console.print(f"[dim]{line:^{w}}[/dim]")
 
 
 def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
     """Print grouped available rules when an unknown rule ID is given."""
     console.print(f"[red]Error:[/red] Unknown rule: {rule_id}")
     grouped: dict[str, list[str]] = {}
-    for rid in sorted(loaded_rules.keys()):
+    for rid in sorted(loaded_rules):
         ns = rid.rsplit(":", 1)[0] if ":" in rid else rid
         grouped.setdefault(ns, []).append(rid.rsplit(":", 1)[-1] if ":" in rid else rid)
     console.print(f"Available rules ({len(loaded_rules)} total):")
     for ns, ids in sorted(grouped.items()):
-        preview = ", ".join(ids[:5])
-        remaining = len(ids) - 5
-        suffix = f" ... ({remaining} more)" if remaining > 0 else ""
-        console.print(f"  {ns}: {preview}{suffix}")
+        tail = f" ... ({len(ids) - 5} more)" if len(ids) > 5 else ""
+        console.print(f"  {ns}: {', '.join(ids[:5])}{tail}")
 
 
 def _handle_no_instruction_files(effective_agent: str, output_format: str, con: Console) -> None:
     """Print appropriate message when no instruction files are found, then exit."""
-    from reporails_cli.core.agents import KNOWN_AGENTS
-
-    agent_type = KNOWN_AGENTS.get(effective_agent)
-    hint_file = agent_type.instruction_patterns[0] if agent_type else "AGENTS.md"
     if output_format in ("json", "github"):
         print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
     else:
-        con.print("No instruction files found.")
-        con.print("Level: L1 (Absent)")
-        con.print()
-        con.print(f"[dim]Create a {hint_file} to get started.[/dim]")
+        from reporails_cli.core.agents import KNOWN_AGENTS
+
+        at = KNOWN_AGENTS.get(effective_agent)
+        hint = at.instruction_patterns[0] if at else "AGENTS.md"
+        con.print(f"No instruction files found.\nLevel: L1 (Absent)\n\n[dim]Create a {hint} to get started.[/dim]")
 
 
 def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | None:
     """Validate and resolve --rules CLI option paths. Exits if any path missing."""
     if not rules:
         return None
-    rules_paths: list[Path] = []
-    for r in rules:
-        rp = Path(r).resolve()
+    resolved = [Path(r).resolve() for r in rules]
+    for rp in resolved:
         if not rp.is_dir():
             con.print(f"[red]Error:[/red] Rules directory not found: {rp}")
             raise typer.Exit(2)
-        rules_paths.append(rp)
-    return rules_paths
+    return resolved
 
 
 def _compute_file_checks(
@@ -206,8 +211,7 @@ def _compute_file_checks(
     return checks_per_file(yml_paths, target, context, instruction_files), mechanical_ids, titles
 
 
-def _check_id_to_rule_id(check_id: str) -> str:
-    """Extract rule ID from a check ID (e.g., 'CORE.S.0001.check.0001' -> 'CORE:S:0001')."""
+def _check_id_to_rule_id(check_id: str) -> str:  # CORE.S.0001.check.0001 -> CORE:S:0001
     parts = check_id.replace(".", ":").split(":")
     return ":".join(parts[:3]) if len(parts) >= 3 else check_id
 
@@ -278,13 +282,11 @@ def _format_output(  # pylint: disable=too-many-locals
         print(output)
     elif output_format == "brief":
         data = json_formatter.format_result(result, delta)
-        score = data.get("score", 0)
-        level = data.get("level", "?")
-        violations = len(data.get("violations", []))
-        check_mark = "ok" if ascii else "\u2713"
-        cross_mark = "x" if ascii else "\u2717"
-        status = check_mark if violations == 0 else f"{cross_mark} {violations} violations"
-        print(f"ails: {score:.1f}/10 ({level}) {status}")
+        n_viols = len(data.get("violations", []))
+        mark = (
+            ("ok" if ascii else "\u2713") if n_viols == 0 else f"{'x' if ascii else chr(0x2717)} {n_viols} violations"
+        )
+        print(f"ails: {data.get('score', 0):.1f}/10 ({data.get('level', '?')}) {mark}")
     else:
         output = text_formatter.format_result(
             result,
