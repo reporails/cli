@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.mechanical.checks import (
+    MECHANICAL_CHECKS,
     _safe_float,
     byte_size,
     content_absent,
@@ -12,6 +13,12 @@ from reporails_cli.core.mechanical.checks import (
     file_exists,
     git_tracked,
     line_count,
+)
+from reporails_cli.core.mechanical.checks_advanced import (
+    check_import_targets_exist,
+    count_at_least,
+    count_at_most,
+    filename_matches_pattern,
 )
 from reporails_cli.core.mechanical.runner import (
     _matches_any_pattern,
@@ -416,3 +423,113 @@ class TestResolveLocationMainFile:
         rule = self._rule_with_targets(".reporails/config.yml")
         vars = {"main_instruction_file": ["CLAUDE.md"]}
         assert resolve_location(tmp_path, rule, vars) == ".reporails/config.yml:0"
+
+
+# ---------------------------------------------------------------------------
+# New probes: count_at_most, count_at_least, check_import_targets_exist,
+# filename_matches_pattern
+# ---------------------------------------------------------------------------
+
+
+class TestCountAtMost:
+    def test_within_threshold(self, tmp_path: Path) -> None:
+        result = count_at_most(tmp_path, {"threshold": 3, "items": ["a", "b"]}, {})
+        assert result.passed
+
+    def test_at_threshold(self, tmp_path: Path) -> None:
+        result = count_at_most(tmp_path, {"threshold": 2, "items": ["a", "b"]}, {})
+        assert result.passed
+
+    def test_exceeds_threshold(self, tmp_path: Path) -> None:
+        result = count_at_most(tmp_path, {"threshold": 1, "items": ["a", "b", "c"]}, {})
+        assert not result.passed
+        assert "exceeds" in result.message
+
+    def test_empty_list_passes(self, tmp_path: Path) -> None:
+        result = count_at_most(tmp_path, {"threshold": 0}, {})
+        assert result.passed
+
+    def test_default_threshold_zero(self, tmp_path: Path) -> None:
+        result = count_at_most(tmp_path, {"items": ["a"]}, {})
+        assert not result.passed
+
+
+class TestCountAtLeast:
+    def test_meets_minimum(self, tmp_path: Path) -> None:
+        result = count_at_least(tmp_path, {"threshold": 2, "items": ["a", "b", "c"]}, {})
+        assert result.passed
+
+    def test_at_minimum(self, tmp_path: Path) -> None:
+        result = count_at_least(tmp_path, {"threshold": 2, "items": ["a", "b"]}, {})
+        assert result.passed
+
+    def test_below_minimum(self, tmp_path: Path) -> None:
+        result = count_at_least(tmp_path, {"threshold": 3, "items": ["a"]}, {})
+        assert not result.passed
+        assert "below" in result.message
+
+    def test_empty_list_fails_default(self, tmp_path: Path) -> None:
+        result = count_at_least(tmp_path, {}, {})
+        assert not result.passed
+
+    def test_default_threshold_one(self, tmp_path: Path) -> None:
+        result = count_at_least(tmp_path, {"items": ["a"]}, {})
+        assert result.passed
+
+
+class TestCheckImportTargetsExist:
+    def test_all_imports_resolve(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("# Rules")
+        (tmp_path / "config.md").write_text("# Config")
+        result = check_import_targets_exist(tmp_path, {"import_paths": ["@rules.md", "@config.md"]}, {})
+        assert result.passed
+
+    def test_missing_import(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("# Rules")
+        result = check_import_targets_exist(tmp_path, {"import_paths": ["@rules.md", "@missing.md"]}, {})
+        assert not result.passed
+        assert "missing.md" in result.message
+
+    def test_empty_imports_pass(self, tmp_path: Path) -> None:
+        result = check_import_targets_exist(tmp_path, {}, {})
+        assert result.passed
+
+    def test_no_metadata_key_pass(self, tmp_path: Path) -> None:
+        result = check_import_targets_exist(tmp_path, {"threshold": 5}, {})
+        assert result.passed
+
+
+class TestFilenameMatchesPattern:
+    def test_matches(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        result = filename_matches_pattern(tmp_path, {"pattern": r"^[A-Z]+\.md$"}, _vars())
+        assert result.passed
+
+    def test_no_match(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        result = filename_matches_pattern(tmp_path, {"pattern": r"^[a-z]+\.md$"}, _vars())
+        assert not result.passed
+        assert "does not match" in result.message
+
+    def test_no_pattern_fails(self, tmp_path: Path) -> None:
+        result = filename_matches_pattern(tmp_path, {}, _vars())
+        assert not result.passed
+
+    def test_invalid_regex_fails(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        result = filename_matches_pattern(tmp_path, {"pattern": "[invalid"}, _vars())
+        assert not result.passed
+        assert "invalid regex" in result.message
+
+
+class TestAliases:
+    """Signal catalog aliases map to existing probes."""
+
+    def test_glob_match_is_file_exists(self) -> None:
+        assert MECHANICAL_CHECKS["glob_match"] is MECHANICAL_CHECKS["file_exists"]
+
+    def test_max_line_count_is_line_count(self) -> None:
+        assert MECHANICAL_CHECKS["max_line_count"] is MECHANICAL_CHECKS["line_count"]
+
+    def test_glob_count_is_file_count(self) -> None:
+        assert MECHANICAL_CHECKS["glob_count"] is MECHANICAL_CHECKS["file_count"]

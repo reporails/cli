@@ -250,9 +250,13 @@ def byte_size(
 # Import advanced checks for re-export and registry registration
 from reporails_cli.core.mechanical.checks_advanced import (  # noqa: E402
     aggregate_byte_size,
+    check_import_targets_exist,
     content_absent,
+    count_at_least,
+    count_at_most,
     directory_file_types,
     extract_imports,
+    filename_matches_pattern,
     frontmatter_valid_glob,
     import_depth,
     path_resolves,
@@ -275,4 +279,12 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "directory_file_types": directory_file_types,
     "frontmatter_valid_glob": frontmatter_valid_glob,
     "content_absent": content_absent,
+    "count_at_most": count_at_most,
+    "count_at_least": count_at_least,
+    "check_import_targets_exist": check_import_targets_exist,
+    "filename_matches_pattern": filename_matches_pattern,
+    # Aliases for signal catalog naming
+    "glob_match": file_exists,
+    "max_line_count": line_count,
+    "glob_count": file_count,
 }

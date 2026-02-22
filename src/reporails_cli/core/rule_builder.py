@@ -88,6 +88,7 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
             check=item.get("check"),
             args=item.get("args"),
             negate=item.get("negate", False),
+            metadata_keys=item.get("metadata_keys", []),
         )
         checks.append(check)
 

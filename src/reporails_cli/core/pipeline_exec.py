@@ -90,6 +90,27 @@ def _handle_mechanical(
     location: str,
 ) -> None:
     """Process a mechanical check within per-rule iteration."""
+    # M←annotations: inject metadata from earlier D checks into args
+    if check.metadata_keys:
+        loc_path = location.rsplit(":", 1)[0] if ":" in location else "."
+        meta = state.targets.get(loc_path)
+        if meta:
+            injected_args = dict(check.args or {})
+            for key in check.metadata_keys:
+                if key in meta.annotations:
+                    injected_args[key] = meta.annotations[key]
+            # Replace check args with injected version (Check is frozen, pass via vars)
+            check = Check(
+                id=check.id,
+                severity=check.severity,
+                type=check.type,
+                name=check.name,
+                check=check.check,
+                args=injected_args,
+                negate=check.negate,
+                metadata_keys=check.metadata_keys,
+            )
+
     violation, raw_result = dispatch_single_check(check, rule, scan_root, effective_vars, location)
 
     if violation:
@@ -102,7 +123,7 @@ def _handle_mechanical(
         _propagate_annotations(raw_result.annotations, state, location)
 
 
-def _handle_deterministic(
+def _handle_deterministic(  # pylint: disable=too-many-locals
     check: Check,
     rule: Rule,
     state: PipelineState,
@@ -133,6 +154,13 @@ def _handle_deterministic(
                 check_id=check_id,
             )
         )
+
+    # D→annotations: write matched texts to the metadata bus
+    if check.metadata_keys and check_results:
+        match_texts = [r.get("message", {}).get("text", "") for r in check_results]
+        loc_path = get_location(check_results[0]).rsplit(":", 1)[0] if check_results else "."
+        for key in check.metadata_keys:
+            state.annotate_target(loc_path, key, match_texts)
 
     return len(check_results)
 
@@ -175,7 +203,14 @@ def _handle_semantic(
     if not sarif_results and det_candidate_count == 0:
         return  # Short-circuit: no candidates -> semantic never fires
 
+    # Deduplicate by file — semantic reads full file content, so multiple
+    # D matches in the same file need exactly one LLM evaluation, not N.
+    seen_files: set[str] = set()
     for result in sarif_results:
+        file_path = get_location(result).rsplit(":", 1)[0]
+        if file_path in seen_files:
+            continue
+        seen_files.add(file_path)
         request = build_request_from_sarif_result(rule, result, scan_root)
         if request:
             judgment_requests.append(request)

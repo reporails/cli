@@ -1,6 +1,9 @@
 # Unreleased
 
 ### Added
+- [ENGINE]: Add `metadata_keys` field to Check model — D checks write matched texts to pipeline annotations, M checks read them as injected args
+- [ENGINE]: Add `count_at_most`, `count_at_least`, `check_import_targets_exist`, `filename_matches_pattern` mechanical probes
+- [ENGINE]: Add signal catalog aliases: `glob_match`→`file_exists`, `max_line_count`→`line_count`, `glob_count`→`file_count`
 - [CONFIG]: Add `--global` flag to `ails config set/get/list` — set defaults in `~/.reporails/config.yml` (supports `default_agent`, `recommended`)
 - [AGENTS]: Add OpenAI Codex agent (`--agent codex`) with AGENTS.md instruction pattern
 - [AGENTS]: Add generic agent config at rules level — targets AGENTS.md per agents.md convention
@@ -57,6 +60,7 @@
 - [INTEGRATION]: Add pipeline output stability tests — run full validation against committed fixtures, assert deterministic fields with regeneration flag
 
 ### Fixed
+- [ENGINE]: Deduplicate semantic JudgmentRequests by file path — multiple D matches in the same file produce one LLM evaluation, not N
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
 - [CONFIG]: Malformed project config now applies global defaults (was returning hardcoded defaults)
 - [CLI]: Empty-files hint now shows the correct instruction file per agent (was hardcoded to CLAUDE.md)
