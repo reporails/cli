@@ -148,9 +148,17 @@ def heal(  # pylint: disable=too-many-locals
 
     project_config = get_project_config(target)
 
-    # Resolve effective agent: CLI flag > config default_agent > engine defaults to generic
+    # Resolve effective agent: CLI flag > config default_agent > auto-detect > generic
     if not agent and project_config.default_agent:
         agent = _validate_agent(project_config.default_agent, console)
+
+    if not agent:
+        from reporails_cli.core.agents import auto_detect_agent, detect_agents
+
+        all_detected = detect_agents(target)
+        auto = auto_detect_agent(all_detected)
+        if auto:
+            agent = auto
 
     # Merge exclude_dirs
     merged_excludes: list[str] | None = None

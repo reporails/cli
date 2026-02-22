@@ -109,17 +109,9 @@ def clear_agent_cache() -> None:
 
 
 def detect_agents(target: Path) -> list[DetectedAgent]:
-    """
-    Detect which coding agents are configured in the target directory.
+    """Detect which coding agents are configured in the target directory.
 
-    Scans for known file patterns and returns detected agents with their files.
-    Results are cached per target path for MCP performance.
-
-    Args:
-        target: Project root to scan
-
-    Returns:
-        List of detected agents with their associated files
+    Scans for known file patterns. Results cached per target path.
     """
     cache_key = str(target)
     cached = _agent_cache.get(cache_key)
@@ -168,20 +160,54 @@ def detect_agents(target: Path) -> list[DetectedAgent]:
     return detected
 
 
+def _distinctive_agents(detected_agents: list[DetectedAgent]) -> list[DetectedAgent]:
+    """Return agents that are genuinely distinctive (not just generic aliases).
+
+    Agents whose instruction files are entirely a subset of generic's files
+    (e.g. codex matching only AGENTS.md) are not distinctive enough to count.
+    """
+    generic_files: set[Path] = set()
+    for a in detected_agents:
+        if a.agent_type.id == "generic":
+            generic_files = set(a.instruction_files)
+            break
+    return [
+        a
+        for a in detected_agents
+        if a.agent_type.id != "generic" and not set(a.instruction_files).issubset(generic_files)
+    ]
+
+
+def auto_detect_agent(detected_agents: list[DetectedAgent]) -> str:
+    """Pick agent when exactly one distinctive agent is detected.
+
+    Returns agent ID if unambiguous, empty string if zero or multiple.
+    Conservative: better to fall back to generic than guess wrong.
+    """
+    distinctive = _distinctive_agents(detected_agents)
+    if len(distinctive) == 1:
+        return distinctive[0].agent_type.id
+    return ""
+
+
+def resolve_agent(agent: str, detected_agents: list[DetectedAgent]) -> tuple[str, bool, bool]:
+    """Apply auto-detect step in the agent resolution chain.
+
+    Called after CLI flag and config have been checked.
+    Returns (agent, assumed, mixed_signals).
+    """
+    if agent:
+        return agent, False, False
+    auto = auto_detect_agent(detected_agents)
+    if auto:
+        return auto, True, False
+    if len(_distinctive_agents(detected_agents)) > 1:
+        return "", False, True
+    return "", False, False
+
+
 def filter_agents_by_id(agents: list[DetectedAgent], agent_id: str) -> list[DetectedAgent]:
-    """
-    Filter detected agents by agent ID.
-
-    Returns only the matching agent's files. If no match, returns empty list
-    so the caller can show "no instruction files found" with an appropriate hint.
-
-    Args:
-        agents: List of detected agents
-        agent_id: Agent identifier to filter by (e.g., "claude", "copilot")
-
-    Returns:
-        List containing only the specified agent if found, empty list otherwise
-    """
+    """Filter detected agents to only those matching agent_id."""
     return [agent for agent in agents if agent.agent_type.id == agent_id]
 
 
@@ -225,16 +251,7 @@ def filter_agents_by_exclude_dirs(
 
 
 def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
-    """
-    Get all instruction files for all detected agents.
-
-    Args:
-        target: Project root to scan
-        agents: Pre-detected agents (avoids redundant filesystem scan)
-
-    Returns:
-        Deduplicated list of all instruction file paths
-    """
+    """Get deduplicated instruction + rule files for detected agents."""
     all_files: set[Path] = set()
 
     for detected in agents if agents is not None else detect_agents(target):
@@ -245,19 +262,7 @@ def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None =
 
 
 def get_all_scannable_files(target: Path, agents: list[DetectedAgent] | None = None) -> list[Path]:
-    """
-    Get all files the regex engine should scan: instruction, rule, and config files.
-
-    Config files (e.g. .claude/settings.json) are included so that rules with
-    explicit paths.include targeting them can match.
-
-    Args:
-        target: Project root to scan
-        agents: Pre-detected agents (avoids redundant filesystem scan)
-
-    Returns:
-        Deduplicated list of all scannable file paths
-    """
+    """Get all scannable files (instruction + rule + config) for detected agents."""
     all_files: set[Path] = set()
 
     for detected in agents if agents is not None else detect_agents(target):

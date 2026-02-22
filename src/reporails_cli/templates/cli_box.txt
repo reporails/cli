@@ -4,6 +4,7 @@
 {capability_line}
 {bar_line}
 {empty_line}
+{agent_line}
 {surface_line}
 {empty_line}
 {summary_line}

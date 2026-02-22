@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 
+from reporails_cli.core.agents import KNOWN_AGENTS, DetectedAgent, auto_detect_agent
 from reporails_cli.core.bootstrap import get_agent_config
 from reporails_cli.core.models import (
     AgentConfig,
@@ -232,3 +234,55 @@ class TestLoadRulesExcludes:
             rules = load_rules([tmp_path], include_experimental=False, agent="")
 
         assert "CORE:S:0001" in rules
+
+
+# =============================================================================
+# auto_detect_agent tests
+# =============================================================================
+
+
+def _detected(agent_id: str, files: list[str] | None = None) -> DetectedAgent:
+    """Create a DetectedAgent stub for a known agent."""
+    return DetectedAgent(
+        agent_type=KNOWN_AGENTS[agent_id],
+        instruction_files=[Path(f) for f in files] if files else [],
+    )
+
+
+class TestAutoDetectAgent:
+    """Test auto_detect_agent picks agent only when unambiguous."""
+
+    @pytest.mark.parametrize(
+        ("agents", "expected"),
+        [
+            pytest.param([_detected("claude", ["CLAUDE.md"])], "claude", id="single_non_generic"),
+            pytest.param(
+                [_detected("claude", ["CLAUDE.md"]), _detected("generic", ["AGENTS.md"])],
+                "claude",
+                id="non_generic_plus_generic",
+            ),
+            pytest.param(
+                [_detected("claude", ["CLAUDE.md"]), _detected("cursor", [".cursorrules"])],
+                "",
+                id="two_distinctive_ambiguous",
+            ),
+            pytest.param([_detected("generic", ["AGENTS.md"])], "", id="generic_only"),
+            pytest.param([], "", id="empty_list"),
+            pytest.param(
+                [
+                    _detected("claude", ["CLAUDE.md"]),
+                    _detected("codex", ["AGENTS.md"]),
+                    _detected("generic", ["AGENTS.md"]),
+                ],
+                "claude",
+                id="codex_overlaps_generic_ignored",
+            ),
+            pytest.param(
+                [_detected("codex", ["AGENTS.md"]), _detected("generic", ["AGENTS.md"])],
+                "",
+                id="codex_only_not_distinctive",
+            ),
+        ],
+    )
+    def test_auto_detect(self, agents: list[DetectedAgent], expected: str) -> None:
+        assert auto_detect_agent(agents) == expected

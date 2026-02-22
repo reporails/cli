@@ -12,6 +12,8 @@
 - [ENGINE]: Dismissed violations filtered from `ails check` output (cached as pass verdicts, reset with `--refresh`)
 
 ### Changed
+- [CLI]: Auto-detect agent from project files when `--agent` not specified — single unambiguous agent assumed, multiple agents default to generic
+- [CLI]: Scorecard shows detected agent(s) above Scope line — `Agent: claude` for single, `Agents: claude, copilot` for multiple
 - [CLI]: Scorecard category table redesigned — mini bars for per-category scores, centered columns, wider score bar, icon colors match severity
 - [CLI]: Pending semantic checks shown inline with violations (was separate box below scorecard) — uses `?` icon, file headers show "N awaiting semantic"
 - [CLI]: Experimental rules no longer displayed in output (was dim text below scorecard)
