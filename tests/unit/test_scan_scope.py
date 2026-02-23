@@ -91,7 +91,8 @@ class TestDetectAgentsScope:
         for f in all_files:
             assert str(f).startswith(str(child)), f"File outside child scope: {f}"
 
-    def test_parent_sees_both(self, tmp_path: Path) -> None:
+    def test_parent_sees_only_root_files(self, tmp_path: Path) -> None:
+        """Detection uses shallow globs — child CLAUDE.md is not found."""
         _make_nested_project(tmp_path)
         agents = detect_agents(tmp_path)
 
@@ -100,8 +101,8 @@ class TestDetectAgentsScope:
             all_files.extend(a.instruction_files)
 
         paths = {str(f) for f in all_files}
-        assert any("child/CLAUDE.md" in p for p in paths), "Parent should see child files"
-        assert any(p.endswith("tmp/CLAUDE.md") or "/CLAUDE.md" in p for p in paths)
+        assert not any("child/CLAUDE.md" in p for p in paths), "Should not recurse into child"
+        assert any(p.endswith("/CLAUDE.md") for p in paths), "Should find root CLAUDE.md"
 
 
 class TestInstructionFilesScope:

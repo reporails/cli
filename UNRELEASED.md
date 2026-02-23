@@ -23,6 +23,8 @@
 - [ENGINE]: Dismissed violations filtered from `ails check` output (cached as pass verdicts, reset with `--refresh`)
 
 ### Changed
+- [AGENTS]: Remove redundant recursive globs from agent instruction and rule patterns — use shallow discovery only
+- [ENGINE]: Regex scan falls back to non-.md files when no .md targets found in fixture directory
 - [CLI]: Auto-detect agent from project files when `--agent` not specified — single unambiguous agent assumed, multiple agents default to generic
 - [CLI]: Scorecard shows detected agent(s) above Scope line — `Agent: claude` for single, `Agents: claude, copilot` for multiple
 - [CLI]: Scorecard category table redesigned — mini bars for per-category scores, centered columns, wider score bar, icon colors match severity
