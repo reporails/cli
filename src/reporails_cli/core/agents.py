@@ -32,9 +32,9 @@ KNOWN_AGENTS: dict[str, AgentType] = {
     "claude": AgentType(
         id="claude",
         name="Claude (Anthropic)",
-        instruction_patterns=("CLAUDE.md", "**/CLAUDE.md"),
+        instruction_patterns=("CLAUDE.md",),
         config_patterns=(".claude/settings.json", ".claude/mcp.json"),
-        rule_patterns=(".claude/rules/*.md", ".claude/rules/**/*.md", ".claude/skills/**/*.md"),
+        rule_patterns=(".claude/rules/*.md", ".claude/skills/**/*.md"),
         directory_patterns=(
             ("rules", ".claude/rules"),
             ("skills", ".claude/skills"),
@@ -80,7 +80,7 @@ KNOWN_AGENTS: dict[str, AgentType] = {
     "generic": AgentType(
         id="generic",
         name="Generic AI Instructions",
-        instruction_patterns=("AGENTS.md", ".ai/instructions.md", ".ai/**/*.md"),
+        instruction_patterns=("AGENTS.md", ".ai/instructions.md"),
         config_patterns=(),
         rule_patterns=(".ai/rules/*.md",),
     ),
@@ -98,8 +98,8 @@ class DetectedAgent:
     detected_directories: dict[str, str] = field(default_factory=dict)
 
 
-# Module-level cache for detected agents — glob scanning is expensive (~100ms
-# on large repos). Cache keyed on target path, cleared by clear_agent_cache().
+# Module-level cache for detected agents — avoids repeated glob scanning.
+# Cache keyed on target path, cleared by clear_agent_cache().
 _agent_cache: dict[str, list[DetectedAgent]] = {}
 
 

@@ -96,6 +96,8 @@ def _resolve_scan_targets(
 
     scan_dir = target if target.is_dir() else target.parent
     targets = list(scan_dir.rglob("*.md"))
+    if not targets:
+        targets = [f for f in scan_dir.rglob("*") if f.is_file() and _is_text_file(f)]
     seen = {t.resolve() for t in targets}
     _append_extra(seen, targets, extra_targets)
     return targets
