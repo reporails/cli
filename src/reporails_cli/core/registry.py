@@ -165,6 +165,21 @@ def load_rules(  # pylint: disable=too-many-locals
     return rules
 
 
+_AGNOSTIC_PREFIXES = frozenset({"CORE", "RRAILS"})
+
+
+def infer_agent_from_rule_id(rule_id: str) -> str:
+    """Infer agent name from a rule ID prefix.
+
+    Returns lowercase agent name for agent-specific rules (e.g., "claude"
+    for CLAUDE:S:0001), empty string for CORE/RRAILS rules.
+    """
+    prefix = rule_id.split(":")[0] if ":" in rule_id else ""
+    if not prefix or prefix in _AGNOSTIC_PREFIXES:
+        return ""
+    return prefix.lower()
+
+
 def _is_other_agent_rule(rule_id: str, agent_prefix: str) -> bool:
     """Check if a rule belongs to a different agent.
 
