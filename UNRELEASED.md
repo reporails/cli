@@ -1,6 +1,8 @@
 # Unreleased
 
 ### Added
+- [ENGINE]: Support glob patterns in agent excludes (e.g., `CLAUDE:*` excludes all Claude-namespaced rules)
+- [ENGINE]: Load `prefix`, `name`, `core` fields from agent config schema v0.2.0
 - [CLI]: Phased progress spinner — shows "Loading rules..." / "Checking files..." / "Scoring..." during validation
 - [ENGINE]: Add `metadata_keys` field to Check model — D checks write matched texts to pipeline annotations, M checks read them as injected args
 - [ENGINE]: Add `count_at_most`, `count_at_least`, `check_import_targets_exist`, `filename_matches_pattern` mechanical probes
@@ -61,6 +63,7 @@
 - [INTEGRATION]: Add pipeline output stability tests — run full validation against committed fixtures, assert deterministic fields with regeneration flag
 
 ### Fixed
+- [MCP]: Apply `exclude_dirs` from project config — MCP tools (validate, score, heal) now respect `.reporails/config.yml` exclusions (was scanning all directories including test fixtures)
 - [ENGINE]: Deduplicate semantic JudgmentRequests by file path — multiple D matches in the same file produce one LLM evaluation, not N
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
 - [CONFIG]: Malformed project config now applies global defaults (was returning hardcoded defaults)
