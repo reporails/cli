@@ -64,6 +64,7 @@
 
 ### Fixed
 - [MCP]: Apply `exclude_dirs` from project config — MCP tools (validate, score, heal) now respect `.reporails/config.yml` exclusions (was scanning all directories including test fixtures)
+- [MCP]: Fix `validate` handler missing `rules_paths` and `exclude_dirs` — was calling `run_validation` directly without resolving project config (score, heal already did this correctly)
 - [ENGINE]: Deduplicate semantic JudgmentRequests by file path — multiple D matches in the same file produce one LLM evaluation, not N
 - [CONFIG]: Malformed YAML config files now log warnings instead of failing silently — applies to project, global, and agent configs
 - [CONFIG]: Malformed project config now applies global defaults (was returning hardcoded defaults)
