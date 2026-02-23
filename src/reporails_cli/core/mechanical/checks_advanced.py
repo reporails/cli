@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Advanced mechanical checks — content reading, import following, aggregation.
 
 These checks are more complex than the simple structural checks in checks.py.
@@ -266,6 +267,24 @@ def filename_matches_pattern(
                     message=f"{match.name}: does not match pattern {pattern}",
                 )
     return CheckResult(passed=True, message="All filenames match pattern")
+
+
+def file_absent(
+    root: Path,
+    args: dict[str, Any],
+    vars: dict[str, str | list[str]],
+) -> CheckResult:
+    """Check that NO file matching the pattern exists."""
+    pattern = str(args.get("pattern", ""))
+    if not pattern:
+        return CheckResult(passed=False, message="file_absent: no pattern specified")
+    resolved = _resolve_path(pattern, vars)
+    matches = _resolve_glob_targets(resolved, root)
+    if not matches:
+        if (root / resolved).exists():
+            return CheckResult(passed=False, message=f"Forbidden file exists: {resolved}")
+        return CheckResult(passed=True, message="Forbidden file not found")
+    return CheckResult(passed=False, message=f"Forbidden file exists: {matches[0].name}")
 
 
 def content_absent(

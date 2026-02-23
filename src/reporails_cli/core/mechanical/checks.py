@@ -256,6 +256,7 @@ from reporails_cli.core.mechanical.checks_advanced import (  # noqa: E402
     count_at_most,
     directory_file_types,
     extract_imports,
+    file_absent,
     filename_matches_pattern,
     frontmatter_valid_glob,
     import_depth,
@@ -282,9 +283,14 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "count_at_most": count_at_most,
     "count_at_least": count_at_least,
     "check_import_targets_exist": check_import_targets_exist,
+    "file_absent": file_absent,
     "filename_matches_pattern": filename_matches_pattern,
     # Aliases for signal catalog naming
     "glob_match": file_exists,
     "max_line_count": line_count,
     "glob_count": file_count,
+    # Aliases for rule frontmatter name → check mapping
+    "file_tracked": git_tracked,
+    "memory_dir_exists": directory_exists,
+    "total_size_check": aggregate_byte_size,
 }
