@@ -5,6 +5,7 @@
 - [ENGINE]: Register check aliases: `file_tracked`→`git_tracked`, `memory_dir_exists`→`directory_exists`, `total_size_check`→`aggregate_byte_size`
 - [HARNESS]: Add fail scaffold system — auto-generates fail fixtures for structural M checks (`filename_matches_pattern`, `glob_count`, `file_count`, `file_absent`)
 - [HARNESS]: Add pass scaffold for `file_absent` — removes forbidden file from pass fixture
+- [HARNESS]: Add multi-agent prefix dispatch, effectiveness scoring, and coverage baseline
 - [ENGINE]: Support glob patterns in agent excludes (e.g., `CLAUDE:*` excludes all Claude-namespaced rules)
 - [ENGINE]: Load `prefix`, `name`, `core` fields from agent config schema v0.2.0
 - [CLI]: Phased progress spinner — shows "Loading rules..." / "Checking files..." / "Scoring..." during validation

@@ -13,6 +13,8 @@ Uses the same check engines as production validation (ails check):
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,8 @@ from reporails_cli.core.regex import run_validation as run_regex_validation
 from reporails_cli.core.utils import parse_frontmatter
 
 logger = logging.getLogger(__name__)
+
+_FIXTURE_EXCLUDES = frozenset({".gitkeep", ".DS_Store"})
 
 
 # ── Data models ─────────────────────────────────────────────────────
@@ -97,6 +101,32 @@ def load_agent_config(
             vars_out[key] = str(value)
 
     return vars_out, data.get("excludes", [])
+
+
+def _build_prefix_to_agent_map(rules_root: Path) -> dict[str, str]:
+    """Build NAMESPACE_PREFIX → agent_name map from agent configs.
+
+    Reads each agents/<name>/config.yml for the ``prefix`` field.
+    Returns mapping like ``{"CLAUDE": "claude", "CODEX": "codex"}``.
+    """
+    agents_dir = rules_root / "agents"
+    if not agents_dir.is_dir():
+        return {}
+    mapping: dict[str, str] = {}
+    for agent_dir in sorted(agents_dir.iterdir()):
+        if not agent_dir.is_dir():
+            continue
+        config_path = agent_dir / "config.yml"
+        if not config_path.exists():
+            continue
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            prefix = data.get("prefix", "")
+            if prefix:
+                mapping[prefix] = agent_dir.name
+        except (yaml.YAMLError, OSError):
+            continue
+    return mapping
 
 
 # ── Rule discovery ──────────────────────────────────────────────────
@@ -292,11 +322,12 @@ def _run_mechanical_check(
     agent_vars: dict[str, str | list[str]],
 ) -> CheckResult:
     """Run a single mechanical check against a fixture directory."""
-    check_name = check.get("check", "")
+    check_name = check.get("check", "") or check.get("name", "")
     args = check.get("args", {}) or {}
 
     fn = MECHANICAL_CHECKS.get(check_name)
     if fn is None:
+        logger.warning("Unknown mechanical check: %s", check_name)
         return CheckResult(passed=False, message=f"Unknown mechanical check: {check_name}")
 
     result = fn(fixture_root, args, agent_vars)
@@ -357,8 +388,8 @@ def _run_deterministic_check(  # pylint: disable=too-many-locals
         tmp_path = Path(tmp.name)
 
     try:
-        # Discover instruction files in fixture for path filtering
-        fixture_files = list(fixture_root.rglob("*.md"))
+        # Discover all files in fixture for path filtering
+        fixture_files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
         sarif = run_regex_validation(
             [tmp_path],
             fixture_root,
@@ -375,7 +406,369 @@ def _run_deterministic_check(  # pylint: disable=too-many-locals
         tmp_path.unlink(missing_ok=True)
 
 
+# ── Pass fixture scaffolding ─────────────────────────────────────────
+
+
+def _glob_to_concrete(pattern: str) -> str:
+    """Convert a glob pattern to a concrete file path for scaffolding.
+
+    Examples:
+        "**/*.md" → "scaffold.md"
+        ".claude/skills/**" → ".claude/skills/scaffold"
+        ".claude/rules/**/*.md" → ".claude/rules/scaffold.md"
+    """
+    # Strip leading ./
+    clean = pattern.removeprefix("./")
+    parts = clean.split("/")
+    concrete: list[str] = []
+    for part in parts:
+        if part == "**":
+            continue
+        if "*" in part:
+            # Replace glob with scaffold filename, preserving extension
+            ext = ""
+            if "." in part:
+                ext = part[part.rindex(".") :]
+                if "*" in ext:
+                    ext = ".md"
+            concrete.append(f"scaffold{ext}")
+        else:
+            concrete.append(part)
+    return "/".join(concrete) if concrete else "scaffold.md"
+
+
+_SCAFFOLDABLE_CHECKS: dict[str, str] = {
+    "file_exists": "file",
+    "glob_match": "file",
+    "directory_exists": "dir",
+    "glob_count": "glob_count",
+    "file_count": "glob_count",
+    "git_tracked": "git_marker",
+    "file_tracked": "git_marker",
+    "file_absent": "file_removal",
+}
+
+
+def _collect_scaffold_actions(
+    checks: list[dict[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Extract scaffoldable actions from mechanical checks."""
+    actions: list[tuple[str, dict[str, Any]]] = []
+    for check in checks:
+        if check.get("type") != "mechanical":
+            continue
+        check_name = check.get("check", "") or check.get("name", "")
+        action_type = _SCAFFOLDABLE_CHECKS.get(check_name)
+        if action_type:
+            actions.append((action_type, check.get("args", {}) or {}))
+    return actions
+
+
+def _apply_scaffold_action(
+    action_type: str,
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Apply a single scaffold action to the temp directory."""
+    if action_type == "file":
+        _scaffold_file(args, tmp_dir, agent_vars)
+    elif action_type == "dir":
+        path = str(args.get("path", ""))
+        resolved = _resolve_var_str(path, agent_vars)
+        target = tmp_dir / resolved
+        if not target.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+    elif action_type == "glob_count":
+        _scaffold_glob_count(args, tmp_dir, agent_vars)
+    elif action_type == "file_removal":
+        _scaffold_file_removal(args, tmp_dir, agent_vars)
+    elif action_type == "git_marker":
+        marker = tmp_dir / ".git_marker"
+        if not marker.exists() and not (tmp_dir / ".git").exists():
+            marker.touch()
+
+
+def _scaffold_file(
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Scaffold a single file for file_exists/glob_match checks."""
+    path_pattern = str(args.get("path", ""))
+    if path_pattern:
+        resolved = _resolve_var_str(path_pattern, agent_vars)
+        concrete = _glob_to_concrete(resolved)
+    else:
+        patterns = agent_vars.get("instruction_files", [])
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        if not patterns:
+            return
+        concrete = _glob_to_concrete(str(patterns[0]))
+    target = tmp_dir / concrete
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.touch()
+
+
+def _scaffold_glob_count(
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Scaffold files for glob_count/file_count checks."""
+    raw_pattern = str(args.get("pattern", "**/*"))
+    resolved = _resolve_var_str(raw_pattern, agent_vars)
+    min_count = int(args.get("min", 1))
+    existing = list(tmp_dir.glob(resolved))
+    needed = max(0, min_count - len(existing))
+    for i in range(needed):
+        concrete = _glob_to_concrete(resolved)
+        base, ext = concrete.rsplit(".", 1) if "." in concrete else (concrete, "")
+        name = f"{base}_{i}.{ext}" if ext else f"{base}_{i}"
+        target = tmp_dir / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.touch()
+
+
+def _scaffold_fixture(
+    fixture_root: Path,
+    checks: list[dict[str, Any]],
+    agent_vars: dict[str, str | list[str]],
+) -> Path | None:
+    """Create a scaffolded copy of a pass fixture with M check dependencies.
+
+    Reads mechanical checks and creates minimal structure so that
+    checks like file_exists, directory_exists, glob_count, git_tracked
+    can pass. Only applied to pass fixtures.
+
+    Returns the scaffolded temp directory, or None if no scaffolding needed.
+    """
+    actions = _collect_scaffold_actions(checks)
+    if not actions:
+        return None
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="harness_scaffold_"))
+    shutil.copytree(fixture_root, tmp_dir, dirs_exist_ok=True)
+
+    for action_type, args in actions:
+        _apply_scaffold_action(action_type, args, tmp_dir, agent_vars)
+
+    return tmp_dir
+
+
+def _resolve_var_str(template: str, agent_vars: dict[str, str | list[str]]) -> str:
+    """Resolve {{var}} placeholders in a string, picking first list element."""
+    result = template
+    for key, value in agent_vars.items():
+        placeholder = "{{" + key + "}}"
+        if placeholder in result:
+            if isinstance(value, list):
+                result = result.replace(placeholder, value[0] if value else "")
+            else:
+                result = result.replace(placeholder, str(value))
+    return result
+
+
+def _scaffold_file_removal(
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Remove forbidden file from pass scaffold (for file_absent checks)."""
+    import glob as globmod
+
+    pattern = str(args.get("pattern", ""))
+    if not pattern:
+        return
+    resolved = _resolve_var_str(pattern, agent_vars)
+    # Try as plain path first
+    target = tmp_dir / resolved
+    if target.exists():
+        target.unlink()
+        return
+    # Try as glob
+    for match in globmod.glob(str(tmp_dir / resolved), recursive=True):
+        Path(match).unlink()
+
+
+# ── Fail fixture scaffolding ─────────────────────────────────────────
+
+
+_SCAFFOLDABLE_FAIL_CHECKS: dict[str, str] = {
+    "filename_matches_pattern": "filename_mismatch",
+    "glob_count": "glob_count_deficit",
+    "file_count": "glob_count_deficit",
+    "file_absent": "file_present",
+}
+
+
+def _collect_fail_scaffold_actions(
+    checks: list[dict[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Extract scaffoldable fail actions from mechanical checks."""
+    actions: list[tuple[str, dict[str, Any]]] = []
+    for check in checks:
+        if check.get("type") != "mechanical":
+            continue
+        check_name = check.get("check", "") or check.get("name", "")
+        action_type = _SCAFFOLDABLE_FAIL_CHECKS.get(check_name)
+        if action_type:
+            actions.append((action_type, check.get("args", {}) or {}))
+    return actions
+
+
+def _apply_fail_scaffold_action(
+    action_type: str,
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Apply a single fail scaffold action to the temp directory."""
+    if action_type == "filename_mismatch":
+        _scaffold_filename_mismatch(args, tmp_dir, agent_vars)
+    elif action_type == "glob_count_deficit":
+        _scaffold_glob_count_deficit(args, tmp_dir, agent_vars)
+    elif action_type == "file_present":
+        _scaffold_file_present(args, tmp_dir, agent_vars)
+
+
+def _scaffold_filename_mismatch(
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Rename existing files so they fail filename_matches_pattern.
+
+    Preserves the file extension so glob patterns still find the file,
+    but uses a name that won't match the regex pattern.
+    """
+    import glob as globmod
+
+    for fp in _get_target_patterns_from_args(args, agent_vars):
+        resolved = str(tmp_dir / fp)
+        for match_path in globmod.glob(resolved, recursive=True):
+            match = Path(match_path)
+            if match.is_file():
+                dest = match.parent / f"_scaffold_invalid{match.suffix}"
+                match.rename(dest)
+                return  # One rename is sufficient to cause failure
+    # No existing files to rename — create one with a bad name
+    patterns = _get_target_patterns_from_args(args, agent_vars)
+    concrete = _glob_to_concrete(patterns[0] if patterns else "**/*.md")
+    base = Path(concrete)
+    target = tmp_dir / base.parent / f"_scaffold_invalid{base.suffix or '.md'}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.touch()
+
+
+def _scaffold_glob_count_deficit(
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Remove files to get count below min for glob_count/file_count checks."""
+    raw_pattern = str(args.get("pattern", "**/*"))
+    resolved = _resolve_var_str(raw_pattern, agent_vars)
+    min_count = int(args.get("min", 1))
+    existing = sorted(tmp_dir.glob(resolved))
+    existing_files = [f for f in existing if f.is_file()]
+    # Remove files until count is below min
+    target_count = max(0, min_count - 1)
+    to_remove = len(existing_files) - target_count
+    for f in existing_files[:to_remove]:
+        f.unlink()
+
+
+def _scaffold_file_present(
+    args: dict[str, Any],
+    tmp_dir: Path,
+    agent_vars: dict[str, str | list[str]],
+) -> None:
+    """Create the forbidden file so file_absent fails."""
+    pattern = str(args.get("pattern", ""))
+    if not pattern:
+        return
+    resolved = _resolve_var_str(pattern, agent_vars)
+    # Create as plain path
+    target = tmp_dir / resolved
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        target.touch()
+
+
+def _get_target_patterns_from_args(
+    args: dict[str, Any],
+    agent_vars: dict[str, str | list[str]],
+) -> list[str]:
+    """Get file patterns from args or vars (harness-side mirror of checks._get_target_patterns)."""
+    path_pattern = args.get("path", "")
+    if path_pattern:
+        return [_resolve_var_str(str(path_pattern), agent_vars)]
+    patterns = agent_vars.get("instruction_files", [])
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    return list(patterns)
+
+
+def _scaffold_fail_fixture(
+    fixture_root: Path,
+    checks: list[dict[str, Any]],
+    agent_vars: dict[str, str | list[str]],
+) -> Path | None:
+    """Create a scaffolded copy of a fail fixture with M check dependencies.
+
+    Mirrors _scaffold_fixture() for the fail side. First applies pass scaffolding
+    (to ensure structural dependencies exist), then applies fail actions to break
+    exactly the targeted check.
+
+    Returns the scaffolded temp directory, or None if no scaffolding needed.
+    """
+    fail_actions = _collect_fail_scaffold_actions(checks)
+    if not fail_actions:
+        return None
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="harness_fail_scaffold_"))
+    shutil.copytree(fixture_root, tmp_dir, dirs_exist_ok=True)
+
+    # First, apply pass scaffolding so structural deps exist
+    pass_actions = _collect_scaffold_actions(checks)
+    for action_type, args in pass_actions:
+        _apply_scaffold_action(action_type, args, tmp_dir, agent_vars)
+
+    # Then apply fail actions to break the targeted checks
+    for action_type, args in fail_actions:
+        _apply_fail_scaffold_action(action_type, args, tmp_dir, agent_vars)
+
+    return tmp_dir
+
+
 # ── Rule runner ─────────────────────────────────────────────────────
+
+
+def _prepare_scaffolds(
+    rule: RuleInfo,
+    agent_vars: dict[str, str | list[str]],
+) -> tuple[Path | None, Path | None, Path, Path]:
+    """Prepare scaffolded fixtures for a rule.
+
+    Returns (scaffolded_pass, scaffolded_fail, effective_pass_dir, effective_fail_dir).
+    """
+    pass_dir = rule.rule_dir / "tests" / "pass"
+    fail_dir = rule.rule_dir / "tests" / "fail"
+
+    scaffolded_pass: Path | None = None
+    if rule.has_pass_fixture:
+        scaffolded_pass = _scaffold_fixture(pass_dir, rule.checks, agent_vars)
+
+    scaffolded_fail: Path | None = None
+    if rule.has_fail_fixture:
+        scaffolded_fail = _scaffold_fail_fixture(fail_dir, rule.checks, agent_vars)
+
+    effective_pass = scaffolded_pass if scaffolded_pass else pass_dir
+    effective_fail = scaffolded_fail if scaffolded_fail else fail_dir
+    return scaffolded_pass, scaffolded_fail, effective_pass, effective_fail
 
 
 def run_rule(
@@ -406,34 +799,41 @@ def run_rule(
         result.messages.append("No test fixtures (tests/pass/ or tests/fail/ empty)")
         return result
 
-    pass_dir = rule.rule_dir / "tests" / "pass"
-    fail_dir = rule.rule_dir / "tests" / "fail"
     fail_violation_found = False
+    scaffolded_pass, scaffolded_fail, effective_pass_dir, effective_fail_dir = _prepare_scaffolds(rule, agent_vars)
 
-    for check in rule.checks:
-        check_id = check.get("id", "unknown")
-        check_type = check.get("type", "unknown")
-        negate = check.get("negate", False)
+    try:
+        for check in rule.checks:
+            check_id = check.get("id", "unknown")
+            check_type = check.get("type", "unknown")
+            negate = check.get("negate", False)
 
-        # === Pass fixture: ALL checks must pass ===
-        if rule.has_pass_fixture:
-            passed, run = _check_fixture(check, check_id, check_type, negate, pass_dir, rule, agent_vars, "pass")
-            result.check_runs.append(run)
-            if not passed:
-                result.status = HarnessStatus.FAILED
+            # === Pass fixture: ALL checks must pass ===
+            if rule.has_pass_fixture:
+                passed, run = _check_fixture(
+                    check, check_id, check_type, negate, effective_pass_dir, rule, agent_vars, "pass"
+                )
+                result.check_runs.append(run)
+                if not passed:
+                    result.status = HarnessStatus.FAILED
 
-        # === Fail fixture: at least ONE check must detect a violation ===
-        if rule.has_fail_fixture:
-            violation, run = _check_fixture_for_violation(
-                check, check_id, check_type, negate, fail_dir, rule, agent_vars
-            )
-            result.check_runs.append(run)
-            if violation:
-                fail_violation_found = True
+            # === Fail fixture: at least ONE check must detect a violation ===
+            if rule.has_fail_fixture:
+                violation, run = _check_fixture_for_violation(
+                    check, check_id, check_type, negate, effective_fail_dir, rule, agent_vars
+                )
+                result.check_runs.append(run)
+                if violation:
+                    fail_violation_found = True
 
-    if rule.has_fail_fixture and not fail_violation_found:
-        result.status = HarnessStatus.FAILED
-        result.messages.append("Fail fixture: no check detected a violation")
+        if rule.has_fail_fixture and not fail_violation_found:
+            result.status = HarnessStatus.FAILED
+            result.messages.append("Fail fixture: no check detected a violation")
+    finally:
+        if scaffolded_pass:
+            shutil.rmtree(scaffolded_pass, ignore_errors=True)
+        if scaffolded_fail:
+            shutil.rmtree(scaffolded_fail, ignore_errors=True)
 
     return result
 
@@ -493,6 +893,29 @@ def _check_fixture_for_violation(
 # ── Batch runner ────────────────────────────────────────────────────
 
 
+def _build_agent_cache(
+    rules_root: Path,
+    default_agent: str,
+    prefix_map: dict[str, str],
+) -> dict[str, tuple[dict[str, str | list[str]], list[str]]]:
+    """Load configs for all agents into a cache keyed by agent name."""
+    cache: dict[str, tuple[dict[str, str | list[str]], list[str]]] = {}
+    for agent_name in {default_agent} | set(prefix_map.values()):
+        cache[agent_name] = load_agent_config(rules_root, agent_name)
+    return cache
+
+
+def _get_rule_agent(rule_id: str, prefix_map: dict[str, str]) -> str | None:
+    """Determine which agent owns a rule based on its prefix.
+
+    Returns agent name if prefix matches, None for CORE/RRAILS rules.
+    """
+    prefix = rule_id.split(":")[0] if ":" in rule_id else ""
+    if prefix in prefix_map:
+        return prefix_map[prefix]
+    return None
+
+
 def run_harness(
     rules_root: Path,
     *,
@@ -503,24 +926,46 @@ def run_harness(
 ) -> list[HarnessResult]:
     """Discover and run all rules, returning per-rule results.
 
+    Discovers rules across all agents and dispatches each rule to the
+    correct agent's vars based on its rule_id prefix. CORE/RRAILS rules
+    use the default agent's vars.
+
     Args:
         rules_root: Primary rules repository root.
         filter_path: Optional path prefix filter.
         filter_rule: Optional rule coordinate filter.
         package_roots: Additional package roots to scan.
-        agent: Agent config for var resolution.
+        agent: Default agent config for CORE/RRAILS rules.
     """
-    agent_vars, excludes = load_agent_config(rules_root, agent)
+    # Build prefix→agent mapping and per-agent config cache
+    prefix_map = _build_prefix_to_agent_map(rules_root)
+    agent_cache = _build_agent_cache(rules_root, agent, prefix_map)
+    default_vars, default_excludes = agent_cache[agent]
+
+    # Discover rules across ALL agents (agent=None)
     rules = discover_rules(
         rules_root,
         filter_path=filter_path,
         filter_rule=filter_rule,
         package_roots=package_roots,
-        excludes=excludes,
-        agent=agent,
+        excludes=default_excludes,
+        agent=None,
     )
 
-    return [run_rule(rule, agent_vars) for rule in rules]
+    results: list[HarnessResult] = []
+    for rule in rules:
+        rule_agent = _get_rule_agent(rule.rule_id, prefix_map)
+        if rule_agent and rule_agent in agent_cache:
+            rule_vars, rule_excludes = agent_cache[rule_agent]
+            # Skip rules excluded by their own agent config
+            if _rule_matches_exclude(rule.rule_id, rule_excludes):
+                continue
+        else:
+            # CORE/RRAILS rules use default agent vars
+            rule_vars = default_vars
+        results.append(run_rule(rule, rule_vars))
+
+    return results
 
 
 # ── Effectiveness scoring ──────────────────────────────────────────
