@@ -18,6 +18,7 @@ from reporails_cli.core.mechanical.checks_advanced import (
     check_import_targets_exist,
     count_at_least,
     count_at_most,
+    file_absent,
     filename_matches_pattern,
 )
 from reporails_cli.core.mechanical.runner import (
@@ -520,6 +521,37 @@ class TestFilenameMatchesPattern:
         result = filename_matches_pattern(tmp_path, {"pattern": "[invalid"}, _vars())
         assert not result.passed
         assert "invalid regex" in result.message
+
+
+class TestFileAbsent:
+    def test_file_not_present_passes(self, tmp_path: Path) -> None:
+        result = file_absent(tmp_path, {"pattern": "README.md"}, {})
+        assert result.passed
+
+    def test_file_present_fails(self, tmp_path: Path) -> None:
+        (tmp_path / "README.md").write_text("# README")
+        result = file_absent(tmp_path, {"pattern": "README.md"}, {})
+        assert not result.passed
+        assert "Forbidden" in result.message
+
+    def test_glob_pattern_no_match_passes(self, tmp_path: Path) -> None:
+        result = file_absent(tmp_path, {"pattern": "**/*.lock"}, {})
+        assert result.passed
+
+    def test_glob_pattern_match_fails(self, tmp_path: Path) -> None:
+        (tmp_path / "package-lock.json").write_text("{}")
+        result = file_absent(tmp_path, {"pattern": "**/*.json"}, {})
+        assert not result.passed
+
+    def test_no_pattern_fails(self, tmp_path: Path) -> None:
+        result = file_absent(tmp_path, {}, {})
+        assert not result.passed
+        assert "no pattern" in result.message
+
+    def test_var_resolution(self, tmp_path: Path) -> None:
+        (tmp_path / "FORBIDDEN.md").write_text("bad")
+        result = file_absent(tmp_path, {"pattern": "{{forbidden_file}}"}, {"forbidden_file": "FORBIDDEN.md"})
+        assert not result.passed
 
 
 class TestAliases:
