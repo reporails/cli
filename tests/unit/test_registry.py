@@ -140,3 +140,23 @@ class TestBuildRulePatternConfidence:
         fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": "bogus"}
         with pytest.raises(ValueError):
             build_rule(fm, Path("test.md"), None)
+
+
+class TestInferAgentFromRuleId:
+    """Test infer_agent_from_rule_id prefix logic."""
+
+    @pytest.mark.parametrize(
+        ("rule_id", "expected"),
+        [
+            ("CORE:S:0001", ""),
+            ("RRAILS:C:0003", ""),
+            ("CLAUDE:S:0001", "claude"),
+            ("CODEX:S:0001", "codex"),
+            ("COPILOT:S:0001", "copilot"),
+            ("no-colon", ""),
+        ],
+    )
+    def test_infer(self, rule_id: str, expected: str) -> None:
+        from reporails_cli.core.registry import infer_agent_from_rule_id
+
+        assert infer_agent_from_rule_id(rule_id) == expected

@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Typer CLI for reporails - validate and score AI instruction files."""
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.cache import get_previous_scan
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
-from reporails_cli.core.registry import load_rules
+from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.cli.helpers import (
     _default_format,
@@ -29,6 +30,17 @@ from reporails_cli.interfaces.cli.helpers import (
     app,
     console,
 )
+
+
+def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
+    """Resolve rules paths for explain command, auto-including recommended."""
+    if rules:
+        return [Path(r).resolve() for r in rules]
+    from reporails_cli.core.bootstrap import get_recommended_package_path
+    from reporails_cli.core.registry import get_rules_dir
+
+    rec_path = get_recommended_package_path()
+    return [get_rules_dir(), rec_path] if rec_path.is_dir() else None
 
 
 @app.command(rich_help_panel="Commands")
@@ -241,20 +253,10 @@ def explain(
     ),
 ) -> None:
     """Show rule details."""
-    rules_paths: list[Path] | None = None
-    if rules:
-        rules_paths = [Path(r).resolve() for r in rules]
-    else:
-        # Auto-include recommended if installed
-        from reporails_cli.core.bootstrap import get_recommended_package_path
-        from reporails_cli.core.registry import get_rules_dir
-
-        rec_path = get_recommended_package_path()
-        if rec_path.is_dir():
-            rules_paths = [get_rules_dir(), rec_path]
-    loaded_rules = load_rules(rules_paths)
-
+    rules_paths = _explain_rules_paths(rules)
     rule_id_upper = rule_id.upper()
+    agent = infer_agent_from_rule_id(rule_id_upper)  # auto-load agent-namespaced rules
+    loaded_rules = load_rules(rules_paths, agent=agent)
 
     if rule_id_upper not in loaded_rules:
         _print_unknown_rule(rule_id, loaded_rules)
@@ -268,7 +270,10 @@ def explain(
         "level": rule.level,
         "slug": rule.slug,
         "targets": rule.targets,
-        "checks": [{"id": c.id, "type": c.type, "severity": c.severity.value} for c in rule.checks],
+        "checks": [
+            {"id": c.id, "type": c.type, "name": c.name, "check": c.check, "severity": c.severity.value}
+            for c in rule.checks
+        ],
         "see_also": rule.see_also,
     }
 

@@ -5,7 +5,7 @@ from typing import Any
 
 from reporails_cli.core.bootstrap import get_project_config, is_initialized
 from reporails_cli.core.engine import run_validation
-from reporails_cli.core.registry import load_rules
+from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters import text as text_formatter
 
@@ -261,11 +261,9 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[st
         if rec_path.is_dir():
             rules_paths = [get_rules_dir(), rec_path]
 
-    # include_experimental=True so any rule can be explained
-    rules = load_rules(rules_paths, include_experimental=True)
-
-    # Normalize rule ID
     rule_id_upper = rule_id.upper()
+    agent = infer_agent_from_rule_id(rule_id_upper)  # auto-load agent-namespaced rules
+    rules = load_rules(rules_paths, include_experimental=True, agent=agent)
 
     if rule_id_upper not in rules:
         return {
@@ -281,7 +279,10 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[st
         "level": rule.level,
         "slug": rule.slug,
         "targets": rule.targets,
-        "checks": [{"id": c.id, "type": c.type, "severity": c.severity.value} for c in rule.checks],
+        "checks": [
+            {"id": c.id, "type": c.type, "name": c.name, "check": c.check, "severity": c.severity.value}
+            for c in rule.checks
+        ],
         "see_also": rule.see_also,
     }
 
