@@ -17,6 +17,8 @@ from reporails_cli.core.engine import run_validation
 from reporails_cli.core.models import ScanDelta
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.interfaces.mcp.tools import (
+    _get_exclude_dirs,
+    _resolve_recommended_rules_paths,
     explain_tool,
     heal_tool,
     judge_tool,
@@ -212,7 +214,9 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
 
     previous_scan = get_previous_scan(target)
     try:
-        result = run_validation(target, agent="claude")
+        rules_paths = _resolve_recommended_rules_paths(target)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return _json_response({"error": type(e).__name__, "message": str(e)})
 
