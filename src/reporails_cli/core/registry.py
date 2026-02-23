@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -138,14 +139,13 @@ def load_rules(  # pylint: disable=too-many-locals
     # 3-4. Apply agent excludes and overrides
     agent_config = get_agent_config(agent) if agent else AgentConfig()
     if agent_config.excludes:
-        excluded = set(agent_config.excludes)
-        rules = {k: v for k, v in rules.items() if k not in excluded}
+        rules = {k: v for k, v in rules.items() if not any(fnmatch(k, pat) for pat in agent_config.excludes)}
     if agent_config.overrides:
         rules = _apply_agent_overrides(rules, agent_config.overrides)
 
     # 4b. Filter rules by agent namespace
     if agent:
-        agent_prefix = agent.upper()
+        agent_prefix = agent_config.prefix or agent.upper()
         rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
 
     # 5. Filter by tier if experimental not included

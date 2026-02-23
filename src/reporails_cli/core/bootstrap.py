@@ -79,6 +79,9 @@ def get_agent_config(agent: str) -> AgentConfig:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         return AgentConfig(
             agent=data.get("agent", ""),
+            prefix=data.get("prefix", ""),
+            name=data.get("name", ""),
+            core=data.get("core", False),
             excludes=data.get("excludes", []),
             overrides=data.get("overrides", {}),
         )
@@ -290,9 +293,3 @@ def is_initialized() -> bool:
     """Check if reporails has been initialized (rules framework downloaded)."""
     rules_path = get_rules_path()
     return rules_path.is_dir() and (rules_path / "core").is_dir()
-
-
-# Legacy alias for backward compatibility
-def get_checks_path() -> Path:
-    """Legacy alias for get_rules_path()."""
-    return get_rules_path()

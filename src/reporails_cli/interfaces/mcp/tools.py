@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.bootstrap import is_initialized
+from reporails_cli.core.bootstrap import get_project_config, is_initialized
 from reporails_cli.core.engine import run_validation
 from reporails_cli.core.registry import load_rules
 from reporails_cli.formatters import mcp as mcp_formatter
@@ -37,6 +37,12 @@ def _resolve_recommended_rules_paths(target: Path) -> list[Path] | None:
     return None
 
 
+def _get_exclude_dirs(target: Path) -> list[str] | None:
+    """Load exclude_dirs from project config."""
+    dirs = get_project_config(target).exclude_dirs
+    return sorted(dirs) if dirs else None
+
+
 def validate_tool(path: str = ".") -> dict[str, Any]:
     """
     Validate AI instruction files at path.
@@ -61,7 +67,8 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
         return mcp_formatter.format_result(result)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
@@ -91,7 +98,8 @@ def validate_tool_text(path: str = ".") -> str:
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
         return text_formatter.format_result(result, ascii_mode=True)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return f"Error: {e}"
@@ -119,7 +127,8 @@ def score_tool(path: str = ".") -> dict[str, Any]:
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
         return mcp_formatter.format_score(result)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
@@ -217,7 +226,8 @@ def heal_tool(path: str = ".") -> dict[str, Any]:
         from reporails_cli.core.fixers import apply_auto_fixes, partition_violations
 
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
 
         # Partition violations into fixable and non-fixable
         fixable, non_fixable = partition_violations(list(result.violations))

@@ -114,6 +114,9 @@ class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
 
     agent: str = ""
+    prefix: str = ""  # Uppercase namespace prefix (e.g., "CLAUDE")
+    name: str = ""  # Display name (e.g., "Claude Code")
+    core: bool = False  # True for CORE config (generic agent)
     excludes: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
