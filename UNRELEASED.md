@@ -71,8 +71,8 @@
 
 ### Fixed
 - [CLI]: `ails explain` now resolves agent-namespaced rules (e.g., `CLAUDE:S:0001`) by inferring agent from rule ID prefix
-- [CLI]: `ails explain` checks output now shows check function and type instead of "Unknown"
-- [MCP]: `explain` tool resolves agent-namespaced rules and shows check details (same fixes as CLI)
+- [CLI]: `ails explain` checks output now shows human-readable labels and type instead of "Unknown"
+- [MCP]: `explain` tool resolves agent-namespaced rules and shows check labels (same fixes as CLI)
 - [MCP]: Apply `exclude_dirs` from project config — MCP tools (validate, score, heal) now respect `.reporails/config.yml` exclusions (was scanning all directories including test fixtures)
 - [MCP]: Fix `validate` handler missing `rules_paths` and `exclude_dirs` — was calling `run_validation` directly without resolving project config (score, heal already did this correctly)
 - [ENGINE]: Deduplicate semantic JudgmentRequests by file path — multiple D matches in the same file produce one LLM evaluation, not N

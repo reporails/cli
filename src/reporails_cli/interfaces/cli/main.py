@@ -270,10 +270,7 @@ def explain(
         "level": rule.level,
         "slug": rule.slug,
         "targets": rule.targets,
-        "checks": [
-            {"id": c.id, "type": c.type, "name": c.name, "check": c.check, "severity": c.severity.value}
-            for c in rule.checks
-        ],
+        "checks": [{"id": c.id, "type": c.type, "name": c.name, "severity": c.severity.value} for c in rule.checks],
         "see_also": rule.see_also,
     }
 
