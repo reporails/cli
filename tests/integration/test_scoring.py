@@ -18,9 +18,10 @@ class TestValidationScoring:
         result = run_validation_sync(level2_project, agent="claude")
 
         # A level 2 project (commands + architecture + constraints) won't ace
-        # every content rule, but should clear the baseline
-        assert result.score >= 5.0, (
-            f"Level 2 project should score 5+, got {result.score}\nViolations {result.violations}"
+        # every content rule, but should clear the baseline. Threshold lowered
+        # for 0.5.0 rules (52 rules vs ~20 previously — many new structure/governance rules).
+        assert result.score >= 2.0, (
+            f"Level 2 project should score 2+, got {result.score}\nViolations {result.violations}"
         )
 
     def test_score_reproducible_across_runs(self, level3_project: Path) -> None:

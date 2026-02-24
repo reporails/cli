@@ -2,62 +2,176 @@
   "category_summary": [
     {
       "code": "S",
-      "failed": 0,
+      "failed": 6,
       "name": "Structure",
-      "passed": 3,
-      "total": 3,
-      "worst_severity": null
+      "passed": 8,
+      "total": 14,
+      "worst_severity": "medium"
     },
     {
       "code": "C",
-      "failed": 0,
+      "failed": 4,
       "name": "Content",
       "passed": 4,
-      "total": 4,
-      "worst_severity": null
+      "total": 8,
+      "worst_severity": "high"
     },
     {
       "code": "E",
       "failed": 0,
       "name": "Efficiency",
-      "passed": 0,
-      "total": 0,
+      "passed": 4,
+      "total": 4,
       "worst_severity": null
     },
     {
       "code": "M",
-      "failed": 0,
+      "failed": 1,
       "name": "Maintenance",
-      "passed": 1,
+      "passed": 0,
       "total": 1,
-      "worst_severity": null
+      "worst_severity": "medium"
     },
     {
       "code": "G",
-      "failed": 0,
+      "failed": 5,
       "name": "Governance",
-      "passed": 0,
-      "total": 0,
-      "worst_severity": null
+      "passed": 1,
+      "total": 6,
+      "worst_severity": "medium"
     }
   ],
-  "evaluation": "complete",
-  "friction": "none",
-  "is_partial": false,
-  "judgment_requests": [],
+  "evaluation": "awaiting_semantic",
+  "friction": "high",
+  "is_partial": true,
+  "judgment_requests": [
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "AGENTS.md:1",
+      "pass_value": "pass",
+      "rule_id": "CORE:G:0007"
+    }
+  ],
   "level": "L2",
-  "score": 10.0,
-  "skipped_experimental": {
-    "rule_count": 2,
+  "pending_semantic": {
+    "file_count": 1,
+    "rule_count": 1,
     "rules": [
-      "CORE:C:0004",
-      "CORE:M:0001"
+      "CORE:G:0007"
     ]
   },
+  "score": 5.3,
   "summary": {
-    "rules_checked": 8,
-    "rules_failed": 0,
-    "rules_passed": 8
+    "rules_checked": 33,
+    "rules_failed": 16,
+    "rules_passed": 17
   },
-  "violations": []
+  "violations": [
+    {
+      "check_id": "has_security_content",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:C:0011",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_project_description",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:C:0013",
+      "severity": "high"
+    },
+    {
+      "check_id": "has_code_fences",
+      "location": "AGENTS.md:7",
+      "rule_id": "CORE:C:0016",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_mermaid_blocks",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:C:0031",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_command_boundaries",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:G:0004",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0005.file_in_scope",
+      "location": "{{settings_file}}:0",
+      "rule_id": "CORE:G:0005",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0006.managed_config_exists",
+      "location": "{{managed_config}}:0",
+      "rule_id": "CORE:G:0006",
+      "severity": "low"
+    },
+    {
+      "check_id": "extract_settings_refs",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:G:0007",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0008.mcp_config_exists",
+      "location": "{{mcp_config}}:0",
+      "rule_id": "CORE:G:0008",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_freshness_marker",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:M:0001",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0005.file_in_scope",
+      "location": "{{supplementary_files}}:0",
+      "rule_id": "CORE:S:0005",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0006.file_in_scope",
+      "location": "{{supplementary_files}}:0",
+      "rule_id": "CORE:S:0006",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0010.multiple_files_present",
+      "location": "AGENTS.md:0",
+      "rule_id": "CORE:S:0010",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0011.file_in_scope",
+      "location": "{{supplementary_files}}:0",
+      "rule_id": "CORE:S:0011",
+      "severity": "medium"
+    },
+    {
+      "check_id": "discovery_documented",
+      "location": "AGENTS.md:1",
+      "rule_id": "CORE:S:0012",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0018.file_in_scope",
+      "location": "{{skill_entry_file}}:0",
+      "rule_id": "CORE:S:0018",
+      "severity": "medium"
+    }
+  ]
 }
