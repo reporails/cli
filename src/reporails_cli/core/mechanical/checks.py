@@ -66,11 +66,13 @@ def _get_target_patterns(
     args: dict[str, Any],
     vars: dict[str, str | list[str]],
 ) -> list[str]:
-    """Get file patterns from args or vars."""
+    """Get file patterns: args.path > args._targets (from rule.targets) > vars.instruction_files."""
     path_pattern = args.get("path", "")
     if path_pattern:
         return [_resolve_path(str(path_pattern), vars)]
-
+    targets = args.get("_targets", "")  # injected from rule.targets by dispatch
+    if targets:
+        return _expand_file_pattern(str(targets), vars)
     patterns = vars.get("instruction_files", [])
     if isinstance(patterns, str):
         patterns = [patterns]

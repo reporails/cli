@@ -94,4 +94,7 @@
 - [ENGINE]: Rule compiler crashes on `paths: include: null` in YAML rules — `dict.get()` returns `None` not default when key exists with null value (was `TypeError: 'NoneType' object is not iterable`)
 - [ENGINE]: `exclude_dirs` config not applied during agent file discovery — test fixtures were scanned as real instruction files
 - [ENGINE]: `--refresh` flag did not clear agent or rule caches — only affected semantic judgment cache
+- [ENGINE]: Mechanical checks ignored `rule.targets` — fell back to all instruction files instead of scoped targets (e.g., `filename_matches_pattern` checked `.claude/rules/*.md` against main-file-only rule CORE:S:0004)
+- [ENGINE]: `file_absent` searched from project root instead of rule target scope — README.md at project root triggered false violation for CLAUDE:S:0001 (skills-scoped rule)
+- [CONFIG]: `disabled_rules:` with empty value in config.yml crashed with `TypeError` — `set(None)` when YAML parses empty key as `None`
 

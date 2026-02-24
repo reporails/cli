@@ -155,10 +155,10 @@ def load_rules(  # pylint: disable=too-many-locals
 
     # 6. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
-    disabled: set[str] = set(config.disabled_rules)
+    disabled: set[str] = set(config.disabled_rules or [])
     if scan_root and scan_root != project_root:
         scan_config = _load_project_config(scan_root)
-        disabled |= set(scan_config.disabled_rules)
+        disabled |= set(scan_config.disabled_rules or [])
     if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
 
