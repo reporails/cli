@@ -37,7 +37,7 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
     if checks:
         lines.append("Checks:")
         for check in checks:
-            label = check.get("check") or check.get("name") or check.get("type", "unknown")
+            label = check.get("name") or check.get("type", "unknown")
             lines.append(f"  - {check.get('id', '?')}: {label} [{check.get('type', '?')}]")
             lines.append(f"    Severity: {check.get('severity', 'medium')}")
         lines.append("")
