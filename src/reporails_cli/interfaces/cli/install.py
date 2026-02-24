@@ -1,4 +1,4 @@
-"""CLI command — setup."""
+"""CLI command — install."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ import typer
 from reporails_cli.interfaces.cli.helpers import app, console
 
 
-@app.command()
-def setup(
+@app.command(rich_help_panel="Commands")
+def install(
     path: str = typer.Argument(".", help="Project root"),
 ) -> None:
-    """Set up the reporails MCP server for detected agents."""
+    """Install the reporails MCP server for detected agents."""
     from reporails_cli.core.mcp_install import detect_mcp_targets, write_mcp_config
 
     target = Path(path).resolve()
@@ -26,7 +26,7 @@ def setup(
 
     if not targets:
         console.print("[yellow]No supported agents detected.[/yellow]")
-        console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        console.print("[dim]Create an instruction file to get started.[/dim]")
         raise typer.Exit(1)
 
     for agent_id, config_path in targets:
@@ -38,3 +38,11 @@ def setup(
         console.print(f"  {agent_id}: {rel}")
 
     console.print("\n[green]Restart your editor to activate.[/green]")
+
+
+@app.command(hidden=True)
+def setup(
+    path: str = typer.Argument(".", help="Project root"),
+) -> None:
+    """Alias for install (deprecated)."""
+    install(path)

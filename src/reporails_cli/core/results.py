@@ -114,6 +114,9 @@ class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
 
     agent: str = ""
+    prefix: str = ""  # Uppercase namespace prefix (e.g., "CLAUDE")
+    name: str = ""  # Display name (e.g., "Claude Code")
+    core: bool = False  # True for CORE config (generic agent)
     excludes: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -125,10 +128,12 @@ class GlobalConfig:
     framework_path: Path | None = None  # Local override (dev)
     recommended_path: Path | None = None  # Local override (dev)
     auto_update_check: bool = True
+    default_agent: str = ""
+    recommended: bool = True
 
 
 @dataclass
-class ProjectConfig:
+class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     """Project-level configuration (.reporails/config.yml)."""
 
     framework_version: str | None = None  # Pin version
@@ -138,6 +143,7 @@ class ProjectConfig:
     experimental: bool | list[str] = False  # True, False, or list of rule IDs
     recommended: bool = True  # Include recommended rules (opt out with false)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
+    default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
 
 
 # =============================================================================
@@ -211,7 +217,7 @@ class SkippedExperimental:
     """Summary of skipped experimental rules."""
 
     rule_count: int  # Number of experimental rules skipped
-    rules: tuple[str, ...]  # Rule IDs (e.g., "E2", "S3")
+    rules: tuple[str, ...]  # Rule IDs (e.g., "CORE:C:0004")
 
 
 @dataclass(frozen=True)

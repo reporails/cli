@@ -3,9 +3,9 @@
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.bootstrap import is_initialized
+from reporails_cli.core.bootstrap import get_project_config, is_initialized
 from reporails_cli.core.engine import run_validation
-from reporails_cli.core.registry import load_rules
+from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters import text as text_formatter
 
@@ -37,9 +37,15 @@ def _resolve_recommended_rules_paths(target: Path) -> list[Path] | None:
     return None
 
 
+def _get_exclude_dirs(target: Path) -> list[str] | None:
+    """Load exclude_dirs from project config."""
+    dirs = get_project_config(target).exclude_dirs
+    return sorted(dirs) if dirs else None
+
+
 def validate_tool(path: str = ".") -> dict[str, Any]:
     """
-    Validate CLAUDE.md files at path.
+    Validate AI instruction files at path.
 
     Returns violations, score, level, and JudgmentRequests for semantic rules.
 
@@ -50,7 +56,7 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
         Validation result dict
     """
     if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails init' first."}
+        return {"error": "Reporails not initialized. Run 'ails install' first."}
 
     target = Path(path).resolve()
 
@@ -61,7 +67,8 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
         return mcp_formatter.format_result(result)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
@@ -69,7 +76,7 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
 
 def validate_tool_text(path: str = ".") -> str:
     """
-    Validate CLAUDE.md files at path, returning text format.
+    Validate AI instruction files at path, returning text format.
 
     Returns human-readable text report with score, violations, and friction.
 
@@ -80,7 +87,7 @@ def validate_tool_text(path: str = ".") -> str:
         Text-formatted validation report
     """
     if not is_initialized():
-        return "Error: Reporails not initialized. Run 'ails init' first."
+        return "Error: Reporails not initialized. Run 'ails install' first."
 
     target = Path(path).resolve()
 
@@ -91,7 +98,8 @@ def validate_tool_text(path: str = ".") -> str:
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
         return text_formatter.format_result(result, ascii_mode=True)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return f"Error: {e}"
@@ -99,7 +107,7 @@ def validate_tool_text(path: str = ".") -> str:
 
 def score_tool(path: str = ".") -> dict[str, Any]:
     """
-    Quick score check for CLAUDE.md files.
+    Quick score check for AI instruction files.
 
     Args:
         path: Directory to score (default: current directory)
@@ -108,7 +116,7 @@ def score_tool(path: str = ".") -> dict[str, Any]:
         Score summary dict
     """
     if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails init' first."}
+        return {"error": "Reporails not initialized. Run 'ails install' first."}
 
     target = Path(path).resolve()
 
@@ -119,7 +127,8 @@ def score_tool(path: str = ".") -> dict[str, Any]:
 
     try:
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
         return mcp_formatter.format_score(result)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
@@ -214,16 +223,20 @@ def heal_tool(path: str = ".") -> dict[str, Any]:
         return {"error": f"Path is not a directory: {target}"}
 
     try:
-        from reporails_cli.core.fixers import apply_auto_fixes
+        from reporails_cli.core.fixers import apply_auto_fixes, partition_violations
 
         rules_paths = _resolve_recommended_rules_paths(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths)
+        exclude_dirs = _get_exclude_dirs(target)
+        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
+
+        # Partition violations into fixable and non-fixable
+        fixable, non_fixable = partition_violations(list(result.violations))
 
         # Phase 1: Auto-fix
-        fixes = apply_auto_fixes(list(result.violations), target)
+        fixes = apply_auto_fixes(fixable, target)
 
-        # Phase 2: Return remaining semantic requests
-        return mcp_formatter.format_heal_result(fixes, list(result.judgment_requests))
+        # Phase 2: Return fixes, non-fixable violations, and semantic requests
+        return mcp_formatter.format_heal_result(fixes, list(result.judgment_requests), non_fixable=non_fixable)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
@@ -248,11 +261,9 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[st
         if rec_path.is_dir():
             rules_paths = [get_rules_dir(), rec_path]
 
-    # include_experimental=True so any rule can be explained
-    rules = load_rules(rules_paths, include_experimental=True)
-
-    # Normalize rule ID
     rule_id_upper = rule_id.upper()
+    agent = infer_agent_from_rule_id(rule_id_upper)  # auto-load agent-namespaced rules
+    rules = load_rules(rules_paths, include_experimental=True, agent=agent)
 
     if rule_id_upper not in rules:
         return {
@@ -268,7 +279,7 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> dict[st
         "level": rule.level,
         "slug": rule.slug,
         "targets": rule.targets,
-        "checks": [{"id": c.id, "type": c.type, "severity": c.severity.value} for c in rule.checks],
+        "checks": [{"id": c.id, "type": c.type, "name": c.name, "severity": c.severity.value} for c in rule.checks],
         "see_also": rule.see_also,
     }
 

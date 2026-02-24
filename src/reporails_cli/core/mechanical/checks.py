@@ -66,11 +66,13 @@ def _get_target_patterns(
     args: dict[str, Any],
     vars: dict[str, str | list[str]],
 ) -> list[str]:
-    """Get file patterns from args or vars."""
+    """Get file patterns: args.path > args._targets (from rule.targets) > vars.instruction_files."""
     path_pattern = args.get("path", "")
     if path_pattern:
         return [_resolve_path(str(path_pattern), vars)]
-
+    targets = args.get("_targets", "")  # injected from rule.targets by dispatch
+    if targets:
+        return _expand_file_pattern(str(targets), vars)
     patterns = vars.get("instruction_files", [])
     if isinstance(patterns, str):
         patterns = [patterns]
@@ -140,8 +142,11 @@ def git_tracked(
     _args: dict[str, Any],
     _vars: dict[str, str | list[str]],
 ) -> CheckResult:
-    """Check that the project is git-tracked."""
-    if (root / ".git").exists():
+    """Check that the project is git-tracked.
+
+    In test fixtures, .git_marker stands in for .git (git cannot track .git paths).
+    """
+    if (root / ".git").exists() or (root / ".git_marker").exists():
         return CheckResult(passed=True, message="Git repository detected")
     return CheckResult(passed=False, message="Not a git repository")
 
@@ -247,9 +252,14 @@ def byte_size(
 # Import advanced checks for re-export and registry registration
 from reporails_cli.core.mechanical.checks_advanced import (  # noqa: E402
     aggregate_byte_size,
+    check_import_targets_exist,
     content_absent,
+    count_at_least,
+    count_at_most,
     directory_file_types,
     extract_imports,
+    file_absent,
+    filename_matches_pattern,
     frontmatter_valid_glob,
     import_depth,
     path_resolves,
@@ -272,4 +282,17 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "directory_file_types": directory_file_types,
     "frontmatter_valid_glob": frontmatter_valid_glob,
     "content_absent": content_absent,
+    "count_at_most": count_at_most,
+    "count_at_least": count_at_least,
+    "check_import_targets_exist": check_import_targets_exist,
+    "file_absent": file_absent,
+    "filename_matches_pattern": filename_matches_pattern,
+    # Aliases for signal catalog naming
+    "glob_match": file_exists,
+    "max_line_count": line_count,
+    "glob_count": file_count,
+    # Aliases for rule frontmatter name → check mapping
+    "file_tracked": git_tracked,
+    "memory_dir_exists": directory_exists,
+    "total_size_check": aggregate_byte_size,
 }

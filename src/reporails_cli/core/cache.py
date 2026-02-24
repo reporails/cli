@@ -1,4 +1,4 @@
-"""Caching system — project-local cache and hash functions for cache invalidation."""
+"""Caching system — project-local cache and hash functions for cache invalidation."""  # pylint: disable=too-many-lines
 
 from __future__ import annotations
 
@@ -224,6 +224,48 @@ def _parse_verdict_string(s: str) -> tuple[str, str, str, str]:
     verdict = rest[verdict_idx]
     reason = ":".join(rest[verdict_idx + 1 :])
     return (rule_id, location, verdict, reason)
+
+
+def cache_verdict(target: Path, jr: Any, verdict: str, reason: str) -> None:
+    """Cache a single semantic verdict using the existing cache_judgments pipeline."""
+    file_path = jr.location.rsplit(":", 1)[0] if ":" in jr.location else jr.location
+    import contextlib
+
+    with contextlib.suppress(ValueError):
+        file_path = str(Path(file_path).relative_to(target))
+
+    cache_judgments(
+        target,
+        [
+            {
+                "rule_id": jr.rule_id,
+                "location": file_path,
+                "verdict": verdict,
+                "reason": reason,
+            }
+        ],
+    )
+
+
+def cache_violation_dismissal(target: Path, violation: Any) -> None:
+    """Cache a violation dismissal as a 'pass' verdict in the judgment cache."""
+    file_path = violation.location.rsplit(":", 1)[0] if ":" in violation.location else violation.location
+    import contextlib
+
+    with contextlib.suppress(ValueError):
+        file_path = str(Path(file_path).relative_to(target))
+
+    cache_judgments(
+        target,
+        [
+            {
+                "rule_id": violation.rule_id,
+                "location": file_path,
+                "verdict": "pass",
+                "reason": "Dismissed via ails heal",
+            }
+        ],
+    )
 
 
 def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disable=too-many-locals

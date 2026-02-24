@@ -1,0 +1,219 @@
+{
+  "category_summary": [
+    {
+      "code": "S",
+      "failed": 13,
+      "name": "Structure",
+      "passed": 8,
+      "total": 21,
+      "worst_severity": "high"
+    },
+    {
+      "code": "C",
+      "failed": 3,
+      "name": "Content",
+      "passed": 5,
+      "total": 8,
+      "worst_severity": "high"
+    },
+    {
+      "code": "E",
+      "failed": 0,
+      "name": "Efficiency",
+      "passed": 4,
+      "total": 4,
+      "worst_severity": null
+    },
+    {
+      "code": "M",
+      "failed": 1,
+      "name": "Maintenance",
+      "passed": 0,
+      "total": 1,
+      "worst_severity": "medium"
+    },
+    {
+      "code": "G",
+      "failed": 6,
+      "name": "Governance",
+      "passed": 1,
+      "total": 7,
+      "worst_severity": "medium"
+    }
+  ],
+  "evaluation": "awaiting_semantic",
+  "friction": "high",
+  "is_partial": true,
+  "judgment_requests": [
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:1",
+      "pass_value": "pass",
+      "rule_id": "CORE:G:0007"
+    }
+  ],
+  "level": "L2",
+  "pending_semantic": {
+    "file_count": 1,
+    "rule_count": 1,
+    "rules": [
+      "CORE:G:0007"
+    ]
+  },
+  "score": 4.5,
+  "summary": {
+    "rules_checked": 41,
+    "rules_failed": 23,
+    "rules_passed": 18
+  },
+  "violations": [
+    {
+      "check_id": "CLAUDE.G.0001.settings_file_exists",
+      "location": ".claude/settings.json:0",
+      "rule_id": "CLAUDE:G:0001",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CLAUDE.S.0001.skill_dir_exists",
+      "location": ".claude/skills/**/*.md:0",
+      "rule_id": "CLAUDE:S:0001",
+      "severity": "high"
+    },
+    {
+      "check_id": "CLAUDE.S.0002.skill_file_exists",
+      "location": ".claude/skills/**/SKILL.md:0",
+      "rule_id": "CLAUDE:S:0002",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CLAUDE.S.0003.skill_file_exists",
+      "location": ".claude/skills/**/SKILL.md:0",
+      "rule_id": "CLAUDE:S:0003",
+      "severity": "high"
+    },
+    {
+      "check_id": "CLAUDE.S.0004.settings_file_exists",
+      "location": ".claude/settings.json:0",
+      "rule_id": "CLAUDE:S:0004",
+      "severity": "high"
+    },
+    {
+      "check_id": "CLAUDE.S.0005.settings_file_exists",
+      "location": ".claude/settings.json:0",
+      "rule_id": "CLAUDE:S:0005",
+      "severity": "high"
+    },
+    {
+      "check_id": "CLAUDE.S.0006.settings_file_exists",
+      "location": ".claude/settings.json:0",
+      "rule_id": "CLAUDE:S:0006",
+      "severity": "high"
+    },
+    {
+      "check_id": "CLAUDE.S.0007.settings_file_exists",
+      "location": ".claude/settings.json:0",
+      "rule_id": "CLAUDE:S:0007",
+      "severity": "high"
+    },
+    {
+      "check_id": "has_security_content",
+      "location": "CLAUDE.md:1",
+      "rule_id": "CORE:C:0011",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_project_description",
+      "location": "CLAUDE.md:1",
+      "rule_id": "CORE:C:0013",
+      "severity": "high"
+    },
+    {
+      "check_id": "has_code_fences",
+      "location": "CLAUDE.md:7",
+      "rule_id": "CORE:C:0016",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_command_boundaries",
+      "location": "CLAUDE.md:1",
+      "rule_id": "CORE:G:0004",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0005.file_in_scope",
+      "location": ".claude/settings.json:0",
+      "rule_id": "CORE:G:0005",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0006.managed_config_exists",
+      "location": "/etc/claude-code/managed-settings.json:0",
+      "rule_id": "CORE:G:0006",
+      "severity": "low"
+    },
+    {
+      "check_id": "extract_settings_refs",
+      "location": "CLAUDE.md:1",
+      "rule_id": "CORE:G:0007",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0008.mcp_config_exists",
+      "location": ".mcp.json:0",
+      "rule_id": "CORE:G:0008",
+      "severity": "medium"
+    },
+    {
+      "check_id": "has_freshness_marker",
+      "location": "CLAUDE.md:1",
+      "rule_id": "CORE:M:0001",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0005.file_in_scope",
+      "location": ".claude/rules/**/*.md:0",
+      "rule_id": "CORE:S:0005",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0006.file_in_scope",
+      "location": ".claude/rules/**/*.md:0",
+      "rule_id": "CORE:S:0006",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0010.multiple_files_present",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:S:0010",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0011.file_in_scope",
+      "location": ".claude/rules/**/*.md:0",
+      "rule_id": "CORE:S:0011",
+      "severity": "medium"
+    },
+    {
+      "check_id": "discovery_documented",
+      "location": "CLAUDE.md:1",
+      "rule_id": "CORE:S:0012",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.S.0018.file_in_scope",
+      "location": ".claude/skills/**/SKILL.md:0",
+      "rule_id": "CORE:S:0018",
+      "severity": "medium"
+    }
+  ]
+}

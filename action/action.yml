@@ -15,14 +15,20 @@ inputs:
     description: 'Minimum score threshold (0-10). Fails the step if score is below this value.'
     default: ''
   agent:
-    description: 'Agent type (e.g., claude, cursor)'
-    default: 'claude'
+    description: 'Agent type (e.g., claude, cursor). Empty = resolve from project config or generic fallback.'
+    default: ''
+  exclude-dir:
+    description: 'Comma-separated directory names to exclude from scanning (e.g., "vendor,dist")'
+    default: ''
   experimental:
     description: 'Include experimental rules'
     default: 'false'
   version:
     description: 'CLI version to install (e.g., 0.3.0). Defaults to latest.'
     default: ''
+  from-source:
+    description: 'Install CLI from local checkout instead of PyPI (for CI testing of the action itself).'
+    default: 'false'
 
 outputs:
   score:
@@ -49,7 +55,9 @@ runs:
     - name: Install reporails CLI
       shell: bash
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
+        if [ "${{ inputs.from-source }}" = "true" ]; then
+          pip install "${{ github.workspace }}" --quiet
+        elif [ -n "${{ inputs.version }}" ]; then
           pip install "reporails-cli==${{ inputs.version }}" --quiet
         else
           pip install reporails-cli --quiet
@@ -60,14 +68,21 @@ runs:
       shell: bash
       run: |
         # Build command
-        CMD="ails check ${{ inputs.path }} --format github --ascii --no-update-check"
+        CMD="ails check ${{ inputs.path }} --format github --ascii --no-update-check -q"
 
         if [ "${{ inputs.strict }}" = "true" ]; then
           CMD="$CMD --strict"
         fi
 
-        if [ "${{ inputs.agent }}" != "claude" ]; then
+        if [ -n "${{ inputs.agent }}" ]; then
           CMD="$CMD --agent ${{ inputs.agent }}"
+        fi
+
+        if [ -n "${{ inputs.exclude-dir }}" ]; then
+          IFS=',' read -ra DIRS <<< "${{ inputs.exclude-dir }}"
+          for dir in "${DIRS[@]}"; do
+            CMD="$CMD --exclude-dir $(echo "$dir" | xargs)"
+          done
         fi
 
         if [ "${{ inputs.experimental }}" = "true" ]; then
@@ -120,7 +135,7 @@ runs:
     - name: Write step summary
       if: always()
       shell: bash
+      env:
+        REPORAILS_RESULT: ${{ steps.check.outputs.result }}
       run: |
-        python3 "${{ github.action_path }}/summary.py" \
-          '${{ steps.check.outputs.result }}' \
-          >> "$GITHUB_STEP_SUMMARY"
+        python3 "${{ github.action_path }}/summary.py" >> "$GITHUB_STEP_SUMMARY"

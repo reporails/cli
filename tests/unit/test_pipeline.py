@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.models import Category, Check, Rule, RuleType, Severity
-from reporails_cli.core.pipeline import CEILING, PipelineState, TargetMeta, build_initial_state
+from reporails_cli.core.pipeline import PipelineState, TargetMeta, build_initial_state
 from reporails_cli.core.pipeline_exec import execute_rule_checks
 from reporails_cli.core.sarif import distribute_sarif_by_rule
 
@@ -404,12 +404,6 @@ class TestExecuteRuleChecks:
         jrs = execute_rule_checks(rule, state, tmp_path, {}, None)
         assert jrs == []
 
-    def test_ceiling_constant(self) -> None:
-        """Verify CEILING mapping is correct."""
-        assert CEILING[RuleType.MECHANICAL] == frozenset({"mechanical"})
-        assert CEILING[RuleType.DETERMINISTIC] == frozenset({"mechanical", "deterministic"})
-        assert CEILING[RuleType.SEMANTIC] == frozenset({"mechanical", "deterministic", "semantic"})
-
     def test_negated_deterministic_uses_effective_vars(self, tmp_path: Path) -> None:
         """Negated deterministic violation location resolves {{instruction_files}} via effective_vars."""
         (tmp_path / "CLAUDE.md").touch()
@@ -483,3 +477,638 @@ class TestExecuteRuleChecks:
         execute_rule_checks(rule, state, tmp_path, {}, None)
         # check_cache is available on state (even though not used for dedup yet in single-rule case)
         assert state.check_cache is not None
+
+
+# ---------------------------------------------------------------------------
+# Blocking behavior — cross-rule target exclusion
+# ---------------------------------------------------------------------------
+
+
+class TestBlockingBehaviorAcrossRules:
+    """Blocking check failure must exclude target for subsequent rules.
+
+    When file_exists fails, the target is recorded as excluded in PipelineState.
+    Subsequent rules executed against the same state see the exclusion.
+    """
+
+    @staticmethod
+    def _blocking_rule(rule_id: str, check_name: str = "file_exists", args: dict | None = None) -> Rule:
+        """Create a rule with a blocking check and proper targets."""
+        return Rule(
+            id=rule_id,
+            title=f"Rule {rule_id}",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            level="L1",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id=f"{rule_id}:check:0001",
+                    severity=Severity.CRITICAL,
+                    type="mechanical",
+                    check=check_name,
+                    args=args,
+                )
+            ],
+        )
+
+    def test_file_exists_failure_excludes_target(self, tmp_path: Path) -> None:
+        """file_exists failure marks the target as excluded in state."""
+        rule = self._blocking_rule("CORE:S:0001")
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        assert len(state.findings) == 1
+        assert state.targets["CLAUDE.md"].excluded
+        assert state.targets["CLAUDE.md"].excluded_by == "file_exists"
+
+    def test_excluded_target_not_in_active_targets(self, tmp_path: Path) -> None:
+        """After blocking failure, active_targets() filters out the excluded target."""
+        rule = self._blocking_rule("CORE:S:0001")
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state.targets["other.md"] = TargetMeta(path=tmp_path / "other.md")
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        active = state.active_targets()
+        active_paths = {t.path.name for t in active}
+        assert "CLAUDE.md" not in active_paths
+        assert "other.md" in active_paths
+
+    def test_blocking_persists_across_two_rules(self, tmp_path: Path) -> None:
+        """Exclusion from rule A is visible when processing rule B with same state."""
+        rule_a = self._blocking_rule("CORE:S:0001")
+        rule_b = Rule(
+            id="CORE:S:0002",
+            title="Rule CORE:S:0002",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            level="L1",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:S:0002:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="git_tracked",
+                )
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        # Rule A: file_exists fails → target excluded
+        execute_rule_checks(rule_a, state, tmp_path, vars, None)
+        assert state.targets["CLAUDE.md"].excluded
+
+        # Rule B executes against same state — target still excluded
+        execute_rule_checks(rule_b, state, tmp_path, vars, None)
+        assert state.targets["CLAUDE.md"].excluded
+        assert state.targets["CLAUDE.md"].excluded_by == "file_exists"
+
+    def test_directory_exists_failure_excludes_target(self, tmp_path: Path) -> None:
+        """directory_exists is also a blocking check and excludes targets."""
+        rule = Rule(
+            id="CORE:S:0003",
+            title="Rule CORE:S:0003",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            level="L1",
+            targets=".claude/rules",
+            checks=[
+                Check(
+                    id="CORE:S:0003:check:0001",
+                    severity=Severity.HIGH,
+                    type="mechanical",
+                    check="directory_exists",
+                    args={"path": ".claude/rules"},
+                )
+            ],
+        )
+        state = PipelineState()
+        # Target key matches the resolved location path
+        state.targets[".claude/rules"] = TargetMeta(path=tmp_path / ".claude" / "rules")
+        vars = {"instruction_files": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        assert len(state.findings) == 1
+        assert state.targets[".claude/rules"].excluded
+        assert state.targets[".claude/rules"].excluded_by == "directory_exists"
+
+
+# ---------------------------------------------------------------------------
+# Interleaved check types — M→D→S within a single rule
+# ---------------------------------------------------------------------------
+
+
+class TestInterleavedCheckTypes:
+    """Rules with mixed check types must execute M→D→S in declaration order."""
+
+    def test_semantic_rule_with_mds_sequence(self, tmp_path: Path) -> None:
+        """Semantic rule with M+D+S checks: mechanical runs, deterministic reads SARIF, semantic fires."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "CLAUDE.md").write_text("# Project\n\nContent for semantic evaluation.\n")
+        rule = Rule(
+            id="CORE:C:0010",
+            title="Comprehensive rule",
+            category=Category.CONTENT,
+            type=RuleType.SEMANTIC,
+            level="L2",
+            question="Is this good?",
+            choices=[{"value": "pass"}, {"value": "fail"}],
+            pass_value="pass",
+            checks=[
+                Check(
+                    id="CORE:C:0010:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="git_tracked",
+                ),
+                Check(
+                    id="CORE:C:0010:check:0002",
+                    severity=Severity.HIGH,
+                    type="deterministic",
+                ),
+                Check(
+                    id="CORE:C:0010:check:0003",
+                    severity=Severity.MEDIUM,
+                    type="semantic",
+                ),
+            ],
+        )
+        state = PipelineState()
+        # Provide SARIF results for the deterministic check
+        state._sarif_by_rule = {
+            "CORE:C:0010": [
+                {
+                    "ruleId": "CORE.C.0010.check.0002",
+                    "message": {"text": "section candidate"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": "CLAUDE.md"},
+                                "region": {"startLine": 10},
+                            }
+                        }
+                    ],
+                }
+            ]
+        }
+
+        jrs = execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        # Mechanical passed (git_tracked), no violation for it
+        mechanical_violations = [f for f in state.findings if f.check_id == "CORE:C:0010:check:0001"]
+        assert len(mechanical_violations) == 0
+
+        # Deterministic produced a violation from SARIF
+        det_violations = [f for f in state.findings if "check:0002" in f.check_id]
+        assert len(det_violations) == 1
+
+        # Semantic produced a JudgmentRequest (not a violation — needs human judgment)
+        assert len(jrs) == 1
+
+    def test_mechanical_failure_still_allows_deterministic(self, tmp_path: Path) -> None:
+        """Failing mechanical check within a rule does not block subsequent deterministic checks."""
+        rule = Rule(
+            id="CORE:C:0020",
+            title="Multi-gate rule",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            checks=[
+                Check(
+                    id="CORE:C:0020:check:0001",
+                    severity=Severity.LOW,
+                    type="mechanical",
+                    check="git_tracked",
+                ),
+                Check(
+                    id="CORE:C:0020:check:0002",
+                    severity=Severity.HIGH,
+                    type="deterministic",
+                ),
+            ],
+        )
+        state = PipelineState()
+        state._sarif_by_rule = {
+            "CORE:C:0020": [
+                {
+                    "ruleId": "CORE.C.0020.check.0002",
+                    "message": {"text": "violation"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": "CLAUDE.md"},
+                                "region": {"startLine": 5},
+                            }
+                        }
+                    ],
+                }
+            ]
+        }
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        # Both checks produced violations (no .git → mechanical fails, SARIF hit → deterministic fails)
+        assert len(state.findings) == 2
+        check_ids = {f.check_id for f in state.findings}
+        assert "CORE:C:0020:check:0001" in check_ids
+        assert "check:0002" in {f.check_id for f in state.findings}
+
+    def test_semantic_short_circuits_without_deterministic_candidates(self, tmp_path: Path) -> None:
+        """Semantic check never fires when there are no deterministic candidates."""
+        (tmp_path / ".git").mkdir()
+        rule = Rule(
+            id="CORE:C:0030",
+            title="Semantic with no candidates",
+            category=Category.CONTENT,
+            type=RuleType.SEMANTIC,
+            level="L3",
+            question="Is this good?",
+            choices=[{"value": "pass"}, {"value": "fail"}],
+            pass_value="pass",
+            checks=[
+                Check(
+                    id="CORE:C:0030:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="git_tracked",
+                ),
+                Check(
+                    id="CORE:C:0030:check:0002",
+                    severity=Severity.HIGH,
+                    type="deterministic",
+                ),
+                Check(
+                    id="CORE:C:0030:check:0003",
+                    severity=Severity.MEDIUM,
+                    type="semantic",
+                ),
+            ],
+        )
+        state = PipelineState()
+        # No SARIF results — deterministic produces 0 candidates
+
+        jrs = execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        # Mechanical passed, deterministic had no results, semantic short-circuited
+        assert state.findings == []
+        assert jrs == []
+
+    def test_ceiling_blocks_semantic_in_deterministic_rule(self, tmp_path: Path) -> None:
+        """Deterministic rule cannot execute semantic checks — ceiling enforcement."""
+        rule = Rule(
+            id="CORE:C:0040",
+            title="Det rule with semantic check",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            question="Is this good?",
+            choices=[{"value": "pass"}, {"value": "fail"}],
+            pass_value="pass",
+            checks=[
+                Check(
+                    id="CORE:C:0040:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                ),
+                Check(
+                    id="CORE:C:0040:check:0002",
+                    severity=Severity.MEDIUM,
+                    type="semantic",
+                ),
+            ],
+        )
+        state = PipelineState()
+
+        jrs = execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        # Semantic check skipped due to ceiling — no judgment requests
+        assert jrs == []
+
+
+# ---------------------------------------------------------------------------
+# Negate on blocking checks (file_exists, directory_exists)
+# ---------------------------------------------------------------------------
+
+
+class TestNegateBlockingChecks:
+    """Negate=True on blocking checks inverts pass/fail at the pipeline level."""
+
+    def test_negate_file_exists_present_means_violation(self, tmp_path: Path) -> None:
+        """file_exists + negate=True: file present → violation (require file absent)."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = _make_rule(
+            "CORE:S:0098",
+            RuleType.MECHANICAL,
+            checks=[
+                Check(
+                    id="CORE:S:0098:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="file_exists",
+                    negate=True,
+                )
+            ],
+        )
+        state = PipelineState()
+        vars = {"instruction_files": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # file_exists returns passed=True, negate inverts → violation
+        assert len(state.findings) == 1
+
+    def test_negate_file_exists_absent_means_pass(self, tmp_path: Path) -> None:
+        """file_exists + negate=True: file absent → pass (desired state)."""
+        rule = _make_rule(
+            "CORE:S:0098",
+            RuleType.MECHANICAL,
+            checks=[
+                Check(
+                    id="CORE:S:0098:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="file_exists",
+                    negate=True,
+                )
+            ],
+        )
+        state = PipelineState()
+        vars = {"instruction_files": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # file_exists returns passed=False, negate inverts → pass
+        assert state.findings == []
+
+    def test_negate_directory_exists_present_means_violation(self, tmp_path: Path) -> None:
+        """directory_exists + negate=True: dir present → violation."""
+        (tmp_path / ".claude" / "rules").mkdir(parents=True)
+        rule = _make_rule(
+            "CORE:S:0097",
+            RuleType.MECHANICAL,
+            checks=[
+                Check(
+                    id="CORE:S:0097:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="directory_exists",
+                    args={"path": ".claude/rules"},
+                    negate=True,
+                )
+            ],
+        )
+        state = PipelineState()
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        assert len(state.findings) == 1
+
+    def test_negate_directory_exists_absent_means_pass(self, tmp_path: Path) -> None:
+        """directory_exists + negate=True: dir absent → pass."""
+        rule = _make_rule(
+            "CORE:S:0097",
+            RuleType.MECHANICAL,
+            checks=[
+                Check(
+                    id="CORE:S:0097:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="directory_exists",
+                    args={"path": ".claude/rules"},
+                    negate=True,
+                )
+            ],
+        )
+        state = PipelineState()
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        assert state.findings == []
+
+
+# ---------------------------------------------------------------------------
+# D→M metadata propagation via metadata_keys
+# ---------------------------------------------------------------------------
+
+
+class TestMetadataKeysPropagation:
+    """D checks with metadata_keys write to annotations; M checks read them."""
+
+    def test_deterministic_writes_annotations(self, tmp_path: Path) -> None:
+        """D check with metadata_keys stores match texts in state annotations."""
+        rule = Rule(
+            id="CORE:C:0050",
+            title="D→annotations test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            checks=[
+                Check(
+                    id="CORE:C:0050:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                    metadata_keys=["found_items"],
+                )
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state._sarif_by_rule = {
+            "CORE:C:0050": [
+                {
+                    "ruleId": "CORE.C.0050.check.0001",
+                    "message": {"text": "match alpha"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 1}}}
+                    ],
+                },
+                {
+                    "ruleId": "CORE.C.0050.check.0001",
+                    "message": {"text": "match beta"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 5}}}
+                    ],
+                },
+            ]
+        }
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        # Violations created as normal
+        assert len(state.findings) == 2
+        # Annotations written to target
+        assert "found_items" in state.targets["CLAUDE.md"].annotations
+        assert state.targets["CLAUDE.md"].annotations["found_items"] == ["match alpha", "match beta"]
+
+    def test_deterministic_no_results_no_annotations(self, tmp_path: Path) -> None:
+        """D check with metadata_keys but no SARIF matches writes nothing."""
+        rule = Rule(
+            id="CORE:C:0051",
+            title="D→annotations empty test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            checks=[
+                Check(
+                    id="CORE:C:0051:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                    metadata_keys=["items"],
+                )
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+
+        execute_rule_checks(rule, state, tmp_path, {}, None)
+
+        assert state.findings == []
+        assert state.targets["CLAUDE.md"].annotations == {}
+
+    def test_mechanical_reads_annotations(self, tmp_path: Path) -> None:
+        """M check with metadata_keys gets annotations injected into args."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = Rule(
+            id="CORE:C:0052",
+            title="D→M metadata test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:C:0052:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="deterministic",
+                    metadata_keys=["style_rules"],
+                ),
+                Check(
+                    id="CORE:C:0052:check:0002",
+                    severity=Severity.HIGH,
+                    type="mechanical",
+                    check="count_at_most",
+                    args={"threshold": 0},
+                    metadata_keys=["style_rules"],
+                ),
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state._sarif_by_rule = {
+            "CORE:C:0052": [
+                {
+                    "ruleId": "CORE.C.0052.check.0001",
+                    "message": {"text": "indent with 4 spaces"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 3}}}
+                    ],
+                },
+                {
+                    "ruleId": "CORE.C.0052.check.0001",
+                    "message": {"text": "use tabs for indent"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 7}}}
+                    ],
+                },
+            ]
+        }
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # D check produced 2 violations + annotations
+        det_findings = [f for f in state.findings if "check:0001" in (f.check_id or "")]
+        assert len(det_findings) == 2
+
+        # M check (count_at_most threshold=0) consumed the 2-item list → violation
+        mech_findings = [f for f in state.findings if f.check_id == "CORE:C:0052:check:0002"]
+        assert len(mech_findings) == 1
+        assert "exceeds" in mech_findings[0].message
+
+    def test_d_to_m_pass_when_within_threshold(self, tmp_path: Path) -> None:
+        """D→M chain: count_at_most passes when items within threshold."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = Rule(
+            id="CORE:C:0053",
+            title="D→M pass test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:C:0053:check:0001",
+                    severity=Severity.LOW,
+                    type="deterministic",
+                    metadata_keys=["items"],
+                ),
+                Check(
+                    id="CORE:C:0053:check:0002",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="count_at_most",
+                    args={"threshold": 5},
+                    metadata_keys=["items"],
+                ),
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        state._sarif_by_rule = {
+            "CORE:C:0053": [
+                {
+                    "ruleId": "CORE.C.0053.check.0001",
+                    "message": {"text": "item 1"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": "CLAUDE.md"}, "region": {"startLine": 1}}}
+                    ],
+                },
+            ]
+        }
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # D violation exists, but M check passes (1 item <= 5 threshold)
+        mech_findings = [f for f in state.findings if f.check_id == "CORE:C:0053:check:0002"]
+        assert len(mech_findings) == 0
+
+    def test_metadata_keys_without_annotations_m_sees_empty(self, tmp_path: Path) -> None:
+        """M check with metadata_keys but no prior D annotations gets empty args — no crash."""
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rule = Rule(
+            id="CORE:C:0054",
+            title="M without prior D test",
+            category=Category.CONTENT,
+            type=RuleType.DETERMINISTIC,
+            level="L2",
+            targets="{{instruction_files}}",
+            checks=[
+                Check(
+                    id="CORE:C:0054:check:0001",
+                    severity=Severity.MEDIUM,
+                    type="mechanical",
+                    check="count_at_most",
+                    args={"threshold": 0},
+                    metadata_keys=["nonexistent_key"],
+                ),
+            ],
+        )
+        state = PipelineState()
+        state.targets["CLAUDE.md"] = TargetMeta(path=tmp_path / "CLAUDE.md")
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+
+        execute_rule_checks(rule, state, tmp_path, vars, None)
+
+        # count_at_most with no metadata → empty list → passes (0 <= 0)
+        assert not any(f.check_id == "CORE:C:0054:check:0001" for f in state.findings)

@@ -5,7 +5,7 @@ Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
 ## Quick Start
 
 ```bash
-npx @reporails/cli setup
+npx @reporails/cli install
 ```
 
 This detects agents in your project and writes the MCP config. Then ask Claude:
@@ -23,7 +23,7 @@ npx @reporails/cli check
 That's it. You'll get a score, capability level, and actionable violations.
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║   SCORE: 8.1 / 10 (partial)  |  CAPABILITY: Maintained (L5)    ║
+║   SCORE: 8.1 / 10 (awaiting semantic)  |  CAPABILITY: Maintained (L5)    ║
 ║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░         ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -94,41 +94,23 @@ See the [main README](https://github.com/reporails/cli#github-actions) for full 
 
 ## Commands
 
-```bash
-ails setup                      # Set up MCP server for detected agents
-ails check                      # Score your setup
-ails check -f json              # JSON output (for CI)
-ails check -f github            # GitHub Actions annotations
-ails check --strict             # Exit 1 if violations (for CI)
-ails check --no-update-check    # Skip pre-run update prompt
-ails check --exclude-dir vendor # Exclude directory from scanning
-ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
-ails heal                       # Interactive auto-fix + semantic evaluation
-ails heal --non-interactive     # JSON output for agents and scripts
-ails explain CORE:S:0001        # Explain a rule
-ails map                        # Show project structure
-ails map --save                 # Generate backbone.yml
-ails update                     # Update rules framework + recommended
-ails update --check             # Check for updates without installing
-ails update --recommended       # Update recommended rules only
-ails update --force             # Force reinstall even if current
-ails update --cli               # Upgrade the CLI package itself
-ails dismiss CORE:C:0001        # Dismiss a semantic finding
-ails judge . "RULE:FILE:pass:reason"  # Cache semantic verdicts
-ails version                    # Show version info
-```
-
 | Command | Description |
 |---------|-------------|
-| `setup [PATH]` | Set up MCP server for detected agents |
+| `install [PATH]` | Install MCP server for detected agents |
 | `check [PATH]` | Validate instruction files |
 | `heal [PATH]` | Interactive auto-fix + semantic evaluation |
 | `explain RULE_ID` | Show rule details |
 | `map [PATH]` | Discover project structure |
 | `update` | Update rules framework + recommended |
+| `config set KEY VALUE` | Set a project config value |
+| `config set --global KEY VALUE` | Set a global default |
+| `config get KEY` | Show a config value |
+| `config list` | Show all config (project + global) |
 | `dismiss RULE_ID` | Dismiss a semantic finding |
 | `judge PATH VERDICTS` | Cache semantic verdicts |
 | `version` | Show version info |
+
+See the [main README](https://github.com/reporails/cli#commands) for full flag reference.
 
 ## Updating
 
@@ -147,10 +129,11 @@ Persistent installs: `npm install -g @reporails/cli@latest`
 
 ## Recommended Rules
 
-[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out, add to your `.reporails/config.yml`:
+[Recommended rules](https://github.com/reporails/recommended) (AILS_ namespace) are included by default and auto-downloaded on first run. To opt out:
 
-```yaml
-recommended: false
+```bash
+ails config set recommended false            # This project only
+ails config set --global recommended false   # All projects
 ```
 
 To update recommended rules independently:
@@ -163,7 +146,7 @@ ails update --recommended
 
 - **Node.js >= 18**
 - **uv** — auto-installed if missing ([manual install](https://docs.astral.sh/uv/))
-- **No additional dependencies** — `setup` writes config files directly
+- **No additional dependencies** — `install` writes config files directly
 
 ## How It Works
 
@@ -178,4 +161,4 @@ Want to add or improve rules? Please follow [Contribute](https://github.com/repo
 
 ## License
 
-BUSL 1.1
+BUSL 1.1 — converts to Apache 2.0 on 2029-02-20 or at 1.0, whichever comes first.

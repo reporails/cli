@@ -13,6 +13,7 @@ import pytest
 
 from reporails_cli.core.models import (
     FrictionEstimate,
+    JudgmentRequest,
     Level,
     PendingSemantic,
     Severity,
@@ -41,11 +42,17 @@ class TestTemplateLoader:
 
     def test_render_substitutes_variables(self) -> None:
         """Should substitute variables in template."""
-        from reporails_cli.templates import render
+        from reporails_cli.templates import load_template, render
 
-        result = render("cli_legend.txt", crit="!", high="!", med="o", low="-")
-        assert "!" in result
-        assert "o" in result
+        result = render("cli_legend.txt", crit="X", high="H", med="M", low="L", pending="?", experimental="~")
+        raw = load_template("cli_legend.txt")
+        # Rendered output should differ from raw template (substitution happened)
+        assert result != raw
+        # Placeholder tokens should be gone
+        assert "{crit}" not in result
+        assert "{high}" not in result
+        assert "{med}" not in result
+        assert "{low}" not in result
 
     def test_render_missing_variable_raises(self) -> None:
         """Should raise KeyError for missing variables."""
@@ -58,14 +65,14 @@ class TestTemplateLoader:
         """Should render template when condition is true."""
         from reporails_cli.templates import render_conditional
 
-        result = render_conditional("cli_legend.txt", True, crit="!", high="!", med="o", low="-")
+        result = render_conditional("cli_legend.txt", True, crit="!", high="!", med="o", low="-", pending="?")
         assert result != ""
 
     def test_render_conditional_false(self) -> None:
         """Should return empty when condition is false."""
         from reporails_cli.templates import render_conditional
 
-        result = render_conditional("cli_legend.txt", False, crit="!", high="!", med="o", low="-")
+        result = render_conditional("cli_legend.txt", False, crit="!", high="!", med="o", low="-", pending="?")
         assert result == ""
 
 
@@ -120,7 +127,8 @@ class TestPartialEvaluation:
         result = self._make_result(is_partial=False)
         output = text_formatter.format_result(result)
 
-        assert "complete analysis" not in output
+        assert "full semantic analysis" not in output
+        assert "(awaiting semantic)" not in output
 
     def test_json_includes_evaluation_field(self) -> None:
         """JSON output should include evaluation completeness field."""
@@ -129,7 +137,7 @@ class TestPartialEvaluation:
         result = self._make_result(is_partial=True)
         data = json_formatter.format_result(result)
 
-        assert data["evaluation"] == "partial"
+        assert data["evaluation"] == "awaiting_semantic"
         assert data["is_partial"] is True
 
     def test_json_complete_evaluation(self) -> None:
@@ -142,14 +150,14 @@ class TestPartialEvaluation:
         assert data["evaluation"] == "complete"
         assert data["is_partial"] is False
 
-    def test_compact_shows_partial(self) -> None:
-        """Compact format should show partial marker."""
+    def test_compact_shows_awaiting_semantic(self) -> None:
+        """Compact format should show awaiting semantic marker."""
         from reporails_cli.formatters import text as text_formatter
 
         result = self._make_result(is_partial=True)
         output = text_formatter.format_compact(result)
 
-        assert "(partial)" in output
+        assert "(awaiting semantic)" in output
 
 
 class TestPendingSemanticDisplay:
@@ -158,15 +166,43 @@ class TestPendingSemanticDisplay:
     def _make_result_with_pending(self) -> ValidationResult:
         """Create a result with pending semantic rules."""
         pending = PendingSemantic(
-            rule_count=3,
-            file_count=5,
-            rules=("C6", "C10", "M4"),
+            rule_count=2,
+            file_count=1,
+            rules=("CORE:S:0011", "CORE:S:0012"),
+        )
+        jrs = (
+            JudgmentRequest(
+                rule_id="CORE:S:0011",
+                rule_title="Constraint quality evaluation",
+                content="test",
+                location="CLAUDE.md",
+                question="test",
+                criteria={},
+                examples={},
+                choices=["pass", "fail"],
+                pass_value="pass",
+                severity=Severity.MEDIUM,
+                points_if_fail=3,
+            ),
+            JudgmentRequest(
+                rule_id="CORE:S:0012",
+                rule_title="Content specificity check",
+                content="test",
+                location="CLAUDE.md",
+                question="test",
+                criteria={},
+                examples={},
+                choices=["pass", "fail"],
+                pass_value="pass",
+                severity=Severity.LOW,
+                points_if_fail=1,
+            ),
         )
         return ValidationResult(
             score=7.5,
             level=Level.L3,
             violations=(),
-            judgment_requests=(),
+            judgment_requests=jrs,
             rules_checked=10,
             rules_passed=10,
             rules_failed=0,
@@ -176,25 +212,28 @@ class TestPendingSemanticDisplay:
             pending_semantic=pending,
         )
 
-    def test_text_shows_pending_section(self) -> None:
-        """Text output should show pending semantic section."""
+    def test_text_shows_pending_inline(self) -> None:
+        """Pending semantic checks should appear inline with violations."""
         from reporails_cli.formatters import text as text_formatter
 
         result = self._make_result_with_pending()
         output = text_formatter.format_result(result, quiet_semantic=False)
 
-        assert "Pending semantic evaluation:" in output
-        assert "3 rules" in output
-        assert "C6" in output
+        assert "CORE:S:0011" in output
+        assert "CORE:S:0012" in output
+        assert "awaiting semantic" in output
+        # Old pending box should NOT appear
+        assert "Pending semantic evaluation:" not in output
 
     def test_quiet_semantic_hides_pending(self) -> None:
-        """Quiet semantic mode should hide pending section."""
+        """Quiet semantic mode should hide pending items."""
         from reporails_cli.formatters import text as text_formatter
 
         result = self._make_result_with_pending()
         output = text_formatter.format_result(result, quiet_semantic=True)
 
-        assert "Pending semantic evaluation:" not in output
+        assert "CORE:S:0011" not in output
+        assert "awaiting semantic" not in output
 
     def test_json_includes_pending_semantic(self) -> None:
         """JSON output should include pending_semantic field."""
@@ -204,9 +243,9 @@ class TestPendingSemanticDisplay:
         data = json_formatter.format_result(result)
 
         assert data["pending_semantic"] is not None
-        assert data["pending_semantic"]["rule_count"] == 3
-        assert data["pending_semantic"]["file_count"] == 5
-        assert "C6" in data["pending_semantic"]["rules"]
+        assert data["pending_semantic"]["rule_count"] == 2
+        assert data["pending_semantic"]["file_count"] == 1
+        assert "CORE:S:0011" in data["pending_semantic"]["rules"]
 
     def test_json_omits_pending_when_complete(self) -> None:
         """JSON output should omit pending_semantic key when complete."""
@@ -305,7 +344,7 @@ class TestMCPCallToAction:
         output = text_formatter.format_result(result, quiet_semantic=False)
 
         assert "full semantic analysis" in output
-        assert "ails setup" in output
+        assert "ails install" in output
 
     def test_cta_hidden_when_quiet_semantic(self) -> None:
         """CTA should be hidden in quiet semantic mode."""
@@ -360,10 +399,10 @@ class TestFormatScore:
         )
         output = text_formatter.format_score(result)
 
-        assert "(partial)" in output
+        assert "(awaiting semantic)" in output
 
-    def test_no_partial_marker_when_complete(self) -> None:
-        """Score summary should not show partial marker when complete."""
+    def test_no_awaiting_semantic_marker_when_complete(self) -> None:
+        """Score summary should not show awaiting semantic marker when complete."""
         from reporails_cli.formatters import text as text_formatter
 
         result = ValidationResult(
@@ -381,4 +420,4 @@ class TestFormatScore:
         )
         output = text_formatter.format_score(result)
 
-        assert "(partial)" not in output
+        assert "(awaiting semantic)" not in output

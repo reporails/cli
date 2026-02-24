@@ -1,43 +1,41 @@
 # Reporails CLI
 
-AI instruction validator & quality assurance provider. Validates instruction files against deterministic, mechanical and semantic rules using a pure Python regex engine.
+- AI instruction validator and quality assurance provider
+- Validates instruction files against deterministic, mechanical, and semantic rules
+- Pure Python regex engine (no external binary dependencies)
 
 ## Session Start
 
-Read `.reporails/backbone.yml` for project structure and `docs/specs/arch.md` for architecture decisions.
+- Read `.reporails/backbone.yml` for project structure
+- Read `docs/specs/arch.md` for architecture decisions
 
-## Development Context
-
-You are developing the reporails CLI, not an end user.
+## Roles
 
 - **You**: modify source, run tests, read specs
 - **CLI end users**: install package, run `ails check`
 - **MCP end users**: use reporails via Claude Code
+- Treat each role separately when discussing features, delivery, or documentation
 
-Don't conflate these when discussing features, delivery, or documentation.
+## Commands
 
-## File Reading Strategy
+- `uv sync` — install dependencies
+- `uv run ails install` — install MCP server for detected agents
+- `uv run ails check` — validate instruction files
+- `uv run ails check -f json` — JSON output
+- `uv run ails heal` — interactive auto-fix
+- `uv run ails map . --save` — save backbone.yml
 
-- Read specs (`docs/specs/*.md`) before modifying core modules
-- Prefer reading specific files over broad glob patterns
+## Testing
 
-## Search Efficiency
+- `uv run poe qa_fast` — lint + type check + unit tests (pre-commit gate)
+- `uv run poe qa` — full QA including integration and smoke tests
+- Unit tests in `tests/unit/`, integration tests in `tests/integration/`, smoke in `tests/smoke/`
+- Test files named `test_*.py`, test functions prefixed `test_`
+- Use `pytest` fixtures from `conftest.py` for shared setup
+- NEVER modify golden fixtures; update the corresponding expected output instead
 
-- Use `Grep --type py` for Python-specific searches
-- Use `Glob "src/**/*.py"` to find Python files
-- Limit searches to `src/` or `tests/` directories when possible
-- Avoid grepping the entire repo; scope to relevant paths
+## Architecture
 
-## Quick Reference
-
-- `uv sync` to install dependencies
-- `uv run ails setup` to set up MCP server for detected agents
-- `uv run ails check` to validate instruction files
-- `uv run ails check -f json` for JSON output
-- `uv run ails heal` for interactive auto-fix
-- `uv run ails map . --save` to save backbone.yml
-
-## Project Structure
 ```
 src/reporails_cli/
 ├── core/           # Domain logic (regex/, mechanical/, pipeline, agents)
@@ -47,18 +45,8 @@ src/reporails_cli/
 action/             # GitHub Actions composite action
 ```
 
-Path-scoped rules in `.claude/rules/` — see those files for context-specific constraints.
-
-See `docs/specs/arch.md` for full architecture.
-
-## Testing
-
-- Run `uv run poe qa_fast` for lint + type check + unit tests (pre-commit gate)
-- Run `uv run poe qa` for full QA including integration tests
-- Unit tests in `tests/unit/`, integration tests in `tests/integration/`
-- Test files named `test_*.py`, test functions prefixed `test_`
-- Use `pytest` fixtures from `conftest.py` for shared setup
-- Never modify golden fixtures — update expected output alongside
+- Path-scoped rules in `.claude/rules/` — see those files for context-specific constraints
+- See `docs/specs/arch.md` for full architecture
 
 ## Conventions
 
@@ -71,6 +59,15 @@ See `docs/specs/arch.md` for full architecture.
 - When fixing bugs, explain the root cause and why the fix works
 - When making architectural decisions, document the tradeoffs considered
 
+## Boundaries
+
+- NEVER read or modify sensitive files (`.env`, `credentials*`, `*.pem`); ask the user instead
+- NEVER grep the entire repo; scope searches to `src/` or `tests/` instead
+- ALWAYS read specs (`docs/specs/*.md`) before modifying core modules
+- Prefer reading specific files over broad glob patterns
+- Use `Grep --type py` for Python-specific searches
+- Use `Glob "src/**/*.py"` to find Python files
+
 ## Skills
 
 | Skill | Purpose |
@@ -79,7 +76,3 @@ See `docs/specs/arch.md` for full architecture.
 | `/qa` | Run the full QA suite |
 | `/plan-feature` | Plan implementation of a new feature |
 | `/add-changelog-entry` | Add an entry to UNRELEASED.md |
-
-## Architecture
-
-@docs/specs/arch.md for full architecture details.

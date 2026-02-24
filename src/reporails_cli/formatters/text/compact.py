@@ -59,11 +59,11 @@ def format_compact(
         deduped_grouped[file_path] = unique
         deduped_count += len(unique)
 
-    # Header line with delta indicators
-    score_delta_str = format_score_delta(delta, ascii_mode)
-    level_delta_str = format_level_delta(delta, ascii_mode)
-    violations_delta_str = format_violations_delta(delta, ascii_mode) if deduped_count > 0 else ""
-    partial_marker = " (partial)" if is_partial else ""
+    # Header line with delta indicators (compact never uses colors)
+    score_delta_str, _ = format_score_delta(delta, ascii_mode)
+    level_delta_str, _ = format_level_delta(delta, ascii_mode)
+    violations_delta_str, _ = format_violations_delta(delta, ascii_mode) if deduped_count > 0 else ("", 0)
+    partial_marker = " (awaiting semantic)" if is_partial else ""
     header_base = f"Score: {score:.1f}/10{score_delta_str} ({level_label} ({level}){level_delta_str}){partial_marker}"
     if deduped_count > 0:
         lines.append(f"{header_base} - {deduped_count} violations{violations_delta_str}")
@@ -110,7 +110,7 @@ def format_score(result: ValidationResult, _ascii_mode: bool | None = None) -> s
     """Format quick score summary for terminal."""
     level_label = get_level_labels().get(result.level, "Unknown")
     violation_count = len(result.violations)
-    partial = " (partial)" if result.is_partial else ""
+    partial = " (awaiting semantic)" if result.is_partial else ""
 
     if violation_count == 0:
         return f"ails: {result.score:.1f}/10 {level_label} ({result.level.value}){partial}"

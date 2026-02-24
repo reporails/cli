@@ -150,3 +150,31 @@ class TestFindProjectRoot:
         subdir = child / "src"
         subdir.mkdir()
         assert _find_project_root(subdir) == child
+
+
+class TestProgressCallback:
+    """Tests for on_progress callback in run_validation."""
+
+    def test_receives_three_phases_in_order(self, level2_project: Path) -> None:
+        """Callback fires for all three phases with correct (name, current, total) tuples."""
+        from reporails_cli.core.engine import run_validation_sync
+
+        phases: list[tuple[str, int, int]] = []
+
+        def recorder(phase: str, current: int, total: int) -> None:
+            phases.append((phase, current, total))
+
+        run_validation_sync(level2_project, agent="claude", on_progress=recorder)
+
+        assert phases == [
+            ("Loading rules", 1, 3),
+            ("Checking files", 2, 3),
+            ("Scoring", 3, 3),
+        ]
+
+    def test_none_callback_no_error(self, level2_project: Path) -> None:
+        """Default on_progress=None does not raise."""
+        from reporails_cli.core.engine import run_validation_sync
+
+        result = run_validation_sync(level2_project, agent="claude", on_progress=None)
+        assert result.score >= 0

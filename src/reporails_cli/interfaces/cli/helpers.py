@@ -18,10 +18,10 @@ from reporails_cli.formatters import text as text_formatter
 
 app = typer.Typer(
     name="ails",
-    help="Validate and score CLAUDE.md files - what ails your repo?",
+    help="Validate and score AI instruction files - what ails your repo?",
     no_args_is_help=True,
 )
-console = Console(emoji=False)
+console = Console(emoji=False, highlight=False)
 
 
 def _is_ci() -> bool:
@@ -45,10 +45,7 @@ def _resolve_recommended_rules(
     format: str | None,
     con: Console,
 ) -> list[Path] | None:
-    """Download recommended rules if needed and append the package path.
-
-    Returns the updated rules_paths (may be mutated or newly created).
-    """
+    """Download recommended rules if needed and append the package path."""
     from reporails_cli.core.init import download_recommended, is_recommended_installed
 
     use_recommended = project_config.recommended
@@ -62,14 +59,15 @@ def _resolve_recommended_rules(
     )
 
     if use_recommended and not has_recommended and not is_recommended_installed():
+        show = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
         try:
-            if sys.stdout.isatty() and format not in ("json", "brief", "compact", "github"):
+            if show:
                 with con.status("[bold]Downloading recommended rules...[/bold]"):
                     download_recommended()
             else:
                 download_recommended()
-        except Exception as e:
-            con.print(f"[yellow]Warning:[/yellow] Could not download recommended rules: {e}")
+        except Exception:
+            con.print("[yellow]Warning:[/yellow] Could not download recommended rules.")
 
     if use_recommended and not has_recommended:
         from reporails_cli.core.bootstrap import get_recommended_package_path
@@ -89,50 +87,103 @@ def _resolve_recommended_rules(
 
 def _handle_update_check(con: Console) -> None:
     """Print installed vs latest versions for framework and recommended."""
-    from reporails_cli.core.bootstrap import (
-        get_installed_recommended_version,
-        get_installed_version,
-    )
+    from reporails_cli.core.bootstrap import get_installed_recommended_version, get_installed_version
     from reporails_cli.core.init import get_latest_recommended_version, get_latest_version
 
-    current = get_installed_version()
-    current_rec = get_installed_recommended_version()
+    current, current_rec = get_installed_version(), get_installed_recommended_version()
     with con.status("[bold]Checking for updates...[/bold]"):
-        latest = get_latest_version()
-        latest_rec = get_latest_recommended_version()
+        latest, latest_rec = get_latest_version(), get_latest_recommended_version()
+    con.print(f"[bold]Framework:[/bold]  {current or 'not installed'} → {latest or 'unknown'}")
+    con.print(f"[bold]Recommended:[/bold] {current_rec or 'not installed'} → {latest_rec or 'unknown'}")
+    up_to_date = (latest and current == latest) and (latest_rec and current_rec == latest_rec)
+    con.print("\n[green]You are up to date.[/green]" if up_to_date else "\n[cyan]Run 'ails update' to update[/cyan]")
 
-    con.print("[bold]Framework:[/bold]")
-    con.print(f"  Installed: {current or 'not installed'}")
-    con.print(f"  Latest:    {latest or 'unknown'}")
 
-    con.print("[bold]Recommended:[/bold]")
-    con.print(f"  Installed: {current_rec or 'not installed'}")
-    con.print(f"  Latest:    {latest_rec or 'unknown'}")
+VALID_FORMATS = {"text", "json", "compact", "brief", "github"}
 
-    rules_current = latest and current == latest
-    rec_current = latest_rec and current_rec == latest_rec
-    if rules_current and rec_current:
-        con.print("\n[green]You are up to date.[/green]")
+
+def _validate_agent(agent: str, con: Console) -> str:
+    """Normalize and validate --agent value. Returns normalized agent or exits."""
+    from reporails_cli.core.agents import KNOWN_AGENTS as _KNOWN
+
+    agent = agent.lower().strip()
+    if agent and agent not in _KNOWN:
+        con.print(f"[red]Error:[/red] Unknown agent: {agent}")
+        con.print(f"Known agents: {', '.join(sorted(_KNOWN))}")
+        raise typer.Exit(2)
+    return agent
+
+
+def _validate_format(format: str | None, con: Console) -> None:
+    """Validate --format value or exit."""
+    if format and format not in VALID_FORMATS:
+        con.print(f"[red]Error:[/red] Unknown format: {format}")
+        con.print(f"Valid formats: {', '.join(sorted(VALID_FORMATS))}")
+        raise typer.Exit(2)
+
+
+def _show_agent_auto_detect_hint(
+    effective_agent: str,
+    output_format: str,
+    assumed: bool,
+    mixed_signals: bool,
+    detected_agents: list[Any],
+) -> None:
+    """Show auto-detect or generic-fallback hint for agent resolution."""
+    if output_format not in ("text", "compact") or not sys.stdout.isatty():
+        return
+    cmd = "ails config set default_agent"
+    w = 64  # scorecard width
+    non_generic = [a.agent_type.id for a in detected_agents if a.agent_type.id != "generic"]
+    lines: list[str] = []
+    if assumed:
+        lines.append(f"Assumed {effective_agent} — lock in: {cmd} {effective_agent}")
+    elif mixed_signals:
+        lines.append(f"Lock in an agent: {cmd} <name>")
+        lines.append("Add --global to set for all projects")
+        lines.append(f"Available: {', '.join(non_generic)}")
+    elif effective_agent == "generic" and non_generic:
+        lines.append(f"Lock in: {cmd} {non_generic[0]}")
+    if lines:
+        for line in lines:
+            console.print(f"[dim]{line:^{w}}[/dim]")
+
+
+def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
+    """Print grouped available rules when an unknown rule ID is given."""
+    console.print(f"[red]Error:[/red] Unknown rule: {rule_id}")
+    grouped: dict[str, list[str]] = {}
+    for rid in sorted(loaded_rules):
+        ns = rid.rsplit(":", 1)[0] if ":" in rid else rid
+        grouped.setdefault(ns, []).append(rid.rsplit(":", 1)[-1] if ":" in rid else rid)
+    console.print(f"Available rules ({len(loaded_rules)} total):")
+    for ns, ids in sorted(grouped.items()):
+        tail = f" ... ({len(ids) - 5} more)" if len(ids) > 5 else ""
+        console.print(f"  {ns}: {', '.join(ids[:5])}{tail}")
+
+
+def _handle_no_instruction_files(effective_agent: str, output_format: str, con: Console) -> None:
+    """Print appropriate message when no instruction files are found, then exit."""
+    if output_format in ("json", "github"):
+        print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
     else:
-        con.print("\n[cyan]Run 'ails update' to update[/cyan]")
+        from reporails_cli.core.agents import KNOWN_AGENTS
+
+        at = KNOWN_AGENTS.get(effective_agent)
+        hint = at.instruction_patterns[0] if at else "AGENTS.md"
+        con.print(f"No instruction files found.\nLevel: L1 (Absent)\n\n[dim]Create a {hint} to get started.[/dim]")
 
 
 def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | None:
-    """Validate and resolve --rules CLI option paths.
-
-    Returns resolved Path list, or None if no --rules were provided.
-    Exits with error if any path does not exist.
-    """
+    """Validate and resolve --rules CLI option paths. Exits if any path missing."""
     if not rules:
         return None
-    rules_paths: list[Path] = []
-    for r in rules:
-        rp = Path(r).resolve()
+    resolved = [Path(r).resolve() for r in rules]
+    for rp in resolved:
         if not rp.is_dir():
             con.print(f"[red]Error:[/red] Rules directory not found: {rp}")
-            raise typer.Exit(1)
-        rules_paths.append(rp)
-    return rules_paths
+            raise typer.Exit(2)
+    return resolved
 
 
 def _compute_file_checks(
@@ -142,12 +193,8 @@ def _compute_file_checks(
     agent: str,
     experimental: bool,
 ) -> tuple[dict[str, list[str]], list[str], dict[str, str]]:
-    """Compute per-file check ID lists (regex + mechanical) and rule titles.
-
-    Returns:
-        (file_path -> list of regex check IDs, list of mechanical check IDs, rule_id -> title)
-    """
-    from reporails_cli.core.bootstrap import get_agent_vars
+    """Compute per-file check ID lists (regex + mechanical) and rule titles."""
+    from reporails_cli.core.engine import build_template_context
     from reporails_cli.core.models import RuleType
     from reporails_cli.core.regex import checks_per_file, get_rule_yml_paths
     from reporails_cli.core.registry import load_rules
@@ -158,14 +205,13 @@ def _compute_file_checks(
     yml_paths = get_rule_yml_paths(
         {k: v for k, v in rules.items() if v.type in (RuleType.DETERMINISTIC, RuleType.SEMANTIC)}
     )
-    context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
+    context = build_template_context(agent, instruction_files, rules_paths)
     mechanical_ids = [c.id for r in rules.values() if r.type == RuleType.MECHANICAL for c in r.checks]
     titles = {r.id: r.title for r in rules.values()}
     return checks_per_file(yml_paths, target, context, instruction_files), mechanical_ids, titles
 
 
-def _check_id_to_rule_id(check_id: str) -> str:
-    """Extract rule ID from a check ID (e.g., 'CORE.S.0001.check.0001' -> 'CORE:S:0001')."""
+def _check_id_to_rule_id(check_id: str) -> str:  # CORE.S.0001.check.0001 -> CORE:S:0001
     parts = check_id.replace(".", ":").split(":")
     return ":".join(parts[:3]) if len(parts) >= 3 else check_id
 
@@ -185,10 +231,8 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
     con.print("[dim]Verbose:[/dim]")
     if rules_paths:
         for rp in rules_paths:
-            display = str(rp).replace(str(Path.home()), "~")
-            con.print(f"[dim]  source: {display}[/dim]")
+            con.print(f"[dim]  source: {str(rp).replace(str(Path.home()), '~')}[/dim]")
     con.print(f"[dim]  agent: {agent}, {result.rules_checked} rules, {elapsed_ms:.0f}ms[/dim]")
-
     file_checks, mechanical_ids, titles = _compute_file_checks(
         rules_paths,
         target,
@@ -196,13 +240,10 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
         agent,
         experimental,
     )
-
-    # Group violations by file and rule
     failed_by_file: dict[str, set[str]] = {}
     for v in result.violations:
         viol_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
         failed_by_file.setdefault(viol_path, set()).add(v.rule_id)
-
     con.print("[dim]  files:[/dim]")
     for ifile in sorted(instruction_files, key=lambda p: str(p)):
         try:
@@ -214,13 +255,11 @@ def _print_verbose(  # pylint: disable=too-many-arguments,too-many-locals
         failed = failed_by_file.get(rel, set())
         con.print(f"[dim]    {rel} ({len(all_rule_ids)} rules):[/dim]")
         for rid in all_rule_ids:
-            if rid in failed:
-                con.print(f"[dim]      [red]FAIL[/red] {rid} {titles.get(rid, '')}[/dim]")
-            else:
-                con.print(f"[dim]      [green]PASS[/green] {rid} {titles.get(rid, '')}[/dim]")
+            status_tag = "[red]FAIL[/red]" if rid in failed else "[green]PASS[/green]"
+            con.print(f"[dim]      {status_tag} {rid} {titles.get(rid, '')}[/dim]")
 
 
-def _format_output(
+def _format_output(  # pylint: disable=too-many-locals
     result: ValidationResult,
     delta: ScanDelta,
     output_format: str,
@@ -228,6 +267,7 @@ def _format_output(
     quiet_semantic: bool,
     elapsed_ms: float,
     con: Console,
+    surface: dict[str, Any] | None = None,
 ) -> None:
     """Dispatch output formatting based on the chosen format."""
     if output_format == "json":
@@ -242,14 +282,18 @@ def _format_output(
         print(output)
     elif output_format == "brief":
         data = json_formatter.format_result(result, delta)
-        score = data.get("score", 0)
-        level = data.get("level", "?")
-        violations = len(data.get("violations", []))
-        check_mark = "ok" if ascii else "\u2713"
-        cross_mark = "x" if ascii else "\u2717"
-        status = check_mark if violations == 0 else f"{cross_mark} {violations} violations"
-        print(f"ails: {score:.1f}/10 ({level}) {status}")
+        n_viols = len(data.get("violations", []))
+        mark = (
+            ("ok" if ascii else "\u2713") if n_viols == 0 else f"{'x' if ascii else chr(0x2717)} {n_viols} violations"
+        )
+        print(f"ails: {data.get('score', 0):.1f}/10 ({data.get('level', '?')}) {mark}")
     else:
-        output = text_formatter.format_result(result, ascii_mode=ascii, quiet_semantic=quiet_semantic, delta=delta)
+        output = text_formatter.format_result(
+            result,
+            ascii_mode=ascii,
+            quiet_semantic=quiet_semantic,
+            delta=delta,
+            elapsed_ms=elapsed_ms,
+            surface=surface,
+        )
         con.print(output)
-        con.print(f"\n[dim]Completed in {elapsed_ms:.0f}ms[/dim]")

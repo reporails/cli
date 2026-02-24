@@ -42,7 +42,12 @@ def dispatch_single_check(
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
 
-    args: dict[str, Any] = check.args or {}
+    args: dict[str, Any] = dict(check.args or {})
+
+    # Inject rule targets so checks can scope to the rule's file targets
+    # instead of falling back to all instruction_files.
+    if rule.targets and "_targets" not in args:
+        args["_targets"] = rule.targets
 
     try:
         result = fn(root, args, effective_vars)

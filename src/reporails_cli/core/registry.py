@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -129,9 +130,6 @@ def load_rules(  # pylint: disable=too-many-locals
     if agent:
         agent_rules_path = primary / "agents" / agent / "rules"
         rules.update(_load_from_path(agent_rules_path))
-    else:
-        agents_path = primary / "agents"
-        rules.update(_load_from_path(agents_path))
 
     # 2. Load additional rule sources
     for extra in extra_paths:
@@ -141,14 +139,13 @@ def load_rules(  # pylint: disable=too-many-locals
     # 3-4. Apply agent excludes and overrides
     agent_config = get_agent_config(agent) if agent else AgentConfig()
     if agent_config.excludes:
-        excluded = set(agent_config.excludes)
-        rules = {k: v for k, v in rules.items() if k not in excluded}
+        rules = {k: v for k, v in rules.items() if not any(fnmatch(k, pat) for pat in agent_config.excludes)}
     if agent_config.overrides:
         rules = _apply_agent_overrides(rules, agent_config.overrides)
 
     # 4b. Filter rules by agent namespace
     if agent:
-        agent_prefix = agent.upper()
+        agent_prefix = agent_config.prefix or agent.upper()
         rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
 
     # 5. Filter by tier if experimental not included
@@ -158,14 +155,29 @@ def load_rules(  # pylint: disable=too-many-locals
 
     # 6. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
-    disabled: set[str] = set(config.disabled_rules)
+    disabled: set[str] = set(config.disabled_rules or [])
     if scan_root and scan_root != project_root:
         scan_config = _load_project_config(scan_root)
-        disabled |= set(scan_config.disabled_rules)
+        disabled |= set(scan_config.disabled_rules or [])
     if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
 
     return rules
+
+
+_AGNOSTIC_PREFIXES = frozenset({"CORE", "RRAILS"})
+
+
+def infer_agent_from_rule_id(rule_id: str) -> str:
+    """Infer agent name from a rule ID prefix.
+
+    Returns lowercase agent name for agent-specific rules (e.g., "claude"
+    for CLAUDE:S:0001), empty string for CORE/RRAILS rules.
+    """
+    prefix = rule_id.split(":")[0] if ":" in rule_id else ""
+    if not prefix or prefix in _AGNOSTIC_PREFIXES:
+        return ""
+    return prefix.lower()
 
 
 def _is_other_agent_rule(rule_id: str, agent_prefix: str) -> bool:
@@ -213,6 +225,7 @@ def _apply_agent_overrides(
                         check=check.check,
                         args=check.args,
                         negate=check.negate,
+                        metadata_keys=check.metadata_keys,
                     )
                 )
             else:

@@ -21,10 +21,10 @@ from reporails_cli.core.bootstrap import (
 logger = logging.getLogger(__name__)
 
 RECOMMENDED_REPO = "reporails/recommended"
-RECOMMENDED_VERSION = "0.2.0"
+RECOMMENDED_VERSION = "0.3.0"
 RECOMMENDED_API_URL = "https://api.github.com/repos/reporails/recommended/releases/latest"
 
-RULES_VERSION = "0.4.0"
+RULES_VERSION = "0.5.0"
 RULES_EXPECTED_DIRS = ("core", "schemas")  # Minimum dirs after extraction
 
 

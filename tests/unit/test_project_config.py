@@ -19,16 +19,6 @@ class TestGetProjectConfig:
         assert config.experimental is False
         assert config.recommended is True
 
-    def test_loads_packages(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("packages:\n  - recommended\n  - custom\n")
-        config = get_project_config(tmp_path)
-        assert config.packages == ["recommended", "custom"]
-
-    def test_loads_disabled_rules(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("disabled_rules:\n  - S1\n  - C7\n")
-        config = get_project_config(tmp_path)
-        assert config.disabled_rules == ["S1", "C7"]
-
     def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
         make_config_file(
             "framework_version: '0.1.0'\npackages:\n  - recommended\ndisabled_rules:\n  - S1\nexperimental: true\n"
@@ -55,20 +45,86 @@ class TestGetProjectConfig:
         assert config.packages == []
         assert config.disabled_rules == []
 
+    def test_malformed_yaml_inherits_global(self, tmp_path: Path, make_config_file) -> None:
+        from reporails_cli.core.models import GlobalConfig
+
+        make_config_file(": : :\n  bad yaml [[[")
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(default_agent="claude", recommended=False),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.default_agent == "claude"
+        assert config.recommended is False
+
     def test_returns_defaults_on_empty_file(self, tmp_path: Path, make_config_file) -> None:
         make_config_file("")
         config = get_project_config(tmp_path)
         assert config.packages == []
 
-    def test_loads_exclude_dirs(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("exclude_dirs:\n  - tests\n  - vendor\n")
-        config = get_project_config(tmp_path)
-        assert config.exclude_dirs == ["tests", "vendor"]
 
-    def test_exclude_dirs_defaults_empty(self, tmp_path: Path, make_config_file) -> None:
+class TestGlobalDefaultsMerged:
+    """Test that get_project_config() falls back to global config for unset values."""
+
+    def test_inherits_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
+        """Project without default_agent inherits global value."""
+        from reporails_cli.core.models import GlobalConfig
+
         make_config_file("packages:\n  - custom\n")
-        config = get_project_config(tmp_path)
-        assert config.exclude_dirs == []
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(default_agent="claude"),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.default_agent == "claude"
+
+    def test_project_overrides_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
+        """Project default_agent wins over global."""
+        from reporails_cli.core.models import GlobalConfig
+
+        make_config_file("default_agent: cursor\n")
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(default_agent="claude"),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.default_agent == "cursor"
+
+    def test_inherits_global_recommended(self, tmp_path: Path, make_config_file) -> None:
+        """Project without recommended key inherits global value."""
+        from reporails_cli.core.models import GlobalConfig
+
+        make_config_file("packages:\n  - custom\n")
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(recommended=False),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.recommended is False
+
+    def test_project_overrides_global_recommended(self, tmp_path: Path, make_config_file) -> None:
+        """Project explicit recommended: false wins over global true."""
+        from reporails_cli.core.models import GlobalConfig
+
+        make_config_file("recommended: false\n")
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(recommended=True),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.recommended is False
+
+    def test_no_config_file_inherits_global(self, tmp_path: Path) -> None:
+        """No .reporails/config.yml — global defaults apply."""
+        from reporails_cli.core.models import GlobalConfig
+
+        with patch(
+            "reporails_cli.core.bootstrap.get_global_config",
+            return_value=GlobalConfig(default_agent="claude", recommended=False),
+        ):
+            config = get_project_config(tmp_path)
+        assert config.default_agent == "claude"
+        assert config.recommended is False
 
 
 class TestGetPackagePaths:
