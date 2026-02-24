@@ -135,7 +135,7 @@ runs:
     - name: Write step summary
       if: always()
       shell: bash
+      env:
+        REPORAILS_RESULT: ${{ steps.check.outputs.result }}
       run: |
-        python3 "${{ github.action_path }}/summary.py" \
-          '${{ steps.check.outputs.result }}' \
-          >> "$GITHUB_STEP_SUMMARY"
+        python3 "${{ github.action_path }}/summary.py" >> "$GITHUB_STEP_SUMMARY"
