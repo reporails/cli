@@ -30,7 +30,7 @@ from reporails_cli.core.download import (
 REQUIRED_SCHEMAS: dict[str, str] = {
     "rule": "0.1",
     "levels": "0.1",
-    "agent": "0.1",
+    "agent": "0.2",
 }
 
 
