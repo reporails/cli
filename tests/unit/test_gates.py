@@ -43,61 +43,32 @@ def _mock_level_caps() -> None:  # type: ignore[misc]
 class TestDetectCapability:
     """Test _detect_capability for individual capabilities."""
 
-    def test_instruction_file_detected(self) -> None:
-        features = DetectedFeatures(has_instruction_file=True)
-        assert _detect_capability(features, "instruction_file") is True
-
-    def test_instruction_file_not_detected(self) -> None:
-        features = DetectedFeatures()
-        assert _detect_capability(features, "instruction_file") is False
-
-    def test_project_constraints_detected(self) -> None:
-        features = DetectedFeatures(has_explicit_constraints=True)
-        assert _detect_capability(features, "project_constraints") is True
-
-    def test_size_controlled_detected(self) -> None:
-        features = DetectedFeatures(is_size_controlled=True)
-        assert _detect_capability(features, "size_controlled") is True
-
-    def test_external_references_detected(self) -> None:
-        features = DetectedFeatures(has_imports=True)
-        assert _detect_capability(features, "external_references") is True
-
-    def test_multiple_files_detected(self) -> None:
-        features = DetectedFeatures(has_multiple_instruction_files=True)
-        assert _detect_capability(features, "multiple_files") is True
-
-    def test_path_scoping_via_abstracted(self) -> None:
-        features = DetectedFeatures(is_abstracted=True)
-        assert _detect_capability(features, "path_scoping") is True
-
-    def test_path_scoping_via_path_scoped_rules(self) -> None:
-        features = DetectedFeatures(has_path_scoped_rules=True)
-        assert _detect_capability(features, "path_scoping") is True
-
-    def test_navigation_via_backbone(self) -> None:
-        features = DetectedFeatures(has_backbone=True)
-        assert _detect_capability(features, "navigation") is True
-
-    def test_navigation_via_component_count(self) -> None:
-        features = DetectedFeatures(component_count=3)
-        assert _detect_capability(features, "navigation") is True
+    @pytest.mark.parametrize(
+        "feature_kwargs, capability, expected",
+        [
+            ({"has_instruction_file": True}, "instruction_file", True),
+            ({}, "instruction_file", False),
+            ({"has_explicit_constraints": True}, "project_constraints", True),
+            ({"is_size_controlled": True}, "size_controlled", True),
+            ({"has_imports": True}, "external_references", True),
+            ({"has_multiple_instruction_files": True}, "multiple_files", True),
+            ({"is_abstracted": True}, "path_scoping", True),
+            ({"has_path_scoped_rules": True}, "path_scoping", True),
+            ({"has_backbone": True}, "navigation", True),
+            ({"component_count": 3}, "navigation", True),
+            ({"has_shared_files": True}, "org_policy", True),
+            ({"has_skills_dir": True}, "dynamic_context", True),
+            ({"has_mcp_config": True}, "extensibility", True),
+        ],
+        ids=lambda x: str(x) if not isinstance(x, dict) else next(iter(x.keys()), "empty"),
+    )
+    def test_capability_detected(self, feature_kwargs: dict, capability: str, expected: bool) -> None:
+        features = DetectedFeatures(**feature_kwargs)
+        assert _detect_capability(features, capability) is expected
 
     def test_navigation_below_threshold(self) -> None:
         features = DetectedFeatures(component_count=2)
         assert _detect_capability(features, "navigation") is False
-
-    def test_org_policy_detected(self) -> None:
-        features = DetectedFeatures(has_shared_files=True)
-        assert _detect_capability(features, "org_policy") is True
-
-    def test_dynamic_context_detected(self) -> None:
-        features = DetectedFeatures(has_skills_dir=True)
-        assert _detect_capability(features, "dynamic_context") is True
-
-    def test_extensibility_detected(self) -> None:
-        features = DetectedFeatures(has_mcp_config=True)
-        assert _detect_capability(features, "extensibility") is True
 
     def test_structural_integrity_not_detectable(self) -> None:
         """structural_integrity is not filesystem-detectable — always False."""
@@ -120,99 +91,64 @@ class TestDetectCapability:
 class TestLevelHasCapability:
     """Test _level_has_capability — OR within level."""
 
-    def test_l1_with_instruction_file(self) -> None:
-        features = DetectedFeatures(has_instruction_file=True)
-        assert _level_has_capability(features, "L1", _TEST_LEVEL_CAPS) is True
-
-    def test_l2_with_only_size_controlled(self) -> None:
-        """L2 passes with just size_controlled (OR semantics)."""
-        features = DetectedFeatures(is_size_controlled=True)
-        assert _level_has_capability(features, "L2", _TEST_LEVEL_CAPS) is True
-
-    def test_l2_with_only_project_constraints(self) -> None:
-        """L2 passes with just project_constraints (OR semantics)."""
-        features = DetectedFeatures(has_explicit_constraints=True)
-        assert _level_has_capability(features, "L2", _TEST_LEVEL_CAPS) is True
-
-    def test_l2_with_neither_capability(self) -> None:
-        features = DetectedFeatures()
-        assert _level_has_capability(features, "L2", _TEST_LEVEL_CAPS) is False
-
-    def test_l5_with_one_of_three(self) -> None:
-        """L5 passes with just navigation (backbone)."""
-        features = DetectedFeatures(has_backbone=True)
-        assert _level_has_capability(features, "L5", _TEST_LEVEL_CAPS) is True
-
-    def test_l6_with_none(self) -> None:
-        features = DetectedFeatures()
-        assert _level_has_capability(features, "L6", _TEST_LEVEL_CAPS) is False
-
-    def test_empty_level_treated_as_passing(self) -> None:
-        features = DetectedFeatures()
-        assert _level_has_capability(features, "L0", _TEST_LEVEL_CAPS) is True
+    @pytest.mark.parametrize(
+        "feature_kwargs, level, expected",
+        [
+            ({"has_instruction_file": True}, "L1", True),
+            ({"is_size_controlled": True}, "L2", True),  # OR: just one of two
+            ({"has_explicit_constraints": True}, "L2", True),  # OR: the other one
+            ({}, "L2", False),  # neither L2 capability
+            ({"has_backbone": True}, "L5", True),  # 1 of 3 suffices
+            ({}, "L6", False),  # no L6 capabilities
+            ({}, "L0", True),  # empty level always passes
+        ],
+        ids=["L1-pass", "L2-size", "L2-constraints", "L2-neither", "L5-backbone", "L6-none", "L0-empty"],
+    )
+    def test_level_capability_check(self, feature_kwargs: dict, level: str, expected: bool) -> None:
+        features = DetectedFeatures(**feature_kwargs)
+        assert _level_has_capability(features, level, _TEST_LEVEL_CAPS) is expected
 
 
 class TestDetermineLevelFromGates:
     """Test determine_level_from_gates — full cumulative walk."""
 
-    def test_l0_no_features(self) -> None:
-        features = DetectedFeatures()
-        assert determine_level_from_gates(features) == Level.L0
-
-    def test_l1_has_instruction_file(self) -> None:
-        features = DetectedFeatures(has_instruction_file=True)
-        assert determine_level_from_gates(features) == Level.L1
-
-    def test_l2_with_constraints(self) -> None:
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-        )
-        assert determine_level_from_gates(features) == Level.L2
-
-    def test_l2_with_size_controlled(self) -> None:
-        """L2 reachable via size_controlled alone (OR semantics)."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            is_size_controlled=True,
-        )
-        assert determine_level_from_gates(features) == Level.L2
-
-    def test_l3_with_imports(self) -> None:
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            is_size_controlled=True,
-            has_imports=True,
-        )
-        assert determine_level_from_gates(features) == Level.L3
-
-    def test_l3_via_multiple_files(self) -> None:
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_multiple_instruction_files=True,
-        )
-        assert determine_level_from_gates(features) == Level.L3
-
-    def test_l4_with_path_scoping(self) -> None:
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            is_size_controlled=True,
-            has_imports=True,
-            is_abstracted=True,
-        )
-        assert determine_level_from_gates(features) == Level.L4
-
-    def test_l6_full_project(self) -> None:
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_imports=True,
-            is_abstracted=True,
-            has_backbone=True,  # L5: navigation
-            has_skills_dir=True,  # L6: dynamic_context
-        )
-        assert determine_level_from_gates(features) == Level.L6
+    @pytest.mark.parametrize(
+        "feature_kwargs, expected_level",
+        [
+            ({}, Level.L0),
+            ({"has_instruction_file": True}, Level.L1),
+            ({"has_instruction_file": True, "has_explicit_constraints": True}, Level.L2),
+            ({"has_instruction_file": True, "is_size_controlled": True}, Level.L2),  # OR path
+            ({"has_instruction_file": True, "is_size_controlled": True, "has_imports": True}, Level.L3),
+            (
+                {
+                    "has_instruction_file": True,
+                    "has_explicit_constraints": True,
+                    "has_multiple_instruction_files": True,
+                },
+                Level.L3,
+            ),  # L3 via multiple_files
+            (
+                {"has_instruction_file": True, "is_size_controlled": True, "has_imports": True, "is_abstracted": True},
+                Level.L4,
+            ),
+            (
+                {
+                    "has_instruction_file": True,
+                    "has_explicit_constraints": True,
+                    "has_imports": True,
+                    "is_abstracted": True,
+                    "has_backbone": True,
+                    "has_skills_dir": True,
+                },
+                Level.L6,
+            ),
+        ],
+        ids=["L0", "L1", "L2-constraints", "L2-size", "L3-imports", "L3-multi", "L4", "L6-full"],
+    )
+    def test_cumulative_walk(self, feature_kwargs: dict, expected_level: Level) -> None:
+        features = DetectedFeatures(**feature_kwargs)
+        assert determine_level_from_gates(features) == expected_level
 
     def test_gap_caps_at_lower_level(self) -> None:
         """Has L4 + L6 features but missing L5 → caps at L4."""
@@ -273,3 +209,34 @@ class TestDetectOrphanFeatures:
     def test_l1_no_higher_features_no_orphan(self) -> None:
         features = DetectedFeatures(has_instruction_file=True)
         assert detect_orphan_features(features, Level.L1) is False
+
+
+class TestCapabilityInteraction:
+    """Test cross-level capability interactions and edge cases."""
+
+    def test_l5_requires_l4_features(self) -> None:
+        """L5 features without L4 path_scoping should cap at L3 or lower.
+
+        Has L1-L3 + L5 (backbone) but missing L4 (no path_scoped_rules,
+        no is_abstracted) → cumulative gate blocks at L4 gap → caps at L3.
+        """
+        features = DetectedFeatures(
+            has_instruction_file=True,  # L1
+            has_explicit_constraints=True,  # L2
+            has_imports=True,  # L3
+            # L4: is_abstracted=False, has_path_scoped_rules=False → gap
+            is_abstracted=False,
+            has_path_scoped_rules=False,
+            has_backbone=True,  # L5: navigation
+        )
+        level = determine_level_from_gates(features)
+        assert level.value <= Level.L3.value, f"Missing L4 path_scoping should cap level at L3 or below, got {level}"
+
+    def test_state_persistence_detection(self) -> None:
+        """state_persistence is L6 — verify it returns False for default features."""
+        features = DetectedFeatures()
+        assert _detect_capability(features, "state_persistence") is False
+
+        # With has_memory_dir set, it should be detected
+        features_with_memory = DetectedFeatures(has_memory_dir=True)
+        assert _detect_capability(features_with_memory, "state_persistence") is True

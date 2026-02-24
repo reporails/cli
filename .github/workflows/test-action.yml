@@ -1,0 +1,119 @@
+# Regression tests for the composite action at action/.
+# Runs pass and fail scenarios to verify shell logic, output capture, and gates.
+# All jobs use from-source to test the action against the branch CLI, not PyPI.
+
+name: Test Action
+on:
+  push:
+    branches: [main, 0.4.0]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # --- Pass scenarios ---
+
+  pass-default:
+    name: "Pass: default agent"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        id: check
+        with:
+          from-source: "true"
+      - name: Verify outputs
+        env:
+          SCORE: ${{ steps.check.outputs.score }}
+          LEVEL: ${{ steps.check.outputs.level }}
+          VIOLATIONS: ${{ steps.check.outputs.violations }}
+          RESULT: ${{ steps.check.outputs.result }}
+        run: |
+          echo "score=$SCORE"
+          echo "level=$LEVEL"
+          echo "violations=$VIOLATIONS"
+          [ -n "$SCORE" ] || { echo "FAIL: no score output"; exit 1; }
+          [ -n "$LEVEL" ] || { echo "FAIL: no level output"; exit 1; }
+          [ -n "$RESULT" ] || { echo "FAIL: no result output"; exit 1; }
+
+  pass-explicit-agent:
+    name: "Pass: explicit agent + exclude-dir"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        id: check
+        with:
+          agent: claude
+          exclude-dir: "vendor,dist"
+          from-source: "true"
+      - name: Verify agent was applied
+        env:
+          SCORE: ${{ steps.check.outputs.score }}
+        run: |
+          echo "score=$SCORE"
+          [ "$SCORE" != "0" ] || { echo "FAIL: score is 0"; exit 1; }
+
+  pass-min-score:
+    name: "Pass: min-score gate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        with:
+          min-score: "5"
+          from-source: "true"
+
+  # --- Fail scenarios ---
+
+  fail-min-score:
+    name: "Fail: min-score gate rejects low score"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        id: should-fail
+        continue-on-error: true
+        with:
+          min-score: "11"
+          from-source: "true"
+      - name: Verify failure
+        if: steps.should-fail.outcome != 'failure'
+        run: |
+          echo "Expected failure from min-score=11 but got: ${{ steps.should-fail.outcome }}"
+          exit 1
+
+  fail-strict:
+    name: "Fail: strict mode on violations"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create fixture with violations
+        run: |
+          mkdir -p /tmp/bad-project
+          # Wall of prose with no heading/structure — triggers CORE:S:0003 and CORE:C:0001
+          cat > /tmp/bad-project/CLAUDE.md << 'FIXTURE'
+          This is a project with no structure. You should do things correctly. Make sure to follow all the rules. Do not skip steps. Always verify your work. This is important. Remember to test everything. Do not forget to lint. Always use proper formatting. Keep the code clean. Follow best practices at all times.
+          FIXTURE
+      - uses: ./action
+        id: should-fail
+        continue-on-error: true
+        with:
+          path: /tmp/bad-project
+          agent: claude
+          strict: "true"
+          from-source: "true"
+      - name: Verify failure
+        env:
+          OUTCOME: ${{ steps.should-fail.outcome }}
+          VIOLATIONS: ${{ steps.should-fail.outputs.violations }}
+        run: |
+          echo "outcome=$OUTCOME"
+          echo "violations=$VIOLATIONS"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "Expected failure from strict mode but got: $OUTCOME"
+            exit 1
+          fi
+          if [ "$VIOLATIONS" = "0" ]; then
+            echo "Expected violations > 0"
+            exit 1
+          fi

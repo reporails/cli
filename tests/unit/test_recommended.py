@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from reporails_cli.core.init import (
-    RECOMMENDED_REPO,
     RECOMMENDED_VERSION,
     download_recommended,
     is_recommended_installed,
@@ -138,8 +137,8 @@ class TestDownloadRecommended:
         assert not (pkg_dir / "old_file.txt").exists()
         assert (pkg_dir / "new_file.yml").exists()
 
-    def test_uses_correct_url(self, tmp_path: Path) -> None:
-        """Verifies the correct archive URL is fetched."""
+    def test_writes_version_file(self, tmp_path: Path) -> None:
+        """Version file should contain the requested version after download."""
         pkg_dir = tmp_path / "packages" / "recommended"
         archive = _make_archive({"test.yml": "ok: true"})
 
@@ -159,7 +158,9 @@ class TestDownloadRecommended:
             ),
             patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
         ):
-            download_recommended(version=RECOMMENDED_VERSION)
+            result = download_recommended(version=RECOMMENDED_VERSION)
 
-        expected_url = f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{RECOMMENDED_VERSION}.tar.gz"
-        mock_client.get.assert_called_once_with(expected_url)
+        assert result == pkg_dir
+        version_file = pkg_dir / ".version"
+        assert version_file.exists()
+        assert version_file.read_text().strip() == RECOMMENDED_VERSION

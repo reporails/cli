@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from reporails_cli.core.models import (
     FrictionEstimate,
     Level,
@@ -62,74 +64,67 @@ def _make_result(
 class TestSeverityMapping:
     """Test _severity_to_command mapping."""
 
-    def test_critical_maps_to_error(self) -> None:
-        assert github_formatter._severity_to_command(Severity.CRITICAL) == "error"
-
-    def test_high_maps_to_error(self) -> None:
-        assert github_formatter._severity_to_command(Severity.HIGH) == "error"
-
-    def test_medium_maps_to_warning(self) -> None:
-        assert github_formatter._severity_to_command(Severity.MEDIUM) == "warning"
-
-    def test_low_maps_to_warning(self) -> None:
-        assert github_formatter._severity_to_command(Severity.LOW) == "warning"
+    @pytest.mark.parametrize(
+        "severity, expected",
+        [
+            (Severity.CRITICAL, "error"),
+            (Severity.HIGH, "error"),
+            (Severity.MEDIUM, "warning"),
+            (Severity.LOW, "warning"),
+        ],
+    )
+    def test_severity_to_command(self, severity: Severity, expected: str) -> None:
+        assert github_formatter._severity_to_command(severity) == expected
 
 
 class TestLocationParsing:
     """Test file:line parsing from violation location."""
 
-    def test_standard_file_line(self) -> None:
-        v = _make_violation(location="CLAUDE.md:45")
+    @pytest.mark.parametrize(
+        "location, expected_fragment",
+        [
+            ("CLAUDE.md:45", "file=CLAUDE.md,line=45"),
+            ("CLAUDE.md", "file=CLAUDE.md,line=1"),  # no line → default 1
+            (".claude/rules/testing.md:12", "file=.claude/rules/testing.md,line=12"),
+            ("CLAUDE.md:abc", "file=CLAUDE.md%3Aabc,line=1"),  # non-numeric → default 1
+        ],
+        ids=["standard", "file-only", "path-with-dir", "non-numeric-line"],
+    )
+    def test_location_parsing(self, location: str, expected_fragment: str) -> None:
+        v = _make_violation(location=location)
         result = _make_result(violations=(v,))
         output = github_formatter.format_annotations(result)
-        assert "file=CLAUDE.md,line=45" in output
-
-    def test_file_only_defaults_to_line_1(self) -> None:
-        v = _make_violation(location="CLAUDE.md")
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        assert "file=CLAUDE.md,line=1" in output
-
-    def test_path_with_directory(self) -> None:
-        v = _make_violation(location=".claude/rules/testing.md:12")
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        assert "file=.claude/rules/testing.md,line=12" in output
-
-    def test_non_numeric_line_defaults_to_1(self) -> None:
-        v = _make_violation(location="CLAUDE.md:abc")
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        assert "file=CLAUDE.md%3Aabc,line=1" in output
+        assert expected_fragment in output
 
 
 class TestEscaping:
     """Test special character escaping in workflow commands."""
 
-    def test_escape_property_colon(self) -> None:
-        assert github_formatter._escape_workflow_property("a:b") == "a%3Ab"
+    @pytest.mark.parametrize(
+        "input_str, expected",
+        [
+            ("a:b", "a%3Ab"),
+            ("a,b", "a%2Cb"),
+            ("100%", "100%25"),
+            ("a\nb", "a%0Ab"),
+            ("a\rb", "a%0Db"),
+        ],
+        ids=["colon", "comma", "percent", "newline", "carriage-return"],
+    )
+    def test_escape_workflow_property(self, input_str: str, expected: str) -> None:
+        assert github_formatter._escape_workflow_property(input_str) == expected
 
-    def test_escape_property_comma(self) -> None:
-        assert github_formatter._escape_workflow_property("a,b") == "a%2Cb"
-
-    def test_escape_property_percent(self) -> None:
-        assert github_formatter._escape_workflow_property("100%") == "100%25"
-
-    def test_escape_property_newline(self) -> None:
-        assert github_formatter._escape_workflow_property("a\nb") == "a%0Ab"
-
-    def test_escape_property_carriage_return(self) -> None:
-        assert github_formatter._escape_workflow_property("a\rb") == "a%0Db"
-
-    def test_escape_data_percent(self) -> None:
-        assert github_formatter._escape_workflow_data("100%") == "100%25"
-
-    def test_escape_data_newline(self) -> None:
-        assert github_formatter._escape_workflow_data("line1\nline2") == "line1%0Aline2"
-
-    def test_escape_data_preserves_colon(self) -> None:
-        """Data (message body) does NOT escape colons — only properties do."""
-        assert github_formatter._escape_workflow_data("a:b") == "a:b"
+    @pytest.mark.parametrize(
+        "input_str, expected",
+        [
+            ("100%", "100%25"),
+            ("line1\nline2", "line1%0Aline2"),
+            ("a:b", "a:b"),  # data does NOT escape colons
+        ],
+        ids=["percent", "newline", "preserves-colon"],
+    )
+    def test_escape_workflow_data(self, input_str: str, expected: str) -> None:
+        assert github_formatter._escape_workflow_data(input_str) == expected
 
     def test_title_with_special_chars(self) -> None:
         v = _make_violation(

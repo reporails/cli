@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.3.0"
+version = "0.4.0"
 description = "Validate and score CLAUDE.md files — MCP-first AI context governance"
 readme = "README.md"
 license = { text = "BUSL-1.1" }
@@ -76,8 +76,9 @@ pylint_struct = "pylint src/reporails_cli/ --disable=all --enable=R0902,R0904,R0
 type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v"
+test_smoke = "pytest tests/smoke/ -v -m e2e"
 qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit"]
-qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration"]
+qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration", "test_smoke"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
 
 [tool.ruff]

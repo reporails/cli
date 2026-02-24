@@ -14,7 +14,7 @@ from reporails_cli.core.discover import generate_backbone_yaml, save_backbone
 from reporails_cli.interfaces.cli.helpers import _handle_update_check, app, console
 
 
-@app.command()
+@app.command(rich_help_panel="Development")
 def map(  # pylint: disable=too-many-locals
     path: str = typer.Argument(".", help="Project root to analyze"),
     output: str = typer.Option(
@@ -88,7 +88,7 @@ def map(  # pylint: disable=too-many-locals
         console.print(f"[green]Saved:[/green] {backbone_path}")
 
 
-@app.command()
+@app.command(rich_help_panel="Development")
 def sync(
     rules_dir: str = typer.Argument(
         "checks",
@@ -110,11 +110,11 @@ def sync(
         count = sync_rules_to_local(target)
         console.print(f"[green]Synced {count} rule definition(s)[/green]")
     except RuntimeError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] Failed to sync rules: {e}")
         raise typer.Exit(1) from None
 
 
-@app.command()
+@app.command(rich_help_panel="Configuration")
 def update(
     version: str = typer.Option(
         None,
@@ -171,7 +171,7 @@ def update(
         if cli_result.updated:
             console.print(f"[green]CLI upgraded:[/green] {cli_result.previous_version} -> {cli_result.new_version}")
             console.print(f"[dim]Method: {cli_result.method.value}[/dim]")
-            console.print("[dim]Run 'ails setup' to update your MCP server config.[/dim]")
+            console.print("[dim]Run 'ails install' to update your MCP server config.[/dim]")
         else:
             console.print(cli_result.message)
         return
@@ -204,7 +204,7 @@ def update(
             console.print(f"[dim]{rec_result.message}[/dim]")
 
 
-@app.command()
+@app.command(hidden=True)
 def dismiss(
     rule_id: str = typer.Argument(..., help="Rule ID to dismiss (e.g., C6, M4)"),
     file: str = typer.Argument(None, help="Specific file to dismiss for (default: all instruction files)"),
@@ -255,7 +255,7 @@ def dismiss(
     console.print(f"[green]Dismissed[/green] {rule_id_upper} for {dismissed} file(s)")
 
 
-@app.command()
+@app.command(hidden=True)
 def judge(
     path: str = typer.Argument(".", help="Project root"),
     verdicts: list[str] = typer.Argument(  # noqa: B008
@@ -278,7 +278,7 @@ def judge(
     print(json.dumps({"recorded": recorded}))
 
 
-@app.command("version")
+@app.command("version", rich_help_panel="Configuration")
 def show_version() -> None:
     """Show CLI and framework versions."""
     from reporails_cli import __version__ as cli_version

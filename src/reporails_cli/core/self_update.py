@@ -29,6 +29,18 @@ class CliUpdateResult:
     message: str
 
 
+def is_ephemeral_install() -> bool:
+    """Check if running from an ephemeral uvx/npx environment."""
+    method = detect_install_method()
+    if method in (InstallMethod.DEV, InstallMethod.PIPX, InstallMethod.PIP):
+        return False
+    if method == InstallMethod.UV:
+        # Persistent uv tool installs go to ~/.local/share/uv/tools/
+        # Ephemeral uvx goes to cache dirs
+        return "/.local/share/uv/tools/" not in sys.prefix
+    return False
+
+
 def detect_install_method() -> InstallMethod:
     """Detect how reporails-cli was installed using package metadata."""
     try:

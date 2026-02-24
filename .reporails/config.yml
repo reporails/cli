@@ -1,0 +1,6 @@
+default_agent: claude
+exclude_dirs:
+  - fixtures
+disabled_rules:
+  - RRAILS:C:0005
+  - CORE:G:0001

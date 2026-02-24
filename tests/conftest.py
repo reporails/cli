@@ -11,6 +11,23 @@ from pathlib import Path
 
 import pytest
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register custom CLI options."""
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="Regenerate golden snapshot expected.json files",
+    )
+
+
+@pytest.fixture
+def update_golden(request: pytest.FixtureRequest) -> bool:
+    """Whether to update golden snapshot files instead of comparing."""
+    return bool(request.config.getoption("--update-golden"))
+
+
 # Path to test fixtures
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -66,22 +83,26 @@ def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
 
 @pytest.fixture
 def level1_project(tmp_path: Path) -> Generator[Path, None, None]:
-    """Create a Level 1 (minimal) project - just CLAUDE.md."""
+    """Create a Level 1 (minimal) project — single AGENTS.md."""
     project = tmp_path / "level1"
     project.mkdir()
 
-    (project / "CLAUDE.md").write_text("# My Project\n\nA simple project.\n")
+    (project / "AGENTS.md").write_text("# My Project\n\nA simple project.\n")
 
     yield project
 
 
 @pytest.fixture
 def level2_project(tmp_path: Path) -> Generator[Path, None, None]:
-    """Create a Level 2 (basic) project - CLAUDE.md with sections."""
+    """Create a Level 2 (basic) project — AGENTS.md + CLAUDE.md with sections.
+
+    AGENTS.md is scanned by the generic default (no --agent).
+    CLAUDE.md is scanned when tests pass --agent claude.
+    """
     project = tmp_path / "level2"
     project.mkdir()
 
-    (project / "CLAUDE.md").write_text("""\
+    content = """\
 # My Project
 
 A project with structure.
@@ -99,7 +120,9 @@ The project uses a modular architecture.
 
 - MUST use TypeScript
 - NEVER commit secrets
-""")
+"""
+    (project / "AGENTS.md").write_text(content)
+    (project / "CLAUDE.md").write_text(content)
 
     yield project
 

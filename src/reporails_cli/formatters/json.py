@@ -108,7 +108,7 @@ def format_result(
         "friction": result.friction.level if result.friction else "none",
         "category_summary": _format_category_summary(result.category_summary),
         # Evaluation completeness
-        "evaluation": "partial" if result.is_partial else "complete",
+        "evaluation": "awaiting_semantic" if result.is_partial else "complete",
         "is_partial": result.is_partial,
     }
 
@@ -178,17 +178,23 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def format_heal_result(auto_fixed: list[dict[str, Any]], judgment_requests: list[dict[str, Any]]) -> dict[str, Any]:
+def format_heal_result(
+    auto_fixed: list[dict[str, Any]],
+    judgment_requests: list[dict[str, Any]],
+    *,
+    violations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Format heal command results as JSON.
 
     Args:
         auto_fixed: List of auto-fix entries (rule_id, file_path, description)
         judgment_requests: List of semantic judgment requests
+        violations: Optional list of non-fixable violations requiring manual attention
 
     Returns:
-        Dict with auto_fixed and judgment_requests
+        Dict with auto_fixed, violations, and judgment_requests
     """
-    return {
+    result: dict[str, Any] = {
         "auto_fixed": auto_fixed,
         "judgment_requests": judgment_requests,
         "summary": {
@@ -196,3 +202,7 @@ def format_heal_result(auto_fixed: list[dict[str, Any]], judgment_requests: list
             "pending_judgments": len(judgment_requests),
         },
     }
+    if violations:
+        result["violations"] = violations
+        result["summary"]["violations_count"] = len(violations)
+    return result

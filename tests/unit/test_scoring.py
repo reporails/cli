@@ -192,11 +192,254 @@ class TestScoreBounds:
         assert score <= 10.0, f"Score should not exceed 10, got {score}"
 
     def test_score_zero_rules_checked(self) -> None:
-        """Zero rules checked should handle gracefully."""
+        """Zero rules checked should return perfect score (no rules = nothing failed)."""
         from reporails_cli.core.scorer import calculate_score
 
-        # Should not crash
         score = calculate_score(rules_checked=0, violations=[])
 
-        assert score >= 0.0, "Should return valid score even with 0 rules"
-        assert score <= 10.0, "Should return valid score even with 0 rules"
+        assert score == 10.0
+
+
+class TestScoreAnchored:
+    """Anchored score values — catch formula regressions."""
+
+    def test_single_medium_violation_anchored(self) -> None:
+        """One MEDIUM violation out of 10 rules: lost 2.5, earned 22.5/25 = 9.0."""
+        from reporails_cli.core.scorer import calculate_score
+
+        violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.MEDIUM,
+                check_id="test",
+            )
+        ]
+
+        score = calculate_score(rules_checked=10, violations=violations)
+        assert score == 9.0, f"Expected 9.0, got {score}"
+
+    def test_single_critical_violation_anchored(self) -> None:
+        """One CRITICAL violation out of 10 rules: capped at 2.5, earned 22.5/25 = 9.0."""
+        from reporails_cli.core.scorer import calculate_score
+
+        violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.CRITICAL,
+                check_id="test",
+            )
+        ]
+
+        score = calculate_score(rules_checked=10, violations=violations)
+        assert score == 9.0, f"Expected 9.0 (capped at rule weight), got {score}"
+
+    def test_per_rule_cap_limits_deduction(self) -> None:
+        """Multiple violations of the same rule should not deduct more than DEFAULT_RULE_WEIGHT."""
+        from reporails_cli.core.scorer import calculate_score
+
+        # 3 MEDIUM violations (3 * 2.5 = 7.5) for one rule — capped at 2.5
+        same_rule_violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location=f"test.md:{i}",
+                message="Test",
+                severity=Severity.MEDIUM,
+                check_id="test",
+            )
+            for i in range(3)
+        ]
+
+        # 1 violation of a different rule
+        different_rule_violation = [
+            Violation(
+                rule_id="S2",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.MEDIUM,
+                check_id="test",
+            )
+        ]
+
+        score_same = calculate_score(rules_checked=10, violations=same_rule_violations)
+        score_diff = calculate_score(rules_checked=10, violations=different_rule_violation)
+
+        # Same rule 3x should be capped at 2.5 total, same as 1 violation of 1 rule
+        assert score_same == score_diff, (
+            f"Per-rule cap: 3 violations of 1 rule ({score_same}) should equal 1 violation ({score_diff})"
+        )
+
+    def test_different_rules_deduct_independently(self) -> None:
+        """Violations of different rules should deduct independently."""
+        from reporails_cli.core.scorer import calculate_score
+
+        # 1 violation of 1 rule
+        one_rule = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.MEDIUM,
+                check_id="test",
+            )
+        ]
+
+        # 1 violation of each of 2 different rules
+        two_rules = [
+            Violation(
+                rule_id=f"S{i}",
+                rule_title="Test",
+                location=f"test.md:{i}",
+                message="Test",
+                severity=Severity.MEDIUM,
+                check_id="test",
+            )
+            for i in range(2)
+        ]
+
+        score_one = calculate_score(rules_checked=10, violations=one_rule)
+        score_two = calculate_score(rules_checked=10, violations=two_rules)
+
+        assert score_two < score_one, "2 rules violated should score lower than 1 rule violated"
+        assert score_one == 9.0, f"1 MEDIUM violation out of 10 rules: expected 9.0, got {score_one}"
+        assert score_two == 8.0, f"2 MEDIUM violations out of 10 rules: expected 8.0, got {score_two}"
+
+
+class TestEstimateFriction:
+    """Test friction estimation from violations."""
+
+    def test_no_violations_none(self) -> None:
+        from reporails_cli.core.scorer import estimate_friction
+
+        result = estimate_friction([])
+        assert result.level == "none"
+
+    def test_critical_extreme(self) -> None:
+        from reporails_cli.core.scorer import estimate_friction
+
+        violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.CRITICAL,
+                check_id="test",
+            )
+        ]
+        result = estimate_friction(violations)
+        assert result.level == "extreme"
+
+    def test_two_high_is_high(self) -> None:
+        from reporails_cli.core.scorer import estimate_friction
+
+        violations = [
+            Violation(
+                rule_id=f"S{i}",
+                rule_title="Test",
+                location=f"test.md:{i}",
+                message="Test",
+                severity=Severity.HIGH,
+                check_id="test",
+            )
+            for i in range(2)
+        ]
+        result = estimate_friction(violations)
+        assert result.level == "high"
+
+    def test_one_high_is_medium(self) -> None:
+        from reporails_cli.core.scorer import estimate_friction
+
+        violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.HIGH,
+                check_id="test",
+            )
+        ]
+        result = estimate_friction(violations)
+        assert result.level == "medium"
+
+    def test_five_low_is_high(self) -> None:
+        from reporails_cli.core.scorer import estimate_friction
+
+        violations = [
+            Violation(
+                rule_id=f"S{i}",
+                rule_title="Test",
+                location=f"test.md:{i}",
+                message="Test",
+                severity=Severity.LOW,
+                check_id="test",
+            )
+            for i in range(5)
+        ]
+        result = estimate_friction(violations)
+        assert result.level == "high"
+
+    def test_two_low_is_small(self) -> None:
+        from reporails_cli.core.scorer import estimate_friction
+
+        violations = [
+            Violation(
+                rule_id=f"S{i}",
+                rule_title="Test",
+                location=f"test.md:{i}",
+                message="Test",
+                severity=Severity.LOW,
+                check_id="test",
+            )
+            for i in range(2)
+        ]
+        result = estimate_friction(violations)
+        assert result.level == "small"
+
+
+class TestHasCriticalViolations:
+    """Test has_critical_violations."""
+
+    def test_empty_list(self) -> None:
+        from reporails_cli.core.scorer import has_critical_violations
+
+        assert has_critical_violations([]) is False
+
+    def test_no_critical(self) -> None:
+        from reporails_cli.core.scorer import has_critical_violations
+
+        violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.HIGH,
+                check_id="test",
+            )
+        ]
+        assert has_critical_violations(violations) is False
+
+    def test_has_critical(self) -> None:
+        from reporails_cli.core.scorer import has_critical_violations
+
+        violations = [
+            Violation(
+                rule_id="S1",
+                rule_title="Test",
+                location="test.md:1",
+                message="Test",
+                severity=Severity.CRITICAL,
+                check_id="test",
+            )
+        ]
+        assert has_critical_violations(violations) is True

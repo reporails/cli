@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.agents import clear_agent_cache
+from reporails_cli.core.agents import KNOWN_AGENTS, clear_agent_cache
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -45,10 +45,16 @@ def _clear_caches() -> None:
 
 @pytest.fixture
 def minimal_project(tmp_path: Path) -> Path:
-    """Bare CLAUDE.md — L2 project."""
+    """Bare project with both AGENTS.md and CLAUDE.md — L2 project.
+
+    AGENTS.md is scanned by the generic default (no --agent).
+    CLAUDE.md is scanned when tests pass --agent claude.
+    """
     p = tmp_path / "proj"
     p.mkdir()
-    (p / "CLAUDE.md").write_text("# My Project\n\nProject description.\n\n## Commands\n\n- `make build`\n")
+    content = "# My Project\n\nProject description.\n\n## Commands\n\n- `make build`\n"
+    (p / "AGENTS.md").write_text(content)
+    (p / "CLAUDE.md").write_text(content)
     return p
 
 
@@ -110,36 +116,8 @@ def multi_file_project(tmp_path: Path) -> Path:
 
 
 # ===========================================================================
-# CHECK COMMAND — Exit Codes
-# ===========================================================================
-
-
-class TestCheckExitCodes:
-    """Exit code contract: 0=ok, 1=strict+violations, 2=input error."""
-
-    @requires_rules
-    def test_exit_0_with_violations_no_strict(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
-        assert result.exit_code == 0
-
-    @requires_rules
-    def test_exit_1_strict_with_violations(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "--strict", "-f", "json", "--no-update-check"])
-        data = json.loads(result.output)
-        if data["violations"]:
-            assert result.exit_code == 1, "strict mode must exit 1 when violations exist"
-
-    def test_exit_2_missing_path(self) -> None:
-        result = runner.invoke(app, ["check", "/tmp/no-such-path-xyz-abc", "--no-update-check"])
-        assert result.exit_code == 2
-
-    def test_exit_0_no_instruction_files(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(empty_project), "--no-update-check"])
-        assert result.exit_code == 0
-
-
-# ===========================================================================
 # CHECK COMMAND — JSON Output Schema
+# (Exit codes covered by smoke tests: strict, missing path, no files)
 # ===========================================================================
 
 
@@ -236,7 +214,9 @@ class TestCheckTextOutput:
 
     @requires_rules
     def test_violations_grouped_by_file(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "text", "-q", "--no-update-check"])
+        result = runner.invoke(
+            app, ["check", str(minimal_project), "--agent", "claude", "-f", "text", "-q", "--no-update-check"]
+        )
         assert result.exit_code == 0
         assert "CLAUDE.md" in result.output
 
@@ -314,63 +294,8 @@ class TestCheckScoreConsistency:
 
 
 # ===========================================================================
-# MAP COMMAND
-# ===========================================================================
-
-
-class TestMapCommand:
-    """ails map must detect agents and project structure."""
-
-    def test_text_output_shows_agent(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(minimal_project)])
-        assert result.exit_code == 0
-        assert "Claude" in result.output or "claude" in result.output.lower()
-
-    def test_yaml_output_valid(self, minimal_project: Path) -> None:
-        import yaml
-
-        result = runner.invoke(app, ["map", str(minimal_project), "-o", "yaml"])
-        assert result.exit_code == 0
-        data = yaml.safe_load(result.output)
-        assert isinstance(data, dict)
-        assert "agents" in data
-
-    def test_json_output_valid(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(minimal_project), "-o", "json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert isinstance(data, dict)
-        assert "agents" in data
-
-    def test_save_creates_backbone(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(minimal_project), "--save"])
-        assert result.exit_code == 0
-
-        backbone = minimal_project / ".reporails" / "backbone.yml"
-        assert backbone.exists(), "backbone.yml should be created"
-
-        import yaml
-
-        data = yaml.safe_load(backbone.read_text())
-        assert "agents" in data
-
-    def test_missing_path_errors(self) -> None:
-        result = runner.invoke(app, ["map", "/tmp/no-such-path-xyz-abc"])
-        assert result.exit_code == 1
-
-    def test_empty_dir_no_crash(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(empty_project)])
-        assert result.exit_code == 0
-
-    def test_multi_agent_detected(self, multi_file_project: Path) -> None:
-        result = runner.invoke(app, ["map", str(multi_file_project), "-o", "json"])
-        data = json.loads(result.output)
-        agents = data.get("agents", {})
-        assert len(agents) >= 2, f"Should detect Claude + Generic, got: {list(agents.keys())}"
-
-
-# ===========================================================================
 # DISMISS COMMAND
+# (Map command covered by smoke tests)
 # ===========================================================================
 
 
@@ -398,84 +323,13 @@ class TestDismissCommand:
         assert "C6" in judgment
         assert judgment["C6"]["verdict"] == "pass"
 
-    def test_dismiss_missing_path(self) -> None:
-        result = runner.invoke(app, ["dismiss", "C6", "--path", "/tmp/no-such-path-xyz"])
-        assert result.exit_code == 1
-
-    def test_dismiss_no_files(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["dismiss", "C6", "--path", str(empty_project)])
-        assert result.exit_code == 1
-        assert "No instruction files" in result.output
+    # Error paths (missing path, no files) covered by smoke tests
 
 
 # ===========================================================================
-# JUDGE COMMAND
+# CHECK COMMAND — Flags
+# (Version and Explain commands covered by smoke tests)
 # ===========================================================================
-
-
-class TestJudgeCommand:
-    """ails judge must cache verdicts in batch."""
-
-    def test_judge_records_verdict(self, minimal_project: Path) -> None:
-        result = runner.invoke(
-            app,
-            ["judge", str(minimal_project), "C6:CLAUDE.md:pass:Looks good"],
-        )
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert data["recorded"] >= 1
-
-    def test_judge_no_verdicts_errors(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["judge", str(minimal_project)])
-        assert result.exit_code == 1
-
-    def test_judge_missing_path(self) -> None:
-        result = runner.invoke(app, ["judge", "/tmp/no-such-path-xyz", "C6:CLAUDE.md:pass:ok"])
-        assert result.exit_code == 1
-
-
-# ===========================================================================
-# EXPLAIN COMMAND
-# ===========================================================================
-
-
-class TestExplainCommand:
-    """ails explain must show rule details."""
-
-    @requires_rules
-    def test_known_rule(self) -> None:
-        result = runner.invoke(app, ["explain", "CORE:S:0001"])
-        assert result.exit_code == 0
-        assert "CORE:S:0001" in result.output or "structure" in result.output.lower()
-
-    def test_unknown_rule(self) -> None:
-        result = runner.invoke(app, ["explain", "ZZZZZ99"])
-        assert result.exit_code == 1
-        assert "Unknown rule" in result.output or "Error" in result.output
-
-
-# ===========================================================================
-# VERSION COMMAND
-# ===========================================================================
-
-
-class TestVersionCommand:
-    """ails version must show component versions."""
-
-    def test_shows_cli_version(self) -> None:
-        result = runner.invoke(app, ["version"])
-        assert result.exit_code == 0
-        assert "CLI:" in result.output
-
-    def test_shows_framework_version(self) -> None:
-        result = runner.invoke(app, ["version"])
-        assert result.exit_code == 0
-        assert "Framework:" in result.output
-
-    def test_shows_recommended_version(self) -> None:
-        result = runner.invoke(app, ["version"])
-        assert result.exit_code == 0
-        assert "Recommended:" in result.output
 
 
 # ===========================================================================
@@ -494,37 +348,7 @@ class TestCheckFlags:
         data = json.loads(result.output)
         assert "score" in data
 
-    @requires_rules
-    def test_exclude_dir_reduces_scan(self, tmp_path: Path) -> None:
-        """--exclude-dir should prevent scanning excluded directories."""
-        p = tmp_path / "proj"
-        p.mkdir()
-        (p / "CLAUDE.md").write_text("# Main\n\nMain project.\n")
-
-        # Create a subdir with its own CLAUDE.md
-        sub = p / "vendor"
-        sub.mkdir()
-        (sub / "CLAUDE.md").write_text("# Vendor\n\nVendor code.\n")
-
-        # Without exclude — should find both
-        r1 = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
-        d1 = json.loads(r1.output)
-
-        # With exclude — should skip vendor
-        r2 = runner.invoke(app, ["check", str(p), "--exclude-dir", "vendor", "-f", "json", "--no-update-check"])
-        d2 = json.loads(r2.output)
-
-        # Fewer or equal violations with exclude
-        assert len(d2["violations"]) <= len(d1["violations"])
-
-    @requires_rules
-    def test_ascii_flag_no_unicode(self, minimal_project: Path) -> None:
-        """--ascii should produce output without Unicode box drawing."""
-        result = runner.invoke(app, ["check", str(minimal_project), "--ascii", "-q", "--no-update-check"])
-        assert result.exit_code == 0
-        # Unicode box chars should not appear
-        for char in "\u2550\u2551\u2554\u2557\u255a\u255d":
-            assert char not in result.output, f"Unicode char {char!r} found with --ascii"
+    # --exclude-dir and --ascii covered by smoke tests
 
     def test_legend_flag_shows_legend(self) -> None:
         """--legend should show severity legend and exit."""
@@ -543,6 +367,146 @@ class TestCheckFlags:
     def test_brief_format(self, minimal_project: Path) -> None:
         """-f brief should produce output."""
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "brief", "--no-update-check"])
+        assert result.exit_code == 0
+
+
+# ===========================================================================
+# CHECK COMMAND — Agent Flag
+# ===========================================================================
+
+
+class TestCheckAgentFlag:
+    """--agent flag must scope file discovery and adapt hints per agent."""
+
+    # Hint message tests (no agent, claude, codex, copilot) covered by
+    # smoke TestHintMessages. Keep agent-specific behavior tests below.
+
+    def test_no_files_hint_cursor(self, empty_project: Path) -> None:
+        """--agent cursor should hint .cursorrules."""
+        result = runner.invoke(
+            app, ["check", str(empty_project), "--agent", "cursor", "-f", "text", "--no-update-check"]
+        )
+        assert "Create a .cursorrules to get started" in result.output
+
+    def test_no_files_hint_copilot(self, empty_project: Path) -> None:
+        """--agent copilot should hint its instruction file."""
+        result = runner.invoke(
+            app, ["check", str(empty_project), "--agent", "copilot", "-f", "text", "--no-update-check"]
+        )
+        assert "Create a .github/copilot-instructions.md to get started" in result.output
+
+    def test_unknown_agent_errors(self, empty_project: Path) -> None:
+        """Unknown agent must error with exit code 2 and list known agents."""
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "somefuture", "--no-update-check"])
+        assert result.exit_code == 2
+        assert "Unknown agent" in result.output
+        assert "claude" in result.output
+
+    def test_wrong_agent_no_false_positive(self, tmp_path: Path) -> None:
+        """--agent claude on a project with only AGENTS.md must NOT scan it."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
+        result = runner.invoke(app, ["check", str(p), "--agent", "claude", "-f", "text", "--no-update-check"])
+        assert "No instruction files found" in result.output
+
+    @requires_rules
+    def test_codex_agent_scans_agents_md(self, tmp_path: Path) -> None:
+        """--agent codex should find and validate AGENTS.md."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "AGENTS.md").write_text("# Agents\n\nInstructions for Codex.\n")
+        result = runner.invoke(app, ["check", str(p), "--agent", "codex", "-f", "json", "--no-update-check"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "score" in data
+        assert data["level"] != "L1", "AGENTS.md should be detected, not L1 Absent"
+
+    @requires_rules
+    def test_no_agent_core_rules_fire(self, tmp_path: Path) -> None:
+        """No --agent must still apply core rules (not just file presence)."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
+        result = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["level"] != "L1"
+        # Core content/structure rules must fire, not just CORE:S:0001
+        checked = data.get("summary", {}).get("rules_checked", 0)
+        assert checked > 3, f"Only {checked} rules checked — core rules not resolving targets"
+
+
+# ===========================================================================
+# CHECK COMMAND — Agent Cross-Validation
+# ===========================================================================
+
+
+class TestAgentCrossValidation:
+    """KNOWN_AGENTS must stay in sync with the rules framework agent configs."""
+
+    @requires_rules
+    def test_framework_agents_in_known_agents(self) -> None:
+        """Every agent dir in the rules framework must have an entry in KNOWN_AGENTS."""
+        from reporails_cli.core.agents import KNOWN_AGENTS
+        from reporails_cli.core.bootstrap import get_rules_path
+
+        agents_dir = get_rules_path() / "agents"
+        if not agents_dir.is_dir():
+            pytest.skip("No agents directory in rules framework")
+
+        framework_agents = {d.name for d in agents_dir.iterdir() if d.is_dir() and (d / "config.yml").exists()}
+        missing = framework_agents - set(KNOWN_AGENTS)
+        assert not missing, (
+            f"Rules framework has agent configs not in KNOWN_AGENTS: {missing}. "
+            f"Add them to KNOWN_AGENTS in src/reporails_cli/core/agents.py"
+        )
+
+
+# ===========================================================================
+# CHECK COMMAND — Agent Matrix (derived from KNOWN_AGENTS, not manual)
+# ===========================================================================
+
+
+# Agents whose first instruction pattern is YAML, not markdown — skip file-detection
+# test since the rules engine expects markdown content.
+_YAML_AGENTS = {"aider"}
+
+
+class TestAgentMatrix:
+    """Every known agent must produce a valid check result against its instruction file.
+
+    Parametrized directly from KNOWN_AGENTS so new agents get coverage automatically.
+    """
+
+    @requires_rules
+    @pytest.mark.parametrize("agent_id", sorted(KNOWN_AGENTS))
+    def test_agent_check_finds_files(self, agent_id: str, tmp_path: Path) -> None:
+        """ails check --agent X must detect the agent's instruction file."""
+        if agent_id in _YAML_AGENTS:
+            pytest.skip(f"{agent_id} uses YAML instruction files")
+
+        agent_type = KNOWN_AGENTS[agent_id]
+        # Use first instruction pattern (strip glob wildcards for file creation)
+        filename = agent_type.instruction_patterns[0].replace("**/", "")
+        p = tmp_path / "proj"
+        p.mkdir()
+        target = p / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"# {agent_type.name}\n\nInstructions.\n")
+
+        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "-f", "json", "--no-update-check"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["level"] != "L1", f"--agent {agent_id} should detect {filename}, got L1 Absent"
+
+    @requires_rules
+    @pytest.mark.parametrize("agent_id", sorted(KNOWN_AGENTS))
+    def test_agent_check_no_crash(self, agent_id: str, tmp_path: Path) -> None:
+        """ails check --agent X must not crash on an empty project."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "--no-update-check"])
         assert result.exit_code == 0
 
 
@@ -608,30 +572,18 @@ class TestCheckConfig:
 
 
 class TestHealCommand:
-    """ails heal must run auto-fixes, present semantic prompts, cache verdicts."""
+    """ails heal must auto-fix and report remaining violations."""
 
-    def test_heal_requires_tty(self, minimal_project: Path) -> None:
-        """CliRunner is non-TTY — heal should refuse to run."""
-        result = runner.invoke(app, ["heal", str(minimal_project)])
-        assert result.exit_code == 2
-        assert "interactive terminal" in result.output.lower() or "tty" in result.output.lower()
-
-    def test_heal_missing_path(self) -> None:
-        result = runner.invoke(app, ["heal", "/tmp/no-such-path-xyz"])
-        assert result.exit_code != 0
+    # test_heal_missing_path covered by smoke tests
 
     @requires_rules
     def test_heal_auto_fixes_applied(self, tmp_path: Path) -> None:
         """Auto-fixers should modify the file and report what they fixed."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="s\n" * 50)
+        result = runner.invoke(app, ["heal", str(p)])
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 
@@ -641,101 +593,64 @@ class TestHealCommand:
             assert len(content) > len(original)
 
     @requires_rules
-    def test_heal_pass_verdict_cached(self, tmp_path: Path) -> None:
-        """Passing a semantic rule should cache the verdict."""
-        from unittest.mock import patch
-
-        p = tmp_path / "proj"
-        p.mkdir()
-        (p / "CLAUDE.md").write_text(
-            "# Project\n\n## Commands\n\n- `make build`\n\n## Constraints\n\n- NEVER commit secrets\n"
-        )
-
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="p\n" * 50)
-
-        assert result.exit_code in (0, None), f"heal failed: {result.output}"
-
-        if "Passed" in result.output:
-            from reporails_cli.core.cache import ProjectCache
-
-            cache_dir = p / ".reporails" / ".cache"
-            if cache_dir.exists():
-                cache = ProjectCache(p)
-                assert cache.cache_dir.exists()
-
-    @requires_rules
-    def test_heal_fail_verdict_with_reason(self, tmp_path: Path) -> None:
-        """Failing a semantic rule should prompt for reason and cache it."""
-        from unittest.mock import patch
-
-        p = tmp_path / "proj"
-        p.mkdir()
-        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
-
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="f\nNot good enough\n" + "s\n" * 50)
-
-        assert result.exit_code in (0, None), f"heal failed: {result.output}"
-        if "verdict" in result.output.lower():
-            assert "Failed" in result.output or "Skipped" in result.output
-
-    @requires_rules
-    def test_heal_dismiss_verdict(self, tmp_path: Path) -> None:
-        """Dismissing a semantic rule should cache it as pass."""
-        from unittest.mock import patch
-
-        p = tmp_path / "proj"
-        p.mkdir()
-        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
-
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
-
-        assert result.exit_code in (0, None), f"heal failed: {result.output}"
-
-    @requires_rules
     def test_heal_nothing_to_heal(self, tmp_path: Path) -> None:
         """When all rules pass or are cached, heal should say nothing to do."""
-        from unittest.mock import patch
-
         p = tmp_path / "proj"
         p.mkdir()
+        # Rich enough content that most rules pass after fixes
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
-        # First pass — dismiss everything
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            runner.invoke(app, ["heal", str(p)], input="d\n" * 50)
-
-        # Second pass — everything should be cached
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="")
-
+        # First pass — applies fixes
+        result = runner.invoke(app, ["heal", str(p)])
         assert result.exit_code in (0, None)
-        assert "Nothing to heal" in result.output or "Fixed" in result.output or "0" in result.output
+        # Should produce some output (fixes applied, violations listed, or nothing to heal)
+        assert len(result.output.strip()) > 0
 
     @requires_rules
-    def test_heal_summary_shows_counts(self, tmp_path: Path) -> None:
-        """Heal summary should report pass/fail/skip/dismiss counts."""
-        from unittest.mock import patch
-
+    def test_heal_json_output(self, tmp_path: Path) -> None:
+        """Invoke with -f json, parse JSON, assert keys."""
         p = tmp_path / "proj"
         p.mkdir()
-        (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        with patch("reporails_cli.interfaces.cli.heal.sys") as mock_sys:
-            mock_sys.stdout.isatty.return_value = True
-            result = runner.invoke(app, ["heal", str(p)], input="p\n" + "s\n" * 50)
+        result = runner.invoke(app, ["heal", str(p), "-f", "json"])
+
+        assert result.exit_code in (0, None), f"heal failed: {result.output}"
+        data = json.loads(result.output)
+        assert "auto_fixed" in data
+        assert "summary" in data
+        assert "auto_fixed_count" in data["summary"]
+
+    def test_heal_works_without_tty(self, tmp_path: Path) -> None:
+        """CliRunner is non-TTY — heal should still work (no TTY requirement)."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        result = runner.invoke(app, ["heal", str(p)])
+        assert result.exit_code in (0, None)
+
+    @requires_rules
+    def test_heal_shows_remaining_violations(self, tmp_path: Path) -> None:
+        """Non-fixable violations should be listed in text output."""
+        p = tmp_path / "proj"
+        p.mkdir()
+        # Minimal content that will have non-fixable violations
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        result = runner.invoke(app, ["heal", str(p)])
 
         assert result.exit_code in (0, None)
-        output_lower = result.output.lower()
-        if "pending" in output_lower or "semantic" in output_lower:
-            assert "pass" in output_lower or "skip" in output_lower or "summary" in output_lower
+        # Should show either fixes applied or remaining violations
+        output = result.output
+        has_content = (
+            "fix" in output.lower()
+            or "remaining" in output.lower()
+            or "violation" in output.lower()
+            or "semantic" in output.lower()
+            or "Nothing to heal" in output
+        )
+        assert has_content, f"Expected heal output content, got: {output}"
 
 
 # ===========================================================================

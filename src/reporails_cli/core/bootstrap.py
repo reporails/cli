@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from reporails_cli.core.models import AgentConfig, GlobalConfig, ProjectConfig
@@ -76,10 +79,14 @@ def get_agent_config(agent: str) -> AgentConfig:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         return AgentConfig(
             agent=data.get("agent", ""),
+            prefix=data.get("prefix", ""),
+            name=data.get("name", ""),
+            core=data.get("core", False),
             excludes=data.get("excludes", []),
             overrides=data.get("overrides", {}),
         )
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse agent config %s: %s", config_path, exc)
         return AgentConfig()
 
 
@@ -116,7 +123,8 @@ def get_agent_vars(
                 else:
                     result[key] = str(value)
             return result
-        except (yaml.YAMLError, OSError):
+        except (yaml.YAMLError, OSError) as exc:
+            logger.warning("Failed to parse agent vars %s: %s", config_path, exc)
             continue
     return {}
 
@@ -172,8 +180,11 @@ def get_global_config() -> GlobalConfig:
             framework_path=Path(framework_path) if framework_path else None,
             recommended_path=Path(recommended_path) if recommended_path else None,
             auto_update_check=data.get("auto_update_check", True),
+            default_agent=data.get("default_agent", ""),
+            recommended=data.get("recommended", True),
         )
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse global config %s: %s", config_path, exc)
         return GlobalConfig()
 
 
@@ -192,11 +203,16 @@ def get_project_config(project_root: Path) -> ProjectConfig:
 
     config_path = project_root / ".reporails" / "config.yml"
     if not config_path.exists():
-        return ProjectConfig()
+        global_cfg = get_global_config()
+        return ProjectConfig(
+            default_agent=global_cfg.default_agent,
+            recommended=global_cfg.recommended,
+        )
 
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        return ProjectConfig(
+        has_recommended = "recommended" in data
+        config = ProjectConfig(
             framework_version=data.get("framework_version"),
             packages=data.get("packages", []),
             disabled_rules=data.get("disabled_rules", []),
@@ -204,9 +220,22 @@ def get_project_config(project_root: Path) -> ProjectConfig:
             experimental=data.get("experimental", False),
             recommended=data.get("recommended", True),
             exclude_dirs=data.get("exclude_dirs", []),
+            default_agent=data.get("default_agent", ""),
         )
-    except (yaml.YAMLError, OSError):
-        return ProjectConfig()
+        # Apply global defaults where project doesn't override
+        global_cfg = get_global_config()
+        if not config.default_agent:
+            config.default_agent = global_cfg.default_agent
+        if not has_recommended:
+            config.recommended = global_cfg.recommended
+        return config
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse project config %s: %s", config_path, exc)
+        global_cfg = get_global_config()
+        return ProjectConfig(
+            default_agent=global_cfg.default_agent,
+            recommended=global_cfg.recommended,
+        )
 
 
 def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
@@ -264,9 +293,3 @@ def is_initialized() -> bool:
     """Check if reporails has been initialized (rules framework downloaded)."""
     rules_path = get_rules_path()
     return rules_path.is_dir() and (rules_path / "core").is_dir()
-
-
-# Legacy alias for backward compatibility
-def get_checks_path() -> Path:
-    """Legacy alias for get_rules_path()."""
-    return get_rules_path()

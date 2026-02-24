@@ -1,35 +1,88 @@
-"""Interactive semantic judgment command — ails heal.
+"""Autoheal command — ails heal.
 
-Runs validation, then presents each pending JudgmentRequest interactively.
-Users evaluate content against criteria and provide pass/fail/skip/dismiss verdicts.
-Verdicts are cached immediately after each answer.
+Silently applies all auto-fixes and reports results.
+Non-fixable violations are listed for the coding agent to handle.
 """
 
 from __future__ import annotations
 
-import contextlib
-import sys
+import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from reporails_cli.core.cache import cache_judgments
 from reporails_cli.core.engine import run_validation_sync
-from reporails_cli.core.fixers import apply_auto_fixes
-
-if TYPE_CHECKING:
-    from reporails_cli.core.models import JudgmentRequest
-from reporails_cli.formatters.text.heal import format_heal_summary, format_judgment_prompt
+from reporails_cli.core.fixers import apply_auto_fixes, partition_violations
+from reporails_cli.formatters import json as json_formatter
+from reporails_cli.formatters.text.heal import format_heal_summary
 from reporails_cli.interfaces.cli.helpers import (
     _resolve_recommended_rules,
     _resolve_rules_paths,
+    _validate_agent,
     app,
     console,
 )
 
+if TYPE_CHECKING:
+    from reporails_cli.core.fixers import FixResult
+    from reporails_cli.core.models import JudgmentRequest, Violation
 
-@app.command()
+VALID_HEAL_FORMATS = {"text", "json"}
+
+
+def _serialize_heal_json(
+    fixes: list[FixResult],
+    non_fixable: list[Violation],
+    requests: list[JudgmentRequest],
+    target: Path,
+) -> dict[str, Any]:
+    """Serialize heal results to JSON-compatible dict."""
+    auto_fixed_data = [
+        {
+            "rule_id": fix.rule_id,
+            "file_path": str(Path(fix.file_path).relative_to(target))
+            if Path(fix.file_path).is_relative_to(target)
+            else fix.file_path,
+            "description": fix.description,
+        }
+        for fix in fixes
+    ]
+
+    violation_data = [
+        {
+            "rule_id": v.rule_id,
+            "rule_title": v.rule_title,
+            "location": v.location,
+            "message": v.message,
+            "severity": v.severity.value,
+        }
+        for v in non_fixable
+    ]
+
+    judgment_data = [
+        {
+            "rule_id": jr.rule_id,
+            "rule_title": jr.rule_title,
+            "question": jr.question,
+            "content": jr.content,
+            "location": jr.location,
+            "criteria": jr.criteria,
+            "examples": jr.examples,
+            "choices": jr.choices,
+            "pass_value": jr.pass_value,
+        }
+        for jr in requests
+    ]
+
+    return json_formatter.format_heal_result(
+        auto_fixed_data,
+        judgment_data,
+        violations=violation_data,
+    )
+
+
+@app.command(rich_help_panel="Commands")
 def heal(  # pylint: disable=too-many-locals
     path: str = typer.Argument(".", help="Project root to heal"),
     rules: list[str] = typer.Option(  # noqa: B008
@@ -44,38 +97,43 @@ def heal(  # pylint: disable=too-many-locals
         "-x",
         help="Directory name to exclude from scanning (repeatable).",
     ),
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        help="Refresh file map cache (re-scan for instruction files)",
+    ),
     ascii: bool = typer.Option(
         False,
         "--ascii",
         "-a",
-        help="Use ASCII characters only (no Unicode box drawing)",
+        help="Use ASCII characters only (no Unicode)",
     ),
     agent: str = typer.Option(
-        "claude",
+        "",
         "--agent",
-        help="Agent type for rule overrides and template vars",
+        help="Agent type for rule overrides and template vars (e.g., claude, cursor, codex)",
     ),
     experimental: bool = typer.Option(
         False,
         "--experimental",
         help="Include experimental rules",
     ),
-    non_interactive: bool = typer.Option(
-        False,
-        "--non-interactive",
-        "-n",
-        help="Non-interactive mode: auto-fix and output JSON (for scripts/agents)",
+    format: str = typer.Option(
+        "text",
+        "--format",
+        "-f",
+        help="Output format: text or json",
     ),
 ) -> None:
-    """Interactively evaluate pending semantic rules."""
-    if not non_interactive and not sys.stdout.isatty():
-        console.print("[red]Error:[/red] ails heal requires an interactive terminal.")
-        console.print()
-        console.print("[dim]Solutions:[/dim]")
-        console.print("[dim]  1. Run with --non-interactive flag: ails heal --non-interactive[/dim]")
-        console.print("[dim]  2. Use the MCP heal tool (Claude Code): 'use the heal tool'[/dim]")
-        console.print("[dim]  3. Run ails heal in your actual terminal[/dim]")
+    """Apply all auto-fixes and report remaining violations."""
+    # Validate format
+    if format not in VALID_HEAL_FORMATS:
+        console.print(f"[red]Error:[/red] Unknown format: {format}")
+        console.print(f"Valid formats: {', '.join(sorted(VALID_HEAL_FORMATS))}")
         raise typer.Exit(2)
+
+    # Normalize and validate agent
+    agent = _validate_agent(agent, console)
 
     target = Path(path).resolve()
     if not target.exists():
@@ -90,178 +148,48 @@ def heal(  # pylint: disable=too-many-locals
 
     project_config = get_project_config(target)
 
+    # Resolve effective agent: CLI flag > config default_agent > auto-detect > generic
+    if not agent and project_config.default_agent:
+        agent = _validate_agent(project_config.default_agent, console)
+
+    if not agent:
+        from reporails_cli.core.agents import auto_detect_agent, detect_agents
+
+        all_detected = detect_agents(target)
+        auto = auto_detect_agent(all_detected)
+        if auto:
+            agent = auto
+
     # Merge exclude_dirs
     merged_excludes: list[str] | None = None
-    config_excludes = set(project_config.exclude_dirs)
-    cli_excludes = set(exclude_dir or [])
-    all_excludes = config_excludes | cli_excludes
+    all_excludes = set(project_config.exclude_dirs) | set(exclude_dir or [])
     if all_excludes:
         merged_excludes = sorted(all_excludes)
 
-    rules_paths = _resolve_recommended_rules(rules_paths, project_config, "text", console)
+    rules_paths = _resolve_recommended_rules(rules_paths, project_config, format, console)
 
-    # Run validation to get pending judgment requests
-    if non_interactive or not sys.stdout.isatty():
-        result = run_validation_sync(
-            target,
-            rules_paths=rules_paths,
-            use_cache=True,
-            agent=agent,
-            include_experimental=experimental,
-            exclude_dirs=merged_excludes,
-            record_analytics=False,
-        )
-    else:
-        with console.status("[bold]Scanning for pending semantic rules...[/bold]"):
-            result = run_validation_sync(
-                target,
-                rules_paths=rules_paths,
-                use_cache=True,
-                agent=agent,
-                include_experimental=experimental,
-                exclude_dirs=merged_excludes,
-                record_analytics=False,
-            )
-
-    # Phase 2: Auto-fix deterministic violations
-    fixes = apply_auto_fixes(list(result.violations), target)
-    if fixes and not non_interactive:
-        for fix in fixes:
-            console.print(f"[green]Fixed:[/green] {fix.description}")
-
-    requests = list(result.judgment_requests)
-
-    # Non-interactive mode: output JSON and exit
-    if non_interactive:
-        from reporails_cli.formatters import json as json_formatter
-
-        auto_fixed_data = [
-            {
-                "rule_id": fix.rule_id,
-                "file_path": str(Path(fix.file_path).relative_to(target))
-                if Path(fix.file_path).is_relative_to(target)
-                else fix.file_path,
-                "description": fix.description,
-            }
-            for fix in fixes
-        ]
-
-        judgment_data = [
-            {
-                "rule_id": jr.rule_id,
-                "rule_title": jr.rule_title,
-                "question": jr.question,
-                "content": jr.content,
-                "location": jr.location,
-                "criteria": jr.criteria,
-                "examples": jr.examples,
-                "choices": jr.choices,
-                "pass_value": jr.pass_value,
-            }
-            for jr in requests
-        ]
-
-        import json
-
-        output = json_formatter.format_heal_result(auto_fixed_data, judgment_data)
-        print(json.dumps(output, indent=2))
-        return
-
-    # Interactive mode
-    if not requests and not fixes:
-        console.print("Nothing to heal. All rules pass or are cached.")
-        return
-    if not requests:
-        console.print(f"\n{format_heal_summary(0, 0, 0, 0, auto_fixed=len(fixes))}")
-        return
-
-    console.print(f"\n[bold]{len(requests)} semantic rule(s) pending evaluation.[/bold]\n")
-
-    # Interactive semantic loop
-    passed, failed, skipped, dismissed = _run_semantic_loop(requests, target, ascii)
-
-    # Summary
-    console.print(f"\n{format_heal_summary(passed, failed, skipped, dismissed, auto_fixed=len(fixes))}")
-
-
-def _run_semantic_loop(
-    requests: list[JudgmentRequest],
-    target: Path,
-    ascii_mode: bool,
-) -> tuple[int, int, int, int]:
-    """Run interactive semantic evaluation loop. Returns (passed, failed, skipped, dismissed)."""
-    passed = 0
-    failed = 0
-    skipped = 0
-    dismissed = 0
-
-    for i, jr in enumerate(requests, 1):
-        prompt_text = format_judgment_prompt(jr, i, len(requests), ascii_mode=ascii_mode)
-        console.print(prompt_text)
-
-        verdict = _prompt_verdict()
-
-        if verdict == "s":
-            skipped += 1
-            console.print("[dim]Skipped.[/dim]\n")
-            continue
-
-        if verdict == "p":
-            _cache_verdict(target, jr, "pass", "Passed via ails heal")
-            passed += 1
-            console.print("[green]Passed.[/green]\n")
-        elif verdict == "f":
-            reason = _prompt_reason()
-            _cache_verdict(target, jr, "fail", reason)
-            failed += 1
-            console.print("[red]Failed.[/red]\n")
-        elif verdict == "d":
-            _cache_verdict(target, jr, "pass", "Dismissed via ails heal")
-            dismissed += 1
-            console.print("[yellow]Dismissed.[/yellow]\n")
-
-    return passed, failed, skipped, dismissed
-
-
-def _prompt_verdict() -> str:
-    """Prompt for [p]ass / [f]ail / [s]kip / [d]ismiss."""
-    while True:
-        try:
-            choice = input("\n  Your verdict [p/f/s/d]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return "s"
-        if choice in ("p", "f", "s", "d"):
-            return choice
-        print("  Please enter p (pass), f (fail), s (skip), or d (dismiss).")
-
-
-def _prompt_reason() -> str:
-    """Prompt for failure reason (required)."""
-    while True:
-        try:
-            reason = input("  Reason: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            return "No reason provided"
-        if reason:
-            return reason
-        print("  Reason is required for failures.")
-
-
-def _cache_verdict(target: Path, jr: JudgmentRequest, verdict: str, reason: str) -> None:
-    """Cache a single verdict using the existing cache_judgments pipeline."""
-    file_path = jr.location.rsplit(":", 1)[0] if ":" in jr.location else jr.location
-    # Normalize to relative path
-    with contextlib.suppress(ValueError):
-        file_path = str(Path(file_path).relative_to(target))
-
-    cache_judgments(
+    # Run validation
+    result = run_validation_sync(
         target,
-        [
-            {
-                "rule_id": jr.rule_id,
-                "location": file_path,
-                "verdict": verdict,
-                "reason": reason,
-            }
-        ],
+        rules_paths=rules_paths,
+        use_cache=not refresh,
+        agent=agent,
+        include_experimental=experimental,
+        exclude_dirs=merged_excludes,
+        record_analytics=False,
     )
+
+    # Partition violations and apply fixes
+    fixable, non_fixable = partition_violations(list(result.violations))
+    requests = list(result.judgment_requests)
+    fixes = apply_auto_fixes(fixable, target)
+
+    # Output
+    if format == "json":
+        output = _serialize_heal_json(fixes, non_fixable, requests, target)
+        print(json.dumps(output, indent=2))
+    else:
+        summary = format_heal_summary(fixes, non_fixable, requests, ascii_mode=ascii)
+        console.print(summary)
+        if fixes or non_fixable or requests:
+            console.print("\n[dim]Run 'ails check' to see your updated score.[/dim]")

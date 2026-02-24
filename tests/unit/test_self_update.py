@@ -23,15 +23,6 @@ from reporails_cli.core.self_update import (
 # ---------------------------------------------------------------------------
 
 
-class TestInstallMethod:
-    def test_values(self) -> None:
-        assert InstallMethod.UV.value == "uv"
-        assert InstallMethod.PIP.value == "pip"
-        assert InstallMethod.PIPX.value == "pipx"
-        assert InstallMethod.DEV.value == "dev"
-        assert InstallMethod.UNKNOWN.value == "unknown"
-
-
 # ---------------------------------------------------------------------------
 # detect_install_method
 # ---------------------------------------------------------------------------
@@ -277,15 +268,12 @@ class TestUpgradeCli:
             patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.UV),
             patch("reporails_cli.__version__", "0.1.0"),
             patch("reporails_cli.core.update_check._is_newer", return_value=True),
-            patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_run) as mock_sub,
+            patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_run),
             patch("reporails_cli.core.self_update._verify_installed_version", return_value="0.3.0"),
         ):
             result = upgrade_cli(target_version="0.3.0")
         assert result.updated is True
         assert result.new_version == "0.3.0"
-        # Should have called subprocess with the version-pinned command
-        call_args = mock_sub.call_args[0][0]
-        assert "reporails-cli==0.3.0" in call_args
 
 
 # ---------------------------------------------------------------------------

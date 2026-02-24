@@ -10,45 +10,7 @@ from pathlib import Path
 
 from reporails_cli.core.models import Level
 
-
-class TestFilesystemFeatureDetection:
-    """Test Phase 1: filesystem-based feature detection."""
-
-    def test_detect_instruction_file(self, level1_project: Path) -> None:
-        """Detect presence of instruction file (CLAUDE.md)."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-
-        features = detect_features_filesystem(level1_project)
-
-        assert features.has_instruction_file, f"Should detect CLAUDE.md in {level1_project}"
-        assert features.instruction_file_count >= 1
-
-    def test_detect_rules_directory(self, level3_project: Path) -> None:
-        """Detect presence of .claude/rules/ directory."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-
-        features = detect_features_filesystem(level3_project)
-
-        assert features.is_abstracted, f"Should detect .claude/rules/ in {level3_project}"
-
-    def test_detect_backbone(self, level5_project: Path) -> None:
-        """Detect presence of .reporails/backbone.yml."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-
-        features = detect_features_filesystem(level5_project)
-
-        assert features.has_backbone, f"Should detect backbone.yml in {level5_project}"
-
-    def test_empty_directory_has_no_features(self, tmp_path: Path) -> None:
-        """Empty directory should have no features detected."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-
-        features = detect_features_filesystem(tmp_path)
-
-        assert not features.has_instruction_file
-        assert not features.is_abstracted
-        assert not features.has_backbone
-        assert features.instruction_file_count == 0
+# TestFilesystemFeatureDetection removed — covered by unit/test_applicability.py
 
 
 class TestContentFeatureDetection:
@@ -155,9 +117,9 @@ class TestCapabilityLevelDetermination:
 
         result = determine_capability_level(features, content_features)
 
-        # Project with backbone should be at least L4
-        assert result.level.value >= Level.L4.value, (
-            f"Project with backbone.yml should be at least L4, got {result.level}"
+        # Project with backbone should be at least L5
+        assert result.level.value >= Level.L5.value, (
+            f"Project with backbone.yml should be at least L5, got {result.level}"
         )
 
     def test_missing_files_lowers_level(self, tmp_path: Path) -> None:
@@ -222,3 +184,24 @@ class TestLevelDeterminism:
         # Same features should always give same level
         levels = [determine_level_from_gates(features) for _ in range(5)]
         assert len(set(levels)) == 1, f"Same features should give same level, got: {levels}"
+
+
+class TestCapabilityEdgeCases:
+    """Edge cases for the capability detection pipeline."""
+
+    def test_empty_project_is_l0(self, tmp_path: Path) -> None:
+        """An empty directory should detect as L0 through the full pipeline."""
+        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.capability import (
+            detect_features_content,
+            determine_capability_level,
+        )
+        from reporails_cli.core.regex import run_capability_detection
+
+        features = detect_features_filesystem(tmp_path)
+        sarif = run_capability_detection(tmp_path)
+        content_features = detect_features_content(sarif)
+
+        result = determine_capability_level(features, content_features)
+
+        assert result.level == Level.L0, f"Empty directory should be L0, got {result.level}"

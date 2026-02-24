@@ -18,6 +18,7 @@ modules:
   interfaces: src/reporails_cli/interfaces/
   formatters: src/reporails_cli/formatters/
   bundled: src/reporails_cli/bundled/
+  templates: src/reporails_cli/templates/
 
 bundled:
   capability_patterns: src/reporails_cli/bundled/capability-patterns.yml

@@ -12,7 +12,7 @@ from reporails_cli.formatters import json as json_formatter
 
 if TYPE_CHECKING:
     from reporails_cli.core.fixers import FixResult
-    from reporails_cli.core.models import JudgmentRequest
+    from reporails_cli.core.models import JudgmentRequest, Violation
 
 
 def format_result(
@@ -72,18 +72,21 @@ def format_score(result: ValidationResult) -> dict[str, Any]:
 def format_heal_result(
     fixes: list[FixResult],
     judgment_requests: list[JudgmentRequest],
+    *,
+    non_fixable: list[Violation] | None = None,
 ) -> dict[str, Any]:
     """
     Format heal result for MCP response.
 
-    Returns auto-fixes applied and remaining semantic judgment requests.
+    Returns auto-fixes applied, non-fixable violations, and remaining semantic judgment requests.
 
     Args:
         fixes: List of FixResult from auto-fix phase
         judgment_requests: Remaining semantic JudgmentRequests
+        non_fixable: Optional list of violations without auto-fixers
 
     Returns:
-        Dict with auto_fixed and judgment_requests
+        Dict with auto_fixed, violations, and judgment_requests
     """
     data: dict[str, Any] = {
         "auto_fixed": [
@@ -109,6 +112,18 @@ def format_heal_result(
             for jr in judgment_requests
         ],
     }
+
+    if non_fixable:
+        data["violations"] = [
+            {
+                "rule_id": v.rule_id,
+                "rule_title": v.rule_title,
+                "location": v.location,
+                "message": v.message,
+                "severity": v.severity.value,
+            }
+            for v in non_fixable
+        ]
 
     if judgment_requests:
         data["_semantic_workflow"] = {

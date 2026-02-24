@@ -8,9 +8,16 @@ from __future__ import annotations
 import contextlib
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 
-from reporails_cli.core.agents import detect_agents, get_all_instruction_files, get_all_scannable_files
+from reporails_cli.core.agents import (
+    clear_agent_cache,
+    detect_agents,
+    filter_agents_by_exclude_dirs,
+    get_all_instruction_files,
+    get_all_scannable_files,
+)
 from reporails_cli.core.applicability import detect_features_filesystem, get_applicable_rules
 from reporails_cli.core.bootstrap import (
     get_agent_vars,
@@ -27,6 +34,9 @@ from reporails_cli.core.engine_helpers import (
     _filter_cached_judgments as _filter_cached_judgments,
 )
 from reporails_cli.core.engine_helpers import (
+    _filter_dismissed_violations as _filter_dismissed_violations,
+)
+from reporails_cli.core.engine_helpers import (
     _find_project_root as _find_project_root,
 )
 from reporails_cli.core.engine_helpers import (
@@ -39,14 +49,40 @@ from reporails_cli.core.models import (
     SkippedExperimental,
     ValidationResult,
 )
-from reporails_cli.core.registry import get_experimental_rules, load_rules
+from reporails_cli.core.registry import clear_rule_cache, get_experimental_rules, load_rules
 from reporails_cli.core.sarif import dedupe_violations
 from reporails_cli.core.scorer import calculate_score, estimate_friction
+
+ProgressCallback = Callable[[str, int, int], None]
 
 logger = logging.getLogger(__name__)
 
 
-def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
+def build_template_context(
+    agent: str,
+    instruction_files: list[Path],
+    rules_paths: list[Path] | None = None,
+) -> dict[str, str | list[str]]:
+    """Build template context for rule placeholder resolution.
+
+    With an agent: loads vars from agent config (e.g., claude → CLAUDE.md patterns).
+    Without an agent: derives minimal vars from detected instruction files so
+    core rules can resolve {{instruction_files}} and {{main_instruction_file}}.
+    """
+    if agent:
+        vars = get_agent_vars(agent, rules_paths=rules_paths)
+        if vars:
+            return vars
+        # Agent has no config.yml — fall through to file-based derivation
+    # Derive from detected files so rules can resolve {{instruction_files}}
+    rel_patterns = [f"**/{f.name}" for f in instruction_files]
+    return {
+        "instruction_files": rel_patterns,
+        "main_instruction_file": rel_patterns[:1],
+    }
+
+
+def run_validation(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     target: Path,
     rules: dict[str, Rule] | None = None,
     rules_paths: list[Path] | None = None,
@@ -55,19 +91,40 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     agent: str = "",
     include_experimental: bool = False,
     exclude_dirs: list[str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> ValidationResult:
     """Run full validation: capability detection then rule validation."""
     start_time = time.perf_counter()
+    _notify = on_progress or (lambda *_: None)
+    _notify("Loading rules", 1, 3)
     scan_root = target.parent if target.is_file() else target
     project_root = _find_project_root(scan_root)
+
+    # Clear file-discovery and rule caches when refresh requested
+    if not use_cache:
+        clear_agent_cache()
+        clear_rule_cache()
 
     # Auto-init if needed (downloads rules framework)
     if not is_initialized():
         logger.info("Downloading rules framework...")
         run_init()
 
-    # Get template vars from agent config for yml placeholder resolution
-    template_context = get_agent_vars(agent, rules_paths=rules_paths) if agent else {}
+    # Detect agents once — reuse for all file lookups (avoids redundant recursive globs)
+    # Use scan_root (not project_root) so only files inside the target are scanned
+    all_agents = detect_agents(scan_root)
+
+    # Resolve effective agent: explicit flag or generic default (agents.md convention)
+    from reporails_cli.core.agents import filter_agents_by_id
+
+    effective_agent = agent if agent else "generic"
+    agents = filter_agents_by_id(all_agents, effective_agent)
+    agents = filter_agents_by_exclude_dirs(agents, scan_root, exclude_dirs)
+
+    instruction_files = get_all_instruction_files(scan_root, agents=agents)
+
+    # Get template vars for yml placeholder resolution
+    template_context = build_template_context(effective_agent, instruction_files, rules_paths)
 
     # Load rules if not provided
     if rules is None:
@@ -75,7 +132,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
             rules_paths,
             include_experimental=include_experimental,
             project_root=project_root,
-            agent=agent,
+            agent=effective_agent,
             scan_root=scan_root,
         )
 
@@ -89,16 +146,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
                 rules=tuple(sorted(exp_rules.keys())),
             )
 
-    # Detect agents once — reuse for all file lookups (avoids redundant recursive globs)
-    # Use scan_root (not project_root) so only files inside the target are scanned
-    all_agents = detect_agents(scan_root)
-
-    # Filter to specific agent if requested (default behavior: only validate specified agent's files)
-    from reporails_cli.core.agents import filter_agents_by_id
-
-    agents = filter_agents_by_id(all_agents, agent) if agent else all_agents
-
-    instruction_files = get_all_instruction_files(scan_root, agents=agents)
+    _notify("Checking files", 2, 3)
 
     # PASS 1: Capability Detection (determines final level)
     features = detect_features_filesystem(scan_root, agents=agents)
@@ -115,11 +163,6 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
 
     # Target-scoped files for rule validation (includes config files for path-filtered rules)
     target_instruction_files = get_all_scannable_files(scan_root, agents=agents) or None
-    if target_instruction_files and exclude_dirs:
-        exclude_set = set(exclude_dirs)
-        target_instruction_files = [
-            f for f in target_instruction_files if not (exclude_set & set(f.relative_to(scan_root).parts))
-        ]
     if target_instruction_files and extra_targets:
         target_instruction_files = list(target_instruction_files) + list(extra_targets)
 
@@ -141,6 +184,11 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
         project_root,
         use_cache,
     )
+
+    # Dismissed violations: filter deterministic violations cached as 'pass'
+    violations = _filter_dismissed_violations(violations, scan_root, project_root, use_cache)
+
+    _notify("Scoring", 3, 3)
 
     # Scoring
     unique_violations = dedupe_violations(violations)
@@ -177,7 +225,7 @@ def run_validation(  # pylint: disable=too-many-arguments,too-many-locals
     return ValidationResult(
         score=score,
         level=final_level,
-        violations=tuple(violations),
+        violations=tuple(unique_violations),
         judgment_requests=tuple(judgment_requests),
         rules_checked=len(applicable_rules),
         rules_passed=len(applicable_rules) - rules_failed,
@@ -201,6 +249,7 @@ def run_validation_sync(  # pylint: disable=too-many-arguments
     agent: str = "",
     include_experimental: bool = False,
     exclude_dirs: list[str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> ValidationResult:
     """Synchronous entry point for run_validation."""
     return run_validation(
@@ -212,4 +261,5 @@ def run_validation_sync(  # pylint: disable=too-many-arguments
         agent,
         include_experimental,
         exclude_dirs,
+        on_progress,
     )

@@ -1,9 +1,11 @@
+# pylint: disable=too-many-lines
 """Typer CLI for reporails - validate and score AI instruction files."""
 
 from __future__ import annotations
 
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import typer
@@ -12,20 +14,36 @@ from reporails_cli.core.agents import get_all_instruction_files
 from reporails_cli.core.cache import get_previous_scan
 from reporails_cli.core.engine import run_validation_sync
 from reporails_cli.core.models import ScanDelta
-from reporails_cli.core.registry import load_rules
+from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import text as text_formatter
 from reporails_cli.interfaces.cli.helpers import (
     _default_format,
     _format_output,
+    _handle_no_instruction_files,
+    _print_unknown_rule,
     _print_verbose,
     _resolve_recommended_rules,
     _resolve_rules_paths,
+    _show_agent_auto_detect_hint,
+    _validate_agent,
+    _validate_format,
     app,
     console,
 )
 
 
-@app.command()
+def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
+    """Resolve rules paths for explain command, auto-including recommended."""
+    if rules:
+        return [Path(r).resolve() for r in rules]
+    from reporails_cli.core.bootstrap import get_recommended_package_path
+    from reporails_cli.core.registry import get_rules_dir
+
+    rec_path = get_recommended_package_path()
+    return [get_rules_dir(), rec_path] if rec_path.is_dir() else None
+
+
+@app.command(rich_help_panel="Commands")
 def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
     path: str = typer.Argument(".", help="File or directory to validate"),
     format: str = typer.Option(
@@ -49,7 +67,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
     refresh: bool = typer.Option(
         False,
         "--refresh",
-        help="Refresh file map cache (re-scan for CLAUDE.md files)",
+        help="Refresh file map cache (re-scan for instruction files)",
     ),
     ascii: bool = typer.Option(
         False,
@@ -75,9 +93,9 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         help="Show severity legend only",
     ),
     agent: str = typer.Option(
-        "claude",
+        "",
         "--agent",
-        help="Agent type for rule overrides and template vars (e.g., claude, cursor)",
+        help="Agent type for rule overrides and template vars (e.g., claude, cursor, codex)",
     ),
     experimental: bool = typer.Option(
         False,
@@ -96,14 +114,15 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         help="Skip pre-run update check prompt",
     ),
 ) -> None:
-    """Validate CLAUDE.md files against reporails rules."""
+    """Validate AI instruction files against reporails rules."""
     if legend:
         legend_text = text_formatter.format_legend(ascii_mode=ascii)
         print(f"Severity Legend: {legend_text}")
         return
 
+    agent = _validate_agent(agent, console)
+    _validate_format(format, console)
     target = Path(path).resolve()
-
     if not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
         console.print("Run 'ails check .' to validate the current directory.")
@@ -117,13 +136,13 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     project_config = get_project_config(target)
 
+    # Resolve effective agent: CLI flag > config default_agent > engine defaults to generic
+    if not agent and project_config.default_agent:
+        agent = _validate_agent(project_config.default_agent, console)
+
     # Merge exclude_dirs: config + CLI flags
-    merged_excludes: list[str] | None = None
-    config_excludes = set(project_config.exclude_dirs)
-    cli_excludes = set(exclude_dir or [])
-    all_excludes = config_excludes | cli_excludes
-    if all_excludes:
-        merged_excludes = sorted(all_excludes)
+    all_excludes = set(project_config.exclude_dirs) | set(exclude_dir or [])
+    merged_excludes: list[str] | None = sorted(all_excludes) if all_excludes else None
 
     # Auto-include recommended rules if needed
     rules_paths = _resolve_recommended_rules(rules_paths, project_config, format, console)
@@ -136,44 +155,38 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
 
     # Early check for missing instruction files
     output_format = format if format else _default_format()
-    # Filter to specified agent (default: claude) for file discovery
-    from reporails_cli.core.agents import detect_agents, filter_agents_by_id
+    from reporails_cli.core.agents import (
+        detect_agents,
+        filter_agents_by_exclude_dirs,
+        filter_agents_by_id,
+        resolve_agent,
+    )
 
     all_detected_agents = detect_agents(target)
-    filtered_agents = filter_agents_by_id(all_detected_agents, agent) if agent else all_detected_agents
+
+    # Resolution chain: CLI flag > config > auto-detect > generic
+    agent, assumed, mixed_signals = resolve_agent(agent, all_detected_agents)
+    effective_agent = agent if agent else "generic"
+    filtered_agents = filter_agents_by_id(all_detected_agents, effective_agent)
+    filtered_agents = filter_agents_by_exclude_dirs(filtered_agents, target, merged_excludes)
     instruction_files = get_all_instruction_files(target, agents=filtered_agents)
     if not instruction_files:
-        if output_format in ("json", "github"):
-            import json
-
-            print(json.dumps({"violations": [], "score": 0, "level": "L1"}))
-        else:
-            console.print("No instruction files found.")
-            console.print("Level: L1 (Absent)")
-            console.print()
-            console.print("[dim]Create a CLAUDE.md to get started.[/dim]")
+        _handle_no_instruction_files(effective_agent, output_format, console)
         return
 
     # Get previous scan BEFORE running validation (for delta comparison)
     previous_scan = get_previous_scan(target)
 
-    # Determine if we should show spinner (TTY + not explicitly JSON)
-    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
-
     # Run validation with timing
+    show_spinner = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github")
+    if show_spinner:
+        spinner = console.status("[bold]Loading rules...[/bold]")
+        progress_cb = lambda phase, _c, _t: spinner.update(f"[bold]{phase}...[/bold]")  # noqa: E731
+    else:
+        spinner, progress_cb = nullcontext(), None  # type: ignore[assignment]
     start_time = time.perf_counter()
     try:
-        if show_spinner:
-            with console.status("[bold]Scanning instruction files...[/bold]"):
-                result = run_validation_sync(
-                    target,
-                    rules_paths=rules_paths,
-                    use_cache=not refresh,
-                    agent=agent,
-                    include_experimental=experimental,
-                    exclude_dirs=merged_excludes,
-                )
-        else:
+        with spinner:
             result = run_validation_sync(
                 target,
                 rules_paths=rules_paths,
@@ -181,9 +194,10 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
                 agent=agent,
                 include_experimental=experimental,
                 exclude_dirs=merged_excludes,
+                on_progress=progress_cb,
             )
     except FileNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] File not found during validation: {e.filename or e}")
         raise typer.Exit(2) from None
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -195,8 +209,29 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         previous=previous_scan,
     )
 
+    # Build surface summary from agent detection for display
+    from reporails_cli.formatters.text.components import build_surface_summary
+
+    surface = build_surface_summary(filtered_agents, target) | {
+        "detected_agents": [a.agent_type.id for a in all_detected_agents],
+        "effective_agent": effective_agent,
+        "assumed": assumed,
+    }
+
     # Format output
-    _format_output(result, delta, output_format, ascii, quiet_semantic, elapsed_ms, console)
+    _format_output(
+        result,
+        delta,
+        output_format,
+        ascii,
+        quiet_semantic,
+        elapsed_ms,
+        console,
+        surface=surface,
+    )
+
+    # Agent auto-detect messaging
+    _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed_signals, all_detected_agents)
 
     # Verbose diagnostics (text formats only)
     if verbose and output_format not in ("json", "brief"):
@@ -207,7 +242,7 @@ def check(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statem
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(rich_help_panel="Commands")
 def explain(
     rule_id: str = typer.Argument(..., help="Rule ID (e.g., S1, C2)"),
     rules: list[str] = typer.Option(  # noqa: B008
@@ -218,25 +253,14 @@ def explain(
     ),
 ) -> None:
     """Show rule details."""
-    rules_paths: list[Path] | None = None
-    if rules:
-        rules_paths = [Path(r).resolve() for r in rules]
-    else:
-        # Auto-include recommended if installed
-        from reporails_cli.core.bootstrap import get_recommended_package_path
-        from reporails_cli.core.registry import get_rules_dir
-
-        rec_path = get_recommended_package_path()
-        if rec_path.is_dir():
-            rules_paths = [get_rules_dir(), rec_path]
-    loaded_rules = load_rules(rules_paths)
-
+    rules_paths = _explain_rules_paths(rules)
     rule_id_upper = rule_id.upper()
+    agent = infer_agent_from_rule_id(rule_id_upper)  # auto-load agent-namespaced rules
+    loaded_rules = load_rules(rules_paths, agent=agent)
 
     if rule_id_upper not in loaded_rules:
-        console.print(f"[red]Error:[/red] Unknown rule: {rule_id}")
-        console.print(f"Available rules: {', '.join(sorted(loaded_rules.keys()))}")
-        raise typer.Exit(1)
+        _print_unknown_rule(rule_id, loaded_rules)
+        raise typer.Exit(2)
 
     rule = loaded_rules[rule_id_upper]
     rule_data = {
@@ -246,7 +270,7 @@ def explain(
         "level": rule.level,
         "slug": rule.slug,
         "targets": rule.targets,
-        "checks": [{"id": c.id, "type": c.type, "severity": c.severity.value} for c in rule.checks],
+        "checks": [{"id": c.id, "type": c.type, "name": c.name, "severity": c.severity.value} for c in rule.checks],
         "see_also": rule.see_also,
     }
 
@@ -268,7 +292,11 @@ def main() -> None:
 
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
-import reporails_cli.interfaces.cli.setup  # noqa: F401, E402  # Register setup command
+import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
+import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
+from reporails_cli.interfaces.cli.config_command import config_app  # noqa: E402
+
+app.add_typer(config_app, rich_help_panel="Configuration")
 
 if __name__ == "__main__":
     main()
