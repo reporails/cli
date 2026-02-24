@@ -48,7 +48,7 @@ COMPATIBLE_MANIFEST = """\
 schemas:
   rule: "0.1.0"
   levels: "0.1.0"
-  agent: "0.1.0"
+  agent: "0.2.0"
 """
 
 INCOMPATIBLE_MANIFEST = """\
