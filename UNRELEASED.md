@@ -10,6 +10,7 @@
 - [ENGINE]: Load `prefix`, `name`, `core` fields from agent config schema v0.2.0
 - [META]: Bump default rules version to 0.5.0, recommended to 0.3.0
 - [META]: Declare agent schema v0.2 compatibility
+- [TESTS]: Update golden snapshots, scoring threshold, and smoke assertions for 0.5.0 rules
 - [CLI]: Phased progress spinner — shows "Loading rules..." / "Checking files..." / "Scoring..." during validation
 - [ENGINE]: Add `metadata_keys` field to Check model — D checks write matched texts to pipeline annotations, M checks read them as injected args
 - [ENGINE]: Add `count_at_most`, `count_at_least`, `check_import_targets_exist`, `filename_matches_pattern` mechanical probes
