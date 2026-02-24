@@ -15,6 +15,7 @@ from reporails_cli.core.mechanical.checks import (
     line_count,
 )
 from reporails_cli.core.mechanical.checks_advanced import (
+    _scope_dir_from_glob,
     check_import_targets_exist,
     count_at_least,
     count_at_most,
@@ -552,6 +553,99 @@ class TestFileAbsent:
         (tmp_path / "FORBIDDEN.md").write_text("bad")
         result = file_absent(tmp_path, {"pattern": "{{forbidden_file}}"}, {"forbidden_file": "FORBIDDEN.md"})
         assert not result.passed
+
+
+class TestTargetScoping:
+    """Checks respect rule.targets via injected _targets arg."""
+
+    def test_filename_matches_pattern_scoped_to_main_file(self, tmp_path: Path) -> None:
+        """Bug fix: CORE:S:0004 — should only check main_instruction_file, not all files."""
+        (tmp_path / "CLAUDE.md").write_text("# Main")
+        (tmp_path / ".claude" / "rules").mkdir(parents=True)
+        (tmp_path / ".claude" / "rules" / "core-rules.md").write_text("# Rules")
+        vars = {
+            "instruction_files": ["CLAUDE.md", ".claude/rules/core-rules.md"],
+            "main_instruction_file": ["CLAUDE.md"],
+        }
+        # With _targets scoping to main_instruction_file, only CLAUDE.md is checked
+        args = {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$", "_targets": "{{main_instruction_file}}"}
+        result = filename_matches_pattern(tmp_path, args, vars)
+        assert result.passed
+
+    def test_filename_matches_pattern_unscoped_leaks(self, tmp_path: Path) -> None:
+        """Without _targets, filename_matches_pattern falls back to all instruction_files."""
+        (tmp_path / "CLAUDE.md").write_text("# Main")
+        (tmp_path / ".claude" / "rules").mkdir(parents=True)
+        (tmp_path / ".claude" / "rules" / "core-rules.md").write_text("# Rules")
+        vars = {
+            "instruction_files": ["CLAUDE.md", ".claude/rules/core-rules.md"],
+            "main_instruction_file": ["CLAUDE.md"],
+        }
+        # Without _targets, falls back to instruction_files — core-rules.md fails the regex
+        args = {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$"}
+        result = filename_matches_pattern(tmp_path, args, vars)
+        assert not result.passed
+        assert "core-rules.md" in result.message
+
+    def test_file_absent_scoped_ignores_root_readme(self, tmp_path: Path) -> None:
+        """Bug fix: CLAUDE:S:0001 — README.md at root should not trigger file_absent in skills."""
+        (tmp_path / "README.md").write_text("# Project readme")
+        skills = tmp_path / ".claude" / "skills" / "test-skill"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("# Skill")
+        args = {"pattern": "README.md", "_targets": "{{skills_dir}}/**/*.md"}
+        vars = {"skills_dir": ".claude/skills"}
+        result = file_absent(tmp_path, args, vars)
+        assert result.passed
+
+    def test_file_absent_scoped_catches_readme_in_skills(self, tmp_path: Path) -> None:
+        """file_absent with scope detects README.md inside skills directory."""
+        skills = tmp_path / ".claude" / "skills" / "test-skill"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("# Skill")
+        (skills / "README.md").write_text("# Bad")
+        args = {"pattern": "README.md", "_targets": "{{skills_dir}}/**/*.md"}
+        vars = {"skills_dir": ".claude/skills"}
+        result = file_absent(tmp_path, args, vars)
+        assert not result.passed
+        assert "README.md" in result.message
+
+    def test_file_absent_unscoped_finds_root_readme(self, tmp_path: Path) -> None:
+        """Without _targets, file_absent searches from project root (original behavior)."""
+        (tmp_path / "README.md").write_text("# Project")
+        result = file_absent(tmp_path, {"pattern": "README.md"}, {})
+        assert not result.passed
+
+    def test_explicit_path_overrides_targets(self, tmp_path: Path) -> None:
+        """Explicit args.path takes priority over _targets."""
+        (tmp_path / "CLAUDE.md").write_text("# Main")
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "notes.md").write_text("# Notes")
+        vars = {"instruction_files": ["CLAUDE.md"], "main_instruction_file": ["CLAUDE.md"]}
+        # path points to docs/, _targets points to main_instruction_file — path wins
+        args = {"pattern": r"^CLAUDE\.md$", "path": "docs/**/*.md", "_targets": "{{main_instruction_file}}"}
+        result = filename_matches_pattern(tmp_path, args, vars)
+        assert not result.passed
+        assert "notes.md" in result.message
+
+
+class TestScopeDirFromGlob:
+    """Unit tests for _scope_dir_from_glob helper."""
+
+    def test_skills_dir_glob(self) -> None:
+        assert _scope_dir_from_glob(".claude/skills/**/*.md") == ".claude/skills"
+
+    def test_wildcard_at_start(self) -> None:
+        assert _scope_dir_from_glob("**/CLAUDE.md") == ""
+
+    def test_no_glob(self) -> None:
+        assert _scope_dir_from_glob("docs/README.md") == "docs/README.md"
+
+    def test_single_dir(self) -> None:
+        assert _scope_dir_from_glob("src/*.py") == "src"
+
+    def test_empty(self) -> None:
+        assert _scope_dir_from_glob("") == ""
 
 
 class TestAliases:
