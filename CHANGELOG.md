@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.4.0
+
+### Multi-agent support
+
+Agent detection and scoping overhauled. `ails check` auto-detects agents from project files — single unambiguous agent is assumed, multiple agents default to generic. Without `--agent`, only core rules load; agent-specific rules require an explicit flag. Added OpenAI Codex agent (`--agent codex`) with AGENTS.md instruction pattern, plus a generic agent config targeting AGENTS.md. Glob patterns supported in agent excludes (e.g., `CLAUDE:*`). Agent config schema v0.2.0 fields (`prefix`, `name`, `core`) now loaded.
+
+### Configuration system
+
+New `ails config set/get/list` commands for managing `.reporails/config.yml` without manual editing. `--global` flag writes to `~/.reporails/config.yml`. Added `default_agent` option — sets agent when `--agent` not specified (CLI flag overrides). Agent hint suggests setting `default_agent` when running generic with a specific agent detected.
+
+### New mechanical checks
+
+Added `file_absent` check (verifies a file does NOT exist), `count_at_most`, `count_at_least`, `check_import_targets_exist`, and `filename_matches_pattern` probes. `metadata_keys` field on the Check model enables D→M annotation propagation — D checks write matched texts to pipeline annotations, M checks read them as injected args. Check aliases registered: `file_tracked`→`git_tracked`, `memory_dir_exists`→`directory_exists`, `total_size_check`→`aggregate_byte_size`. Signal catalog aliases: `glob_match`→`file_exists`, `max_line_count`→`line_count`, `glob_count`→`file_count`.
+
+### Test harness
+
+Added fail scaffold system — auto-generates fail fixtures for structural M checks (`filename_matches_pattern`, `glob_count`, `file_count`, `file_absent`). Pass scaffold extended with `file_absent` support (removes forbidden file from fixture). Multi-agent prefix dispatch, effectiveness scoring, and coverage baseline added to harness.
+
+### Scorecard redesign
+
+Scorecard moved to bottom of output — violations shown first, score as conclusion. Category table redesigned with mini bars, centered columns, and severity-colored icons. Capability moved to own line below score, elapsed time shown in top-right. Semantic color output throughout — score, bar, capability level, violations, friction, and category table use green/yellow/red (ASCII mode disables colors). Pending semantic checks shown inline with violations using `?` icon. "Setup:" replaced with "Scope:" showing instruction files by agent directory labels.
+
+### `ails heal` simplified
+
+Heal command simplified to autoheal — silently applies all fixes, reports remaining violations and pending semantic rules (interactive prompts removed). Added `--format`/`-f` option (text/json) replacing `--non-interactive` flag. Dismissed violations filtered from output (cached as pass verdicts, reset with `--refresh`).
+
+### CLI polish
+
+- `setup` command renamed to `install` — `setup` kept as hidden alias
+- `--help` groups commands into panels (Commands, Configuration, Development) — `dismiss` and `judge` hidden as plumbing
+- Phased progress spinner shows "Loading rules..." / "Checking files..." / "Scoring..." during validation
+- `explain` unknown rule shows rules grouped by namespace with counts instead of flat list
+- Install CTA shown for ephemeral (npx/uvx) users below scorecard
+- Raw exceptions wrapped in user-friendly error messages (FileNotFoundError, RuntimeError, download failures)
+- Exit code 2 for input errors in `explain` and `--rules` — was exit 1
+- `"partial"` evaluation label renamed to `"awaiting_semantic"` across all output formats (breaking: JSON consumers checking `evaluation` field need updating)
+- "CLAUDE.md" replaced with "AI instruction files" in CLI, MCP, and setup strings
+
+### GitHub Action improvements
+
+- Agent default changed from `claude` to empty (resolve via project config or generic fallback)
+- Added `-q` (quiet-semantic) flag for CI — no human to judge semantic rules
+- Added `exclude-dir` input for comma-separated directory exclusions
+- Fixed shell syntax error in step summary — JSON result passed via env var instead of shell argument
+
+### Testing
+
+Mutation-tested E2E smoke layer (`tests/smoke/`, 112 tests) covering agent scoping, cross-agent contamination, template context, hint messages, violation accuracy, CLI commands, mechanical checks, and flag combinations. Pipeline output stability tests with golden snapshots and regeneration flag. Unit test suite refactored — parametrized duplicates, added boundary/edge-case tests, relocated pure unit tests from integration/. GitHub Action regression workflow (`test-action.yml`) with pass/fail scenarios.
+
+### Bug fixes
+
+- `ails explain` did not resolve agent-namespaced rules (e.g., `CLAUDE:S:0001`) and showed "Unknown" for check labels — fixed in both CLI and MCP
+- MCP tools (validate, score, heal) did not apply `exclude_dirs` from project config — was scanning all directories including test fixtures
+- MCP `validate` handler missing `rules_paths` and `exclude_dirs` — called `run_validation` directly without resolving project config
+- Semantic JudgmentRequests not deduplicated by file path — multiple D matches in the same file produced N evaluations instead of one
+- Malformed YAML config files failed silently instead of logging warnings; malformed project config returned hardcoded defaults instead of global defaults
+- Empty-files hint was hardcoded to CLAUDE.md instead of showing the correct instruction file per agent
+- Unknown `--agent` values silently ignored — now error with exit code 2 and list known agents; values are case-insensitive
+- Invalid `--format` values silently accepted — now error with exit code 2 and list valid formats
+- `--agent generic` returned empty template context instead of file-derived vars
+- JSON output serialized raw duplicate violations instead of deduplicated results
+- Without `--agent`, scanned all agent files with identical rules instead of defaulting to generic
+- Rule compiler crashed on `paths: include: null` in YAML rules (`dict.get()` returns `None` not default when key exists with null value)
+- `exclude_dirs` config not applied during agent file discovery — test fixtures scanned as real instruction files
+- `--refresh` flag only cleared semantic judgment cache, not agent or rule caches
+- Mechanical checks ignored `rule.targets` — fell back to all instruction files instead of scoped targets
+- `file_absent` searched from project root instead of rule target scope — project-level README.md triggered false violations for skills-scoped rules
+- `disabled_rules:` with empty value in config.yml crashed with `TypeError` (`set(None)`)
+
+### Dependencies
+
+- Rules framework 0.5.0
+- Recommended package 0.3.0
+- Agent schema v0.2 compatibility
+
 ## 0.3.0
 
 ### Pure Python regex engine
