@@ -73,6 +73,7 @@
 - [INTEGRATION]: Add pipeline output stability tests — run full validation against committed fixtures, assert deterministic fields with regeneration flag
 
 ### Fixed
+- [ACTION]: Fix shell syntax error in step summary — JSON result passed via env var instead of shell argument (parentheses in JSON broke bash parsing)
 - [CLI]: `ails explain` now resolves agent-namespaced rules (e.g., `CLAUDE:S:0001`) by inferring agent from rule ID prefix
 - [CLI]: `ails explain` checks output now shows human-readable labels and type instead of "Unknown"
 - [MCP]: `explain` tool resolves agent-namespaced rules and shows check labels (same fixes as CLI)

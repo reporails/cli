@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Generate GitHub Actions step summary markdown from ails check JSON output.
 
-Usage: python3 summary.py '<json_result>'
+Usage: REPORAILS_RESULT='<json>' python3 summary.py
 
+Reads JSON from the REPORAILS_RESULT environment variable.
 Outputs markdown to stdout for appending to $GITHUB_STEP_SUMMARY.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 SEVERITY_ICONS = {
@@ -96,12 +98,13 @@ def generate_summary(result: dict) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 2 or not sys.argv[1].strip():
+    raw = os.environ.get("REPORAILS_RESULT", "").strip()
+    if not raw:
         print("## Reporails Check\n\n> No results available.")
         return
 
     try:
-        result = json.loads(sys.argv[1])
+        result = json.loads(raw)
     except json.JSONDecodeError:
         print("## Reporails Check\n\n> Failed to parse results.")
         return

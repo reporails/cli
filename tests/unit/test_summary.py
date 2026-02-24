@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
 # Load summary.py as a module since action/ is not a package
 _summary_path = Path(__file__).resolve().parents[2] / "action" / "summary.py"
@@ -209,32 +207,32 @@ class TestViolationsTable:
 
 
 class TestMain:
-    """main() argument handling."""
+    """main() reads from REPORAILS_RESULT env var."""
 
-    def test_no_args(self, capsys):
-        with patch.object(sys, "argv", ["summary.py"]):
-            main()
+    def test_no_env_var(self, capsys, monkeypatch):
+        monkeypatch.delenv("REPORAILS_RESULT", raising=False)
+        main()
         out = capsys.readouterr().out
         assert "No results available" in out
 
-    def test_empty_arg(self, capsys):
-        with patch.object(sys, "argv", ["summary.py", "  "]):
-            main()
+    def test_empty_env_var(self, capsys, monkeypatch):
+        monkeypatch.setenv("REPORAILS_RESULT", "  ")
+        main()
         out = capsys.readouterr().out
         assert "No results available" in out
 
-    def test_invalid_json(self, capsys):
-        with patch.object(sys, "argv", ["summary.py", "not-json"]):
-            main()
+    def test_invalid_json(self, capsys, monkeypatch):
+        monkeypatch.setenv("REPORAILS_RESULT", "not-json")
+        main()
         out = capsys.readouterr().out
         assert "Failed to parse" in out
 
-    def test_valid_json(self, capsys):
+    def test_valid_json(self, capsys, monkeypatch):
         import json
 
         payload = json.dumps({"score": 8.0, "level": "L4", "violations": []})
-        with patch.object(sys, "argv", ["summary.py", payload]):
-            main()
+        monkeypatch.setenv("REPORAILS_RESULT", payload)
+        main()
         out = capsys.readouterr().out
         assert "8.0/10" in out
         assert "Pass" in out
