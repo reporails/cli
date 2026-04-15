@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+Patch release — 0.5.0 published with a direct URL dependency (`en-core-web-sm`) that PyPI accepted but pip/uvx cannot resolve. The spaCy language model is now auto-downloaded on first run instead of declared as a dependency.
+
 ## 0.5.0
 
 ### Self-contained install
