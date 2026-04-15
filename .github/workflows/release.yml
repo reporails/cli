@@ -101,7 +101,7 @@ jobs:
 
       - name: Verify PyPI metadata
         run: |
-          pip install twine --quiet
+          pip install "twine>=5,<6" --quiet
           twine check dist/*
 
       - name: Verify wheel install
