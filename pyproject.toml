@@ -76,8 +76,8 @@ ails = "reporails_cli.interfaces.cli.main:app"
 reporails-mcp = "reporails_cli.interfaces.mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/reporails/cli"
-Documentation = "https://reporails.dev/docs"
+Homepage = "https://reporails.com"
+Documentation = "https://reporails.com/docs"
 Repository = "https://github.com/reporails/cli"
 Issues = "https://github.com/reporails/cli/issues"
 
