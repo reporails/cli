@@ -16,33 +16,59 @@ generate_summary = summary.generate_summary
 main = summary.main
 
 
+# Helper: build a CombinedResult-style dict
+def _result(
+    files: dict | None = None,
+    stats: dict | None = None,
+    offline: bool = True,
+) -> dict:
+    return {
+        "offline": offline,
+        "files": files or {},
+        "stats": stats or {"errors": 0, "warnings": 0},
+    }
+
+
+def _file(findings: list[dict]) -> dict:
+    return {"findings": findings, "count": len(findings)}
+
+
+def _finding(severity: str = "warning", rule: str = "CORE:S:0001", line: int = 1, message: str = "msg") -> dict:
+    return {"severity": severity, "rule": rule, "line": line, "message": message}
+
+
 # ---------------------------------------------------------------------------
-# generate_summary — score table
+# generate_summary — header table
 # ---------------------------------------------------------------------------
 
 
-class TestScoreTable:
-    """Score/level/status header table."""
+class TestHeaderTable:
+    """Status/findings/files/mode header table."""
 
-    def test_score_display(self):
-        md = generate_summary({"score": 7.5, "level": "L3"})
-        assert "**7.5/10**" in md
+    def test_status_pass_no_findings(self):
+        md = generate_summary(_result())
+        assert "Pass" in md
 
-    def test_level_and_capability(self):
-        md = generate_summary({"score": 9, "level": "L5", "capability": "Autonomous"})
-        assert "**L5** Autonomous" in md
+    def test_findings_count(self):
+        md = generate_summary(_result(
+            files={"CLAUDE.md": _file([_finding(), _finding()])},
+            stats={"errors": 0, "warnings": 2},
+        ))
+        assert "**2**" in md
 
-    def test_positive_delta(self):
-        md = generate_summary({"score": 8, "level": "L4", "score_delta": 1.5})
-        assert "(+1.5)" in md
+    def test_file_count(self):
+        md = generate_summary(_result(
+            files={"CLAUDE.md": _file([_finding()]), "rules/foo.md": _file([_finding()])},
+        ))
+        assert "| Files | 2 |" in md
 
-    def test_negative_delta(self):
-        md = generate_summary({"score": 5, "level": "L2", "score_delta": -2.0})
-        assert "(-2.0)" in md
+    def test_offline_mode(self):
+        md = generate_summary(_result(offline=True))
+        assert "offline" in md
 
-    def test_zero_delta_omitted(self):
-        md = generate_summary({"score": 6, "level": "L3", "score_delta": 0})
-        assert "(+" not in md and "(-" not in md
+    def test_online_mode(self):
+        md = generate_summary(_result(offline=False))
+        assert "online" in md
 
 
 # ---------------------------------------------------------------------------
@@ -51,154 +77,64 @@ class TestScoreTable:
 
 
 class TestStatus:
-    """Status line derivation from violations."""
+    """Status line derivation from findings."""
 
-    def test_no_violations_pass(self):
-        md = generate_summary({"score": 10, "level": "L6", "violations": []})
+    def test_no_findings_pass(self):
+        md = generate_summary(_result())
         assert "Pass" in md
 
-    def test_critical_fail(self):
-        md = generate_summary(
-            {
-                "score": 2,
-                "level": "L1",
-                "violations": [{"severity": "critical", "rule_id": "X", "location": "f", "message": "m"}],
-            }
-        )
+    def test_errors_fail(self):
+        md = generate_summary(_result(
+            files={"f.md": _file([_finding(severity="error")])},
+            stats={"errors": 1, "warnings": 0},
+        ))
         assert "Fail" in md
 
-    def test_high_fail(self):
-        md = generate_summary(
-            {
-                "score": 3,
-                "level": "L2",
-                "violations": [{"severity": "high", "rule_id": "X", "location": "f", "message": "m"}],
-            }
-        )
-        assert "Fail" in md
-
-    def test_medium_warnings(self):
-        md = generate_summary(
-            {
-                "score": 6,
-                "level": "L3",
-                "violations": [{"severity": "medium", "rule_id": "X", "location": "f", "message": "m"}],
-            }
-        )
-        assert "Warnings" in md
-
-    def test_low_warnings(self):
-        md = generate_summary(
-            {
-                "score": 7,
-                "level": "L3",
-                "violations": [{"severity": "low", "rule_id": "X", "location": "f", "message": "m"}],
-            }
-        )
+    def test_warnings_only(self):
+        md = generate_summary(_result(
+            files={"f.md": _file([_finding(severity="warning")])},
+            stats={"errors": 0, "warnings": 1},
+        ))
         assert "Warnings" in md
 
 
 # ---------------------------------------------------------------------------
-# generate_summary — category summary
+# generate_summary — findings table
 # ---------------------------------------------------------------------------
 
 
-class TestCategorySummary:
-    """Category summary table rendering."""
-
-    def test_table_rendered(self):
-        md = generate_summary(
-            {
-                "score": 7,
-                "level": "L3",
-                "category_summary": [{"name": "structure", "passed": 3, "failed": 1, "worst_severity": "medium"}],
-            }
-        )
-        assert "### Categories" in md
-        assert "Structure" in md
-        assert "| 3 | 1 |" in md
-
-    def test_empty_skipped(self):
-        md = generate_summary({"score": 10, "level": "L6", "category_summary": []})
-        assert "### Categories" not in md
-
-    def test_severity_icon_shown(self):
-        md = generate_summary(
-            {
-                "score": 5,
-                "level": "L2",
-                "category_summary": [{"name": "coherence", "passed": 0, "failed": 2, "worst_severity": "critical"}],
-            }
-        )
-        # critical icon
-        assert "\u274c" in md
-
-    def test_passing_checkmark(self):
-        md = generate_summary(
-            {
-                "score": 9,
-                "level": "L5",
-                "category_summary": [{"name": "coherence", "passed": 5, "failed": 0, "worst_severity": "-"}],
-            }
-        )
-        assert "\u2705" in md
-
-
-# ---------------------------------------------------------------------------
-# generate_summary — violations table
-# ---------------------------------------------------------------------------
-
-
-class TestViolationsTable:
-    """Violations detail table rendering."""
+class TestFindingsTable:
+    """Findings detail table rendering."""
 
     def test_row_rendered(self):
-        md = generate_summary(
-            {
-                "score": 5,
-                "level": "L2",
-                "violations": [
-                    {
-                        "severity": "high",
-                        "rule_id": "CORE:S:0001",
-                        "location": "CLAUDE.md",
-                        "message": "Missing section",
-                    }
-                ],
-            }
-        )
-        assert "### Violations" in md
+        md = generate_summary(_result(
+            files={"CLAUDE.md": _file([_finding(rule="CORE:S:0001", message="Missing section")])},
+        ))
+        assert "### Findings" in md
         assert "`CORE:S:0001`" in md
-        assert "`CLAUDE.md`" in md
+        assert "CLAUDE.md" in md
         assert "Missing section" in md
 
     def test_long_message_truncated(self):
         long_msg = "A" * 100
-        md = generate_summary(
-            {
-                "score": 3,
-                "level": "L1",
-                "violations": [{"severity": "low", "rule_id": "X", "location": "f", "message": long_msg}],
-            }
-        )
+        md = generate_summary(_result(
+            files={"f.md": _file([_finding(message=long_msg)])},
+        ))
         assert "AAA..." in md
-        # Truncated to 77 + "..."
         assert "A" * 78 not in md
 
-    def test_empty_violations_skipped(self):
-        md = generate_summary({"score": 10, "level": "L6", "violations": []})
-        assert "### Violations" not in md
+    def test_empty_findings_no_table(self):
+        md = generate_summary(_result())
+        assert "### Findings" not in md
 
     def test_severity_icons(self):
-        violations = [
-            {"severity": sev, "rule_id": "X", "location": "f", "message": "m"}
-            for sev in ("critical", "high", "medium", "low")
-        ]
-        md = generate_summary({"score": 1, "level": "L1", "violations": violations})
-        assert "\u274c" in md  # critical
-        assert "\U0001f7e0" in md  # high/orange
-        assert "\u26a0\ufe0f" in md  # medium/warning
-        assert "\U0001f535" in md  # low/blue
+        findings = [_finding(severity=s) for s in ("error", "warning", "medium", "info")]
+        md = generate_summary(_result(
+            files={"f.md": _file(findings)},
+        ))
+        assert "\u274c" in md       # error
+        assert "\u26a0\ufe0f" in md  # warning/medium
+        assert "\U0001f535" in md    # info
 
 
 # ---------------------------------------------------------------------------
@@ -230,9 +166,12 @@ class TestMain:
     def test_valid_json(self, capsys, monkeypatch):
         import json
 
-        payload = json.dumps({"score": 8.0, "level": "L4", "violations": []})
+        payload = json.dumps(_result(
+            files={"CLAUDE.md": _file([_finding()])},
+            stats={"errors": 0, "warnings": 1},
+        ))
         monkeypatch.setenv("REPORAILS_RESULT", payload)
         main()
         out = capsys.readouterr().out
-        assert "8.0/10" in out
-        assert "Pass" in out
+        assert "Reporails Check" in out
+        assert "Warnings" in out

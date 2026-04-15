@@ -236,6 +236,7 @@
 - [TESTS]: Fix MCP test expectations for current tool set (heal replaces judge)
 - [CORE]: Gracefully handle missing ONNX model — catch `RuntimeError` alongside `ImportError` in mapper fallback paths (check, heal, MCP tools)
 - [TESTS]: Update integration tests for `CombinedResult` JSON schema (`files`/`stats` replaces `score`/`level`/`violations`)
+- [TESTS]: Rewrite `test_summary.py` for `CombinedResult` schema
 
 ### Fixed
 
