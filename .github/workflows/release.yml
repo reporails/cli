@@ -99,6 +99,11 @@ jobs:
           # sdist separately for PyPI (model not included — source-only)
           uv build --sdist
 
+      - name: Verify PyPI metadata
+        run: |
+          pip install twine --quiet
+          twine check dist/*
+
       - name: Verify wheel install
         run: |
           python -m venv /tmp/verify-wheel
