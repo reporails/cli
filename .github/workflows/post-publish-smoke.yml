@@ -1,0 +1,103 @@
+name: Post-publish smoke test
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+jobs:
+  smoke-pypi:
+    name: "Smoke: pip install from PyPI"
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Wait for PyPI propagation
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if pip install reporails-cli --dry-run --quiet 2>/dev/null; then break; fi
+            echo "Waiting for PyPI propagation (attempt $i)..."
+            sleep 30
+          done
+
+      - name: Install from PyPI
+        run: pip install reporails-cli
+
+      - name: Verify ails command exists
+        run: |
+          which ails
+          ails version
+
+      - name: Verify ONNX model bundled
+        run: |
+          python -c "
+          from reporails_cli.bundled import get_models_path
+          onnx = get_models_path() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
+          assert onnx.exists(), f'ONNX model missing: {onnx}'
+          print(f'OK: {onnx.stat().st_size / 1024 / 1024:.0f} MB')
+          "
+
+      - name: Smoke check
+        run: |
+          mkdir /tmp/smoke-project
+          echo "# Test Project" > /tmp/smoke-project/CLAUDE.md
+          ails check /tmp/smoke-project -f json
+
+  smoke-uvx:
+    name: "Smoke: uvx ephemeral install"
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Wait for PyPI propagation
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if uvx reporails-cli version 2>/dev/null; then break; fi
+            echo "Waiting for PyPI propagation (attempt $i)..."
+            sleep 30
+          done
+
+      - name: Verify uvx runs ails
+        run: uvx reporails-cli version
+
+      - name: Smoke check
+        run: |
+          mkdir /tmp/smoke-project
+          echo "# Test Project" > /tmp/smoke-project/CLAUDE.md
+          uvx reporails-cli check /tmp/smoke-project -f json
+
+  smoke-npx:
+    name: "Smoke: npx @reporails/cli"
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Wait for npm propagation
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if npx --yes @reporails/cli version 2>/dev/null; then break; fi
+            echo "Waiting for npm propagation (attempt $i)..."
+            sleep 20
+          done
+
+      - name: Verify npx runs ails
+        run: npx --yes @reporails/cli version
+
+      - name: Smoke check
+        run: |
+          mkdir /tmp/smoke-project
+          echo "# Test Project" > /tmp/smoke-project/CLAUDE.md
+          npx --yes @reporails/cli check /tmp/smoke-project -f json
