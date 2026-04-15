@@ -29,6 +29,10 @@
     "type": "git",
     "url": "https://github.com/reporails/cli"
   },
+  "homepage": "https://reporails.com",
+  "bugs": {
+    "url": "https://github.com/reporails/cli/issues"
+  },
   "license": "BUSL-1.1",
   "author": "Reporails"
 }
