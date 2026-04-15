@@ -231,6 +231,9 @@
 - [META]: Fix ruff lint errors in `tests/unit/test_api_client.py` — unused import, dict literal
 - [META]: Exclude `_archived/` from mypy in `pyproject.toml`
 - [ACTION]: Remove invalid `--no-update-check` flag from `action/action.yml`
+- [TESTS]: Remove stale integration tests for removed features (update, dismiss, judge, --no-update-check, -q, --refresh, --legend, compact/brief formats)
+- [TESTS]: Add `requires_model` skip marker for integration tests needing bundled ONNX model
+- [TESTS]: Fix MCP test expectations for current tool set (heal replaces judge)
 
 ### Fixed
 

@@ -31,6 +31,13 @@ requires_rules = pytest.mark.skipif(
     reason="Rules framework not installed",
 )
 
+_onnx_path = (
+    Path(__file__).resolve().parents[2]
+    / "src" / "reporails_cli" / "bundled" / "models" / "minilm-l6-v2" / "onnx" / "model.onnx"
+)
+_has_onnx_model = _onnx_path.exists()
+requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX model not available")
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -126,7 +133,7 @@ class TestCheckJsonSchema:
 
     @requires_rules
     def test_required_keys_present(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
 
@@ -135,26 +142,26 @@ class TestCheckJsonSchema:
 
     @requires_rules
     def test_score_is_number_in_range(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         data = json.loads(result.output)
         assert isinstance(data["score"], (int, float))
         assert 0 <= data["score"] <= 10
 
     @requires_rules
     def test_level_format(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         data = json.loads(result.output)
         assert data["level"].startswith("L"), f"Level should start with L, got: {data['level']}"
 
     @requires_rules
     def test_violations_are_list(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         data = json.loads(result.output)
         assert isinstance(data["violations"], list)
 
     @requires_rules
     def test_violation_has_required_fields(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         data = json.loads(result.output)
         if data["violations"]:
             v = data["violations"][0]
@@ -164,7 +171,7 @@ class TestCheckJsonSchema:
             assert "severity" in v
 
     def test_no_files_json_output(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(empty_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(empty_project), "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["violations"] == []
@@ -181,7 +188,7 @@ class TestCheckScanScope:
 
     @requires_rules
     def test_nested_child_only_scans_child(self, nested_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(nested_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(nested_project), "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
 
@@ -192,7 +199,7 @@ class TestCheckScanScope:
     @requires_rules
     def test_nested_child_violation_count_reasonable(self, nested_project: Path) -> None:
         """A single-file project should have a bounded number of violations."""
-        result = runner.invoke(app, ["check", str(nested_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(nested_project), "-f", "json"])
         data = json.loads(result.output)
         # One CLAUDE.md can't have hundreds of violations.
         # With expect=present, missing-evidence violations fire for applicable rules.
@@ -210,31 +217,22 @@ class TestCheckTextOutput:
 
     @requires_rules
     def test_score_displayed(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "text", "-q", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "text"])
         assert result.exit_code == 0
         assert "SCORE:" in result.output or "/ 10" in result.output or "Score:" in result.output
 
     @requires_rules
     def test_violations_grouped_by_file(self, minimal_project: Path) -> None:
         result = runner.invoke(
-            app, ["check", str(minimal_project), "--agent", "claude", "-f", "text", "-q", "--no-update-check"]
+            app, ["check", str(minimal_project), "--agent", "claude", "-f", "text"]
         )
         assert result.exit_code == 0
         assert "CLAUDE.md" in result.output
 
     def test_no_files_shows_l0_message(self, empty_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(empty_project), "-f", "text", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(empty_project), "-f", "text"])
         assert "No instruction files found" in result.output
         assert "L0" in result.output
-
-    @requires_rules
-    def test_quiet_semantic_suppresses_message(self, minimal_project: Path) -> None:
-        result_quiet = runner.invoke(app, ["check", str(minimal_project), "-f", "text", "-q", "--no-update-check"])
-        result_normal = runner.invoke(app, ["check", str(minimal_project), "-f", "text", "--no-update-check"])
-        # If semantic message appears in normal, it should not appear in quiet
-        if "semantic" in result_normal.output.lower():
-            # -q should either suppress or shorten the message
-            assert result_quiet.output != result_normal.output
 
 
 # ===========================================================================
@@ -247,7 +245,7 @@ class TestCheckMultiFile:
 
     @requires_rules
     def test_multiple_agents_detected(self, multi_file_project: Path) -> None:
-        result = runner.invoke(app, ["check", str(multi_file_project), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(multi_file_project), "-f", "json"])
         data = json.loads(result.output)
         # Multi-file project should produce valid JSON output with required keys
         assert "violations" in data
@@ -268,7 +266,7 @@ class TestCheckScoreConsistency:
     def test_deterministic_score(self, structured_project: Path) -> None:
         scores = []
         for _ in range(3):
-            result = runner.invoke(app, ["check", str(structured_project), "-f", "json", "--no-update-check"])
+            result = runner.invoke(app, ["check", str(structured_project), "-f", "json"])
             data = json.loads(result.output)
             scores.append(data["score"])
 
@@ -290,86 +288,9 @@ class TestCheckScoreConsistency:
         )
 
         for project in [bare, rich]:
-            result = runner.invoke(app, ["check", str(project), "-f", "json", "--no-update-check"])
+            result = runner.invoke(app, ["check", str(project), "-f", "json"])
             score = json.loads(result.output)["score"]
             assert 0 <= score <= 10, f"Score {score} out of bounds for {project.name}"
-
-
-# ===========================================================================
-# DISMISS COMMAND
-# (Map command covered by smoke tests)
-# ===========================================================================
-
-
-class TestDismissCommand:
-    """ails dismiss must cache a pass verdict for the rule."""
-
-    def test_dismiss_caches_verdict(self, minimal_project: Path) -> None:
-        result = runner.invoke(app, ["dismiss", "C6", "--path", str(minimal_project)])
-        assert result.exit_code == 0
-        assert "Dismissed" in result.output
-        assert "C6" in result.output
-
-        # Verify cache was written
-        from reporails_cli.core.cache import ProjectCache, content_hash
-
-        # Find project root the same way dismiss does
-        from reporails_cli.core.engine_helpers import _find_project_root
-
-        project_root = _find_project_root(minimal_project)
-        cache = ProjectCache(project_root)
-        md = minimal_project / "CLAUDE.md"
-        h = content_hash(md)
-        judgment = cache.get_cached_judgment(str(md.relative_to(minimal_project)), h)
-        assert judgment is not None
-        assert "C6" in judgment
-        assert judgment["C6"]["verdict"] == "pass"
-
-    # Error paths (missing path, no files) covered by smoke tests
-
-
-# ===========================================================================
-# CHECK COMMAND — Flags
-# (Version and Explain commands covered by smoke tests)
-# ===========================================================================
-
-
-# ===========================================================================
-# CHECK COMMAND — Flags
-# ===========================================================================
-
-
-class TestCheckFlags:
-    """CLI flags must produce the documented behavior."""
-
-    @requires_rules
-    def test_refresh_flag_accepted(self, minimal_project: Path) -> None:
-        """--refresh should not error and should produce valid output."""
-        result = runner.invoke(app, ["check", str(minimal_project), "--refresh", "-f", "json", "--no-update-check"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert "score" in data
-
-    # --exclude-dir and --ascii covered by smoke tests
-
-    def test_legend_flag_shows_legend(self) -> None:
-        """--legend should show severity legend and exit."""
-        result = runner.invoke(app, ["check", ".", "--legend"])
-        assert result.exit_code == 0
-        assert "Legend" in result.output or "Severity" in result.output
-
-    @requires_rules
-    def test_compact_format(self, minimal_project: Path) -> None:
-        """-f compact should produce condensed output."""
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "compact", "--no-update-check"])
-        assert result.exit_code == 0
-        assert len(result.output.strip()) > 0
-
-    @requires_rules
-    def test_brief_format(self, minimal_project: Path) -> None:
-        """-f brief should produce output."""
-        result = runner.invoke(app, ["check", str(minimal_project), "-f", "brief", "--no-update-check"])
-        assert result.exit_code == 0
 
 
 # ===========================================================================
@@ -386,13 +307,13 @@ class TestCheckAgentFlag:
     def test_no_files_hint_copilot(self, empty_project: Path) -> None:
         """--agent copilot should hint its instruction file."""
         result = runner.invoke(
-            app, ["check", str(empty_project), "--agent", "copilot", "-f", "text", "--no-update-check"]
+            app, ["check", str(empty_project), "--agent", "copilot", "-f", "text"]
         )
         assert "Create a .github/copilot-instructions.md to get started" in result.output
 
     def test_unknown_agent_errors(self, empty_project: Path) -> None:
         """Unknown agent must error with exit code 2 and list known agents."""
-        result = runner.invoke(app, ["check", str(empty_project), "--agent", "somefuture", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "somefuture"])
         assert result.exit_code == 2
         assert "Unknown agent" in result.output
         assert "claude" in result.output
@@ -402,7 +323,7 @@ class TestCheckAgentFlag:
         p = tmp_path / "proj"
         p.mkdir()
         (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
-        result = runner.invoke(app, ["check", str(p), "--agent", "claude", "-f", "text", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(p), "--agent", "claude", "-f", "text"])
         assert "No instruction files found" in result.output
 
     @requires_rules
@@ -411,7 +332,7 @@ class TestCheckAgentFlag:
         p = tmp_path / "proj"
         p.mkdir()
         (p / "AGENTS.md").write_text("# Agents\n\nInstructions for Codex.\n")
-        result = runner.invoke(app, ["check", str(p), "--agent", "codex", "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(p), "--agent", "codex", "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "score" in data
@@ -423,7 +344,7 @@ class TestCheckAgentFlag:
         p = tmp_path / "proj"
         p.mkdir()
         (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
-        result = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(p), "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["level"] != "L0"
@@ -480,7 +401,7 @@ class TestAgentMatrix:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"# {agent_type.name}\n\nInstructions.\n")
 
-        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["level"] != "L0", f"--agent {agent_id} should detect {filename}, got L0 Absent"
@@ -491,7 +412,7 @@ class TestAgentMatrix:
         """ails check --agent X must not crash on an empty project."""
         p = tmp_path / "proj"
         p.mkdir()
-        result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "--no-update-check"])
+        result = runner.invoke(app, ["check", str(p), "--agent", agent_id])
         assert result.exit_code == 0
 
 
@@ -507,7 +428,7 @@ class TestCheckFileTarget:
     def test_single_file_target(self, minimal_project: Path) -> None:
         """Pointing at a specific file should work."""
         target = minimal_project / "CLAUDE.md"
-        result = runner.invoke(app, ["check", str(target), "-f", "json", "--no-update-check"])
+        result = runner.invoke(app, ["check", str(target), "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "score" in data
@@ -529,7 +450,7 @@ class TestCheckConfig:
         (p / "CLAUDE.md").write_text("# Project\n\nA project.\n")
 
         # Run without config — get violations
-        r1 = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
+        r1 = runner.invoke(app, ["check", str(p), "-f", "json"])
         d1 = json.loads(r1.output)
         if not d1["violations"]:
             pytest.skip("No violations to disable")
@@ -544,7 +465,7 @@ class TestCheckConfig:
 
         # Run with config — that rule should not fire
         clear_agent_cache()
-        r2 = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
+        r2 = runner.invoke(app, ["check", str(p), "-f", "json"])
         d2 = json.loads(r2.output)
 
         fired_rules = {v["rule_id"] for v in d2["violations"]}
@@ -561,6 +482,7 @@ class TestHealCommand:
 
     # test_heal_missing_path covered by smoke tests
 
+    @requires_model
     @requires_rules
     def test_heal_auto_fixes_applied(self, tmp_path: Path) -> None:
         """Auto-fixers should modify the file and report what they fixed."""
@@ -577,6 +499,7 @@ class TestHealCommand:
         if content != original:
             assert len(content) > len(original)
 
+    @requires_model
     @requires_rules
     def test_heal_nothing_to_heal(self, tmp_path: Path) -> None:
         """When all rules pass or are cached, heal should say nothing to do."""
@@ -591,6 +514,7 @@ class TestHealCommand:
         # Should produce some output (fixes applied, violations listed, or nothing to heal)
         assert len(result.output.strip()) > 0
 
+    @requires_model
     @requires_rules
     def test_heal_json_output(self, tmp_path: Path) -> None:
         """Invoke with -f json, parse JSON, assert keys."""
@@ -606,6 +530,7 @@ class TestHealCommand:
         assert "summary" in data
         assert "auto_fixed_count" in data["summary"]
 
+    @requires_model
     def test_heal_works_without_tty(self, tmp_path: Path) -> None:
         """CliRunner is non-TTY — heal should still work (no TTY requirement)."""
         p = tmp_path / "proj"
@@ -615,6 +540,7 @@ class TestHealCommand:
         result = runner.invoke(app, ["heal", str(p)])
         assert result.exit_code in (0, None)
 
+    @requires_model
     @requires_rules
     def test_heal_shows_remaining_violations(self, tmp_path: Path) -> None:
         """Non-fixable violations should be listed in text output."""
@@ -650,10 +576,10 @@ class TestCheckDelta:
     def test_second_run_shows_delta(self, minimal_project: Path) -> None:
         """Running check twice should show delta on the second run."""
         # First run — no delta
-        runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
 
         # Second run — should have delta fields
-        r2 = runner.invoke(app, ["check", str(minimal_project), "-f", "json", "--no-update-check"])
+        r2 = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         d2 = json.loads(r2.output)
         # Delta fields should exist (may be 0 if unchanged)
         assert "score_delta" in d2
