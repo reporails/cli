@@ -9,7 +9,7 @@ AI instruction diagnostics for coding agents. Validates instruction files for Cl
 ```bash
 npx @reporails/cli check
 # or
-uvx reporails-cli check
+uvx --from reporails-cli ails check
 ```
 
 No install needed. Or install globally:
@@ -67,7 +67,7 @@ pip install reporails-cli
 
 # Zero install (ephemeral, always latest)
 npx @reporails/cli check
-uvx reporails-cli check
+uvx --from reporails-cli ails check
 ```
 
 All paths add `ails` to your PATH. The npm package auto-installs `uv` if needed — no Python install required.
@@ -92,11 +92,11 @@ ails check -f json              # JSON output
 ails check -f github            # GitHub Actions annotations
 ails check --strict             # Exit 1 if violations found
 ails check --agent claude       # Agent-specific rules only
-ails check --exclude-dir vendor # Exclude directory from scanning
+ails check --exclude-dirs vendor # Exclude directory from scanning
 ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
 
 ails explain CORE:S:0001        # Explain a specific rule
-ails heal                       # Interactive auto-fix for violations
+ails heal                       # Auto-fix common violations
 ails install                    # Install MCP server for detected agents
 ails version                    # Show version info
 ```
@@ -171,7 +171,7 @@ jobs:
 - **Maintenance** — Versioning, review processes
 - **Governance** — Security policies, credential protection, permissions
 
-## Levels [* under re-evaluation *]
+## Levels
 
 Levels describe what your AI instruction setup enables.
 
@@ -198,7 +198,7 @@ Levels describe what your AI instruction setup enables.
 
 ## Performance
 
-First run downloads the embedding model (~90MB) to cache. Subsequent runs start in under 2 seconds for typical projects.
+The embedding model is bundled with the CLI. First run may download the spaCy language model (~13MB). Subsequent runs start in under 2 seconds for typical projects.
 
 ## Rules
 

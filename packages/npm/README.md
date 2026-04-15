@@ -64,7 +64,7 @@ ails check         # Now with cross-file analysis + compliance scoring
 |---------|-------------|
 | `check [PATH]` | Validate instruction files (90+ rules) |
 | `explain RULE_ID` | Show rule details and fix guidance |
-| `heal` | Interactive auto-fix for violations |
+| `heal` | Auto-fix common violations |
 | `auth login` | Sign in with GitHub (Pro enrollment) |
 | `auth status` | Check auth state |
 | `auth logout` | Remove stored credentials |
