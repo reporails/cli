@@ -118,13 +118,12 @@ class TestValidateTool:
         assert isinstance(data, dict)
 
     @requires_rules
-    @requires_model
-    def test_json_has_score(self, level2_project: Path) -> None:
-        """validate JSON must contain a score key."""
+    def test_json_has_files_and_stats(self, level2_project: Path) -> None:
+        """validate JSON must contain files and stats keys."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "score" in data
-        assert isinstance(data["score"], (int, float))
+        assert "files" in data
+        assert "stats" in data
 
     @requires_rules
     def test_json_has_violations_grouped_by_file(self, level2_project: Path) -> None:
@@ -141,13 +140,11 @@ class TestValidateTool:
                     assert len(entry) == 4  # [rule_id, line_ref, severity, message]
 
     @requires_rules
-    @requires_model
-    def test_json_has_level(self, level2_project: Path) -> None:
-        """validate JSON must contain level."""
+    def test_json_has_offline_flag(self, level2_project: Path) -> None:
+        """validate JSON must contain offline flag."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "level" in data
-        assert data["level"].startswith("L")
+        assert "offline" in data
 
     @requires_rules
     def test_no_shell_out_guidance(self, level2_project: Path) -> None:
@@ -192,21 +189,18 @@ class TestValidateTool:
 
 class TestScoreTool:
     @requires_rules
-    @requires_model
-    def test_returns_json_with_score(self, level2_project: Path) -> None:
-        """score should return JSON with score and level."""
+    def test_returns_json_with_stats(self, level2_project: Path) -> None:
+        """score should return JSON with findings summary."""
         text = _call_tool("score", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "score" in data
-        assert "level" in data
+        assert "total_findings" in data or "errors" in data
 
     @requires_rules
-    @requires_model
-    def test_score_is_numeric(self, level2_project: Path) -> None:
-        """Score value should be a number."""
+    def test_offline_flag_present(self, level2_project: Path) -> None:
+        """Score result should indicate offline status."""
         text = _call_tool("score", {"path": str(level2_project)})
         data = json.loads(text)
-        assert isinstance(data["score"], (int, float))
+        assert "offline" in data
 
 
 # ---------------------------------------------------------------------------
@@ -269,23 +263,21 @@ class TestCircuitBreaker:
         self._reset_states()
 
     @requires_rules
-    @requires_model
     def test_first_call_succeeds(self, level2_project: Path) -> None:
         """First validate call should return normal JSON results."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" not in data
-        assert "score" in data
+        assert "files" in data
 
     @requires_rules
-    @requires_model
     def test_second_call_succeeds(self, level2_project: Path) -> None:
         """Second validate call (unchanged files) should still succeed."""
         _call_tool("validate", {"path": str(level2_project)})
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" not in data
-        assert "score" in data
+        assert "files" in data
 
     @requires_rules
     def test_third_unchanged_triggers_breaker(self, level2_project: Path) -> None:
@@ -297,7 +289,6 @@ class TestCircuitBreaker:
         assert data.get("error") == "circuit_breaker"
 
     @requires_rules
-    @requires_model
     def test_edit_between_calls_resets_breaker(self, level2_project: Path) -> None:
         """Editing a file between validate calls should reset the breaker."""
         _call_tool("validate", {"path": str(level2_project)})
@@ -309,7 +300,7 @@ class TestCircuitBreaker:
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" not in data
-        assert "score" in data
+        assert "files" in data
 
     @requires_rules
     def test_breaker_message_says_do_not_call_again(self, level2_project: Path) -> None:
@@ -373,13 +364,11 @@ class TestScoreToolHelper:
     """Test the score_tool helper function directly."""
 
     @requires_rules
-    @requires_model
     def test_returns_score_dict(self, level2_project: Path) -> None:
         from reporails_cli.interfaces.mcp.tools import score_tool
 
         result = score_tool(str(level2_project))
-        assert "score" in result
-        assert "level" in result
+        assert "total_findings" in result or "offline" in result
         assert "error" not in result
 
     def test_missing_path_returns_error(self) -> None:

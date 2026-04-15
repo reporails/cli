@@ -239,6 +239,7 @@
 - [TESTS]: Rewrite `test_summary.py` for `CombinedResult` schema
 - [ACTION]: Add `parse_result.py` — compute score, level, violations from `CombinedResult` JSON
 - [CLI]: `--strict` exits 1 on any finding, not just errors
+- [TESTS]: Fix remaining MCP and CLI integration tests for `CombinedResult` schema — remove `score`/`level` assertions, use `files`/`stats`
 
 ### Fixed
 
