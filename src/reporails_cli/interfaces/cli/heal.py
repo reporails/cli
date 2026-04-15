@@ -1,195 +1,180 @@
-"""Autoheal command — ails heal.
+"""Heal command — apply auto-fixes to instruction file issues.
 
-Silently applies all auto-fixes and reports results.
-Non-fixable violations are listed for the coding agent to handle.
+Combines additive fixers (missing sections) with mechanical fixers
+(formatting, bold, italic, ordering) that operate on atom-level data.
 """
 
 from __future__ import annotations
 
 import json
+import sys
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import typer
 
-from reporails_cli.core.engine import run_validation_sync
-from reporails_cli.core.fixers import apply_auto_fixes, partition_violations
-from reporails_cli.formatters import json as json_formatter
-from reporails_cli.formatters.text.heal import format_heal_summary
-from reporails_cli.interfaces.cli.helpers import (
-    _resolve_recommended_rules,
-    _resolve_rules_paths,
-    _validate_agent,
-    app,
-    console,
-)
-
-if TYPE_CHECKING:
-    from reporails_cli.core.fixers import FixResult
-    from reporails_cli.core.models import JudgmentRequest, Violation
-
-VALID_HEAL_FORMATS = {"text", "json"}
-
-
-def _serialize_heal_json(
-    fixes: list[FixResult],
-    non_fixable: list[Violation],
-    requests: list[JudgmentRequest],
-    target: Path,
-) -> dict[str, Any]:
-    """Serialize heal results to JSON-compatible dict."""
-    auto_fixed_data = [
-        {
-            "rule_id": fix.rule_id,
-            "file_path": str(Path(fix.file_path).relative_to(target))
-            if Path(fix.file_path).is_relative_to(target)
-            else fix.file_path,
-            "description": fix.description,
-        }
-        for fix in fixes
-    ]
-
-    violation_data = [
-        {
-            "rule_id": v.rule_id,
-            "rule_title": v.rule_title,
-            "location": v.location,
-            "message": v.message,
-            "severity": v.severity.value,
-        }
-        for v in non_fixable
-    ]
-
-    judgment_data = [
-        {
-            "rule_id": jr.rule_id,
-            "rule_title": jr.rule_title,
-            "question": jr.question,
-            "content": jr.content,
-            "location": jr.location,
-            "criteria": jr.criteria,
-            "examples": jr.examples,
-            "choices": jr.choices,
-            "pass_value": jr.pass_value,
-        }
-        for jr in requests
-    ]
-
-    return json_formatter.format_heal_result(
-        auto_fixed_data,
-        judgment_data,
-        violations=violation_data,
-    )
+from reporails_cli.interfaces.cli.main import app  # type: ignore[attr-defined]
 
 
 @app.command(rich_help_panel="Commands")
-def heal(  # pylint: disable=too-many-locals
+def heal(  # noqa: C901
     path: str = typer.Argument(".", help="Project root to heal"),
-    rules: list[str] = typer.Option(  # noqa: B008
-        None,
-        "--rules",
-        "-r",
-        help="Directory containing rules (repeatable).",
-    ),
-    exclude_dir: list[str] = typer.Option(  # noqa: B008
-        None,
-        "--exclude-dir",
-        "-x",
-        help="Directory name to exclude from scanning (repeatable).",
-    ),
-    refresh: bool = typer.Option(
-        False,
-        "--refresh",
-        help="Refresh file map cache (re-scan for instruction files)",
-    ),
-    ascii: bool = typer.Option(
-        False,
-        "--ascii",
-        "-a",
-        help="Use ASCII characters only (no Unicode)",
-    ),
-    agent: str = typer.Option(
-        "",
-        "--agent",
-        help="Agent type for rule overrides and template vars (e.g., claude, cursor, codex)",
-    ),
-    experimental: bool = typer.Option(
-        False,
-        "--experimental",
-        help="Include experimental rules",
-    ),
-    format: str = typer.Option(
-        "text",
-        "--format",
-        "-f",
-        help="Output format: text or json",
-    ),
+    format: str = typer.Option(None, "--format", "-f", help="Output format: text, json"),
+    agent: str = typer.Option("", "--agent", help="Agent type"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show fixes without applying"),
+    exclude_dirs: list[str] = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
 ) -> None:
-    """Apply all auto-fixes and report remaining violations."""
-    # Validate format
-    if format not in VALID_HEAL_FORMATS:
-        console.print(f"[red]Error:[/red] Unknown format: {format}")
-        console.print(f"Valid formats: {', '.join(sorted(VALID_HEAL_FORMATS))}")
-        raise typer.Exit(2)
+    """Auto-fix instruction file issues.
 
-    # Normalize and validate agent
-    agent = _validate_agent(agent, console)
+    Applies formatting fixes (backticks, bold→italic, constraint wrapping,
+    charge ordering) and structural fixes (missing sections). Use --dry-run
+    to preview changes without writing.
+    """
+    from rich.console import Console
 
+    from reporails_cli.core.agents import detect_agents, get_all_instruction_files
+    from reporails_cli.core.config import get_project_config
+    from reporails_cli.core.fixers import apply_auto_fixes as _apply_auto_fixes
+    from reporails_cli.core.models import Severity, Violation
+    from reporails_cli.core.rule_runner import run_m_probes
+    from reporails_cli.interfaces.cli.helpers import _default_format, _handle_no_instruction_files
+    from reporails_cli.interfaces.cli.main import _suppress_ml_noise
+
+    console = Console(stderr=True)
     target = Path(path).resolve()
     if not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
         raise typer.Exit(2)
 
-    # Resolve rules paths
-    rules_paths = _resolve_rules_paths(rules, console)
+    output_format = format or _default_format()
 
-    # Load project config
-    from reporails_cli.core.bootstrap import get_project_config
+    # 1. Detect agents and discover files
+    detected = detect_agents(target)
+    config = get_project_config(target)
+    agent_arg = agent or config.default_agent
+    excl = exclude_dirs if exclude_dirs is not None else config.exclude_dirs
+    from reporails_cli.interfaces.cli.helpers import _resolve_agent_filters, _validate_agent
 
-    project_config = get_project_config(target)
+    if agent_arg:
+        _validate_agent(agent_arg, console)
+    effective_agent, _assumed, _mixed, filtered = _resolve_agent_filters(agent_arg, detected, target, excl)
+    instruction_files = get_all_instruction_files(target, agents=filtered)
+    if not instruction_files:
+        _handle_no_instruction_files(effective_agent, output_format, console)
+        return
 
-    # Resolve effective agent: CLI flag > config default_agent > auto-detect > generic
-    if not agent and project_config.default_agent:
-        agent = _validate_agent(project_config.default_agent, console)
+    show_progress = sys.stdout.isatty() and output_format != "json"
+    start_time = time.perf_counter()
 
-    if not agent:
-        from reporails_cli.core.agents import auto_detect_agent, detect_agents
+    # 2. Run mapper for mechanical fixes
+    _suppress_ml_noise()
+    ruleset_map = None
+    cache_dir = target / ".ails" / ".cache"
 
-        all_detected = detect_agents(target)
-        auto = auto_detect_agent(all_detected)
-        if auto:
-            agent = auto
+    if show_progress:
+        console.print("[bold]Mapping instruction files...[/bold]")
 
-    # Merge exclude_dirs
-    merged_excludes: list[str] | None = None
-    all_excludes = set(project_config.exclude_dirs) | set(exclude_dir or [])
-    if all_excludes:
-        merged_excludes = sorted(all_excludes)
+    try:
+        from reporails_cli.core.mapper.daemon_client import ensure_daemon, map_ruleset_via_daemon
 
-    rules_paths = _resolve_recommended_rules(rules_paths, project_config, format, console)
+        ensure_daemon(cache_dir)
+        ruleset_map = map_ruleset_via_daemon(list(instruction_files), target, cache_dir)
+        if ruleset_map is None:
+            from reporails_cli.interfaces.cli.main import _map_in_process
 
-    # Run validation
-    result = run_validation_sync(
-        target,
-        rules_paths=rules_paths,
-        use_cache=not refresh,
-        agent=agent,
-        include_experimental=experimental,
-        exclude_dirs=merged_excludes,
-        record_analytics=False,
-    )
+            ruleset_map = _map_in_process(instruction_files, cache_dir)
+    except ImportError:
+        if show_progress:
+            console.print("[dim]Mapper unavailable — mechanical fixes skipped.[/dim]")
 
-    # Partition violations and apply fixes
-    fixable, non_fixable = partition_violations(list(result.violations))
-    requests = list(result.judgment_requests)
-    fixes = apply_auto_fixes(fixable, target)
+    # 3. Apply mechanical fixes (atom-level)
+    mechanical_results: list[dict[str, Any]] = []
+    if ruleset_map is not None:
+        if show_progress:
+            console.print("[bold]Applying mechanical fixes...[/bold]")
+        from reporails_cli.core.mechanical_fixers import apply_mechanical_fixes
 
-    # Output
-    if format == "json":
-        output = _serialize_heal_json(fixes, non_fixable, requests, target)
-        print(json.dumps(output, indent=2))
+        mech_fixes = apply_mechanical_fixes(ruleset_map, target, dry_run=dry_run)
+        mechanical_results.extend(
+            {"rule_id": mf.fix_type, "file_path": mf.file_path, "line": mf.line, "description": mf.description}
+            for mf in mech_fixes
+        )
+
+    # 4. Run M probes for additive fixes
+    if show_progress:
+        console.print("[bold]Running structural checks...[/bold]")
+    m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
+
+    # Convert findings to Violations for additive fixers
+    sev_map = {"critical": Severity.CRITICAL, "high": Severity.HIGH, "medium": Severity.MEDIUM, "low": Severity.LOW}
+    violations = [
+        Violation(
+            rule_id=f.rule,
+            rule_title="",
+            severity=sev_map.get(f.severity, Severity.MEDIUM),
+            message=f.message,
+            location=f"{f.file}:{f.line}" if f.line else f.file,
+        )
+        for f in m_findings
+    ]
+
+    # 5. Apply additive fixes (missing sections)
+    additive_results: list[dict[str, Any]] = []
+    if not dry_run:
+        add_fixes = _apply_auto_fixes(violations, target)
+        additive_results.extend(
+            {"rule_id": af.rule_id, "file_path": af.file_path, "description": af.description} for af in add_fixes
+        )
+
+    elapsed_ms = round((time.perf_counter() - start_time) * 1000, 1)
+    all_fixes = mechanical_results + additive_results
+
+    # 6. Output
+    if output_format == "json":
+        data = {
+            "auto_fixed": all_fixes,
+            "summary": {
+                "auto_fixed_count": len(all_fixes),
+                "mechanical_count": len(mechanical_results),
+                "additive_count": len(additive_results),
+                "dry_run": dry_run,
+                "elapsed_ms": elapsed_ms,
+            },
+        }
+        print(json.dumps(data, indent=2))
     else:
-        summary = format_heal_summary(fixes, non_fixable, requests, ascii_mode=ascii)
-        console.print(summary)
-        if fixes or non_fixable or requests:
-            console.print("\n[dim]Run 'ails check' to see your updated score.[/dim]")
+        _print_text_result(all_fixes, dry_run, elapsed_ms, console)
+
+
+def _print_text_result(
+    fixes: list[dict[str, Any]],
+    dry_run: bool,
+    elapsed_ms: float,
+    console: Any,
+) -> None:
+    """Print human-readable heal results."""
+    prefix = "[dim]would fix[/dim]" if dry_run else "[green]fixed[/green]"
+
+    if not fixes:
+        console.print("[green]No fixable issues found.[/green]")
+        console.print(f"[dim]{elapsed_ms:.0f}ms[/dim]")
+        return
+
+    # Group by file
+    by_file: dict[str, list[dict[str, Any]]] = {}
+    for f in fixes:
+        by_file.setdefault(f.get("file_path", "?"), []).append(f)
+
+    for filepath, file_fixes in sorted(by_file.items()):
+        console.print(f"\n[bold]{filepath}[/bold]")
+        for fix in file_fixes:
+            line = fix.get("line", "")
+            line_str = f"L{line} " if line else ""
+            console.print(f"  {prefix} {line_str}{fix['description']}")
+
+    console.print(
+        f"\n[bold]{len(fixes)}[/bold] fix{'es' if len(fixes) != 1 else ''} "
+        + ("(dry run)" if dry_run else "applied")
+        + f" in {elapsed_ms:.0f}ms"
+    )

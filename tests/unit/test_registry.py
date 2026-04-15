@@ -14,9 +14,8 @@ MINIMAL_FRONTMATTER = {
     "title": "Test Rule",
     "category": "structure",
     "type": "deterministic",
-    "level": "L2",
     "slug": "test-rule",
-    "targets": "{{instruction_files}}",
+    "match": {"type": "main"},
 }
 
 
@@ -76,9 +75,9 @@ class TestBuildRuleBasic:
         assert rule.title == "Test Rule"
         assert rule.category == Category.STRUCTURE
         assert rule.type == RuleType.DETERMINISTIC
-        assert rule.level == "L2"
         assert rule.slug == "test-rule"
-        assert rule.targets == "{{instruction_files}}"
+        assert rule.match is not None
+        assert rule.match.type == "main"
 
     def test_checks_parsed_new_format(self) -> None:
         fm = {
@@ -93,7 +92,8 @@ class TestBuildRuleBasic:
         assert rule.checks[0].id == "CORE:S:0001:check:0001"
         assert rule.checks[0].type == "mechanical"
         assert rule.checks[0].check == "file_exists"
-        assert rule.checks[0].severity.value == "critical"
+        # Severity derived from first check's frontmatter entry → rule level
+        assert rule.severity.value == "critical"
         assert rule.checks[1].type == "deterministic"
         assert rule.checks[1].check is None
 

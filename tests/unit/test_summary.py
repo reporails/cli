@@ -127,7 +127,7 @@ class TestCategorySummary:
             {
                 "score": 5,
                 "level": "L2",
-                "category_summary": [{"name": "content", "passed": 0, "failed": 2, "worst_severity": "critical"}],
+                "category_summary": [{"name": "coherence", "passed": 0, "failed": 2, "worst_severity": "critical"}],
             }
         )
         # critical icon
@@ -138,7 +138,7 @@ class TestCategorySummary:
             {
                 "score": 9,
                 "level": "L5",
-                "category_summary": [{"name": "content", "passed": 5, "failed": 0, "worst_severity": "-"}],
+                "category_summary": [{"name": "coherence", "passed": 5, "failed": 0, "worst_severity": "-"}],
             }
         )
         assert "\u2705" in md

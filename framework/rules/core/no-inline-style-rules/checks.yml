@@ -1,0 +1,9 @@
+checks:
+- id: CORE.C.0017.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0017.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)(<style\b|<script\b|style\s*=\s*[\"'']|class\s*=\s*[\"''])'
+  expect: absent
+  message: "Inline style/script found — avoid agent-specific rendering directives"

@@ -1,0 +1,5 @@
+checks:
+- id: CORE.S.0007.check
+  type: mechanical
+  check: file_exists
+  # hint: file_exists at known root paths

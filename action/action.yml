@@ -20,9 +20,6 @@ inputs:
   exclude-dir:
     description: 'Comma-separated directory names to exclude from scanning (e.g., "vendor,dist")'
     default: ''
-  experimental:
-    description: 'Include experimental rules'
-    default: 'false'
   version:
     description: 'CLI version to install (e.g., 0.3.0). Defaults to latest.'
     default: ''
@@ -83,10 +80,6 @@ runs:
           for dir in "${DIRS[@]}"; do
             CMD="$CMD --exclude-dir $(echo "$dir" | xargs)"
           done
-        fi
-
-        if [ "${{ inputs.experimental }}" = "true" ]; then
-          CMD="$CMD --experimental"
         fi
 
         # Run and capture output (annotations go to stdout for GitHub to pick up)

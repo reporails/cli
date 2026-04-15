@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 config_app = typer.Typer(
     name="config",
-    help="Get and set project configuration (.reporails/config.yml).",
+    help="Get and set project configuration (.ails/config.yml).",
     no_args_is_help=True,
 )
 
@@ -24,17 +24,17 @@ KNOWN_KEYS = {
     "default_agent": str,
     "exclude_dirs": list,
     "disabled_rules": list,
-    "experimental": bool,
     "recommended": bool,
     "framework_version": str,
+    "tier": str,
 }
 
 # Subset of keys allowed in global config (~/.reporails/config.yml)
-GLOBAL_KEYS = {"default_agent", "recommended"}
+GLOBAL_KEYS = {"default_agent", "recommended", "tier"}
 
 
 def _project_config_path(path: Path) -> Path:
-    return path / ".reporails" / "config.yml"
+    return path / ".ails" / "config.yml"
 
 
 def _global_config_path() -> Path:
@@ -178,7 +178,7 @@ def config_list(
             merged[key] = (global_data[key], " (global)")
 
     if not merged:
-        console.print("[dim]No configuration set. Config file: .reporails/config.yml[/dim]")
+        console.print("[dim]No configuration set. Config file: .ails/config.yml[/dim]")
         return
 
     for key, (val, source) in sorted(merged.items()):

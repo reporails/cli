@@ -1,0 +1,14 @@
+checks:
+- id: CORE.S.0021.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0021.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Settings
+    - Scope
+    - Configuration
+    message: Missing scope declaration in settings — declare scope level for configuration
+  expect: present

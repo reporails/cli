@@ -1,11 +1,12 @@
 ---
+description: Bundled config protection — never modify without explicit instruction
 paths: ["src/reporails_cli/bundled/**"]
 ---
 
 # Bundled Config Files
 
-NEVER modify bundled config files without explicit human instruction.
+Leave `src/reporails_cli/bundled/capability-patterns.yml` unchanged unless the user explicitly asks for a modification. This file contains regex patterns for agent capability detection — it is CLI-owned orchestration logic, not a framework rule file under `framework/rules/`.
 
-- `capability-patterns.yml` — Regex patterns for capability detection
+## Discovery
 
-These are CLI-owned orchestration logic, not framework rules.
+Applies to files matching `src/reporails_cli/bundled/**` via `paths` frontmatter. Loaded automatically by Claude Code from `.claude/rules/`.

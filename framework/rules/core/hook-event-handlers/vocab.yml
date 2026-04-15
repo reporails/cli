@@ -1,0 +1,7 @@
+hook_event_handlers:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

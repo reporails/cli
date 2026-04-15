@@ -1,0 +1,11 @@
+checks:
+- id: CORE.S.0019.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0019.content_check
+  type: content_query
+  query: has_layered_structure
+  args:
+    min_headings: 3
+    message: Multiple topics may share sections — split into separate heading sections
+  expect: present

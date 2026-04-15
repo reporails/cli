@@ -116,7 +116,7 @@ class TestListMerge:
     def test_shows_global_fallback_annotated(self, tmp_path: Path) -> None:
         # Project has exclude_dirs but no default_agent
         project = tmp_path / "project"
-        cfg_dir = project / ".reporails"
+        cfg_dir = project / ".ails"
         cfg_dir.mkdir(parents=True)
         (cfg_dir / "config.yml").write_text("exclude_dirs:\n  - vendor\n")
 
@@ -134,7 +134,7 @@ class TestListMerge:
 
     def test_project_value_not_annotated(self, tmp_path: Path) -> None:
         project = tmp_path / "project"
-        cfg_dir = project / ".reporails"
+        cfg_dir = project / ".ails"
         cfg_dir.mkdir(parents=True)
         (cfg_dir / "config.yml").write_text("default_agent: cursor\n")
 

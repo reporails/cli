@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | grep -q 'src/reporails_cli/bundled/' && echo '{\"decision\": \"block\", \"reason\": \"Bundled config files (levels.yml, capability-patterns.yml) must not be modified without explicit human instruction. These are CLI-owned orchestration logic.\"}' && exit 2 || exit 0"
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | grep -q 'capability-patterns\\.yml' && echo '{\"decision\": \"block\", \"reason\": \"capability-patterns.yml is CLI-owned orchestration logic. Do not modify without explicit human instruction.\"}' && exit 2 || exit 0"
           }
         ]
       }

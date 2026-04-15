@@ -1,0 +1,12 @@
+checks:
+- id: CORE.S.0016.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0016.content_check
+  type: content_query
+  query: has_layered_structure
+  args:
+    min_headings: 2
+    message: Missing content layering — organize content with top-level headings for
+      key topics
+  expect: present

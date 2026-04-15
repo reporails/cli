@@ -1,0 +1,31 @@
+# Level definitions
+version: 4
+
+levels:
+  L0:
+    name: Absent
+    description: "No instruction file exists"
+
+  L1:
+    name: Present
+    description: "Instruction file exists, tracked, safe, real content"
+
+  L2:
+    name: Structured
+    description: "Organizational scaffolding: headers, formatting, manageable size"
+
+  L3:
+    name: Substantive
+    description: "Real content: commands, constraints, conventions, project identity"
+
+  L4:
+    name: Actionable
+    description: "Behavioral directives: role, plan-first, ask-not-guess, error handling"
+
+  L5:
+    name: Refined
+    description: "Complete operational guide: domain terms, detailed examples, architecture"
+
+  L6:
+    name: Adaptive
+    description: "Production-grade: non-redundant, cross-agent, task delegation"

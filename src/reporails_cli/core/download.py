@@ -87,7 +87,11 @@ def copy_bundled_yml_files(dest: Path) -> int:
 
 
 def copy_local_framework(source: Path) -> tuple[Path, int]:
-    """Copy rules from a local framework directory (dev mode)."""
+    """Copy rules from a local framework directory (dev mode).
+
+    The framework repo has: rules/ (core + agent dirs), schemas/, docs/, registry/.
+    We copy into ~/.reporails/rules/ with a flat layout.
+    """
     rules_path = get_reporails_home() / "rules"
 
     if rules_path.exists():
@@ -95,7 +99,18 @@ def copy_local_framework(source: Path) -> tuple[Path, int]:
     rules_path.mkdir(parents=True, exist_ok=True)
 
     count = 0
-    for dir_name in ("core", "agents", "schemas", "docs"):
+
+    # Copy rule directories (core/ + agent dirs like claude/, codex/, etc.)
+    rules_src = source / "rules"
+    if rules_src.is_dir():
+        for child in sorted(rules_src.iterdir()):
+            if child.is_dir():
+                dest_dir = rules_path / child.name
+                shutil.copytree(child, dest_dir)
+                count += sum(1 for _ in dest_dir.rglob("*") if _.is_file())
+
+    # Copy schemas and docs from repo root
+    for dir_name in ("schemas", "docs", "registry"):
         source_dir = source / dir_name
         if source_dir.exists() and source_dir.is_dir():
             dest_dir = rules_path / dir_name

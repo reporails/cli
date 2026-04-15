@@ -1,0 +1,6 @@
+single_topic_per_section:
+  - priority
+  - order
+  - first
+  - before
+  - heading hierarchy

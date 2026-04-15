@@ -1,0 +1,4 @@
+has_openai_yaml:
+- display_name
+- allow_implicit_invocation
+- brand_color

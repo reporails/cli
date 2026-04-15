@@ -59,12 +59,12 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
 
 class TestListTools:
     def test_all_tools_present(self) -> None:
-        """list_tools should return all five tools."""
+        """list_tools should return all four tools (heal disabled until 0.7.0)."""
         from reporails_cli.interfaces.mcp.server import list_tools
 
         tools = _run_async(list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "score", "explain", "judge", "heal"}
+        assert names == {"validate", "score", "explain", "judge"}
 
     def test_judge_tool_has_required_verdicts(self) -> None:
         """judge tool schema should require the verdicts parameter."""
@@ -119,12 +119,18 @@ class TestValidateTool:
         assert isinstance(data["score"], (int, float))
 
     @requires_rules
-    def test_json_has_violations_array(self, level2_project: Path) -> None:
-        """validate JSON must contain violations as a list."""
+    def test_json_has_violations_grouped_by_file(self, level2_project: Path) -> None:
+        """validate JSON must contain violations as a dict grouped by file."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "violations" in data
-        assert isinstance(data["violations"], list)
+        if "violations" in data:
+            assert isinstance(data["violations"], dict)
+            for file_key, entries in data["violations"].items():
+                assert isinstance(file_key, str)
+                assert isinstance(entries, list)
+                for entry in entries:
+                    assert isinstance(entry, list)
+                    assert len(entry) == 4  # [rule_id, line_ref, severity, message]
 
     @requires_rules
     def test_json_has_level(self, level2_project: Path) -> None:
@@ -140,19 +146,6 @@ class TestValidateTool:
         text = _call_tool("validate", {"path": str(level2_project)})
         for pattern in _SHELL_OUT_PATTERNS:
             assert pattern not in text, f"Shell-out pattern {pattern!r} found in validate response"
-
-    @requires_rules
-    def test_semantic_workflow_when_pending(self, level2_project: Path) -> None:
-        """When semantic rules exist, JSON must contain _semantic_workflow."""
-        text = _call_tool("validate", {"path": str(level2_project)})
-        data = json.loads(text)
-        if data.get("judgment_requests"):
-            assert "_semantic_workflow" in data
-            workflow = data["_semantic_workflow"]
-            assert workflow["action"] == "evaluate_and_judge"
-            assert "steps" in workflow
-            assert "verdict_format" in workflow
-            assert "example_call" in workflow
 
     def test_missing_path_returns_error_json(self) -> None:
         """Non-existent path should return JSON error."""
@@ -170,9 +163,12 @@ class TestValidateTool:
 
     def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
         """RuntimeError from run_validation must return JSON error, not crash."""
-        with patch(
-            "reporails_cli.interfaces.mcp.server.run_validation",
-            side_effect=RuntimeError("Unsupported operating system"),
+        with (
+            patch("reporails_cli.interfaces.mcp.server.is_initialized", return_value=True),
+            patch(
+                "reporails_cli.interfaces.mcp.server.run_validation",
+                side_effect=RuntimeError("Unsupported operating system"),
+            ),
         ):
             text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
@@ -209,12 +205,13 @@ class TestScoreTool:
 
 class TestExplainTool:
     def test_known_rule_returns_details(self, dev_rules_dir: Path) -> None:
-        """Explaining a known rule should return its details."""
+        """Explaining a known rule should return readable text with rule ID and title."""
         from reporails_cli.interfaces.mcp.tools import explain_tool
 
-        data = explain_tool("CORE:S:0001", rules_paths=[dev_rules_dir])
-        assert "error" not in data
-        assert "title" in data or "rule_id" in data
+        result = explain_tool("CORE:S:0001", rules_paths=[dev_rules_dir])
+        assert isinstance(result, str)
+        assert "CORE:S:0001" in result
+        assert "Import References Used" in result
 
     def test_unknown_rule_returns_error(self) -> None:
         """Explaining an unknown rule should return an error."""
@@ -239,9 +236,7 @@ class TestJudgeTool:
                 "verdicts": verdicts,
             },
         )
-        data = json.loads(text)
-        assert "recorded" in data
-        assert data["recorded"] == 1
+        assert "Recorded 1 verdict" in text
 
     def test_records_multiple_verdicts(self, level2_project: Path) -> None:
         """judge should handle multiple verdicts."""
@@ -256,8 +251,7 @@ class TestJudgeTool:
                 "verdicts": verdicts,
             },
         )
-        data = json.loads(text)
-        assert data["recorded"] == 2
+        assert "Recorded 2 verdict" in text
 
     def test_coordinate_rule_id(self, level2_project: Path) -> None:
         """Coordinate-format rule IDs (CORE:S:0001) should be parsed correctly."""
@@ -269,8 +263,7 @@ class TestJudgeTool:
                 "verdicts": verdicts,
             },
         )
-        data = json.loads(text)
-        assert data["recorded"] == 1
+        assert "Recorded 1 verdict" in text
 
     def test_persists_to_cache(self, level2_project: Path) -> None:
         """Verdicts should be persisted in the judgment cache file."""
@@ -313,8 +306,7 @@ class TestJudgeTool:
                 "verdicts": verdicts,
             },
         )
-        data = json.loads(text)
-        assert data["recorded"] == 0
+        assert "Recorded 0 verdict" in text
 
     def test_nonexistent_file_in_verdict_records_zero(self, level2_project: Path) -> None:
         """Verdict referencing a nonexistent file should not be recorded."""
@@ -326,8 +318,7 @@ class TestJudgeTool:
                 "verdicts": verdicts,
             },
         )
-        data = json.loads(text)
-        assert data["recorded"] == 0
+        assert "Recorded 0 verdict" in text
 
     def test_path_traversal_blocked(self, tmp_path: Path) -> None:
         """Verdicts referencing files outside the project must be rejected."""
@@ -345,8 +336,7 @@ class TestJudgeTool:
                 "verdicts": ["CORE:S:0001:../sibling/secrets.md:pass:Should be blocked"],
             },
         )
-        data = json.loads(text)
-        assert data["recorded"] == 0
+        assert "Recorded 0 verdict" in text
 
     def test_invalid_verdict_value_rejected(self, level2_project: Path) -> None:
         """Verdict must be 'pass' or 'fail'; other values are rejected."""
@@ -358,8 +348,7 @@ class TestJudgeTool:
                 "verdicts": verdicts,
             },
         )
-        data = json.loads(text)
-        assert data["recorded"] == 0
+        assert "Recorded 0 verdict" in text
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +443,7 @@ class TestCircuitBreaker:
         other = tmp_path / "other"
         other.mkdir()
         (other / "CLAUDE.md").write_text("# Other project\n")
-        (other / ".reporails").mkdir()
+        (other / ".ails").mkdir()
 
         # Call level2_project twice (at threshold)
         _call_tool("validate", {"path": str(level2_project)})
@@ -500,12 +489,12 @@ class TestCircuitBreaker:
 class TestJudgeToolHelper:
     """Test the judge_tool helper function directly."""
 
-    def test_returns_recorded_count_and_details(self, level2_project: Path) -> None:
+    def test_returns_recorded_count(self, level2_project: Path) -> None:
         from reporails_cli.interfaces.mcp.tools import judge_tool
 
         result = judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
         assert result["recorded"] == 1
-        assert result["verdicts"] == [{"rule": "CORE:S:0001", "file": "CLAUDE.md", "verdict": "pass", "reason": "OK"}]
+        assert "verdicts" not in result
 
     def test_none_verdicts_returns_error(self) -> None:
         from reporails_cli.interfaces.mcp.tools import judge_tool
@@ -656,7 +645,7 @@ class TestCacheAtomicity:
 
         judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
 
-        cache_path = level2_project / ".reporails" / ".cache" / "judgment-cache.json"
+        cache_path = level2_project / ".ails" / ".cache" / "judgment-cache.json"
         assert cache_path.exists()
         data = json.loads(cache_path.read_text())
         assert "version" in data
@@ -668,6 +657,6 @@ class TestCacheAtomicity:
 
         judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
 
-        cache_dir = level2_project / ".reporails" / ".cache"
+        cache_dir = level2_project / ".ails" / ".cache"
         tmp_files = list(cache_dir.glob("*.tmp"))
         assert tmp_files == []

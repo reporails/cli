@@ -1,0 +1,9 @@
+checks:
+- id: CORE.G.0002.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0002.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)(password\s*[=:]\s*[''\"]?\w|api[_-]?key\s*[=:]\s*[''\"]?\w|-----BEGIN\s+(RSA|PRIVATE|CERTIFICATE)|secret[_-]?key\s*[=:])'
+  expect: absent
+  message: "Credential or secret detected — never include passwords, API keys, or private keys"

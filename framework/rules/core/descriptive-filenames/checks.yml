@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0014.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0014.filename_pattern
+  type: mechanical
+  check: filename_matches_pattern
+  args:
+    pattern: "^[a-z][a-z0-9-]*\\.(md|yml|yaml)$"
+  message: "Filename should be lowercase kebab-case — descriptive of content"

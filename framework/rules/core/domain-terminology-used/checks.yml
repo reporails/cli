@@ -1,0 +1,16 @@
+checks:
+- id: CORE.C.0024.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0024.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Terminology
+    - Glossary
+    - Terms
+    - Domain
+    message: Missing domain terminology — define project-specific terms or include
+      a glossary
+  expect: present

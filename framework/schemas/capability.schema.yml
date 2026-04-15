@@ -1,0 +1,28 @@
+# Capability taxonomy schema
+version: "0.1.0"
+
+fields:
+  id:
+    required: true
+    type: string
+    pattern: "^[a-z][a-z0-9_]*$"
+    description: "Unique capability identifier (snake_case)"
+
+  level:
+    required: true
+    type: enum
+    values: [L1, L2, L3, L4, L5, L6]
+    description: "Which level this capability belongs to"
+
+  description:
+    required: true
+    type: string
+    description: "What this capability means and how to recognize it"
+
+  threshold:
+    required: false
+    type: object
+    description: "Detection parameters (e.g., min_lines, min_sections, has_any_of)"
+
+validation:
+  - rule: "id must be unique across all capabilities"

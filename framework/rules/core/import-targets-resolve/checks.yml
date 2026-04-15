@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0024.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0024.import_check
+  type: mechanical
+  check: extract_imports
+- id: CORE.S.0024.targets_exist
+  type: mechanical
+  check: check_import_targets_exist

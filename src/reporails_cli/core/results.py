@@ -20,69 +20,42 @@ from reporails_cli.core.models import JudgmentRequest
 
 @dataclass
 class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
-    """Features detected in a project for capability scoring.
+    """Features detected in a project for capability-gate level detection.
 
-    Populated in two phases:
-    - Phase 1: Filesystem detection (applicability.py)
-    - Phase 2: Content detection (capability.py via regex)
+    Used by determine_level_from_gates() for project level assignment,
+    by display summaries, and for symlink resolution.
     """
 
-    # === Phase 1: Filesystem detection ===
-
     # Base existence
-    has_instruction_file: bool = False  # Any instruction file found
-    has_claude_md: bool = False  # CLAUDE.md at root (legacy compat)
+    has_instruction_file: bool = False
+    has_claude_md: bool = False  # CLAUDE.md at root
 
     # Directory structure
     is_abstracted: bool = False  # .claude/rules/, .claude/skills/, etc.
-    has_shared_files: bool = False  # .shared/, shared/, cross-refs
-    has_backbone: bool = False  # .reporails/backbone.yml
+    has_shared_files: bool = False  # .shared/, shared/
+    has_backbone: bool = False  # .ails/backbone.yml
 
     # Discovery
-    component_count: int = 0  # Components from discovery
     instruction_file_count: int = 0
     has_multiple_instruction_files: bool = False
-    has_hierarchical_structure: bool = False  # nested CLAUDE.md files
-    detected_agents: list[str] = field(default_factory=list)
-
-    # Symlink resolution (for regex engine extra targets)
-    resolved_symlinks: list[Path] = field(default_factory=list)
+    has_hierarchical_structure: bool = False  # nested instruction files
+    component_count: int = 0  # components from backbone.yml
 
     # L2 capabilities
-    is_size_controlled: bool = False  # Root instruction file under size threshold
+    is_size_controlled: bool = False  # root instruction file under size threshold
+    has_explicit_constraints: bool = False  # MUST/NEVER keywords in content
+    has_imports: bool = False  # @import references in content
+
+    # L4 capabilities
+    has_path_scoped_rules: bool = False  # rules with path scope frontmatter
 
     # L6 capabilities
     has_skills_dir: bool = False  # .claude/skills/ etc. with content
     has_mcp_config: bool = False  # .mcp.json or similar
-    has_memory_dir: bool = False  # Memory/state persistence
+    has_memory_dir: bool = False  # memory/state persistence directory
 
-    # === Phase 2: Content detection (regex) ===
-
-    # Content analysis
-    has_sections: bool = False  # Has H2+ headers
-    has_imports: bool = False  # @imports or file references
-    has_explicit_constraints: bool = False  # MUST/NEVER keywords
-    has_path_scoped_rules: bool = False  # Rules with paths: frontmatter
-
-
-@dataclass(frozen=True)
-class ContentFeatures:
-    """Intermediate result from regex content analysis."""
-
-    has_sections: bool = False
-    has_imports: bool = False
-    has_explicit_constraints: bool = False
-    has_path_scoped_rules: bool = False
-
-
-@dataclass(frozen=True)
-class CapabilityResult:
-    """Result of capability detection pipeline."""
-
-    features: DetectedFeatures
-    level: Level  # Base level (L1-L6)
-    has_orphan_features: bool  # Has features above base level (display as L3+)
-    feature_summary: str  # Human-readable
+    # Symlink resolution (for regex engine extra targets)
+    resolved_symlinks: list[Path] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -93,11 +66,19 @@ class FrictionEstimate:
 
 
 @dataclass(frozen=True)
+class RuleResult:
+    """Per-rule pass/fail outcome for the violation matrix."""
+
+    rule_id: str  # e.g., "CORE:C:0001"
+    status: str  # "pass" or "fail"
+
+
+@dataclass(frozen=True)
 class CategoryStats:
     """Per-category rule statistics for the category summary table."""
 
-    code: str  # "S", "C", "E", "M", "G"
-    name: str  # "Structure", "Content", etc.
+    code: str  # "S", "C", "D", "E", "M", "G"
+    name: str  # "Structure", "Coherence", "Direction", etc.
     total: int
     passed: int
     failed: int
@@ -130,17 +111,17 @@ class GlobalConfig:
     auto_update_check: bool = True
     default_agent: str = ""
     recommended: bool = True
+    tier: str = ""  # "free" | "pro" — overridden by AILS_TIER env var
 
 
 @dataclass
 class ProjectConfig:  # pylint: disable=too-many-instance-attributes
-    """Project-level configuration (.reporails/config.yml)."""
+    """Project-level configuration (.ails/config.yml)."""
 
     framework_version: str | None = None  # Pin version
     packages: list[str] = field(default_factory=list)  # Project rule packages
     disabled_rules: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
-    experimental: bool | list[str] = False  # True, False, or list of rule IDs
     recommended: bool = True  # Include recommended rules (opt out with false)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
     default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
@@ -213,14 +194,6 @@ class PendingSemantic:
 
 
 @dataclass(frozen=True)
-class SkippedExperimental:
-    """Summary of skipped experimental rules."""
-
-    rule_count: int  # Number of experimental rules skipped
-    rules: tuple[str, ...]  # Rule IDs (e.g., "CORE:C:0004")
-
-
-@dataclass(frozen=True)
 class ValidationResult:  # pylint: disable=too-many-instance-attributes
     """Complete validation output."""
 
@@ -234,12 +207,12 @@ class ValidationResult:  # pylint: disable=too-many-instance-attributes
     feature_summary: str  # Human-readable
     friction: FrictionEstimate
     # Per-category breakdown
-    has_orphan_features: bool = False  # Features above base level (display as L3+)
     category_summary: tuple[CategoryStats, ...] = ()
+    # Per-rule pass/fail (for violation matrix construction)
+    rule_results: tuple[RuleResult, ...] = ()
     # Evaluation completeness
     is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
     pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules
-    skipped_experimental: SkippedExperimental | None = None  # Summary of skipped experimental rules
 
 
 @dataclass(frozen=True)

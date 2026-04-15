@@ -1,0 +1,10 @@
+checks:
+- id: CORE.C.0019.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0019.content_check
+  type: content_query
+  query: has_constraint_atoms
+  args:
+    message: No explicit prohibitions — add constraints that tell the agent what NOT to do
+  expect: present

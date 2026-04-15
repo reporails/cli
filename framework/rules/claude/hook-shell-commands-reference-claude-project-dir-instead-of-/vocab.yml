@@ -1,0 +1,4 @@
+uses_project_dir_var:
+- \$CLAUDE_PROJECT_DIR
+- \$CLAUDE_ENV_FILE
+- \$\{CLAUDE_PROJECT_DIR\}

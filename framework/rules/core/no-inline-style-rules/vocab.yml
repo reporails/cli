@@ -1,0 +1,8 @@
+no_inline_style_rules:
+  - agent
+  - claude
+  - copilot
+  - cursor
+  - windsurf
+  - cline
+  - agent-specific syntax

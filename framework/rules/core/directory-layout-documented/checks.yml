@@ -1,0 +1,20 @@
+checks:
+- id: CORE.C.0035.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0035.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Directory
+    - Layout
+    - Structure
+    - Tree
+    message: Missing directory layout — show the project structure with a tree or section listing
+  expect: present
+- id: CORE.C.0035.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)(## (Structure|Architecture|Layout|Directory)|[├└│]|src/\s|tests/\s|```\s*\n[^\n]*[├└/])'
+  expect: present
+  message: "Missing directory layout — show the project structure with a tree or section"

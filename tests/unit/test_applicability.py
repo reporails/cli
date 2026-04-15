@@ -1,19 +1,18 @@
 """Applicability unit tests - feature detection and rule filtering.
 
-Tests the filesystem feature detection pipeline and level-based rule
-applicability logic including supersession.
+Tests the filesystem feature detection pipeline and target-existence
+rule applicability logic including supersession.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.models import Category, Level, Rule, RuleType
+from reporails_cli.core.models import Category, FileMatch, Rule, RuleType
 
 
 def _make_rule(
     rule_id: str = "S1",
-    level: str = "L2",
     supersedes: str | None = None,
     **kw: object,
 ) -> Rule:
@@ -23,14 +22,8 @@ def _make_rule(
         "title": "Test",
         "category": Category.STRUCTURE,
         "type": RuleType.DETERMINISTIC,
-        "level": level,
         "checks": [],
-        "question": None,
-        "criteria": None,
-        "choices": None,
-        "examples": None,
-        "pass_value": None,
-        "targets": "CLAUDE.md",
+        "match": FileMatch(type="main"),
         "slug": "test",
         "see_also": [],
         "supersedes": supersedes,
@@ -84,140 +77,99 @@ class TestDetectFeaturesFilesystem:
         assert features.is_abstracted is True
 
 
-class TestCountComponents:
-    """Test _count_components with v1 and v2 backbone formats."""
-
-    def test_v1_backbone_with_components(self) -> None:
-        """v1 backbone counts entries in components dict."""
-        from reporails_cli.core.applicability import _count_components
-
-        backbone = {
-            "version": 1,
-            "components": {
-                "api": {"path": "src/api"},
-                "web": {"path": "src/web"},
-                "workers": {"path": "src/workers"},
-            },
-        }
-
-        assert _count_components(backbone) == 3
-
-    def test_v2_backbone_extracts_top_level_dirs(self) -> None:
-        """v2 backbone collects distinct top-level directories from path values."""
-        from reporails_cli.core.applicability import _count_components
-
-        backbone = {
-            "version": 2,
-            "structure": {
-                "source": "src/main",
-                "tests": "tests/unit",
-                "docs": "docs/specs/arch.md",
-            },
-        }
-
-        count = _count_components(backbone)
-
-        # Should find: src, tests, docs
-        assert count == 3
-
-    def test_v1_backbone_empty_components(self) -> None:
-        """v1 backbone with no components should return 0."""
-        from reporails_cli.core.applicability import _count_components
-
-        backbone = {"version": 1, "components": {}}
-
-        assert _count_components(backbone) == 0
-
-    def test_v2_backbone_skips_urls(self) -> None:
-        """v2 backbone should skip URL-like values (containing ':' or '@')."""
-        from reporails_cli.core.applicability import _count_components
-
-        backbone = {
-            "version": 2,
-            "source": "src/main",
-            "repo_url": "https://github.com/org/repo",
-            "contact": "user@example.com",
-        }
-
-        count = _count_components(backbone)
-
-        # Only src/main produces a top-level dir; URLs and emails are skipped
-        assert count == 1
-
-
 class TestGetApplicableRules:
-    """Test level-based rule filtering and supersession."""
+    """Test target-existence rule filtering and supersession."""
 
-    def test_l2_rule_not_included_at_l1(self) -> None:
-        """A rule requiring L2 should not be included when project is at L1."""
+    def test_rule_included_when_target_present(self) -> None:
+        """A rule targeting 'main' is included when 'main' is present."""
         from reporails_cli.core.applicability import get_applicable_rules
 
-        rules = {"S1": _make_rule(rule_id="S1", level="L2")}
+        rules = {"S1": _make_rule(rule_id="S1", match=FileMatch(type="main"))}
 
-        result = get_applicable_rules(rules, Level.L1)
+        result = get_applicable_rules(rules, {"main"})
+
+        assert "S1" in result
+
+    def test_rule_excluded_when_target_absent(self) -> None:
+        """A rule targeting 'main' is excluded when 'main' is not present."""
+        from reporails_cli.core.applicability import get_applicable_rules
+
+        rules = {"S1": _make_rule(rule_id="S1", match=FileMatch(type="main"))}
+
+        result = get_applicable_rules(rules, {"scoped_rule"})
 
         assert "S1" not in result
 
-    def test_l2_rule_included_at_l3(self) -> None:
-        """A rule requiring L2 should be included when project is at L3."""
+    def test_wildcard_match_none_fires_when_any_present(self) -> None:
+        """Rules with match=None fire if any type is present."""
         from reporails_cli.core.applicability import get_applicable_rules
 
-        rules = {"S1": _make_rule(rule_id="S1", level="L2")}
+        rules = {"S1": _make_rule(rule_id="S1", match=None)}
 
-        result = get_applicable_rules(rules, Level.L3)
+        result = get_applicable_rules(rules, {"main"})
 
         assert "S1" in result
 
-    def test_l2_rule_included_at_l2(self) -> None:
-        """A rule requiring L2 should be included when project is exactly at L2."""
+    def test_wildcard_type_none_fires_when_any_present(self) -> None:
+        """Rules with match.type=None fire if any type is present."""
         from reporails_cli.core.applicability import get_applicable_rules
 
-        rules = {"S1": _make_rule(rule_id="S1", level="L2")}
+        rules = {"S1": _make_rule(rule_id="S1", match=FileMatch(type=None))}
 
-        result = get_applicable_rules(rules, Level.L2)
+        result = get_applicable_rules(rules, {"scoped_rule"})
 
         assert "S1" in result
+
+    def test_no_present_types_returns_empty(self) -> None:
+        """No present types → no rules fire."""
+        from reporails_cli.core.applicability import get_applicable_rules
+
+        rules = {"S1": _make_rule(rule_id="S1")}
+
+        result = get_applicable_rules(rules, set())
+
+        assert result == {}
 
     def test_supersession_drops_superseded_rule(self) -> None:
         """When rule A supersedes rule B and both are applicable, B is dropped."""
         from reporails_cli.core.applicability import get_applicable_rules
 
         rules = {
-            "S1": _make_rule(rule_id="S1", level="L1"),
-            "S2": _make_rule(rule_id="S2", level="L2", supersedes="S1"),
+            "S1": _make_rule(rule_id="S1"),
+            "S2": _make_rule(rule_id="S2", supersedes="S1"),
         }
 
-        result = get_applicable_rules(rules, Level.L3)
+        result = get_applicable_rules(rules, {"main"})
 
         assert "S2" in result
         assert "S1" not in result, "Superseded rule S1 should be dropped"
 
-    def test_supersession_keeps_both_when_superseder_not_applicable(self) -> None:
-        """When superseding rule is above project level, superseded rule stays."""
+    def test_supersession_keeps_both_when_superseder_target_absent(self) -> None:
+        """When superseding rule targets absent type, both remain (only applicable supersede)."""
         from reporails_cli.core.applicability import get_applicable_rules
 
         rules = {
-            "S1": _make_rule(rule_id="S1", level="L1"),
-            "S2": _make_rule(rule_id="S2", level="L4", supersedes="S1"),
+            "S1": _make_rule(rule_id="S1", match=FileMatch(type="main")),
+            "S2": _make_rule(rule_id="S2", match=FileMatch(type="config"), supersedes="S1"),
         }
 
-        # At L2, S2 (L4) is not applicable, so S1 should remain
-        result = get_applicable_rules(rules, Level.L2)
+        # Only "main" present, S2 targets "config" which is absent → S2 excluded
+        result = get_applicable_rules(rules, {"main"})
 
         assert "S1" in result
         assert "S2" not in result
 
-    def test_multiple_rules_at_different_levels(self) -> None:
-        """Multiple rules with different levels are filtered correctly."""
+    def test_multiple_types_filter_correctly(self) -> None:
+        """Rules targeting different types are filtered by presence."""
         from reporails_cli.core.applicability import get_applicable_rules
 
         rules = {
-            "R1": _make_rule(rule_id="R1", level="L1"),
-            "R2": _make_rule(rule_id="R2", level="L3"),
-            "R3": _make_rule(rule_id="R3", level="L5"),
+            "R1": _make_rule(rule_id="R1", match=FileMatch(type="main")),
+            "R2": _make_rule(rule_id="R2", match=FileMatch(type="scoped_rule")),
+            "R3": _make_rule(rule_id="R3", match=FileMatch(type="skill")),
         }
 
-        result = get_applicable_rules(rules, Level.L3)
+        result = get_applicable_rules(rules, {"main", "scoped_rule"})
 
         assert "R1" in result
         assert "R2" in result
@@ -227,32 +179,34 @@ class TestGetApplicableRules:
         """Empty rules dict returns empty result."""
         from reporails_cli.core.applicability import get_applicable_rules
 
-        result = get_applicable_rules({}, Level.L3)
+        result = get_applicable_rules({}, {"main"})
 
         assert result == {}
-
-    def test_invalid_level_string_skipped(self) -> None:
-        """A rule with an invalid level string should be silently skipped."""
-        from reporails_cli.core.applicability import get_applicable_rules
-
-        rules = {
-            "R1": _make_rule(rule_id="R1", level="L2"),
-            "BAD": _make_rule(rule_id="BAD", level="invalid"),
-        }
-
-        result = get_applicable_rules(rules, Level.L3)
-
-        assert "R1" in result
-        assert "BAD" not in result
 
     def test_supersedes_nonexistent_rule_ignored(self) -> None:
         """A rule that supersedes a rule ID not in the dict should not crash."""
         from reporails_cli.core.applicability import get_applicable_rules
 
         rules = {
-            "S1": _make_rule(rule_id="S1", level="L1", supersedes="DOES_NOT_EXIST"),
+            "S1": _make_rule(rule_id="S1", supersedes="DOES_NOT_EXIST"),
         }
 
-        result = get_applicable_rules(rules, Level.L3)
+        result = get_applicable_rules(rules, {"main"})
 
         assert "S1" in result
+
+    def test_multiple_target_types_fire_when_present(self) -> None:
+        """Rules targeting different types all fire when their types are present."""
+        from reporails_cli.core.applicability import get_applicable_rules
+
+        rules = {
+            "R1": _make_rule(rule_id="R1", match=FileMatch(type="main")),
+            "R2": _make_rule(rule_id="R2", match=FileMatch(type="scoped_rule")),
+            "R3": _make_rule(rule_id="R3", match=FileMatch(type="skill")),
+        }
+
+        result = get_applicable_rules(rules, {"main", "scoped_rule", "skill"})
+
+        assert "R1" in result
+        assert "R2" in result
+        assert "R3" in result

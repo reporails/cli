@@ -1,0 +1,1 @@
+"command": "/bin/bash .claude/hooks/lint.sh"

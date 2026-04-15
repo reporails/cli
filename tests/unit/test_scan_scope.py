@@ -2,6 +2,10 @@
 
 Verifies that `ails check /foo` only discovers and validates files inside /foo,
 even when /foo is nested inside a larger project with .git or backbone markers.
+
+External instruction surface files (~/..., absolute paths from config patterns)
+are intentionally included by agent discovery — they are part of the instruction
+surface even though they live outside the repo. Scope assertions filter these out.
 """
 
 from __future__ import annotations
@@ -15,6 +19,11 @@ from reporails_cli.core.agents import (
     get_all_scannable_files,
 )
 from reporails_cli.core.engine_helpers import _find_project_root
+
+
+def _is_external(f: Path, scope: Path) -> bool:
+    """True if f is an external instruction surface file (outside any tmp scope)."""
+    return not str(f).startswith("/tmp/")
 
 
 def _make_nested_project(tmp_path: Path) -> Path:
@@ -53,7 +62,7 @@ def _make_backbone_project(tmp_path: Path) -> Path:
     Structure:
         tmp/
         ├── .git/
-        ├── .reporails/backbone.yml
+        ├── .ails/backbone.yml
         ├── CLAUDE.md
         └── child/
             └── CLAUDE.md
@@ -61,8 +70,8 @@ def _make_backbone_project(tmp_path: Path) -> Path:
     Returns the child directory path.
     """
     (tmp_path / ".git").mkdir()
-    (tmp_path / ".reporails").mkdir()
-    (tmp_path / ".reporails" / "backbone.yml").write_text("version: 3\n")
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "backbone.yml").write_text("version: 3\n")
     (tmp_path / "CLAUDE.md").write_text("# Parent instructions")
 
     child = tmp_path / "child"
@@ -88,11 +97,13 @@ class TestDetectAgentsScope:
             all_files.extend(a.rule_files)
             all_files.extend(a.config_files)
 
-        for f in all_files:
+        # External instruction surface files (~/...) are by-design outside the repo
+        local_files = [f for f in all_files if not _is_external(f, child)]
+        for f in local_files:
             assert str(f).startswith(str(child)), f"File outside child scope: {f}"
 
-    def test_parent_sees_only_root_files(self, tmp_path: Path) -> None:
-        """Detection uses shallow globs — child CLAUDE.md is not found."""
+    def test_parent_sees_hierarchical_files(self, tmp_path: Path) -> None:
+        """Config-driven discovery with **/CLAUDE.md finds hierarchical instruction files."""
         _make_nested_project(tmp_path)
         agents = detect_agents(tmp_path)
 
@@ -101,8 +112,8 @@ class TestDetectAgentsScope:
             all_files.extend(a.instruction_files)
 
         paths = {str(f) for f in all_files}
-        assert not any("child/CLAUDE.md" in p for p in paths), "Should not recurse into child"
-        assert any(p.endswith("/CLAUDE.md") for p in paths), "Should find root CLAUDE.md"
+        assert any(p.endswith("/CLAUDE.md") and "child" not in p for p in paths), "Should find root CLAUDE.md"
+        assert any("child/CLAUDE.md" in p for p in paths), "Should find child CLAUDE.md via ** pattern"
 
 
 class TestInstructionFilesScope:
@@ -137,7 +148,9 @@ class TestScannableFilesScope:
         child = _make_nested_project(tmp_path)
         files = get_all_scannable_files(child)
 
-        for f in files:
+        # External instruction surface files (~/...) are by-design outside the repo
+        local_files = [f for f in files if not _is_external(f, child)]
+        for f in local_files:
             assert str(f).startswith(str(child)), f"File outside child scope: {f}"
 
     def test_child_does_not_include_parent_rules(self, tmp_path: Path) -> None:
@@ -161,9 +174,10 @@ class TestProjectRootVsScanRoot:
         project_root = _find_project_root(child)
         assert project_root == tmp_path, "project_root should walk up to backbone"
 
-        # But file discovery must stay within child
+        # But file discovery must stay within child (external surface files excluded)
         files = get_all_scannable_files(child)
-        for f in files:
+        local_files = [f for f in files if not _is_external(f, child)]
+        for f in local_files:
             assert str(f).startswith(str(child)), f"File outside scan scope: {f}"
 
     def test_project_root_equals_scan_root_when_no_parent(self, tmp_path: Path) -> None:
@@ -211,5 +225,7 @@ class TestPreDetectedAgentsBypass:
         agents = detect_agents(scan_root)
         files = get_all_scannable_files(scan_root, agents=agents)
 
-        for f in files:
+        # External instruction surface files (~/...) are by-design outside the repo
+        local_files = [f for f in files if not _is_external(f, child)]
+        for f in local_files:
             assert str(f).startswith(str(child)), f"File outside scan scope: {f}"

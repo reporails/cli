@@ -1,0 +1,5 @@
+checks:
+- id: CORE.S.0025.check
+  type: mechanical
+  check: file_exists
+  # hint: glob_match for rules directory pattern
