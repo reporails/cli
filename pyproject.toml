@@ -35,7 +35,6 @@ dependencies = [
     # hard requirement — the fallback verb lexicon drops charge accuracy
     # from 96% to ~78%. With the torch blocker active, spaCy loads in ~1s.
     "spacy>=3.8.11,<4",
-    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 [project.optional-dependencies]
@@ -86,9 +85,6 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
-# Required because we pin en_core_web_sm via a direct URL (spaCy models
-# are distributed as GitHub release wheels, not via PyPI).
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reporails_cli"]

@@ -2091,10 +2091,24 @@ class Models:
                         # tok.text / tok.i / root.children. That needs tok2vec +
                         # tagger + parser only; ner / lemmatizer / attribute_ruler
                         # are dead weight on both load time and per-doc inference.
-                        self._nlp = spacy.load(
-                            "en_core_web_sm",
-                            disable=["ner", "lemmatizer", "attribute_ruler"],
-                        )
+                        try:
+                            self._nlp = spacy.load(
+                                "en_core_web_sm",
+                                disable=["ner", "lemmatizer", "attribute_ruler"],
+                            )
+                        except OSError:
+                            # Model not installed — download it once
+                            import subprocess
+                            import sys
+
+                            subprocess.run(
+                                [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
+                                capture_output=True,
+                            )
+                            self._nlp = spacy.load(
+                                "en_core_web_sm",
+                                disable=["ner", "lemmatizer", "attribute_ruler"],
+                            )
                     except (ImportError, OSError):
                         self._nlp = None
         return self._nlp
