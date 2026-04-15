@@ -240,6 +240,7 @@
 - [ACTION]: Add `parse_result.py` — compute score, level, violations from `CombinedResult` JSON
 - [CLI]: `--strict` exits 1 on any finding, not just errors
 - [BUILD]: Remove `en-core-web-sm` direct URL dependency (rejected by PyPI). spaCy model auto-downloads on first run if missing.
+- [CLI]: `ails version` shows only CLI version and install method — remove stale Framework/Recommended lines
 - [TESTS]: Fix remaining MCP and CLI integration tests for `CombinedResult` schema — remove `score`/`level` assertions, use `files`/`stats`
 
 ### Fixed
