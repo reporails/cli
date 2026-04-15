@@ -62,20 +62,9 @@ def map(
 
 @app.command("version", rich_help_panel="Configuration")
 def show_version() -> None:
-    """Show CLI and framework versions."""
+    """Show CLI version and install method."""
     from reporails_cli import __version__ as cli_version
-    from reporails_cli.core.bootstrap import (
-        get_installed_recommended_version,
-        get_installed_version,
-    )
-    from reporails_cli.core.init import RECOMMENDED_VERSION, RULES_VERSION
-
-    installed = get_installed_version()
-    installed_rec = get_installed_recommended_version()
-
     from reporails_cli.core.self_update import detect_install_method
 
-    console.print(f"CLI:         {cli_version}")
-    console.print(f"Framework:   {installed or 'not installed'} (bundled: {RULES_VERSION})")
-    console.print(f"Recommended: {installed_rec or 'not installed'} (bundled: {RECOMMENDED_VERSION})")
-    console.print(f"Install:     {detect_install_method().value}")
+    console.print(f"CLI:     {cli_version}")
+    console.print(f"Install: {detect_install_method().value}")
