@@ -65,7 +65,7 @@ runs:
       shell: bash
       run: |
         # Build command
-        CMD="ails check ${{ inputs.path }} --format github --ascii --no-update-check -q"
+        CMD="ails check ${{ inputs.path }} --format github --ascii -q"
 
         if [ "${{ inputs.strict }}" = "true" ]; then
           CMD="$CMD --strict"

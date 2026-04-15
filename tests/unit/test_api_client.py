@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.api_client import AilsClient, LintResult, _strip_and_serialize
+from reporails_cli.core.api_client import AilsClient, _strip_and_serialize
 from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
 
 
@@ -40,10 +40,10 @@ class TestV2WireFormat:
     @staticmethod
     def _make_atom(**overrides: object) -> Atom:
         """Build a minimal Atom with defaults."""
-        defaults: dict[str, object] = dict(
-            line=1, text="", kind="excitation", charge="NEUTRAL",
-            charge_value=0, modality="none", specificity="abstract",
-        )
+        defaults: dict[str, object] = {
+            "line": 1, "text": "", "kind": "excitation", "charge": "NEUTRAL",
+            "charge_value": 0, "modality": "none", "specificity": "abstract",
+        }
         defaults.update(overrides)
         return Atom(**defaults)  # type: ignore[arg-type]
 

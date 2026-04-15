@@ -226,6 +226,7 @@
 - [MCP]: `validate` and `score` tools use new pipeline returning `CombinedResult`
 - [FORMATTERS]: Add `format_combined_result()` to JSON and GitHub formatters
 - [REGEX]: Add `run_checks()` returning `list[LocalFinding]` alongside SARIF `run_validation()`
+- [CLI]: Fixing deploy.
 
 ### Fixed
 
