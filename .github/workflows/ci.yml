@@ -6,6 +6,9 @@ on:
       # Release branches: run QA on every push (e.g. 0.1.4)
       - "[0-9]*.[0-9]*.[0-9]*"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   qa:
     name: QA gate
