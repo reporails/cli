@@ -141,7 +141,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                 if show_progress:
                     spinner.update("[bold]Loading models...[/bold]")  # type: ignore[union-attr]
                 ruleset_map = _map_in_process(instruction_files, _cache_dir)
-        except ImportError:
+        except (ImportError, RuntimeError):
             if verbose:
                 console.print("[dim]Mapper unavailable. Content checks skipped.[/dim]")
 
@@ -227,7 +227,7 @@ def _map_in_process(instruction_files: list[Path], cache_dir: Path) -> Any:
         from reporails_cli.core.mapper import map_ruleset
 
         return map_ruleset(list(instruction_files), cache_dir=cache_dir)
-    except ImportError:
+    except (ImportError, RuntimeError):
         return None
     finally:
         sys.stderr = saved_stderr

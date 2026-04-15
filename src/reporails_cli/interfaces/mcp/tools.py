@@ -47,7 +47,7 @@ def _run_pipeline(target: Path) -> dict[str, Any]:
 
         cache_dir = target / ".ails" / ".cache"
         ruleset_map = map_ruleset(list(instruction_files), cache_dir=cache_dir)
-    except ImportError:
+    except (ImportError, RuntimeError):
         pass
 
     # M probes (mechanical + deterministic)
@@ -134,7 +134,7 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 
             cache_dir = target / ".ails" / ".cache"
             ruleset_map = map_ruleset(list(instruction_files), cache_dir=cache_dir)
-        except ImportError:
+        except (ImportError, RuntimeError):
             pass
 
         fixes: list[dict[str, str]] = []
