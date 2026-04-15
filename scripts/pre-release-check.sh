@@ -38,10 +38,23 @@ rm -rf dist/
 uv build --wheel || fail "Wheel build failed"
 ok "Wheel built: $(ls -lh dist/*.whl | awk '{print $5}')"
 
-# 4. Twine metadata check
-step "Twine metadata check"
-uv run --with "twine>=5,<6" twine check dist/* || fail "Twine check failed"
-ok "PyPI metadata valid"
+# 4. Verify no direct URL dependencies (PyPI rejects these)
+step "Check for direct URL dependencies"
+uv run python -c "
+from pathlib import Path
+import zipfile, re
+whl = list(Path('dist').glob('*.whl'))[0]
+with zipfile.ZipFile(whl) as z:
+    meta = [n for n in z.namelist() if n.endswith('/METADATA')][0]
+    text = z.read(meta).decode()
+    directs = re.findall(r'^Requires-Dist:.*@\s*https?://.*$', text, re.MULTILINE)
+    if directs:
+        for d in directs:
+            print(f'  BLOCKED: {d.strip()}')
+        raise SystemExit('Direct URL dependencies found — PyPI will reject this wheel')
+    print('  No direct URL dependencies')
+" || fail "Direct URL dependency check failed"
+ok "PyPI-compatible dependencies"
 
 # 5. Verify wheel install
 step "Verify wheel install"
