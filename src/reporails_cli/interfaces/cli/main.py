@@ -193,7 +193,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
-    if strict and result.stats.errors > 0:
+    if strict and result.findings:
         raise typer.Exit(1)
 
 

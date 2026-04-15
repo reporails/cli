@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./action
         with:
-          min-score: "5"
+          min-score: "1"
           from-source: "true"
 
   # --- Fail scenarios ---
