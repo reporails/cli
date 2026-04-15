@@ -91,6 +91,21 @@ jobs:
       - name: Build package
         run: uv cache clean reporails-cli && uv build
 
+      - name: Verify wheel install
+        run: |
+          python -m venv /tmp/verify-wheel
+          /tmp/verify-wheel/bin/pip install dist/*.whl --quiet
+          /tmp/verify-wheel/bin/ails version
+          /tmp/verify-wheel/bin/ails check --help > /dev/null
+          # Verify ONNX model is bundled (content checks need it)
+          /tmp/verify-wheel/bin/python -c "
+          from reporails_cli.bundled import get_models_path
+          onnx = get_models_path() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
+          assert onnx.exists(), f'ONNX model missing from wheel: {onnx}'
+          print(f'ONNX model verified: {onnx.stat().st_size / 1024 / 1024:.0f} MB')
+          "
+          echo "Wheel verification passed"
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
