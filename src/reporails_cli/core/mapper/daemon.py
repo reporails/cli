@@ -114,7 +114,7 @@ def start_daemon(cache_dir: Path) -> int:
         os.close(devnull)
 
         _daemon_main(cache_dir)
-    except Exception:
+    except Exception:  # daemon child must not crash on transient errors
         pass
     finally:
         os._exit(0)  # daemon child must not return
@@ -182,7 +182,7 @@ def _daemon_main(cache_dir: Path) -> None:
     def _warmup() -> None:
         try:
             models.warmup()
-        except Exception:
+        except Exception:  # background warmup thread must not crash
             logger.debug("daemon warmup failed", exc_info=True)
         finally:
             warmup_done.set()
@@ -206,7 +206,7 @@ def _daemon_main(cache_dir: Path) -> None:
         last_activity = time.monotonic()
         try:
             _handle_connection(conn, models, cache_dir, warmup_done)
-        except Exception:
+        except Exception:  # per-request isolation; return error to client
             pass
         finally:
             conn.close()
@@ -307,5 +307,5 @@ def _handle_map_ruleset(request: dict[str, Any], models: Any, cache_dir: Path) -
         Path(tmp_path).unlink()
 
         return {"ok": True, "ruleset_map": json.loads(result_json)}
-    except Exception as e:
+    except Exception as e:  # daemon returns error dict, must not crash
         return {"ok": False, "error": str(e)}

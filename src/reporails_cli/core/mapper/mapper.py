@@ -2330,7 +2330,7 @@ def _parse_frontmatter_description(path: Path) -> str:
         if name and desc:
             return f"{name}: {desc}"
         return name or desc
-    except Exception:
+    except Exception:  # yaml.YAMLError; yaml imported in try scope
         return ""
 
 
@@ -2360,7 +2360,7 @@ def _parse_frontmatter_globs(path: Path) -> tuple[str, ...]:
                 return tuple(str(g) for g in globs)
             if isinstance(globs, str):
                 return (globs,)
-    except Exception:
+    except Exception:  # yaml.YAMLError; yaml imported in try scope
         pass
     return ()
 
@@ -2385,7 +2385,8 @@ def _load_registry() -> dict[str, dict[str, Any]]:
             data = yaml.safe_load(config_path.read_text())
             agent = data.get("agent", config_path.parent.name)
             configs[agent] = data
-        except Exception:
+        except (yaml.YAMLError, OSError) as exc:
+            logger.warning("Failed to load agent config %s: %s", config_path, exc)
             continue
     return configs
 

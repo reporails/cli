@@ -247,6 +247,7 @@
 - [META]: Add `scripts/pre-release-check.sh` step 7: verify content checks produce findings in isolated venv
 - [DOCS]: Add `docs/specs/ARCHITECTURE-PRINCIPLES.md` — graded architectural instruction system (Standard/Advanced/Production/Enterprise)
 - [META]: Add `.claude/rules/` atomic rules: `dependency-boundary.md`, `silent-degradation.md`, `release-gates.md`
+- [CORE]: Fail-fast exception audit — add `logger.warning()` on 4 critical-path catches, narrow 12 bare `except Exception:` to specific types, justify 16 remaining with inline comments
 - [TESTS]: Fix remaining MCP and CLI integration tests for `CombinedResult` schema — remove `score`/`level` assertions, use `files`/`stats`
 
 ### Fixed

@@ -7,6 +7,7 @@ Combines additive fixers (missing sections) with mechanical fixers
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,8 @@ from typing import Any
 import typer
 
 from reporails_cli.interfaces.cli.main import app  # type: ignore[attr-defined]
+
+logger = logging.getLogger(__name__)
 
 
 @app.command(rich_help_panel="Commands")
@@ -84,7 +87,8 @@ def heal(  # noqa: C901
             from reporails_cli.interfaces.cli.main import _map_in_process
 
             ruleset_map = _map_in_process(instruction_files, cache_dir)
-    except (ImportError, RuntimeError):
+    except (ImportError, RuntimeError) as exc:
+        logger.warning("Mapper unavailable in heal: %s", exc)
         if show_progress:
             console.print("[dim]Mapper unavailable — mechanical fixes skipped.[/dim]")
 

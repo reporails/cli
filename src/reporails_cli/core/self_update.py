@@ -45,7 +45,7 @@ def detect_install_method() -> InstallMethod:
     """Detect how reporails-cli was installed using package metadata."""
     try:
         dist = distribution(PKG_NAME)
-    except Exception:
+    except Exception:  # package metadata API can fail many ways
         return InstallMethod.UNKNOWN
 
     # Check for editable/dev install via direct_url.json
@@ -105,7 +105,7 @@ def _verify_installed_version() -> str | None:
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except Exception:
+    except (subprocess.SubprocessError, OSError, ValueError):
         pass
     return None
 
@@ -176,7 +176,7 @@ def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:  # pylint
             method=method,
             message="Upgrade timed out.",
         )
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         return CliUpdateResult(
             updated=False,
             previous_version=current_version,

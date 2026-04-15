@@ -142,7 +142,7 @@ def _build_agent_registry() -> dict[str, AgentType]:
     for config_path in sorted(rules_path.glob("*/config.yml")):
         try:
             data = load_yaml_file(config_path)
-        except Exception:
+        except Exception:  # load_yaml_file can raise various errors
             continue
         if not data or not isinstance(data, dict):
             continue
@@ -231,7 +231,7 @@ def _load_config_file_types(
             ft = data.get("file_types")
             if ft and isinstance(ft, dict):
                 return dict(ft)
-        except Exception:
+        except Exception:  # agent config parsing; skip broken configs
             logger.debug("Failed to load agent config %s", path, exc_info=True)
             continue
     return None
@@ -438,7 +438,7 @@ def _load_project_exclude_dirs(target: Path) -> frozenset[str]:
         dirs = data.get("exclude_dirs", [])
         if isinstance(dirs, list):
             return frozenset(str(d) for d in dirs)
-    except Exception:
+    except Exception:  # glob expansion; skip unresolvable patterns
         logger.warning("Failed to load project config %s", config_path, exc_info=True)
     return frozenset()
 

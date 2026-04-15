@@ -94,7 +94,7 @@ def validate_memory_files(  # noqa: C901
                                         source="client_check",
                                     )
                                 )
-                    except Exception:
+                    except Exception:  # yaml.YAMLError; yaml imported in try scope
                         pass
                 else:
                     findings.append(

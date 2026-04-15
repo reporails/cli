@@ -363,7 +363,7 @@ def _run_deterministic_check(  # pylint: disable=too-many-locals
         for run in sarif.get("runs", []):
             findings += len(run.get("results", []))
         return True, findings, f"{findings} finding(s)"
-    except Exception as exc:
+    except Exception as exc:  # test harness reports errors, must not crash
         return False, 0, f"Regex engine error: {exc}"
     finally:
         tmp_path.unlink(missing_ok=True)

@@ -231,7 +231,8 @@ def _map_in_process(instruction_files: list[Path], cache_dir: Path) -> Any:
         from reporails_cli.core.mapper import map_ruleset
 
         return map_ruleset(list(instruction_files), cache_dir=cache_dir)
-    except (ImportError, RuntimeError):
+    except (ImportError, RuntimeError) as exc:
+        logger.warning("In-process mapper unavailable: %s", exc)
         return None
     finally:
         sys.stderr = saved_stderr
@@ -793,7 +794,7 @@ def _print_text_result(  # noqa: C901
         from reporails_cli.interfaces.cli.auth_command import _read_credentials
 
         creds_tier = _read_credentials().get("tier", "")
-    except Exception:
+    except (FileNotFoundError, KeyError, OSError):
         pass
     if result.offline:
         tier = "offline"

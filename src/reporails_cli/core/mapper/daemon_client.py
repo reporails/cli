@@ -105,7 +105,7 @@ def map_ruleset_via_daemon(
         result = load_ruleset_map(tmp_path)
         tmp_path.unlink()
         return result
-    except Exception:
+    except (OSError, TimeoutError, json.JSONDecodeError, RuntimeError):
         logger.debug("Failed to deserialize daemon response", exc_info=True)
         return None
 
