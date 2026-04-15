@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   check-release:
     name: Check if release commit
@@ -89,7 +92,12 @@ jobs:
         run: uv run poe fetch_bundled_model
 
       - name: Build package
-        run: uv cache clean reporails-cli && uv build
+        run: |
+          # Build wheel directly from source tree (not via sdist) so the
+          # gitignored ONNX model is picked up by the build hook.
+          uv build --wheel
+          # sdist separately for PyPI (model not included — source-only)
+          uv build --sdist
 
       - name: Verify wheel install
         run: |
