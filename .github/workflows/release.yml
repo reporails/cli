@@ -82,6 +82,12 @@ jobs:
             --title "v$VERSION" \
             --generate-notes
 
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Fetch bundled ONNX model
+        run: uv run poe fetch_bundled_model
+
       - name: Build package
         run: uv cache clean reporails-cli && uv build
 
