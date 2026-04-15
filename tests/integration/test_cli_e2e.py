@@ -86,13 +86,12 @@ class TestCheckCommand:
                 "json",
             ],
         )
-        # --strict exits 1 only when stats.errors > 0
+        # --strict exits 1 when any findings exist
         data = json.loads(result.output)
-        errors = data.get("stats", {}).get("errors", 0)
-        if errors > 0:
+        has_findings = bool(data.get("files", {}))
+        if has_findings:
             assert result.exit_code == 1
         else:
-            # No errors = exit 0 even with warnings
             assert result.exit_code == 0
 
     @requires_model
