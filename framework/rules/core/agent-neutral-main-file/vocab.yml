@@ -1,0 +1,8 @@
+agent_neutral_main_file:
+  - agent
+  - claude
+  - copilot
+  - cursor
+  - windsurf
+  - cline
+  - agent-specific syntax

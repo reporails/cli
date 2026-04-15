@@ -1,0 +1,11 @@
+checks:
+- id: CORE.C.0016.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0016.content_check
+  type: content_query
+  query: has_code_blocks
+  args:
+    message: Missing code block examples — use fenced code blocks to show concrete
+      examples
+  expect: present

@@ -1,0 +1,6 @@
+exact_filename_convention:
+  - heading style
+  - code block
+  - camelCase identifier
+  - kebab-case name
+  - filename convention

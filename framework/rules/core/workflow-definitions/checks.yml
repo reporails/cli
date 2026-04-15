@@ -1,0 +1,16 @@
+checks:
+- id: CORE.C.0007.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0007.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Workflow
+    - Process
+    - Pipeline
+    - Steps
+    message: Missing workflow definitions — describe repeatable processes with ordered
+      steps
+  expect: present

@@ -28,9 +28,9 @@ from reporails_cli.core.download import (
 # Schema versions this CLI can consume (match on major.minor, ignore patch).
 # Only schemas the CLI reads directly -- others are ignored.
 REQUIRED_SCHEMAS: dict[str, str] = {
-    "rule": "0.1",
+    "rule": "0.2",
     "levels": "0.1",
-    "agent": "0.2",
+    "agent": "0.3",
 }
 
 

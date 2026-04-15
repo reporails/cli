@@ -1,0 +1,17 @@
+checks:
+- id: CORE.C.0008.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0008.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Validation
+    - Verify
+    - QA
+    - Lint
+    - Check
+    message: Missing validation commands — show how to lint, type-check, or validate
+      the project
+  expect: present

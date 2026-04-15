@@ -1,0 +1,229 @@
+# Agent configuration schema v0.5.0
+#
+# Foundational assumption: coding agents are more alike than different.
+# All agents occupy the same M1 (governance) × M2 (loading) tensor space.
+# An instruction surface has the same tensor coordinate regardless of which
+# agent reads it — the agent determines the file path, the tensor determines
+# the quality criteria.
+#
+# Each file_type is a CAPABILITY (skills, rules, agents, etc.) with shared
+# properties and one or more SCOPES (project, user, managed, auto, local).
+# Scopes determine where instances live and carry scope-specific properties
+# (patterns, precedence, vcs, maintainer). Shared properties (format,
+# cardinality, lifecycle, loading) are declared once at capability level.
+version: "0.5.0"
+
+fields:
+  agent:
+    required: true
+    type: string
+    pattern: "^[a-z]+$"
+    description: "Agent identifier. Lowercase, used as config directory name."
+
+  version:
+    required: true
+    type: string
+    pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    description: "Semver version of this agent configuration"
+
+  prefix:
+    required: false
+    type: string
+    pattern: "^[A-Z]+$"
+    description: "Uppercase agent prefix for coordinate namespacing (e.g., CLAUDE, CODEX)"
+
+  name:
+    required: false
+    type: string
+    description: "Human-readable display name for the agent"
+
+  core:
+    required: false
+    type: boolean
+    description: "If true, this config represents CORE itself"
+
+  file_types:
+    required: true
+    type: object
+    description: "Capability declarations. Each key is a recognized capability name."
+    additionalProperties:
+      type: object
+      description: "A capability with shared properties and scoped pattern sets."
+      properties:
+        # Capability-level (shared across all scopes)
+        required:
+          type: boolean
+          default: false
+          description: "Whether at least one instance of this capability must exist"
+        deprecated:
+          type: boolean
+          default: false
+          description: "Whether this capability is deprecated by the agent vendor"
+        format:
+          type: [enum, array]
+          values: [freeform, frontmatter, schema_validated]
+          description: "File content format(s). Shared across scopes."
+        scope:
+          type: enum
+          values: [global, path_scoped, task_scoped]
+          description: "Effect scope — what the surface applies to. Distinct from location scope (the scopes key)."
+        cardinality:
+          type: enum
+          values: [singleton, optional, collection, hierarchical, chain]
+          description: "How many instances of this capability exist per scope"
+        lifecycle:
+          type: enum
+          values: [static, mutable, transient]
+          description: "How the file changes over time"
+        loading:
+          type: enum
+          values: [session_start, on_demand, on_invocation]
+          description: "When the agent loads the file"
+
+        # Scoped pattern sets
+        scopes:
+          type: object
+          description: "Location scopes. Each key is a scope name (project, user, managed, auto, local)."
+          additionalProperties:
+            type: object
+            properties:
+              patterns:
+                required: true
+                type: array
+                items: { type: string }
+                description: "Glob patterns for file discovery in this scope"
+              precedence:
+                required: true
+                type: enum
+                values: [managed, project, user, auto]
+                description: "Priority in conflict resolution"
+              vcs:
+                required: true
+                type: enum
+                values: [committed, gitignored, external]
+                description: "Version control status"
+              maintainer:
+                required: true
+                type: enum
+                values: [human, agent, system, hybrid]
+                description: "Who maintains the file"
+              # Any capability-level property can be overridden per scope
+              format: { type: [enum, array], values: [freeform, frontmatter, schema_validated] }
+              scope: { type: enum, values: [global, path_scoped, task_scoped] }
+              cardinality: { type: enum, values: [singleton, optional, collection, hierarchical, chain] }
+              lifecycle: { type: enum, values: [static, mutable, transient] }
+              loading: { type: enum, values: [session_start, on_demand, on_invocation] }
+
+  excludes:
+    required: false
+    type: array
+    description: "Rule coordinates or glob patterns to exclude from resolution"
+    items:
+      type: string
+      pattern: "^[A-Z_]+:[SCDEGM*]:[0-9]{4}$|^[A-Z_]+:\\*$"
+
+  overrides:
+    required: false
+    type: object
+    description: "Per-rule severity overrides keyed by coordinate (e.g., RRAILS:C:0008)"
+    additionalProperties:
+      type: object
+      properties:
+        severity:
+          type: enum
+          values: [critical, high, medium, low]
+
+validation:
+  - rule: "agent uppercase must be in reserved_agent_prefixes (see rule.schema.yml)"
+  - rule: "scope keys should be one of: project, user, managed, auto, local"
+
+examples:
+  claude: |
+    agent: claude
+    version: "0.5.0"
+    prefix: CLAUDE
+    name: Claude Code
+    file_types:
+      main:
+        required: true
+        format: freeform
+        scope: global
+        cardinality: singleton
+        lifecycle: static
+        loading: session_start
+        scopes:
+          project:
+            patterns: ["**/CLAUDE.md"]
+            precedence: project
+            vcs: committed
+            maintainer: human
+          user:
+            patterns: ["~/.claude/CLAUDE.md"]
+            precedence: user
+            vcs: external
+            maintainer: human
+          managed:
+            patterns:
+              - "/etc/claude-code/CLAUDE.md"
+              - "/Library/Application Support/ClaudeCode/CLAUDE.md"
+            precedence: managed
+            vcs: external
+            maintainer: system
+      rules:
+        format: [frontmatter, freeform]
+        scope: path_scoped
+        cardinality: collection
+        lifecycle: static
+        loading: on_demand
+        scopes:
+          project:
+            patterns: [".claude/rules/**/*.md"]
+            precedence: project
+            vcs: committed
+            maintainer: human
+          user:
+            patterns: ["~/.claude/rules/*.md"]
+            precedence: user
+            vcs: external
+            maintainer: human
+      skills:
+        format: [frontmatter, freeform]
+        scope: task_scoped
+        cardinality: hierarchical
+        lifecycle: static
+        loading: on_invocation
+        scopes:
+          project:
+            patterns: [".claude/skills/**/SKILL.md"]
+            precedence: project
+            vcs: committed
+            maintainer: human
+          user:
+            patterns: ["~/.claude/skills/**/SKILL.md"]
+            precedence: user
+            vcs: external
+            maintainer: human
+          managed:
+            patterns: ["/etc/claude-code/skills/**/SKILL.md"]
+            precedence: managed
+            vcs: external
+            maintainer: system
+      agents:
+        format: [frontmatter, freeform]
+        scope: task_scoped
+        cardinality: collection
+        lifecycle: static
+        loading: on_invocation
+        scopes:
+          project:
+            patterns: [".claude/agents/**/*.md"]
+            precedence: project
+            vcs: committed
+            maintainer: human
+          user:
+            patterns: ["~/.claude/agents/**/*.md"]
+            precedence: user
+            vcs: external
+            maintainer: human
+    excludes:
+      - CORE:C:0026

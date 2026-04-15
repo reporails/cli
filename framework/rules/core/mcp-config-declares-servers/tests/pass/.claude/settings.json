@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "reporails": {
+      "command": "uv",
+      "args": ["run", "ails", "serve"]
+    }
+  }
+}

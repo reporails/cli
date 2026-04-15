@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0011.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0011.pattern_check
+  type: deterministic
+  pattern-regex: (?i)(\bignore\s+(parent|all)\b|\boverride\s+(everything|all)\b)
+  expect: absent
+  message: Child instruction overrides parent scope — extend, don't override

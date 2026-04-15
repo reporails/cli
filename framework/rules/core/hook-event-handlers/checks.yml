@@ -1,0 +1,16 @@
+checks:
+- id: CORE.S.0020.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0020.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Hook
+    - Event
+    - Trigger
+    - Pre-commit
+    message: Missing hook/event handler definitions — document trigger conditions
+      for hooks
+  expect: present

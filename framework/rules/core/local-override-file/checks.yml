@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0022.check
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0022.has_content
+  type: deterministic
+  pattern-regex: '(?s).{20,}'
+  expect: present
+  message: "Override file exists but has no meaningful content"

@@ -25,7 +25,7 @@ class TestRegexEngineResults:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: wont-match
     message: "Won't find this"
     severity: WARNING
@@ -52,7 +52,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: finds-hello
     message: "Found hello"
     severity: WARNING
@@ -78,7 +78,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         bad_yaml = """\
-rules:
+checks:
   - id: bad-rule
     # Missing message, severity, pattern
 """
@@ -98,7 +98,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: rust-only
     message: "Rust check"
     severity: WARNING
@@ -128,7 +128,7 @@ class TestSARIFOutputFormat:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-structure
     message: "Found TODO"
     severity: WARNING
@@ -169,7 +169,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-defs
     message: "Match"
     severity: WARNING

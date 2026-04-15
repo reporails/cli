@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0039.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0039.content_check
+  type: content_query
+  query: has_charged_headings
+  args:
+    message: Instruction in heading — headings should organize content, not carry instructions
+  expect: absent

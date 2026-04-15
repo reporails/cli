@@ -12,16 +12,18 @@ class Category(str, Enum):
     """Rule categories matching framework."""
 
     STRUCTURE = "structure"
-    CONTENT = "content"
+    COHERENCE = "coherence"
+    DIRECTION = "direction"
+    EFFICIENCY = "efficiency"
     MAINTENANCE = "maintenance"
     GOVERNANCE = "governance"
-    EFFICIENCY = "efficiency"
 
 
 # Category code -> Category enum mapping (first letter of rule ID)
 CATEGORY_CODES: dict[str, Category] = {
     "S": Category.STRUCTURE,
-    "C": Category.CONTENT,
+    "C": Category.COHERENCE,
+    "D": Category.DIRECTION,
     "E": Category.EFFICIENCY,
     "M": Category.MAINTENANCE,
     "G": Category.GOVERNANCE,
@@ -29,11 +31,17 @@ CATEGORY_CODES: dict[str, Category] = {
 
 
 class RuleType(str, Enum):
-    """How the rule is detected. Three types."""
+    """How the rule is checked locally."""
 
     MECHANICAL = "mechanical"  # Python structural check
     DETERMINISTIC = "deterministic"  # Regex pattern -> direct violation
-    SEMANTIC = "semantic"  # LLM judgment required
+
+
+class Execution(str, Enum):
+    """Where the rule's checks execute."""
+
+    LOCAL = "local"  # checks.yml on client
+    SERVER = "server"  # diagnostic from API, no local checks
 
 
 class Severity(str, Enum):
@@ -63,32 +71,72 @@ class PatternConfidence(str, Enum):
 
 
 class Level(str, Enum):
-    """Capability levels from framework."""
+    """Project levels from framework."""
 
     L0 = "L0"  # Absent
-    L1 = "L1"  # Basic
-    L2 = "L2"  # Scoped
-    L3 = "L3"  # Structured
-    L4 = "L4"  # Abstracted
-    L5 = "L5"  # Maintained
+    L1 = "L1"  # Present
+    L2 = "L2"  # Structured
+    L3 = "L3"  # Substantive
+    L4 = "L4"  # Actionable
+    L5 = "L5"  # Refined
     L6 = "L6"  # Adaptive
 
 
 @dataclass(frozen=True)
-class Check:  # pylint: disable=too-many-instance-attributes
+class FileTypeDeclaration:
+    """A typed file declaration from agent config file_types section."""
+
+    name: str  # "main", "scoped_rule", "skill", etc.
+    patterns: tuple[str, ...]  # glob patterns
+    required: bool = False
+    properties: dict[str, str | list[str]] = field(default_factory=dict)  # property name → value(s)
+
+
+@dataclass(frozen=True)
+class ClassifiedFile:
+    """A file matched to a type declaration with resolved properties."""
+
+    path: Path
+    file_type: str  # type name from FileTypeDeclaration.name
+    properties: dict[str, str | list[str]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class FileMatch:  # pylint: disable=too-many-instance-attributes
+    """Property-based file targeting. None properties are wildcards.
+
+    Each property can be:
+    - None: wildcard (matches any value)
+    - str: exact match
+    - list[str]: OR match (value must be in the list)
+    """
+
+    type: list[str] | str | None = None
+    scope: list[str] | str | None = None
+    format: list[str] | str | None = None
+    content_format: list[str] | None = None
+    cardinality: list[str] | str | None = None
+    lifecycle: list[str] | str | None = None
+    maintainer: list[str] | str | None = None
+    vcs: list[str] | str | None = None
+    loading: list[str] | str | None = None
+    precedence: list[str] | str | None = None
+
+
+@dataclass(frozen=True)
+class Check:
     """A specific check within a rule.
 
     Checks have a type matching their gate: mechanical (Python function),
-    deterministic (regex pattern), or semantic (LLM evaluation).
+    deterministic (regex pattern), or content_query (atom-based).
     """
 
     id: str  # e.g., "CORE:S:0001:check:0001"
-    severity: Severity
-    type: str = "deterministic"  # "mechanical" | "deterministic" | "semantic"
-    name: str = ""  # Human-readable (optional)
+    type: str = "deterministic"  # "mechanical" | "deterministic" | "content_query"
     check: str | None = None  # Mechanical function name
-    args: dict[str, Any] | None = None  # Mechanical check arguments
-    negate: bool = False  # If True, finding = pass (content present), no finding = violation
+    args: dict[str, Any] | None = None  # Mechanical/content_query arguments
+    query: str | None = None  # Content query function name (type=content_query)
+    expect: str = "present"  # "present" = no match is violation; "absent" = match is violation
     metadata_keys: list[str] = field(default_factory=list)  # D→M metadata bus keys
 
 
@@ -101,27 +149,22 @@ class Rule:  # pylint: disable=too-many-instance-attributes
     title: str  # e.g., "Instruction File Exists"
     category: Category
     type: RuleType
-    level: str  # e.g., "L2" - minimum level this rule applies to
+    severity: Severity = Severity.MEDIUM  # Rule-level severity
 
     # Identity
     slug: str = ""  # e.g., "instruction-file-exists"
-    targets: str = ""  # e.g., "{{instruction_files}}"
+    execution: Execution = Execution.LOCAL  # Where checks run
+    match: FileMatch | None = None  # Property-based file targeting
     supersedes: str | None = None  # Coordinate of rule this replaces
 
     # Checks (all rule types)
     checks: list[Check] = field(default_factory=list)
 
-    # Semantic fields (semantic rules)
-    question: str | None = None
-    criteria: list[dict[str, str]] | str | None = None  # [{key, check}, ...] or string
-    choices: list[dict[str, str]] | list[str] | None = None  # [{value, label}, ...]
-    pass_value: str | None = None
-    examples: dict[str, list[str]] | None = None  # {good: [...], bad: [...]}
-
     # References
     sources: list[str] = field(default_factory=list)
     see_also: list[str] = field(default_factory=list)
     backed_by: list[str] = field(default_factory=list)  # Source IDs from sources.yml
+    concern: str | None = None  # Content concern: identity, directive, knowledge, constraint
 
     # Pattern quality
     pattern_confidence: PatternConfidence | None = None
@@ -129,6 +172,20 @@ class Rule:  # pylint: disable=too-many-instance-attributes
     # Paths (set after loading)
     md_path: Path | None = None
     yml_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class LocalFinding:
+    """A finding from local M-probe or D-level client check."""
+
+    file: str  # relative file path
+    line: int  # 1-based line number
+    severity: str  # "error" | "warning" | "info"
+    rule: str  # rule_id (M probes) or theory label (client checks)
+    message: str  # human-readable description
+    fix: str = ""  # suggested fix text
+    source: str = "local"  # "m_probe" | "client_check"
+    check_id: str = ""  # specific check that triggered this
 
 
 @dataclass(frozen=True)
@@ -173,17 +230,15 @@ class JudgmentResponse:
 # Re-exports for backward compatibility
 from reporails_cli.core.results import (  # noqa: E402
     AgentConfig,
-    CapabilityResult,
     CategoryStats,
-    ContentFeatures,
     DetectedFeatures,
     FrictionEstimate,
     GlobalConfig,
     InitResult,
     PendingSemantic,
     ProjectConfig,
+    RuleResult,
     ScanDelta,
-    SkippedExperimental,
     UpdateResult,
     ValidationResult,
 )
@@ -191,12 +246,13 @@ from reporails_cli.core.results import (  # noqa: E402
 __all__ = [
     "CATEGORY_CODES",
     "AgentConfig",
-    "CapabilityResult",
     "Category",
     "CategoryStats",
     "Check",
-    "ContentFeatures",
+    "ClassifiedFile",
     "DetectedFeatures",
+    "FileMatch",
+    "FileTypeDeclaration",
     "FrictionEstimate",
     "GlobalConfig",
     "InitResult",
@@ -207,10 +263,10 @@ __all__ = [
     "PendingSemantic",
     "ProjectConfig",
     "Rule",
+    "RuleResult",
     "RuleType",
     "ScanDelta",
     "Severity",
-    "SkippedExperimental",
     "Tier",
     "UpdateResult",
     "ValidationResult",

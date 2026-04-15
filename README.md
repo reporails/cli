@@ -1,46 +1,57 @@
 # Reporails CLI
 
-Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.
-[Why this exists](https://dev.to/cleverhoods/claudemd-lint-score-improve-repeat-2om5)
+AI instruction diagnostics for coding agents. Validates instruction files for Claude, Codex, Copilot, Gemini, and Cursor against 90+ deterministic rules.
 
-### Pre-1.0 — moving fast, API still evolving, feedback welcome.
+### Beta — limited 100 spots, free until GA. Moving fast, feedback welcome.
 
 ## Quick Start
 
-### MCP setup (recommended)
-
 ```bash
-uvx reporails-cli install
-# or
-npx @reporails/cli install
-```
-
-This detects agents in your project and writes the MCP config. Restart your editor — you'll get validation, scoring, and semantic evaluation via MCP tools.
-
-### CLI-only
-
-```bash
-uvx reporails-cli check
-# or
 npx @reporails/cli check
+# or
+uvx reporails-cli check
 ```
 
-You'll get a score, capability level, and actionable violations:
+No install needed. Or install globally:
+
+```bash
+npm install -g @reporails/cli    # adds `ails` to PATH
+# or
+pip install reporails-cli        # same, via Python
+```
+
+Then just:
+
+```bash
+ails check
+```
+
+You'll get a score, level, and actionable findings:
 
 ```
-╔══════════════════════════════════════════════════════════════╗
-║                                                              ║
-║   SCORE: 8.1 / 10 (awaiting semantic)                        ║
-║   LEVEL: Maintained (L5)                                     ║
-║   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░        ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝
+Reporails — Diagnostics
 
-Violations:
-  CLAUDE.md (7 issues)
-    ○ :1    No NEVER or AVOID statements found       RRAILS:C:0003
-    · :1    No version or date marker found           CORE:C:0012
-    ...
+  ┌─ Main (1)
+  │ CLAUDE.md  12 dir / 5 con · 60% prose
+  │   ⚠ L1     No NEVER or AVOID statements found  CORE:C:0003
+  │   ○ L1     No version or date marker found  CORE:C:0012
+  │
+  └─ 3 findings
+
+  ── Summary ──────────────────────────────────────────────
+
+  Score: 7.2 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (0.3s)
+  Agent: Claude
+
+  Scope:
+    capabilities: 1 main
+    instructions: 12 directive / 5 prose (28%)
+                  5 constraint
+
+  3 findings · 0 errors · 2 warnings · 1 info
+
+  Full diagnostics free for the first 100 registering users during beta
+  ails auth login
 ```
 
 Fix the issues, run again, watch your score improve.
@@ -48,67 +59,47 @@ Fix the issues, run again, watch your score improve.
 ## Install
 
 ```bash
-pip install reporails-cli
-# or
+# Node.js (recommended — no separate Python install needed)
 npm install -g @reporails/cli
+
+# Python
+pip install reporails-cli
+
+# Zero install (ephemeral, always latest)
+npx @reporails/cli check
+uvx reporails-cli check
 ```
 
-This adds `ails` to your PATH. All commands below assume a global install.
+All paths add `ails` to your PATH. The npm package auto-installs `uv` if needed — no Python install required.
 
-Depends on your install path:
+## Authentication
 
-- **uvx/pip**: [uv](https://docs.astral.sh/uv/) — no separate Python install needed
-- **npx/npm**: Node.js >= 18 — uv is auto-installed if missing
-- **MCP install**: No dependencies — `ails install` writes config files directly
+Free offline diagnostics work without an account. For server-enhanced diagnostics (cross-file analysis, reinforcement detection, compliance scoring), sign up for the beta:
+
+```bash
+ails auth login       # GitHub Device Flow — authorize in browser
+ails auth status      # Check your current auth state
+ails auth logout      # Remove stored credentials
+```
+
+Credentials are stored in `~/.reporails/credentials.yml`.
 
 ## Commands
 
-### Validate
-
 ```bash
-ails check                      # Score your setup
+ails check                      # Validate your instruction files
 ails check -f json              # JSON output
 ails check -f github            # GitHub Actions annotations
-ails check --strict             # Exit 1 if violations
-ails check --agent claude       # Agent-specific rules
-ails check --experimental       # Include experimental rules
+ails check --strict             # Exit 1 if violations found
+ails check --agent claude       # Agent-specific rules only
 ails check --exclude-dir vendor # Exclude directory from scanning
 ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
-ails check --no-update-check    # Skip pre-run update prompt
-```
 
-### Fix
-
-```bash
-ails heal                       # Auto-fix violations
-ails heal -f json               # JSON output for agents and scripts
-ails explain CORE:S:0001        # Explain a rule
-ails dismiss CORE:C:0001        # Dismiss a semantic finding
-```
-
-### Configure
-
-```bash
+ails explain CORE:S:0001        # Explain a specific rule
+ails heal                       # Interactive auto-fix for violations
 ails install                    # Install MCP server for detected agents
-ails config set default_agent claude  # Set default agent
-ails config set --global default_agent claude  # Set global default
-ails config get default_agent   # Show current value
-ails config list                # Show all config (project + global)
-ails map                        # Show project structure
-ails map --save                 # Generate backbone.yml
+ails version                    # Show version info
 ```
-
-### Update
-
-```bash
-ails update                     # Update rules framework + recommended
-ails update --check             # Check for updates without installing
-ails update --recommended       # Update recommended rules only
-ails update --force             # Force reinstall even if current
-ails update --cli               # Upgrade the CLI package itself
-```
-
-Before each scan, the CLI checks for available updates and prompts to install. Use `--no-update-check` to skip. Ephemeral runners (`uvx`, `npx`) always use the latest version automatically.
 
 ### Exit codes
 
@@ -118,16 +109,26 @@ Before each scan, the CLI checks for available updates and prompts to install. U
 | 1 | Violations found (strict mode) |
 | 2 | Invalid input (bad path, unknown agent/format/rule) |
 
+## Supported Agents
+
+| Agent | Instruction files |
+|-------|-------------------|
+| Claude | `CLAUDE.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md` |
+| Codex | `AGENTS.md`, `CODEX.md`, `agents/*.md` |
+| Copilot | `copilot-instructions.md`, `.github/copilot-instructions.md` |
+| Gemini | `GEMINI.md`, `.gemini/rules/*.md` |
+| Cursor | `.cursorrules`, `.cursor/rules/*.md` |
+
+The CLI auto-detects which agents are present in your project.
+
 ## Configuration
 
-Project config in `.reporails/config.yml`:
+Project config in `.ails/config.yml`:
 
 ```yaml
 default_agent: claude          # Default agent (run: ails config set default_agent claude)
 exclude_dirs: [vendor, dist]   # Directories to skip
 disabled_rules: [CORE:C:0010]  # Rules to disable
-experimental: false            # Include experimental rules
-recommended: true              # Include recommended rules (RRAILS_ namespace)
 ```
 
 Set values via CLI: `ails config set <key> <value>`
@@ -137,13 +138,8 @@ Set values via CLI: `ails config set <key> <value>`
 Global config in `~/.reporails/config.yml` applies to all projects. Project config overrides global.
 
 ```bash
-ails config set --global default_agent claude   # Use claude everywhere
-ails config set --global recommended false      # Opt out globally
+ails config set --global default_agent claude
 ```
-
-Supported global keys: `default_agent`, `recommended`.
-
-[Recommended rules](https://github.com/reporails/recommended) (RRAILS_ namespace) are included by default. To opt out: `ails config set recommended false`
 
 ## GitHub Actions
 
@@ -154,70 +150,60 @@ Add `ails check` as a CI gate with inline PR annotations:
 name: Reporails
 on:
   pull_request:
-    paths: ['CLAUDE.md', '.claude/**']
+    paths: ['CLAUDE.md', '.claude/**', 'AGENTS.md', '.cursorrules']
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: reporails/cli/action@v1
-        with:
-          min-score: '6.0'
-```
-
-Violations appear as inline annotations on the PR diff. The step summary shows score, level, and a violations table.
-
-**Action inputs:**
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `path` | `.` | Path to validate |
-| `strict` | `false` | Fail on any violation |
-| `min-score` | | Minimum score threshold (0-10) |
-| `agent` | | Agent type (resolve from project config or generic fallback) |
-| `exclude-dir` | | Comma-separated directory names to exclude from scanning |
-| `from-source` | `false` | Install CLI from local checkout (for CI testing) |
-| `experimental` | `false` | Include experimental rules |
-| `version` | | CLI version to install (default: latest) |
-
-**Action outputs:** `score`, `level`, `violations`, `result` (full JSON).
-
-You can also use `--format github` directly in custom workflows:
-
-```bash
-ails check . --format github --strict
+      - run: pip install reporails-cli
+      - run: ails check . --format github --strict
 ```
 
 ## What It Checks
 
-- **Structure** — File organization, size limits
-- **Content** — Clarity, completeness, anti-patterns
-- **Efficiency** — Token usage, context management
+90+ rules across six categories:
+
+- **Structure** — File organization, discoverability, size limits
+- **Content** — Clarity, specificity, reinforcement patterns, anti-patterns
+- **Context Quality** — Tech stack, project description, domain terminology
+- **Efficiency** — Token usage, import depth, instruction elaboration
 - **Maintenance** — Versioning, review processes
-- **Governance** — Ownership, security policies
+- **Governance** — Security policies, credential protection, permissions
 
-## Capability Levels
+## Levels [* under re-evaluation *]
 
-Capability levels describe what your AI instruction setup enables — not how "mature" it is. Different projects need different capabilities.
+Levels describe what your AI instruction setup enables.
 
 | Level | Name | What It Enables |
 |-------|------|-----------------|
-| L1 | Basic | A non-trivial, tracked instruction file exists |
-| L2 | Scoped | Project-specific constraints defined, file is focused |
-| L3 | Structured | Guidance is modular with external references |
-| L4 | Abstracted | Instructions adapt based on code location |
-| L5 | Maintained | Instruction system is structurally sound, governed, and navigable |
+| L0 | Absent | No instruction file |
+| L1 | Present | A non-trivial, tracked instruction file exists |
+| L2 | Structured | Project-specific constraints, focused content |
+| L3 | Substantive | Modular guidance with external references |
+| L4 | Actionable | Instructions adapt based on code location |
+| L5 | Refined | Structurally sound, governed, navigable |
 | L6 | Adaptive | Agent dynamically discovers context and extends capabilities |
+
+## Offline vs Server
+
+| Feature | Unauthenticated | Authenticated                         |
+|---------|-----------------|---------------------------------------|
+| Mechanical rules | 70+ rules       | 70+ rules                             |
+| Deterministic rules | 20+ rules       | 20+ rules                             |
+| Cross-file analysis | -               | Conflicts, repetition                 |
+| Reinforcement detection | -               | Orphan instructions, topic clustering |
+| Compliance scoring | -               | Per-instruction strength              |
+| Rate limit | -               | 10/hour (beta)                        |
+
+## Performance
+
+First run downloads the embedding model (~90MB) to cache. Subsequent runs start in under 2 seconds for typical projects.
 
 ## Rules
 
-Core rules are maintained at [reporails/rules](https://github.com/reporails/rules).
-Recommended rules at [reporails/recommended](https://github.com/reporails/recommended).
-
-Want to add or improve rules? See the [Contributing guide](https://github.com/reporails/rules/blob/main/CONTRIBUTING.md).
+Rules are bundled with the CLI — no separate install or download needed. See [reporails.com/rules](https://reporails.com/rules) for the full rule reference.
 
 ## License
 
-BUSL 1.1 — converts to Apache 2.0 on 2029-02-20 or at 1.0, whichever comes first.
-
-Rules and Recommended rules package are [CC BY-SA 4.0](https://github.com/reporails/rules/blob/main/LICENSE) — always open, always forkable.
+[BUSL 1.1](LICENSE) — converts to Apache 2.0 three years after each release.

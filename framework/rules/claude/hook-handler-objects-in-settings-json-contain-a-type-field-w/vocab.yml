@@ -1,0 +1,4 @@
+handler_has_type:
+- command
+- prompt
+- agent

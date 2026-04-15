@@ -1,10 +1,11 @@
 ---
+description: Rule file authoring — format, scope, and constraints for .claude/rules/
 paths: [".claude/rules/**"]
 ---
 
 # Writing Rule Files
 
-Rule files in `.claude/rules/` are loaded into Claude's context.
+Rule files in `.claude/rules/` are loaded into Claude's context at session start.
 
 ## Format
 
@@ -21,7 +22,11 @@ paths: ["src/**/*.py"]  # Optional: scope to specific files
 
 ## Constraints
 
-- One concern per file (e.g., access control separate from styling)
-- Keep under 500 lines — everything consumes tokens
-- Use descriptive filenames (`api-validation.md` not `rules1.md`)
-- Add `paths` frontmatter to scope rules to relevant files; omit for global rules
+- Keep each `.claude/rules/*.md` file focused on one concern — access control separate from styling, testing separate from documentation
+- Keep files under 500 lines — every line consumes context tokens
+- Use descriptive filenames like `api-validation.md` not `rules1.md`
+- Add `paths` or `globs` frontmatter to scope rules to relevant files under `src/`, `tests/`, or `docs/`. Omit for global rules.
+
+## Discovery
+
+Applies to files matching `.claude/rules/**` via `paths` frontmatter. Loaded automatically by Claude Code from `.claude/rules/`.

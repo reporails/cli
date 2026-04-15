@@ -1,0 +1,7 @@
+scope_fields_in_frontmatter:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

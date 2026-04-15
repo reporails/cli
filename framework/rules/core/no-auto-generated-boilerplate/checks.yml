@@ -1,0 +1,9 @@
+checks:
+- id: CORE.C.0030.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0030.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)(auto[_-]?generated|do\s+not\s+edit|generated\s+by\s+\w+|this\s+file\s+was\s+auto)'
+  expect: absent
+  message: "Auto-generated boilerplate detected — instruction content should be human-authored"

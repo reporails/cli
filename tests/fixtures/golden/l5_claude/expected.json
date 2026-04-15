@@ -2,27 +2,35 @@
   "category_summary": [
     {
       "code": "S",
-      "failed": 17,
+      "failed": 6,
       "name": "Structure",
-      "passed": 12,
-      "total": 29,
+      "passed": 30,
+      "total": 36,
       "worst_severity": "high"
     },
     {
       "code": "C",
-      "failed": 15,
-      "name": "Content",
-      "passed": 14,
-      "total": 29,
+      "failed": 25,
+      "name": "Coherence",
+      "passed": 22,
+      "total": 47,
       "worst_severity": "high"
     },
     {
+      "code": "D",
+      "failed": 0,
+      "name": "Direction",
+      "passed": 0,
+      "total": 0,
+      "worst_severity": null
+    },
+    {
       "code": "E",
-      "failed": 1,
+      "failed": 0,
       "name": "Efficiency",
-      "passed": 4,
-      "total": 5,
-      "worst_severity": "medium"
+      "passed": 6,
+      "total": 6,
+      "worst_severity": null
     },
     {
       "code": "M",
@@ -30,15 +38,15 @@
       "name": "Maintenance",
       "passed": 0,
       "total": 1,
-      "worst_severity": "medium"
+      "worst_severity": "high"
     },
     {
       "code": "G",
-      "failed": 8,
+      "failed": 1,
       "name": "Governance",
-      "passed": 1,
-      "total": 9,
-      "worst_severity": "medium"
+      "passed": 3,
+      "total": 4,
+      "worst_severity": "high"
     }
   ],
   "evaluation": "awaiting_semantic",
@@ -57,7 +65,7 @@
         "bad": [],
         "good": []
       },
-      "location": ".claude/rules/security.md:2",
+      "location": ".claude/rules/security.md:4",
       "pass_value": "pass",
       "rule_id": "CORE:C:0001"
     },
@@ -73,7 +81,7 @@
         "bad": [],
         "good": []
       },
-      "location": ".claude/rules/testing.md:2",
+      "location": "CLAUDE.md:8",
       "pass_value": "pass",
       "rule_id": "CORE:C:0001"
     },
@@ -89,39 +97,7 @@
         "bad": [],
         "good": []
       },
-      "location": "CLAUDE.md:21",
-      "pass_value": "pass",
-      "rule_id": "CORE:C:0001"
-    },
-    {
-      "choices": [
-        "pass",
-        "fail"
-      ],
-      "criteria": {
-        "pass_condition": "Evaluate based on context"
-      },
-      "examples": {
-        "bad": [],
-        "good": []
-      },
-      "location": "CLAUDE.md:1",
-      "pass_value": "pass",
-      "rule_id": "CORE:C:0002"
-    },
-    {
-      "choices": [
-        "pass",
-        "fail"
-      ],
-      "criteria": {
-        "pass_condition": "Evaluate based on context"
-      },
-      "examples": {
-        "bad": [],
-        "good": []
-      },
-      "location": "CLAUDE.md:12",
+      "location": ".claude/rules/testing.md:4",
       "pass_value": "pass",
       "rule_id": "CORE:C:0003"
     },
@@ -137,9 +113,9 @@
         "bad": [],
         "good": []
       },
-      "location": "CLAUDE.md:1",
+      "location": "CLAUDE.md:13",
       "pass_value": "pass",
-      "rule_id": "CORE:C:0009"
+      "rule_id": "CORE:C:0003"
     },
     {
       "choices": [
@@ -153,9 +129,9 @@
         "bad": [],
         "good": []
       },
-      "location": "CLAUDE.md:1",
+      "location": "CLAUDE.md:16",
       "pass_value": "pass",
-      "rule_id": "CORE:C:0012"
+      "rule_id": "CORE:C:0033"
     },
     {
       "choices": [
@@ -169,9 +145,9 @@
         "bad": [],
         "good": []
       },
-      "location": "CLAUDE.md:1",
+      "location": "CLAUDE.md:18",
       "pass_value": "pass",
-      "rule_id": "CORE:C:0028"
+      "rule_id": "CORE:C:0036"
     },
     {
       "choices": [
@@ -185,9 +161,9 @@
         "bad": [],
         "good": []
       },
-      "location": "CLAUDE.md:1",
+      "location": "CLAUDE.md:18",
       "pass_value": "pass",
-      "rule_id": "CORE:E:0003"
+      "rule_id": "CORE:C:0037"
     },
     {
       "choices": [
@@ -201,9 +177,9 @@
         "bad": [],
         "good": []
       },
-      "location": "CLAUDE.md:1",
+      "location": "CLAUDE.md:18",
       "pass_value": "pass",
-      "rule_id": "CORE:G:0007"
+      "rule_id": "CORE:C:0038"
     },
     {
       "choices": [
@@ -217,9 +193,9 @@
         "bad": [],
         "good": []
       },
-      "location": ".claude/rules/security.md:1",
+      "location": "CLAUDE.md:18",
       "pass_value": "pass",
-      "rule_id": "CORE:S:0011"
+      "rule_id": "CORE:C:0039"
     },
     {
       "choices": [
@@ -233,332 +209,744 @@
         "bad": [],
         "good": []
       },
-      "location": ".claude/rules/testing.md:1",
+      "location": "CLAUDE.md:18",
       "pass_value": "pass",
-      "rule_id": "CORE:S:0011"
+      "rule_id": "CORE:C:0040"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/security.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0046"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/testing.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0046"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0046"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/security.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0047"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/testing.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0047"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0047"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/security.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0048"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/testing.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0048"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:C:0048"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0039"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0040"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0041"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0042"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0043"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0044"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/security.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0045"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/testing.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0045"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:5",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0045"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:5",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0046"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/security.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0047"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/testing.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0047"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0047"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/security.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0048"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": ".claude/rules/testing.md:3",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0048"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0048"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0050"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0051"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:22",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0052"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:7",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0053"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:5",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0054"
+    },
+    {
+      "choices": [
+        "pass",
+        "fail"
+      ],
+      "criteria": {
+        "pass_condition": "Evaluate based on context"
+      },
+      "examples": {
+        "bad": [],
+        "good": []
+      },
+      "location": "CLAUDE.md:18",
+      "pass_value": "pass",
+      "rule_id": "CORE:S:0055"
     }
   ],
   "level": "L5",
   "pending_semantic": {
     "file_count": 3,
-    "rule_count": 9,
+    "rule_count": 27,
     "rules": [
       "CORE:C:0001",
-      "CORE:C:0002",
       "CORE:C:0003",
-      "CORE:C:0009",
-      "CORE:C:0012",
-      "CORE:C:0028",
-      "CORE:E:0003",
-      "CORE:G:0007",
-      "CORE:S:0011"
+      "CORE:C:0033",
+      "CORE:C:0036",
+      "CORE:C:0037",
+      "CORE:C:0038",
+      "CORE:C:0039",
+      "CORE:C:0040",
+      "CORE:C:0046",
+      "CORE:C:0047",
+      "CORE:C:0048",
+      "CORE:S:0039",
+      "CORE:S:0040",
+      "CORE:S:0041",
+      "CORE:S:0042",
+      "CORE:S:0043",
+      "CORE:S:0044",
+      "CORE:S:0045",
+      "CORE:S:0046",
+      "CORE:S:0047",
+      "CORE:S:0048",
+      "CORE:S:0050",
+      "CORE:S:0051",
+      "CORE:S:0052",
+      "CORE:S:0053",
+      "CORE:S:0054",
+      "CORE:S:0055"
     ]
   },
-  "score": 4.4,
+  "score": 6.6,
   "summary": {
-    "rules_checked": 73,
-    "rules_failed": 42,
-    "rules_passed": 31
+    "rules_checked": 94,
+    "rules_failed": 33,
+    "rules_passed": 61
   },
   "violations": [
     {
-      "check_id": "CLAUDE.G.0001.settings_file_exists",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CLAUDE:G:0001",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CLAUDE.S.0001.skill_dir_exists",
-      "location": ".claude/skills/**/*.md:0",
-      "rule_id": "CLAUDE:S:0001",
-      "severity": "high"
-    },
-    {
-      "check_id": "CLAUDE.S.0002.skill_file_exists",
-      "location": ".claude/skills/**/SKILL.md:0",
-      "rule_id": "CLAUDE:S:0002",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CLAUDE.S.0003.skill_file_exists",
-      "location": ".claude/skills/**/SKILL.md:0",
-      "rule_id": "CLAUDE:S:0003",
-      "severity": "high"
-    },
-    {
-      "check_id": "CLAUDE.S.0004.settings_file_exists",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CLAUDE:S:0004",
-      "severity": "high"
-    },
-    {
-      "check_id": "CLAUDE.S.0005.settings_file_exists",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CLAUDE:S:0005",
-      "severity": "high"
-    },
-    {
-      "check_id": "CLAUDE.S.0006.settings_file_exists",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CLAUDE:S:0006",
-      "severity": "high"
-    },
-    {
-      "check_id": "CLAUDE.S.0007.settings_file_exists",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CLAUDE:S:0007",
-      "severity": "high"
-    },
-    {
-      "check_id": "flag_vague_language",
-      "location": ".claude/rules/security.md:2",
-      "rule_id": "CORE:C:0001",
-      "severity": "high"
-    },
-    {
-      "check_id": "flag_vague_language",
-      "location": ".claude/rules/testing.md:2",
-      "rule_id": "CORE:C:0001",
-      "severity": "high"
-    },
-    {
-      "check_id": "flag_vague_language",
-      "location": "CLAUDE.md:21",
-      "rule_id": "CORE:C:0001",
-      "severity": "high"
-    },
-    {
-      "check_id": "extract_rationale_content",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.C.0002.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0002",
+      "severity": "low"
+    },
+    {
+      "check_id": "CORE.C.0004.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0004",
       "severity": "medium"
     },
     {
-      "check_id": "extract_iteration_directives",
-      "location": "CLAUDE.md:12",
-      "rule_id": "CORE:C:0003",
+      "check_id": "CORE.C.0006.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0006",
       "severity": "medium"
     },
     {
-      "check_id": "has_workflow_content",
-      "location": "CLAUDE.md:14",
-      "rule_id": "CORE:C:0007",
-      "severity": "medium"
-    },
-    {
-      "check_id": "has_validation_section",
-      "location": "CLAUDE.md:8",
-      "rule_id": "CORE:C:0008",
-      "severity": "high"
-    },
-    {
-      "check_id": "extract_ask_directives",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.C.0009.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0009",
       "severity": "medium"
     },
     {
-      "check_id": "commands_in_code_blocks",
-      "location": "CLAUDE.md:12",
-      "rule_id": "CORE:C:0010",
-      "severity": "high"
-    },
-    {
-      "check_id": "has_security_content",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:C:0011",
-      "severity": "medium"
-    },
-    {
-      "check_id": "extract_convention_content",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.C.0012.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0012",
       "severity": "high"
     },
     {
-      "check_id": "has_project_description",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:C:0013",
+      "check_id": "CORE.C.0014.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0014",
       "severity": "high"
     },
     {
-      "check_id": "has_code_fences",
-      "location": "CLAUDE.md:7",
+      "check_id": "CORE.C.0016.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0016",
       "severity": "medium"
     },
     {
-      "check_id": "has_detailed_commands",
-      "location": "CLAUDE.md:12",
+      "check_id": "CORE.C.0020.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0020",
       "severity": "medium"
     },
     {
-      "check_id": "has_workflow_sequence",
-      "location": "CLAUDE.md:12",
-      "rule_id": "CORE:C:0021",
+      "check_id": "CORE.C.0023.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0023",
       "severity": "medium"
     },
     {
-      "check_id": "has_domain_terms",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.C.0024.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0024",
+      "severity": "high"
+    },
+    {
+      "check_id": "CORE.C.0025.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0025",
+      "severity": "high"
+    },
+    {
+      "check_id": "CORE.C.0027.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0027",
       "severity": "medium"
     },
     {
-      "check_id": "extract_reasoning_directives",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.C.0028.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:C:0028",
+      "severity": "low"
+    },
+    {
+      "check_id": "CORE.C.0031.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0031",
       "severity": "medium"
     },
     {
-      "check_id": "extract_potentially_redundant",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:E:0003",
+      "check_id": "CORE.C.0034.pattern_check",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0034",
+      "severity": "high"
+    },
+    {
+      "check_id": "d_shadow",
+      "location": "CLAUDE.md:18",
+      "rule_id": "CORE:C:0036",
       "severity": "medium"
     },
     {
-      "check_id": "CORE.G.0001.file_tracked",
+      "check_id": "d_shadow",
+      "location": "CLAUDE.md:18",
+      "rule_id": "CORE:C:0037",
+      "severity": "medium"
+    },
+    {
+      "check_id": "d_shadow",
+      "location": "CLAUDE.md:18",
+      "rule_id": "CORE:C:0038",
+      "severity": "medium"
+    },
+    {
+      "check_id": "d_shadow",
+      "location": "CLAUDE.md:18",
+      "rule_id": "CORE:C:0039",
+      "severity": "medium"
+    },
+    {
+      "check_id": "d_shadow",
+      "location": "CLAUDE.md:18",
+      "rule_id": "CORE:C:0040",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.C.0041.d_shadow",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0041",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.C.0042.d_shadow",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0042",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.C.0043.config_language",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0043",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.C.0044.config_language",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0044",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.C.0045.config_language",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:C:0045",
+      "severity": "medium"
+    },
+    {
+      "check_id": "CORE.G.0001.check",
       "location": "CLAUDE.md:0",
       "rule_id": "CORE:G:0001",
-      "severity": "medium"
+      "severity": "high"
     },
     {
-      "check_id": "has_permission_section",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:G:0003",
-      "severity": "medium"
-    },
-    {
-      "check_id": "has_command_boundaries",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:G:0004",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CORE.G.0005.file_in_scope",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CORE:G:0005",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CORE.G.0006.managed_config_exists",
-      "location": "/etc/claude-code/managed-settings.json:0",
-      "rule_id": "CORE:G:0006",
-      "severity": "low"
-    },
-    {
-      "check_id": "extract_settings_refs",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:G:0007",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CORE.G.0008.mcp_config_exists",
-      "location": ".mcp.json:0",
-      "rule_id": "CORE:G:0008",
-      "severity": "medium"
-    },
-    {
-      "check_id": "has_freshness_marker",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.M.0001.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:M:0001",
-      "severity": "medium"
+      "severity": "high"
     },
     {
-      "check_id": "has_import_references",
-      "location": ".claude/rules/security.md:1",
+      "check_id": "CORE.S.0001.pattern_check",
+      "location": "CLAUDE.md:0",
       "rule_id": "CORE:S:0001",
-      "severity": "low"
+      "severity": "medium"
     },
     {
-      "check_id": "has_import_references",
-      "location": ".claude/rules/testing.md:1",
-      "rule_id": "CORE:S:0001",
-      "severity": "low"
+      "check_id": "CORE.S.0005.pattern_check",
+      "location": "security.md:0",
+      "rule_id": "CORE:S:0005",
+      "severity": "high"
     },
     {
-      "check_id": "has_frontmatter_block",
-      "location": ".claude/rules/security.md:1",
+      "check_id": "CORE.S.0006.pattern_check",
+      "location": "security.md:0",
       "rule_id": "CORE:S:0006",
-      "severity": "medium"
+      "severity": "high"
     },
     {
-      "check_id": "has_frontmatter_block",
-      "location": ".claude/rules/testing.md:1",
-      "rule_id": "CORE:S:0006",
-      "severity": "medium"
-    },
-    {
-      "check_id": "extract_override_content",
-      "location": ".claude/rules/security.md:1",
-      "rule_id": "CORE:S:0011",
-      "severity": "medium"
-    },
-    {
-      "check_id": "extract_override_content",
-      "location": ".claude/rules/testing.md:1",
-      "rule_id": "CORE:S:0011",
-      "severity": "medium"
-    },
-    {
-      "check_id": "discovery_documented",
-      "location": "CLAUDE.md:1",
+      "check_id": "CORE.S.0012.pattern_check",
+      "location": "security.md:0",
       "rule_id": "CORE:S:0012",
       "severity": "medium"
     },
     {
-      "check_id": "has_overview_section",
-      "location": "CLAUDE.md:1",
-      "rule_id": "CORE:S:0016",
+      "check_id": "CORE.S.0013.pattern_check",
+      "location": "security.md:0",
+      "rule_id": "CORE:S:0013",
       "severity": "medium"
     },
     {
-      "check_id": "CORE.S.0018.file_in_scope",
-      "location": ".claude/skills/**/SKILL.md:0",
-      "rule_id": "CORE:S:0018",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CORE.S.0021.settings_file_exists",
-      "location": ".claude/settings.json:0",
-      "rule_id": "CORE:S:0021",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CORE.S.0022.local_override_exists",
-      "location": "CLAUDE.local.md:0",
-      "rule_id": "CORE:S:0022",
-      "severity": "medium"
-    },
-    {
-      "check_id": "CORE.S.0024.all_imports_resolve",
-      "location": ".claude/rules/**/*.md:0",
-      "rule_id": "CORE:S:0024",
-      "severity": "high"
-    },
-    {
-      "check_id": "extract_import_refs",
-      "location": ".claude/rules/security.md:1",
-      "rule_id": "CORE:S:0024",
-      "severity": "high"
-    },
-    {
-      "check_id": "extract_import_refs",
-      "location": ".claude/rules/testing.md:1",
-      "rule_id": "CORE:S:0024",
-      "severity": "high"
-    },
-    {
-      "check_id": "has_markdown_rule_files",
-      "location": ".claude/rules/security.md:1",
-      "rule_id": "CORE:S:0025",
-      "severity": "medium"
-    },
-    {
-      "check_id": "has_markdown_rule_files",
-      "location": ".claude/rules/testing.md:1",
-      "rule_id": "CORE:S:0025",
+      "check_id": "CORE.S.0049.d_shadow",
+      "location": "CLAUDE.md:0",
+      "rule_id": "CORE:S:0049",
       "severity": "medium"
     }
   ]

@@ -1,0 +1,6 @@
+checks:
+- id: CORE.E.0001.check
+  type: mechanical
+  check: aggregate_byte_size
+  args:
+    max: 102400

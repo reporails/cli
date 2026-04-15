@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0003.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0003.pattern_check
+  type: deterministic
+  pattern-regex: '(?m)^#{5,}\s'
+  expect: absent
+  message: "Heading hierarchy too deep — keep headings to 4 levels or fewer"

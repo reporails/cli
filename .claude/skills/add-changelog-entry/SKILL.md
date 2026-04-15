@@ -5,57 +5,27 @@ description: Add a changelog entry to UNRELEASED.md
 
 # /add-changelog-entry
 
-Automatically add a changelog entry to PROJECT_ROOT/UNRELEASED.md.
+Add a changelog entry to `UNRELEASED.md` based on recent changes.
 
-## Instructions
+## Process
 
-1. Check git diff or recent file modifications
-2. Determine the area from the file path:
-   - interfaces/cli/ → [CLI]
-   - core/ → [CORE]
-   - bundled/ → [BUNDLED]
-   - formatters/ → [FORMATTERS]
-   - README.md → [DOCS]
-   - CLAUDE.md, backbone.yml, .claude/, .reporails/ → [META]
-3. Determine the category:
-   - New files/content → Added
-   - Modified existing → Changed
-   - Marked as deprecated/obsolete → Deprecated
-   - Removed content → Removed
-   - Bug fixes → Fixed
-   - Security-related changes → Security
+1. Run `git diff` or check recent file modifications to determine what changed
+2. Determine the **area** from the file path:
+   - `src/reporails_cli/interfaces/cli/` → `[CLI]`
+   - `src/reporails_cli/core/` → `[CORE]`
+   - `src/reporails_cli/bundled/` → `[BUNDLED]`
+   - `src/reporails_cli/formatters/` → `[FORMATTERS]`
+   - `README.md`, `docs/` → `[DOCS]`
+   - `CLAUDE.md`, `.ails/backbone.yml`, `.claude/` → `[META]`
+3. Determine the **category**: Added (new files/content), Changed (modified existing), Deprecated, Removed, Fixed (bug fixes), Security
 4. Write a concise description (3-7 words)
-5. Append to UNRELEASED.md under the correct category section
-6. Create the category section if it doesn't exist
+5. Append to `UNRELEASED.md` under the correct `### [Category]` section — create the section if it doesn't exist
 
 ## Format
 
 ```markdown
 ### [Category]
-- [Area]: [Description]
+- [Area]: Description
 ```
 
-## Categories
-
-Added, Changed, Deprecated, Removed, Fixed, Security
-
-## Areas
-
-- [CLI] – CLI interface (interfaces/cli/)
-- [CORE] – Core domain logic
-- [BUNDLED] – Bundled config (levels.yml, capability-patterns.yml)
-- [FORMATTERS] – Output formatters
-- [DOCS] – README, general documentation
-- [META] – CLAUDE.md, backbone.yml, repo structure
-
-## Example
-
-```markdown
-### Added
-- [CORE]: Semantic rule caching support
-
-### Changed
-- [FORMATTERS]: Updated compact output format
-```
-
-Do not ask for confirmation. Just do it.
+Append directly without asking for confirmation.

@@ -1,0 +1,7 @@
+rules_directory_structure:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

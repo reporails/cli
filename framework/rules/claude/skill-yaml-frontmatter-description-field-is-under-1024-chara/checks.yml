@@ -1,0 +1,7 @@
+checks:
+- id: CLAUDE.S.0003.skill_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0003.description_length
+  type: mechanical
+  check: byte_size

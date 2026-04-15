@@ -1,0 +1,7 @@
+skill_directory_kebab_case:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

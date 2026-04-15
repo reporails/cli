@@ -1,0 +1,14 @@
+default_agent: claude
+exclude_dirs:
+  - fixtures
+  - research
+  - _archive
+  - _archived
+  - .venv
+  - docs
+  - framework
+  - .mypy_cache
+  - .ruff_cache
+  - .pytest_cache
+disabled_rules:
+

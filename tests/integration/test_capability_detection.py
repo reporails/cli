@@ -1,207 +1,98 @@
-"""Capability detection tests - level detection must be deterministic and correct.
+"""Project level determination tests - level detection must be deterministic and correct.
 
-The capability level (L1-L6) determines which rules are applied.
-Detection must be consistent and based on actual project structure.
+The project level (L1-L6) is computed from file type property divergence.
+Detection must be consistent for the same set of classified files.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.models import Level
+import pytest
 
-# TestFilesystemFeatureDetection removed — covered by unit/test_applicability.py
-
-
-class TestContentFeatureDetection:
-    """Test Phase 2: content-based feature detection via regex engine."""
-
-    def test_detect_sections_in_content(
-        self,
-        level2_project: Path,
-    ) -> None:
-        """Detect markdown sections (## headings) in content."""
-        from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.regex import run_capability_detection
-
-        sarif = run_capability_detection(level2_project)
-        content_features = detect_features_content(sarif)
-
-        assert content_features.has_sections, "Should detect ## headings in CLAUDE.md"
-
-    def test_detect_explicit_constraints(
-        self,
-        level2_project: Path,
-    ) -> None:
-        """Detect MUST/NEVER constraints in content."""
-        from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.regex import run_capability_detection
-
-        sarif = run_capability_detection(level2_project)
-        content_features = detect_features_content(sarif)
-
-        assert content_features.has_explicit_constraints, "Should detect MUST/NEVER in level2 CLAUDE.md"
+from reporails_cli.core.levels import determine_project_level
+from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration, Level
 
 
-class TestCapabilityLevelDetermination:
-    """Test capability level determination from features."""
-
-    def test_level1_minimal_project(self, level1_project: Path) -> None:
-        """Level 1 project should be detected as L1 or L2."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
-
-        features = detect_features_filesystem(level1_project)
-        sarif = run_capability_detection(level1_project)
-        content_features = detect_features_content(sarif)
-
-        result = determine_capability_level(features, content_features)
-
-        # Minimal project should be L1 or L2
-        assert result.level in (Level.L1, Level.L2), f"Minimal project should be L1-L2, got {result.level}"
-
-    def test_level2_basic_project(self, level2_project: Path) -> None:
-        """Level 2 project should be detected as L2 or L3."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
-
-        features = detect_features_filesystem(level2_project)
-        sarif = run_capability_detection(level2_project)
-        content_features = detect_features_content(sarif)
-
-        result = determine_capability_level(features, content_features)
-
-        # Basic project with sections should be at least L2
-        assert result.level.value >= Level.L2.value, f"Project with sections should be at least L2, got {result.level}"
-
-    def test_level3_structured_project(self, level3_project: Path) -> None:
-        """Level 3 project should be detected as L3 or higher."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
-
-        features = detect_features_filesystem(level3_project)
-        sarif = run_capability_detection(level3_project)
-        content_features = detect_features_content(sarif)
-
-        result = determine_capability_level(features, content_features)
-
-        # Project with rules dir should be at least L3
-        assert result.level.value >= Level.L3.value, (
-            f"Project with .claude/rules/ should be at least L3, got {result.level}"
-        )
-
-    def test_level5_governed_project(self, level5_project: Path) -> None:
-        """Level 5 project should be detected as L5 or L6."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
-
-        features = detect_features_filesystem(level5_project)
-        sarif = run_capability_detection(level5_project)
-        content_features = detect_features_content(sarif)
-
-        result = determine_capability_level(features, content_features)
-
-        # Project with backbone should be at least L5
-        assert result.level.value >= Level.L5.value, (
-            f"Project with backbone.yml should be at least L5, got {result.level}"
-        )
-
-    def test_missing_files_lowers_level(self, tmp_path: Path) -> None:
-        """Missing expected files should result in lower level, not error."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
-
-        # Create minimal structure
-        (tmp_path / "CLAUDE.md").write_text("# Test\n")
-
-        features = detect_features_filesystem(tmp_path)
-        sarif = run_capability_detection(tmp_path)
-        content_features = detect_features_content(sarif)
-
-        # Should not raise error
-        result = determine_capability_level(features, content_features)
-
-        assert result.level is not None, "Should determine a level even for minimal project"
+def _cf(
+    name: str,
+    path: str = "CLAUDE.md",
+    **properties: str,
+) -> ClassifiedFile:
+    return ClassifiedFile(path=Path(path), file_type=name, properties=properties)
 
 
-class TestLevelDeterminism:
-    """Test that level detection is deterministic."""
-
-    def test_same_project_same_level(self, level3_project: Path) -> None:
-        """Same project should always detect same level."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
-
-        results = []
-        for _ in range(3):
-            features = detect_features_filesystem(level3_project)
-            sarif = run_capability_detection(level3_project)
-            content_features = detect_features_content(sarif)
-            result = determine_capability_level(features, content_features)
-            results.append(result.level)
-
-        assert len(set(results)) == 1, f"Level detection should be deterministic, got different results: {results}"
-
-    def test_same_features_same_level(self, level3_project: Path) -> None:
-        """Same features should always map to same level."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            merge_content_features,
-        )
-        from reporails_cli.core.levels import determine_level_from_gates
-        from reporails_cli.core.regex import run_capability_detection
-
-        features = detect_features_filesystem(level3_project)
-        sarif = run_capability_detection(level3_project)
-        content_features = detect_features_content(sarif)
-        merge_content_features(features, content_features)
-
-        # Same features should always give same level
-        levels = [determine_level_from_gates(features) for _ in range(5)]
-        assert len(set(levels)) == 1, f"Same features should give same level, got: {levels}"
+def _ft(
+    name: str,
+    patterns: tuple[str, ...] = ("**/CLAUDE.md",),
+    **properties: str,
+) -> FileTypeDeclaration:
+    return FileTypeDeclaration(name=name, patterns=patterns, properties=properties)
 
 
-class TestCapabilityEdgeCases:
-    """Edge cases for the capability detection pipeline."""
+class TestProjectLevelDetermination:
+    """Test project level determination from file type properties."""
 
-    def test_empty_project_is_l0(self, tmp_path: Path) -> None:
-        """An empty directory should detect as L0 through the full pipeline."""
-        from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import (
-            detect_features_content,
-            determine_capability_level,
-        )
-        from reporails_cli.core.regex import run_capability_detection
+    def test_no_files_is_l0(self, tmp_path: Path) -> None:
+        """No files → L0."""
+        level, present = determine_project_level(tmp_path, [], [])
+        assert level == Level.L0
+        assert present == set()
 
-        features = detect_features_filesystem(tmp_path)
-        sarif = run_capability_detection(tmp_path)
-        content_features = detect_features_content(sarif)
+    def test_main_only_is_l1(self, tmp_path: Path) -> None:
+        """Main file with baseline properties → L1."""
+        classified = [_cf("main")]
+        level, _ = determine_project_level(tmp_path, [], classified)
+        assert level == Level.L1
 
-        result = determine_capability_level(features, content_features)
+    @pytest.mark.parametrize(
+        "depth, expected_level",
+        [
+            (0, Level.L1),
+            (1, Level.L2),
+            (2, Level.L3),
+            (3, Level.L4),
+            (4, Level.L5),
+            (5, Level.L6),
+        ],
+    )
+    def test_progressive_level(self, tmp_path: Path, depth: int, expected_level: Level) -> None:
+        """depth N divergences → Level L(N+1)."""
+        prop_overrides = [
+            ("format", "frontmatter"),
+            ("cardinality", "collection"),
+            ("precedence", "managed"),
+            ("loading", "on_demand"),
+            ("scope", "path_scoped"),
+        ]
+        props: dict[str, str] = {}
+        for i in range(depth):
+            k, v = prop_overrides[i]
+            props[k] = v
+        classified = [_cf("test", **props)]
+        level, _ = determine_project_level(tmp_path, [], classified)
+        assert level == expected_level
 
-        assert result.level == Level.L0, f"Empty directory should be L0, got {result.level}"
+    def test_max_depth_wins(self, tmp_path: Path) -> None:
+        """Level is driven by the type with most divergences."""
+        classified = [
+            _cf("main"),  # depth 0
+            _cf("scoped_rule", format="frontmatter"),  # depth 1
+            _cf("skill", format="frontmatter", scope="task_scoped", loading="on_invocation"),  # depth 3
+        ]
+        level, _ = determine_project_level(tmp_path, [], classified)
+        assert level == Level.L4  # max(0, 1, 3) + 1
+
+
+class TestProjectLevelDeterminism:
+    """Test that project level determination is deterministic."""
+
+    def test_same_input_same_output(self, tmp_path: Path) -> None:
+        """Same files always give same level."""
+        classified = [
+            _cf("main"),
+            _cf("scoped_rule", format="frontmatter", scope="path_scoped"),
+        ]
+        results = [determine_project_level(tmp_path, [], classified) for _ in range(5)]
+        levels = [r[0] for r in results]
+        assert len(set(levels)) == 1

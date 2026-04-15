@@ -1,0 +1,14 @@
+checks:
+- id: CORE.C.0027.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0027.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - MCP
+    - Server
+    - Tools
+    message: Missing MCP documentation — describe MCP server configuration if applicable
+  expect: present

@@ -12,7 +12,7 @@ import typer
 from reporails_cli.interfaces.cli.helpers import app, console
 
 
-@app.command("test", rich_help_panel="Development")
+@app.command("test", hidden=True)
 def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
     path: str = typer.Argument(None, help="Filter by path prefix (e.g., core/structure/)"),
     rule: str = typer.Option(
@@ -70,6 +70,11 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
         "--coverage-baseline",
         help="Check rules against expected-rules baseline JSON file",
     ),
+    lint: bool = typer.Option(
+        False,
+        "--lint",
+        help="Run structural integrity checks on rule files",
+    ),
 ) -> None:
     """Validate rules against their own test fixtures."""
     root = Path(rules_root).resolve()
@@ -78,6 +83,10 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
         raise typer.Exit(2)
 
     package_roots = [Path(p).resolve() for p in (package or [])]
+
+    if lint:
+        _run_lint(root, path, rule, package_roots, agent)
+        return
 
     if export_baseline:
         _run_export_baseline(root, package_roots, agent, export_baseline)
@@ -117,6 +126,44 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
 
     if failures:
         raise typer.Exit(1)
+
+
+def _run_lint(
+    root: Path,
+    filter_path: str | None,
+    filter_rule: str | None,
+    package_roots: list[Path],
+    agent: str,
+) -> None:
+    """Run structural integrity checks on rule files."""
+    from reporails_cli.core.harness import discover_rules, lint_rules, load_agent_config
+
+    _, excludes = load_agent_config(root, agent)
+    rules = discover_rules(
+        root,
+        filter_path=filter_path,
+        filter_rule=filter_rule,
+        package_roots=package_roots,
+        excludes=excludes,
+        agent=None,
+    )
+
+    if not rules:
+        console.print("[red]No rules found.[/red]")
+        raise typer.Exit(1)
+
+    errors = lint_rules(rules)
+
+    console.print(f"Lint: {len(rules)} rule(s) checked")
+    if not errors:
+        console.print("[green]0 errors[/green]")
+        return
+
+    console.print(f"[red]{len(errors)} error(s):[/red]")
+    for err in errors:
+        console.print(f"  {err.rule_id}  [{err.check_name}]  {err.message}")
+
+    raise typer.Exit(1)
 
 
 def _run_export_baseline(

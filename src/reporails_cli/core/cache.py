@@ -28,6 +28,43 @@ def content_hash(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
 
+_rfp_cache: dict[str, tuple[float, str]] = {}  # key → (max_mtime, fingerprint)
+
+
+def rules_fingerprint(rules_paths: list[Path]) -> str:
+    """Hash of all checks.yml and rule.md files across rules paths.
+
+    Changes to rule definitions (new rules, modified checks, moved fields)
+    invalidate the judgment cache so stale verdicts aren't served.
+    Uses mtime-gated caching to skip rehashing when files haven't changed.
+    """
+    cache_key = "|".join(str(p) for p in sorted(rules_paths))
+
+    # Collect mtimes — if max matches cached value, reuse fingerprint
+    max_mtime = 0.0
+    rule_files: list[Path] = []
+    for rp in sorted(rules_paths):
+        if not rp.is_dir():
+            continue
+        for f in rp.rglob("checks.yml"):
+            rule_files.append(f)
+            max_mtime = max(max_mtime, f.stat().st_mtime)
+        for f in rp.rglob("rule.md"):
+            rule_files.append(f)
+            max_mtime = max(max_mtime, f.stat().st_mtime)
+
+    cached = _rfp_cache.get(cache_key)
+    if cached and cached[0] == max_mtime:
+        return cached[1]
+
+    h = hashlib.sha256()
+    for f in sorted(rule_files):
+        h.update(f.read_bytes())
+    fp = "rules:" + h.hexdigest()[:16]
+    _rfp_cache[cache_key] = (max_mtime, fp)
+    return fp
+
+
 def structural_hash(path: Path) -> str:
     """Hash of semantic-relevant structure: headings, constraint lines, list items.
 
@@ -50,7 +87,7 @@ def structural_hash(path: Path) -> str:
 
 
 # =============================================================================
-# Project-Local Cache (.reporails/)
+# Project-Local Cache (.ails/)
 # =============================================================================
 
 
@@ -62,12 +99,12 @@ class ProjectCache:
 
     @property
     def reporails_dir(self) -> Path:
-        """Get project's .reporails directory."""
-        return self.target / ".reporails"
+        """Get project's .ails directory."""
+        return self.target / ".ails"
 
     @property
     def cache_dir(self) -> Path:
-        """Get project's cache directory (.reporails/.cache/)."""
+        """Get project's cache directory (.ails/.cache/)."""
         return self.reporails_dir / ".cache"
 
     @property
@@ -123,15 +160,21 @@ class ProjectCache:
         return None
 
     # Judgment cache operations
-    def load_judgment_cache(self) -> dict[str, Any]:
-        """Load cached semantic judgments."""
+    def load_judgment_cache(self, rules_fingerprint: str = "") -> dict[str, Any]:
+        """Load cached semantic judgments.
+
+        If ``rules_fingerprint`` is provided and differs from the cached value,
+        the judgment cache is invalidated (rules changed since last evaluation).
+        """
         if not self.judgment_cache_path.exists():
-            return {"version": 1, "judgments": {}}
+            return {"version": 1, "judgments": {}, "rules_fingerprint": rules_fingerprint}
         try:
             result: dict[str, Any] = json.loads(self.judgment_cache_path.read_text(encoding="utf-8"))
-            return result
         except (json.JSONDecodeError, OSError):
-            return {"version": 1, "judgments": {}}
+            return {"version": 1, "judgments": {}, "rules_fingerprint": rules_fingerprint}
+        if rules_fingerprint and result.get("rules_fingerprint", "") != rules_fingerprint:
+            return {"version": 1, "judgments": {}, "rules_fingerprint": rules_fingerprint}
+        return result
 
     def save_judgment_cache(self, data: dict[str, Any]) -> None:
         """Save judgment cache atomically (write to temp, then rename)."""
@@ -270,7 +313,7 @@ def cache_violation_dismissal(target: Path, violation: Any) -> None:
 
 def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disable=too-many-locals
     """Cache semantic judgment verdicts for a project."""
-    from reporails_cli.core.engine import _find_project_root
+    from reporails_cli.core.engine_helpers import _find_project_root
 
     project_root = _find_project_root(target)
     cache = ProjectCache(project_root)

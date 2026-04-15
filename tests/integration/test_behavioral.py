@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.agents import KNOWN_AGENTS, clear_agent_cache
+from reporails_cli.core.agents import clear_agent_cache, get_known_agents
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -168,7 +168,7 @@ class TestCheckJsonSchema:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["violations"] == []
-        assert data["level"] == "L1"
+        assert data["level"] == "L0"
 
 
 # ===========================================================================
@@ -194,8 +194,10 @@ class TestCheckScanScope:
         """A single-file project should have a bounded number of violations."""
         result = runner.invoke(app, ["check", str(nested_project), "-f", "json", "--no-update-check"])
         data = json.loads(result.output)
-        # One CLAUDE.md can't have hundreds of violations
-        assert len(data["violations"]) < 50, f"Suspiciously many violations: {len(data['violations'])}"
+        # One CLAUDE.md can't have hundreds of violations.
+        # With expect=present, missing-evidence violations fire for applicable rules.
+        # A minimal main-only project legitimately triggers ~85 (rules targeting main + freeform).
+        assert len(data["violations"]) < 100, f"Suspiciously many violations: {len(data['violations'])}"
 
 
 # ===========================================================================
@@ -220,10 +222,10 @@ class TestCheckTextOutput:
         assert result.exit_code == 0
         assert "CLAUDE.md" in result.output
 
-    def test_no_files_shows_l1_message(self, empty_project: Path) -> None:
+    def test_no_files_shows_l0_message(self, empty_project: Path) -> None:
         result = runner.invoke(app, ["check", str(empty_project), "-f", "text", "--no-update-check"])
         assert "No instruction files found" in result.output
-        assert "L1" in result.output
+        assert "L0" in result.output
 
     @requires_rules
     def test_quiet_semantic_suppresses_message(self, minimal_project: Path) -> None:
@@ -381,13 +383,6 @@ class TestCheckAgentFlag:
     # Hint message tests (no agent, claude, codex, copilot) covered by
     # smoke TestHintMessages. Keep agent-specific behavior tests below.
 
-    def test_no_files_hint_cursor(self, empty_project: Path) -> None:
-        """--agent cursor should hint .cursorrules."""
-        result = runner.invoke(
-            app, ["check", str(empty_project), "--agent", "cursor", "-f", "text", "--no-update-check"]
-        )
-        assert "Create a .cursorrules to get started" in result.output
-
     def test_no_files_hint_copilot(self, empty_project: Path) -> None:
         """--agent copilot should hint its instruction file."""
         result = runner.invoke(
@@ -420,7 +415,7 @@ class TestCheckAgentFlag:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "score" in data
-        assert data["level"] != "L1", "AGENTS.md should be detected, not L1 Absent"
+        assert data["level"] != "L0", "AGENTS.md should be detected, not L0 Absent"
 
     @requires_rules
     def test_no_agent_core_rules_fire(self, tmp_path: Path) -> None:
@@ -431,7 +426,7 @@ class TestCheckAgentFlag:
         result = runner.invoke(app, ["check", str(p), "-f", "json", "--no-update-check"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["level"] != "L1"
+        assert data["level"] != "L0"
         # Core content/structure rules must fire, not just CORE:S:0001
         checked = data.get("summary", {}).get("rules_checked", 0)
         assert checked > 3, f"Only {checked} rules checked — core rules not resolving targets"
@@ -443,50 +438,40 @@ class TestCheckAgentFlag:
 
 
 class TestAgentCrossValidation:
-    """KNOWN_AGENTS must stay in sync with the rules framework agent configs."""
+    """Agent registry must be built from framework config.yml files."""
 
     @requires_rules
-    def test_framework_agents_in_known_agents(self) -> None:
-        """Every agent dir in the rules framework must have an entry in KNOWN_AGENTS."""
-        from reporails_cli.core.agents import KNOWN_AGENTS
-        from reporails_cli.core.bootstrap import get_rules_path
-
-        agents_dir = get_rules_path() / "agents"
-        if not agents_dir.is_dir():
-            pytest.skip("No agents directory in rules framework")
-
-        framework_agents = {d.name for d in agents_dir.iterdir() if d.is_dir() and (d / "config.yml").exists()}
-        missing = framework_agents - set(KNOWN_AGENTS)
-        assert not missing, (
-            f"Rules framework has agent configs not in KNOWN_AGENTS: {missing}. "
-            f"Add them to KNOWN_AGENTS in src/reporails_cli/core/agents.py"
-        )
+    def test_registry_populated_from_configs(self) -> None:
+        """Registry should contain at least the big 5 agents."""
+        agents = get_known_agents()
+        for agent_id in ("claude", "cursor", "copilot", "codex", "gemini"):
+            assert agent_id in agents, f"Agent {agent_id} missing from registry"
 
 
 # ===========================================================================
-# CHECK COMMAND — Agent Matrix (derived from KNOWN_AGENTS, not manual)
+# CHECK COMMAND — Agent Matrix (derived from config.yml, not manual)
 # ===========================================================================
 
 
 # Agents whose first instruction pattern is YAML, not markdown — skip file-detection
 # test since the rules engine expects markdown content.
-_YAML_AGENTS = {"aider"}
+_YAML_AGENTS: set[str] = set()
 
 
 class TestAgentMatrix:
     """Every known agent must produce a valid check result against its instruction file.
 
-    Parametrized directly from KNOWN_AGENTS so new agents get coverage automatically.
+    Parametrized from get_known_agents() so new config.yml agents get coverage automatically.
     """
 
     @requires_rules
-    @pytest.mark.parametrize("agent_id", sorted(KNOWN_AGENTS))
+    @pytest.mark.parametrize("agent_id", sorted(get_known_agents()))
     def test_agent_check_finds_files(self, agent_id: str, tmp_path: Path) -> None:
         """ails check --agent X must detect the agent's instruction file."""
         if agent_id in _YAML_AGENTS:
             pytest.skip(f"{agent_id} uses YAML instruction files")
 
-        agent_type = KNOWN_AGENTS[agent_id]
+        agent_type = get_known_agents()[agent_id]
         # Use first instruction pattern (strip glob wildcards for file creation)
         filename = agent_type.instruction_patterns[0].replace("**/", "")
         p = tmp_path / "proj"
@@ -498,10 +483,10 @@ class TestAgentMatrix:
         result = runner.invoke(app, ["check", str(p), "--agent", agent_id, "-f", "json", "--no-update-check"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["level"] != "L1", f"--agent {agent_id} should detect {filename}, got L1 Absent"
+        assert data["level"] != "L0", f"--agent {agent_id} should detect {filename}, got L0 Absent"
 
     @requires_rules
-    @pytest.mark.parametrize("agent_id", sorted(KNOWN_AGENTS))
+    @pytest.mark.parametrize("agent_id", sorted(get_known_agents()))
     def test_agent_check_no_crash(self, agent_id: str, tmp_path: Path) -> None:
         """ails check --agent X must not crash on an empty project."""
         p = tmp_path / "proj"
@@ -538,7 +523,7 @@ class TestCheckConfig:
 
     @requires_rules
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
-        """Rules listed in .reporails/config.yml disabled_rules should not fire."""
+        """Rules listed in .ails/config.yml disabled_rules should not fire."""
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# Project\n\nA project.\n")
@@ -553,7 +538,7 @@ class TestCheckConfig:
         rule_to_disable = d1["violations"][0]["rule_id"]
 
         # Create config that disables it
-        config_dir = p / ".reporails"
+        config_dir = p / ".ails"
         config_dir.mkdir()
         (config_dir / "config.yml").write_text(f"disabled_rules:\n  - {rule_to_disable}\n")
 

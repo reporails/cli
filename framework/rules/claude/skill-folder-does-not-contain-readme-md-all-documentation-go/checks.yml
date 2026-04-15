@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0001.skill_dir_exists
+  type: mechanical
+  check: glob_match
+- id: CLAUDE.S.0001.no_readme
+  type: mechanical
+  check: file_absent
+  args:
+    pattern: README.md

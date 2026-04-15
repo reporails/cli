@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0009.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0009.length_check
+  type: mechanical
+  check: line_count
+  args:
+    max: 100

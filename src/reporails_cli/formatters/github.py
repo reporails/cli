@@ -96,3 +96,24 @@ def format_result(
     parts.append(json.dumps(data))
 
     return "\n".join(parts)
+
+
+def format_combined_annotations(result: Any) -> str:
+    """Emit GitHub workflow commands from CombinedResult findings."""
+    from reporails_cli.core.merger import CombinedResult
+
+    if not isinstance(result, CombinedResult):
+        return ""
+
+    lines: list[str] = []
+    for f in result.findings:
+        command = "error" if f.severity == "error" else "warning"
+        title = _escape_workflow_property(f"[{f.rule}]")
+        file_val = _escape_workflow_property(f.file)
+        message = _escape_workflow_data(f.message)
+        lines.append(f"::{command} file={file_val},line={f.line},title={title}::{message}")
+
+    # JSON summary
+    data = json_formatter.format_combined_result(result)
+    lines.append(json.dumps(data))
+    return "\n".join(lines)

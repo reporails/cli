@@ -1,7 +1,4 @@
-"""Integration tests for symlinked instruction file validation.
-
-Requires OpenGrep to be installed.
-"""
+"""Integration tests for symlinked instruction file validation."""
 
 from __future__ import annotations
 
@@ -52,35 +49,15 @@ Modular design with clear boundaries.
 class TestSymlinkIntegration:
     """Integration tests for symlinked instruction file handling."""
 
-    def test_capability_detection_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
-        """Symlinked CLAUDE.md should have its content features detected."""
+    def test_symlink_detection_populates_resolved_symlinks(self, symlink_project: tuple[Path, Path]) -> None:
+        """Symlinked CLAUDE.md should appear in resolved_symlinks."""
         project, _external = symlink_project
 
-        from reporails_cli.bundled import get_capability_patterns_path
         from reporails_cli.core.applicability import detect_features_filesystem
-        from reporails_cli.core.capability import detect_features_content
-        from reporails_cli.core.regex import run_validation
 
         features = detect_features_filesystem(project)
         assert features.has_claude_md is True
         assert len(features.resolved_symlinks) == 1
-
-        # Run capability detection with extra targets
-        capability_patterns = get_capability_patterns_path()
-        if not capability_patterns.exists():
-            pytest.skip("Capability patterns not available")
-
-        sarif = run_validation(
-            [capability_patterns],
-            project,
-            extra_targets=features.resolved_symlinks,
-        )
-
-        content_features = detect_features_content(sarif)
-
-        # The external file has sections and constraints
-        assert content_features.has_sections is True
-        assert content_features.has_explicit_constraints is True
 
     def test_rule_validation_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md with violations should have them detected."""

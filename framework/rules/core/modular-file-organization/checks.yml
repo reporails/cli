@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0010.check
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0010.modular
+  type: mechanical
+  check: file_count
+  args:
+    min: 2

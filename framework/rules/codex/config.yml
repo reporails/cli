@@ -1,0 +1,157 @@
+# OpenAI Codex Agent Configuration
+# Schema: schemas/agent.schema.yml v0.5.0
+#
+# AGENTS.md is a cross-agent standard (agents.md) — its presence alone
+# does not indicate a Codex project. Detection requires .codex/ markers
+# (config.toml, rules/, agents/, hooks.json) or AGENTS.override.md.
+
+agent: codex
+version: "0.5.0"
+prefix: CODEX
+name: OpenAI Codex
+
+file_types:
+  main:
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.codex/AGENTS.md", "~/.codex/AGENTS.override.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  override:
+    format: freeform
+    scope: global
+    cardinality: optional
+    lifecycle: mutable
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.override.md"]
+        precedence: user
+        vcs: committed
+        maintainer: human
+
+  skills:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".agents/skills/**/SKILL.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.agents/skills/**/SKILL.md", "~/.codex/skills/**/SKILL.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+      system:
+        patterns: ["/etc/codex/skills/**/SKILL.md"]
+        precedence: managed
+        vcs: external
+        maintainer: system
+
+  skill_metadata:
+    # Per-skill optional: display info, policy, MCP dependencies
+    format: schema_validated
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: ["**/agents/openai.yaml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  agents:
+    format: schema_validated
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".codex/agents/*.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.codex/agents/*.toml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  rules:
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".codex/rules/*.rules"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  hooks:
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".codex/hooks.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.codex/hooks.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  config:
+    # contains harness settings AND attention-channel instructions/developer_instructions fields
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".codex/config.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.codex/config.toml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+      system:
+        patterns: ["/etc/codex/requirements.toml"]
+        precedence: managed
+        vcs: external
+        maintainer: system
+
+excludes:
+  - CLAUDE:*
+  - COPILOT:*

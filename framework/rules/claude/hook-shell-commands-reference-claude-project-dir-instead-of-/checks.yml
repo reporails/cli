@@ -1,0 +1,11 @@
+checks:
+- id: CLAUDE.G.0001.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.G.0001.uses_project_dir_var
+  expect: absent
+  message: Uses project dir var not found
+  patterns:
+  - pattern-regex: (?s)\A[\s\S]+
+  - pattern-not-regex: (?:\$CLAUDE_PROJECT_DIR|\$CLAUDE_ENV_FILE|\$\{CLAUDE_PROJECT_DIR\})
+  type: deterministic

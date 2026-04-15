@@ -1,0 +1,61 @@
+# Levels schema
+version: "0.1.0"
+
+fields:
+  levels:
+    required: true
+    type: object
+    description: "Map of level IDs (L0-L6) to level definitions"
+    pattern_key: "^L[0-6]$"
+    properties:
+      name:
+        required: true
+        type: string
+        description: "Level display name (e.g., Basic, Scoped, Structured)"
+      description:
+        required: true
+        type: string
+        description: "What this level represents"
+      capabilities:
+        required: true
+        type: array
+        description: "Capability IDs required at this level (must exist in registry/capabilities.yml)"
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+
+validation:
+  - rule: "Each capability ID must appear in exactly one level"
+  - rule: "Capability IDs must exist in registry/capabilities.yml"
+
+examples:
+  full: |
+    levels:
+      L0:
+        name: Absent
+        description: "No instruction file exists"
+        capabilities: []
+      L1:
+        name: Basic
+        description: "A reviewed, non-trivial instruction file exists"
+        capabilities: [instruction_file, baseline_quality]
+      L2:
+        name: Scoped
+        description: "Instruction file has structural organization and controlled size"
+        capabilities: [structural_scaffolding, size_controlled]
+      L3:
+        name: Structured
+        description: "Substantive content fills the scaffolding; guidance is modular"
+        capabilities: [content_maturity, external_references, multiple_files]
+      L4:
+        name: Abstracted
+        description: "Instructions adapt based on code location"
+        capabilities: [path_scoping]
+      L5:
+        name: Maintained
+        description: "Structurally sound, governed, and navigable"
+        capabilities: [structural_integrity, org_policy, navigation]
+      L6:
+        name: Adaptive
+        description: "Dynamic context discovery and extensibility"
+        capabilities: [dynamic_context, extensibility, state_persistence]

@@ -9,25 +9,21 @@ from reporails_cli.core.bootstrap import get_package_paths, get_project_config
 
 
 class TestGetProjectConfig:
-    """Test get_project_config loading from .reporails/config.yml."""
+    """Test get_project_config loading from .ails/config.yml."""
 
     def test_returns_defaults_when_missing(self, tmp_path: Path) -> None:
         config = get_project_config(tmp_path)
         assert config.packages == []
         assert config.disabled_rules == []
         assert config.framework_version is None
-        assert config.experimental is False
         assert config.recommended is True
 
     def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file(
-            "framework_version: '0.1.0'\npackages:\n  - recommended\ndisabled_rules:\n  - S1\nexperimental: true\n"
-        )
+        make_config_file("framework_version: '0.1.0'\npackages:\n  - recommended\ndisabled_rules:\n  - S1\n")
         config = get_project_config(tmp_path)
         assert config.framework_version == "0.1.0"
         assert config.packages == ["recommended"]
         assert config.disabled_rules == ["S1"]
-        assert config.experimental is True
 
     def test_recommended_true_by_default(self, tmp_path: Path, make_config_file) -> None:
         make_config_file("packages:\n  - custom\n")
@@ -50,7 +46,7 @@ class TestGetProjectConfig:
 
         make_config_file(": : :\n  bad yaml [[[")
         with patch(
-            "reporails_cli.core.bootstrap.get_global_config",
+            "reporails_cli.core.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude", recommended=False),
         ):
             config = get_project_config(tmp_path)
@@ -72,7 +68,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("packages:\n  - custom\n")
         with patch(
-            "reporails_cli.core.bootstrap.get_global_config",
+            "reporails_cli.core.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude"),
         ):
             config = get_project_config(tmp_path)
@@ -84,7 +80,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("default_agent: cursor\n")
         with patch(
-            "reporails_cli.core.bootstrap.get_global_config",
+            "reporails_cli.core.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude"),
         ):
             config = get_project_config(tmp_path)
@@ -96,7 +92,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("packages:\n  - custom\n")
         with patch(
-            "reporails_cli.core.bootstrap.get_global_config",
+            "reporails_cli.core.config.get_global_config",
             return_value=GlobalConfig(recommended=False),
         ):
             config = get_project_config(tmp_path)
@@ -108,18 +104,18 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("recommended: false\n")
         with patch(
-            "reporails_cli.core.bootstrap.get_global_config",
+            "reporails_cli.core.config.get_global_config",
             return_value=GlobalConfig(recommended=True),
         ):
             config = get_project_config(tmp_path)
         assert config.recommended is False
 
     def test_no_config_file_inherits_global(self, tmp_path: Path) -> None:
-        """No .reporails/config.yml — global defaults apply."""
+        """No .ails/config.yml — global defaults apply."""
         from reporails_cli.core.models import GlobalConfig
 
         with patch(
-            "reporails_cli.core.bootstrap.get_global_config",
+            "reporails_cli.core.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude", recommended=False),
         ):
             config = get_project_config(tmp_path)
@@ -131,18 +127,18 @@ class TestGetPackagePaths:
     """Test get_package_paths resolution."""
 
     def test_returns_existing_dirs(self, tmp_path: Path) -> None:
-        pkg_dir = tmp_path / ".reporails" / "packages" / "recommended"
+        pkg_dir = tmp_path / ".ails" / "packages" / "recommended"
         pkg_dir.mkdir(parents=True)
         paths = get_package_paths(tmp_path, ["recommended"])
         assert paths == [pkg_dir]
 
     def test_skips_missing_dirs(self, tmp_path: Path) -> None:
-        (tmp_path / ".reporails" / "packages").mkdir(parents=True)
+        (tmp_path / ".ails" / "packages").mkdir(parents=True)
         paths = get_package_paths(tmp_path, ["nonexistent"])
         assert paths == []
 
     def test_mixed_existing_and_missing(self, tmp_path: Path) -> None:
-        pkg_base = tmp_path / ".reporails" / "packages"
+        pkg_base = tmp_path / ".ails" / "packages"
         (pkg_base / "exists").mkdir(parents=True)
         paths = get_package_paths(tmp_path, ["exists", "missing"])
         assert len(paths) == 1
@@ -173,7 +169,7 @@ class TestGetPackagePaths:
         global_pkg.mkdir(parents=True)
 
         project = tmp_path / "project"
-        local_pkg = project / ".reporails" / "packages" / "recommended"
+        local_pkg = project / ".ails" / "packages" / "recommended"
         local_pkg.mkdir(parents=True)
 
         with patch(
@@ -189,7 +185,7 @@ class TestGetPackagePaths:
         global_pkg.mkdir(parents=True)
 
         project = tmp_path / "project"
-        local_pkg = project / ".reporails" / "packages" / "custom"
+        local_pkg = project / ".ails" / "packages" / "custom"
         local_pkg.mkdir(parents=True)
 
         with patch(
@@ -253,7 +249,6 @@ class TestLoadRulesWithPackages:
         # Additional paths override primary framework rules
         rules = load_rules(
             rules_paths=[rules_dir, pkg_dir],
-            include_experimental=True,
         )
         assert "CORE:S:0001" in rules
         assert rules["CORE:S:0001"].title == "Custom S1"
@@ -274,13 +269,12 @@ class TestLoadRulesWithPackages:
 
         # Project config disabling CORE:S:0001
         project = tmp_path / "project"
-        config_dir = project / ".reporails"
+        config_dir = project / ".ails"
         config_dir.mkdir(parents=True)
         (config_dir / "config.yml").write_text('disabled_rules:\n  - "CORE:S:0001"\n')
 
         rules = load_rules(
             rules_paths=[rules_dir],
-            include_experimental=True,
             project_root=project,
         )
         assert "CORE:S:0001" not in rules
@@ -298,13 +292,12 @@ class TestLoadRulesWithPackages:
         (docs_dir / "sources.yml").write_text("general:\n  - id: anthropic-docs\n    weight: 1.0\n")
 
         project = tmp_path / "project"
-        config_dir = project / ".reporails"
+        config_dir = project / ".ails"
         config_dir.mkdir(parents=True)
         (config_dir / "config.yml").write_text("disabled_rules:\n  - NOPE\n")
 
         rules = load_rules(
             rules_paths=[rules_dir],
-            include_experimental=True,
             project_root=project,
         )
         assert "CORE:S:0001" in rules
@@ -321,5 +314,5 @@ class TestLoadRulesWithPackages:
         (docs_dir / "sources.yml").write_text("general:\n  - id: anthropic-docs\n    weight: 1.0\n")
 
         # No project_root — backward compatible
-        rules = load_rules(rules_paths=[rules_dir], include_experimental=True)
+        rules = load_rules(rules_paths=[rules_dir])
         assert "CORE:S:0001" in rules

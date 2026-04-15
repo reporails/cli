@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0005.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0005.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)\b(id|name|slug)\s*:'
+  expect: present
+  message: "Missing identity fields in frontmatter — include id, name, or slug"

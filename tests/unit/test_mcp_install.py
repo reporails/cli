@@ -45,12 +45,10 @@ def test_detect_multiple_agents(tmp_path: Path) -> None:
 
 
 def test_skips_unsupported_agents(tmp_path: Path) -> None:
-    """Aider and generic agents have no MCP config → skipped."""
-    (tmp_path / "CONVENTIONS.md").write_text("# Conventions\n")
-    (tmp_path / ".aider.conf.yml").write_text("model: gpt-4\n")
+    """Generic agent has no MCP config → skipped."""
+    (tmp_path / "AGENTS.md").write_text("# Agents\n")
     targets = detect_mcp_targets(tmp_path)
     agent_ids = {t[0] for t in targets}
-    assert "aider" not in agent_ids
     assert "generic" not in agent_ids
 
 

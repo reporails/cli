@@ -1,7 +1,7 @@
-"""Unit tests ensuring backbone.yml detection reflects actual project state.
+"""Unit tests ensuring feature detection reflects actual project state.
 
-The backbone gate must NOT always evaluate to true — it should only be true
-when the project already has a backbone.yml before validation runs.
+Verifies that detect_features_filesystem populates display-only features
+correctly for the feature summary.
 """
 
 from __future__ import annotations
@@ -9,15 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.applicability import detect_features_filesystem
-from reporails_cli.core.levels import determine_level_from_gates
-from reporails_cli.core.models import DetectedFeatures, Level
 
 
-class TestBackboneGateNotAlwaysTrue:
-    """Verify backbone detection reflects actual project state."""
+class TestFeatureDetection:
+    """Verify filesystem feature detection for display purposes."""
 
-    def test_no_backbone_yields_false_gate(self, tmp_path: Path) -> None:
-        """Project without .reporails/backbone.yml → has_backbone is False."""
+    def test_no_backbone_yields_false(self, tmp_path: Path) -> None:
+        """Project without .ails/backbone.yml → has_backbone is False."""
         project = tmp_path / "project"
         project.mkdir()
         (project / "CLAUDE.md").write_text("# Project\n")
@@ -32,70 +30,47 @@ class TestBackboneGateNotAlwaysTrue:
         project.mkdir()
         (project / "CLAUDE.md").write_text("# Project\n")
 
-        reporails_dir = project / ".reporails"
-        reporails_dir.mkdir()
-        (reporails_dir / "backbone.yml").write_text("version: 2\nagents:\n  claude:\n    rules: .claude/rules/\n")
+        ails_dir = project / ".ails"
+        ails_dir.mkdir()
+        (ails_dir / "backbone.yml").write_text("version: 2\nagents:\n  claude:\n    rules: .claude/rules/\n")
 
         features = detect_features_filesystem(project)
 
         assert features.has_backbone is True
 
-    def test_backbone_gate_does_not_affect_level_when_absent(self, tmp_path: Path) -> None:
-        """L4-level project without backbone should NOT reach L5."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_imports=True,
-            is_abstracted=True,
-            # No backbone, no shared files, no component count → no L5
-        )
-        level = determine_level_from_gates(features)
+    def test_abstracted_structure_detected(self, tmp_path: Path) -> None:
+        """Project with .claude/rules/ → is_abstracted is True."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Project\n")
+        rules_dir = project / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "test.md").write_text("# Rule\n")
 
-        assert level != Level.L5
-        assert level == Level.L4
+        features = detect_features_filesystem(project)
 
-    def test_backbone_gate_grants_l5_navigation(self) -> None:
-        """Backbone contributes L5 (navigation). L6 needs skills/MCP/memory."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_imports=True,
-            is_abstracted=True,
-            has_backbone=True,  # L5: navigation
-        )
-        level = determine_level_from_gates(features)
+        assert features.is_abstracted is True
 
-        assert level == Level.L5
+    def test_shared_files_detected(self, tmp_path: Path) -> None:
+        """Project with shared/ directory → has_shared_files is True."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Project\n")
+        (project / "shared").mkdir()
 
-    def test_backbone_plus_skills_grants_l6(self) -> None:
-        """Full project with backbone (L5) + skills (L6) → L6."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_imports=True,
-            is_abstracted=True,
-            has_backbone=True,  # L5: navigation
-            has_skills_dir=True,  # L6: dynamic_context
-        )
-        level = determine_level_from_gates(features)
+        features = detect_features_filesystem(project)
 
-        assert level == Level.L6
+        assert features.has_shared_files is True
 
     def test_placeholder_backbone_not_detected_before_creation(self, tmp_path: Path) -> None:
-        """Feature detection runs before backbone auto-creation.
-
-        The .reporails/ directory should not exist before detection,
-        so has_backbone must be False.
-        """
+        """Feature detection runs before backbone auto-creation."""
         project = tmp_path / "project"
         project.mkdir()
         (project / "CLAUDE.md").write_text("# Project\n")
 
-        # Ensure no .reporails directory
-        assert not (project / ".reporails").exists()
+        assert not (project / ".ails").exists()
 
         features = detect_features_filesystem(project)
 
         assert features.has_backbone is False
-        # .reporails still doesn't exist (engine creates it, not detect_features)
-        assert not (project / ".reporails" / "backbone.yml").exists()
+        assert not (project / ".ails" / "backbone.yml").exists()

@@ -162,7 +162,7 @@ class TestRegexExtraTargets:
         # Create a rule that matches "SHARED_CONTENT"
         yml_file = tmp_path / "test.yml"
         yml_file.write_text("""\
-rules:
+checks:
   - id: test.extra
     message: "Found shared content"
     severity: WARNING
@@ -198,7 +198,7 @@ rules:
         """No extra_targets → only main target scanned."""
         yml_file = tmp_path / "test.yml"
         yml_file.write_text("""\
-rules:
+checks:
   - id: test.main
     message: "Found content"
     severity: WARNING

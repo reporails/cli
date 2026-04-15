@@ -1,0 +1,11 @@
+checks:
+- id: CORE.E.0005.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.E.0005.content_check
+  type: content_query
+  query: has_layered_structure
+  args:
+    min_headings: 2
+    message: Instructions not grouped by topic — use headings to organize related instructions
+  expect: present
