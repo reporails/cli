@@ -1,0 +1,7 @@
+agent_documents_filenames:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

@@ -6,17 +6,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
+from reporails_cli.core.bundled import get_bundled_package_root, get_bundled_rules_path
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from reporails_cli.core.models import AgentConfig, GlobalConfig, ProjectConfig
+    from reporails_cli.core.models import AgentConfig, FileTypeDeclaration, GlobalConfig, ProjectConfig
 
 # Constants
 REPORAILS_HOME = Path.home() / ".reporails"
-FRAMEWORK_REPO = "reporails/reporails-rules"
-FRAMEWORK_RELEASE_URL = f"https://github.com/{FRAMEWORK_REPO}/releases/download"
 
 
 def get_reporails_home() -> Path:
@@ -27,21 +25,36 @@ def get_reporails_home() -> Path:
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
-    Returns local override from global config if set, otherwise prefers
-    local ./checks/ directory if it has .yml files (development mode),
-    otherwise uses ~/.reporails/rules/ (installed mode).
+    Resolution: config override → bundled (package default).
     """
-    # Check for global config override (development mode)
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        rules_sub = config.framework_path / "rules"
+        if rules_sub.is_dir():
+            return rules_sub
+        return config.framework_path
+
+    bundled = get_bundled_rules_path()
+    if bundled is not None:
+        return bundled
+
+    # Unreachable when installed correctly, but return a sane default
+    return get_reporails_home() / "rules"
+
+
+def get_framework_root() -> Path:
+    """Get the root where schemas/, registry/, sources.yml live.
+
+    Resolution: config override → bundled package root.
+    """
     config = get_global_config()
     if config.framework_path and config.framework_path.is_dir():
         return config.framework_path
 
-    # Check for local checks directory (legacy development mode)
-    local_checks = Path.cwd() / "checks"
-    if local_checks.exists() and any(local_checks.rglob("*.yml")):
-        return local_checks
+    bundled_root = get_bundled_package_root()
+    if bundled_root is not None:
+        return bundled_root
 
-    # Fall back to global directory
     return get_reporails_home() / "rules"
 
 
@@ -51,87 +64,50 @@ def get_core_rules_path() -> Path:
 
 
 def get_agent_rules_path(agent: str) -> Path:
-    """Get path to agent-specific rules (~/.reporails/rules/agents/{agent}/rules/)."""
-    return get_rules_path() / "agents" / agent / "rules"
+    """Get path to agent-specific rules (~/.reporails/rules/{agent}/)."""
+    return get_rules_path() / agent
 
 
 def get_agent_config_path(agent: str) -> Path:
-    """Get path to agent config file (~/.reporails/rules/agents/{agent}/config.yml)."""
-    return get_rules_path() / "agents" / agent / "config.yml"
+    """Get path to agent config file.
+
+    The generic agent's config lives in core/ (not a separate directory).
+    """
+    dir_name = "core" if agent == "generic" else agent
+    return get_rules_path() / dir_name / "config.yml"
 
 
 def get_agent_config(agent: str) -> AgentConfig:
     """Load agent config (excludes + overrides) from framework.
 
-    Args:
-        agent: Agent identifier (e.g., "claude")
-
-    Returns:
-        AgentConfig with excludes and overrides, or defaults if missing/malformed
+    Delegated to core.config. Re-exported here for backward compatibility.
     """
-    from reporails_cli.core.models import AgentConfig
+    from reporails_cli.core.config import get_agent_config as _get_agent_config
 
-    config_path = get_agent_config_path(agent)
-    if not config_path.exists():
-        return AgentConfig()
-
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        return AgentConfig(
-            agent=data.get("agent", ""),
-            prefix=data.get("prefix", ""),
-            name=data.get("name", ""),
-            core=data.get("core", False),
-            excludes=data.get("excludes", []),
-            overrides=data.get("overrides", {}),
-        )
-    except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to parse agent config %s: %s", config_path, exc)
-        return AgentConfig()
+    return _get_agent_config(agent)
 
 
-def get_agent_vars(
+def get_agent_file_types(
     agent: str = "claude",
     rules_paths: list[Path] | None = None,
-) -> dict[str, str | list[str]]:
-    """Load template variables from agent config.
+) -> list[FileTypeDeclaration]:
+    """Load file type declarations from agent config.
 
     Args:
         agent: Agent identifier (default: claude)
-        rules_paths: Optional rules directories to search first (before default path)
+        rules_paths: Optional rules directories to search first
 
     Returns:
-        Dict of template variables from the agent's config.yml vars section
+        List of FileTypeDeclaration from the agent's config.yml file_types section
     """
-    # Build candidate config paths: explicit rules_paths first, then default
-    candidates: list[Path] = []
-    if rules_paths:
-        candidates.extend(rules_dir / "agents" / agent / "config.yml" for rules_dir in rules_paths)
-    candidates.append(get_agent_config_path(agent))
+    from reporails_cli.core.classification import load_file_types
 
-    for config_path in candidates:
-        if not config_path.exists():
-            continue
-        try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            vars_data = data.get("vars", {})
-            # Ensure all values are str or list[str]
-            result: dict[str, str | list[str]] = {}
-            for key, value in vars_data.items():
-                if isinstance(value, list):
-                    result[key] = [str(v) for v in value]
-                else:
-                    result[key] = str(value)
-            return result
-        except (yaml.YAMLError, OSError) as exc:
-            logger.warning("Failed to parse agent vars %s: %s", config_path, exc)
-            continue
-    return {}
+    return load_file_types(agent, rules_paths)
 
 
 def get_schemas_path() -> Path:
-    """Get path to rule schemas (~/.reporails/rules/schemas/)."""
-    return get_rules_path() / "schemas"
+    """Get path to rule schemas (schemas/ under framework root)."""
+    return get_framework_root() / "schemas"
 
 
 def get_global_packages_path() -> Path:
@@ -164,84 +140,27 @@ def get_global_config_path() -> Path:
 def get_global_config() -> GlobalConfig:
     """Load global configuration from ~/.reporails/config.yml.
 
-    Returns default config if file doesn't exist.
+    Delegated to core.config. Re-exported here for backward compatibility.
     """
-    from reporails_cli.core.models import GlobalConfig
+    from reporails_cli.core.config import get_global_config as _get_global_config
 
-    config_path = get_global_config_path()
-    if not config_path.exists():
-        return GlobalConfig()
-
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        framework_path = data.get("framework_path")
-        recommended_path = data.get("recommended_path")
-        return GlobalConfig(
-            framework_path=Path(framework_path) if framework_path else None,
-            recommended_path=Path(recommended_path) if recommended_path else None,
-            auto_update_check=data.get("auto_update_check", True),
-            default_agent=data.get("default_agent", ""),
-            recommended=data.get("recommended", True),
-        )
-    except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to parse global config %s: %s", config_path, exc)
-        return GlobalConfig()
+    return _get_global_config()
 
 
 def get_project_config(project_root: Path) -> ProjectConfig:
-    """Load project configuration from .reporails/config.yml.
+    """Load project configuration from .ails/config.yml.
 
-    Returns default config if file doesn't exist or is malformed.
-
-    Args:
-        project_root: Root directory of the project
-
-    Returns:
-        ProjectConfig with loaded or default values
+    Delegated to core.config. Re-exported here for backward compatibility.
     """
-    from reporails_cli.core.models import ProjectConfig
+    from reporails_cli.core.config import get_project_config as _get_project_config
 
-    config_path = project_root / ".reporails" / "config.yml"
-    if not config_path.exists():
-        global_cfg = get_global_config()
-        return ProjectConfig(
-            default_agent=global_cfg.default_agent,
-            recommended=global_cfg.recommended,
-        )
-
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        has_recommended = "recommended" in data
-        config = ProjectConfig(
-            framework_version=data.get("framework_version"),
-            packages=data.get("packages", []),
-            disabled_rules=data.get("disabled_rules", []),
-            overrides=data.get("overrides", {}),
-            experimental=data.get("experimental", False),
-            recommended=data.get("recommended", True),
-            exclude_dirs=data.get("exclude_dirs", []),
-            default_agent=data.get("default_agent", ""),
-        )
-        # Apply global defaults where project doesn't override
-        global_cfg = get_global_config()
-        if not config.default_agent:
-            config.default_agent = global_cfg.default_agent
-        if not has_recommended:
-            config.recommended = global_cfg.recommended
-        return config
-    except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to parse project config %s: %s", config_path, exc)
-        global_cfg = get_global_config()
-        return ProjectConfig(
-            default_agent=global_cfg.default_agent,
-            recommended=global_cfg.recommended,
-        )
+    return _get_project_config(project_root)
 
 
 def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
     """Resolve package names to directories.
 
-    Checks project-local (.reporails/packages/<name>) first, then falls back
+    Checks project-local (.ails/packages/<name>) first, then falls back
     to global (~/.reporails/packages/<name>). Project-local overrides global
     for the same package name. Silently skips packages not found in either.
 
@@ -256,7 +175,7 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
     paths: list[Path] = []
     for name in packages:
         # Project-local takes priority
-        local_dir = project_root / ".reporails" / "packages" / name
+        local_dir = project_root / ".ails" / "packages" / name
         if local_dir.is_dir():
             paths.append(local_dir)
             continue
@@ -290,6 +209,6 @@ def get_installed_recommended_version() -> str | None:
 
 
 def is_initialized() -> bool:
-    """Check if reporails has been initialized (rules framework downloaded)."""
+    """Check if rules are available (installed, config override, or bundled)."""
     rules_path = get_rules_path()
     return rules_path.is_dir() and (rules_path / "core").is_dir()

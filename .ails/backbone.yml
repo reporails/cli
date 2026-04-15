@@ -1,0 +1,62 @@
+version: 3
+generator: manual
+auto_heal: true
+directive: >-
+  If any path, command, or classification in this file does not
+  match the project when accessed, update the entry and continue.
+
+depends_on: {}
+
+agents:
+  claude:
+    main_instruction_file: CLAUDE.md
+    config: .claude/settings.json
+    mcp: .claude/mcp.json
+    skills: .claude/skills/
+    rules: .claude/rules/
+    sub_agents: .claude/agents/
+
+modules:
+  core: src/reporails_cli/core/
+  interfaces: src/reporails_cli/interfaces/
+  formatters: src/reporails_cli/formatters/
+  bundled: src/reporails_cli/bundled/
+  templates: src/reporails_cli/templates/
+  rules: framework/rules/
+  schemas: framework/schemas/
+
+
+bundled:
+  project_types: src/reporails_cli/bundled/project-types.yml
+
+artifacts:
+  changelog: UNRELEASED.md
+  specs: docs/specs/
+
+context:
+  role: developer
+  description: "You are developing the reporails CLI, not an end user."
+  personas:
+    developer: "Modify source, run tests, read specs"
+    cli_user: "Install package, run ails check"
+    mcp_user: "Use reporails via Claude Code MCP integration"
+
+meta:
+  version_file: VERSION
+
+skills:
+  ails:
+    path: .claude/skills/ails/
+    entry: SKILL.md
+  qa:
+    path: .claude/skills/qa/
+    entry: SKILL.md
+  plan-feature:
+    path: .claude/skills/plan-feature/
+    entry: SKILL.md
+  add-changelog-entry:
+    path: .claude/skills/add-changelog-entry/
+    entry: SKILL.md
+  bootstrap:
+    path: .claude/skills/bootstrap/
+    entry: SKILL.md

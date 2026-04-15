@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0002.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0002.content_check
+  type: content_query
+  query: has_headings
+  args:
+    message: Missing section headers — structure content with markdown headings
+  expect: present

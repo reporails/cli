@@ -1,0 +1,6 @@
+checks:
+- id: CORE.E.0002.check
+  type: mechanical
+  check: line_count
+  args:
+    max: 300

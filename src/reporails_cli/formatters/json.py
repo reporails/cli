@@ -12,8 +12,8 @@ from reporails_cli.core.levels import LEVEL_LABELS
 from reporails_cli.core.models import (
     CategoryStats,
     PendingSemantic,
+    RuleResult,
     ScanDelta,
-    SkippedExperimental,
     ValidationResult,
 )
 
@@ -29,6 +29,11 @@ def _format_pending_semantic(pending: PendingSemantic | None) -> dict[str, Any] 
     }
 
 
+def _format_rule_results(results: tuple[RuleResult, ...]) -> list[dict[str, str]]:
+    """Format per-rule pass/fail for JSON output."""
+    return [{"rule_id": r.rule_id, "status": r.status} for r in results]
+
+
 def _format_category_summary(summary: tuple[CategoryStats, ...]) -> list[dict[str, Any]]:
     """Format category summary for JSON output."""
     return [
@@ -42,16 +47,6 @@ def _format_category_summary(summary: tuple[CategoryStats, ...]) -> list[dict[st
         }
         for cs in summary
     ]
-
-
-def _format_skipped_experimental(skipped: SkippedExperimental | None) -> dict[str, Any] | None:
-    """Format skipped experimental rules for JSON output."""
-    if skipped is None:
-        return None
-    return {
-        "rule_count": skipped.rule_count,
-        "rules": list(skipped.rules),
-    }
 
 
 def format_result(
@@ -73,7 +68,6 @@ def format_result(
         "score": result.score,
         "level": result.level.value,
         "capability": LEVEL_LABELS.get(result.level, "Unknown"),
-        "has_orphan_features": result.has_orphan_features,
         "feature_summary": result.feature_summary,
         "summary": {
             "rules_checked": result.rules_checked,
@@ -107,6 +101,7 @@ def format_result(
         ],
         "friction": result.friction.level if result.friction else "none",
         "category_summary": _format_category_summary(result.category_summary),
+        "rule_results": _format_rule_results(result.rule_results),
         # Evaluation completeness
         "evaluation": "awaiting_semantic" if result.is_partial else "complete",
         "is_partial": result.is_partial,
@@ -116,9 +111,6 @@ def format_result(
     pending = _format_pending_semantic(result.pending_semantic)
     if pending is not None:
         data["pending_semantic"] = pending
-    skipped = _format_skipped_experimental(result.skipped_experimental)
-    if skipped is not None:
-        data["skipped_experimental"] = skipped
 
     # Add delta fields (null if no previous run or unchanged)
     if delta is not None:
@@ -166,16 +158,19 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dict with rule details
     """
-    return {
+    result: dict[str, Any] = {
         "id": rule_id,
         "title": rule_data.get("title", ""),
         "category": rule_data.get("category", ""),
         "type": rule_data.get("type", ""),
-        "level": rule_data.get("level", ""),
-        "description": rule_data.get("description", ""),
-        "checks": rule_data.get("checks", rule_data.get("antipatterns", [])),
-        "see_also": rule_data.get("see_also", []),
     }
+    match = rule_data.get("match")
+    if match:
+        result["scope"] = match
+    result["description"] = rule_data.get("description", "")
+    result["checks"] = rule_data.get("checks", rule_data.get("antipatterns", []))
+    result["see_also"] = rule_data.get("see_also", [])
+    return result
 
 
 def format_heal_result(
@@ -206,3 +201,66 @@ def format_heal_result(
         result["violations"] = violations
         result["summary"]["violations_count"] = len(violations)
     return result
+
+
+def format_combined_result(result: Any) -> dict[str, Any]:
+    """Format CombinedResult as JSON dict.
+
+    Args:
+        result: CombinedResult from merger
+
+    Returns:
+        Dict with findings, stats, compliance
+    """
+    from dataclasses import asdict
+
+    from reporails_cli.core.merger import CombinedResult
+
+    if not isinstance(result, CombinedResult):
+        return {"error": "Invalid result type"}
+
+    # Group findings by file for agent consumption — agents work file-by-file
+    by_file: dict[str, list[dict[str, Any]]] = {}
+    for f in result.findings:
+        entry: dict[str, Any] = {
+            "line": f.line,
+            "severity": f.severity,
+            "rule": f.rule,
+            "message": f.message,
+        }
+        if f.fix:
+            entry["fix"] = f.fix
+        by_file.setdefault(f.file, []).append(entry)
+
+    data: dict[str, Any] = {
+        "offline": result.offline,
+        "files": {
+            fp: {"findings": findings, "count": len(findings)}
+            for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))
+        },
+        "stats": asdict(result.stats),
+    }
+    if result.cross_file:
+        data["cross_file"] = [
+            {
+                "file_1": cf.file_1,
+                "file_2": cf.file_2,
+                "line_1": cf.line_1,
+                "line_2": cf.line_2,
+                "type": cf.finding_type,
+            }
+            for cf in result.cross_file
+        ]
+    if result.hints:
+        data["hints"] = [
+            {
+                "file": h.file,
+                "type": h.diagnostic_type,
+                "count": h.count,
+                "summary": h.summary,
+            }
+            for h in result.hints
+        ]
+    if result.quality is not None and result.quality.compliance_band:
+        data["compliance_band"] = result.quality.compliance_band
+    return data

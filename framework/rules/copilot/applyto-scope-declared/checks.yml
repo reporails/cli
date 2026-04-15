@@ -1,0 +1,9 @@
+checks:
+- id: COPILOT.S.0001.instruction_file_exists
+  type: mechanical
+  check: file_exists
+- id: COPILOT.S.0001.has_applyto_frontmatter
+  type: mechanical
+  check: frontmatter_key
+  args:
+    key: applyTo

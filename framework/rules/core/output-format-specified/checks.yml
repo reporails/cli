@@ -1,0 +1,14 @@
+checks:
+- id: CORE.C.0025.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0025.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Output
+    - Format
+    - Display
+    message: Missing output format specification — describe expected output formats
+  expect: present

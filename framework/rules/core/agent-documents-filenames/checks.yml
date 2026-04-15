@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0012.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0012.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)(CLAUDE\.md|\.cursorrules|copilot-instructions|AGENTS\.md|\.windsurfrules|filename|file\s+name)'
+  expect: present
+  message: "Missing filename documentation — list which instruction filenames the agent checks"

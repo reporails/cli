@@ -2,11 +2,10 @@
 
 Covers:
   - Tool listing: all expected tools present with correct schemas
-  - validate: returns JSON with score, violations, judgment workflow
-  - score: returns JSON with score/level keys
+  - validate: returns JSON with score, violations
+  - score: returns JSON with compliance band and finding counts
   - explain: returns rule details or error for unknown rules
-  - judge: caches verdicts, returns recorded count
-  - judge: path traversal blocked, coordinate IDs parsed correctly
+  - heal: auto-fix instruction file issues
   - Circuit breaker: content-aware mtime tracking
   - Unknown tool: returns error
 """
@@ -20,6 +19,22 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Skip markers
+# ---------------------------------------------------------------------------
+
+_has_onnx_model = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "reporails_cli"
+    / "bundled"
+    / "models"
+    / "minilm-l6-v2"
+    / "onnx"
+    / "model.onnx"
+).exists()
+requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX model not available")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,20 +74,12 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
 
 class TestListTools:
     def test_all_tools_present(self) -> None:
-        """list_tools should return all five tools."""
+        """list_tools should return all four tools."""
         from reporails_cli.interfaces.mcp.server import list_tools
 
         tools = _run_async(list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "score", "explain", "judge", "heal"}
-
-    def test_judge_tool_has_required_verdicts(self) -> None:
-        """judge tool schema should require the verdicts parameter."""
-        from reporails_cli.interfaces.mcp.server import list_tools
-
-        tools = _run_async(list_tools())
-        judge = next(t for t in tools if t.name == "judge")
-        assert "verdicts" in judge.inputSchema["required"]
+        assert names == {"validate", "score", "explain", "heal"}
 
     def test_validate_tool_path_optional(self) -> None:
         """validate tool should not require path (has default)."""
@@ -111,28 +118,33 @@ class TestValidateTool:
         assert isinstance(data, dict)
 
     @requires_rules
-    def test_json_has_score(self, level2_project: Path) -> None:
-        """validate JSON must contain a score key."""
+    def test_json_has_files_and_stats(self, level2_project: Path) -> None:
+        """validate JSON must contain files and stats keys."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "score" in data
-        assert isinstance(data["score"], (int, float))
+        assert "files" in data
+        assert "stats" in data
 
     @requires_rules
-    def test_json_has_violations_array(self, level2_project: Path) -> None:
-        """validate JSON must contain violations as a list."""
+    def test_json_has_violations_grouped_by_file(self, level2_project: Path) -> None:
+        """validate JSON must contain violations as a dict grouped by file."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "violations" in data
-        assert isinstance(data["violations"], list)
+        if "violations" in data:
+            assert isinstance(data["violations"], dict)
+            for file_key, entries in data["violations"].items():
+                assert isinstance(file_key, str)
+                assert isinstance(entries, list)
+                for entry in entries:
+                    assert isinstance(entry, list)
+                    assert len(entry) == 4  # [rule_id, line_ref, severity, message]
 
     @requires_rules
-    def test_json_has_level(self, level2_project: Path) -> None:
-        """validate JSON must contain level."""
+    def test_json_has_offline_flag(self, level2_project: Path) -> None:
+        """validate JSON must contain offline flag."""
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "level" in data
-        assert data["level"].startswith("L")
+        assert "offline" in data
 
     @requires_rules
     def test_no_shell_out_guidance(self, level2_project: Path) -> None:
@@ -140,19 +152,6 @@ class TestValidateTool:
         text = _call_tool("validate", {"path": str(level2_project)})
         for pattern in _SHELL_OUT_PATTERNS:
             assert pattern not in text, f"Shell-out pattern {pattern!r} found in validate response"
-
-    @requires_rules
-    def test_semantic_workflow_when_pending(self, level2_project: Path) -> None:
-        """When semantic rules exist, JSON must contain _semantic_workflow."""
-        text = _call_tool("validate", {"path": str(level2_project)})
-        data = json.loads(text)
-        if data.get("judgment_requests"):
-            assert "_semantic_workflow" in data
-            workflow = data["_semantic_workflow"]
-            assert workflow["action"] == "evaluate_and_judge"
-            assert "steps" in workflow
-            assert "verdict_format" in workflow
-            assert "example_call" in workflow
 
     def test_missing_path_returns_error_json(self) -> None:
         """Non-existent path should return JSON error."""
@@ -169,15 +168,18 @@ class TestValidateTool:
         assert data["error"] == "not_initialized"
 
     def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
-        """RuntimeError from run_validation must return JSON error, not crash."""
-        with patch(
-            "reporails_cli.interfaces.mcp.server.run_validation",
-            side_effect=RuntimeError("Unsupported operating system"),
+        """RuntimeError from _run_pipeline must return JSON error, not crash."""
+        with (
+            patch("reporails_cli.interfaces.mcp.server.is_initialized", return_value=True),
+            patch(
+                "reporails_cli.interfaces.mcp.tools._run_pipeline",
+                side_effect=RuntimeError("Unsupported operating system"),
+            ),
         ):
             text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" in data
-        assert data["error"] == "RuntimeError"
+        assert data["error"] == "Unsupported operating system"
 
 
 # ---------------------------------------------------------------------------
@@ -187,19 +189,18 @@ class TestValidateTool:
 
 class TestScoreTool:
     @requires_rules
-    def test_returns_json_with_score(self, level2_project: Path) -> None:
-        """score should return JSON with score and level."""
+    def test_returns_json_with_stats(self, level2_project: Path) -> None:
+        """score should return JSON with findings summary."""
         text = _call_tool("score", {"path": str(level2_project)})
         data = json.loads(text)
-        assert "score" in data
-        assert "level" in data
+        assert "total_findings" in data or "errors" in data
 
     @requires_rules
-    def test_score_is_numeric(self, level2_project: Path) -> None:
-        """Score value should be a number."""
+    def test_offline_flag_present(self, level2_project: Path) -> None:
+        """Score result should indicate offline status."""
         text = _call_tool("score", {"path": str(level2_project)})
         data = json.loads(text)
-        assert isinstance(data["score"], (int, float))
+        assert "offline" in data
 
 
 # ---------------------------------------------------------------------------
@@ -209,157 +210,19 @@ class TestScoreTool:
 
 class TestExplainTool:
     def test_known_rule_returns_details(self, dev_rules_dir: Path) -> None:
-        """Explaining a known rule should return its details."""
+        """Explaining a known rule should return readable text with rule ID and title."""
         from reporails_cli.interfaces.mcp.tools import explain_tool
 
-        data = explain_tool("CORE:S:0001", rules_paths=[dev_rules_dir])
-        assert "error" not in data
-        assert "title" in data or "rule_id" in data
+        result = explain_tool("CORE:S:0002", rules_paths=[dev_rules_dir])
+        assert isinstance(result, str)
+        assert "CORE:S:0002" in result
+        assert "Section Headers Present" in result
 
     def test_unknown_rule_returns_error(self) -> None:
         """Explaining an unknown rule should return an error."""
         text = _call_tool("explain", {"rule_id": "ZZZZZ999"})
         data = json.loads(text)
         assert "error" in data
-
-
-# ---------------------------------------------------------------------------
-# judge tool
-# ---------------------------------------------------------------------------
-
-
-class TestJudgeTool:
-    def test_records_verdicts(self, level2_project: Path) -> None:
-        """judge should record verdicts and return count."""
-        verdicts = ["CORE:S:0001:CLAUDE.md:pass:File size OK"]
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-        data = json.loads(text)
-        assert "recorded" in data
-        assert data["recorded"] == 1
-
-    def test_records_multiple_verdicts(self, level2_project: Path) -> None:
-        """judge should handle multiple verdicts."""
-        verdicts = [
-            "CORE:S:0001:CLAUDE.md:pass:File size OK",
-            "CORE:C:0002:CLAUDE.md:fail:Missing section",
-        ]
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-        data = json.loads(text)
-        assert data["recorded"] == 2
-
-    def test_coordinate_rule_id(self, level2_project: Path) -> None:
-        """Coordinate-format rule IDs (CORE:S:0001) should be parsed correctly."""
-        verdicts = ["CORE:S:0001:CLAUDE.md:pass:Criteria met"]
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-        data = json.loads(text)
-        assert data["recorded"] == 1
-
-    def test_persists_to_cache(self, level2_project: Path) -> None:
-        """Verdicts should be persisted in the judgment cache file."""
-        from reporails_cli.core.cache import ProjectCache
-
-        verdicts = ["CORE:S:0001:CLAUDE.md:pass:Looks good"]
-        _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-
-        cache = ProjectCache(level2_project)
-        cache_data = cache.load_judgment_cache()
-        judgments = cache_data.get("judgments", {})
-        assert "CLAUDE.md" in judgments
-        assert "CORE:S:0001" in judgments["CLAUDE.md"].get("results", {})
-
-    def test_empty_verdicts_returns_error(self) -> None:
-        """Empty verdicts list should return an error."""
-        text = _call_tool("judge", {"path": ".", "verdicts": []})
-        data = json.loads(text)
-        assert "error" in data
-
-    def test_no_verdicts_key_returns_error(self) -> None:
-        """Missing verdicts argument should return an error."""
-        text = _call_tool("judge", {"path": "."})
-        data = json.loads(text)
-        assert "error" in data
-
-    def test_invalid_verdict_format_records_zero(self, level2_project: Path) -> None:
-        """Malformed verdict strings should not be recorded."""
-        verdicts = ["garbage"]
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-        data = json.loads(text)
-        assert data["recorded"] == 0
-
-    def test_nonexistent_file_in_verdict_records_zero(self, level2_project: Path) -> None:
-        """Verdict referencing a nonexistent file should not be recorded."""
-        verdicts = ["CORE:S:0001:no-such-file.md:pass:OK"]
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-        data = json.loads(text)
-        assert data["recorded"] == 0
-
-    def test_path_traversal_blocked(self, tmp_path: Path) -> None:
-        """Verdicts referencing files outside the project must be rejected."""
-        project = tmp_path / "project"
-        sibling = tmp_path / "sibling"
-        project.mkdir()
-        sibling.mkdir()
-        (project / "CLAUDE.md").write_text("# Project\n")
-        (sibling / "secrets.md").write_text("API_KEY=sk-secret\n")
-
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(project),
-                "verdicts": ["CORE:S:0001:../sibling/secrets.md:pass:Should be blocked"],
-            },
-        )
-        data = json.loads(text)
-        assert data["recorded"] == 0
-
-    def test_invalid_verdict_value_rejected(self, level2_project: Path) -> None:
-        """Verdict must be 'pass' or 'fail'; other values are rejected."""
-        verdicts = ["CORE:S:0001:CLAUDE.md:maybe:unsure"]
-        text = _call_tool(
-            "judge",
-            {
-                "path": str(level2_project),
-                "verdicts": verdicts,
-            },
-        )
-        data = json.loads(text)
-        assert data["recorded"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +268,7 @@ class TestCircuitBreaker:
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" not in data
-        assert "score" in data
+        assert "files" in data
 
     @requires_rules
     def test_second_call_succeeds(self, level2_project: Path) -> None:
@@ -414,7 +277,7 @@ class TestCircuitBreaker:
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" not in data
-        assert "score" in data
+        assert "files" in data
 
     @requires_rules
     def test_third_unchanged_triggers_breaker(self, level2_project: Path) -> None:
@@ -437,7 +300,7 @@ class TestCircuitBreaker:
         text = _call_tool("validate", {"path": str(level2_project)})
         data = json.loads(text)
         assert "error" not in data
-        assert "score" in data
+        assert "files" in data
 
     @requires_rules
     def test_breaker_message_says_do_not_call_again(self, level2_project: Path) -> None:
@@ -454,7 +317,7 @@ class TestCircuitBreaker:
         other = tmp_path / "other"
         other.mkdir()
         (other / "CLAUDE.md").write_text("# Other project\n")
-        (other / ".reporails").mkdir()
+        (other / ".ails").mkdir()
 
         # Call level2_project twice (at threshold)
         _call_tool("validate", {"path": str(level2_project)})
@@ -497,29 +360,6 @@ class TestCircuitBreaker:
 # ---------------------------------------------------------------------------
 
 
-class TestJudgeToolHelper:
-    """Test the judge_tool helper function directly."""
-
-    def test_returns_recorded_count_and_details(self, level2_project: Path) -> None:
-        from reporails_cli.interfaces.mcp.tools import judge_tool
-
-        result = judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
-        assert result["recorded"] == 1
-        assert result["verdicts"] == [{"rule": "CORE:S:0001", "file": "CLAUDE.md", "verdict": "pass", "reason": "OK"}]
-
-    def test_none_verdicts_returns_error(self) -> None:
-        from reporails_cli.interfaces.mcp.tools import judge_tool
-
-        result = judge_tool(".", None)
-        assert "error" in result
-
-    def test_missing_path_returns_error(self) -> None:
-        from reporails_cli.interfaces.mcp.tools import judge_tool
-
-        result = judge_tool("/tmp/no-such-path-xyz-mcp-test", ["CORE:S:0001:x.md:pass:OK"])
-        assert "error" in result
-
-
 class TestScoreToolHelper:
     """Test the score_tool helper function directly."""
 
@@ -528,8 +368,7 @@ class TestScoreToolHelper:
         from reporails_cli.interfaces.mcp.tools import score_tool
 
         result = score_tool(str(level2_project))
-        assert "score" in result
-        assert "level" in result
+        assert "total_findings" in result or "offline" in result
         assert "error" not in result
 
     def test_missing_path_returns_error(self) -> None:
@@ -642,32 +481,3 @@ class TestScanDeltaResilience:
         assert d is not None
 
 
-# ---------------------------------------------------------------------------
-# Cache atomicity
-# ---------------------------------------------------------------------------
-
-
-class TestCacheAtomicity:
-    """Judgment cache writes must use atomic temp+rename."""
-
-    def test_write_creates_no_partial_json(self, level2_project: Path) -> None:
-        """After caching verdicts, the cache file must be valid JSON."""
-        from reporails_cli.interfaces.mcp.tools import judge_tool
-
-        judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
-
-        cache_path = level2_project / ".reporails" / ".cache" / "judgment-cache.json"
-        assert cache_path.exists()
-        data = json.loads(cache_path.read_text())
-        assert "version" in data
-        assert "judgments" in data
-
-    def test_no_temp_file_left_behind(self, level2_project: Path) -> None:
-        """Atomic write must not leave .tmp files after completion."""
-        from reporails_cli.interfaces.mcp.tools import judge_tool
-
-        judge_tool(str(level2_project), ["CORE:S:0001:CLAUDE.md:pass:OK"])
-
-        cache_dir = level2_project / ".reporails" / ".cache"
-        tmp_files = list(cache_dir.glob("*.tmp"))
-        assert tmp_files == []

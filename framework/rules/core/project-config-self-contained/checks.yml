@@ -1,0 +1,9 @@
+checks:
+- id: CORE.G.0007.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0007.pattern_check
+  type: deterministic
+  pattern-regex: (?i)(~/|\$HOME\b|\benv\s+var\b|\brequires?\s+.*\binstall)
+  expect: absent
+  message: External dependency detected — config must be self-contained

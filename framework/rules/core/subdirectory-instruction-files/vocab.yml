@@ -1,0 +1,7 @@
+subdirectory_instruction_files:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

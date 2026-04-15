@@ -1,0 +1,4 @@
+checks:
+- id: CORE.G.0001.check
+  type: mechanical
+  check: git_tracked

@@ -1,0 +1,11 @@
+checks:
+- id: CODEX.S.0001.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CODEX.S.0001.discovery_chain_documented
+  expect: absent
+  message: Discovery chain documented not found
+  patterns:
+  - pattern-regex: (?s)\A[\s\S]+
+  - pattern-not-regex: (?i)(?:AGENTS\.override|override.*fallback|fallback.*filename|project_doc_fallback|discovery.*order|precedence.*override)
+  type: deterministic

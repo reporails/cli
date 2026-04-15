@@ -8,26 +8,23 @@ const PYPI_PACKAGE = "reporails-cli";
 const CLI_COMMAND = "ails";
 
 const HELP = `
-reporails — Score your CLAUDE.md files
+ails — Validate and score AI instruction files
 
 Usage:
-  reporails install [PATH]                 Install MCP server for detected agents
-  reporails check [PATH] [OPTIONS]           Validate instruction files
-  reporails explain RULE_ID                  Show rule details
-  reporails map [PATH] [--save]              Discover project structure
-  reporails update                           Update rules framework + recommended
-  reporails update --check                   Check for updates without installing
-  reporails update --recommended             Update recommended rules only
-  reporails update --cli                     Upgrade CLI package itself
-  reporails dismiss RULE_ID                  Dismiss a semantic finding
-  reporails version                          Show version info
-  reporails <command> [args...]              Proxy any command to ails CLI
+  ails check [PATH] [OPTIONS]     Validate instruction files
+  ails explain RULE_ID            Show rule details
+  ails install [PATH]             Install MCP server for detected agents
+  ails update                     Update rules framework
+  ails update --cli               Upgrade CLI package itself
+  ails version                    Show version info
 
 Examples:
-  npx @reporails/cli install           # Install MCP server
-  npx @reporails/cli check            # Score your setup
+  npx @reporails/cli check               # Validate your setup
+  npx @reporails/cli install              # Install MCP server
   npx @reporails/cli explain CORE:S:0001  # Explain a rule
-  npx @reporails/cli update           # Update rules + recommended
+
+Aliases:
+  ails, reporails — both work after global install
 
 Prerequisites:
   Node.js >= 18 (uv is auto-installed if missing)

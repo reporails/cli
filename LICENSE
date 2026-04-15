@@ -4,7 +4,10 @@ Licensor:  Reporails
 Licensed Work:  Reporails CLI (ails)
 Additional Use Grant:
   You may use the Licensed Work for any purpose other than offering
-  a competing AI instruction validation product or service.
+  a competing AI instruction management product or service, including
+  but not limited to validation, analysis, optimization, governance,
+  scoring, monitoring, and drift detection of AI agent instruction
+  files and configurations.
 Change Date:  Three years from the date of each release of the
   Licensed Work.
 Change License:  Apache License, Version 2.0

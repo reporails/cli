@@ -1,0 +1,7 @@
+permission_config_denies_sensitive:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

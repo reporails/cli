@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from importlib.metadata import version
-
-__version__ = version("reporails-cli")
-
 from reporails_cli.core.models import (
     Category,
     Level,
@@ -24,3 +20,11 @@ __all__ = [
     "Violation",
     "__version__",
 ]
+
+
+def __getattr__(name: str) -> str:
+    if name == "__version__":
+        from importlib.metadata import version
+
+        return version("reporails-cli")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

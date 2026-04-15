@@ -24,6 +24,27 @@ def fast_yaml_load(content: str) -> Any:
     return yaml.load(content, Loader=_YamlLoader)
 
 
+# File-level YAML cache — avoids re-parsing the same file from multiple call sites
+# (e.g., registry loads checks.yml for Rule construction, compiler re-reads for regex).
+_yaml_file_cache: dict[str, Any] = {}
+
+
+def load_yaml_file(path: Path) -> Any:
+    """Load and cache a YAML file using the fastest available loader."""
+    key = str(path)
+    cached = _yaml_file_cache.get(key)
+    if cached is not None:
+        return cached
+    data = fast_yaml_load(path.read_text(encoding="utf-8"))
+    _yaml_file_cache[key] = data
+    return data
+
+
+def clear_yaml_cache() -> None:
+    """Clear the YAML file cache. Called alongside rule cache clearing."""
+    _yaml_file_cache.clear()
+
+
 def parse_frontmatter(content: str) -> dict[str, Any]:
     """Parse YAML frontmatter from markdown content.
 

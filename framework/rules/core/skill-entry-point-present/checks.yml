@@ -1,0 +1,12 @@
+checks:
+- id: CORE.S.0015.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0015.content_check
+  type: content_query
+  query: has_named_tokens_matching
+  args:
+    tokens:
+    - SKILL.md
+    message: Missing skill entry point — each skill directory must contain a SKILL.md
+  expect: present

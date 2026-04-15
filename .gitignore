@@ -1,29 +1,41 @@
 .idea
 .venv
 __pycache__
+.ails/maps
 
 # Framework docs (symlinked from framework repo)
 checks/*/*.md
 docs/capability-levels.md
 
-docs/research
+# Docs - WIP / internal (specs and infra are tracked)
+docs/tmp/
+docs/
+docs/plans/
+docs/cms/
+docs/cli-migration-guide.md
+research/
 
-# Reporails caches (backbone.yml is committed, caches are not)
-.reporails/.cache/
-# Prevent stray .reporails in subdirectories
-*/.reporails/
+# Project caches (backbone.yml is committed, caches are not)
+.ails/.cache/
+# Prevent stray .ails in subdirectories
+*/.ails/
 
 .env
 
 # Claude Code (machine-specific)
+.claude/plans/
 .claude/mcp.json
 .claude/settings.local.json
+packages/npm/.claude/settings.local.json
 .mcp.json
 
-# Development internals (functional locally, not public)
-docs/specs/
+# Development internals
 CLAUDE.md
 .claude/rules/
-.claude/settings.json
 .claude/hooks/
 .claude/skills/
+/framework/rules/_archive/
+
+# Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
+# (dev-only, not committed; populated on clone and in CI before hatch build)
+src/reporails_cli/bundled/models/

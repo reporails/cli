@@ -1,8 +1,4 @@
-"""YAML rule file → compiled regex checks.
-
-Parses OpenGrep-compatible YAML rule files and compiles regex patterns
-for execution by the runner module.
-"""
+"""YAML rule file → compiled regex checks."""
 
 from __future__ import annotations
 
@@ -14,13 +10,7 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.templates import TEMPLATE_PATTERN, resolve_templates_str
-
-# Use C YAML loader when available
-try:
-    from yaml import CSafeLoader as _YamlLoader
-except ImportError:
-    from yaml import SafeLoader as _YamlLoader  # type: ignore[assignment]
+from reporails_cli.core.utils import load_yaml_file
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +19,7 @@ _SUPPORTED_OPERATORS = {"pattern-regex", "pattern-either", "patterns"}
 
 
 @dataclass(frozen=True)
-class CompiledCheck:
+class CompiledCheck:  # pylint: disable=too-many-instance-attributes
     """A single compiled regex check from a YAML rule file."""
 
     id: str
@@ -39,6 +29,7 @@ class CompiledCheck:
     negative_patterns: tuple[re.Pattern[str], ...]  # AND — none must match
     either_patterns: tuple[re.Pattern[str], ...]  # OR — any must match
     path_includes: tuple[str, ...]  # Resolved path filters
+    body_only: bool = False  # True → strip frontmatter before matching
 
 
 @dataclass
@@ -142,15 +133,23 @@ def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
     return None
 
 
+def _parse_entries(data: dict[str, Any], yml_path: Path) -> list[dict[str, Any]] | None:
+    """Extract deterministic entries from YAML data ('checks' key)."""
+    entries = data.get("checks")
+    if not isinstance(entries, list):
+        logger.warning("Rule file %s has no valid 'checks' list, skipping", yml_path)
+        return None
+    return [e for e in entries if e.get("type", "deterministic") == "deterministic"]
+
+
 def compile_rules(
     yml_paths: list[Path],
-    template_context: dict[str, str | list[str]] | None = None,
+    body_only_paths: set[Path] | None = None,
 ) -> CompiledRuleSet:
     """Compile YAML rule files into a CompiledRuleSet.
 
     Args:
         yml_paths: Paths to YAML rule files
-        template_context: Template variables for {{placeholder}} resolution
 
     Returns:
         CompiledRuleSet with compiled checks and skipped rule IDs
@@ -162,18 +161,16 @@ def compile_rules(
             continue
 
         try:
-            # Read file once — check for templates in memory (avoids double-read)
-            raw_content = yml_path.read_text(encoding="utf-8")
-            if template_context and TEMPLATE_PATTERN.search(raw_content):
-                content = resolve_templates_str(raw_content, template_context)
-            else:
-                content = raw_content
-
-            data = yaml.load(content, Loader=_YamlLoader)
-            if not data or "rules" not in data or not isinstance(data["rules"], list):
+            data = load_yaml_file(yml_path)
+            if not data:
+                logger.warning("Rule file %s has no valid data, skipping", yml_path)
                 continue
 
-            for rule_entry in data["rules"]:
+            entries = _parse_entries(data, yml_path)
+            if entries is None:
+                continue
+
+            for rule_entry in entries:
                 rule_id = rule_entry.get("id", "unknown")
                 operator = _get_operator(rule_entry)
 
@@ -188,6 +185,17 @@ def compile_rules(
                 try:
                     check = _compile_single_rule(rule_entry)
                     if check is not None:
+                        if body_only_paths and yml_path in body_only_paths:
+                            check = CompiledCheck(
+                                id=check.id,
+                                message=check.message,
+                                severity=check.severity,
+                                patterns=check.patterns,
+                                negative_patterns=check.negative_patterns,
+                                either_patterns=check.either_patterns,
+                                path_includes=check.path_includes,
+                                body_only=True,
+                            )
                         result.checks.append(check)
                     else:
                         result.skipped.append(rule_id)
@@ -224,13 +232,7 @@ def _scope_inline_flags(pattern: str) -> str:
 
 
 def _get_combinable_pattern(check: CompiledCheck) -> str | None:
-    """Get a single embeddable pattern string for combined regex batching.
-
-    Returns None if the check cannot be combined (e.g., has negative patterns
-    or multiple AND patterns). Handles:
-    - Single patterns (with or without inline flags like (?i))
-    - Either-pattern alternatives (joined as alternation)
-    """
+    """Get a single embeddable pattern string for combined regex batching."""
     if check.negative_patterns:
         return None  # Can't batch negatives (require all-must-not-match logic)
 

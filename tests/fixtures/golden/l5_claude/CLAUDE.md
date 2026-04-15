@@ -4,7 +4,7 @@ A governed Python service with full structure.
 
 ## Session Start
 
-1. Read `.reporails/backbone.yml`
+1. Read `.ails/backbone.yml`
 2. Check project status
 
 ## Commands

@@ -22,9 +22,6 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         lines.append(f"Category: {rule_data['category']}")
     if rule_data.get("type"):
         lines.append(f"Type: {rule_data['type']}")
-    if rule_data.get("level"):
-        lines.append(f"Required Level: {rule_data['level']}")
-
     lines.append("")
 
     if rule_data.get("description"):

@@ -1,61 +1,53 @@
-"""Unit tests for rule applicability and level-based filtering."""
+"""Unit tests for rule applicability with target existence filtering."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from reporails_cli.core.applicability import get_applicable_rules
-from reporails_cli.core.models import Category, Level, Rule, RuleType
+from reporails_cli.core.models import Category, FileMatch, Rule, RuleType
 
 
-def _make_rule(rule_id: str, level: str = "L2") -> Rule:
+def _make_rule(rule_id: str, match_type: str = "main") -> Rule:
     """Helper to create a minimal Rule."""
     return Rule(
         id=rule_id,
         title=f"Rule {rule_id}",
         category=Category.STRUCTURE,
         type=RuleType.DETERMINISTIC,
-        level=level,
+        match=FileMatch(type=match_type),
         checks=[],
     )
 
 
-class TestGetApplicableRulesLevelFiltering:
-    """Test rule-level-based applicability filtering."""
+class TestGetApplicableRulesTargetFiltering:
+    """Test target-existence-based applicability filtering."""
 
-    def test_rule_at_or_below_level_included(self) -> None:
-        """A rule at L2 is included when project is at L3."""
-        rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "L2")}
+    def test_rule_included_when_target_present(self) -> None:
+        """A rule targeting 'main' is included when 'main' is present."""
+        rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "main")}
 
-        result = get_applicable_rules(rules, Level.L3)
+        result = get_applicable_rules(rules, {"main"})
 
         assert "CORE:S:0001" in result
 
-    def test_rule_above_level_excluded(self) -> None:
-        """A rule at L4 is excluded when project is at L2."""
-        rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "L4")}
+    def test_rule_excluded_when_target_absent(self) -> None:
+        """A rule targeting 'config' is excluded when 'config' is not present."""
+        rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "config")}
 
-        result = get_applicable_rules(rules, Level.L2)
+        result = get_applicable_rules(rules, {"main"})
 
         assert "CORE:S:0001" not in result
 
-    def test_rule_at_exact_level_included(self) -> None:
-        """A rule at L2 is included when project is at L2."""
-        rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "L2")}
-
-        result = get_applicable_rules(rules, Level.L2)
-
-        assert "CORE:S:0001" in result
-
     def test_supersession_drops_superseded_rule(self) -> None:
         """If rule A supersedes rule B, and both are applicable, B is dropped."""
-        from dataclasses import replace
-
-        rule_a = replace(_make_rule("CORE:S:0010", "L3"), supersedes="CORE:S:0001")
+        rule_a = replace(_make_rule("CORE:S:0010"), supersedes="CORE:S:0001")
         rules = {
-            "CORE:S:0001": _make_rule("CORE:S:0001", "L2"),
+            "CORE:S:0001": _make_rule("CORE:S:0001"),
             "CORE:S:0010": rule_a,
         }
 
-        result = get_applicable_rules(rules, Level.L3)
+        result = get_applicable_rules(rules, {"main"})
 
         assert "CORE:S:0001" not in result
         assert "CORE:S:0010" in result

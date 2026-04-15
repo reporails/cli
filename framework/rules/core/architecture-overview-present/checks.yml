@@ -1,0 +1,14 @@
+checks:
+- id: CORE.C.0033.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0033.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Architecture
+    - Structure
+    - Layout
+    message: Missing architecture overview — describe system structure
+  expect: present

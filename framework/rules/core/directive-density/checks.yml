@@ -1,0 +1,10 @@
+checks:
+- id: CORE.D.0001.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.D.0001.content_check
+  type: content_query
+  query: has_directive_atoms
+  args:
+    message: No directive instructions found — add instructions that tell the agent what to do
+  expect: present

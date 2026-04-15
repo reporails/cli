@@ -1,0 +1,7 @@
+discovery_chain_documented:
+- AGENTS\.override
+- override.*fallback
+- fallback.*filename
+- project_doc_fallback
+- discovery.*order
+- precedence.*override

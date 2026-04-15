@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0018.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0018.kebab_name
+  type: deterministic
+  pattern-regex: '(?m)^name:\s*[a-z][a-z0-9]*(-[a-z0-9]+)*\s*$'
+  expect: present
+  message: "Skill name in frontmatter should use kebab-case (lowercase with hyphens)"

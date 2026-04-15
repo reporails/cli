@@ -1,0 +1,10 @@
+checks:
+- id: CORE.E.0006.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.E.0006.constraints_italic
+  type: content_query
+  query: has_non_italic_constraints
+  args:
+    message: Constraint not in italic — wrap the full sentence in *italic* to signal charge type visually
+  expect: absent

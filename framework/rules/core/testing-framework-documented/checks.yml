@@ -1,0 +1,15 @@
+checks:
+- id: CORE.C.0005.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0005.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Testing
+    - Tests
+    - Test
+    message: Missing testing documentation — describe the test framework and how to
+      run tests
+  expect: present

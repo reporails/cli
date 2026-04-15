@@ -1,0 +1,119 @@
+# GitHub Copilot Agent Configuration
+# Schema: schemas/agent.schema.yml v0.5.0
+
+agent: copilot
+version: "0.5.0"
+prefix: COPILOT
+name: GitHub Copilot
+
+file_types:
+  main:
+    required: true
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".github/copilot-instructions.md", "**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  rules:
+    format: [frontmatter, freeform]
+    scope: path_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: [".github/instructions/**/*.instructions.md", ".claude/rules/**/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.claude/rules/*.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  skills:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".github/skills/**/SKILL.md", ".claude/skills/**/SKILL.md", ".agents/skills/**/SKILL.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.copilot/skills/**/SKILL.md", "~/.agents/skills/**/SKILL.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  agents:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".github/agents/*.agent.md", ".claude/agents/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.copilot/agents/*.agent.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  hooks:
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".github/hooks/*.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  prompts:
+    format: [frontmatter, freeform]
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".github/prompts/*.prompt.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  mcp:
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".vscode/mcp.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+excludes:
+  - CLAUDE:*
+  - CODEX:*

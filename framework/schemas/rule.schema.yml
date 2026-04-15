@@ -1,0 +1,333 @@
+# Rule frontmatter schema
+version: "0.7.0"
+
+types:
+  - mechanical
+  - deterministic
+
+categories:
+  - structure
+  - coherence
+  - direction
+  - efficiency
+  - maintenance
+  - governance
+
+severities:
+  - critical
+  - high
+  - medium
+  - low
+
+reserved_agent_prefixes:
+  - CLAUDE
+  - COPILOT
+  - CODEX
+  - CURSOR
+  - WINDSURF
+  - CLINE
+  - AIDER
+  - CONTINUE
+  - ROO
+  - GEMINI
+
+reserved_package_prefixes:
+  - RRAILS
+
+fields:
+  id:
+    required: true
+    type: string
+    pattern:
+      core: "^CORE:[SCDEGM]:[0-9]{4}$"
+      agent: "^[A-Z]+:[SCDEGM]:[0-9]{4}$"
+      package: "^[A-Z]{3,}:[SCDEGM]:[0-9]{4}$"
+      package_agent: "^[A-Z]{3,}_[A-Z]+:[SCDEGM]:[0-9]{4}$"
+      custom: "^[A-Z]{3,}:[SCDEGM]:[0-9]{4}$"
+    description: "Coordinate: {REGISTRY}:{CATEGORY}:{SLOT}. Immutable, never reused."
+
+  slug:
+    required: true
+    type: string
+    pattern: "^[a-z][a-z0-9-]*$"
+    description: "Mutable display name, used as directory name"
+
+  title:
+    required: true
+    type: string
+    max_length: 64
+    description: "Human-readable rule name (max 64 chars)"
+
+  category:
+    required: true
+    type: enum
+    values: [structure, coherence, direction, efficiency, maintenance, governance]
+    description: "Rule concern area. Maps to category letter in coordinate: S/C/D/E/M/G"
+
+  type:
+    required: true
+    type: enum
+    values: [mechanical, deterministic]
+    description: "Local check dispatch. Determines which engine runs checks.yml entries."
+
+  execution:
+    required: false
+    type: enum
+    values: [local, server]
+    default: local
+    description: "Where the rule executes. local = checks.yml on client. server = diagnostic from API, no local checks."
+
+  severity:
+    required: true
+    type: enum
+    values: [critical, high, medium, low]
+    description: "Impact weight for scoring. One per rule. Critical=5.5, High=4.0, Medium=2.5, Low=1.0"
+
+  match:
+    required: true
+    type: object
+    description: "Property-based file targeting. Unspecified properties are wildcards."
+    properties:
+      type:
+        type: string
+        description: "Named file type (main, scoped_rule, skill, config, override, memory, mcp, managed)"
+      scope:
+        type: enum
+        values: [global, path_scoped, task_scoped, user, system]
+      format:
+        type: [enum, array]
+        values: [freeform, frontmatter, schema_validated]
+        description: "Container format. Single value or list for OR-matching (e.g., [freeform, frontmatter])"
+      content_format:
+        required_if: "format includes freeform"
+        forbidden_if: "format excludes freeform"
+        type: array
+        items:
+          type: enum
+          values: [prose, heading, code_block, data_block, table, list]
+        description: >
+          Content region format within the file. Fine structure of the format axis.
+          prose: natural language paragraphs.
+          heading: markdown section headers.
+          code_block: fenced code blocks (executable/example code).
+          data_block: structured visualization/data blocks (mermaid, embedded yaml/json).
+          table: markdown tables.
+          list: ordered/unordered lists.
+      cardinality:
+        type: enum
+        values: [singleton, optional, collection, hierarchical, chain]
+      lifecycle:
+        type: enum
+        values: [static, mutable, transient]
+      maintainer:
+        type: enum
+        values: [human, agent, system, hybrid]
+      vcs:
+        type: enum
+        values: [committed, gitignored, external]
+      loading:
+        type: enum
+        values: [session_start, on_demand, on_invocation]
+      precedence:
+        type: enum
+        values: [managed, project, user, auto]
+
+  backed_by:
+    required: false
+    type: array
+    description: "Evidence sources backing this rule. References source IDs from docs/sources.yml."
+    items:
+      type: string
+      pattern: "^[a-z][a-z0-9-]*$"
+      description: "Source ID (matches id field in docs/sources.yml)"
+
+  concern:
+    required: false
+    type: enum
+    values: [identity, directive, knowledge, constraint]
+    description: "Content concern classification. Null for formal/structural rules."
+
+  checks:
+    required: false
+    type: array
+    description: "Check stubs in rule.md (optional). Full definitions in checks.yml."
+    items:
+      id:
+        required: true
+        type: string
+        pattern: "^[A-Z_]+\\.[SCDEGM]\\.[0-9]{4}\\.[a-z][a-z0-9-]*$"
+        description: "Check coordinate: {NAMESPACE}.{CATEGORY}.{SLOT}.{descriptive-name}"
+      type:
+        required: true
+        type: enum
+        values: [mechanical, deterministic, content_query]
+        description: "Gate type for this check step"
+      # mechanical
+      check:
+        required_if: "type == mechanical"
+        type: string
+        description: "Mechanical check function name (see values for available checks)"
+        values:
+          - file_exists
+          - directory_exists
+          - directory_contains
+          - git_tracked
+          - frontmatter_key
+          - file_count
+          - line_count
+          - byte_size
+          - path_resolves
+          - extract_imports
+          - aggregate_byte_size
+          - import_depth
+          - directory_file_types
+          - frontmatter_valid_glob
+          - content_absent
+      args:
+        required: false
+        type: object
+        description: "Check-specific arguments (e.g., path, min, max)"
+      # deterministic
+      pattern:
+        required_if: "type == deterministic"
+        type: string
+        description: "Regex pattern to detect evidence"
+      expect:
+        required: false
+        type: enum
+        values: [present, absent]
+        default: present
+        description: "What the pattern tests for. present (default): pattern matches expected evidence — no match = violation. absent: pattern matches forbidden content — match = violation."
+      message:
+        required_if: "type == deterministic"
+        type: string
+        description: "Human-readable message describing what was detected or missing"
+      cross_file:
+        required: false
+        type: boolean
+        default: false
+        description: "Whether pattern operates across the full target set (not per-file)"
+      # content_query
+      query:
+        required_if: "type == content_query"
+        type: string
+        description: "Content query function name from content_queries.QUERY_REGISTRY"
+
+  supersedes:
+    required: false
+    type: string
+    pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
+    description: "Coordinate of replaced rule. 1:1 only."
+
+  see_also:
+    required: false
+    type: array
+    description: "Related rule coordinates for cross-referencing"
+    items:
+      type: string
+      pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
+
+  conflicts:
+    required: false
+    type: array
+    description: "Known conflicts with other rules, with resolution status"
+    items:
+      conflict_id:
+        required: true
+        type: string
+        description: "Reference to a resolution in docs/resolutions/"
+      resolution_honored:
+        required: true
+        type: boolean
+        description: "Whether this rule follows the published resolution"
+      scoped_to:
+        required: false
+        type: string
+        description: "Context scope where this conflict applies (e.g., monorepo, single-root)"
+
+checks_file:
+  filename: "checks.yml"
+  top_level_key: "checks"
+  description: "Consolidated check definitions. Each entry has id, type, and type-specific fields."
+
+validation:
+  - rule: "Every checks[].id in rule.md must match a corresponding entry in checks.yml"
+  - rule: "checks[].id format: {NAMESPACE}.{CATEGORY}.{SLOT}.{descriptive-name}"
+  - rule: "mechanical type: checks may only contain mechanical + content_query"
+  - rule: "deterministic type: checks may contain mechanical + deterministic + content_query"
+  - rule: "execution: server rules have no checks.yml — diagnostics from API"
+  - rule: "supersedes target must be a valid rule coordinate"
+  - rule: "No circular supersessions"
+  - rule: "Each rule may be superseded by at most one other rule"
+  - rule: "Severity is a rule-level field (one per rule, not per check)"
+  - rule: "Slots are immutable — deleted rules are tombstoned, never reused"
+  - rule: "Tier derived from backed_by: core (weight >= 0.8), experimental (< 0.8 or empty)"
+
+examples:
+  core_mechanical: |
+    ---
+    id: CORE:M:0001
+    slug: version-controlled
+    title: Version Controlled
+    category: maintenance
+    type: mechanical
+    severity: critical
+    backed_by:
+      - claude-code-best-practices
+    match: {}
+    see_also: [CLAUDE:M:0001]
+    ---
+
+  core_deterministic: |
+    ---
+    id: CORE:S:0001
+    slug: size-limits
+    title: Size Limits
+    category: structure
+    type: deterministic
+    severity: critical
+    backed_by:
+      - claude-code-best-practices
+    match: {type: main}
+    see_also: [CORE:S:0002, CORE:C:0001]
+    ---
+
+  server_rule: |
+    ---
+    id: CORE:C:0040
+    slug: cross-file-conflict
+    title: No Conflicting Instructions
+    category: coherence
+    type: mechanical
+    execution: server
+    severity: critical
+    match: {}
+    ---
+
+  agent_specific: |
+    ---
+    id: CLAUDE:S:0001
+    slug: hierarchical-memory
+    title: Hierarchical Memory
+    category: structure
+    type: mechanical
+    severity: medium
+    backed_by:
+      - claude-code-memory
+    match: {type: scoped_rule}
+    see_also: [CLAUDE:S:0002, CORE:S:0002]
+    ---
+
+  with_supersession: |
+    ---
+    id: CORE:C:0002
+    slug: single-source-of-truth
+    title: Single Source of Truth
+    category: coherence
+    type: mechanical
+    severity: high
+    supersedes: CORE:C:0001
+    backed_by:
+      - claude-code-best-practices
+    match: {}
+    ---

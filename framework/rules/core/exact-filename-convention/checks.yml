@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0004.check
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0004.filename_pattern
+  type: mechanical
+  check: filename_matches_pattern
+  args:
+    pattern: "^[A-Za-z0-9._-]+$"

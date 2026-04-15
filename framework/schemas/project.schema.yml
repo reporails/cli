@@ -1,0 +1,142 @@
+# Project configuration schema (.ails/config.yml)
+version: "0.1.0"
+
+# Removed instruction_files (moved to agent config).
+# Updated rules.disabled/overrides for coordinate format.
+
+fields:
+  schema_version:
+    required: true
+    type: string
+    pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    default: "0.1.0"
+    description: "Config schema version (semver). CLI validates against supported range."
+
+  agent:
+    required: false
+    type: string
+    default: "claude"
+    description: "Default agent for this project (loads agent config from rules repo)"
+
+  components:
+    required: false
+    type: array
+    description: "Monorepo component definitions for multi-path scoring"
+    items:
+      type: object
+      properties:
+        path:
+          required: true
+          type: string
+          description: "Relative path to component root"
+        main:
+          type: string
+          default: "CLAUDE.md"
+          description: "Component's primary instruction file"
+        expected_level:
+          type: string
+          pattern: "^L[1-6]$"
+          description: "Target capability level for this component"
+        role:
+          type: enum
+          values: [coordinator, component, library, docs]
+          default: component
+          description: "Component role (affects which rules apply)"
+
+  rules:
+    required: false
+    type: object
+    description: "Project-level rule overrides and exclusions"
+    properties:
+      disabled:
+        type: array
+        description: "Rule coordinates to skip entirely"
+        items:
+          type: string
+          pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
+      overrides:
+        type: object
+        description: "Per-check severity adjustments (key = check coordinate)"
+        additionalProperties:
+          type: object
+          properties:
+            severity:
+              type: enum
+              values: [critical, high, medium, low]
+              description: "Override default severity for this check"
+            disabled:
+              type: boolean
+              description: "Disable this specific check"
+
+  scoring:
+    required: false
+    type: object
+    description: "Scoring configuration for CLI output"
+    properties:
+      scope:
+        type: enum
+        values: [main, all, aggregate]
+        default: main
+        description: "What to score: main file only, all files, or aggregate across components"
+
+  tiers:
+    required: false
+    type: object
+    description: "Orthogonal to levels: evidence confidence vs concern level"
+    properties:
+      core:
+        type: boolean
+        default: true
+        description: "Enforce rules backed by official/research sources (weight >= 0.8)"
+      experimental:
+        type: boolean
+        default: true
+        description: "Enforce rules backed by community sources only (weight < 0.8)"
+
+defaults:
+  schema_version: "0.1.0"
+  agent: "claude"
+  scoring:
+    scope: main
+  tiers:
+    core: true
+    experimental: true
+
+validation:
+  - rule: "schema_version must be supported (currently: 0.1.0)"
+  - rule: "Unknown fields should warn, not error"
+  - rule: "If tiers.core is false, no rules are enforced"
+  - rule: "rules.disabled items must be valid rule coordinates"
+  - rule: "rules.overrides keys must be valid check coordinates"
+
+examples:
+  minimal: |
+    schema_version: "0.1.0"
+
+  monorepo: |
+    schema_version: "0.1.0"
+    agent: claude
+    components:
+      - path: "packages/api"
+        role: component
+        expected_level: L3
+      - path: "packages/shared"
+        role: library
+        expected_level: L2
+    scoring:
+      scope: aggregate
+
+  with_overrides: |
+    schema_version: "0.1.0"
+    agent: claude
+    rules:
+      disabled: ["CORE:E:0002"]
+      overrides:
+        "CORE.S.0001.file-exists":
+          severity: medium
+
+  strict: |
+    schema_version: "0.1.0"
+    tiers:
+      core: true
+      experimental: false

@@ -19,7 +19,7 @@ class TestPatternOperators:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-simple
     message: "Found a TODO comment"
     severity: WARNING
@@ -42,7 +42,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-either
     message: "Found test framework"
     severity: WARNING
@@ -68,7 +68,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-patterns-and
     message: "File has content but no Commands section"
     severity: WARNING
@@ -95,7 +95,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-neg-suppresses
     message: "Missing commands"
     severity: WARNING
@@ -122,7 +122,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-no-pattern
     message: "No pattern"
     severity: WARNING
@@ -145,7 +145,7 @@ class TestPathFiltering:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-path
     message: "Found in md"
     severity: WARNING
@@ -172,7 +172,7 @@ rules:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-no-filter
     message: "Found"
     severity: WARNING
@@ -196,7 +196,7 @@ class TestLineNumbers:
         from reporails_cli.core.regex import run_validation
 
         rule_yaml = """\
-rules:
+checks:
   - id: test-lines
     message: "Found TODO"
     severity: WARNING

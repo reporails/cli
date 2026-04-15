@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0038.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0038.has_globs
+  type: mechanical
+  check: frontmatter_key
+  args:
+    key: globs
+  message: "Path-scoped rule must declare a 'globs' key in frontmatter"

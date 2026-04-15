@@ -1,0 +1,10 @@
+checks:
+- id: CORE.C.0022.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0022.content_check
+  type: content_query
+  query: has_constraint_atoms
+  args:
+    message: No safety constraints found — add safety directives using NEVER, MUST NOT, or ALWAYS
+  expect: present

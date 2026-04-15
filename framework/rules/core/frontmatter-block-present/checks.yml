@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0006.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0006.pattern_check
+  type: deterministic
+  pattern-regex: '(?m)\A---\s*\n'
+  expect: present
+  message: "Missing frontmatter block — start with --- delimited YAML frontmatter"

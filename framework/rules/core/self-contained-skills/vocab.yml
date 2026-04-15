@@ -1,0 +1,7 @@
+self_contained_skills:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

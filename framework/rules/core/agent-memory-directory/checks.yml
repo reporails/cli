@@ -1,0 +1,5 @@
+checks:
+- id: CORE.S.0023.check
+  type: mechanical
+  check: file_exists
+  # hint: memory directory exists

@@ -25,7 +25,7 @@ def _make_rules_tarball(manifest_content: str | None = None) -> bytes:
     """Build an in-memory tarball mimicking a rules release."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        rule_data = b"rules:\n  - id: test\n    message: test\n"
+        rule_data = b"checks:\n  - id: test\n    message: test\n"
         info = tarfile.TarInfo(name="core/test-rule.yml")
         info.size = len(rule_data)
         tar.addfile(info, io.BytesIO(rule_data))
@@ -46,9 +46,9 @@ def _make_rules_tarball(manifest_content: str | None = None) -> bytes:
 
 COMPATIBLE_MANIFEST = """\
 schemas:
-  rule: "0.1.0"
+  rule: "0.2.0"
   levels: "0.1.0"
-  agent: "0.2.0"
+  agent: "0.3.0"
 """
 
 INCOMPATIBLE_MANIFEST = """\

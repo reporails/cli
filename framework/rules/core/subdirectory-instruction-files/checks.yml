@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0037.check
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0037.content_check
+  type: content_query
+  query: has_directive_atoms
+  args:
+    message: Subdirectory instruction file lacks instructional content — add directives or constraints
+  expect: present

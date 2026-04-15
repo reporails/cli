@@ -1,0 +1,16 @@
+checks:
+- id: CORE.S.0017.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0017.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Input
+    - Process
+    - Output
+    - Constraints
+    message: Skill is not self-contained — include Input, Process, Output, and Constraints
+      sections
+  expect: present

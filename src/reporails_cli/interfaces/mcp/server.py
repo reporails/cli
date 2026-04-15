@@ -1,38 +1,39 @@
 """MCP server for reporails - exposes validation tools to Claude Code."""
 
-import hashlib
-import json
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+# ─────────────────────────────────────────────────────────────────────
+# CRITICAL: torch import blocker MUST run before any import that could
+# transitively reach thinc/spacy. The MCP server is long-lived and
+# serves many tool calls; skipping the ~20s torch import makes first
+# validate/score calls fast. See `_torch_blocker` docstring for details.
+from reporails_cli.core import _torch_blocker
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+_torch_blocker.install()
+# ─────────────────────────────────────────────────────────────────────
 
-from reporails_cli.core.agents import get_all_instruction_files
-from reporails_cli.core.bootstrap import is_initialized
-from reporails_cli.core.cache import get_previous_scan
-from reporails_cli.core.engine import run_validation
-from reporails_cli.core.models import ScanDelta
-from reporails_cli.formatters import mcp as mcp_formatter
-from reporails_cli.interfaces.mcp.tools import (
-    _get_exclude_dirs,
-    _resolve_recommended_rules_paths,
+import hashlib  # noqa: E402
+import json  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any  # noqa: E402
+
+from mcp.server import Server  # noqa: E402
+from mcp.server.stdio import stdio_server  # noqa: E402
+from mcp.types import TextContent, Tool  # noqa: E402
+
+from reporails_cli.core.agents import get_all_instruction_files  # noqa: E402
+from reporails_cli.core.bootstrap import is_initialized  # noqa: E402
+from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
     explain_tool,
-    heal_tool,
-    judge_tool,
     score_tool,
+    validate_tool,
 )
 
 # Create MCP server
 server = Server("ails")
 
 # Circuit breaker: content-aware loop detection.
-# Tracks instruction file mtimes — if files changed between calls, it's a
-# legitimate edit-validate cycle, not a loop.
-_MAX_CALLS = 10  # Absolute ceiling per session
-_MAX_UNCHANGED = 2  # Consecutive calls without file changes
+_MAX_CALLS = 10
+_MAX_UNCHANGED = 2
 
 
 @dataclass
@@ -64,10 +65,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="validate",
             description=(
-                "Returns JSON with score (0-10), level (L1-L6), violations array,"
-                " and judgment_requests for semantic rules you must evaluate."
+                "Validate AI instruction files. Returns JSON with findings,"
+                " compliance band, and cross-file analysis."
                 " Use when user asks to check, validate, or improve instruction files."
-                " After evaluating judgment_requests, call judge to cache verdicts."
             ),
             inputSchema={
                 "type": "object",
@@ -83,10 +83,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="score",
             description=(
-                "Quick score check without violation details or semantic rules."
-                " Returns JSON with score, level, violation count, and friction."
-                " Use for fast health checks or progress monitoring."
-                " Use validate for full details."
+                "Quick score check without violation details. Returns JSON with compliance band and violation count."
             ),
             inputSchema={
                 "type": "object",
@@ -103,7 +100,7 @@ async def list_tools() -> list[Tool]:
             name="explain",
             description=(
                 "Get details about a specific rule by ID."
-                " Returns JSON with title, category, type, level, description, checks."
+                " Returns rule title, category, type, description, checks."
                 " Use full coordinate IDs (e.g., CORE:S:0005, CLAUDE:S:0011)."
             ),
             inputSchema={
@@ -111,7 +108,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "rule_id": {
                         "type": "string",
-                        "description": "Rule ID to explain (e.g., S1, C2)",
+                        "description": "Rule ID to explain (e.g., CORE:S:0005)",
                     }
                 },
                 "required": ["rule_id"],
@@ -120,11 +117,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="heal",
             description=(
-                "Auto-fix deterministic violations (adds missing sections) then returns"
-                " remaining semantic judgment_requests for you to evaluate."
-                " Use when user asks to fix, heal, or improve instruction files."
-                " Returns JSON with auto_fixed array and judgment_requests."
-                " After evaluating judgment_requests, call judge to cache verdicts."
+                "Auto-fix instruction file issues. Applies formatting, bold→italic,"
+                " constraint wrapping, and charge ordering fixes."
+                " Use --dry-run to preview."
             ),
             inputSchema={
                 "type": "object",
@@ -134,42 +129,20 @@ async def list_tools() -> list[Tool]:
                         "description": "Directory to heal (default: current directory)",
                         "default": ".",
                     },
-                },
-            },
-        ),
-        Tool(
-            name="judge",
-            description=(
-                "Cache semantic rule verdicts so they persist across validation runs."
-                " Call after evaluating judgment_requests from validate."
-                " Verdict format: RULE_ID:FILENAME:pass|fail:reason."
-                " Keep reason BRIEF (under 40 chars)."
-                " Examples: 'CORE:C:0017:CLAUDE.md:pass:Repo-specific paths',"
-                " 'CORE:S:0012:CLAUDE.md:fail:3 inlined procedures'."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Project root directory",
-                        "default": ".",
-                    },
-                    "verdicts": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Verdict strings in rule_id:location:verdict:reason format",
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Preview fixes without applying",
+                        "default": False,
                     },
                 },
-                "required": ["verdicts"],
             },
         ),
     ]
 
 
-def _json_response(data: dict[str, Any], indent: int = 2) -> list[TextContent]:
-    """Wrap a dict as a JSON TextContent response."""
-    return [TextContent(type="text", text=json.dumps(data, indent=indent))]
+def _json_response(data: dict[str, Any]) -> list[TextContent]:
+    """Wrap a dict as a compact JSON TextContent response."""
+    return [TextContent(type="text", text=json.dumps(data, separators=(",", ":")))]
 
 
 async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
@@ -177,7 +150,6 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
     path = arguments.get("path", ".")
     target = Path(path).resolve()
 
-    # Circuit breaker: update state, then check thresholds
     path_key = str(target)
     state = _validate_states.get(path_key, _CircuitState())
     mtime_hash = _compute_mtime_hash(target)
@@ -212,41 +184,25 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
     if not target.is_dir():
         return _json_response({"error": "not_a_directory", "message": f"Not a directory: {target}"})
 
-    previous_scan = get_previous_scan(target)
-    try:
-        rules_paths = _resolve_recommended_rules_paths(target)
-        exclude_dirs = _get_exclude_dirs(target)
-        result = run_validation(target, agent="claude", rules_paths=rules_paths, exclude_dirs=exclude_dirs)
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return _json_response({"error": type(e).__name__, "message": str(e)})
-
-    delta = ScanDelta.compute(
-        current_score=result.score,
-        current_level=result.level.value,
-        current_violations=len(result.violations),
-        previous=previous_scan,
-    )
-    return _json_response(mcp_formatter.format_result(result, delta=delta))
+    return _json_response(validate_tool(path))
 
 
 async def _handle_score(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle the 'score' tool call."""
+    """Handle 'score'."""
     return _json_response(score_tool(arguments.get("path", ".")))
 
 
-async def _handle_explain(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle the 'explain' tool call."""
-    return _json_response(explain_tool(arguments.get("rule_id", "")))
-
-
 async def _handle_heal(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle the 'heal' tool call."""
-    return _json_response(heal_tool(arguments.get("path", ".")))
+    """Handle 'heal'."""
+    from reporails_cli.interfaces.mcp.tools import heal_tool
+
+    return _json_response(heal_tool(arguments.get("path", "."), arguments.get("dry_run", False)))
 
 
-async def _handle_judge(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle the 'judge' tool call."""
-    return _json_response(judge_tool(arguments.get("path", "."), arguments.get("verdicts", [])))
+async def _handle_explain(arguments: dict[str, Any]) -> list[TextContent]:
+    """Handle 'explain' — readable text, not JSON."""
+    result = explain_tool(arguments.get("rule_id", ""))
+    return _json_response(result) if isinstance(result, dict) else [TextContent(type="text", text=result)]
 
 
 @server.call_tool()  # type: ignore[untyped-decorator]
@@ -257,7 +213,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         "explain": _handle_explain,
         "score": _handle_score,
         "heal": _handle_heal,
-        "judge": _handle_judge,
     }
     handler = handlers.get(name)
     if handler is None:
