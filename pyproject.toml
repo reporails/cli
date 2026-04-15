@@ -94,7 +94,6 @@ allow-direct-references = true
 packages = ["src/reporails_cli"]
 artifacts = [
     "src/reporails_cli/bundled/*.yml",
-    "src/reporails_cli/bundled/models/**/*",
 ]
 
 [tool.hatch.build.targets.wheel.hooks.custom]

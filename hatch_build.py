@@ -15,6 +15,11 @@ FRAMEWORK_INCLUDES = {
     "framework/sources.yml": "reporails_cli/sources.yml",
 }
 
+# Bundled model (gitignored, but must be in wheel).
+# Populated by scripts/fetch_bundled_model.py before build.
+BUNDLED_MODEL = "src/reporails_cli/bundled/models"
+BUNDLED_MODEL_DEST = "reporails_cli/bundled/models"
+
 # Directory names to skip when bundling (rule test fixtures are dev-only)
 SKIP_DIRS = {"tests"}
 
@@ -35,6 +40,18 @@ class CustomBuildHook(BuildHookInterface):
                     if path.is_file() and not _in_skip_dir(path, src):
                         rel = path.relative_to(src)
                         force_include[str(path)] = f"{dest_rel}/{rel}"
+
+        # Bundle ONNX model (gitignored but required at runtime)
+        model_dir = root / BUNDLED_MODEL
+        if model_dir.is_dir():
+            for path in model_dir.rglob("*"):
+                if not path.is_file():
+                    continue
+                # Skip HF download cache metadata
+                if ".cache" in path.parts:
+                    continue
+                rel = path.relative_to(root / "src")
+                force_include[str(path)] = str(rel)
 
         # Remove the pyproject.toml force-include entries (they'd double-include)
         # — handled by clearing them from config before this hook, or by
