@@ -84,7 +84,7 @@ def heal(  # noqa: C901
             from reporails_cli.interfaces.cli.main import _map_in_process
 
             ruleset_map = _map_in_process(instruction_files, cache_dir)
-    except ImportError:
+    except (ImportError, RuntimeError):
         if show_progress:
             console.print("[dim]Mapper unavailable — mechanical fixes skipped.[/dim]")
 

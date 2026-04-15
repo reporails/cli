@@ -234,6 +234,7 @@
 - [TESTS]: Remove stale integration tests for removed features (update, dismiss, judge, --no-update-check, -q, --refresh, --legend, compact/brief formats)
 - [TESTS]: Add `requires_model` skip marker for integration tests needing bundled ONNX model
 - [TESTS]: Fix MCP test expectations for current tool set (heal replaces judge)
+- [CORE]: Gracefully handle missing ONNX model — catch `RuntimeError` alongside `ImportError` in mapper fallback paths (check, heal, MCP tools)
 
 ### Fixed
 
