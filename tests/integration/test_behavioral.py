@@ -402,6 +402,26 @@ class TestCheckFileTarget:
 
 
 # ===========================================================================
+# CHECK COMMAND — Content Check Verification
+# ===========================================================================
+
+
+class TestContentChecks:
+    """Content checks must produce findings when mapper is available."""
+
+    @requires_rules
+    @requires_model
+    def test_content_checks_produce_findings(self, minimal_project: Path) -> None:
+        """When ONNX model + spaCy are available, client_check_count must be > 0."""
+        result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["stats"]["client_check_count"] > 0, (
+            f"Content checks should produce findings but got client_check_count=0. "
+            f"A runtime dependency may be missing. Stats: {data['stats']}"
+        )
+
+
 # CHECK COMMAND — Config Integration
 # ===========================================================================
 
