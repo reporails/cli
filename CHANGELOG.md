@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.5.0
+
+### Self-contained install
+
+Rules, schemas, and agent configs are now bundled inside the Python wheel. `ails check` works immediately after `pip install reporails-cli` — no `ails install` step, no external rules download. The 222 bundled rule files ship as package data via hatch `force-include`. The separate `rules/` repo is no longer a runtime dependency.
+
+### New pipeline architecture
+
+The check pipeline was rebuilt from scratch: discover files → run mechanical probes → map instruction content → run client checks → merge results. Findings from all sources converge into a single `CombinedResult` with normalized file paths, deduplication, and per-file grouping. The old `engine.py` / `pipeline.py` / `scorer.py` stack is removed.
+
+### ONNX embeddings (no torch)
+
+`sentence-transformers` and PyTorch are replaced by a bundled ONNX export of `all-MiniLM-L6-v2` loaded via `onnxruntime` + `tokenizers`. The embedding output is bit-identical to the PyTorch baseline. A `sys.meta_path` import hook blocks `torch` from loading through spaCy's thinc backend, eliminating a 20-second cold-start penalty. The installed venv footprint drops by several hundred MB.
+
+### Mapper daemon
+
+A persistent background process (`ails daemon start`) keeps the embedding model loaded between runs. The daemon binds its Unix socket before model warmup and warms in a background thread, so cache-hit requests return instantly. Per-file embedding results are cached by content hash. Idle timeout is 1 hour (configurable via `AILS_DAEMON_IDLE_S`).
+
+### Content-quality checks
+
+25 rules migrated from regex pattern matching to atom-based content queries. The mapper classifies each instruction into atoms with charge (directive/constraint/neutral/ambiguous), modality, and specificity. Content queries like `has_non_italic_constraints`, `has_mermaid_blocks`, and `has_charged_headings` run against the atom map. A new `heading-as-instruction` rule flags headings that carry charge instead of organizing content.
+
+### Heal command
+
+`ails heal [PATH]` auto-fixes instruction file issues. Four mechanical fixers operate at the atom level: backtick wrapping for code constructs, bold→italic on constraints, full-sentence italic, and charge ordering. Reports remaining violations after fixes. Available as both CLI command and MCP tool.
+
+### File type classification
+
+Agent configs define file types with properties (format, cardinality, loading, scope, precedence). Rules declare which file types they target via `match: {type: ...}`. Rules that target a file type not present in the project are silently skipped — no false positives from missing surfaces. Project level is emergent from file type property coverage instead of a stored `level:` field.
+
+### Inline import expansion
+
+The mapper expands `@path` inline imports before tokenization. Claude Code and Gemini CLI splice imported file content at the reference position — the mapper sees the same expanded content. Resolves relative to importing file, expands `~/`, recurses up to 5 hops, detects circular imports.
+
+### External file discovery
+
+Agent configs can reference external paths (`~/...`, `/absolute/...`). Auto-memory files (`~/.claude/projects/*/memory/MEMORY.md`), user-level rules, and managed policies are now part of the instruction surface. Memory index validation catches broken links and missing frontmatter.
+
+### Redesigned output
+
+Text output redesigned — "Reporails — Diagnostics" header with file type breakdown and instruction counts (directive/constraint/ambiguous). Files grouped by type in bordered cards, sorted worst-first. Scorecard at the bottom with score bar, agent, scope, and results. JSON output grouped by file with `fix` field. GitHub formatter emits annotations with JSON summary on the last line.
+
+### Stopwords tooling
+
+`ails stopwords extract` parses alternation patterns from `checks.yml` into `vocab.yml` term lists. `ails stopwords sync` compiles terms back into patterns (with `--dry-run`). Staleness detection flags drift between vocab.yml and checks.yml.
+
+### Breaking changes
+
+- Level labels renamed: Organized→Structured, Distributed→Substantive, Contextual→Actionable, Extensible→Refined, Governed→Adaptive
+- `Rule.targets` string replaced by `Rule.match` (FileMatch dataclass) with `type`, `format`, and property filters
+- `rule.yml` renamed to `checks.yml` with `checks:` top-level key
+- Severity moved from Check to Rule level
+- Removed commands: `update`, `sync`, `topo`, `lint`, `dismiss`, `judge`
+- Removed flags: `--experimental`, `--no-update-check`, `-q`
+- Removed output formats: `compact`, `brief`
+- `--strict` now exits 1 on any finding (was errors only)
+- Project config directory renamed from `.reporails/` to `.ails/`
+- JSON output schema changed: `files`/`stats` replaces `score`/`level`/`violations`
+
+### Bug fixes
+
+- Deterministic checks grouped by `rule.match.type` — rules with `match: {type: scoped_rule}` no longer fire on main files, eliminating ~215 false positives
+- File path normalization unifies paths from all three sources (mechanical, client, server) to project-relative, fixing 60+ → 31 file key fragmentation in JSON output
+- `expect: present` regex semantics inverted — was reporting matches as violations
+- Duplicate findings from mechanical checks processed as regex eliminated (390 empty-message findings)
+- Rich `MarkupError` crash on severity values and bracket characters in rule IDs
+- Daemon JSON round-trip preserving all Atom fields
+- `file_absent` false positives when match_type is set but no files of that type are classified
+- Regex timeout (500ms) guards against catastrophic backtracking
+- Graceful fallback when ONNX model is not bundled (CI/from-source installs)
+- Score returns 0.0 instead of 10.0 when no rules checked (L0)
+
+### GitHub Action
+
+Action updated for the new pipeline. `parse_result.py` computes score, level, and violation count from the `CombinedResult` JSON. Invalid flags (`--no-update-check`, `-q`) removed. `--exclude-dir` corrected to `--exclude-dirs`.
+
+### Dependencies
+
+- Rules bundled (no external framework dependency)
+- `onnxruntime>=1.18,<2`, `tokenizers>=0.19,<1` (replaces sentence-transformers + torch)
+- `spacy>=3.8.11,<4` with `en_core_web_sm-3.8.0`
+- `numpy>=1.26,<3`
+
 ## 0.4.0
 
 ### Multi-agent support
