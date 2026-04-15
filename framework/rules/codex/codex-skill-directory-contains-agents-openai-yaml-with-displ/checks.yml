@@ -1,0 +1,11 @@
+checks:
+- id: CODEX.S.0002.skill_dir_exists
+  type: mechanical
+  check: glob_match
+- id: CODEX.S.0002.has_openai_yaml
+  expect: absent
+  message: Openai yaml not found
+  patterns:
+  - pattern-regex: (?s)\A[\s\S]+
+  - pattern-not-regex: (?:display_name|allow_implicit_invocation|brand_color)
+  type: deterministic

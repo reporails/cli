@@ -1,0 +1,7 @@
+mcp_config_declares_servers:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

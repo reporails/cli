@@ -1,0 +1,186 @@
+# Google Gemini Agent Configuration
+# Schema: schemas/agent.schema.yml v0.5.0
+
+agent: gemini
+version: "0.5.0"
+prefix: GEMINI
+name: Google Gemini
+
+file_types:
+  main:
+    required: true
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/GEMINI.md", "**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        # Also serves as memory surface (agent appends to ## Gemini Added Memories)
+        patterns: ["~/.gemini/GEMINI.md"]
+        precedence: user
+        vcs: external
+        maintainer: hybrid
+        lifecycle: mutable
+
+  nested_context:
+    format: freeform
+    scope: path_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/GEMINI.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  skills:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".gemini/skills/**/SKILL.md", ".agents/skills/**/SKILL.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/skills/**/SKILL.md", "~/.agents/skills/**/SKILL.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  agents:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".gemini/agents/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/agents/*.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  commands:
+    format: schema_validated
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".gemini/commands/*.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/commands/*.toml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  hooks:
+    # 11 events configured in settings.json hooks key
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/settings.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/settings.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  config:
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/settings.json", ".gemini/settings.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/settings.json", "~/.gemini/settings.toml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+      system_defaults:
+        patterns:
+          - "/etc/gemini-cli/system-defaults.json"
+          - "/Library/Application Support/GeminiCli/system-defaults.json"
+          - "C:/ProgramData/gemini-cli/system-defaults.json"
+        precedence: managed
+        vcs: external
+        maintainer: system
+      system_overrides:
+        patterns:
+          - "/etc/gemini-cli/settings.json"
+          - "/Library/Application Support/GeminiCli/settings.json"
+        precedence: managed
+        vcs: external
+        maintainer: system
+      system_policies:
+        patterns:
+          - "/etc/gemini-cli/policies"
+          - "/Library/Application Support/GeminiCli/policies"
+        precedence: managed
+        vcs: external
+        maintainer: system
+        cardinality: collection
+
+  extensions:
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/extensions/**"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  geminiignore:
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".geminiignore"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+excludes:
+  - CLAUDE:*
+  - CODEX:*

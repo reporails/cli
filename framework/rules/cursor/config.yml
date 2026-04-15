@@ -1,0 +1,163 @@
+# Cursor Agent Configuration
+# Schema: schemas/agent.schema.yml v0.5.0
+
+agent: cursor
+version: "0.5.0"
+prefix: CURSOR
+name: Cursor
+
+file_types:
+  main:
+    # AGENTS.md is Cursor's freeform root instruction (no frontmatter)
+    format: freeform
+    scope: global
+    cardinality: chain
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  rules:
+    # .cursor/rules/ with MDC frontmatter — 4 activation modes:
+    # alwaysApply (global), intelligent (agent decides), globs (path-scoped), manual (@mention)
+    format: [frontmatter, freeform]
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursor/rules/**/*.mdc", ".cursor/rules/**/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  legacy_cursorrules:
+    deprecated: true
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursorrules"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  skills:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".cursor/skills/**/SKILL.md", ".claude/skills/**/SKILL.md", ".codex/skills/**/SKILL.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.cursor/skills/**/SKILL.md", "~/.claude/skills/**/SKILL.md", "~/.codex/skills/**/SKILL.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  agents:
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".cursor/agents/*.md", ".claude/agents/*.md", ".codex/agents/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.cursor/agents/*.md", "~/.claude/agents/*.md", "~/.codex/agents/*.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  hooks:
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursor/hooks.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.cursor/hooks.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+      managed:
+        patterns:
+          - "/Library/Application Support/Cursor/hooks.json"
+          - "/etc/cursor/hooks.json"
+          - "C:/ProgramData/Cursor/hooks.json"
+        precedence: managed
+        vcs: external
+        maintainer: system
+
+  mcp:
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursor/mcp.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.cursor/mcp.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  managed_policy:
+    # MDM on macOS (.mobileconfig), Group Policy on Windows (ADMX/ADML), policy.json on Linux
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      managed:
+        patterns: ["~/.cursor/policy.json"]
+        precedence: managed
+        vcs: external
+        maintainer: system
+
+  bugbot_rules:
+    # Auto-generated from PR feedback and reviewer comments, managed by Bugbot
+    format: frontmatter
+    scope: path_scoped
+    cardinality: collection
+    lifecycle: mutable
+    loading: on_demand
+    scopes:
+      auto:
+        patterns: [".cursor/rules/**/*.mdc"]
+        precedence: project
+        vcs: committed
+        maintainer: agent
+
+excludes:
+  - CLAUDE:*
+  - CODEX:*

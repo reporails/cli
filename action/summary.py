@@ -11,34 +11,32 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 
 SEVERITY_ICONS = {
-    "critical": "\u274c",  # red X
-    "high": "\U0001f7e0",  # orange circle
-    "medium": "\u26a0\ufe0f",  # warning
-    "low": "\U0001f535",  # blue circle
+    "error": "\u274c",
+    "high": "\U0001f7e0",
+    "medium": "\u26a0\ufe0f",
+    "warning": "\u26a0\ufe0f",
+    "info": "\U0001f535",
 }
 
 
 def generate_summary(result: dict) -> str:
-    """Generate markdown summary from validation result JSON."""
+    """Generate markdown summary from CombinedResult JSON."""
     lines: list[str] = []
 
-    score = result.get("score", 0)
-    level = result.get("level", "?")
-    capability = result.get("capability", "")
-    violations = result.get("violations", [])
-    category_summary = result.get("category_summary", [])
-    evaluation = result.get("evaluation", "complete")
-    # Display-friendly label for GitHub summary
-    evaluation_display = "awaiting semantic" if evaluation == "awaiting_semantic" else evaluation
-    score_delta = result.get("score_delta")
+    files = result.get("files", {})
+    stats = result.get("stats", {})
+    offline = result.get("offline", True)
+
+    total_findings = sum(f.get("count", 0) for f in files.values())
+    errors = stats.get("errors", 0)
+    warnings = stats.get("warnings", 0)
 
     # Status icon
-    if not violations:
+    if total_findings == 0:
         status = "\u2705 Pass"
-    elif any(v.get("severity") in ("critical", "high") for v in violations):
+    elif errors > 0:
         status = "\u274c Fail"
     else:
         status = "\u26a0\ufe0f Warnings"
@@ -47,51 +45,32 @@ def generate_summary(result: dict) -> str:
     lines.append("## Reporails Check")
     lines.append("")
 
-    # Score table
-    score_display = f"{score:.1f}/10"
-    if score_delta is not None and score_delta != 0:
-        direction = "+" if score_delta > 0 else ""
-        score_display += f" ({direction}{score_delta:.1f})"
-
+    mode = "offline" if offline else "online"
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")
-    lines.append(f"| Score | **{score_display}** |")
-    lines.append(f"| Level | **{level}** {capability} |")
     lines.append(f"| Status | {status} |")
-    lines.append(f"| Evaluation | {evaluation_display} |")
+    lines.append(f"| Findings | **{total_findings}** ({errors} errors, {warnings} warnings) |")
+    lines.append(f"| Files | {len(files)} |")
+    lines.append(f"| Mode | {mode} |")
     lines.append("")
 
-    # Category summary
-    if category_summary:
-        lines.append("### Categories")
-        lines.append("")
-        lines.append("| Category | Passed | Failed | Worst |")
-        lines.append("|----------|--------|--------|-------|")
-        for cat in category_summary:
-            name = cat.get("name", "?")
-            passed = cat.get("passed", 0)
-            failed = cat.get("failed", 0)
-            worst = cat.get("worst_severity", "-")
-            icon = SEVERITY_ICONS.get(worst, "") if failed > 0 else "\u2705"
-            lines.append(f"| {name.title()} | {passed} | {failed} | {icon} {worst} |")
-        lines.append("")
-
-    # Violations table
-    if violations:
-        lines.append("### Violations")
+    # Findings table
+    if files:
+        lines.append("### Findings")
         lines.append("")
         lines.append("| Severity | Rule | File | Message |")
         lines.append("|----------|------|------|---------|")
-        for v in violations:
-            sev = v.get("severity", "?")
-            icon = SEVERITY_ICONS.get(sev, "")
-            rule_id = v.get("rule_id", "?")
-            location = v.get("location", "?")
-            message = v.get("message", "")
-            # Truncate long messages for table readability
-            if len(message) > 80:
-                message = message[:77] + "..."
-            lines.append(f"| {icon} {sev} | `{rule_id}` | `{location}` | {message} |")
+        for filepath, file_data in files.items():
+            for f in file_data.get("findings", []):
+                sev = f.get("severity", "?")
+                icon = SEVERITY_ICONS.get(sev, "")
+                rule = f.get("rule", "?")
+                line = f.get("line", 0)
+                location = f"{filepath}:{line}" if line else filepath
+                message = f.get("message", "")
+                if len(message) > 80:
+                    message = message[:77] + "..."
+                lines.append(f"| {icon} {sev} | `{rule}` | `{location}` | {message} |")
         lines.append("")
 
     return "\n".join(lines)

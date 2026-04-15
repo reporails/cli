@@ -14,10 +14,6 @@ from reporails_cli.core.models import (
     ValidationResult,
     Violation,
 )
-from reporails_cli.core.scorer import (
-    calculate_score,
-    estimate_friction,
-)
 
 __all__ = [
     "Category",
@@ -30,6 +26,4 @@ __all__ = [
     "Severity",
     "ValidationResult",
     "Violation",
-    "calculate_score",
-    "estimate_friction",
 ]

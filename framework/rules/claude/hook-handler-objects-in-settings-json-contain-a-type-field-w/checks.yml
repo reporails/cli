@@ -1,0 +1,11 @@
+checks:
+- id: CLAUDE.S.0006.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0006.handler_has_type
+  expect: absent
+  message: Handler has type not found
+  patterns:
+  - pattern-regex: (?s)\A[\s\S]+
+  - pattern-not-regex: '"type"\s*:\s*"(command|prompt|agent)"'
+  type: deterministic

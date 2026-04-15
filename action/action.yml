@@ -20,9 +20,6 @@ inputs:
   exclude-dir:
     description: 'Comma-separated directory names to exclude from scanning (e.g., "vendor,dist")'
     default: ''
-  experimental:
-    description: 'Include experimental rules'
-    default: 'false'
   version:
     description: 'CLI version to install (e.g., 0.3.0). Defaults to latest.'
     default: ''
@@ -68,7 +65,7 @@ runs:
       shell: bash
       run: |
         # Build command
-        CMD="ails check ${{ inputs.path }} --format github --ascii --no-update-check -q"
+        CMD="ails check ${{ inputs.path }} --format github --ascii"
 
         if [ "${{ inputs.strict }}" = "true" ]; then
           CMD="$CMD --strict"
@@ -81,12 +78,8 @@ runs:
         if [ -n "${{ inputs.exclude-dir }}" ]; then
           IFS=',' read -ra DIRS <<< "${{ inputs.exclude-dir }}"
           for dir in "${DIRS[@]}"; do
-            CMD="$CMD --exclude-dir $(echo "$dir" | xargs)"
+            CMD="$CMD --exclude-dirs $(echo "$dir" | xargs)"
           done
-        fi
-
-        if [ "${{ inputs.experimental }}" = "true" ]; then
-          CMD="$CMD --experimental"
         fi
 
         # Run and capture output (annotations go to stdout for GitHub to pick up)
@@ -95,15 +88,13 @@ runs:
 
         echo "$OUTPUT"
 
-        # Parse JSON from last line
+        # Parse JSON from last line (CombinedResult schema: files, stats)
         JSON_LINE=$(echo "$OUTPUT" | tail -n 1)
-        SCORE=$(echo "$JSON_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('score', 0))")
-        LEVEL=$(echo "$JSON_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('level', 'L0'))")
-        VIOLATIONS=$(echo "$JSON_LINE" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('violations', [])))")
+        eval "$(echo "$JSON_LINE" | python3 "${{ github.action_path }}/parse_result.py")"
 
-        echo "score=$SCORE" >> "$GITHUB_OUTPUT"
-        echo "level=$LEVEL" >> "$GITHUB_OUTPUT"
-        echo "violations=$VIOLATIONS" >> "$GITHUB_OUTPUT"
+        echo "score=$_SCORE" >> "$GITHUB_OUTPUT"
+        echo "level=$_LEVEL" >> "$GITHUB_OUTPUT"
+        echo "violations=$_VIOLATIONS" >> "$GITHUB_OUTPUT"
 
         # Store full JSON for downstream steps
         {

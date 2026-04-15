@@ -1,0 +1,7 @@
+import_targets_resolve:
+  - MUST
+  - SHOULD
+  - NEVER
+  - ALWAYS
+  - required
+  - constraint keyword

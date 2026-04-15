@@ -1,0 +1,15 @@
+checks:
+- id: CORE.C.0021.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0021.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Workflow
+    - Process
+    - Pipeline
+    message: Missing command workflow — document the sequence of steps for common
+      operations
+  expect: present

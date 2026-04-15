@@ -1,0 +1,509 @@
+# Project type detection data for backbone v3 discovery engine.
+# Code reads this file; add entries here to support new languages/tools.
+#
+# Supported manifest formats: toml, json, yaml.
+# Manifests with format "text" or "custom" are detected by file existence
+# only — dependency_paths, version_path, etc. are not traversed.
+
+manifests:
+  # Priority order — first match wins for primary manifest.
+  # Parseable formats (toml, json, yaml) support dotpath traversal.
+  # Non-parseable formats (text, custom) only signal language via file existence.
+
+  # --- Python ---
+  - file: pyproject.toml
+    format: toml
+    language: python
+    runtime: cpython
+    dependency_paths: ["project.dependencies"]
+    version_path: project.version
+    cli_entry_path: project.scripts
+    workspace_path: tool.uv.workspace
+
+  # --- JavaScript / TypeScript ---
+  - file: package.json
+    format: json
+    language: javascript
+    typescript_marker: tsconfig.json
+    dependency_paths: ["dependencies", "devDependencies"]
+    version_path: version
+    cli_entry_path: bin
+    workspace_path: workspaces
+    runtime_lockfiles:
+      bun: [bun.lockb, bun.lock]
+      deno: [deno.lock]
+      node: []                             # default when no lockfile matches
+
+  # --- Rust ---
+  - file: Cargo.toml
+    format: toml
+    language: rust
+    dependency_paths: ["dependencies"]
+    version_path: package.version
+    workspace_path: workspace
+
+  # --- Go ---
+  - file: go.mod
+    format: text
+    language: go
+
+  # --- PHP ---
+  - file: composer.json
+    format: json
+    language: php
+    dependency_paths: ["require", "require-dev"]
+    version_path: version
+    cli_entry_path: bin
+
+  # --- Dart / Flutter ---
+  - file: pubspec.yaml
+    format: yaml
+    language: dart
+    dependency_paths: ["dependencies", "dev_dependencies"]
+    version_path: version
+    workspace_path: workspace
+
+  # --- Ruby ---
+  - file: Gemfile
+    format: custom
+    language: ruby
+
+  # --- Java (Maven) ---
+  - file: pom.xml
+    format: xml
+    language: java
+
+  # --- Java / Kotlin (Gradle) ---
+  - file: build.gradle.kts
+    format: custom
+    language: kotlin
+
+  - file: build.gradle
+    format: custom
+    language: java
+
+  # --- C# / .NET ---
+  - file: "*.sln"
+    format: custom
+    language: csharp
+    glob: true                             # match via glob, not exact filename
+
+  - file: "*.csproj"
+    format: custom
+    language: csharp
+    glob: true
+
+  # --- Elixir ---
+  - file: mix.exs
+    format: custom
+    language: elixir
+
+  # --- Scala ---
+  - file: build.sbt
+    format: custom
+    language: scala
+
+  # --- Swift ---
+  - file: Package.swift
+    format: custom
+    language: swift
+
+  # --- Zig ---
+  - file: build.zig.zon
+    format: custom
+    language: zig
+
+  # --- Lua ---
+  - file: "*.rockspec"
+    format: custom
+    language: lua
+    glob: true
+
+
+frameworks:
+  # dep_contains → framework_name (first match wins per dependency list).
+  # Ordered: more specific matches first to avoid false positives.
+
+  # Python
+  - match: fastapi
+    name: fastapi
+  - match: django
+    name: django
+  - match: flask
+    name: flask
+  - match: starlette
+    name: starlette
+  - match: litestar
+    name: litestar
+  - match: sanic
+    name: sanic
+
+  # JavaScript / TypeScript
+  - match: "@angular/core"
+    name: angular
+  - match: "@nestjs/core"
+    name: nestjs
+  - match: next
+    name: nextjs
+  - match: nuxt
+    name: nuxtjs
+  - match: svelte
+    name: sveltekit
+  - match: remix
+    name: remix
+  - match: astro
+    name: astro
+  - match: express
+    name: express
+  - match: fastify
+    name: fastify
+  - match: hono
+    name: hono
+  - match: koa
+    name: koa
+  - match: "@hapi/hapi"
+    name: hapi
+
+  # Ruby
+  - match: rails
+    name: rails
+  - match: sinatra
+    name: sinatra
+  - match: hanami
+    name: hanami
+  - match: grape
+    name: grape
+
+  # PHP
+  - match: laravel
+    name: laravel
+  - match: symfony/framework-bundle
+    name: symfony
+  - match: slim/slim
+    name: slim
+  - match: codeigniter4/framework
+    name: codeigniter
+
+  # Rust
+  - match: actix
+    name: actix
+  - match: axum
+    name: axum
+  - match: rocket
+    name: rocket
+  - match: warp
+    name: warp
+  - match: leptos
+    name: leptos
+
+  # Go
+  - match: gin-gonic
+    name: gin
+  - match: fiber
+    name: fiber
+  - match: labstack/echo
+    name: echo
+  - match: go-chi/chi
+    name: chi
+  - match: gorilla/mux
+    name: gorilla
+
+  # Java / Kotlin
+  - match: spring-boot
+    name: spring-boot
+  - match: quarkus
+    name: quarkus
+  - match: micronaut
+    name: micronaut
+  - match: ktor-server
+    name: ktor
+
+  # Dart / Flutter
+  - match: flutter
+    name: flutter
+  - match: serverpod
+    name: serverpod
+
+  # Elixir
+  - match: phoenix
+    name: phoenix
+
+  # Scala
+  - match: http4s
+    name: http4s
+  - match: akka-http
+    name: akka-http
+  - match: zio-http
+    name: zio-http
+
+  # Swift
+  - match: vapor
+    name: vapor
+
+
+task_runners:
+  # Checked against pyproject.toml structure (toml-based runners only).
+  - name: poe
+    config_path: tool.poe.tasks
+    command_prefix: "poe"
+    test_aliases: [qa]
+  - name: taskipy
+    config_path: tool.taskipy.tasks
+    command_prefix: "task"
+
+
+script_sources:
+  # Checked in order after task runners.
+  - file: package.json
+    scripts_path: scripts
+    command_prefix: "npm run"
+  - file: Makefile
+    type: makefile
+    command_prefix: "make"
+  - file: Justfile
+    type: makefile                         # same colon-target parsing
+    command_prefix: "just"
+  - file: Rakefile
+    type: makefile
+    command_prefix: "rake"
+
+
+tool_commands:
+  # Inferred from tool config presence (last resort).
+  # Grouped by command key; probes checked in order, first match wins.
+
+  test:
+    # Python
+    - config_paths: ["tool.pytest"]
+      config_file: pyproject.toml
+      command: pytest
+    - file: pytest.ini
+      command: pytest
+    # JavaScript
+    - file: vitest.config.ts
+      command: vitest
+    - file: vitest.config.js
+      command: vitest
+    - file: jest.config.js
+      command: jest
+    - file: jest.config.ts
+      command: jest
+    - file: jest.config.mjs
+      command: jest
+    - file: playwright.config.ts
+      command: "playwright test"
+    - file: playwright.config.js
+      command: "playwright test"
+    # Ruby
+    - file: .rspec
+      command: rspec
+    # PHP
+    - file: phpunit.xml
+      command: "./vendor/bin/phpunit"
+    - file: phpunit.xml.dist
+      command: "./vendor/bin/phpunit"
+    # Rust
+    - file: Cargo.toml
+      command: "cargo test"
+    # Go
+    - file: go.mod
+      command: "go test ./..."
+    # Elixir
+    - file: mix.exs
+      command: "mix test"
+    # Dart
+    - file: pubspec.yaml
+      command: "dart test"
+    # Zig
+    - file: build.zig
+      command: "zig build test"
+
+  lint:
+    # Python
+    - file: ruff.toml
+      command: "ruff check"
+    - config_paths: ["tool.ruff"]
+      config_file: pyproject.toml
+      command: "ruff check"
+    - config_paths: ["tool.mypy"]
+      config_file: pyproject.toml
+      command: "mypy ."
+    - file: mypy.ini
+      command: "mypy ."
+    # JavaScript
+    - file: eslint.config.js
+      command: "eslint ."
+    - file: eslint.config.mjs
+      command: "eslint ."
+    - file: .eslintrc.json
+      command: "eslint ."
+    - file: biome.json
+      command: "biome check ."
+    - file: biome.jsonc
+      command: "biome check ."
+    # Rust
+    - file: clippy.toml
+      command: "cargo clippy"
+    - file: .clippy.toml
+      command: "cargo clippy"
+    # Go
+    - file: .golangci.yml
+      command: "golangci-lint run"
+    - file: .golangci.yaml
+      command: "golangci-lint run"
+    # Ruby
+    - file: .rubocop.yml
+      command: rubocop
+    # PHP
+    - file: phpstan.neon
+      command: "phpstan analyse"
+    - file: phpstan.neon.dist
+      command: "phpstan analyse"
+    # Elixir
+    - file: .credo.exs
+      command: "mix credo"
+    # Dart
+    - file: analysis_options.yaml
+      command: "dart analyze"
+    # Scala
+    - file: .scalafix.conf
+      command: "sbt scalafix"
+    # Lua
+    - file: .luacheckrc
+      command: "luacheck ."
+    # Swift
+    - file: .swiftlint.yml
+      command: swiftlint
+
+  format:
+    # Python
+    - file: ruff.toml
+      command: "ruff format"
+    - config_paths: ["tool.ruff"]
+      config_file: pyproject.toml
+      command: "ruff format"
+    - config_paths: ["tool.black"]
+      config_file: pyproject.toml
+      command: "black ."
+    # JavaScript
+    - file: .prettierrc
+      command: "prettier --write ."
+    - file: .prettierrc.json
+      command: "prettier --write ."
+    - file: biome.json
+      command: "biome format --write ."
+    # Rust
+    - file: rustfmt.toml
+      command: "cargo fmt"
+    - file: .rustfmt.toml
+      command: "cargo fmt"
+    # Go
+    - file: go.mod
+      command: "gofmt -w ."
+    # Ruby
+    - file: .rubocop.yml
+      command: "rubocop -a"
+    # PHP
+    - file: .php-cs-fixer.php
+      command: "php-cs-fixer fix"
+    - file: .php-cs-fixer.dist.php
+      command: "php-cs-fixer fix"
+    # C# / .NET
+    - file: .editorconfig
+      command: "dotnet format"
+    # Elixir
+    - file: .formatter.exs
+      command: "mix format"
+    # Dart
+    - file: analysis_options.yaml
+      command: "dart format ."
+    # Scala
+    - file: .scalafmt.conf
+      command: "sbt scalafmtAll"
+    # Lua
+    - file: .stylua.toml
+      command: "stylua ."
+    # Swift
+    - file: .swiftformat
+      command: "swiftformat ."
+
+  build:
+    # JavaScript / TypeScript
+    - file: vite.config.ts
+      command: "vite build"
+    - file: vite.config.js
+      command: "vite build"
+    - file: webpack.config.js
+      command: webpack
+    - file: tsconfig.json
+      command: tsc
+    # Rust
+    - file: Cargo.toml
+      command: "cargo build"
+    # Go
+    - file: go.mod
+      command: "go build ./..."
+    # Java / Kotlin
+    - file: pom.xml
+      command: "mvn package"
+    - file: build.gradle.kts
+      command: "gradle build"
+    - file: build.gradle
+      command: "gradle build"
+    # C# / .NET
+    - file: "*.sln"
+      command: "dotnet build"
+    # Zig
+    - file: build.zig
+      command: "zig build"
+    # Swift
+    - file: Package.swift
+      command: "swift build"
+
+
+meta:
+  version_files: [VERSION, version.txt]
+  changelogs: [CHANGELOG.md, UNRELEASED.md, CHANGES.md, HISTORY.md, NEWS.md]
+  ci_patterns:
+    - path: .github/workflows
+      type: dir
+      display: ".github/workflows/"
+    - path: .gitlab-ci.yml
+      type: file
+      display: ".gitlab-ci.yml"
+    - path: .circleci
+      type: dir
+      display: ".circleci/"
+    - path: Jenkinsfile
+      type: file
+      display: Jenkinsfile
+    - path: azure-pipelines.yml
+      type: file
+      display: azure-pipelines.yml
+    - path: .travis.yml
+      type: file
+      display: ".travis.yml"
+    - path: bitbucket-pipelines.yml
+      type: file
+      display: bitbucket-pipelines.yml
+    - path: .buildkite
+      type: dir
+      display: ".buildkite/"
+    - path: .drone.yml
+      type: file
+      display: ".drone.yml"
+    - path: .woodpecker.yml
+      type: file
+      display: ".woodpecker.yml"
+    - path: .teamcity
+      type: dir
+      display: ".teamcity/"
+
+
+paths:
+  # (key, [candidate_dirs]) — first existing dir wins
+  src: [src, lib, app]
+  tests: [tests, test, __tests__, spec]
+  docs: [docs, documentation, doc]
+  scripts: [scripts, bin]
+  config: [.config, config]

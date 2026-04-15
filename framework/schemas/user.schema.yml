@@ -1,0 +1,86 @@
+# User configuration schema (~/.reporails/config.yml)
+version: "0.1.0"
+
+fields:
+  schema_version:
+    required: true
+    type: string
+    pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    default: "0.1.0"
+    description: "User config schema version (semver)"
+
+  defaults:
+    required: false
+    type: object
+    description: "Default values applied when project config is missing fields"
+    properties:
+      agent:
+        type: string
+        default: "claude"
+        description: "Default agent when project doesn't specify"
+
+  display:
+    required: false
+    type: object
+    description: "Output display preferences"
+    properties:
+      ascii:
+        type: boolean
+        default: false
+        description: "Use ASCII box drawing instead of Unicode"
+      color:
+        type: boolean
+        default: true
+        description: "Enable colored terminal output"
+      compact:
+        type: boolean
+        default: false
+        description: "Use compact output format by default"
+
+  framework_path:
+    required: false
+    type: string
+    description: "Local framework path — for framework developers only"
+
+  analytics:
+    required: false
+    type: object
+    description: "Anonymous usage analytics"
+    properties:
+      enabled:
+        type: boolean
+        default: true
+        description: "Track scan history in ~/.reporails/analytics/"
+
+defaults:
+  schema_version: "0.1.0"
+  defaults:
+    agent: "claude"
+  display:
+    ascii: false
+    color: true
+    compact: false
+  analytics:
+    enabled: true
+
+validation:
+  - rule: "schema_version must be supported (currently: 0.1.0)"
+  - rule: "Unknown fields should warn, not error"
+  - rule: "Invalid patterns should error with clear message"
+
+examples:
+  default: |
+    schema_version: "0.1.0"
+    display:
+      color: true
+
+  developer: |
+    schema_version: "0.1.0"
+    framework_path: /home/dev/reporails/framework
+
+  ci: |
+    schema_version: "0.1.0"
+    display:
+      ascii: true
+      color: false
+      compact: true

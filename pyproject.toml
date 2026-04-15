@@ -1,12 +1,12 @@
 [project]
 name = "reporails-cli"
-version = "0.4.0"
-description = "Validate and score CLAUDE.md files — MCP-first AI context governance"
+version = "0.5.0"
+description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = { text = "BUSL-1.1" }
 requires-python = ">=3.12"
 authors = [{ name = "Reporails Team" }]
-keywords = ["claude", "ai", "context", "validation", "mcp", "claude-code"]
+keywords = ["ai-instructions", "claude", "codex", "copilot", "cursor", "gemini", "diagnostics", "validation", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -24,6 +24,18 @@ dependencies = [
     "httpx>=0.27.0",
     "mcp>=1.0.0",
     "packaging>=23.0",
+    "markdown-it-py>=3.0.0",
+    # Embedding stack — ONNX Runtime + HF tokenizers on bundled MiniLM-L6-v2.
+    # No torch, no sentence-transformers. See core/_torch_blocker.py and
+    # core/mapper/onnx_embedder.py for the reason and the wiring.
+    "onnxruntime>=1.18,<2",
+    "tokenizers>=0.19,<1",
+    "numpy>=1.26,<3",
+    # spaCy drives Phase 3 imperative classification in the mapper. It's a
+    # hard requirement — the fallback verb lexicon drops charge accuracy
+    # from 96% to ~78%. With the torch blocker active, spaCy loads in ~1s.
+    "spacy>=3.8.11,<4",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 [project.optional-dependencies]
@@ -46,12 +58,22 @@ dev = [
     "ruff>=0.3.0",
     "pylint>=3.0.0",
     "poethepoet>=0.25.0",
+    # huggingface_hub: only needed by scripts/fetch_bundled_model.py on
+    # dev machines and in CI. Not a runtime dep — end users get the
+    # pre-bundled wheel with the ONNX model already inside.
+    "huggingface_hub>=0.23",
+    # Research / test extras (not on the CLI critical path)
+    "scipy>=1.17.1",
+    "networkx>=3.6.1",
+    "matplotlib>=3.10.8",
+    "sympy>=1.14.0",
+    "scikit-learn>=1.8.0",
+    "anthropic>=0.40.0",
 ]
 
 [project.scripts]
 ails = "reporails_cli.interfaces.cli.main:app"
 reporails-mcp = "reporails_cli.interfaces.mcp.server:main"
-ails-mcp = "reporails_cli.interfaces.mcp.server:main"  # deprecated, remove ~0.5.0
 
 [project.urls]
 Homepage = "https://github.com/reporails/cli"
@@ -63,10 +85,18 @@ Issues = "https://github.com/reporails/cli/issues"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+# Required because we pin en_core_web_sm via a direct URL (spaCy models
+# are distributed as GitHub release wheels, not via PyPI).
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/reporails_cli"]
-only-include = ["src/reporails_cli"]
-artifacts = ["src/reporails_cli/bundled/*.yml"]
+artifacts = [
+    "src/reporails_cli/bundled/*.yml",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
 
 [tool.poe.tasks]
 fmt = "ruff format src/ tests/"
@@ -80,6 +110,7 @@ test_smoke = "pytest tests/smoke/ -v -m e2e"
 qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit"]
 qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration", "test_smoke"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
+fetch_bundled_model = "python scripts/fetch_bundled_model.py"
 
 [tool.ruff]
 target-version = "py312"
@@ -110,6 +141,10 @@ explicit_package_bases = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "reporails_cli._archived.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
@@ -126,6 +161,7 @@ max-locals = 15
 
 [tool.pylint.format]
 max-line-length = 120
+max-module-lines = 600
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

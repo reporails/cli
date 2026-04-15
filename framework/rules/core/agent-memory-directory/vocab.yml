@@ -1,0 +1,7 @@
+agent_memory_directory:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

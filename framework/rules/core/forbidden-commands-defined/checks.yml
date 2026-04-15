@@ -1,0 +1,10 @@
+checks:
+- id: CORE.G.0004.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0004.content_check
+  type: content_query
+  query: has_constraint_atoms
+  args:
+    message: No forbidden operations defined — explicitly list commands or actions the agent must never execute
+  expect: present

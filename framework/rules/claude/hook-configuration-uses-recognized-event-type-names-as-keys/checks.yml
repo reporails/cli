@@ -1,0 +1,11 @@
+checks:
+- id: CLAUDE.S.0005.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0005.valid_event_types
+  expect: absent
+  message: Valid event types not found
+  patterns:
+  - pattern-regex: (?s)\A[\s\S]+
+  - pattern-not-regex: (?:PreToolUse|PostToolUse|PostToolUseFailure|PreCompact|SessionStart|SessionEnd|UserPromptSubmit|PermissionRequest|Notification|SubagentStart|SubagentStop|Stop|TeammateIdle|TaskCompleted)
+  type: deterministic

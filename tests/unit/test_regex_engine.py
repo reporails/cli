@@ -20,13 +20,7 @@ from reporails_cli.core.regex.compiler import (
 from reporails_cli.core.regex.runner import (
     _file_matches_path_filter,
     _match_check,
-    run_capability_detection,
     run_validation,
-)
-from reporails_cli.core.templates import (
-    _glob_to_regex,
-    has_templates,
-    resolve_templates,
 )
 
 # ---------------------------------------------------------------------------
@@ -85,13 +79,13 @@ class TestCompilerEdgeCases:
 
     def test_yaml_with_empty_rules_list(self, tmp_path: Path) -> None:
         """YAML with empty rules list should produce no checks."""
-        p = _write_rule(tmp_path, {"rules": []})
+        p = _write_rule(tmp_path, {"checks": []})
         result = compile_rules([p])
         assert result.checks == []
 
     def test_rule_with_no_operator(self, tmp_path: Path) -> None:
         """Rule with no recognized operator should be skipped."""
-        p = _write_rule(tmp_path, {"rules": [{"id": "TEST-001", "message": "bad"}]})
+        p = _write_rule(tmp_path, {"checks": [{"id": "TEST-001", "message": "bad"}]})
         result = compile_rules([p])
         assert result.checks == []
         assert "TEST-001" in result.skipped
@@ -100,7 +94,7 @@ class TestCompilerEdgeCases:
         """Rule with unsupported operator should be skipped gracefully."""
         p = _write_rule(
             tmp_path,
-            {"rules": [{"id": "TEST-002", "pattern-metavar": "$X", "message": "bad"}]},
+            {"checks": [{"id": "TEST-002", "pattern-metavar": "$X", "message": "bad"}]},
         )
         result = compile_rules([p])
         assert "TEST-002" in result.skipped
@@ -109,7 +103,7 @@ class TestCompilerEdgeCases:
         """Invalid regex should be caught and rule skipped."""
         p = _write_rule(
             tmp_path,
-            {"rules": [{"id": "BAD-REGEX", "pattern-regex": "[invalid(", "message": "bad"}]},
+            {"checks": [{"id": "BAD-REGEX", "pattern-regex": "[invalid(", "message": "bad"}]},
         )
         result = compile_rules([p])
         assert result.checks == []
@@ -120,7 +114,7 @@ class TestCompilerEdgeCases:
         p = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "BAD-EITHER",
                         "pattern-either": [{"pattern-regex": "[valid"}, {"pattern-regex": "ok"}],
@@ -149,7 +143,7 @@ class TestCompilerEdgeCases:
 
         yaml.safe_load should handle this safely.
         """
-        content = "a: &a\n  b: &b\n    c: &c\n      d: test\nrules: []\n"
+        content = "a: &a\n  b: &b\n    c: &c\n      d: test\nchecks: []\n"
         p = tmp_path / "nested.yml"
         p.write_text(content)
         result = compile_rules([p])
@@ -159,7 +153,7 @@ class TestCompilerEdgeCases:
         """pattern-either with empty list should produce None."""
         p = _write_rule(
             tmp_path,
-            {"rules": [{"id": "EMPTY-EITHER", "pattern-either": [], "message": "x"}]},
+            {"checks": [{"id": "EMPTY-EITHER", "pattern-either": [], "message": "x"}]},
         )
         result = compile_rules([p])
         assert result.checks == []
@@ -174,7 +168,7 @@ class TestCompilerEdgeCases:
         p = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "NEG-ONLY",
                         "patterns": [{"pattern-not-regex": "(?i)secret"}],
@@ -194,7 +188,7 @@ class TestCompilerEdgeCases:
         """Rule without id or message should use defaults."""
         p = _write_rule(
             tmp_path,
-            {"rules": [{"pattern-regex": "test"}]},
+            {"checks": [{"pattern-regex": "test"}]},
         )
         result = compile_rules([p])
         assert len(result.checks) == 1
@@ -207,7 +201,7 @@ class TestCompilerEdgeCases:
             {"id": f"SEV-{i}", "pattern-regex": f"test{i}", "severity": sev, "message": "x"}
             for i, sev in enumerate(["ERROR", "error", "CRITICAL", "high", "WARNING", "warning", "info", "LOW", ""])
         ]
-        p = _write_rule(tmp_path, {"rules": rules})
+        p = _write_rule(tmp_path, {"checks": rules})
         result = compile_rules([p])
         severities = {c.id: c.severity for c in result.checks}
         assert severities["SEV-0"] == "error"  # ERROR
@@ -224,12 +218,12 @@ class TestCompilerEdgeCases:
         """Multiple YAML files should merge checks."""
         p1 = _write_rule(
             tmp_path,
-            {"rules": [{"id": "R1", "pattern-regex": "a", "message": "x"}]},
+            {"checks": [{"id": "R1", "pattern-regex": "a", "message": "x"}]},
             "r1.yml",
         )
         p2 = _write_rule(
             tmp_path,
-            {"rules": [{"id": "R2", "pattern-regex": "b", "message": "y"}]},
+            {"checks": [{"id": "R2", "pattern-regex": "b", "message": "y"}]},
             "r2.yml",
         )
         result = compile_rules([p1, p2])
@@ -376,7 +370,7 @@ class TestRunValidation:
         """Verify SARIF output has all required fields."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "T-001", "pattern-regex": "hello", "message": "found hello", "severity": "WARNING"}]},
+            {"checks": [{"id": "T-001", "pattern-regex": "hello", "message": "found hello", "severity": "WARNING"}]},
         )
         _write_target(tmp_path, "# Doc\nhello world\n")
 
@@ -409,7 +403,7 @@ class TestRunValidation:
         """Match on first line should report line 1."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "L1", "pattern-regex": "^#", "message": "x"}]},
+            {"checks": [{"id": "L1", "pattern-regex": "^#", "message": "x"}]},
         )
         _write_target(tmp_path, "# Title\nBody\n")
 
@@ -420,7 +414,7 @@ class TestRunValidation:
         """Match on last line should report correct line number."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "LL", "pattern-regex": "end", "message": "x"}]},
+            {"checks": [{"id": "LL", "pattern-regex": "end", "message": "x"}]},
         )
         content = "line1\nline2\nline3\nthe end"
         _write_target(tmp_path, content)
@@ -432,7 +426,7 @@ class TestRunValidation:
         """No matches should produce SARIF with empty results."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "MISS", "pattern-regex": "nonexistent", "message": "x"}]},
+            {"checks": [{"id": "MISS", "pattern-regex": "nonexistent", "message": "x"}]},
         )
         _write_target(tmp_path, "# Nothing here\n")
 
@@ -444,7 +438,7 @@ class TestRunValidation:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {"id": "MULTI", "pattern-regex": "TODO", "message": "found TODO"},
                 ]
             },
@@ -460,7 +454,7 @@ class TestRunValidation:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {"id": "R-A", "pattern-regex": "hello", "message": "found hello"},
                     {"id": "R-B", "pattern-regex": "world", "message": "found world"},
                 ]
@@ -478,7 +472,7 @@ class TestRunValidation:
         rules_dir.mkdir(parents=True)
         rule_yml = _write_rule(
             rules_dir,
-            {"rules": [{"id": "X", "pattern-regex": "anything", "message": "x"}]},
+            {"checks": [{"id": "X", "pattern-regex": "anything", "message": "x"}]},
             "rule.yml",
         )
         target = tmp_path / "project"
@@ -491,7 +485,7 @@ class TestRunValidation:
         """Binary files should be skipped silently."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "BIN", "pattern-regex": ".", "message": "x"}]},
+            {"checks": [{"id": "BIN", "pattern-regex": ".", "message": "x"}]},
         )
         binary_file = tmp_path / "CLAUDE.md"
         binary_file.write_bytes(b"# Title\n\x00\x01binary junk\n")
@@ -503,7 +497,7 @@ class TestRunValidation:
         """File with invalid UTF-8 should be skipped."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "ENC", "pattern-regex": "test", "message": "x"}]},
+            {"checks": [{"id": "ENC", "pattern-regex": "test", "message": "x"}]},
         )
         bad_file = tmp_path / "CLAUDE.md"
         bad_file.write_bytes(b"# Title\n\xff\xfe invalid utf8\n")
@@ -515,7 +509,7 @@ class TestRunValidation:
         """Very long matches should be truncated in snippet."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "LONG", "pattern-regex": "A+", "message": "x"}]},
+            {"checks": [{"id": "LONG", "pattern-regex": "A+", "message": "x"}]},
         )
         _write_target(tmp_path, "A" * 500 + "\n")
 
@@ -562,7 +556,7 @@ class TestPathFiltering:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "PATH-FILTER",
                         "pattern-regex": "test",
@@ -596,7 +590,7 @@ class TestNegativePatterns:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "NEG-1",
                         "patterns": [
@@ -616,7 +610,7 @@ class TestNegativePatterns:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "NEG-2",
                         "patterns": [
@@ -638,7 +632,7 @@ class TestNegativePatterns:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "NEG-MULTI",
                         "patterns": [
@@ -673,7 +667,7 @@ class TestNegativePatterns:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "NEG-ONLY",
                         "patterns": [{"pattern-not-regex": "(?i)good"}],
@@ -703,7 +697,7 @@ class TestPerformance:
         """
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "REDOS", "pattern-regex": "(a+)+b", "message": "x"}]},
+            {"checks": [{"id": "REDOS", "pattern-regex": "(a+)+b", "message": "x"}]},
         )
         # Adversarial input: many 'a's followed by non-matching char
         adversarial = "a" * 25 + "!"
@@ -714,9 +708,9 @@ class TestPerformance:
         elapsed = time.monotonic() - start
 
         assert _sarif_results(sarif) == []
-        # Should complete in under 5 seconds even with backtracking
-        # (25 'a's is manageable; 30+ would hang without possessive quantifiers)
-        assert elapsed < 5.0, f"Regex took {elapsed:.1f}s — possible ReDoS"
+        # Regex engine has a 500ms per-pattern timeout; this should complete
+        # within the timeout (pattern times out, returns no match)
+        assert elapsed < 2.0, f"Regex took {elapsed:.1f}s — timeout guard may not be working"
 
     def test_greedy_dot_star_large_file(self, tmp_path: Path) -> None:
         """Greedy .* between two patterns on a large file.
@@ -725,7 +719,7 @@ class TestPerformance:
         """
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "GREEDY", "pattern-regex": "(?i)(deny|block).*(\\.env|\\.pem)", "message": "x"}]},
+            {"checks": [{"id": "GREEDY", "pattern-regex": "(?i)(deny|block).*(\\.env|\\.pem)", "message": "x"}]},
         )
         # Large file with 'deny' at start but no matching suffix
         content = "deny " + "x" * 50000 + "\n"
@@ -741,7 +735,7 @@ class TestPerformance:
         """Scanning 100 files should complete quickly."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "PERF", "pattern-regex": "## Structure", "message": "x"}]},
+            {"checks": [{"id": "PERF", "pattern-regex": "## Structure", "message": "x"}]},
         )
         for i in range(100):
             _write_target(tmp_path, f"# File {i}\n## Structure\nContent\n", f"doc_{i}.md")
@@ -755,131 +749,36 @@ class TestPerformance:
 
 
 # ===========================================================================
-# 7. TEMPLATE RESOLUTION
-# ===========================================================================
-
-
-class TestTemplateResolution:
-    """Test template {{placeholder}} resolution edge cases."""
-
-    def test_template_detected(self, tmp_path: Path) -> None:
-        p = tmp_path / "test.yml"
-        p.write_text("pattern-regex: '{{files}}'\n")
-        assert has_templates(p)
-
-    def test_no_template(self, tmp_path: Path) -> None:
-        p = tmp_path / "test.yml"
-        p.write_text("pattern-regex: 'hello'\n")
-        assert not has_templates(p)
-
-    def test_string_substitution(self, tmp_path: Path) -> None:
-        p = tmp_path / "test.yml"
-        p.write_text('  pattern-regex: "(?i){{name}}"')
-        result = resolve_templates(p, {"name": "CLAUDE"})
-        assert "CLAUDE" in result
-
-    def test_list_in_array_context(self, tmp_path: Path) -> None:
-        """List value in array context should expand to multiple items."""
-        p = tmp_path / "test.yml"
-        p.write_text('  - "{{files}}"')
-        result = resolve_templates(p, {"files": ["a.md", "b.md"]})
-        assert '"a.md"' in result
-        assert '"b.md"' in result
-
-    def test_list_in_regex_context(self, tmp_path: Path) -> None:
-        """List value in pattern-regex context should produce alternation."""
-        p = tmp_path / "test.yml"
-        p.write_text('  pattern-regex: "{{patterns}}"')
-        result = resolve_templates(p, {"patterns": ["*.md", "*.txt"]})
-        assert "(" in result
-        assert "|" in result
-
-    def test_missing_placeholder(self, tmp_path: Path) -> None:
-        """Template with placeholder not in context should remain unreplaced."""
-        p = tmp_path / "test.yml"
-        p.write_text('  pattern-regex: "{{missing}}"')
-        result = resolve_templates(p, {"other": "value"})
-        assert "{{missing}}" in result
-
-    def test_template_injection_attempt(self, tmp_path: Path) -> None:
-        """Context values with regex metacharacters should be inserted literally.
-
-        This is NOT an attack vector for the template system itself, but the
-        resulting regex could be broken. Template resolution does simple
-        string substitution — it's the compiler's re.compile that would fail.
-        """
-        p = tmp_path / "test.yml"
-        p.write_text('  pattern-regex: "{{value}}"')
-        result = resolve_templates(p, {"value": "[unclosed"})
-        assert "[unclosed" in result
-
-    def test_glob_to_regex_special_chars(self) -> None:
-        """glob_to_regex should escape regex special chars."""
-        assert _glob_to_regex("file.md") == "file\\\\.md"  # for YAML
-        assert _glob_to_regex("file.md", for_yaml=False) == "file\\.md"  # raw
-
-    def test_glob_to_regex_double_star(self) -> None:
-        """**/ prefix should be stripped, ** in middle consumes trailing /."""
-        assert _glob_to_regex("**/CLAUDE.md") == "CLAUDE\\\\.md"
-        # ** consumes the trailing /, so docs/**/file.md → docs/.*file\.md
-        # This is correct: .* already matches /, so it matches docs/sub/file.md
-        assert _glob_to_regex("docs/**/file.md", for_yaml=False) == "docs/.*file\\.md"
-
-    def test_glob_to_regex_single_star(self) -> None:
-        """Single * should not match /"""
-        result = _glob_to_regex("*.md", for_yaml=False)
-        assert result == "[^/]*\\.md"
-
-    def test_template_with_empty_list(self, tmp_path: Path) -> None:
-        """Empty list value should produce empty expansion."""
-        p = tmp_path / "test.yml"
-        p.write_text('  - "{{files}}"')
-        result = resolve_templates(p, {"files": []})
-        # Empty list → no items generated
-        lines = [line for line in result.split("\n") if line.strip()]
-        assert lines == []
-
-    def test_template_with_empty_list_regex_context(self, tmp_path: Path) -> None:
-        """Empty list in regex context should produce empty alternation."""
-        p = tmp_path / "test.yml"
-        p.write_text('  pattern-regex: "{{patterns}}"')
-        result = resolve_templates(p, {"patterns": []})
-        # Produces "()" — empty group, which is valid but matches empty string
-        assert "()" in result
-
-
-# ===========================================================================
-# 8. INTEGRATION: FULL PIPELINE EDGE CASES
+# 7. INTEGRATION: FULL PIPELINE EDGE CASES
 # ===========================================================================
 
 
 class TestIntegration:
     """Full pipeline integration tests with edge cases."""
 
-    def test_negate_interaction_with_regex(self, tmp_path: Path) -> None:
-        """Test that regex results can be consumed by negated deterministic checks.
+    def test_expect_present_interaction_with_regex(self, tmp_path: Path) -> None:
+        """Test that regex results can be consumed by expect=present deterministic checks.
 
-        In the pipeline, negate=True inverts the result. With the regex engine,
-        this means: if regex finds no match → treat as violation.
-        This tests the SARIF output shape is compatible.
+        In the pipeline, expect=present means: if regex finds no match → violation.
+        This tests the SARIF output shape is compatible with evidence-based checks.
         """
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "NEG-DET", "pattern-regex": "(?i)\\bMCP\\b", "message": "MCP not documented"}]},
+            {"checks": [{"id": "NEG-DET", "pattern-regex": "(?i)\\bMCP\\b", "message": "MCP not documented"}]},
         )
-        # File mentions MCP → match → if negate=True in pipeline, this would be NOT a violation
+        # File mentions MCP → match → expect=present means this is evidence → pass
         _write_target(tmp_path, "# MCP Config\nUse MCP servers\n")
 
         sarif = run_validation([rule_yml], tmp_path)
         results = _sarif_results(sarif)
-        # Should produce a match (pipeline negate happens downstream)
+        # Should produce a match (expect logic happens downstream in pipeline)
         assert len(results) == 1
 
     def test_exclude_dirs(self, tmp_path: Path) -> None:
         """--exclude-dir should prevent scanning those directories."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "EXCL", "pattern-regex": "secret", "message": "x"}]},
+            {"checks": [{"id": "EXCL", "pattern-regex": "secret", "message": "x"}]},
         )
         # Create files in included and excluded directories
         sub = tmp_path / "vendor"
@@ -897,7 +796,7 @@ class TestIntegration:
         """Extra targets (from symlinks) should be scanned."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "SYM", "pattern-regex": "external", "message": "x"}]},
+            {"checks": [{"id": "SYM", "pattern-regex": "external", "message": "x"}]},
         )
         project = tmp_path / "project"
         project.mkdir()
@@ -918,7 +817,7 @@ class TestIntegration:
         """When instruction_files is provided, only those files should be scanned."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "IF", "pattern-regex": "content", "message": "x"}]},
+            {"checks": [{"id": "IF", "pattern-regex": "content", "message": "x"}]},
         )
         a = _write_target(tmp_path, "content in A\n", "a.md")
         _write_target(tmp_path, "content in B\n", "b.md")
@@ -929,18 +828,11 @@ class TestIntegration:
         assert any("a.md" in u for u in uris)
         assert not any("b.md" in u for u in uris)
 
-    def test_capability_detection_runs(self, tmp_path: Path) -> None:
-        """run_capability_detection should work with bundled patterns."""
-        _write_target(tmp_path, "# Project\n\n## Structure\n\nSome content\n")
-        sarif = run_capability_detection(tmp_path)
-        # Should produce results (the bundled patterns detect features)
-        assert "runs" in sarif
-
     def test_zero_byte_file(self, tmp_path: Path) -> None:
         """Zero-byte file should not crash."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "ZERO", "pattern-regex": "anything", "message": "x"}]},
+            {"checks": [{"id": "ZERO", "pattern-regex": "anything", "message": "x"}]},
         )
         (tmp_path / "empty.md").write_text("")
 
@@ -951,7 +843,7 @@ class TestIntegration:
         """File with only newlines should not crash."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "NL", "pattern-regex": "\\S", "message": "x"}]},
+            {"checks": [{"id": "NL", "pattern-regex": "\\S", "message": "x"}]},
         )
         (tmp_path / "newlines.md").write_text("\n\n\n\n")
 
@@ -962,7 +854,7 @@ class TestIntegration:
         """File with a single very long line should not crash."""
         rule_yml = _write_rule(
             tmp_path,
-            {"rules": [{"id": "VLONG", "pattern-regex": "needle", "message": "x"}]},
+            {"checks": [{"id": "VLONG", "pattern-regex": "needle", "message": "x"}]},
         )
         # 1MB line with needle buried in the middle
         content = "x" * 500000 + "needle" + "x" * 500000
@@ -981,7 +873,7 @@ class TestIntegration:
         rule_yml = _write_rule(
             tmp_path,
             {
-                "rules": [
+                "checks": [
                     {
                         "id": "BAD-SUB",
                         "pattern-either": [

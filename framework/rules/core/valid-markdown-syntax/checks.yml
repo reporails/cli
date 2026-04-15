@@ -1,0 +1,10 @@
+checks:
+- id: CORE.S.0009.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0009.content_check
+  type: content_query
+  query: has_valid_markdown
+  args:
+    message: Invalid or empty markdown — file must contain valid markdown structure
+  expect: present

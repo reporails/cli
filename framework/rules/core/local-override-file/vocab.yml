@@ -1,0 +1,7 @@
+local_override_file:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

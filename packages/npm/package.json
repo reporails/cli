@@ -1,9 +1,10 @@
 {
   "name": "@reporails/cli",
-  "version": "0.4.0",
-  "description": "Score your CLAUDE.md files. See what's missing. Improve your AI coding setup.",
+  "version": "0.5.0",
+  "description": "AI instruction diagnostics for coding agents",
   "type": "module",
   "bin": {
+    "ails": "bin/reporails.mjs",
     "reporails": "bin/reporails.mjs"
   },
   "engines": {
@@ -14,12 +15,15 @@
     "README.md"
   ],
   "keywords": [
-    "claude",
-    "claude-code",
-    "mcp",
-    "validation",
     "ai-instructions",
-    "claude-md"
+    "claude",
+    "codex",
+    "copilot",
+    "cursor",
+    "gemini",
+    "diagnostics",
+    "validation",
+    "mcp"
   ],
   "repository": {
     "type": "git",

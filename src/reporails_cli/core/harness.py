@@ -21,7 +21,9 @@ from typing import Any
 
 import yaml
 
+from reporails_cli.core.classification import classify_files, load_file_types
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
+from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
 from reporails_cli.core.regex import run_validation as run_regex_validation
 from reporails_cli.core.utils import parse_frontmatter
 
@@ -72,49 +74,51 @@ class HarnessResult:
 def load_agent_config(
     rules_root: Path,
     agent: str,
-) -> tuple[dict[str, str | list[str]], list[str]]:
-    """Load agent config.yml and return (vars, excludes).
+) -> tuple[list[FileTypeDeclaration], list[str]]:
+    """Load agent config.yml and return (file_types, excludes).
 
     Args:
         rules_root: Rules repository root directory.
         agent: Agent name (e.g., "claude").
 
     Returns:
-        Tuple of (template_vars, exclude_patterns).
+        Tuple of (file_type declarations, exclude_patterns).
     """
-    config_path = rules_root / "agents" / agent / "config.yml"
+    config_path = rules_root / agent / "config.yml"
     if not config_path.exists():
         logger.warning("Agent config not found: %s", config_path)
-        return {}, []
+        return [], []
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     except (yaml.YAMLError, OSError) as exc:
         logger.warning("Failed to load agent config: %s", exc)
-        return {}, []
+        return [], []
 
-    raw_vars = data.get("vars", {})
-    vars_out: dict[str, str | list[str]] = {}
-    for key, value in raw_vars.items():
-        if isinstance(value, list):
-            vars_out[key] = [str(v) for v in value]
-        else:
-            vars_out[key] = str(value)
+    file_types = load_file_types(agent, [rules_root])
+    return file_types, data.get("excludes", [])
 
-    return vars_out, data.get("excludes", [])
+
+def _classify_fixture(
+    fixture_root: Path,
+    file_types: list[FileTypeDeclaration],
+) -> list[ClassifiedFile]:
+    """Classify files in a fixture directory against file type declarations."""
+    files = [f for f in fixture_root.rglob("*") if f.is_file() and f.name not in _FIXTURE_EXCLUDES]
+    return classify_files(fixture_root, files, file_types)
 
 
 def _build_prefix_to_agent_map(rules_root: Path) -> dict[str, str]:
     """Build NAMESPACE_PREFIX → agent_name map from agent configs.
 
-    Reads each agents/<name>/config.yml for the ``prefix`` field.
+    Reads each {agent}/config.yml for the ``prefix`` field.
+    Agent directories sit alongside core/ (flat layout).
     Returns mapping like ``{"CLAUDE": "claude", "CODEX": "codex"}``.
     """
-    agents_dir = rules_root / "agents"
-    if not agents_dir.is_dir():
-        return {}
     mapping: dict[str, str] = {}
-    for agent_dir in sorted(agents_dir.iterdir()):
-        if not agent_dir.is_dir():
+    if not rules_root.is_dir():
+        return mapping
+    for agent_dir in sorted(rules_root.iterdir()):
+        if not agent_dir.is_dir() or agent_dir.name == "core":
             continue
         config_path = agent_dir / "config.yml"
         if not config_path.exists():
@@ -141,11 +145,10 @@ class RuleInfo:  # pylint: disable=too-many-instance-attributes
     title: str
     category: str
     rule_type: str
-    level: str
-    targets: str
+    match: dict[str, str]
     checks: list[dict[str, Any]]
     rule_dir: Path
-    rule_yml: Path
+    checks_yml: Path
 
     @property
     def has_checks(self) -> bool:
@@ -176,23 +179,27 @@ def _rule_matches_exclude(rule_id: str, patterns: list[str]) -> bool:
 
 
 def _scan_root(root: Path, agent: str | None = None) -> list[Path]:
-    """Find rule directories under a single root (core/ + agents/*/rules/)."""
+    """Find rule directories under a single root.
+
+    Layout: core/{slug}/ for core rules, {agent}/{slug}/ for agent rules.
+    Agent directories sit alongside core/ and contain a config.yml.
+    """
     dirs: list[Path] = []
 
     core_dir = root / "core"
     if core_dir.exists():
-        for cat_dir in sorted(core_dir.iterdir()):
-            if cat_dir.is_dir():
-                dirs.extend(d for d in sorted(cat_dir.iterdir()) if d.is_dir())
+        dirs.extend(d for d in sorted(core_dir.iterdir()) if d.is_dir())
 
-    agents_dir = root / "agents"
-    if agents_dir.exists():
-        for agent_dir in sorted(agents_dir.iterdir()):
-            if agent and agent_dir.name != agent:
+    # Agent dirs are siblings of core/ that contain a config.yml
+    if root.is_dir():
+        for candidate in sorted(root.iterdir()):
+            if not candidate.is_dir() or candidate.name == "core":
                 continue
-            rules_subdir = agent_dir / "rules"
-            if rules_subdir.is_dir():
-                dirs.extend(d for d in sorted(rules_subdir.iterdir()) if d.is_dir())
+            if not (candidate / "config.yml").exists():
+                continue
+            if agent and candidate.name != agent:
+                continue
+            dirs.extend(d for d in sorted(candidate.iterdir()) if d.is_dir() and d.name != "tests")
 
     return dirs
 
@@ -226,7 +233,7 @@ def discover_rules(  # pylint: disable=too-many-locals
 
     for root, slug_dir in search_pairs:
         rule_md = slug_dir / "rule.md"
-        rule_yml = slug_dir / "rule.yml"
+        checks_yml = slug_dir / "checks.yml"
         if not rule_md.exists():
             continue
 
@@ -250,6 +257,14 @@ def discover_rules(  # pylint: disable=too-many-locals
         if _rule_matches_exclude(rule_id, excludes):
             continue
 
+        checks = meta.get("checks", [])
+        if not checks and checks_yml.exists():
+            try:
+                yml_data = yaml.safe_load(checks_yml.read_text(encoding="utf-8"))
+                checks = yml_data.get("checks", []) if isinstance(yml_data, dict) else []
+            except (OSError, yaml.YAMLError):
+                checks = []
+
         rules.append(
             RuleInfo(
                 rule_id=rule_id,
@@ -257,11 +272,10 @@ def discover_rules(  # pylint: disable=too-many-locals
                 title=meta.get("title", ""),
                 category=meta.get("category", ""),
                 rule_type=meta.get("type", ""),
-                level=meta.get("level", ""),
-                targets=meta.get("targets", ""),
-                checks=meta.get("checks", []),
+                match=meta.get("match") or {},
+                checks=checks,
                 rule_dir=slug_dir,
-                rule_yml=rule_yml,
+                checks_yml=checks_yml,
             )
         )
 
@@ -271,55 +285,10 @@ def discover_rules(  # pylint: disable=too-many-locals
 # ── Check execution ─────────────────────────────────────────────────
 
 
-def _resolve_var(template: str, agent_vars: dict[str, str | list[str]]) -> list[str]:
-    """Resolve a template variable like {{instruction_files}} to its values."""
-    if not template.startswith("{{") or not template.endswith("}}"):
-        return [template]
-    var_name = template[2:-2]
-    value = agent_vars.get(var_name, template)
-    if isinstance(value, list):
-        return value
-    return [value]
-
-
-def _resolve_vars_in_rule(rule: dict[str, Any], agent_vars: dict[str, str | list[str]]) -> dict[str, Any]:
-    """Recursively resolve {{var}} placeholders in an OpenGrep rule dict."""
-    import copy
-
-    rule = copy.deepcopy(rule)
-
-    def resolve(value: Any) -> Any:
-        if isinstance(value, str):
-            for key, val in agent_vars.items():
-                placeholder = "{{" + key + "}}"
-                if placeholder in value:
-                    if value == placeholder and isinstance(val, list):
-                        return val
-                    if isinstance(val, list):
-                        value = value.replace(placeholder, val[0] if val else "")
-                    else:
-                        value = value.replace(placeholder, str(val))
-            return value
-        if isinstance(value, list):
-            expanded: list[Any] = []
-            for item in value:
-                resolved = resolve(item)
-                if isinstance(resolved, list):
-                    expanded.extend(resolved)
-                else:
-                    expanded.append(resolved)
-            return expanded
-        if isinstance(value, dict):
-            return {k: resolve(v) for k, v in value.items()}
-        return value
-
-    return resolve(rule)  # type: ignore[no-any-return]
-
-
 def _run_mechanical_check(
     check: dict[str, Any],
     fixture_root: Path,
-    agent_vars: dict[str, str | list[str]],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Run a single mechanical check against a fixture directory."""
     check_name = check.get("check", "") or check.get("name", "")
@@ -330,36 +299,35 @@ def _run_mechanical_check(
         logger.warning("Unknown mechanical check: %s", check_name)
         return CheckResult(passed=False, message=f"Unknown mechanical check: {check_name}")
 
-    result = fn(fixture_root, args, agent_vars)
+    result = fn(fixture_root, args, classified_files)
 
-    if check.get("negate"):
+    if check.get("expect", "present") == "absent":
         result = CheckResult(passed=not result.passed, message=result.message)
 
     return result  # type: ignore[no-any-return]
 
 
 def _run_deterministic_check(  # pylint: disable=too-many-locals
-    rule_yml: Path,
+    checks_yml: Path,
     check: dict[str, Any],
     fixture_root: Path,
-    agent_vars: dict[str, str | list[str]],
 ) -> tuple[bool, int, str]:
     """Run a deterministic check via the CLI regex engine against fixtures.
 
     Returns:
         Tuple of (engine_ok, findings_count, message).
     """
-    if not rule_yml.exists():
-        return False, 0, f"rule.yml not found: {rule_yml}"
+    if not checks_yml.exists():
+        return False, 0, f"checks.yml not found: {checks_yml}"
 
     try:
-        yml_content = yaml.safe_load(rule_yml.read_text(encoding="utf-8"))
+        yml_content = yaml.safe_load(checks_yml.read_text(encoding="utf-8"))
     except (yaml.YAMLError, OSError) as exc:
-        return False, 0, f"Failed to load rule.yml: {exc}"
+        return False, 0, f"Failed to load checks.yml: {exc}"
 
-    yml_rules = yml_content.get("rules", [])
+    yml_rules = yml_content.get("checks") or []
     if not yml_rules:
-        return False, 0, "rule.yml has no patterns (rules: [])"
+        return False, 0, "checks.yml has no patterns (checks: [])"
 
     # Find the matching rule entry by check ID
     check_id = check.get("id", "")
@@ -374,17 +342,13 @@ def _run_deterministic_check(  # pylint: disable=too-many-locals
         matching_rule = yml_rules[0]
 
     if matching_rule is None:
-        return False, 0, f"No pattern for check {check_id} in rule.yml"
-
-    # Resolve template variables
-    if agent_vars:
-        matching_rule = _resolve_vars_in_rule(matching_rule, agent_vars)
+        return False, 0, f"No pattern for check {check_id} in checks.yml"
 
     # Write a temp rule file and run the CLI regex engine
     import tempfile
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as tmp:
-        yaml.dump({"rules": [matching_rule]}, tmp)
+        yaml.dump({"checks": [matching_rule]}, tmp)
         tmp_path = Path(tmp.name)
 
     try:
@@ -393,7 +357,6 @@ def _run_deterministic_check(  # pylint: disable=too-many-locals
         sarif = run_regex_validation(
             [tmp_path],
             fixture_root,
-            agent_vars,
             instruction_files=fixture_files if fixture_files else None,
         )
         findings = 0
@@ -468,21 +431,20 @@ def _apply_scaffold_action(
     action_type: str,
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> None:
     """Apply a single scaffold action to the temp directory."""
     if action_type == "file":
-        _scaffold_file(args, tmp_dir, agent_vars)
+        _scaffold_file(args, tmp_dir, file_types)
     elif action_type == "dir":
         path = str(args.get("path", ""))
-        resolved = _resolve_var_str(path, agent_vars)
-        target = tmp_dir / resolved
+        target = tmp_dir / path
         if not target.is_dir():
             target.mkdir(parents=True, exist_ok=True)
     elif action_type == "glob_count":
-        _scaffold_glob_count(args, tmp_dir, agent_vars)
+        _scaffold_glob_count(args, tmp_dir)
     elif action_type == "file_removal":
-        _scaffold_file_removal(args, tmp_dir, agent_vars)
+        _scaffold_file_removal(args, tmp_dir)
     elif action_type == "git_marker":
         marker = tmp_dir / ".git_marker"
         if not marker.exists() and not (tmp_dir / ".git").exists():
@@ -492,20 +454,18 @@ def _apply_scaffold_action(
 def _scaffold_file(
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> None:
     """Scaffold a single file for file_exists/glob_match checks."""
     path_pattern = str(args.get("path", ""))
     if path_pattern:
-        resolved = _resolve_var_str(path_pattern, agent_vars)
-        concrete = _glob_to_concrete(resolved)
+        concrete = _glob_to_concrete(path_pattern)
     else:
-        patterns = agent_vars.get("instruction_files", [])
-        if isinstance(patterns, str):
-            patterns = [patterns]
-        if not patterns:
+        # Use first file type pattern as fallback
+        if file_types:
+            concrete = _glob_to_concrete(file_types[0].patterns[0] if file_types[0].patterns else "scaffold.md")
+        else:
             return
-        concrete = _glob_to_concrete(str(patterns[0]))
     target = tmp_dir / concrete
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -515,16 +475,14 @@ def _scaffold_file(
 def _scaffold_glob_count(
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
 ) -> None:
     """Scaffold files for glob_count/file_count checks."""
     raw_pattern = str(args.get("pattern", "**/*"))
-    resolved = _resolve_var_str(raw_pattern, agent_vars)
     min_count = int(args.get("min", 1))
-    existing = list(tmp_dir.glob(resolved))
+    existing = list(tmp_dir.glob(raw_pattern))
     needed = max(0, min_count - len(existing))
     for i in range(needed):
-        concrete = _glob_to_concrete(resolved)
+        concrete = _glob_to_concrete(raw_pattern)
         base, ext = concrete.rsplit(".", 1) if "." in concrete else (concrete, "")
         name = f"{base}_{i}.{ext}" if ext else f"{base}_{i}"
         target = tmp_dir / name
@@ -535,7 +493,7 @@ def _scaffold_glob_count(
 def _scaffold_fixture(
     fixture_root: Path,
     checks: list[dict[str, Any]],
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> Path | None:
     """Create a scaffolded copy of a pass fixture with M check dependencies.
 
@@ -553,28 +511,14 @@ def _scaffold_fixture(
     shutil.copytree(fixture_root, tmp_dir, dirs_exist_ok=True)
 
     for action_type, args in actions:
-        _apply_scaffold_action(action_type, args, tmp_dir, agent_vars)
+        _apply_scaffold_action(action_type, args, tmp_dir, file_types)
 
     return tmp_dir
-
-
-def _resolve_var_str(template: str, agent_vars: dict[str, str | list[str]]) -> str:
-    """Resolve {{var}} placeholders in a string, picking first list element."""
-    result = template
-    for key, value in agent_vars.items():
-        placeholder = "{{" + key + "}}"
-        if placeholder in result:
-            if isinstance(value, list):
-                result = result.replace(placeholder, value[0] if value else "")
-            else:
-                result = result.replace(placeholder, str(value))
-    return result
 
 
 def _scaffold_file_removal(
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
 ) -> None:
     """Remove forbidden file from pass scaffold (for file_absent checks)."""
     import glob as globmod
@@ -582,14 +526,13 @@ def _scaffold_file_removal(
     pattern = str(args.get("pattern", ""))
     if not pattern:
         return
-    resolved = _resolve_var_str(pattern, agent_vars)
     # Try as plain path first
-    target = tmp_dir / resolved
+    target = tmp_dir / pattern
     if target.exists():
         target.unlink()
         return
     # Try as glob
-    for match in globmod.glob(str(tmp_dir / resolved), recursive=True):
+    for match in globmod.glob(str(tmp_dir / pattern), recursive=True):
         Path(match).unlink()
 
 
@@ -623,21 +566,35 @@ def _apply_fail_scaffold_action(
     action_type: str,
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> None:
     """Apply a single fail scaffold action to the temp directory."""
     if action_type == "filename_mismatch":
-        _scaffold_filename_mismatch(args, tmp_dir, agent_vars)
+        _scaffold_filename_mismatch(args, tmp_dir, file_types)
     elif action_type == "glob_count_deficit":
-        _scaffold_glob_count_deficit(args, tmp_dir, agent_vars)
+        _scaffold_glob_count_deficit(args, tmp_dir)
     elif action_type == "file_present":
-        _scaffold_file_present(args, tmp_dir, agent_vars)
+        _scaffold_file_present(args, tmp_dir)
+
+
+def _get_target_patterns_from_args(
+    args: dict[str, Any],
+    file_types: list[FileTypeDeclaration],
+) -> list[str]:
+    """Get file patterns from args or file_types for scaffolding."""
+    path_pattern = args.get("path", "")
+    if path_pattern:
+        return [str(path_pattern)]
+    # Fall back to first file type's patterns
+    if file_types:
+        return list(file_types[0].patterns)
+    return []
 
 
 def _scaffold_filename_mismatch(
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> None:
     """Rename existing files so they fail filename_matches_pattern.
 
@@ -646,7 +603,7 @@ def _scaffold_filename_mismatch(
     """
     import glob as globmod
 
-    for fp in _get_target_patterns_from_args(args, agent_vars):
+    for fp in _get_target_patterns_from_args(args, file_types):
         resolved = str(tmp_dir / fp)
         for match_path in globmod.glob(resolved, recursive=True):
             match = Path(match_path)
@@ -655,7 +612,7 @@ def _scaffold_filename_mismatch(
                 match.rename(dest)
                 return  # One rename is sufficient to cause failure
     # No existing files to rename — create one with a bad name
-    patterns = _get_target_patterns_from_args(args, agent_vars)
+    patterns = _get_target_patterns_from_args(args, file_types)
     concrete = _glob_to_concrete(patterns[0] if patterns else "**/*.md")
     base = Path(concrete)
     target = tmp_dir / base.parent / f"_scaffold_invalid{base.suffix or '.md'}"
@@ -666,13 +623,11 @@ def _scaffold_filename_mismatch(
 def _scaffold_glob_count_deficit(
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
 ) -> None:
     """Remove files to get count below min for glob_count/file_count checks."""
     raw_pattern = str(args.get("pattern", "**/*"))
-    resolved = _resolve_var_str(raw_pattern, agent_vars)
     min_count = int(args.get("min", 1))
-    existing = sorted(tmp_dir.glob(resolved))
+    existing = sorted(tmp_dir.glob(raw_pattern))
     existing_files = [f for f in existing if f.is_file()]
     # Remove files until count is below min
     target_count = max(0, min_count - 1)
@@ -684,38 +639,22 @@ def _scaffold_glob_count_deficit(
 def _scaffold_file_present(
     args: dict[str, Any],
     tmp_dir: Path,
-    agent_vars: dict[str, str | list[str]],
 ) -> None:
     """Create the forbidden file so file_absent fails."""
     pattern = str(args.get("pattern", ""))
     if not pattern:
         return
-    resolved = _resolve_var_str(pattern, agent_vars)
     # Create as plain path
-    target = tmp_dir / resolved
+    target = tmp_dir / pattern
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
         target.touch()
 
 
-def _get_target_patterns_from_args(
-    args: dict[str, Any],
-    agent_vars: dict[str, str | list[str]],
-) -> list[str]:
-    """Get file patterns from args or vars (harness-side mirror of checks._get_target_patterns)."""
-    path_pattern = args.get("path", "")
-    if path_pattern:
-        return [_resolve_var_str(str(path_pattern), agent_vars)]
-    patterns = agent_vars.get("instruction_files", [])
-    if isinstance(patterns, str):
-        patterns = [patterns]
-    return list(patterns)
-
-
 def _scaffold_fail_fixture(
     fixture_root: Path,
     checks: list[dict[str, Any]],
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> Path | None:
     """Create a scaffolded copy of a fail fixture with M check dependencies.
 
@@ -735,11 +674,11 @@ def _scaffold_fail_fixture(
     # First, apply pass scaffolding so structural deps exist
     pass_actions = _collect_scaffold_actions(checks)
     for action_type, args in pass_actions:
-        _apply_scaffold_action(action_type, args, tmp_dir, agent_vars)
+        _apply_scaffold_action(action_type, args, tmp_dir, file_types)
 
     # Then apply fail actions to break the targeted checks
     for action_type, args in fail_actions:
-        _apply_fail_scaffold_action(action_type, args, tmp_dir, agent_vars)
+        _apply_fail_scaffold_action(action_type, args, tmp_dir, file_types)
 
     return tmp_dir
 
@@ -749,7 +688,7 @@ def _scaffold_fail_fixture(
 
 def _prepare_scaffolds(
     rule: RuleInfo,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> tuple[Path | None, Path | None, Path, Path]:
     """Prepare scaffolded fixtures for a rule.
 
@@ -760,11 +699,11 @@ def _prepare_scaffolds(
 
     scaffolded_pass: Path | None = None
     if rule.has_pass_fixture:
-        scaffolded_pass = _scaffold_fixture(pass_dir, rule.checks, agent_vars)
+        scaffolded_pass = _scaffold_fixture(pass_dir, rule.checks, file_types)
 
     scaffolded_fail: Path | None = None
     if rule.has_fail_fixture:
-        scaffolded_fail = _scaffold_fail_fixture(fail_dir, rule.checks, agent_vars)
+        scaffolded_fail = _scaffold_fail_fixture(fail_dir, rule.checks, file_types)
 
     effective_pass = scaffolded_pass if scaffolded_pass else pass_dir
     effective_fail = scaffolded_fail if scaffolded_fail else fail_dir
@@ -773,7 +712,7 @@ def _prepare_scaffolds(
 
 def run_rule(
     rule: RuleInfo,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> HarnessResult:
     """Run all checks for a rule against its fixtures.
 
@@ -800,18 +739,18 @@ def run_rule(
         return result
 
     fail_violation_found = False
-    scaffolded_pass, scaffolded_fail, effective_pass_dir, effective_fail_dir = _prepare_scaffolds(rule, agent_vars)
+    scaffolded_pass, scaffolded_fail, effective_pass_dir, effective_fail_dir = _prepare_scaffolds(rule, file_types)
 
     try:
         for check in rule.checks:
             check_id = check.get("id", "unknown")
             check_type = check.get("type", "unknown")
-            negate = check.get("negate", False)
+            expect = check.get("expect", "present")
 
             # === Pass fixture: ALL checks must pass ===
             if rule.has_pass_fixture:
                 passed, run = _check_fixture(
-                    check, check_id, check_type, negate, effective_pass_dir, rule, agent_vars, "pass"
+                    check, check_id, check_type, expect, effective_pass_dir, rule, file_types, "pass"
                 )
                 result.check_runs.append(run)
                 if not passed:
@@ -820,7 +759,7 @@ def run_rule(
             # === Fail fixture: at least ONE check must detect a violation ===
             if rule.has_fail_fixture:
                 violation, run = _check_fixture_for_violation(
-                    check, check_id, check_type, negate, effective_fail_dir, rule, agent_vars
+                    check, check_id, check_type, expect, effective_fail_dir, rule, file_types
                 )
                 result.check_runs.append(run)
                 if violation:
@@ -842,24 +781,25 @@ def _check_fixture(
     check: dict[str, Any],
     check_id: str,
     check_type: str,
-    negate: bool,
+    expect: str,
     fixture_root: Path,
     rule: RuleInfo,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
     fixture_name: str,
 ) -> tuple[bool, CheckRun]:
     """Run a check against a pass fixture. Returns (passed, CheckRun)."""
     if check_type == "mechanical":
-        cr = _run_mechanical_check(check, fixture_root, agent_vars)
+        classified = _classify_fixture(fixture_root, file_types)
+        cr = _run_mechanical_check(check, fixture_root, classified)
         return cr.passed, CheckRun(check_id, check_type, fixture_name, cr.passed, cr.message)
 
     if check_type == "deterministic":
-        ok, count, msg = _run_deterministic_check(rule.rule_yml, check, fixture_root, agent_vars)
-        passed = (ok and count > 0) if negate else (ok and count == 0)
+        ok, count, msg = _run_deterministic_check(rule.checks_yml, check, fixture_root)
+        passed = (ok and count > 0) if expect == "present" else (ok and count == 0)
         return passed, CheckRun(check_id, check_type, fixture_name, passed, msg)
 
-    if check_type == "semantic":
-        return True, CheckRun(check_id, check_type, fixture_name, True, "semantic — skipped (no LLM)")
+    if check_type == "content_query":
+        return True, CheckRun(check_id, check_type, fixture_name, True, "content_query — skipped (requires mapper)")
 
     return False, CheckRun(check_id, check_type, fixture_name, False, f"unknown check type: {check_type}")
 
@@ -868,24 +808,25 @@ def _check_fixture_for_violation(
     check: dict[str, Any],
     check_id: str,
     check_type: str,
-    negate: bool,
+    expect: str,
     fixture_root: Path,
     rule: RuleInfo,
-    agent_vars: dict[str, str | list[str]],
+    file_types: list[FileTypeDeclaration],
 ) -> tuple[bool, CheckRun]:
     """Run a check against a fail fixture. Returns (violation_found, CheckRun)."""
     if check_type == "mechanical":
-        cr = _run_mechanical_check(check, fixture_root, agent_vars)
+        classified = _classify_fixture(fixture_root, file_types)
+        cr = _run_mechanical_check(check, fixture_root, classified)
         violation = not cr.passed
         return violation, CheckRun(check_id, check_type, "fail", True, cr.message)
 
     if check_type == "deterministic":
-        ok, count, msg = _run_deterministic_check(rule.rule_yml, check, fixture_root, agent_vars)
-        violation = (ok and count == 0) if negate else (ok and count > 0)
+        ok, count, msg = _run_deterministic_check(rule.checks_yml, check, fixture_root)
+        violation = (ok and count == 0) if expect == "present" else (ok and count > 0)
         return violation, CheckRun(check_id, check_type, "fail", True, msg)
 
-    if check_type == "semantic":
-        return False, CheckRun(check_id, check_type, "fail", True, "semantic — skipped (no LLM)")
+    if check_type == "content_query":
+        return False, CheckRun(check_id, check_type, "fail", True, "content_query — skipped (requires mapper)")
 
     return False, CheckRun(check_id, check_type, "fail", False, f"unknown check type: {check_type}")
 
@@ -897,9 +838,9 @@ def _build_agent_cache(
     rules_root: Path,
     default_agent: str,
     prefix_map: dict[str, str],
-) -> dict[str, tuple[dict[str, str | list[str]], list[str]]]:
+) -> dict[str, tuple[list[FileTypeDeclaration], list[str]]]:
     """Load configs for all agents into a cache keyed by agent name."""
-    cache: dict[str, tuple[dict[str, str | list[str]], list[str]]] = {}
+    cache: dict[str, tuple[list[FileTypeDeclaration], list[str]]] = {}
     for agent_name in {default_agent} | set(prefix_map.values()):
         cache[agent_name] = load_agent_config(rules_root, agent_name)
     return cache
@@ -927,8 +868,8 @@ def run_harness(
     """Discover and run all rules, returning per-rule results.
 
     Discovers rules across all agents and dispatches each rule to the
-    correct agent's vars based on its rule_id prefix. CORE/RRAILS rules
-    use the default agent's vars.
+    correct agent's file_types based on its rule_id prefix. CORE/RRAILS rules
+    use the default agent's file_types.
 
     Args:
         rules_root: Primary rules repository root.
@@ -940,7 +881,7 @@ def run_harness(
     # Build prefix→agent mapping and per-agent config cache
     prefix_map = _build_prefix_to_agent_map(rules_root)
     agent_cache = _build_agent_cache(rules_root, agent, prefix_map)
-    default_vars, default_excludes = agent_cache[agent]
+    default_file_types, default_excludes = agent_cache[agent]
 
     # Discover rules across ALL agents (agent=None)
     rules = discover_rules(
@@ -956,14 +897,14 @@ def run_harness(
     for rule in rules:
         rule_agent = _get_rule_agent(rule.rule_id, prefix_map)
         if rule_agent and rule_agent in agent_cache:
-            rule_vars, rule_excludes = agent_cache[rule_agent]
+            rule_file_types, rule_excludes = agent_cache[rule_agent]
             # Skip rules excluded by their own agent config
             if _rule_matches_exclude(rule.rule_id, rule_excludes):
                 continue
         else:
-            # CORE/RRAILS rules use default agent vars
-            rule_vars = default_vars
-        results.append(run_rule(rule, rule_vars))
+            # CORE/RRAILS rules use default agent file_types
+            rule_file_types = default_file_types
+        results.append(run_rule(rule, rule_file_types))
 
     return results
 
@@ -983,22 +924,15 @@ class ScoreDelta:
 
 
 def score_fixture(
-    fixture_dir: Path,
-    rules_paths: list[Path],
+    fixture_dir: Path,  # noqa: ARG001
+    rules_paths: list[Path],  # noqa: ARG001
 ) -> float:
     """Run full validation scoring on a fixture directory.
 
-    Returns the score (0-10) from the validation engine.
+    Returns 0.0 — scoring pending pipeline rewrite (0.5.0).
     """
-    from reporails_cli.core.engine import run_validation_sync
-
-    result = run_validation_sync(
-        fixture_dir,
-        rules_paths=rules_paths,
-        use_cache=False,
-        record_analytics=False,
-    )
-    return result.score
+    logger.warning("score_fixture: scoring disabled pending 0.5.0 pipeline rewrite")
+    return 0.0
 
 
 def score_rules(
@@ -1054,6 +988,129 @@ def score_rules(
         )
 
     return deltas
+
+
+# ── Rule lint ───────────────────────────────────────────────────────
+
+
+@dataclass
+class LintError:
+    """A structural integrity error found in a rule."""
+
+    rule_id: str
+    check_name: str
+    message: str
+
+
+def _lint_single_rule(
+    rule: RuleInfo,
+    seen_ids: dict[str, Path],
+    category_codes: dict[str, Any],
+) -> list[LintError]:
+    """Run lint checks on a single rule. Mutates seen_ids for duplicate tracking."""
+    errors: list[LintError] = []
+
+    # 1. ID-category match
+    parts = rule.rule_id.split(":")
+    if len(parts) >= 3:
+        cat_code = parts[1]
+        expected_cat = category_codes.get(cat_code)
+        if expected_cat is None:
+            errors.append(
+                LintError(
+                    rule_id=rule.rule_id,
+                    check_name="id_category_match",
+                    message=f"Unknown category code '{cat_code}' in rule ID",
+                )
+            )
+        elif expected_cat.value != rule.category:
+            errors.append(
+                LintError(
+                    rule_id=rule.rule_id,
+                    check_name="id_category_match",
+                    message=(
+                        f"ID has category code '{cat_code}' ({expected_cat.value}) "
+                        f"but category field is '{rule.category}'"
+                    ),
+                )
+            )
+
+    # 2. Check ID prefix
+    expected_prefix = rule.rule_id.replace(":", ".")
+    for check in rule.checks:
+        check_id = check.get("id", "")
+        if check_id and not check_id.startswith(expected_prefix + "."):
+            errors.append(
+                LintError(
+                    rule_id=rule.rule_id,
+                    check_name="check_id_prefix",
+                    message=f"Check '{check_id}' does not start with '{expected_prefix}.'",
+                )
+            )
+
+    # 3. No duplicate rule IDs
+    if rule.rule_id in seen_ids:
+        errors.append(
+            LintError(
+                rule_id=rule.rule_id,
+                check_name="duplicate_rule_id",
+                message=f"Duplicate rule ID (also at {seen_ids[rule.rule_id]})",
+            )
+        )
+    else:
+        seen_ids[rule.rule_id] = rule.rule_dir
+
+    # 4. Required frontmatter
+    for field_name, value in [
+        ("id", rule.rule_id),
+        ("slug", rule.slug),
+        ("title", rule.title),
+        ("category", rule.category),
+        ("type", rule.rule_type),
+    ]:
+        if not value:
+            errors.append(
+                LintError(
+                    rule_id=rule.rule_id or "(unknown)",
+                    check_name="required_frontmatter",
+                    message=f"Missing required field: {field_name}",
+                )
+            )
+
+    # Severity requires re-reading frontmatter (not stored in RuleInfo)
+    rule_md = rule.rule_dir / "rule.md"
+    if rule_md.exists():
+        meta = parse_frontmatter(rule_md.read_text(encoding="utf-8"))
+        if meta and not meta.get("severity"):
+            errors.append(
+                LintError(
+                    rule_id=rule.rule_id or "(unknown)",
+                    check_name="required_frontmatter",
+                    message="Missing required field: severity",
+                )
+            )
+
+    return errors
+
+
+def lint_rules(rules: list[RuleInfo]) -> list[LintError]:
+    """Run structural integrity checks on all discovered rules.
+
+    Checks:
+    1. ID-category match — category code in rule ID matches category field
+    2. Check ID prefix — all check IDs start with the dotted rule ID prefix
+    3. No duplicate rule IDs — across all namespaces
+    4. Required frontmatter — id, slug, title, category, type, severity present
+    """
+    from reporails_cli.core.models import CATEGORY_CODES
+
+    errors: list[LintError] = []
+    seen_ids: dict[str, Path] = {}
+
+    for rule in rules:
+        errors.extend(_lint_single_rule(rule, seen_ids, CATEGORY_CODES))
+
+    return errors
 
 
 # ── Coverage baseline ──────────────────────────────────────────────

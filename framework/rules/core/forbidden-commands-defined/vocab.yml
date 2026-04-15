@@ -1,0 +1,7 @@
+forbidden_commands_defined:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

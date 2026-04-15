@@ -1,0 +1,6 @@
+root_instruction_file_exists:
+  - file reference
+  - import path
+  - include directive
+  - frontmatter
+  - description field

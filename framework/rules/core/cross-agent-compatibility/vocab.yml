@@ -1,0 +1,8 @@
+cross_agent_compatibility:
+  - agent
+  - claude
+  - copilot
+  - cursor
+  - windsurf
+  - cline
+  - agent-specific syntax

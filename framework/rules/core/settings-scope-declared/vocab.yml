@@ -1,0 +1,7 @@
+settings_scope_declared:
+  - scope
+  - path
+  - local
+  - global
+  - boundary
+  - scope declaration

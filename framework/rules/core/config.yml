@@ -1,0 +1,29 @@
+# Generic Agent Configuration (agents.md convention)
+# Schema: schemas/agent.schema.yml v0.5.0
+#
+# Default agent when no --agent flag is specified.
+# Targets AGENTS.md — the cross-agent instruction standard.
+# See: https://agents.md
+
+agent: generic
+version: "0.5.0"
+name: Generic AI Instructions
+core: true
+
+file_types:
+  main:
+    required: true
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+# No excludes — generic supports all core rules including cross-agent compatibility
+# No severity overrides

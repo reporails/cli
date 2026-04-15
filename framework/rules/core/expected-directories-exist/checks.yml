@@ -1,0 +1,5 @@
+checks:
+- id: CORE.S.0008.check
+  type: mechanical
+  check: file_exists
+  # hint: directory_exists at expected paths

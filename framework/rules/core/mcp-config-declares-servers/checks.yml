@@ -1,0 +1,14 @@
+checks:
+- id: CORE.G.0008.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0008.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - MCP
+    - mcpServers
+    message: Missing MCP server declarations — config must declare servers with scope
+      constraints
+  expect: present

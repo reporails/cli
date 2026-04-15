@@ -1,0 +1,6 @@
+valid_markdown_syntax:
+  - file reference
+  - import path
+  - include directive
+  - frontmatter
+  - description field

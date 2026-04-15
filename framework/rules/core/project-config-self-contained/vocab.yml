@@ -1,0 +1,7 @@
+project_config_self_contained:
+  - hook
+  - MCP
+  - permission
+  - config
+  - settings
+  - configuration entry

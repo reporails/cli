@@ -1,242 +1,217 @@
-"""Unit tests for capability-based level detection.
+"""Unit tests for project level determination and target existence gating.
 
-Tests the capability detection, level determination, and orphan feature
-logic in reporails_cli.core.levels.
+Tests determine_project_level() — computes project level from file type
+property divergence, and returns the set of present file types.
 """
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.levels import (
-    _detect_capability,
-    _level_has_capability,
-    detect_orphan_features,
-    determine_level_from_gates,
-)
-from reporails_cli.core.models import DetectedFeatures, Level
-
-# Test data matching framework registry/levels.yml
-_TEST_LEVEL_CAPS: dict[str, list[str]] = {
-    "L0": [],
-    "L1": ["instruction_file"],
-    "L2": ["project_constraints", "size_controlled"],
-    "L3": ["external_references", "multiple_files"],
-    "L4": ["path_scoping"],
-    "L5": ["structural_integrity", "org_policy", "navigation"],
-    "L6": ["dynamic_context", "extensibility", "state_persistence"],
-}
+from reporails_cli.core.levels import _property_depth, _type_exists, determine_project_level
+from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration, Level
 
 
-@pytest.fixture(autouse=True)
-def _mock_level_caps() -> None:  # type: ignore[misc]
-    """Ensure tests use known capability mapping regardless of framework state."""
-    with patch(
-        "reporails_cli.core.levels._load_level_capabilities",
-        return_value=_TEST_LEVEL_CAPS,
-    ):
-        yield
+def _ft(
+    name: str,
+    patterns: tuple[str, ...] = ("**/CLAUDE.md",),
+    **properties: str,
+) -> FileTypeDeclaration:
+    """Create a FileTypeDeclaration for testing."""
+    return FileTypeDeclaration(name=name, patterns=patterns, properties=properties)
 
 
-class TestDetectCapability:
-    """Test _detect_capability for individual capabilities."""
+def _cf(
+    name: str,
+    path: str = "CLAUDE.md",
+    **properties: str,
+) -> ClassifiedFile:
+    """Create a ClassifiedFile for testing."""
+    return ClassifiedFile(path=Path(path), file_type=name, properties=properties)
+
+
+# Baseline: format=freeform, cardinality=singleton, precedence=project,
+#           loading=session_start, scope=global
+
+
+class TestPropertyDepth:
+    """Test _property_depth — count divergences from baseline."""
+
+    def test_all_baseline_returns_zero(self) -> None:
+        props = {
+            "format": "freeform",
+            "cardinality": "singleton",
+            "precedence": "project",
+            "loading": "session_start",
+            "scope": "global",
+        }
+        assert _property_depth(props) == 0
+
+    def test_empty_properties_returns_zero(self) -> None:
+        assert _property_depth({}) == 0
+
+    def test_one_divergence(self) -> None:
+        assert _property_depth({"format": "frontmatter"}) == 1
+
+    def test_two_divergences(self) -> None:
+        props = {"format": "frontmatter", "scope": "path_scoped"}
+        assert _property_depth(props) == 2
+
+    def test_all_divergent(self) -> None:
+        props = {
+            "format": "frontmatter",
+            "cardinality": "collection",
+            "precedence": "managed",
+            "loading": "on_demand",
+            "scope": "path_scoped",
+        }
+        assert _property_depth(props) == 5
+
+    def test_extra_properties_ignored(self) -> None:
+        """Properties not in baseline don't count."""
+        props = {"custom_axis": "whatever", "unknown": "value"}
+        assert _property_depth(props) == 0
+
+
+class TestTypeExists:
+    """Test _type_exists — filesystem pattern matching."""
+
+    def test_exact_file_exists(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Test\n")
+        assert _type_exists(tmp_path, ("CLAUDE.md",)) is True
+
+    def test_exact_file_missing(self, tmp_path: Path) -> None:
+        assert _type_exists(tmp_path, ("CLAUDE.md",)) is False
+
+    def test_glob_pattern_matches(self, tmp_path: Path) -> None:
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "style.md").write_text("# Style\n")
+        assert _type_exists(tmp_path, (".claude/rules/**/*.md",)) is True
+
+    def test_glob_pattern_no_match(self, tmp_path: Path) -> None:
+        (tmp_path / ".claude").mkdir()
+        assert _type_exists(tmp_path, (".claude/rules/**/*.md",)) is False
+
+    def test_strips_dotslash_prefix(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Test\n")
+        assert _type_exists(tmp_path, ("./CLAUDE.md",)) is True
+
+    def test_multiple_patterns_any_match(self, tmp_path: Path) -> None:
+        (tmp_path / "AGENTS.md").write_text("# Agents\n")
+        assert _type_exists(tmp_path, ("CLAUDE.md", "AGENTS.md")) is True
+
+
+class TestDetermineProjectLevel:
+    """Test determine_project_level — level from property divergence."""
+
+    def test_no_files_returns_l0(self, tmp_path: Path) -> None:
+        level, present = determine_project_level(tmp_path, [], [])
+        assert level == Level.L0
+        assert present == set()
+
+    def test_main_only_returns_l1(self, tmp_path: Path) -> None:
+        """Main file with all-baseline properties → depth 0 → L1."""
+        classified = [
+            _cf(
+                "main",
+                format="freeform",
+                cardinality="singleton",
+                precedence="project",
+                loading="session_start",
+                scope="global",
+            )
+        ]
+        level, present = determine_project_level(tmp_path, [], classified)
+        assert level == Level.L1
+        assert present == {"main"}
+
+    def test_one_divergence_returns_l2(self, tmp_path: Path) -> None:
+        """One property diverges → depth 1 → L2."""
+        classified = [_cf("scoped_rule", format="frontmatter")]
+        level, present = determine_project_level(tmp_path, [], classified)
+        assert level == Level.L2
+        assert present == {"scoped_rule"}
+
+    def test_max_depth_across_types(self, tmp_path: Path) -> None:
+        """Level is max depth across all present types + 1."""
+        classified = [
+            _cf("main"),  # depth 0
+            _cf("scoped_rule", format="frontmatter", scope="path_scoped", loading="on_demand"),  # depth 3
+        ]
+        level, _ = determine_project_level(tmp_path, [], classified)
+        assert level == Level.L4  # max(0, 3) + 1 = 4
+
+    def test_capped_at_l6(self, tmp_path: Path) -> None:
+        """Level caps at L6 even with 5+ divergences."""
+        classified = [
+            _cf(
+                "extreme",
+                format="schema_validated",
+                cardinality="collection",
+                precedence="managed",
+                loading="on_demand",
+                scope="path_scoped",
+            )
+        ]
+        level, _ = determine_project_level(tmp_path, [], classified)
+        assert level == Level.L6  # min(5+1, 6) = 6
+
+    def test_filesystem_fallback(self, tmp_path: Path) -> None:
+        """Types not in classified_files but present on disk are included."""
+        (tmp_path / "CLAUDE.md").write_text("# Test\n")
+        file_types = [
+            _ft(
+                "main",
+                patterns=("CLAUDE.md",),
+                format="freeform",
+                cardinality="singleton",
+                precedence="project",
+                loading="session_start",
+                scope="global",
+            )
+        ]
+        level, present = determine_project_level(tmp_path, file_types, [])
+        assert level == Level.L1
+        assert "main" in present
+
+    def test_filesystem_not_double_counted(self, tmp_path: Path) -> None:
+        """A type already in classified_files is not re-checked on disk."""
+        (tmp_path / "CLAUDE.md").write_text("# Test\n")
+        classified = [_cf("main")]
+        file_types = [_ft("main", patterns=("CLAUDE.md",), format="frontmatter")]
+        # classified has depth=0 for "main"; file_types would give depth=1 but
+        # should be skipped since "main" is already present
+        level, _ = determine_project_level(tmp_path, file_types, classified)
+        assert level == Level.L1  # depth 0 from classified, not 1 from file_types
 
     @pytest.mark.parametrize(
-        "feature_kwargs, capability, expected",
+        "depth, expected_level",
         [
-            ({"has_instruction_file": True}, "instruction_file", True),
-            ({}, "instruction_file", False),
-            ({"has_explicit_constraints": True}, "project_constraints", True),
-            ({"is_size_controlled": True}, "size_controlled", True),
-            ({"has_imports": True}, "external_references", True),
-            ({"has_multiple_instruction_files": True}, "multiple_files", True),
-            ({"is_abstracted": True}, "path_scoping", True),
-            ({"has_path_scoped_rules": True}, "path_scoping", True),
-            ({"has_backbone": True}, "navigation", True),
-            ({"component_count": 3}, "navigation", True),
-            ({"has_shared_files": True}, "org_policy", True),
-            ({"has_skills_dir": True}, "dynamic_context", True),
-            ({"has_mcp_config": True}, "extensibility", True),
+            (0, Level.L1),
+            (1, Level.L2),
+            (2, Level.L3),
+            (3, Level.L4),
+            (4, Level.L5),
+            (5, Level.L6),
         ],
-        ids=lambda x: str(x) if not isinstance(x, dict) else next(iter(x.keys()), "empty"),
     )
-    def test_capability_detected(self, feature_kwargs: dict, capability: str, expected: bool) -> None:
-        features = DetectedFeatures(**feature_kwargs)
-        assert _detect_capability(features, capability) is expected
-
-    def test_navigation_below_threshold(self) -> None:
-        features = DetectedFeatures(component_count=2)
-        assert _detect_capability(features, "navigation") is False
-
-    def test_structural_integrity_not_detectable(self) -> None:
-        """structural_integrity is not filesystem-detectable — always False."""
-        features = DetectedFeatures()
-        assert _detect_capability(features, "structural_integrity") is False
-
-    def test_unknown_capability_returns_false(self) -> None:
-        features = DetectedFeatures()
-        assert _detect_capability(features, "nonexistent") is False
-
-    def test_skip_content_treats_content_capability_as_detected(self) -> None:
-        features = DetectedFeatures()  # project_constraints not set
-        assert _detect_capability(features, "project_constraints", skip_content=True) is True
-
-    def test_skip_content_does_not_affect_non_content_capability(self) -> None:
-        features = DetectedFeatures()
-        assert _detect_capability(features, "instruction_file", skip_content=True) is False
-
-
-class TestLevelHasCapability:
-    """Test _level_has_capability — OR within level."""
-
-    @pytest.mark.parametrize(
-        "feature_kwargs, level, expected",
-        [
-            ({"has_instruction_file": True}, "L1", True),
-            ({"is_size_controlled": True}, "L2", True),  # OR: just one of two
-            ({"has_explicit_constraints": True}, "L2", True),  # OR: the other one
-            ({}, "L2", False),  # neither L2 capability
-            ({"has_backbone": True}, "L5", True),  # 1 of 3 suffices
-            ({}, "L6", False),  # no L6 capabilities
-            ({}, "L0", True),  # empty level always passes
-        ],
-        ids=["L1-pass", "L2-size", "L2-constraints", "L2-neither", "L5-backbone", "L6-none", "L0-empty"],
-    )
-    def test_level_capability_check(self, feature_kwargs: dict, level: str, expected: bool) -> None:
-        features = DetectedFeatures(**feature_kwargs)
-        assert _level_has_capability(features, level, _TEST_LEVEL_CAPS) is expected
-
-
-class TestDetermineLevelFromGates:
-    """Test determine_level_from_gates — full cumulative walk."""
-
-    @pytest.mark.parametrize(
-        "feature_kwargs, expected_level",
-        [
-            ({}, Level.L0),
-            ({"has_instruction_file": True}, Level.L1),
-            ({"has_instruction_file": True, "has_explicit_constraints": True}, Level.L2),
-            ({"has_instruction_file": True, "is_size_controlled": True}, Level.L2),  # OR path
-            ({"has_instruction_file": True, "is_size_controlled": True, "has_imports": True}, Level.L3),
-            (
-                {
-                    "has_instruction_file": True,
-                    "has_explicit_constraints": True,
-                    "has_multiple_instruction_files": True,
-                },
-                Level.L3,
-            ),  # L3 via multiple_files
-            (
-                {"has_instruction_file": True, "is_size_controlled": True, "has_imports": True, "is_abstracted": True},
-                Level.L4,
-            ),
-            (
-                {
-                    "has_instruction_file": True,
-                    "has_explicit_constraints": True,
-                    "has_imports": True,
-                    "is_abstracted": True,
-                    "has_backbone": True,
-                    "has_skills_dir": True,
-                },
-                Level.L6,
-            ),
-        ],
-        ids=["L0", "L1", "L2-constraints", "L2-size", "L3-imports", "L3-multi", "L4", "L6-full"],
-    )
-    def test_cumulative_walk(self, feature_kwargs: dict, expected_level: Level) -> None:
-        features = DetectedFeatures(**feature_kwargs)
-        assert determine_level_from_gates(features) == expected_level
-
-    def test_gap_caps_at_lower_level(self) -> None:
-        """Has L4 + L6 features but missing L5 → caps at L4."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            is_size_controlled=True,
-            has_imports=True,
-            is_abstracted=True,
-            # L5: no shared_files, no backbone, no structural_integrity
-            has_skills_dir=True,  # L6 feature
-        )
-        assert determine_level_from_gates(features) == Level.L4
-
-    def test_skip_content_optimistic(self) -> None:
-        """With skip_content, content capabilities treated as detected."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            # no explicit_constraints, no size_controlled
-            # but skip_content → project_constraints treated as True → L2 passes
-            has_imports=True,
-            is_abstracted=True,
-            # skip_content → path_scoping treated as True → L4 passes
-        )
-        assert determine_level_from_gates(features, skip_content=True) == Level.L4
-
-
-class TestDetectOrphanFeatures:
-    """Test detect_orphan_features — capabilities above base level."""
-
-    def test_l2_with_backbone_is_orphan(self) -> None:
-        """Backbone = navigation (L5) → orphan above L2."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_backbone=True,
-        )
-        assert detect_orphan_features(features, Level.L2) is True
-
-    def test_l1_with_abstracted_is_orphan(self) -> None:
-        """Abstracted → path_scoping (L4) → orphan above L1."""
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            is_abstracted=True,
-        )
-        assert detect_orphan_features(features, Level.L1) is True
-
-    def test_l6_project_no_orphan(self) -> None:
-        features = DetectedFeatures(
-            has_instruction_file=True,
-            has_explicit_constraints=True,
-            has_imports=True,
-            is_abstracted=True,
-            has_backbone=True,
-            has_skills_dir=True,
-        )
-        assert detect_orphan_features(features, Level.L6) is False
-
-    def test_l1_no_higher_features_no_orphan(self) -> None:
-        features = DetectedFeatures(has_instruction_file=True)
-        assert detect_orphan_features(features, Level.L1) is False
-
-
-class TestCapabilityInteraction:
-    """Test cross-level capability interactions and edge cases."""
-
-    def test_l5_requires_l4_features(self) -> None:
-        """L5 features without L4 path_scoping should cap at L3 or lower.
-
-        Has L1-L3 + L5 (backbone) but missing L4 (no path_scoped_rules,
-        no is_abstracted) → cumulative gate blocks at L4 gap → caps at L3.
-        """
-        features = DetectedFeatures(
-            has_instruction_file=True,  # L1
-            has_explicit_constraints=True,  # L2
-            has_imports=True,  # L3
-            # L4: is_abstracted=False, has_path_scoped_rules=False → gap
-            is_abstracted=False,
-            has_path_scoped_rules=False,
-            has_backbone=True,  # L5: navigation
-        )
-        level = determine_level_from_gates(features)
-        assert level.value <= Level.L3.value, f"Missing L4 path_scoping should cap level at L3 or below, got {level}"
-
-    def test_state_persistence_detection(self) -> None:
-        """state_persistence is L6 — verify it returns False for default features."""
-        features = DetectedFeatures()
-        assert _detect_capability(features, "state_persistence") is False
-
-        # With has_memory_dir set, it should be detected
-        features_with_memory = DetectedFeatures(has_memory_dir=True)
-        assert _detect_capability(features_with_memory, "state_persistence") is True
+    def test_depth_to_level_mapping(self, tmp_path: Path, depth: int, expected_level: Level) -> None:
+        """depth N → Level L(N+1), capped at L6."""
+        # Build properties with exactly `depth` divergences
+        divergent_props: dict[str, str] = {}
+        prop_overrides = [
+            ("format", "frontmatter"),
+            ("cardinality", "collection"),
+            ("precedence", "managed"),
+            ("loading", "on_demand"),
+            ("scope", "path_scoped"),
+        ]
+        for i in range(depth):
+            k, v = prop_overrides[i]
+            divergent_props[k] = v
+        classified = [_cf("test_type", **divergent_props)]
+        level, _ = determine_project_level(tmp_path, [], classified)
+        assert level == expected_level

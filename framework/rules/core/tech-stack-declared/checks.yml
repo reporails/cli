@@ -1,0 +1,16 @@
+checks:
+- id: CORE.C.0034.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0034.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Stack
+    - Tech
+    - Language
+    - Runtime
+    - Framework
+    message: Missing tech stack declaration — list languages, frameworks, and runtimes
+  expect: present

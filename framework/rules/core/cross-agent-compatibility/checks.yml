@@ -1,0 +1,9 @@
+checks:
+- id: CORE.C.0026.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0026.content_check
+  type: deterministic
+  pattern-regex: '(?i)\b(CLAUDE\.md|\.cursorrules|\.clinerules|copilot-instructions\.md)\b'
+  expect: absent
+  message: "Agent-specific filename referenced in shared instruction file — use agent-neutral language"

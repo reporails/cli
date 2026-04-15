@@ -1,0 +1,9 @@
+checks:
+- id: CORE.C.0029.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0029.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)\b(TODO\s*:|FIXME\s*:|HACK\s*:|TEMP\s*:|WIP\s*:|PLACEHOLDER\s*:)'
+  expect: absent
+  message: "Ephemeral content found — remove TODO/FIXME/WIP markers from instruction files"

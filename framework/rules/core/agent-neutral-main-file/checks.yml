@@ -1,0 +1,9 @@
+checks:
+- id: CORE.C.0032.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0032.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)\b(claude\s+code|copilot|cursor|windsurf|cline)\b[^\n]*\b(specific|only|require)'
+  expect: absent
+  message: "Agent-specific directive found — main instruction file must be agent-neutral"

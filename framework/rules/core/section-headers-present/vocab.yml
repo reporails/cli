@@ -1,0 +1,6 @@
+section_headers_present:
+  - file reference
+  - import path
+  - include directive
+  - frontmatter
+  - description field

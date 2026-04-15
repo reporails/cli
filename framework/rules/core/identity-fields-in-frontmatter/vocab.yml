@@ -1,0 +1,6 @@
+identity_fields_in_frontmatter:
+  - heading style
+  - code block
+  - camelCase identifier
+  - kebab-case name
+  - filename convention

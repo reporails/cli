@@ -4,12 +4,42 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
+
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _ft(
+    name: str = "main",
+    patterns: tuple[str, ...] = ("**/*.md",),
+    required: bool = False,
+    properties: dict | None = None,
+) -> FileTypeDeclaration:
+    """Create a FileTypeDeclaration for testing."""
+    return FileTypeDeclaration(
+        name=name,
+        patterns=patterns,
+        required=required,
+        properties=properties or {},
+    )
+
+
+def _fts_claude() -> list[FileTypeDeclaration]:
+    """Return a minimal Claude-like file type set for testing."""
+    return [
+        _ft("main", ("**/CLAUDE.md",), required=True),
+        _ft("scoped_rule", (".claude/rules/**/*.md",)),
+    ]
+
+
+def _fts_with_skills() -> list[FileTypeDeclaration]:
+    """Return file types including skills."""
+    return [*_fts_claude(), _ft("skill", (".claude/skills/**/*.md",))]
 
 
 def _make_rule_dir(tmp_path: Path, slug: str, frontmatter: str, body: str = "") -> Path:
     """Create a minimal rule directory with rule.md."""
-    rule_dir = tmp_path / "core" / "structure" / slug
+    rule_dir = tmp_path / "core" / slug
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text(f"---\n{frontmatter}\n---\n\n{body}")
     return rule_dir
@@ -28,17 +58,24 @@ def _make_fixtures(rule_dir: Path, pass_content: str | None, fail_content: str |
 
 
 def _make_agent_config(tmp_path: Path, agent: str = "claude") -> None:
-    """Create a minimal agent config.yml."""
+    """Create a minimal agent config.yml with file_types."""
     config_dir = tmp_path / "agents" / agent
     config_dir.mkdir(parents=True)
     (config_dir / "config.yml").write_text(
-        'agent: claude\nvars:\n  instruction_files:\n    - "**/*.md"\n  main_instruction_file:\n    - "**/CLAUDE.md"\n'
+        "agent: claude\nprefix: CLAUDE\n"
+        "file_types:\n"
+        "  main:\n"
+        '    patterns: ["**/CLAUDE.md"]\n'
+        "    required: true\n"
+        "    properties:\n"
+        "      format: freeform\n"
+        "      scope: global\n"
     )
 
 
-def _make_rule_yml(rule_dir: Path, yml_content: str) -> None:
-    """Create a rule.yml file in a rule directory."""
-    (rule_dir / "rule.yml").write_text(yml_content)
+def _make_checks_yml(rule_dir: Path, yml_content: str) -> None:
+    """Create a checks.yml file in a rule directory."""
+    (rule_dir / "checks.yml").write_text(yml_content)
 
 
 # ── Discovery tests ─────────────────────────────────────────────────
@@ -98,9 +135,13 @@ class TestDiscoverRules:
     def test_discovers_agent_rules(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import discover_rules
 
-        agent_dir = tmp_path / "agents" / "claude" / "rules" / "test-rule"
+        # Agent dirs sit alongside core/ and need a config.yml
+        agent_dir = tmp_path / "claude"
         agent_dir.mkdir(parents=True)
-        (agent_dir / "rule.md").write_text(
+        (agent_dir / "config.yml").write_text("agent: claude\nprefix: CLAUDE\n")
+        rule_dir = agent_dir / "test-rule"
+        rule_dir.mkdir()
+        (rule_dir / "rule.md").write_text(
             "---\nid: CLAUDE:S:0001\nslug: test-rule\ntitle: Agent Rule\n"
             "category: structure\ntype: mechanical\nlevel: L1\nchecks: []\n---\n"
         )
@@ -116,24 +157,32 @@ class TestDiscoverRules:
 class TestLoadAgentConfig:
     """Tests for load_agent_config()."""
 
-    def test_loads_vars_and_excludes(self, tmp_path: Path) -> None:
+    def test_loads_file_types_and_excludes(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import load_agent_config
 
-        config_dir = tmp_path / "agents" / "claude"
+        config_dir = tmp_path / "claude"
         config_dir.mkdir(parents=True)
         (config_dir / "config.yml").write_text(
-            'agent: claude\nvars:\n  instruction_files:\n    - "**/*.md"\nexcludes:\n  - CORE:S:0010\n'
+            "agent: claude\nprefix: CLAUDE\n"
+            "file_types:\n"
+            "  main:\n"
+            '    patterns: ["**/CLAUDE.md"]\n'
+            "    required: true\n"
+            "    properties:\n"
+            "      format: freeform\n"
+            "excludes:\n  - CORE:S:0010\n"
         )
 
-        vars_, excludes = load_agent_config(tmp_path, "claude")
-        assert "instruction_files" in vars_
+        file_types, excludes = load_agent_config(tmp_path, "claude")
+        type_names = {ft.name for ft in file_types}
+        assert "main" in type_names
         assert excludes == ["CORE:S:0010"]
 
     def test_missing_config_returns_empty(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import load_agent_config
 
-        vars_, excludes = load_agent_config(tmp_path, "nonexistent")
-        assert vars_ == {}
+        file_types, excludes = load_agent_config(tmp_path, "nonexistent")
+        assert file_types == []
         assert excludes == []
 
 
@@ -150,7 +199,7 @@ class TestMechanicalChecks:
             tmp_path,
             "file-exists",
             "id: CORE:S:0001\nslug: file-exists\ntitle: File Exists\n"
-            "category: structure\ntype: mechanical\nlevel: L1\ntargets: '{{instruction_files}}'\n"
+            "category: structure\ntype: mechanical\nlevel: L1\nmatch: {}\n"
             "checks:\n- id: CORE.S.0001.file-exists\n  type: mechanical\n"
             "  severity: medium\n  name: file-exists\n  check: file_exists",
         )
@@ -164,16 +213,15 @@ class TestMechanicalChecks:
             title="File Exists",
             category="structure",
             rule_type="mechanical",
-            level="L1",
-            targets="{{instruction_files}}",
+            match={},
             checks=[
                 {"id": "CORE.S.0001.file-exists", "type": "mechanical", "severity": "medium", "check": "file_exists"}
             ],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {"instruction_files": ["**/*.md"]})
+        result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
     def test_not_implemented(self, tmp_path: Path) -> None:
@@ -191,14 +239,13 @@ class TestMechanicalChecks:
             title="Empty",
             category="structure",
             rule_type="mechanical",
-            level="L1",
-            targets="",
+            match={},
             checks=[],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {})
+        result = run_rule(info, [])
         assert result.status == HarnessStatus.NOT_IMPLEMENTED
 
     def test_no_fixtures(self, tmp_path: Path) -> None:
@@ -218,14 +265,13 @@ class TestMechanicalChecks:
             title="No Fix",
             category="structure",
             rule_type="mechanical",
-            level="L1",
-            targets="",
+            match={},
             checks=[{"id": "CORE.S.0098.check", "type": "mechanical", "severity": "medium", "check": "file_exists"}],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {})
+        result = run_rule(info, [])
         assert result.status == HarnessStatus.NO_FIXTURES
 
 
@@ -242,12 +288,12 @@ class TestDeterministicChecks:
             tmp_path,
             "det-rule",
             "id: CORE:S:0003\nslug: det-rule\ntitle: Det Rule\n"
-            "category: structure\ntype: deterministic\nlevel: L1\ntargets: '{{instruction_files}}'\n"
+            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {}\n"
             "checks:\n- id: CORE.S.0003.check\n  type: deterministic\n  severity: medium\n  name: wall-of-prose",
         )
-        _make_rule_yml(
+        _make_checks_yml(
             rule_dir,
-            "rules:\n"
+            "checks:\n"
             "- id: CORE.S.0003.check\n"
             "  message: Wall of prose\n"
             "  severity: WARNING\n"
@@ -269,33 +315,38 @@ class TestDeterministicChecks:
             title="Det Rule",
             category="structure",
             rule_type="deterministic",
-            level="L1",
-            targets="{{instruction_files}}",
+            match={},
             checks=[
-                {"id": "CORE.S.0003.check", "type": "deterministic", "severity": "medium", "name": "wall-of-prose"}
+                {
+                    "id": "CORE.S.0003.check",
+                    "type": "deterministic",
+                    "severity": "medium",
+                    "name": "wall-of-prose",
+                    "expect": "absent",
+                }
             ],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {"instruction_files": ["**/*.md"]})
+        result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
-    def test_negated_deterministic(self, tmp_path: Path) -> None:
-        """Negated deterministic: finding = pass, no finding = violation."""
+    def test_expect_present_deterministic(self, tmp_path: Path) -> None:
+        """expect=present deterministic: finding = pass, no finding = violation."""
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 
         rule_dir = _make_rule_dir(
             tmp_path,
-            "neg-rule",
-            "id: CORE:C:0001\nslug: neg-rule\ntitle: Neg Rule\n"
-            "category: content\ntype: deterministic\nlevel: L1\ntargets: '{{instruction_files}}'\n"
+            "evidence-rule",
+            "id: CORE:C:0001\nslug: evidence-rule\ntitle: Evidence Rule\n"
+            "category: content\ntype: deterministic\nlevel: L1\nmatch: {}\n"
             "checks:\n- id: CORE.C.0001.check\n  type: deterministic\n"
-            "  severity: medium\n  negate: true\n  name: has-context",
+            "  severity: medium\n  expect: present\n  name: has-context",
         )
-        _make_rule_yml(
+        _make_checks_yml(
             rule_dir,
-            "rules:\n"
+            "checks:\n"
             "- id: CORE.C.0001.check\n"
             "  message: Has project context\n"
             "  severity: WARNING\n"
@@ -303,8 +354,8 @@ class TestDeterministicChecks:
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '## (Commands|Architecture)'\n",
         )
-        # Pass: heading present (finding exists, negate → pass)
-        # Fail: heading absent (no finding, negate → violation)
+        # Pass: heading present (evidence found → pass)
+        # Fail: heading absent (no evidence → violation)
         _make_fixtures(
             rule_dir,
             "# Project\n\n## Commands\n\n- Build: `make`\n",
@@ -313,26 +364,25 @@ class TestDeterministicChecks:
 
         info = RuleInfo(
             rule_id="CORE:C:0001",
-            slug="neg-rule",
-            title="Neg Rule",
-            category="content",
+            slug="evidence-rule",
+            title="Evidence Rule",
+            category="coherence",
             rule_type="deterministic",
-            level="L1",
-            targets="{{instruction_files}}",
+            match={},
             checks=[
                 {
                     "id": "CORE.C.0001.check",
                     "type": "deterministic",
                     "severity": "medium",
-                    "negate": True,
+                    "expect": "present",
                     "name": "has-context",
                 }
             ],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {"instruction_files": ["**/*.md"]})
+        result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
 
@@ -349,7 +399,7 @@ class TestSemanticChecks:
             tmp_path,
             "sem-rule",
             "id: CORE:C:0005\nslug: sem-rule\ntitle: Semantic\n"
-            "category: content\ntype: semantic\nlevel: L1\ntargets: '{{instruction_files}}'\n"
+            "category: content\ntype: semantic\nlevel: L1\nmatch: {}\n"
             "checks:\n- id: CORE.C.0005.sem\n  type: semantic\n  severity: medium\n  name: sem-eval",
         )
         _make_fixtures(rule_dir, "# Good content\n", "# Bad content\n")
@@ -358,16 +408,15 @@ class TestSemanticChecks:
             rule_id="CORE:C:0005",
             slug="sem-rule",
             title="Semantic",
-            category="content",
+            category="coherence",
             rule_type="semantic",
-            level="L1",
-            targets="{{instruction_files}}",
+            match={},
             checks=[{"id": "CORE.C.0005.sem", "type": "semantic", "severity": "medium", "name": "sem-eval"}],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {"instruction_files": ["**/*.md"]})
+        result = run_rule(info, _fts_claude())
         # Semantic-only rules have no M/D checks to detect violations in the
         # fail fixture, so the harness reports FAILED because the fail fixture
         # produced no violations (a harness failure — the fail case should be
@@ -389,7 +438,7 @@ class TestRunHarness:
             tmp_path,
             "batch-rule",
             "id: CORE:S:0001\nslug: batch-rule\ntitle: Batch Rule\n"
-            "category: structure\ntype: mechanical\nlevel: L1\ntargets: '{{instruction_files}}'\n"
+            "category: structure\ntype: mechanical\nlevel: L1\nmatch: {}\n"
             "checks:\n- id: CORE.S.0001.check\n  type: mechanical\n  severity: medium\n  check: file_exists",
         )
         _make_fixtures(rule_dir, "# Test\n", None)
@@ -409,20 +458,20 @@ class TestGitMarker:
         from reporails_cli.core.mechanical.checks import git_tracked
 
         (tmp_path / ".git_marker").touch()
-        result = git_tracked(tmp_path, {}, {})
+        result = git_tracked(tmp_path, {}, [])
         assert result.passed
 
     def test_git_dir_detected(self, tmp_path: Path) -> None:
         from reporails_cli.core.mechanical.checks import git_tracked
 
         (tmp_path / ".git").mkdir()
-        result = git_tracked(tmp_path, {}, {})
+        result = git_tracked(tmp_path, {}, [])
         assert result.passed
 
     def test_no_git_fails(self, tmp_path: Path) -> None:
         from reporails_cli.core.mechanical.checks import git_tracked
 
-        result = git_tracked(tmp_path, {}, {})
+        result = git_tracked(tmp_path, {}, [])
         assert not result.passed
 
 
@@ -440,12 +489,12 @@ class TestFixtureDiscovery:
             tmp_path,
             "json-rule",
             "id: CORE:S:0099\nslug: json-rule\ntitle: JSON Rule\n"
-            "category: structure\ntype: deterministic\nlevel: L1\ntargets: '{{settings_file}}'\n"
+            "category: structure\ntype: deterministic\nlevel: L1\nmatch: {type: config}\n"
             "checks:\n- id: CORE.S.0099.check\n  type: deterministic\n  severity: medium\n  name: json-check",
         )
-        _make_rule_yml(
+        _make_checks_yml(
             rule_dir,
-            "rules:\n"
+            "checks:\n"
             "- id: CORE.S.0099.check\n"
             "  message: Bad setting\n"
             "  severity: WARNING\n"
@@ -468,14 +517,14 @@ class TestFixtureDiscovery:
             title="JSON Rule",
             category="structure",
             rule_type="deterministic",
-            level="L1",
-            targets="{{settings_file}}",
-            checks=[{"id": "CORE.S.0099.check", "type": "deterministic", "severity": "medium"}],
+            match={"type": "config"},
+            checks=[{"id": "CORE.S.0099.check", "type": "deterministic", "severity": "medium", "expect": "absent"}],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {"settings_file": ".claude/settings.json"})
+        file_types = [*_fts_claude(), _ft("config", (".claude/settings.json",))]
+        result = run_rule(info, file_types)
         assert result.status == HarnessStatus.PASSED
 
 
@@ -490,10 +539,11 @@ class TestCheckNameFallback:
         from reporails_cli.core.harness import _run_mechanical_check
 
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
+        classified = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main", properties={})]
         result = _run_mechanical_check(
             {"name": "file_exists", "args": {"path": "**/*.md"}},
             tmp_path,
-            {"instruction_files": ["**/*.md"]},
+            classified,
         )
         assert result.passed
 
@@ -502,10 +552,11 @@ class TestCheckNameFallback:
         from reporails_cli.core.harness import _run_mechanical_check
 
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
+        classified = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main", properties={})]
         result = _run_mechanical_check(
             {"check": "file_exists", "name": "something_else", "args": {"path": "**/*.md"}},
             tmp_path,
-            {"instruction_files": ["**/*.md"]},
+            classified,
         )
         assert result.passed
 
@@ -537,12 +588,16 @@ class TestCheckAliases:
 
 def _make_multi_agent_config(tmp_path: Path, agent: str, prefix: str, instruction_pattern: str) -> None:
     """Create an agent config with a specific prefix and instruction pattern."""
-    config_dir = tmp_path / "agents" / agent
+    config_dir = tmp_path / agent
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.yml").write_text(
-        f"agent: {agent}\nprefix: {prefix}\nvars:\n"
-        f'  instruction_files:\n    - "{instruction_pattern}"\n'
-        f'  main_instruction_file:\n    - "{instruction_pattern}"\n'
+        f"agent: {agent}\nprefix: {prefix}\n"
+        f"file_types:\n"
+        f"  main:\n"
+        f'    patterns: ["{instruction_pattern}"]\n'
+        f"    required: true\n"
+        f"    properties:\n"
+        f"      format: freeform\n"
     )
 
 
@@ -561,9 +616,9 @@ class TestPrefixToAgentMap:
     def test_skips_agent_without_prefix(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _build_prefix_to_agent_map
 
-        config_dir = tmp_path / "agents" / "generic"
+        config_dir = tmp_path / "generic"
         config_dir.mkdir(parents=True)
-        (config_dir / "config.yml").write_text("agent: generic\nvars:\n  instruction_files:\n    - '**/*.md'\n")
+        (config_dir / "config.yml").write_text("agent: generic\nfile_types:\n  main:\n    patterns: ['**/*.md']\n")
 
         mapping = _build_prefix_to_agent_map(tmp_path)
         assert mapping == {}
@@ -604,7 +659,7 @@ class TestMultiAgentHarness:
 
         # Set up claude agent
         _make_multi_agent_config(tmp_path, "claude", "CLAUDE", "**/CLAUDE.md")
-        claude_rule_dir = tmp_path / "agents" / "claude" / "rules" / "claude-rule"
+        claude_rule_dir = tmp_path / "claude" / "claude-rule"
         claude_rule_dir.mkdir(parents=True)
         (claude_rule_dir / "rule.md").write_text(
             "---\nid: CLAUDE:S:0001\nslug: claude-rule\ntitle: Claude Rule\n"
@@ -617,7 +672,7 @@ class TestMultiAgentHarness:
 
         # Set up codex agent
         _make_multi_agent_config(tmp_path, "codex", "CODEX", "**/AGENTS.md")
-        codex_rule_dir = tmp_path / "agents" / "codex" / "rules" / "codex-rule"
+        codex_rule_dir = tmp_path / "codex" / "codex-rule"
         codex_rule_dir.mkdir(parents=True)
         (codex_rule_dir / "rule.md").write_text(
             "---\nid: CODEX:S:0001\nslug: codex-rule\ntitle: Codex Rule\n"
@@ -666,8 +721,8 @@ class TestScaffoldFixture:
         fixture_dir.mkdir()
         (fixture_dir / "CLAUDE.md").write_text("# Existing\n")
 
-        checks = [{"type": "mechanical", "check": "file_exists", "args": {"path": "{{skills_dir}}/**/*.md"}}]
-        result = _scaffold_fixture(fixture_dir, checks, {"skills_dir": ".claude/skills"})
+        checks = [{"type": "mechanical", "check": "file_exists", "args": {"path": ".claude/skills/**/*.md"}}]
+        result = _scaffold_fixture(fixture_dir, checks, _fts_with_skills())
 
         assert result is not None
         assert (result / ".claude" / "skills" / "scaffold.md").exists()
@@ -685,7 +740,7 @@ class TestScaffoldFixture:
         fixture_dir.mkdir()
 
         checks = [{"type": "mechanical", "check": "git_tracked"}]
-        result = _scaffold_fixture(fixture_dir, checks, {})
+        result = _scaffold_fixture(fixture_dir, checks, [])
 
         assert result is not None
         assert (result / ".git_marker").exists()
@@ -699,8 +754,8 @@ class TestScaffoldFixture:
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "mechanical", "check": "directory_exists", "args": {"path": "{{memory_dir}}"}}]
-        result = _scaffold_fixture(fixture_dir, checks, {"memory_dir": ".claude/memory"})
+        checks = [{"type": "mechanical", "check": "directory_exists", "args": {"path": ".claude/memory"}}]
+        result = _scaffold_fixture(fixture_dir, checks, [])
 
         assert result is not None
         assert (result / ".claude" / "memory").is_dir()
@@ -715,7 +770,7 @@ class TestScaffoldFixture:
         fixture_dir.mkdir()
 
         checks = [{"type": "deterministic", "id": "test", "severity": "medium"}]
-        result = _scaffold_fixture(fixture_dir, checks, {})
+        result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
     def test_no_scaffold_for_semantic_only(self, tmp_path: Path) -> None:
@@ -725,7 +780,7 @@ class TestScaffoldFixture:
         fixture_dir.mkdir()
 
         checks = [{"type": "semantic", "id": "test"}]
-        result = _scaffold_fixture(fixture_dir, checks, {})
+        result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
     def test_scaffolds_file_removal_for_file_absent(self, tmp_path: Path) -> None:
@@ -737,7 +792,7 @@ class TestScaffoldFixture:
         (fixture_dir / "README.md").write_text("# README")
 
         checks = [{"type": "mechanical", "check": "file_absent", "args": {"pattern": "README.md"}}]
-        result = _scaffold_fixture(fixture_dir, checks, {})
+        result = _scaffold_fixture(fixture_dir, checks, [])
 
         assert result is not None
         assert not (result / "README.md").exists()
@@ -766,7 +821,7 @@ class TestScaffoldFailFixture:
                 "args": {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$", "path": "**/*.md"},
             }
         ]
-        result = _scaffold_fail_fixture(fixture_dir, checks, {"instruction_files": ["**/*.md"]})
+        result = _scaffold_fail_fixture(fixture_dir, checks, _fts_claude())
 
         assert result is not None
         # Original file should be renamed to invalid name (preserving extension)
@@ -784,7 +839,7 @@ class TestScaffoldFailFixture:
         (fixture_dir / "b.md").write_text("b")
 
         checks = [{"type": "mechanical", "check": "glob_count", "args": {"pattern": "**/*.md", "min": 2}}]
-        result = _scaffold_fail_fixture(fixture_dir, checks, {})
+        result = _scaffold_fail_fixture(fixture_dir, checks, [])
 
         assert result is not None
         md_files = list(result.glob("**/*.md"))
@@ -800,7 +855,7 @@ class TestScaffoldFailFixture:
         fixture_dir.mkdir()
 
         checks = [{"type": "mechanical", "check": "file_absent", "args": {"pattern": "README.md"}}]
-        result = _scaffold_fail_fixture(fixture_dir, checks, {})
+        result = _scaffold_fail_fixture(fixture_dir, checks, [])
 
         assert result is not None
         assert (result / "README.md").exists()
@@ -815,7 +870,7 @@ class TestScaffoldFailFixture:
         fixture_dir.mkdir()
 
         checks = [{"type": "mechanical", "check": "file_exists", "args": {"path": "**/*.md"}}]
-        result = _scaffold_fail_fixture(fixture_dir, checks, {})
+        result = _scaffold_fail_fixture(fixture_dir, checks, [])
         assert result is None
 
 
@@ -829,7 +884,7 @@ class TestFailScaffoldIntegration:
             tmp_path,
             "fname-rule",
             "id: CORE:S:0004\nslug: fname-rule\ntitle: Filename Rule\n"
-            "category: structure\ntype: mechanical\nlevel: L1\ntargets: '{{instruction_files}}'\n"
+            "category: structure\ntype: mechanical\nlevel: L1\nmatch: {}\n"
             "checks:\n- id: CORE.S.0004.fname\n  type: mechanical\n  severity: medium\n"
             "  check: filename_matches_pattern\n  args:\n    pattern: '(?i)^(CLAUDE|AGENTS)\\.md$'",
         )
@@ -848,8 +903,7 @@ class TestFailScaffoldIntegration:
             title="Filename Rule",
             category="structure",
             rule_type="mechanical",
-            level="L1",
-            targets="{{instruction_files}}",
+            match={},
             checks=[
                 {
                     "id": "CORE.S.0004.fname",
@@ -860,10 +914,10 @@ class TestFailScaffoldIntegration:
                 }
             ],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {"instruction_files": ["**/*.md"]})
+        result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
     def test_file_absent_with_scaffold(self, tmp_path: Path) -> None:
@@ -892,8 +946,7 @@ class TestFailScaffoldIntegration:
             title="Absent Rule",
             category="structure",
             rule_type="mechanical",
-            level="L1",
-            targets="",
+            match={},
             checks=[
                 {
                     "id": "CORE.S.0005.absent",
@@ -904,8 +957,8 @@ class TestFailScaffoldIntegration:
                 }
             ],
             rule_dir=rule_dir,
-            rule_yml=rule_dir / "rule.yml",
+            checks_yml=rule_dir / "checks.yml",
         )
 
-        result = run_rule(info, {})
+        result = run_rule(info, [])
         assert result.status == HarnessStatus.PASSED

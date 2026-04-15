@@ -27,6 +27,11 @@ build/
 # IDE & editor
 .idea/
 
+# Research corpus — contains 4600+ CLAUDE.md and 6700+ .claude/rules/ files
+# from third-party repos. Without this exclusion, Claude Code loads them as
+# project instructions, contaminating every session.
+research/data/corpus/
+
 # Environment & secrets
 .env
 .env.local

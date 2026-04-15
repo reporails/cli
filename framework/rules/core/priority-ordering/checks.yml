@@ -1,0 +1,10 @@
+checks:
+- id: CORE.C.0036.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0036.content_check
+  type: content_query
+  query: has_directive_atoms
+  args:
+    message: No directive instructions found to assess ordering
+  expect: present

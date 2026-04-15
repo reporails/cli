@@ -1,0 +1,16 @@
+checks:
+- id: CORE.C.0011.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0011.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Security
+    - Boundaries
+    - Sensitive
+    - Access
+    message: Missing security requirements — document sensitive files, access restrictions,
+      or security patterns
+  expect: present

@@ -1,0 +1,16 @@
+checks:
+- id: CORE.C.0039.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0039.has_branching_steps
+  type: content_query
+  query: has_branching_steps
+  args:
+    message: Branching workflow in numbered list without mermaid — add ```mermaid flowchart showing control flow and branch paths
+  expect: absent
+- id: CORE.C.0039.has_mermaid
+  type: content_query
+  query: has_mermaid_blocks
+  args:
+    message: No mermaid flowcharts — use ```mermaid blocks for procedures with branching logic
+  expect: present

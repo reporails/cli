@@ -180,7 +180,7 @@ class TestDefaultAgentCoreOnly:
         """Without --agent, no agent-specific rules should fire."""
         data = _check_json(generic_only)
         namespaces = _violation_namespaces(data)
-        for ns in ("CLAUDE", "CODEX", "COPILOT", "CURSOR", "WINDSURF"):
+        for ns in ("CLAUDE", "CODEX", "COPILOT", "CURSOR", "GEMINI"):
             assert ns not in namespaces, f"Agent-specific namespace {ns} fired without --agent"
 
     @requires_rules
@@ -204,7 +204,7 @@ class TestDefaultAgentCoreOnly:
     def test_files_detected(self, generic_only: Path) -> None:
         """Without --agent, auto-detect must find AGENTS.md and not report L1."""
         data = _check_json(generic_only)
-        assert data["level"] != "L1", "AGENTS.md should be detected, got L1 Absent"
+        assert data["level"] != "L0", "AGENTS.md should be detected, got L0 Absent"
 
 
 # ===========================================================================
@@ -219,17 +219,17 @@ class TestAgentFileTargeting:
     @requires_rules
     def test_claude_finds_claude_md(self, claude_only: Path) -> None:
         data = _check_json(claude_only, agent="claude")
-        assert data["level"] != "L1", "--agent claude should detect CLAUDE.md"
+        assert data["level"] != "L0", "--agent claude should detect CLAUDE.md"
 
     @requires_rules
     def test_codex_finds_agents_md(self, codex_only: Path) -> None:
         data = _check_json(codex_only, agent="codex")
-        assert data["level"] != "L1", "--agent codex should detect AGENTS.md"
+        assert data["level"] != "L0", "--agent codex should detect AGENTS.md"
 
     @requires_rules
     def test_copilot_finds_its_file(self, copilot_only: Path) -> None:
         data = _check_json(copilot_only, agent="copilot")
-        assert data["level"] != "L1", "--agent copilot should detect copilot-instructions.md"
+        assert data["level"] != "L0", "--agent copilot should detect copilot-instructions.md"
 
     def test_wrong_agent_claude_on_codex(self, codex_only: Path) -> None:
         """--agent claude on a codex-only project must find no files."""
@@ -268,9 +268,7 @@ class TestCrossAgentContamination:
         """--agent claude must produce violations, none from other agent namespaces."""
         data = _check_json(claude_only, agent="claude")
         assert len(data["violations"]) > 0, "Claude fixture must produce violations"
-        foreign = {
-            r for r in _violation_rule_ids(data) if r.split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "WINDSURF")
-        }
+        foreign = {r for r in _violation_rule_ids(data) if r.split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "GEMINI")}
         assert not foreign, f"Foreign agent rules fired under --agent claude: {foreign}"
 
     @requires_rules
@@ -319,20 +317,20 @@ class TestMultiAgentProject:
     """Multi-agent projects must scope correctly per --agent flag."""
 
     @requires_rules
-    def test_no_agent_scans_generic_only(self, multi_agent: Path) -> None:
-        """Without --agent, AGENTS.md (generic) is scanned — not all agents' files."""
+    def test_no_agent_scans_all_on_mixed_signals(self, multi_agent: Path) -> None:
+        """Without --agent on multi-agent project, mixed signals → scan all instruction files."""
         data = _check_json(multi_agent)
-        assert data["level"] != "L1", "Multi-agent project should not be L1"
+        assert data["level"] != "L0", "Multi-agent project should not be L0"
         assert len(data["violations"]) > 0, "Multi-agent fixture must produce violations"
         files = _violation_files(data)
-        assert "AGENTS.md" in files, f"No-agent should scan AGENTS.md (generic), got: {files}"
-        assert "CLAUDE.md" not in files, f"No-agent should not scan CLAUDE.md, got: {files}"
+        # Mixed signals: claude + copilot → scan all instruction files with core rules
+        assert "CLAUDE.md" in files, f"Mixed signals should scan CLAUDE.md, got: {files}"
 
     @requires_rules
     def test_agent_claude_scopes_to_claude_md(self, multi_agent: Path) -> None:
         """--agent claude on multi-agent project should scope to CLAUDE.md."""
         data = _check_json(multi_agent, agent="claude")
-        assert data["level"] != "L1"
+        assert data["level"] != "L0"
         assert len(data["violations"]) > 0, "Claude on multi-agent must produce violations"
         namespaces = _violation_namespaces(data)
         foreign = namespaces - {"CORE", "RRAILS", "CLAUDE"}
@@ -342,7 +340,7 @@ class TestMultiAgentProject:
     def test_agent_codex_scopes_to_agents_md(self, multi_agent: Path) -> None:
         """--agent codex on multi-agent project should scope to AGENTS.md."""
         data = _check_json(multi_agent, agent="codex")
-        assert data["level"] != "L1"
+        assert data["level"] != "L0"
         assert len(data["violations"]) > 0, "Codex on multi-agent must produce violations"
         namespaces = _violation_namespaces(data)
         foreign = namespaces - {"CORE", "RRAILS", "CODEX"}
@@ -426,7 +424,7 @@ class TestEmptyAgentString:
         """--agent '' must not load agent-specific rules."""
         data = _check_json(generic_only, agent="")
         namespaces = _violation_namespaces(data)
-        for ns in ("CLAUDE", "CODEX", "COPILOT", "CURSOR", "WINDSURF"):
+        for ns in ("CLAUDE", "CODEX", "COPILOT", "CURSOR", "GEMINI"):
             assert ns not in namespaces, f"Agent namespace {ns} fired with --agent '': {namespaces}"
 
     def test_empty_string_hint_agents_md(self, empty_dir: Path) -> None:
@@ -467,7 +465,7 @@ class TestNestedFileDiscovery:
     def test_nested_level_above_l1(self, nested_claude: Path) -> None:
         """Project with nested CLAUDE.md files must not be L1."""
         data = _check_json(nested_claude, agent="claude")
-        assert data["level"] != "L1"
+        assert data["level"] != "L0"
 
 
 # ===========================================================================
@@ -484,10 +482,10 @@ class TestConfigOnlyProject:
         output = _check_text(config_only)
         assert "No instruction files found" in output
 
-    def test_config_only_level_l1(self, config_only: Path) -> None:
-        """Config-only project should be L1 (Absent)."""
+    def test_config_only_level_l0(self, config_only: Path) -> None:
+        """Config-only project should be L0 (Absent)."""
         data = _check_json(config_only)
-        assert data["level"] == "L1"
+        assert data["level"] == "L0"
 
     def test_config_only_claude_agent_no_files(self, config_only: Path) -> None:
         """--agent claude on config-only project should find no instruction files."""
@@ -615,7 +613,7 @@ class TestUnknownAgentValidation:
         )
         assert result.exit_code == 0, f"Uppercase agent failed: {result.output}"
         data = json.loads(result.output)
-        assert data["level"] != "L1", "--agent CLAUDE should detect CLAUDE.md after normalization"
+        assert data["level"] != "L0", "--agent CLAUDE should detect CLAUDE.md after normalization"
 
 
 # ===========================================================================
@@ -665,14 +663,14 @@ class TestFormatValidation:
 # ===========================================================================
 # Default Agent Config
 #
-# Users can set default_agent in .reporails/config.yml so they don't need
+# Users can set default_agent in .ails/config.yml so they don't need
 # --agent on every invocation. CLI flag always overrides config.
 # ===========================================================================
 
 
 @pytest.mark.e2e
 class TestDefaultAgentConfig:
-    """default_agent in .reporails/config.yml must control agent scoping."""
+    """default_agent in .ails/config.yml must control agent scoping."""
 
     @requires_rules
     def test_config_default_agent_scopes_files(self, multi_agent_with_config: Path) -> None:
@@ -691,12 +689,12 @@ class TestDefaultAgentConfig:
         assert "CLAUDE.md" not in files, f"--agent codex should not scan CLAUDE.md, got: {files}"
 
     @requires_rules
-    def test_no_config_defaults_to_generic(self, multi_agent: Path) -> None:
-        """Without config, no --agent must default to generic (AGENTS.md scanned, not CLAUDE.md)."""
+    def test_no_config_mixed_signals_scans_all(self, multi_agent: Path) -> None:
+        """Without config on multi-agent project, mixed signals → scan all instruction files."""
         data = _check_json(multi_agent)
         files = _violation_files(data)
-        assert "AGENTS.md" in files, f"Without config, no-agent should scan AGENTS.md (generic), got: {files}"
-        assert "CLAUDE.md" not in files, f"Without config, CLAUDE.md should not be scanned, got: {files}"
+        # Mixed signals: claude + copilot → all instruction files scanned with core rules
+        assert "CLAUDE.md" in files, f"Mixed signals should include CLAUDE.md, got: {files}"
 
 
 # ===========================================================================
@@ -917,7 +915,7 @@ class TestGlobalDefaultsInCheck:
         (project / "AGENTS.md").write_text("# Agents\n\nMinimal content.\n")
 
         # Project config overrides global
-        cfg_dir = project / ".reporails"
+        cfg_dir = project / ".ails"
         cfg_dir.mkdir()
         (cfg_dir / "config.yml").write_text("default_agent: codex\n")
 
@@ -1092,7 +1090,9 @@ class TestMapCommand:
         result = runner.invoke(app, ["map", str(claude_only), "-o", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
+        assert data["version"] == 3
         assert "agents" in data
+        assert "auto_heal" in data
 
     def test_yaml_output_valid(self, claude_only: Path) -> None:
         import yaml as yaml_lib
@@ -1100,17 +1100,22 @@ class TestMapCommand:
         result = runner.invoke(app, ["map", str(claude_only), "-o", "yaml"])
         assert result.exit_code == 0
         data = yaml_lib.safe_load(result.output)
+        assert data["version"] == 3
         assert "agents" in data
 
     def test_save_creates_backbone(self, tmp_path: Path) -> None:
+        import yaml as yaml_lib
+
         project = tmp_path / "project"
         project.mkdir()
         (project / "CLAUDE.md").write_text("# My Project\n")
 
         result = runner.invoke(app, ["map", str(project), "--save"])
         assert result.exit_code == 0
-        backbone = project / ".reporails" / "backbone.yml"
+        backbone = project / ".ails" / "backbone.yml"
         assert backbone.exists(), "backbone.yml not created"
+        data = yaml_lib.safe_load(backbone.read_text())
+        assert data["version"] == 3
 
     def test_multi_agent_detected(self, multi_agent: Path) -> None:
         result = runner.invoke(app, ["map", str(multi_agent), "-o", "json"])

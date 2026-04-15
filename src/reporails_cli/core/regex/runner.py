@@ -10,19 +10,31 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
+import signal
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from reporails_cli.bundled import get_capability_patterns_path
-from reporails_cli.core.models import Rule
+from reporails_cli.core.models import LocalFinding, Rule
 from reporails_cli.core.regex.compiler import (
     CombinedPattern,
     CompiledCheck,
-    build_combined_patterns,
     compile_rules,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_frontmatter(content: str) -> str:
+    """Replace YAML frontmatter with blank lines to preserve line numbers."""
+    if not content.startswith("---"):
+        return content
+    end = content.find("\n---", 3)
+    if end == -1:
+        return content
+    end_of_closing = content.find("\n", end + 4)
+    if end_of_closing == -1:
+        end_of_closing = len(content)
+    return "\n" * content[:end_of_closing].count("\n") + content[end_of_closing:]
 
 
 def _find_line_number(content: str, match: re.Match[str]) -> int:
@@ -37,11 +49,7 @@ def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
 
 
 def _file_matches_path_filter(file_path: str, path_includes: tuple[str, ...]) -> bool:
-    """Check if a file path matches any of the path include patterns.
-
-    Handles ``**`` as zero-or-more directory components (matching glob/OpenGrep
-    semantics) via PurePosixPath.match(), with fnmatch fallback for simple patterns.
-    """
+    """Check if a file path matches any of the path include patterns."""
     if not path_includes:
         return True
     filename = Path(file_path).name
@@ -50,12 +58,10 @@ def _file_matches_path_filter(file_path: str, path_includes: tuple[str, ...]) ->
     for pattern in path_includes:
         if "{{" in pattern:
             continue
-        # PurePosixPath.match handles ** as zero-or-more directories (Python 3.12+)
         if "**" in pattern:
             clean_pattern = pattern.lstrip("./")
             if p.match(clean_pattern):
                 return True
-            # Also check if ** should match zero directories
             if "**/" in clean_pattern:
                 collapsed = clean_pattern.replace("**/", "")
                 if fnmatch.fnmatch(rel, collapsed) or fnmatch.fnmatch(filename, collapsed):
@@ -90,7 +96,7 @@ def _resolve_scan_targets(
             resolved = ifile.resolve()
             if resolved not in seen and resolved.exists():
                 seen.add(resolved)
-                targets.append(resolved)
+                targets.append(ifile)
         _append_extra(seen, targets, extra_targets)
         return targets
 
@@ -112,8 +118,39 @@ def _is_text_file(file_path: Path) -> bool:
         return False
 
 
-def _match_check(check: CompiledCheck, content: str) -> list[re.Match[str]]:
+_REGEX_TIMEOUT_S = 0.5
+
+
+class _RegexTimeoutError(Exception):
+    """Raised when a regex search exceeds the time limit."""
+
+
+def _alarm_handler(_signum: int, _frame: object) -> None:
+    raise _RegexTimeoutError
+
+
+def _safe_search(pat: re.Pattern[str], content: str) -> re.Match[str] | None:
+    """Run pat.search with a signal-based timeout against catastrophic backtracking."""
+    prev = signal.signal(signal.SIGALRM, _alarm_handler)
+    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S)
+    try:
+        return pat.search(content)
+    except _RegexTimeoutError:
+        logger.warning("Regex timed out after %.1fs: %s", _REGEX_TIMEOUT_S, pat.pattern[:80])
+        return None
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
+
+
+def _match_check(
+    check: CompiledCheck,
+    content: str,
+    body_content: str | None = None,
+) -> list[re.Match[str]]:
     """Execute a single compiled check against file content."""
+    if check.body_only:
+        content = body_content if body_content is not None else _strip_frontmatter(content)
     if check.either_patterns:
         return [m for pat in check.either_patterns if (m := pat.search(content))]
 
@@ -160,11 +197,7 @@ def _should_exclude(file_path: Path, scan_root: Path, exclude_dirs: list[str] | 
 def _partition_checks(
     checks: list[CompiledCheck],
 ) -> tuple[list[CompiledCheck], dict[str, list[CompiledCheck]]]:
-    """Pre-partition checks into universal (no path filter) and path-filtered groups.
-
-    Returns:
-        (universal_checks, path_pattern_to_checks_map)
-    """
+    """Pre-partition checks into universal (no path filter) and path-filtered groups."""
     universal: list[CompiledCheck] = []
     by_pattern: dict[str, list[CompiledCheck]] = {}
     for check in checks:
@@ -193,7 +226,6 @@ def _get_applicable_checks(
 
     applicable = list(universal)
     for checks in by_pattern.values():
-        # All checks in this group share the same path_includes
         if _file_matches_path_filter(rel_path, checks[0].path_includes):
             applicable.extend(checks)
     return applicable
@@ -236,6 +268,52 @@ def _emit_results(
         )
 
 
+def _safe_finditer(pat: re.Pattern[str], content: str) -> list[re.Match[str]]:
+    """Run pat.finditer with a signal-based timeout against catastrophic backtracking."""
+    prev = signal.signal(signal.SIGALRM, _alarm_handler)
+    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S)
+    try:
+        return list(pat.finditer(content))
+    except _RegexTimeoutError:
+        logger.warning("Regex finditer timed out after %.1fs: %s", _REGEX_TIMEOUT_S, pat.pattern[:80])
+        return []
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
+
+
+def _retry_shadowed(
+    group_to_check: dict[str, CompiledCheck],
+    matched_checks: set[str],
+    content: str,
+    file_uri: str,
+    results: list[dict[str, Any]],
+    rule_defs: dict[str, dict[str, Any]],
+) -> None:
+    """Retry shadowed checks under a single timeout guard."""
+    prev = signal.signal(signal.SIGALRM, _alarm_handler)
+    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S * 2)
+    try:
+        for group_name, check in group_to_check.items():
+            if group_name in matched_checks:
+                continue
+            if check.patterns:
+                m = check.patterns[0].search(content)
+                if m:
+                    _emit_results(check, [m], file_uri, content, results, rule_defs)
+            elif check.either_patterns:
+                for pat in check.either_patterns:
+                    m = pat.search(content)
+                    if m:
+                        _emit_results(check, [m], file_uri, content, results, rule_defs)
+                        break
+    except _RegexTimeoutError:
+        logger.warning("Shadowed check retry timed out after %.1fs", _REGEX_TIMEOUT_S * 2)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
+
+
 def _scan_combined(
     content: str,
     file_uri: str,
@@ -243,26 +321,23 @@ def _scan_combined(
     results: list[dict[str, Any]],
     rule_defs: dict[str, dict[str, Any]],
 ) -> None:
-    """Scan content using combined alternation patterns for batch matching.
-
-    Emits at most one match per check per file, matching the behavior of
-    re.search() in the individual check path.
-    """
+    """Scan content using combined alternation patterns for batch matching."""
     for combined in combined_patterns:
-        # Track which checks already matched (first match per check)
         matched_checks: set[str] = set()
-        for m in combined.regex.finditer(content):
+        for m in _safe_finditer(combined.regex, content):
             group_name = m.lastgroup
             if group_name and group_name not in matched_checks:
                 check = combined.group_to_check[group_name]
                 _emit_results(check, [m], file_uri, content, results, rule_defs)
                 matched_checks.add(group_name)
-                # Early exit when all checks have matched
                 if len(matched_checks) == len(combined.group_to_check):
                     break
 
+        if len(matched_checks) < len(combined.group_to_check):
+            _retry_shadowed(combined.group_to_check, matched_checks, content, file_uri, results, rule_defs)
 
-_MAX_FILE_SIZE = 1_048_576  # 1 MB — skip files larger than this
+
+_MAX_FILE_SIZE = 1_048_576  # 1 MB
 
 
 def _scan_file(
@@ -289,50 +364,46 @@ def _scan_file(
     except ValueError:
         file_uri = str(file_path)
 
-    # Use combined patterns for simple checks
+    body_content: str | None = None
+    if any(c.body_only for c in checks):
+        body_content = _strip_frontmatter(content)
+
     if combined_patterns:
         _scan_combined(content, file_uri, combined_patterns, results, rule_defs)
 
-    # Run remaining complex checks individually
-    for check in checks:
-        matches = _match_check(check, content)
-        if not matches:
-            continue
+    prev = signal.signal(signal.SIGALRM, _alarm_handler)
+    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S * len(checks))
+    try:
+        for check in checks:
+            matches = _match_check(check, content, body_content)
+            if not matches:
+                continue
 
-        if first_match_only:
-            _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
-        else:
-            _emit_results(check, matches, file_uri, content, results, rule_defs)
+            if first_match_only:
+                _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
+            else:
+                _emit_results(check, matches, file_uri, content, results, rule_defs)
+    except _RegexTimeoutError:
+        logger.warning("File scan timed out: %s", file_path)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
 
 
 def run_validation(  # pylint: disable=too-many-locals
     yml_paths: list[Path],
     target: Path,
-    template_context: dict[str, str | list[str]] | None = None,
     extra_targets: list[Path] | None = None,
     instruction_files: list[Path] | None = None,
     exclude_dirs: list[str] | None = None,
+    body_only_paths: set[Path] | None = None,
 ) -> dict[str, Any]:
-    """Execute regex validation with specified rule configs, returns SARIF-shaped dict.
-
-    Main entry point for regex-based rule validation.
-
-    Args:
-        yml_paths: Paths to YAML rule files
-        target: Directory or file to scan
-        template_context: Template variables for {{placeholder}} resolution
-        extra_targets: Additional file paths to scan
-        instruction_files: Explicit list of files to scan
-        exclude_dirs: Directory names to exclude from scanning
-
-    Returns:
-        SARIF-compatible dict with runs[].results[]
-    """
+    """Execute regex validation with specified rule configs, returns SARIF-shaped dict."""
     valid_paths = [p for p in yml_paths if p and p.exists()]
     if not valid_paths:
         return {"runs": []}
 
-    ruleset = compile_rules(valid_paths, template_context)
+    ruleset = compile_rules(valid_paths, body_only_paths=body_only_paths)
     if not ruleset.checks:
         return {"runs": []}
 
@@ -347,12 +418,7 @@ def run_validation(  # pylint: disable=too-many-locals
     results: list[dict[str, Any]] = []
     rule_defs: dict[str, dict[str, Any]] = {}
 
-    # Partition checks into universal (no path filter) and path-filtered groups
     universal, by_pattern = _partition_checks(ruleset.checks)
-
-    # Build combined patterns for universal checks only — path-filtered checks
-    # run individually (combined alternation is slower for complex/flagged patterns)
-    combined, complex_universal = build_combined_patterns(universal)
 
     for file_path in scan_targets:
         if not file_path.is_file():
@@ -360,12 +426,10 @@ def run_validation(  # pylint: disable=too-many-locals
         if _should_exclude(file_path, scan_root, exclude_dirs):
             continue
 
-        # Get path-filtered checks applicable to this file
         path_checks = _get_applicable_checks(file_path, scan_root, [], by_pattern)
-        individual = complex_universal + path_checks
+        individual = universal + path_checks
 
-        # Skip files with no applicable checks
-        if not individual and not combined:
+        if not individual:
             continue
 
         if not _is_text_file(file_path):
@@ -376,101 +440,145 @@ def run_validation(  # pylint: disable=too-many-locals
             individual,
             results,
             rule_defs,
-            combined_patterns=combined,
         )
 
     return _build_sarif(results, list(rule_defs.values()))
 
 
-def run_capability_detection(  # pylint: disable=too-many-locals
+def run_checks(  # noqa: C901
+    yml_paths: list[Path],
     target: Path,
-    extra_targets: list[Path] | None = None,
     instruction_files: list[Path] | None = None,
-) -> dict[str, Any]:
-    """Run capability detection using bundled patterns.
+    exclude_dirs: list[str] | None = None,
+    body_only_paths: set[Path] | None = None,
+) -> list[LocalFinding]:
+    """Execute regex validation and return LocalFinding list.
 
-    Only needs boolean presence per check, so uses first_match_only=True
-    for faster scanning.
-
-    Args:
-        target: Directory to scan
-        extra_targets: Additional file paths to scan
-        instruction_files: Explicit list of files to scan
-
-    Returns:
-        SARIF-compatible dict
+    Handles expect semantics correctly:
+    - expect: absent → regex MATCH = violation (content should not be present)
+    - expect: present → regex NO MATCH = violation (content should be present)
     """
-    patterns_path = get_capability_patterns_path()
-    if not patterns_path.exists():
-        logger.warning("Capability patterns not found: %s", patterns_path)
-        return {"runs": []}
+    import yaml
 
-    # Use first_match_only for capability detection — only need presence, not all matches
-    valid_paths = [patterns_path]
-    ruleset = compile_rules(valid_paths)
-    if not ruleset.checks:
-        return {"runs": []}
+    # Load check definitions to get expect values (deterministic checks only)
+    expect_map: dict[str, str] = {}  # check_id -> "present" | "absent"
+    message_map: dict[str, str] = {}  # check_id -> message
+    for yml_path in yml_paths:
+        if not yml_path.exists():
+            continue
+        try:
+            data = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
+            for check_def in data.get("checks", []):
+                # Only deterministic (regex) checks — skip mechanical, content_query, fallback
+                if check_def.get("type") != "deterministic":
+                    continue
+                if check_def.get("fallback"):
+                    continue
+                cid = check_def.get("id", "")
+                expect_map[cid] = check_def.get("expect", "present")
+                message_map[cid] = check_def.get("message", "")
+        except (yaml.YAMLError, OSError):
+            continue
 
-    scan_targets = _resolve_scan_targets(target, instruction_files, extra_targets)
-    if not scan_targets:
-        return {"runs": []}
+    # Run regex engine — returns SARIF with matches
+    sarif = run_validation(
+        yml_paths,
+        target,
+        instruction_files=instruction_files,
+        exclude_dirs=exclude_dirs,
+        body_only_paths=body_only_paths,
+    )
 
+    # Collect which (check_id, file) pairs had matches
+    matched_pairs: set[tuple[str, str]] = set()
+    match_details: dict[tuple[str, str], tuple[int, str]] = {}  # (check_id, file) -> (line, msg)
+
+    for run in sarif.get("runs", []):
+        for result in run.get("results", []):
+            check_id = result.get("ruleId", "")
+            msg = result.get("message", {}).get("text", "")
+            file_path = ""
+            line = 0
+            for loc in result.get("locations", []):
+                phys = loc.get("physicalLocation", {})
+                file_path = phys.get("artifactLocation", {}).get("uri", "")
+                line = phys.get("region", {}).get("startLine", 0)
+                break
+            matched_pairs.add((check_id, file_path))
+            match_details[(check_id, file_path)] = (line, msg)
+
+    findings: list[LocalFinding] = []
+
+    # Get scanned files for expect:present checks (need to know what WASN'T matched)
     scan_root = target if target.is_dir() else target.parent
-    results: list[dict[str, Any]] = []
-    rule_defs: dict[str, dict[str, Any]] = {}
-    universal, by_pattern = _partition_checks(ruleset.checks)
-    combined, complex_universal = build_combined_patterns(universal)
+    scan_targets = _resolve_scan_targets(target, instruction_files, None)
+    scanned_files = []
+    for fp in scan_targets:
+        if fp.is_file() and not _should_exclude(fp, scan_root, exclude_dirs):
+            try:
+                scanned_files.append(str(fp.relative_to(scan_root)))
+            except ValueError:
+                scanned_files.append(str(fp))
 
-    for file_path in scan_targets:
-        if not file_path.is_file():
-            continue
+    for check_id, expect in expect_map.items():
+        # Convert dot-separated ID to colon-separated
+        parts = check_id.split(".")
+        rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}" if len(parts) >= 3 else check_id
+        check_suffix = ""
+        if "check" in parts:
+            idx = parts.index("check")
+            if idx + 1 < len(parts):
+                check_suffix = f"check:{parts[idx + 1]}"
 
-        path_checks = _get_applicable_checks(file_path, scan_root, [], by_pattern)
-        individual = complex_universal + path_checks
+        msg = message_map.get(check_id, "")
 
-        if not individual and not combined:
-            continue
-        if not _is_text_file(file_path):
-            continue
-        _scan_file(
-            file_path,
-            scan_root,
-            individual,
-            results,
-            rule_defs,
-            first_match_only=True,
-            combined_patterns=combined,
-        )
+        if expect == "absent":
+            # Match = violation
+            for file_path in scanned_files:
+                if (check_id, file_path) in matched_pairs:
+                    line, match_msg = match_details[(check_id, file_path)]
+                    findings.append(
+                        LocalFinding(
+                            file=file_path,
+                            line=line,
+                            severity="warning",
+                            rule=rule_id,
+                            message=match_msg or msg,
+                            source="m_probe",
+                            check_id=check_suffix,
+                        )
+                    )
+        else:
+            # expect: present — NO match = violation
+            findings.extend(
+                LocalFinding(
+                    file=file_path,
+                    line=1,
+                    severity="warning",
+                    rule=rule_id,
+                    message=msg,
+                    source="m_probe",
+                    check_id=check_suffix,
+                )
+                for file_path in scanned_files
+                if (check_id, file_path) not in matched_pairs
+            )
 
-    return _build_sarif(results, list(rule_defs.values()))
+    return findings
 
 
 def checks_per_file(
     yml_paths: list[Path],
     scan_root: Path,
-    template_context: dict[str, str | list[str]] | None,
-    instruction_files: list[Path] | None,
+    instruction_files: list[Path] | None = None,
 ) -> dict[str, list[str]]:
-    """List compiled regex check IDs applicable to each file (path filter logic only, no matching).
-
-    Args:
-        yml_paths: Rule YAML paths
-        scan_root: Project root
-        template_context: Template variables
-        instruction_files: Files to count against
-
-    Returns:
-        Dict of relative file path -> list of check IDs
-    """
-    ruleset = compile_rules([p for p in yml_paths if p and p.exists()], template_context)
+    """List compiled regex check IDs applicable to each file."""
+    ruleset = compile_rules([p for p in yml_paths if p and p.exists()])
     if not ruleset.checks:
         return {}
 
     universal, by_pattern = _partition_checks(ruleset.checks)
-    combined, complex_universal = build_combined_patterns(universal)
-    base_ids = [c.id for c in complex_universal]
-    for cp in combined:
-        base_ids.extend(c.id for c in cp.group_to_check.values())
+    base_ids = [c.id for c in universal]
 
     result: dict[str, list[str]] = {}
     for file_path in instruction_files or []:
@@ -486,13 +594,6 @@ def checks_per_file(
     return result
 
 
-def get_rule_yml_paths(rules: dict[str, Rule]) -> list[Path]:
-    """Get list of .yml paths for rules that have them and exist.
-
-    Args:
-        rules: Dict of rules
-
-    Returns:
-        List of paths to existing .yml files
-    """
+def get_checks_paths(rules: dict[str, Rule]) -> list[Path]:
+    """Get list of checks.yml paths for rules that have them and exist."""
     return [r.yml_path for r in rules.values() if r.yml_path is not None and r.yml_path.exists()]

@@ -1,0 +1,15 @@
+valid_event_types:
+- PreToolUse
+- PostToolUse
+- PostToolUseFailure
+- PreCompact
+- SessionStart
+- SessionEnd
+- UserPromptSubmit
+- PermissionRequest
+- Notification
+- SubagentStart
+- SubagentStop
+- Stop
+- TeammateIdle
+- TaskCompleted

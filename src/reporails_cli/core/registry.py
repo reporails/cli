@@ -15,17 +15,12 @@ from reporails_cli.core.bootstrap import (
 )
 from reporails_cli.core.models import (
     AgentConfig,
-    Check,
     ProjectConfig,
     Rule,
     Severity,
-    Tier,
 )
 from reporails_cli.core.rule_builder import (
     CORE_WEIGHT_THRESHOLD as CORE_WEIGHT_THRESHOLD,
-)
-from reporails_cli.core.rule_builder import (
-    _load_source_weights,
 )
 from reporails_cli.core.rule_builder import (
     build_rule as build_rule,
@@ -34,7 +29,7 @@ from reporails_cli.core.rule_builder import (
     derive_tier as derive_tier,
 )
 from reporails_cli.core.rule_builder import (
-    get_rule_yml_paths as get_rule_yml_paths,
+    get_checks_paths as get_checks_paths,
 )
 from reporails_cli.core.rule_builder import (
     get_rules_by_category as get_rules_by_category,
@@ -42,7 +37,7 @@ from reporails_cli.core.rule_builder import (
 from reporails_cli.core.rule_builder import (
     get_rules_by_type as get_rules_by_type,
 )
-from reporails_cli.core.utils import parse_frontmatter
+from reporails_cli.core.utils import clear_yaml_cache, load_yaml_file, parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +49,7 @@ _path_cache: dict[str, dict[str, Rule]] = {}
 def clear_rule_cache() -> None:
     """Clear the rule loading cache. Called by --refresh and after ails update."""
     _path_cache.clear()
+    clear_yaml_cache()
 
 
 def get_rules_dir() -> Path:
@@ -78,8 +74,8 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
         return rules
 
     for md_path in path.rglob("rule.md"):
-        # Skip test fixtures (tests/pass/, tests/fail/ directories)
-        if "tests" in md_path.parts:
+        # Skip test fixtures and deferred (not-yet-ready) rules
+        if "tests" in md_path.parts or "_deferred" in md_path.parts:
             continue
 
         try:
@@ -89,9 +85,17 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
             if not frontmatter:
                 continue
 
-            # Look for corresponding .yml file
-            yml_path_candidate = md_path.with_suffix(".yml")
-            yml_path: Path | None = yml_path_candidate if yml_path_candidate.exists() else None
+            # Look for corresponding checks.yml file
+            checks_yml = md_path.parent / "checks.yml"
+            yml_path: Path | None = checks_yml if checks_yml.exists() else None
+
+            # Pre-parse checks.yml so build_rule doesn't re-parse it
+            if yml_path is not None and not frontmatter.get("checks"):
+                try:
+                    yml_data = load_yaml_file(yml_path)
+                    frontmatter["checks"] = (yml_data or {}).get("checks", [])
+                except Exception:
+                    pass
 
             rule = build_rule(frontmatter, md_path, yml_path)
             rules[rule.id] = rule
@@ -106,12 +110,11 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
 
 def load_rules(  # pylint: disable=too-many-locals
     rules_paths: list[Path] | None = None,
-    include_experimental: bool = False,
     project_root: Path | None = None,
     agent: str = "",
     scan_root: Path | None = None,
 ) -> dict[str, Rule]:
-    """Load rules from directories, filtered by tier, agent, and project config."""
+    """Load rules from directories, filtered by agent and project config."""
     if not rules_paths:
         rules_paths = [get_rules_dir()]
 
@@ -128,7 +131,7 @@ def load_rules(  # pylint: disable=too-many-locals
     rules.update(_load_from_path(core_path))
 
     if agent:
-        agent_rules_path = primary / "agents" / agent / "rules"
+        agent_rules_path = primary / agent
         rules.update(_load_from_path(agent_rules_path))
 
     # 2. Load additional rule sources
@@ -148,12 +151,7 @@ def load_rules(  # pylint: disable=too-many-locals
         agent_prefix = agent_config.prefix or agent.upper()
         rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
 
-    # 5. Filter by tier if experimental not included
-    if not include_experimental:
-        weights = _load_source_weights(primary, extra_paths or None)
-        rules = {k: v for k, v in rules.items() if derive_tier(v.backed_by, weights) == Tier.CORE}
-
-    # 6. Remove disabled rules (merge from project_root + scan_root configs)
+    # 5. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
     disabled: set[str] = set(config.disabled_rules or [])
     if scan_root and scan_root != project_root:
@@ -197,40 +195,38 @@ def _apply_agent_overrides(
     rules: dict[str, Rule],
     overrides: dict[str, dict[str, Any]],
 ) -> dict[str, Rule]:
-    """Apply agent check-level overrides (severity, disabled)."""
+    """Apply agent overrides: severity at rule level, disabled at check level."""
     result = {}
     for rule_id, rule in rules.items():
-        new_checks = []
-        for check in rule.checks:
-            override = overrides.get(check.id)
-            if override is None:
-                new_checks.append(check)
-                continue
-            if override.get("disabled", False):
-                continue  # Drop this check
-            new_severity = override.get("severity")
+        # Rule-level severity override (keyed by rule_id)
+        rule_override = overrides.get(rule_id)
+        new_rule = rule
+        if rule_override:
+            new_severity = rule_override.get("severity")
             if new_severity:
                 try:
                     parsed_severity = Severity(new_severity)
+                    new_rule = replace(new_rule, severity=parsed_severity)
                 except ValueError:
-                    logger.warning("Invalid severity '%s' in override for %s, skipping", new_severity, check.id)
-                    new_checks.append(check)
-                    continue
-                new_checks.append(
-                    Check(
-                        id=check.id,
-                        severity=parsed_severity,
-                        type=check.type,
-                        name=check.name,
-                        check=check.check,
-                        args=check.args,
-                        negate=check.negate,
-                        metadata_keys=check.metadata_keys,
-                    )
-                )
-            else:
-                new_checks.append(check)
-        result[rule_id] = replace(rule, checks=new_checks)
+                    logger.warning("Invalid severity '%s' in override for %s, skipping", new_severity, rule_id)
+
+        # Check-level overrides: only handle disabled
+        new_checks = []
+        for check in new_rule.checks:
+            override = overrides.get(check.id)
+            if override is not None and override.get("disabled", False):
+                continue  # Drop this check
+            # Legacy: check-level severity override → lift to rule
+            if override and not rule_override:
+                check_severity = override.get("severity")
+                if check_severity:
+                    try:
+                        parsed_severity = Severity(check_severity)
+                        new_rule = replace(new_rule, severity=parsed_severity)
+                    except ValueError:
+                        pass
+            new_checks.append(check)
+        result[rule_id] = replace(new_rule, checks=new_checks)
     return result
 
 
@@ -239,24 +235,3 @@ def _load_project_config(project_root: Path | None) -> ProjectConfig:
     if project_root is None:
         return ProjectConfig()
     return get_project_config(project_root)
-
-
-def get_experimental_rules(rules_dir: Path | None = None) -> dict[str, Rule]:
-    """Get experimental-tier rules (skipped when experimental is disabled)."""
-    if rules_dir is None:
-        rules_dir = get_rules_dir()
-
-    if not rules_dir.exists():
-        return {}
-
-    # Load all rules, then filter to experimental only
-    all_rules: dict[str, Rule] = {}
-
-    core_path = rules_dir / "core"
-    all_rules.update(_load_from_path(core_path))
-
-    agents_path = rules_dir / "agents"
-    all_rules.update(_load_from_path(agents_path))
-
-    weights = _load_source_weights(rules_dir)
-    return {k: v for k, v in all_rules.items() if derive_tier(v.backed_by, weights) == Tier.EXPERIMENTAL}

@@ -1,0 +1,142 @@
+# Package configuration schema
+version: "0.1.0"
+
+# Updated from v0.0.1: AILS→RRAILS, coordinate format,
+# removed provides.levels (rules self-declare level).
+
+fields:
+  package:
+    required: true
+    type: string
+    pattern: "^[a-z][a-z0-9-]*$"
+    description: "Package identifier (lowercase, hyphens allowed)"
+
+  prefix:
+    required: true
+    type: string
+    pattern: "^[A-Z]{3,}$"
+    description: "Rule ID prefix for package rules. Must be in reserved_package_prefixes (see rule.schema.yml)"
+
+  name:
+    required: true
+    type: string
+    max_length: 64
+    description: "Human-readable package name (max 64 chars)"
+
+  description:
+    required: false
+    type: string
+    description: "One-line purpose of the package"
+
+  version:
+    required: true
+    type: string
+    pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    description: "Semver version of the package"
+
+  depends_on:
+    required: true
+    type: object
+    description: "Schema dependency declaration"
+    properties:
+      schema:
+        required: true
+        type: string
+        description: "Schema repository identifier (e.g., reporails/cli)"
+      min_version:
+        required: true
+        type: string
+        pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        description: "Minimum rule schema version required"
+      source:
+        required: true
+        type: string
+        format: url
+        description: "Git repository URL for schema resolution (cloned by tag at validation time)"
+
+  provides:
+    required: true
+    type: object
+    description: "What the package contributes"
+    properties:
+      rules:
+        required: true
+        type: boolean
+        description: "Must be true — every package provides rules"
+      sources:
+        required: false
+        type: boolean
+        description: "Whether the package provides docs/sources.yml (scoped to own rules)"
+      agent_rules:
+        required: false
+        type: array
+        items:
+          type: object
+          properties:
+            agent:
+              required: true
+              type: string
+              description: "Agent identifier (must match an agent in reserved_agent_prefixes)"
+            prefix:
+              required: true
+              type: string
+              pattern: "^[A-Z]{3,}_[A-Z]+$"
+              description: "Agent rules prefix within package namespace (e.g., RRAILS_CLAUDE)"
+        description: "Agent-specific rules provided by this package"
+
+  excludes:
+    required: false
+    type: array
+    items:
+      type: string
+      pattern: "^CORE:[SCDEGM]:[0-9]{4}$"
+    description: "Core rule IDs this package opts out of" 
+
+  overrides:
+    required: false
+    type: object
+    description: "Per-check severity adjustments on core rules (key = check ID)"
+    additionalProperties:
+      type: object
+      properties:
+        severity:
+          type: enum
+          values: [critical, high, medium, low]
+          description: "Override default severity"
+
+validation:
+  - rule: "prefix must be in reserved_package_prefixes"
+  - rule: "prefix must NOT be in reserved_agent_prefixes"
+  - rule: "provides.rules is required and must be true"
+  - rule: "provides.agent_rules[].prefix must start with the package prefix"
+  - rule: "excludes items must be valid core rule coordinates"
+
+examples:
+  recommended: |
+    package: recommended
+    prefix: RRAILS
+    name: Reporails Recommended Rules
+    description: Opinionated best practices and governance
+    version: "0.2.2"
+    depends_on:
+      schema: "reporails/cli"
+      min_version: "0.5.0"
+      source: "https://github.com/reporails/cli.git"
+    provides:
+      rules: true
+      sources: true
+      agent_rules:
+        - agent: claude
+          prefix: RRAILS_CLAUDE
+
+  minimal: |
+    package: my-rules
+    prefix: MYR
+    name: My Custom Rules
+    version: "1.0.0"
+    depends_on:
+      schema: "reporails/cli"
+      min_version: "0.5.0"
+      source: "https://github.com/reporails/cli.git"
+    provides:
+      rules: true

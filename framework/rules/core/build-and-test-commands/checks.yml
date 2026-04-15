@@ -1,0 +1,16 @@
+checks:
+- id: CORE.C.0010.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0010.content_check
+  type: content_query
+  query: has_heading_matching
+  args:
+    terms:
+    - Commands
+    - Build
+    - Testing
+    - Setup
+    message: Missing build/test commands — add a Commands or Testing section with
+      runnable examples
+  expect: present

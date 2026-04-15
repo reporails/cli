@@ -1,0 +1,52 @@
+# Public source registry schema
+# Format: flat YAML list of source entries
+# Location: docs/sources.yml (in each package repo)
+version: "0.1.0"
+
+format: list
+
+fields:
+  id:
+    required: true
+    type: string
+    pattern: "^[a-z][a-z0-9-]*$"
+    description: "Source slug — unique identifier"
+
+  url:
+    required: true
+    type: string
+    format: url
+    description: "Canonical URL to the source"
+
+  type:
+    required: true
+    type: enum
+    values: [official, research, community, internal]
+    description: |
+      Source origin type. Determines base weight:
+        official: 1.0
+        research: 0.8
+        community: 0.6
+        internal: 0.4
+
+  weight:
+    required: true
+    type: number
+    min: 0.4
+    max: 1.0
+    description: "Authority weight for tier derivation"
+
+  title:
+    required: false
+    type: string
+    description: "Human-readable source name"
+
+tier_derivation:
+  description: "Computed by CLI, not stored in sources.yml"
+  core: "max(backing_source_weights) >= 0.8"
+  experimental: "max(backing_source_weights) < 0.8 or no backing"
+
+validation:
+  - rule: "Every backed_by reference in rule.md must match an id in sources.yml"
+  - rule: "Flat list format — no scoped dicts, no nested claims"
+  - rule: "Weights are authoritative"

@@ -1,12 +1,4 @@
-"""Mechanical check implementations.
-
-Each check receives:
-    root: Path to the project root
-    args: Check-specific arguments from rule frontmatter
-    vars: Resolved template variables from agent config
-
-Returns a CheckResult indicating pass/fail with a message.
-"""
+"""Mechanical check implementations."""
 
 from __future__ import annotations
 
@@ -14,6 +6,8 @@ import glob as globmod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from reporails_cli.core.models import ClassifiedFile
 
 
 def _safe_float(value: Any, default: float = float("inf")) -> float:
@@ -34,19 +28,6 @@ class CheckResult:
     location: str | None = None  # Per-file location override (e.g., "SKILL.md:0")
 
 
-def _resolve_path(template: str, vars: dict[str, str | list[str]]) -> str:
-    """Resolve template variables in a path string."""
-    result = template
-    for key, value in vars.items():
-        placeholder = "{{" + key + "}}"
-        if placeholder in result:
-            if isinstance(value, list):
-                result = result.replace(placeholder, value[0] if value else "")
-            else:
-                result = result.replace(placeholder, str(value))
-    return result
-
-
 _glob_cache: dict[tuple[str, str], list[Path]] = {}
 
 
@@ -62,58 +43,75 @@ def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
     return result
 
 
-def _get_target_patterns(
+def _get_target_files(
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
-) -> list[str]:
-    """Get file patterns: args.path > args._targets (from rule.targets) > vars.instruction_files."""
+    classified_files: list[ClassifiedFile],
+    root: Path,
+) -> list[Path]:
+    """Get target file paths: args.path > args._match_type > all classified files.
+
+    Priority:
+    1. Explicit glob pattern in args["path"] — resolved against root
+    2. Match type from args["_match_type"] — filter classified files by type
+    3. Fallback: all classified file paths
+    """
     path_pattern = args.get("path", "")
     if path_pattern:
-        return [_resolve_path(str(path_pattern), vars)]
-    targets = args.get("_targets", "")  # injected from rule.targets by dispatch
-    if targets:
-        return _expand_file_pattern(str(targets), vars)
-    patterns = vars.get("instruction_files", [])
-    if isinstance(patterns, str):
-        patterns = [patterns]
-    return list(patterns)
+        return _resolve_glob_targets(str(path_pattern), root)
+
+    match_type = args.get("_match_type", "")
+    if match_type and classified_files:
+        matched = [cf.path for cf in classified_files if cf.file_type == match_type]
+        if matched:
+            return matched
+        # No files of this type — return empty, don't fall back to all files.
+        # A config rule shouldn't check memory files just because no config exists.
+        return []
+
+    if classified_files:
+        return [cf.path for cf in classified_files]
+
+    return []
 
 
-def _expand_file_pattern(
-    pattern: str,
-    vars: dict[str, str | list[str]],
-) -> list[str]:
-    """Expand a file glob pattern that may reference a list variable.
+def _get_counted_files(
+    args: dict[str, Any],
+    classified_files: list[ClassifiedFile],
+    root: Path,
+) -> set[Path]:
+    """Get files for counting/sizing checks: args.pattern > classified files."""
+    raw_pattern = str(args.get("pattern", ""))
+    if raw_pattern:
+        all_files: set[Path] = set()
+        all_files.update(m for m in _resolve_glob_targets(raw_pattern, root) if m.is_file())
+        return all_files
 
-    If pattern is exactly "{{key}}" and key maps to a list, returns all
-    elements. Otherwise resolves as a single string via _resolve_path.
-    """
-    for key, value in vars.items():
-        placeholder = "{{" + key + "}}"
-        if pattern == placeholder and isinstance(value, list):
-            return list(value)
-    return [_resolve_path(pattern, vars)]
+    if classified_files:
+        return {cf.path for cf in classified_files if cf.path.is_file()}
+
+    # No classified files — return empty instead of globbing entire project tree
+    return set()
 
 
 def file_exists(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that at least one file matching the target pattern exists."""
-    for pattern in _get_target_patterns(args, vars):
-        if _resolve_glob_targets(pattern, root):
-            return CheckResult(passed=True, message="File found")
+    files = _get_target_files(args, classified_files, root)
+    if any(f.exists() for f in files):
+        return CheckResult(passed=True, message="File found")
     return CheckResult(passed=False, message="No matching files found")
 
 
 def directory_exists(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that a directory exists."""
-    path = _resolve_path(str(args.get("path", "")), vars)
+    path = str(args.get("path", ""))
     if (root / path).is_dir():
         return CheckResult(passed=True, message=f"Directory exists: {path}")
     return CheckResult(passed=False, message=f"Directory not found: {path}")
@@ -122,10 +120,10 @@ def directory_exists(
 def directory_contains(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that a directory contains at least min_count files."""
-    path = _resolve_path(str(args.get("path", "")), vars)
+    path = str(args.get("path", ""))
     pattern = str(args.get("pattern", "*"))
     min_count = int(args.get("min", 1))
     target = root / path
@@ -140,7 +138,7 @@ def directory_contains(
 def git_tracked(
     root: Path,
     _args: dict[str, Any],
-    _vars: dict[str, str | list[str]],
+    _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that the project is git-tracked.
 
@@ -154,42 +152,37 @@ def git_tracked(
 def frontmatter_key(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that files have a specific YAML frontmatter key."""
     import yaml
 
     key = str(args.get("key", ""))
-    for pattern in _get_target_patterns(args, vars):
-        for match in _resolve_glob_targets(pattern, root):
-            if not match.is_file():
-                continue
-            try:
-                content = match.read_text(encoding="utf-8")
-                # Quick frontmatter parse
-                if content.startswith("---"):
-                    end = content.find("---", 3)
-                    if end > 0:
-                        fm = yaml.safe_load(content[3:end])
-                        if isinstance(fm, dict) and key in fm:
-                            return CheckResult(passed=True, message=f"Key '{key}' found")
-            except (OSError, ValueError):
-                continue
+    for match in _get_target_files(args, classified_files, root):
+        if not match.is_file():
+            continue
+        try:
+            content = match.read_text(encoding="utf-8")
+            if content.startswith("---"):
+                end = content.find("---", 3)
+                if end > 0:
+                    fm = yaml.safe_load(content[3:end])
+                    if isinstance(fm, dict) and key in fm:
+                        return CheckResult(passed=True, message=f"Key '{key}' found")
+        except (OSError, ValueError):
+            continue
     return CheckResult(passed=False, message=f"Frontmatter key '{key}' not found")
 
 
 def file_count(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that file count is within bounds."""
     min_count = int(args.get("min", 0))
     max_count = _safe_float(args.get("max"), float("inf"))
-    raw_pattern = str(args.get("pattern", "**/*"))
-    all_files: set[Path] = set()
-    for pattern in _expand_file_pattern(raw_pattern, vars):
-        all_files.update(m for m in _resolve_glob_targets(pattern, root) if m.is_file())
+    all_files = _get_counted_files(args, classified_files, root)
     count = len(all_files)
     if min_count <= count <= max_count:
         return CheckResult(passed=True, message=f"File count {count} within bounds")
@@ -199,53 +192,51 @@ def file_count(
 def line_count(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that file line count is within bounds."""
     max_lines = _safe_float(args.get("max"), float("inf"))
     min_lines = int(args.get("min", 0))
-    for pattern in _get_target_patterns(args, vars):
-        for match in _resolve_glob_targets(pattern, root):
-            if not match.is_file():
-                continue
-            try:
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
-                count = len(match.read_text(encoding="utf-8").splitlines())
-                if count > max_lines:
-                    return CheckResult(
-                        passed=False,
-                        message=f"{match.name}: {count} lines exceeds max {max_lines}",
-                        location=f"{rel}:0",
-                    )
-                if count < min_lines:
-                    return CheckResult(
-                        passed=False,
-                        message=f"{match.name}: {count} lines below min {min_lines}",
-                        location=f"{rel}:0",
-                    )
-            except OSError as e:
-                return CheckResult(passed=False, message=f"Error reading {match.name}: {e}")
+    for match in _get_target_files(args, classified_files, root):
+        if not match.is_file():
+            continue
+        try:
+            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+            count = len(match.read_text(encoding="utf-8").splitlines())
+            if count > max_lines:
+                return CheckResult(
+                    passed=False,
+                    message=f"{match.name}: {count} lines exceeds max {max_lines}",
+                    location=f"{rel}:0",
+                )
+            if count < min_lines:
+                return CheckResult(
+                    passed=False,
+                    message=f"{match.name}: {count} lines below min {min_lines}",
+                    location=f"{rel}:0",
+                )
+        except OSError as e:
+            return CheckResult(passed=False, message=f"Error reading {match.name}: {e}")
     return CheckResult(passed=True, message="Line counts within bounds")
 
 
 def byte_size(
     root: Path,
     args: dict[str, Any],
-    vars: dict[str, str | list[str]],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that file size is within bounds."""
     max_bytes = _safe_float(args.get("max"), float("inf"))
     min_bytes = int(_safe_float(args.get("min", 0), 0))
-    for pattern in _get_target_patterns(args, vars):
-        for match in _resolve_glob_targets(pattern, root):
-            if not match.is_file():
-                continue
-            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
-            size = match.stat().st_size
-            if size > max_bytes:
-                return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0")
-            if size < min_bytes:
-                return CheckResult(passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0")
+    for match in _get_target_files(args, classified_files, root):
+        if not match.is_file():
+            continue
+        rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+        size = match.stat().st_size
+        if size > max_bytes:
+            return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0")
+        if size < min_bytes:
+            return CheckResult(passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0")
     return CheckResult(passed=True, message="File sizes within bounds")
 
 
@@ -260,9 +251,12 @@ from reporails_cli.core.mechanical.checks_advanced import (  # noqa: E402
     extract_imports,
     file_absent,
     filename_matches_pattern,
+    frontmatter_present,
     frontmatter_valid_glob,
+    frontmatter_valid_yaml,
     import_depth,
     path_resolves,
+    valid_markdown,
 )
 
 # Registry of mechanical checks
@@ -272,6 +266,9 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "directory_contains": directory_contains,
     "git_tracked": git_tracked,
     "frontmatter_key": frontmatter_key,
+    "frontmatter_present": frontmatter_present,
+    "frontmatter_valid_yaml": frontmatter_valid_yaml,
+    "valid_markdown": valid_markdown,
     "file_count": file_count,
     "line_count": line_count,
     "byte_size": byte_size,

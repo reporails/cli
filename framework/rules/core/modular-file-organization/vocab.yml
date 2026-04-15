@@ -1,0 +1,6 @@
+modular_file_organization:
+  - heading style
+  - code block
+  - camelCase identifier
+  - kebab-case name
+  - filename convention

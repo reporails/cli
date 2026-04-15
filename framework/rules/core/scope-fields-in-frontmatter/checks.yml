@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0013.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0013.pattern_check
+  type: deterministic
+  pattern-regex: '(?i)\b(scope|globs|applies.?to)\s*:'
+  expect: present
+  message: "Missing scope fields in frontmatter — declare scope, globs, or path targeting"
