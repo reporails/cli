@@ -1,8 +1,8 @@
 # @reporails/cli
 
-AI instruction diagnostics for coding agents. Validates instruction files for Claude, Codex, Copilot, Gemini, and Cursor against 90+ deterministic rules.
+AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 90+ rules.
 
-### Beta — limited 100 spots, free until GA.
+### Beta — first 100 users free.
 
 ## Quick Start
 
@@ -10,24 +10,22 @@ AI instruction diagnostics for coding agents. Validates instruction files for Cl
 npx @reporails/cli check
 ```
 
-That's it. Score and actionable findings — no install, no account.
+No install, no account. Actionable findings in seconds:
 
 ```
 Reporails — Diagnostics
 
   ┌─ Main (1)
-  │ CLAUDE.md  12 dir / 5 con · 60% prose
-  │   ⚠ L1     No NEVER or AVOID statements found  CORE:C:0003
-  │   ○ L1     No version or date marker found  CORE:C:0012
+  │ CLAUDE.md  4 dir / 3 con · 73% prose
+  │   ⚠       Missing tech stack declaration  CORE:C:0034
+  │   ⚠       Missing testing documentation  CORE:C:0005
+  │     2 brief · 2 orphan
   │
-  └─ 3 findings
+  └─ 10 findings
 
-  ── Summary ──────────────────────────────────────────────
-
-  Score: 7.2 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (0.3s)
-  Agent: Claude
-
-  3 findings · 0 errors · 2 warnings · 1 info
+  Score: 7.4 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (1.2s)
+  10 findings · 8 warnings · 2 info
+  Compliance: HIGH
 ```
 
 ## Install
@@ -44,53 +42,51 @@ Once installed globally, use `ails` directly:
 
 ```bash
 ails check
-ails auth login    # Unlock Pro diagnostics (GitHub sign-in)
+ails auth login    # Unlock full diagnostics (GitHub sign-in)
 ails check         # Now with cross-file analysis + compliance scoring
 ```
 
 ## Supported Agents
 
-| Agent | Instruction files |
-|-------|-------------------|
-| Claude | `CLAUDE.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md` |
-| Codex | `AGENTS.md`, `CODEX.md`, `agents/*.md` |
-| Copilot | `copilot-instructions.md`, `.github/copilot-instructions.md` |
-| Gemini | `GEMINI.md`, `.gemini/rules/*.md` |
-| Cursor | `.cursorrules`, `.cursor/rules/*.md` |
+| Agent   | Instruction files                                         |
+|---------|-----------------------------------------------------------|
+| Claude  | `CLAUDE.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md` |
+| Codex   | `AGENTS.md`, `CODEX.md`, `agents/*.md`                    |
+| Copilot | `.github/copilot-instructions.md`                         |
+| Gemini  | `GEMINI.md`, `.gemini/rules/*.md`                         |
+| Cursor  | `.cursorrules`, `.cursor/rules/*.md`                      |
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `check [PATH]` | Validate instruction files (90+ rules) |
-| `explain RULE_ID` | Show rule details and fix guidance |
-| `heal` | Interactive auto-fix for violations |
-| `auth login` | Sign in with GitHub (Pro enrollment) |
-| `auth status` | Check auth state |
-| `auth logout` | Remove stored credentials |
-| `install [PATH]` | Install MCP server for detected agents |
-| `version` | Show version info |
+| Command              | Description                                |
+|----------------------|--------------------------------------------|
+| `check [PATH]`      | Validate instruction files (90+ rules)     |
+| `explain RULE_ID`   | Show rule details and fix guidance         |
+| `heal`              | Auto-fix common violations                 |
+| `auth login`        | Sign in with GitHub                        |
+| `auth status`       | Check auth state                           |
+| `auth logout`       | Remove stored credentials                  |
+| `install [PATH]`    | Install MCP server for detected agents     |
+| `version`           | Show version info                          |
 
 ## What It Checks
 
-90+ rules across six categories:
+90+ rules across five categories:
 
-- **Structure** — File organization, size limits, modularity, imports
-- **Content** — Specificity, reinforcement, topic clustering, anti-patterns
-- **Context Quality** — Tech stack, project description, domain terminology
-- **Efficiency** — Token usage, import depth, elaboration
+- **Structure** — File organization, size limits, modularity
+- **Content** — Specificity, reinforcement, tech stack, domain terminology
+- **Efficiency** — Token usage, elaboration, formatting
 - **Maintenance** — Versioning, review processes
 - **Governance** — Security policies, credential protection
 
-## Unauthenticated vs Authenticated
+## Offline vs Authenticated
 
-| Feature | Unauthenticated | Authenticated |
-|---------|-----------------|---------------|
-| Mechanical rules | 70+ | 70+ |
-| Deterministic rules | 20+ | 20+ |
-| Cross-file analysis | — | Conflicts, repetition |
-| Reinforcement detection | — | Orphan instructions, topic clustering |
-| Compliance scoring | — | Per-instruction strength |
+| Feature              | Offline     | Authenticated                |
+|----------------------|-------------|------------------------------|
+| Mechanical checks    | 70+ rules   | 70+ rules                    |
+| Content checks       | 25+ rules   | 25+ rules                    |
+| Cross-file analysis  | —           | Conflicts, repetition        |
+| Compliance scoring   | —           | Per-instruction strength     |
 
 ## GitHub Actions
 
@@ -109,7 +105,7 @@ jobs:
 
 ## How It Works
 
-Thin Node.js wrapper around the [reporails-cli](https://pypi.org/project/reporails-cli/) Python package. Commands are proxied via `uvx` — no Python install required. Node.js >= 18 needed. `uv` is auto-installed if missing.
+Thin Node.js wrapper around [reporails-cli](https://pypi.org/project/reporails-cli/). Commands proxied via `uvx` — no Python install required. Node.js >= 18 needed. `uv` auto-installed if missing.
 
 ## License
 

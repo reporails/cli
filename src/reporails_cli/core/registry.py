@@ -94,7 +94,7 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
                 try:
                     yml_data = load_yaml_file(yml_path)
                     frontmatter["checks"] = (yml_data or {}).get("checks", [])
-                except Exception:
+                except Exception:  # rule building from YAML; skip broken rules
                     pass
 
             rule = build_rule(frontmatter, md_path, yml_path)

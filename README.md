@@ -1,23 +1,23 @@
 # Reporails CLI
 
-AI instruction diagnostics for coding agents. Validates instruction files for Claude, Codex, Copilot, Gemini, and Cursor against 90+ deterministic rules.
+AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 90+ rules.
 
-### Beta — limited 100 spots, free until GA. Moving fast, feedback welcome.
+### Beta — first 100 users free. Moving fast, feedback welcome.
 
-## Quick Start
+## Quick Start (No install)
 
 ```bash
 npx @reporails/cli check
 # or
-uvx reporails-cli check
+uvx --from reporails-cli ails check
 ```
 
-No install needed. Or install globally:
+## Install
 
 ```bash
-npm install -g @reporails/cli    # adds `ails` to PATH
+npm install -g @reporails/cli
 # or
-pip install reporails-cli        # same, via Python
+pip install reporails-cli
 ```
 
 Then just:
@@ -26,79 +26,58 @@ Then just:
 ails check
 ```
 
-You'll get a score, level, and actionable findings:
-
 ```
 Reporails — Diagnostics
 
   ┌─ Main (1)
-  │ CLAUDE.md  12 dir / 5 con · 60% prose
-  │   ⚠ L1     No NEVER or AVOID statements found  CORE:C:0003
-  │   ○ L1     No version or date marker found  CORE:C:0012
+  │ CLAUDE.md  4 dir / 3 con · 73% prose
+  │   ⚠       Missing tech stack declaration  CORE:C:0034
+  │   ⚠       Missing testing documentation  CORE:C:0005
+  │     2 brief · 2 orphan
   │
-  └─ 3 findings
+  └─ 10 findings
 
   ── Summary ──────────────────────────────────────────────
 
-  Score: 7.2 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (0.3s)
+  Score: 7.4 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (1.2s)
   Agent: Claude
 
   Scope:
     capabilities: 1 main
-    instructions: 12 directive / 5 prose (28%)
-                  5 constraint
+    instructions: 4 directive / 11 prose (73%)
+                  3 constraint
 
-  3 findings · 0 errors · 2 warnings · 1 info
-
-  Full diagnostics free for the first 100 registering users during beta
-  ails auth login
+  10 findings · 8 warnings · 2 info
+  Compliance: HIGH
 ```
 
 Fix the issues, run again, watch your score improve.
 
-## Install
-
-```bash
-# Node.js (recommended — no separate Python install needed)
-npm install -g @reporails/cli
-
-# Python
-pip install reporails-cli
-
-# Zero install (ephemeral, always latest)
-npx @reporails/cli check
-uvx reporails-cli check
-```
-
-All paths add `ails` to your PATH. The npm package auto-installs `uv` if needed — no Python install required.
-
 ## Authentication
 
-Free offline diagnostics work without an account. For server-enhanced diagnostics (cross-file analysis, reinforcement detection, compliance scoring), sign up for the beta:
+Offline diagnostics work without an account. For server-enhanced diagnostics (cross-file analysis, compliance scoring), sign up for the beta:
 
 ```bash
 ails auth login       # GitHub Device Flow — authorize in browser
-ails auth status      # Check your current auth state
+ails auth status      # Check current auth state
 ails auth logout      # Remove stored credentials
 ```
-
-Credentials are stored in `~/.reporails/credentials.yml`.
 
 ## Commands
 
 ```bash
-ails check                      # Validate your instruction files
-ails check -f json              # JSON output
-ails check -f github            # GitHub Actions annotations
-ails check --strict             # Exit 1 if violations found
-ails check --agent claude       # Agent-specific rules only
-ails check --exclude-dir vendor # Exclude directory from scanning
-ails check -v                   # Verbose: per-file PASS/FAIL with rule titles
+ails check                       # Validate instruction files
+ails check -f json               # JSON output
+ails check -f github             # GitHub Actions annotations
+ails check --strict              # Exit 1 on any finding
+ails check --agent claude        # Agent-specific rules only
+ails check --exclude-dirs vendor # Exclude directory from scanning
+ails check -v                    # Verbose: all findings with rule IDs
 
-ails explain CORE:S:0001        # Explain a specific rule
-ails heal                       # Interactive auto-fix for violations
-ails install                    # Install MCP server for detected agents
-ails version                    # Show version info
+ails explain CORE:S:0001         # Explain a specific rule
+ails heal                        # Auto-fix common violations
+ails install                     # Install MCP server for detected agents
+ails version                     # Show version info
 ```
 
 ### Exit codes
@@ -106,7 +85,7 @@ ails version                    # Show version info
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Violations found (strict mode) |
+| 1 | Findings found (strict mode) |
 | 2 | Invalid input (bad path, unknown agent/format/rule) |
 
 ## Supported Agents
@@ -115,7 +94,7 @@ ails version                    # Show version info
 |-------|-------------------|
 | Claude | `CLAUDE.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md` |
 | Codex | `AGENTS.md`, `CODEX.md`, `agents/*.md` |
-| Copilot | `copilot-instructions.md`, `.github/copilot-instructions.md` |
+| Copilot | `.github/copilot-instructions.md` |
 | Gemini | `GEMINI.md`, `.gemini/rules/*.md` |
 | Cursor | `.cursorrules`, `.cursor/rules/*.md` |
 
@@ -146,7 +125,6 @@ ails config set --global default_agent claude
 Add `ails check` as a CI gate with inline PR annotations:
 
 ```yaml
-# .github/workflows/reporails.yml
 name: Reporails
 on:
   pull_request:
@@ -156,53 +134,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install reporails-cli
-      - run: ails check . --format github --strict
+      - uses: reporails/cli/action
+        with:
+          strict: "true"
+```
+
+Or without the action:
+
+```yaml
+      - run: pip install reporails-cli && ails check . --format github --strict
 ```
 
 ## What It Checks
 
-90+ rules across six categories:
+90+ rules across five categories:
 
-- **Structure** — File organization, discoverability, size limits
-- **Content** — Clarity, specificity, reinforcement patterns, anti-patterns
-- **Context Quality** — Tech stack, project description, domain terminology
-- **Efficiency** — Token usage, import depth, instruction elaboration
+- **Structure** — File organization, discoverability, size limits, modularity
+- **Content** — Clarity, specificity, reinforcement patterns, tech stack, domain terminology
+- **Efficiency** — Token usage, instruction elaboration, formatting
 - **Maintenance** — Versioning, review processes
 - **Governance** — Security policies, credential protection, permissions
 
-## Levels [* under re-evaluation *]
+## Offline vs Authenticated
 
-Levels describe what your AI instruction setup enables.
-
-| Level | Name | What It Enables |
-|-------|------|-----------------|
-| L0 | Absent | No instruction file |
-| L1 | Present | A non-trivial, tracked instruction file exists |
-| L2 | Structured | Project-specific constraints, focused content |
-| L3 | Substantive | Modular guidance with external references |
-| L4 | Actionable | Instructions adapt based on code location |
-| L5 | Refined | Structurally sound, governed, navigable |
-| L6 | Adaptive | Agent dynamically discovers context and extends capabilities |
-
-## Offline vs Server
-
-| Feature | Unauthenticated | Authenticated                         |
-|---------|-----------------|---------------------------------------|
-| Mechanical rules | 70+ rules       | 70+ rules                             |
-| Deterministic rules | 20+ rules       | 20+ rules                             |
-| Cross-file analysis | -               | Conflicts, repetition                 |
-| Reinforcement detection | -               | Orphan instructions, topic clustering |
-| Compliance scoring | -               | Per-instruction strength              |
-| Rate limit | -               | 10/hour (beta)                        |
+| Feature | Offline | Authenticated |
+|---------|---------|---------------|
+| Mechanical checks | 70+ rules | 70+ rules |
+| Content-quality checks | 25+ rules | 25+ rules |
+| Cross-file analysis | — | Conflicts, repetition |
+| Compliance scoring | — | Per-instruction strength |
 
 ## Performance
 
-First run downloads the embedding model (~90MB) to cache. Subsequent runs start in under 2 seconds for typical projects.
-
-## Rules
-
-Rules are bundled with the CLI — no separate install or download needed. See [reporails.com/rules](https://reporails.com/rules) for the full rule reference.
+The embedding model is bundled in the wheel. First run may download the spaCy language model (~13 MB). Subsequent runs complete in under 2 seconds for typical projects.
 
 ## License
 
