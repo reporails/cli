@@ -235,6 +235,7 @@
 - [TESTS]: Add `requires_model` skip marker for integration tests needing bundled ONNX model
 - [TESTS]: Fix MCP test expectations for current tool set (heal replaces judge)
 - [CORE]: Gracefully handle missing ONNX model — catch `RuntimeError` alongside `ImportError` in mapper fallback paths (check, heal, MCP tools)
+- [TESTS]: Update integration tests for `CombinedResult` JSON schema (`files`/`stats` replaces `score`/`level`/`violations`)
 
 ### Fixed
 

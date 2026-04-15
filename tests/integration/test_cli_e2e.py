@@ -67,9 +67,7 @@ class TestCheckCommand:
         )
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
-        assert "score" in data
-        assert "level" in data
-        assert "violations" in data
+        assert "files" in data and "stats" in data
 
     # text_output_has_score, compact_output, missing_path, no_instruction_files
     # covered by smoke and behavioral tests
@@ -88,12 +86,13 @@ class TestCheckCommand:
                 "json",
             ],
         )
-        # If rules apply and violations exist, exit 1; otherwise check score
+        # --strict exits 1 only when stats.errors > 0
         data = json.loads(result.output)
-        if data.get("violations"):
+        errors = data.get("stats", {}).get("errors", 0)
+        if errors > 0:
             assert result.exit_code == 1
         else:
-            # No violations = clean project, exit 0 is correct
+            # No errors = exit 0 even with warnings
             assert result.exit_code == 0
 
     @requires_model
@@ -111,4 +110,4 @@ class TestCheckCommand:
         assert result.exit_code == 0, result.output
         # Output should be valid JSON (no prompt text mixed in)
         data = json.loads(result.output)
-        assert "score" in data
+        assert "files" in data and "stats" in data
