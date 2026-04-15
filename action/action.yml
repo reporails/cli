@@ -90,12 +90,7 @@ runs:
 
         # Parse JSON from last line (CombinedResult schema: files, stats)
         JSON_LINE=$(echo "$OUTPUT" | tail -n 1)
-        VIOLATIONS=$(echo "$JSON_LINE" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-total = sum(f.get('count', 0) for f in d.get('files', {}).values())
-print(total)
-")
+        VIOLATIONS=$(echo "$JSON_LINE" | python3 -c "import sys,json;d=json.load(sys.stdin);print(sum(f.get('count',0) for f in d.get('files',{}).values()))")
 
         echo "score=0" >> "$GITHUB_OUTPUT"
         echo "level=L0" >> "$GITHUB_OUTPUT"
