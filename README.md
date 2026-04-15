@@ -1,10 +1,10 @@
 # Reporails CLI
 
-AI instruction diagnostics for coding agents. Validates CLAUDE.md, AGENTS.md, .cursorrules, and other instruction files against 90+ rules.
+AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 90+ rules.
 
 ### Beta — first 100 users free. Moving fast, feedback welcome.
 
-## Quick Start
+## Quick Start (No install)
 
 ```bash
 npx @reporails/cli check
@@ -12,7 +12,7 @@ npx @reporails/cli check
 uvx --from reporails-cli ails check
 ```
 
-No install needed. Or install globally:
+## Install
 
 ```bash
 npm install -g @reporails/cli
@@ -52,22 +52,6 @@ Reporails — Diagnostics
 ```
 
 Fix the issues, run again, watch your score improve.
-
-## Install
-
-```bash
-# Node.js (recommended — no separate Python install needed)
-npm install -g @reporails/cli
-
-# Python
-pip install reporails-cli
-
-# Zero install (ephemeral, always latest)
-npx @reporails/cli check
-uvx --from reporails-cli ails check
-```
-
-All paths register `ails` on your PATH. The npm package auto-installs `uv` if needed.
 
 ## Authentication
 
@@ -183,10 +167,6 @@ Or without the action:
 ## Performance
 
 The embedding model is bundled in the wheel. First run may download the spaCy language model (~13 MB). Subsequent runs complete in under 2 seconds for typical projects.
-
-## Rules
-
-Rules are bundled with the CLI — no separate install needed. See [reporails.com/rules](https://reporails.com/rules) for the full reference.
 
 ## License
 

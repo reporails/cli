@@ -1,6 +1,6 @@
 # @reporails/cli
 
-AI instruction diagnostics for coding agents. Validates CLAUDE.md, AGENTS.md, .cursorrules, and other instruction files against 90+ rules.
+AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 90+ rules.
 
 ### Beta — first 100 users free.
 
@@ -10,7 +10,7 @@ AI instruction diagnostics for coding agents. Validates CLAUDE.md, AGENTS.md, .c
 npx @reporails/cli check
 ```
 
-No install, no account. You get findings and a score:
+No install, no account. Actionable findings in seconds:
 
 ```
 Reporails — Diagnostics
