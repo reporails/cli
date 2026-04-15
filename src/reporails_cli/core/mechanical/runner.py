@@ -50,7 +50,7 @@ def dispatch_single_check(
 
     try:
         result = fn(root, args, classified_files)
-    except Exception:
+    except Exception:  # mechanical checks are plugin-like; any failure caught and logged
         logger.exception("Mechanical check %s failed for rule %s", check.check, rule.id)
         return None, None
 

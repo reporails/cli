@@ -6,12 +6,15 @@ The API key is stored in ~/.reporails/credentials.yml (not in the project).
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
 import typer
 import yaml
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
 
 console = Console(emoji=False, highlight=False)
 auth_app = typer.Typer(
@@ -42,7 +45,7 @@ def _read_credentials() -> dict[str, str]:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except Exception:
+    except (yaml.YAMLError, OSError):
         return {}
 
 
@@ -85,7 +88,7 @@ def _resolve_client_id(base_url: str) -> str:
             resp = httpx.get(f"{base_url}/api/auth/client-id", timeout=5.0)
             resp.raise_for_status()
             client_id = resp.json().get("client_id", "")
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             pass
     return client_id
 
@@ -109,7 +112,7 @@ def _poll_github_token(client_id: str, device_code: str, interval: int) -> str |
                 timeout=10.0,
             )
             result = poll.json()
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             continue
 
         if "access_token" in result:
@@ -200,7 +203,7 @@ def login(
         )
         resp.raise_for_status()
         data = resp.json()
-    except Exception as exc:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
         console.print(f"  [red]Failed to start GitHub auth:[/] {exc}")
         raise typer.Exit(1) from exc
 
@@ -227,7 +230,7 @@ def login(
         )
         exchange.raise_for_status()
         payload = exchange.json()
-    except Exception as exc:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
         console.print(f"  [red]Failed to exchange token:[/] {exc}")
         raise typer.Exit(1) from exc
 

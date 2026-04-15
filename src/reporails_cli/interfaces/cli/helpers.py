@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from collections.abc import Mapping
@@ -11,6 +12,8 @@ from typing import Any
 
 import typer
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="ails",
@@ -62,7 +65,8 @@ def _resolve_recommended_rules(
                     download_recommended()
             else:
                 download_recommended()
-        except Exception:
+        except (FileNotFoundError, KeyError, OSError) as exc:
+            logger.debug("Failed to download recommended rules: %s", exc)
             con.print("[yellow]Warning:[/yellow] Could not download recommended rules.")
 
     if use_recommended and not has_recommended:

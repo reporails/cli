@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,6 +12,8 @@ from typing import Any
 
 import httpx
 from packaging.version import Version
+
+logger = logging.getLogger(__name__)
 
 PYPI_URL = "https://pypi.org/pypi/reporails-cli/json"
 CACHE_FILE = "update-check.json"
@@ -100,7 +103,7 @@ def _is_newer(current: str, latest: str) -> bool:
     """Compare version strings, stripping leading 'v' for packaging.version."""
     try:
         return Version(latest.lstrip("v")) > Version(current.lstrip("v"))
-    except Exception:
+    except (ValueError, TypeError):
         return False
 
 
@@ -152,7 +155,8 @@ def check_for_updates() -> UpdateNotification | None:
             recommended_current=installed_recommended if recommended_outdated else None,
             recommended_latest=latest_recommended if recommended_outdated else None,
         )
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError, KeyError) as exc:
+        logger.debug("Update check failed: %s", exc)
         return None
 
 

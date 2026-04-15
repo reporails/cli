@@ -31,10 +31,10 @@ packages/npm/.claude/settings.local.json
 
 # Development internals
 CLAUDE.md
+.claude/agents/
 .claude/rules/
 .claude/hooks/
 .claude/skills/
-/framework/rules/_archive/
 
 # Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
 # (dev-only, not committed; populated on clone and in CI before hatch build)
