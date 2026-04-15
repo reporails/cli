@@ -87,7 +87,7 @@ def _dir_prefix_from_glob(pattern: str) -> tuple[str, str] | None:
 def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
     """Parse a single agent config.yml into an AgentType."""
     agent_id = data.get("agent")
-    agent_name = data.get("name", agent_id)
+    agent_name: str = data.get("name", agent_id) or agent_id or ""
     file_types = data.get("file_types")
     if not agent_id or not file_types or not isinstance(file_types, dict):
         return None

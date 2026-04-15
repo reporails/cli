@@ -227,6 +227,10 @@
 - [FORMATTERS]: Add `format_combined_result()` to JSON and GitHub formatters
 - [REGEX]: Add `run_checks()` returning `list[LocalFinding]` alongside SARIF `run_validation()`
 - [CLI]: Fixing deploy.
+- [META]: Fix 50 mypy strict-mode errors across `core/` and `cli/main.py` — type annotations, unused ignores, untyped lambdas
+- [META]: Fix ruff lint errors in `tests/unit/test_api_client.py` — unused import, dict literal
+- [META]: Exclude `_archived/` from mypy in `pyproject.toml`
+- [ACTION]: Remove invalid `--no-update-check` flag from `action/action.yml`
 
 ### Fixed
 

@@ -1974,7 +1974,7 @@ def cluster_topics(
         return [TopicCluster(topic_id=0, atoms=exc, charged=charged, j=j)]
 
     # Dequantize int8 embeddings to float32 for clustering
-    vecs = np.array([list(a.embedding_int8) for a in embedded], dtype=np.float32)
+    vecs = np.array([list(a.embedding_int8) for a in embedded if a.embedding_int8 is not None], dtype=np.float32)
 
     from sklearn.cluster import AgglomerativeClustering
     from sklearn.preprocessing import normalize
