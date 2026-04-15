@@ -1,5 +1,6 @@
 """MCP tool implementations for reporails."""
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,8 @@ from reporails_cli.core.bootstrap import is_initialized
 from reporails_cli.core.models import FileMatch
 from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import mcp as mcp_formatter
+
+logger = logging.getLogger(__name__)
 
 
 def _serialize_match(match: FileMatch | None) -> dict[str, object]:
@@ -47,8 +50,8 @@ def _run_pipeline(target: Path) -> dict[str, Any]:
 
         cache_dir = target / ".ails" / ".cache"
         ruleset_map = map_ruleset(list(instruction_files), cache_dir=cache_dir)
-    except (ImportError, RuntimeError):
-        pass
+    except (ImportError, RuntimeError) as exc:
+        logger.warning("Mapper unavailable in MCP validate: %s", exc)
 
     # M probes (mechanical + deterministic)
     m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
@@ -134,8 +137,8 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 
             cache_dir = target / ".ails" / ".cache"
             ruleset_map = map_ruleset(list(instruction_files), cache_dir=cache_dir)
-        except (ImportError, RuntimeError):
-            pass
+        except (ImportError, RuntimeError) as exc:
+            logger.warning("Mapper unavailable in MCP heal: %s", exc)
 
         fixes: list[dict[str, str]] = []
         if ruleset_map is not None:

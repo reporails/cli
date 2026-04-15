@@ -110,7 +110,7 @@ def download_rules_version(version: str) -> tuple[Path, int]:
             rules_path.rename(old_backup)
         try:
             shutil.move(str(staging_path), str(rules_path))
-        except Exception:
+        except Exception:  # any failure must restore backup before re-raising
             # Restore old rules on failure
             if old_backup.exists():
                 old_backup.rename(rules_path)

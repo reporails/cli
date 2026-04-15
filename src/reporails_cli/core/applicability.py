@@ -190,7 +190,7 @@ def _count_components(backbone_path: Path) -> int:
             return 0
         components = data.get("components", {})
         return len(components) if isinstance(components, dict) else 0
-    except Exception:
+    except Exception:  # YAML parsing; yaml imported in try scope
         return 0
 
 

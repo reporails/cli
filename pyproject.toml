@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.5.0"
+version = "0.5.1"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -35,6 +35,8 @@ dependencies = [
     # hard requirement — the fallback verb lexicon drops charge accuracy
     # from 96% to ~78%. With the torch blocker active, spaCy loads in ~1s.
     "spacy>=3.8.11,<4",
+    # sklearn for topic clustering in mapper
+    "scikit-learn>=1.4.0",
 ]
 
 [project.optional-dependencies]

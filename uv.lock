@@ -1846,7 +1846,7 @@ wheels = [
 
 [[package]]
 name = "reporails-cli"
-version = "0.5.0"
+version = "0.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -1858,6 +1858,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "scikit-learn" },
     { name = "spacy" },
     { name = "tokenizers" },
     { name = "typer" },
@@ -1909,6 +1910,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
+    { name = "scikit-learn", specifier = ">=1.4.0" },
     { name = "spacy", specifier = ">=3.8.11,<4" },
     { name = "tokenizers", specifier = ">=0.19,<1" },
     { name = "typer", specifier = ">=0.12.0" },

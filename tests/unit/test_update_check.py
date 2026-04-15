@@ -446,7 +446,7 @@ class TestCheckForUpdates:
     def test_returns_none_on_exception(self) -> None:
         with patch(
             "reporails_cli.core.update_check._read_cache",
-            side_effect=RuntimeError("boom"),
+            side_effect=OSError("boom"),
         ):
             result = check_for_updates()
 
