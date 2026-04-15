@@ -47,7 +47,8 @@ def send_request(sock: socket.socket, request: dict[str, Any], timeout: float = 
             data += chunk
 
         line = data.split(b"\n", 1)[0]
-        return json.loads(line)
+        result: dict[str, Any] = json.loads(line)
+        return result
     except (OSError, TimeoutError, json.JSONDecodeError):
         return None
     finally:

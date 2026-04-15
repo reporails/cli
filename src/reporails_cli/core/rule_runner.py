@@ -68,7 +68,7 @@ def run_m_probes(
 
     # Run deterministic checks — group by match.type so each rule only
     # targets files of the correct type (e.g., scoped_rule rules skip CLAUDE.md)
-    det_rules = {k: v for k, v in rules.items() if v.type == RuleType.DETERMINISTIC}
+    det_rules = {rid: r for rid, r in rules.items() if r.type == RuleType.DETERMINISTIC}
 
     # Build file lists per match type from classified files
     files_by_type: dict[str, list[Path]] = {}
@@ -77,11 +77,11 @@ def run_m_probes(
 
     # Group rules by their match.type (None = wildcard, targets all files)
     rules_by_target: dict[str | None, dict[str, Rule]] = {}
-    for k, v in det_rules.items():
+    for rid, r in det_rules.items():
         match_type = None
-        if v.match and v.match.type:
-            match_type = v.match.type if isinstance(v.match.type, str) else None
-        rules_by_target.setdefault(match_type, {})[k] = v
+        if r.match and r.match.type:
+            match_type = r.match.type if isinstance(r.match.type, str) else None
+        rules_by_target.setdefault(match_type, {})[rid] = r
 
     for match_type, group_rules in rules_by_target.items():
         yml_paths = get_checks_paths(group_rules)

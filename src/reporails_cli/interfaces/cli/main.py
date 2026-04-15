@@ -22,7 +22,7 @@ from typing import Any  # noqa: E402
 
 import typer  # noqa: E402
 
-from reporails_cli.core.models import FileMatch  # noqa: E402
+from reporails_cli.core.models import FileMatch, LocalFinding  # noqa: E402
 from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules  # noqa: E402
 from reporails_cli.formatters import text as text_formatter  # noqa: E402
 from reporails_cli.interfaces.cli.helpers import (  # noqa: E402
@@ -120,7 +120,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     show_progress = sys.stdout.isatty() and output_format not in ("json", "github")
 
-    spinner = console.status("[bold]Discovering files...[/bold]") if show_progress else nullcontext()  # type: ignore[assignment]
+    spinner = console.status("[bold]Discovering files...[/bold]") if show_progress else nullcontext()
 
     start_time = time.perf_counter()
 
@@ -151,8 +151,8 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
 
         # 4. Run content-quality checks + client checks on map
-        content_findings: list[object] = []
-        client_findings: list[object] = []
+        content_findings: list[LocalFinding] = []
+        client_findings: list[LocalFinding] = []
         if ruleset_map is not None:
             if show_progress:
                 spinner.update("[bold]Running content checks...[/bold]")  # type: ignore[union-attr]
@@ -167,7 +167,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         hints = lint_result.hints if lint_result else ()
 
     # 5b. Memory index validation (client-side, reads local filesystem)
-    memory_findings: list[object] = []
+    memory_findings: list[LocalFinding] = []
     if ruleset_map is not None:
         from reporails_cli.core.memory_checks import validate_memory_files
 
@@ -569,7 +569,7 @@ def _compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
 
     # Base from compliance band (equation ran)
     if has_quality:
-        band = result.quality.compliance_band  # type: ignore[union-attr]
+        band = result.quality.compliance_band
         base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
     else:
         base = 6.0
@@ -586,7 +586,7 @@ def _compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
 
     score = base - error_penalty - warning_penalty
 
-    return round(max(0.0, min(10.0, score)), 1)
+    return float(round(max(0.0, min(10.0, score)), 1))
 
 
 def _print_score_line(score: float, tw: int) -> None:
@@ -620,7 +620,7 @@ def _finding_category(rule: str) -> str:
     return _CLIENT_CHECK_CATEGORY.get(rule, "C")
 
 
-def _print_category_bars(findings: tuple, tw: int) -> None:
+def _print_category_bars(findings: tuple[Any, ...], tw: int) -> None:
     """Print per-category finding breakdown with colored bars."""
     from collections import Counter
 
@@ -724,7 +724,7 @@ def _print_scorecard(  # noqa: C901
             console.print(f"  {' \u00b7 '.join(cf_parts)}")
 
     if has_quality:
-        band = result.quality.compliance_band  # type: ignore[union-attr]
+        band = result.quality.compliance_band
         band_color = "green" if band == "HIGH" else "yellow" if band == "MODERATE" else "red"
         console.print(f"  Compliance: [{band_color}]{band}[/{band_color}]")
 
@@ -859,7 +859,7 @@ def _print_text_result(  # noqa: C901
     total_remaining = 0
 
     for gkey in group_order:
-        group_files = groups.get(gkey)
+        group_files = groups.get(gkey, [])
         if not group_files:
             continue
 
@@ -937,7 +937,7 @@ def _short_path(file_path: str) -> str:
 _HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
-def _aggregate_hints(hints: tuple) -> list[tuple[str, str]]:
+def _aggregate_hints(hints: tuple[Any, ...]) -> list[tuple[str, str]]:
     """Aggregate per-file hints into system-wide summary lines with severity.
 
     Returns list of (severity, message) tuples, sorted worst-first.

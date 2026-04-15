@@ -142,6 +142,10 @@ explicit_package_bases = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "reporails_cli._archived.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false

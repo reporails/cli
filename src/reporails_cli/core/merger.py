@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from reporails_cli.core.api_client import (
     CrossFileFinding,
@@ -97,14 +98,14 @@ class CombinedResult:
     per_file_analysis: tuple[FileAnalysis, ...] = ()
     stats: CombinedStats = field(default_factory=CombinedStats)
     offline: bool = True
-    hints: tuple = ()  # tuple[Hint, ...] from tier gating
+    hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
 
 
 def merge_results(
     m_probe_findings: list[LocalFinding],
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
-    hints: tuple = (),
+    hints: tuple[Any, ...] = (),
     project_root: Path | None = None,
 ) -> CombinedResult:
     """Merge M-probe findings, client checks, and server diagnostics.
@@ -113,7 +114,8 @@ def merge_results(
     When present, deduplicates: server diagnostic at same (file, line, rule)
     replaces the local finding. All paths normalized to project-relative.
     """
-    _norm = lambda fp: normalize_finding_path(fp, project_root)  # noqa: E731
+    def _norm(fp: str) -> str:
+        return normalize_finding_path(fp, project_root)
     items: list[FindingItem] = []
 
     # Collect server diagnostics and build dedup set
