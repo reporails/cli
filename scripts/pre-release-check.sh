@@ -75,6 +75,22 @@ print(f'  {onnx.stat().st_size / 1024 / 1024:.0f} MB')
 " || fail "ONNX model not bundled in wheel"
 ok "ONNX model present"
 
+# 7. Verify content checks actually produce findings
+step "Verify content checks"
+SMOKE_DIR=$(mktemp -d)
+cat > "$SMOKE_DIR/CLAUDE.md" << 'FIXTURE'
+# My Project
+
+Use `npm run build` to build the project.
+
+NEVER commit secrets or API keys.
+FIXTURE
+RESULT=$("$VENV/bin/ails" check "$SMOKE_DIR" -f json 2>/dev/null) || true
+CLIENT=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('stats',{}).get('client_check_count',0))")
+[ "$CLIENT" -gt 0 ] || fail "Content checks not running (client_check_count=$CLIENT). A runtime dependency may be missing."
+ok "Content checks producing $CLIENT findings"
+rm -rf "$SMOKE_DIR"
+
 # Cleanup
 rm -rf "$(dirname "$VENV")"
 

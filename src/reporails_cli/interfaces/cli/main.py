@@ -15,12 +15,15 @@ _torch_blocker.install()
 # ─────────────────────────────────────────────────────────────────────
 
 import json  # noqa: E402
+import logging  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
 import typer  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 from reporails_cli.core.models import FileMatch, LocalFinding  # noqa: E402
 from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules  # noqa: E402
@@ -141,9 +144,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                 if show_progress:
                     spinner.update("[bold]Loading models...[/bold]")  # type: ignore[union-attr]
                 ruleset_map = _map_in_process(instruction_files, _cache_dir)
-        except (ImportError, RuntimeError):
+        except (ImportError, RuntimeError) as exc:
+            logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)
             if verbose:
-                console.print("[dim]Mapper unavailable. Content checks skipped.[/dim]")
+                console.print(f"[dim]Mapper unavailable: {exc}. Content checks skipped.[/dim]")
 
         # 3. Run M probes (mechanical + structural deterministic)
         if show_progress:

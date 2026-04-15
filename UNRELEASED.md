@@ -242,6 +242,11 @@
 - [BUILD]: Remove `en-core-web-sm` direct URL dependency (rejected by PyPI). spaCy model auto-downloads on first run if missing.
 - [CLI]: `ails version` shows only CLI version and install method — remove stale Framework/Recommended lines
 - [BUILD]: Add `scikit-learn` to runtime dependencies — required by mapper topic clustering
+- [CLI]: Log warning when mapper fails instead of silent degradation
+- [TESTS]: Add `TestContentChecks.test_content_checks_produce_findings` — verifies `client_check_count > 0`
+- [META]: Add `scripts/pre-release-check.sh` step 7: verify content checks produce findings in isolated venv
+- [DOCS]: Add `docs/specs/ARCHITECTURE-PRINCIPLES.md` — graded architectural instruction system (Standard/Advanced/Production/Enterprise)
+- [META]: Add `.claude/rules/` atomic rules: `dependency-boundary.md`, `silent-degradation.md`, `release-gates.md`
 - [TESTS]: Fix remaining MCP and CLI integration tests for `CombinedResult` schema — remove `score`/`level` assertions, use `files`/`stats`
 
 ### Fixed
