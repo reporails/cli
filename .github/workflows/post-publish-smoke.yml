@@ -5,6 +5,9 @@ on:
     workflows: ["Release"]
     types: [completed]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   smoke-pypi:
     name: "Smoke: pip install from PyPI"
@@ -79,7 +82,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - uses: astral-sh/setup-uv@v4
         with:
