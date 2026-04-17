@@ -29,9 +29,7 @@ _has_onnx_model = (
     / "model.onnx"
 ).exists()
 
-requires_model = pytest.mark.skipif(
-    not _has_onnx_model, reason="Bundled ONNX model not available"
-)
+requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX model not available")
 
 
 def _rules_installed() -> bool:

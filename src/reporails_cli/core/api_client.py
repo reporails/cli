@@ -32,7 +32,7 @@ class Diagnostic:
     file: str
     line: int
     severity: str  # "error" | "warning" | "info"
-    rule: str  # theory-native label
+    rule: str  # diagnostic rule identifier
     message: str
     fix: str = ""
     line_2: int = 0  # secondary line (conflict pairs)
@@ -171,7 +171,7 @@ def _api_key_from_credentials() -> str:
 
 
 class AilsClient:
-    """Equation client — HTTP to diagnostic API, local fallback.
+    """Diagnostic API client — HTTP to diagnostic API, local fallback.
 
     Sends a text-stripped RulesetMap to the diagnostic API (default:
     api.reporails.com) via POST /diagnose. AILS_SERVER_URL overrides
@@ -243,7 +243,6 @@ class AilsClient:
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
             logger.debug("Remote diagnostic response malformed: %s", exc)
             return None
-
 
 
 # ──────────────────────────────────────────────────────────────────

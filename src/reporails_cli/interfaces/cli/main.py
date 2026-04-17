@@ -242,12 +242,12 @@ def _map_in_process(instruction_files: list[Path], cache_dir: Path) -> Any:
 # This includes: "general" (no atoms), memory-*, description-mismatch, and any
 # new diagnostics — they appear as actionable structural items by default.
 _AGGREGATE_RULES = {
-    # Equation diagnostics — per-atom
+    # Server diagnostics — per-atom
     "CORE:C:0042",
     "CORE:E:0004",
     "CORE:C:0043",
     "CORE:E:0003",
-    # Equation diagnostics — interaction
+    # Server diagnostics — interaction
     "CORE:C:0041",
     "CORE:C:0044",
     "CORE:C:0046",
@@ -560,7 +560,7 @@ def _compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
     Band sets the base range, severity rates adjust within it.
     Rates are relative to instruction count so larger projects
     aren't penalized for having more atoms to check.
-    Does not expose equation internals.
+    Does not expose server internals.
     """
     s = result.stats
     hint_errors = sum(getattr(h, "error_count", 0) for h in result.hints) if result.hints else 0
@@ -572,7 +572,7 @@ def _compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
     if total == 0:
         return 10.0
 
-    # Base from compliance band (equation ran)
+    # Base from compliance band (server diagnostics ran)
     if has_quality:
         band = result.quality.compliance_band
         base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
@@ -607,12 +607,20 @@ def _print_score_line(score: float, tw: int) -> None:
 
 # Category extraction from rule IDs and client check labels
 _RULE_CATEGORY_MAP = {
-    "S": "Structure", "C": "Content", "E": "Efficiency",
-    "G": "Governance", "D": "Maintenance",
+    "S": "Structure",
+    "C": "Content",
+    "E": "Efficiency",
+    "G": "Governance",
+    "D": "Maintenance",
 }
 _CLIENT_CHECK_CATEGORY = {
-    "format": "S", "bold": "E", "orphan": "C", "heading_instruction": "S",
-    "ordering": "C", "scope": "S", "ambiguous_charge": "C",
+    "format": "S",
+    "bold": "E",
+    "orphan": "C",
+    "heading_instruction": "S",
+    "ordering": "C",
+    "scope": "S",
+    "ambiguous_charge": "C",
 }
 
 
@@ -660,10 +668,17 @@ def _print_category_bars(findings: tuple[Any, ...], tw: int) -> None:
 
 
 def _print_scorecard(  # noqa: C901
-    result: Any, has_quality: bool, n_atoms: int = 0,
-    tier: str = "", elapsed_ms: float = 0,
-    agent: str = "", type_str: str = "",
-    n_dir: int = 0, n_con: int = 0, n_amb: int = 0, n_prose: int = 0,
+    result: Any,
+    has_quality: bool,
+    n_atoms: int = 0,
+    tier: str = "",
+    elapsed_ms: float = 0,
+    agent: str = "",
+    type_str: str = "",
+    n_dir: int = 0,
+    n_con: int = 0,
+    n_amb: int = 0,
+    n_prose: int = 0,
 ) -> None:
     """Print the bottom scorecard — the payoff users scroll to."""
     tw = _get_term_width()
@@ -904,10 +919,17 @@ def _print_text_result(  # noqa: C901
             console.print()
 
     _print_scorecard(
-        result, has_quality, n_atoms=n_total, tier=tier,
-        elapsed_ms=elapsed_ms, agent=_detected_agent_name,
-        type_str=type_str, n_dir=n_dir, n_con=n_con,
-        n_amb=n_amb, n_prose=n_prose,
+        result,
+        has_quality,
+        n_atoms=n_total,
+        tier=tier,
+        elapsed_ms=elapsed_ms,
+        agent=_detected_agent_name,
+        type_str=type_str,
+        n_dir=n_dir,
+        n_con=n_con,
+        n_amb=n_amb,
+        n_prose=n_prose,
     )
 
 
