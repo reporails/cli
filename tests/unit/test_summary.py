@@ -50,16 +50,20 @@ class TestHeaderTable:
         assert "Pass" in md
 
     def test_findings_count(self):
-        md = generate_summary(_result(
-            files={"CLAUDE.md": _file([_finding(), _finding()])},
-            stats={"errors": 0, "warnings": 2},
-        ))
+        md = generate_summary(
+            _result(
+                files={"CLAUDE.md": _file([_finding(), _finding()])},
+                stats={"errors": 0, "warnings": 2},
+            )
+        )
         assert "**2**" in md
 
     def test_file_count(self):
-        md = generate_summary(_result(
-            files={"CLAUDE.md": _file([_finding()]), "rules/foo.md": _file([_finding()])},
-        ))
+        md = generate_summary(
+            _result(
+                files={"CLAUDE.md": _file([_finding()]), "rules/foo.md": _file([_finding()])},
+            )
+        )
         assert "| Files | 2 |" in md
 
     def test_offline_mode(self):
@@ -84,17 +88,21 @@ class TestStatus:
         assert "Pass" in md
 
     def test_errors_fail(self):
-        md = generate_summary(_result(
-            files={"f.md": _file([_finding(severity="error")])},
-            stats={"errors": 1, "warnings": 0},
-        ))
+        md = generate_summary(
+            _result(
+                files={"f.md": _file([_finding(severity="error")])},
+                stats={"errors": 1, "warnings": 0},
+            )
+        )
         assert "Fail" in md
 
     def test_warnings_only(self):
-        md = generate_summary(_result(
-            files={"f.md": _file([_finding(severity="warning")])},
-            stats={"errors": 0, "warnings": 1},
-        ))
+        md = generate_summary(
+            _result(
+                files={"f.md": _file([_finding(severity="warning")])},
+                stats={"errors": 0, "warnings": 1},
+            )
+        )
         assert "Warnings" in md
 
 
@@ -107,9 +115,11 @@ class TestFindingsTable:
     """Findings detail table rendering."""
 
     def test_row_rendered(self):
-        md = generate_summary(_result(
-            files={"CLAUDE.md": _file([_finding(rule="CORE:S:0001", message="Missing section")])},
-        ))
+        md = generate_summary(
+            _result(
+                files={"CLAUDE.md": _file([_finding(rule="CORE:S:0001", message="Missing section")])},
+            )
+        )
         assert "### Findings" in md
         assert "`CORE:S:0001`" in md
         assert "CLAUDE.md" in md
@@ -117,9 +127,11 @@ class TestFindingsTable:
 
     def test_long_message_truncated(self):
         long_msg = "A" * 100
-        md = generate_summary(_result(
-            files={"f.md": _file([_finding(message=long_msg)])},
-        ))
+        md = generate_summary(
+            _result(
+                files={"f.md": _file([_finding(message=long_msg)])},
+            )
+        )
         assert "AAA..." in md
         assert "A" * 78 not in md
 
@@ -129,12 +141,14 @@ class TestFindingsTable:
 
     def test_severity_icons(self):
         findings = [_finding(severity=s) for s in ("error", "warning", "medium", "info")]
-        md = generate_summary(_result(
-            files={"f.md": _file(findings)},
-        ))
-        assert "\u274c" in md       # error
+        md = generate_summary(
+            _result(
+                files={"f.md": _file(findings)},
+            )
+        )
+        assert "\u274c" in md  # error
         assert "\u26a0\ufe0f" in md  # warning/medium
-        assert "\U0001f535" in md    # info
+        assert "\U0001f535" in md  # info
 
 
 # ---------------------------------------------------------------------------
@@ -166,10 +180,12 @@ class TestMain:
     def test_valid_json(self, capsys, monkeypatch):
         import json
 
-        payload = json.dumps(_result(
-            files={"CLAUDE.md": _file([_finding()])},
-            stats={"errors": 0, "warnings": 1},
-        ))
+        payload = json.dumps(
+            _result(
+                files={"CLAUDE.md": _file([_finding()])},
+                stats={"errors": 0, "warnings": 1},
+            )
+        )
         monkeypatch.setenv("REPORAILS_RESULT", payload)
         main()
         out = capsys.readouterr().out

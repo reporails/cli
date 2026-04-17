@@ -1,7 +1,7 @@
 """Result merger — combines local findings with server diagnostics.
 
 Deduplicates when server and local checks fire on the same (file, line, rule),
-keeping the server version (richer fix text from equation computation).
+keeping the server version (richer fix text from server diagnostics).
 All file paths are normalized to project-relative before dedup and output.
 """
 
@@ -66,7 +66,7 @@ class FindingItem:
     file: str
     line: int
     severity: str  # "error" | "warning" | "info"
-    rule: str  # theory-native label or rule_id
+    rule: str  # diagnostic rule identifier or rule_id
     message: str
     fix: str = ""
     source: str = "local"  # "m_probe" | "client_check" | "server"
@@ -114,8 +114,10 @@ def merge_results(
     When present, deduplicates: server diagnostic at same (file, line, rule)
     replaces the local finding. All paths normalized to project-relative.
     """
+
     def _norm(fp: str) -> str:
         return normalize_finding_path(fp, project_root)
+
     items: list[FindingItem] = []
 
     # Collect server diagnostics and build dedup set

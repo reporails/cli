@@ -4,11 +4,10 @@
 
 Classifies instruction files into atoms, embeds them, clusters by topic,
 and produces a compact RulesetMap. This module is the client-side component
-of the reporails architecture. It contains NO equation constants — only
-classification, embedding, and clustering logic.
+of the reporails architecture — classification, embedding, and clustering.
 
 The RulesetMap is the wire format: ~32KB covering an entire instruction
-ruleset, suitable for transmission to the server for equation evaluation.
+ruleset, suitable for transmission to the diagnostic API.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ class Atom:
     text: str
     kind: str  # heading | excitation
     charge: str  # CONSTRAINT | DIRECTIVE | IMPERATIVE | NEUTRAL | AMBIGUOUS
-    charge_value: int  # q: -1 (constraint), 0 (neutral/ambiguous), +1 (directive/imperative). NOT b_i.
+    charge_value: int  # q: -1 (constraint), 0 (neutral/ambiguous), +1 (directive/imperative)
     modality: str  # imperative | direct | absolute | hedged | none
     specificity: str  # named | abstract
     scope_conditional: bool = False  # True when conditional frame (if/when/unless) detected

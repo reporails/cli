@@ -41,8 +41,13 @@ class TestV2WireFormat:
     def _make_atom(**overrides: object) -> Atom:
         """Build a minimal Atom with defaults."""
         defaults: dict[str, object] = {
-            "line": 1, "text": "", "kind": "excitation", "charge": "NEUTRAL",
-            "charge_value": 0, "modality": "none", "specificity": "abstract",
+            "line": 1,
+            "text": "",
+            "kind": "excitation",
+            "charge": "NEUTRAL",
+            "charge_value": 0,
+            "modality": "none",
+            "specificity": "abstract",
         }
         defaults.update(overrides)
         return Atom(**defaults)  # type: ignore[arg-type]
@@ -50,8 +55,11 @@ class TestV2WireFormat:
     @staticmethod
     def _make_rm(files: tuple[FileRecord, ...], atoms: tuple[Atom, ...]) -> RulesetMap:
         return RulesetMap(
-            schema_version="1.0.0", embedding_model="test",
-            generated_at="2026-01-01T00:00:00Z", files=files, atoms=atoms,
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=files,
+            atoms=atoms,
             summary=RulesetSummary(n_atoms=len(atoms), n_charged=0, n_neutral=len(atoms)),
         )
 
@@ -64,10 +72,24 @@ class TestV2WireFormat:
         fr = FileRecord(path="test.md", content_hash="a")
         atom = self._make_atom(file_path="test.md")
         a = _strip_and_serialize(self._make_rm((fr,), (atom,)))["atoms"][0]
-        semantic = {"charge", "modality", "specificity", "format", "kind",
-                    "file_path", "cluster_id", "position_index", "token_count",
-                    "scope_conditional", "embedding_b64", "heading_context",
-                    "depth", "ambiguous", "embedded_charge_markers", "inline"}
+        semantic = {
+            "charge",
+            "modality",
+            "specificity",
+            "format",
+            "kind",
+            "file_path",
+            "cluster_id",
+            "position_index",
+            "token_count",
+            "scope_conditional",
+            "embedding_b64",
+            "heading_context",
+            "depth",
+            "ambiguous",
+            "embedded_charge_markers",
+            "inline",
+        }
         assert not semantic & set(a.keys()), f"Semantic keys leaked: {semantic & set(a.keys())}"
 
     def test_short_keys_present(self) -> None:
@@ -97,7 +119,9 @@ class TestV2WireFormat:
 
     def test_inline_style_integer_codes(self) -> None:
         atom = self._make_atom(
-            named_tokens=["ruff"], italic_tokens=["always"], bold_tokens=["NEVER"],
+            named_tokens=["ruff"],
+            italic_tokens=["always"],
+            bold_tokens=["NEVER"],
         )
         fr = FileRecord(path="test.md", content_hash="a")
         a = _strip_and_serialize(self._make_rm((fr,), (atom,)))["atoms"][0]
@@ -111,8 +135,11 @@ class TestV2WireFormat:
 
     def test_text_fields_stripped(self) -> None:
         atom = self._make_atom(
-            text="sensitive content", plain_text="stripped",
-            rule="p1_negation", role="constraint", topics=("security",),
+            text="sensitive content",
+            plain_text="stripped",
+            rule="p1_negation",
+            role="constraint",
+            topics=("security",),
         )
         fr = FileRecord(path="test.md", content_hash="a")
         a = _strip_and_serialize(self._make_rm((fr,), (atom,)))["atoms"][0]

@@ -1,6 +1,6 @@
 """Memory index validation — broken links and missing frontmatter.
 
-Extracted from equation.py. Reads the local filesystem to validate
+Client-side memory validation. Reads the local filesystem to validate
 MEMORY.md index entries. Runs client-side (not in the API).
 """
 

@@ -33,7 +33,13 @@ requires_rules = pytest.mark.skipif(
 
 _onnx_path = (
     Path(__file__).resolve().parents[2]
-    / "src" / "reporails_cli" / "bundled" / "models" / "minilm-l6-v2" / "onnx" / "model.onnx"
+    / "src"
+    / "reporails_cli"
+    / "bundled"
+    / "models"
+    / "minilm-l6-v2"
+    / "onnx"
+    / "model.onnx"
 )
 _has_onnx_model = _onnx_path.exists()
 requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX model not available")
@@ -212,9 +218,7 @@ class TestCheckTextOutput:
 
     @requires_rules
     def test_violations_grouped_by_file(self, minimal_project: Path) -> None:
-        result = runner.invoke(
-            app, ["check", str(minimal_project), "--agent", "claude", "-f", "text"]
-        )
+        result = runner.invoke(app, ["check", str(minimal_project), "--agent", "claude", "-f", "text"])
         assert result.exit_code == 0
         assert "CLAUDE.md" in result.output
 
@@ -257,9 +261,7 @@ class TestCheckScoreConsistency:
             data = json.loads(result.output)
             stats_list.append(data["stats"])
 
-        assert stats_list[0] == stats_list[1] == stats_list[2], (
-            f"Stats varied across runs: {stats_list}"
-        )
+        assert stats_list[0] == stats_list[1] == stats_list[2], f"Stats varied across runs: {stats_list}"
 
 
 # ===========================================================================
@@ -275,9 +277,7 @@ class TestCheckAgentFlag:
 
     def test_no_files_hint_copilot(self, empty_project: Path) -> None:
         """--agent copilot should hint its instruction file."""
-        result = runner.invoke(
-            app, ["check", str(empty_project), "--agent", "copilot", "-f", "text"]
-        )
+        result = runner.invoke(app, ["check", str(empty_project), "--agent", "copilot", "-f", "text"])
         assert "Create a .github/copilot-instructions.md to get started" in result.output
 
     def test_unknown_agent_errors(self, empty_project: Path) -> None:
@@ -550,5 +550,3 @@ class TestHealCommand:
             or "Nothing to heal" in output
         )
         assert has_content, f"Expected heal output content, got: {output}"
-
-
