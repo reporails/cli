@@ -74,6 +74,7 @@ dev = [
 
 [project.scripts]
 ails = "reporails_cli.interfaces.cli.main:app"
+reporails-cli = "reporails_cli.interfaces.cli.main:app"
 reporails-mcp = "reporails_cli.interfaces.mcp.server:main"
 
 [project.urls]
