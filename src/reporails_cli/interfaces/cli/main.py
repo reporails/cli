@@ -169,6 +169,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         lint_result = AilsClient().lint(ruleset_map) if ruleset_map is not None else None
         server_report = lint_result.report if lint_result else None
         hints = lint_result.hints if lint_result else ()
+        cross_file_coordinates = lint_result.cross_file_coordinates if lint_result else ()
 
     # 5b. Memory index validation (client-side, reads local filesystem)
     memory_findings: list[LocalFinding] = []
@@ -180,7 +181,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     # 6. Merge results (content_findings + client_findings + memory_findings go together)
     all_client_findings = content_findings + client_findings + memory_findings
-    result = merge_results(m_findings, all_client_findings, server_report, hints=hints, project_root=target)
+    result = merge_results(
+        m_findings,
+        all_client_findings,
+        server_report,
+        hints=hints,
+        cross_file_coordinates=cross_file_coordinates,
+        project_root=target,
+    )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
     # 7. Format and display
@@ -482,12 +490,53 @@ def _truncate(text: str, max_len: int) -> str:
     return text[: max_len - 1] + "\u2026"
 
 
+_HINT_TYPE_LABELS = {
+    "CORE:C:0044": "topic competition",
+    "CORE:C:0047": "buried instructions",
+    "CORE:C:0046": "conflicts",
+    "CORE:C:0041": "content dilution",
+    "CORE:C:0051": "vague overall",
+    "CORE:D:0002": "unbalanced topics",
+    "CORE:C:0050": "low named coverage",
+    "CORE:C:0053": "low reinforcement",
+    "CORE:C:0040": "repetition",
+}
+
+_HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
+
+
+def _print_inline_hints(file_hints: list[Any], border: str) -> None:
+    """Render inline Pro diagnostic counts inside a file card (free tier).
+
+    Shows count, error count, and top 2 problem categories by severity.
+    Categories name the CLASS of problem (topic competition, buried instructions)
+    without exposing which instructions are affected or how to fix them.
+    """
+    pro_total = sum(h.count for h in file_hints)
+    pro_errors = sum(getattr(h, "error_count", 0) for h in file_hints)
+    err_str = f" ({pro_errors} error{'s' if pro_errors != 1 else ''})" if pro_errors else ""
+    # Top 2 categories by severity — detection is the gift, the fix is the product
+    sorted_hints = sorted(file_hints, key=lambda h: _HINT_SEV_ORDER.get(getattr(h, "severity", "warning"), 9))
+    categories: list[str] = []
+    seen: set[str] = set()
+    for h in sorted_hints:
+        label = _HINT_TYPE_LABELS.get(h.diagnostic_type, h.diagnostic_type)
+        if label not in seen:
+            categories.append(label)
+            seen.add(label)
+        if len(categories) >= 2:
+            break
+    cat_str = f" \u2014 {', '.join(categories)}" if categories else ""
+    console.print(f"  [dim]{border}     \u2295 {pro_total} Pro diagnostics{err_str}{cat_str}[/dim]")
+
+
 def _print_file_card(
     filepath: str,
     findings: list[Any],
     sev_icons: dict[str, str],
     verbose: bool,
     ruleset_map: Any = None,
+    file_hints: list[Any] | None = None,
 ) -> None:
     """Print one file's card: name, stats, structural findings, then quality aggregate."""
     from collections import Counter
@@ -550,6 +599,9 @@ def _print_file_card(
         if parts:
             agg_line = " \u00b7 ".join(parts)
             console.print(f"  [dim]{b}     {_truncate(agg_line, tw - 8)}[/dim]")
+
+    if file_hints:
+        _print_inline_hints(file_hints, b)
 
     console.print(f"  [dim]{b}[/dim]")
 
@@ -686,9 +738,6 @@ def _print_scorecard(  # noqa: C901
 
     hint_errors = sum(getattr(h, "error_count", 0) for h in result.hints) if result.hints else 0
     hint_warnings = sum(getattr(h, "warning_count", 0) for h in result.hints) if result.hints else 0
-    total_errors = s.errors + hint_errors
-    total_warnings = s.warnings + hint_warnings
-    total = total_errors + total_warnings + s.infos
 
     console.print(f"  [dim]\u2500\u2500 Summary {_HRULE}[/dim]\n")
 
@@ -725,16 +774,39 @@ def _print_scorecard(  # noqa: C901
 
     # ── Results ──
     console.print()
+    visible_findings = s.total_findings
     parts = []
-    if total_errors:
-        parts.append(f"[red]{total_errors} errors[/red]")
-    parts.append(f"{total_warnings} warnings")
+    if s.errors:
+        parts.append(f"[red]{s.errors} errors[/red]")
+    parts.append(f"{s.warnings} warnings")
     parts.append(f"{s.infos} info")
-    console.print(f"  {total} findings \u00b7 {' \u00b7 '.join(parts)}")
+    console.print(f"  {visible_findings} findings \u00b7 {' \u00b7 '.join(parts)}")
 
+    # Pro diagnostics (gated interaction diagnostics on free tier)
+    pro_total = sum(h.count for h in result.hints) if result.hints else 0
+    if pro_total:
+        pro_parts = []
+        if hint_errors:
+            pro_parts.append(f"[red]{hint_errors} errors[/red]")
+        if hint_warnings:
+            pro_parts.append(f"{hint_warnings} warnings")
+        pro_detail = f" ({' \u00b7 '.join(pro_parts)})" if pro_parts else ""
+        console.print(f"  [dim]+ {pro_total} Pro diagnostics{pro_detail}[/dim]")
+
+    # Cross-file counts (Pro: from full findings, Free: from coordinates)
     if result.cross_file:
         n_conflicts = sum(1 for cf in result.cross_file if cf.finding_type == "conflict")
         n_reps = sum(1 for cf in result.cross_file if cf.finding_type == "repetition")
+        cf_parts = []
+        if n_conflicts:
+            cf_parts.append(f"{n_conflicts} cross-file conflicts")
+        if n_reps:
+            cf_parts.append(f"{n_reps} cross-file repetitions")
+        if cf_parts:
+            console.print(f"  {' \u00b7 '.join(cf_parts)}")
+    elif result.cross_file_coordinates:
+        n_conflicts = sum(c.count for c in result.cross_file_coordinates if c.finding_type == "conflict")
+        n_reps = sum(c.count for c in result.cross_file_coordinates if c.finding_type == "repetition")
         cf_parts = []
         if n_conflicts:
             cf_parts.append(f"{n_conflicts} cross-file conflicts")
@@ -748,11 +820,11 @@ def _print_scorecard(  # noqa: C901
         band_color = "green" if band == "HIGH" else "yellow" if band == "MODERATE" else "red"
         console.print(f"  Compliance: [{band_color}]{band}[/{band_color}]")
 
-    # ── Beta CTA for unauthenticated users ──
+    # ── CTA for free tier ──
     if tier == "free":
+        all_total = visible_findings + pro_total
         console.print()
-        console.print("  [dim]Full diagnostics free for the first 100 registering users during beta[/dim]")
-        console.print("  [bold]ails auth login[/bold]")
+        console.print(f"  See all {all_total} findings with fixes \u2192 [bold]ails auth login[/bold]")
 
     console.print()
 
@@ -844,6 +916,15 @@ def _print_text_result(  # noqa: C901
         console.print(f"  {mark}  No findings.")
         return
 
+    # ── Build hints-by-file index for inline display ──
+    hints_by_file: dict[str, list[Any]] = {}
+    if result.hints:
+        from reporails_cli.core.merger import normalize_finding_path
+
+        for h in result.hints:
+            norm = normalize_finding_path(h.file, Path.cwd())
+            hints_by_file.setdefault(norm, []).append(h)
+
     # ── Group files by type ──
     sev_icons = _get_sev_icons(ascii_mode)
 
@@ -902,21 +983,29 @@ def _print_text_result(  # noqa: C901
                 n_more = len(group_files) - i
                 console.print(f"  [dim]{b}   ... and {n_more} more ({remaining} findings)[/dim]")
                 break
-            _print_file_card(filepath, findings, sev_icons, verbose, ruleset_map=ruleset_map)
+            _print_file_card(
+                filepath,
+                findings,
+                sev_icons,
+                verbose,
+                ruleset_map=ruleset_map,
+                file_hints=hints_by_file.get(filepath),
+            )
 
         # Bottom border
         console.print(f"  [dim]\u2514\u2500 {n_group_findings} findings[/dim]\n")
 
-    # ── Hints ──
-    if result.hints:
-        agg_hints = _aggregate_hints(result.hints)
-        if agg_hints:
-            console.print(f"  [dim]\u2500\u2500 Hints {_HRULE}[/dim]\n")
-            for sev, line in agg_hints:
-                icon = sev_icons.get(sev, "\u25cf")
-                console.print(f"  {icon}  {line}")
-            console.print("\n  [dim]Beta: full diagnostics free \u2192 ails auth login[/dim]")
-            console.print()
+    # ── Cross-file coordinates (free tier) ──
+    if result.cross_file_coordinates:
+        console.print(f"  [dim]\u2500\u2500 Cross-file {_HRULE}[/dim]\n")
+        for coord in result.cross_file_coordinates:
+            icon = sev_icons.get("error" if coord.finding_type == "conflict" else "warning", "\u25cf")
+            s = "s" if coord.count != 1 else ""
+            short_1 = _short_path(coord.file_1)
+            short_2 = _short_path(coord.file_2)
+            console.print(f"  {icon}  {short_1} \u2194 {short_2} \u2014 {coord.count} {coord.finding_type}{s}")
+        console.print("\n  [dim]Line-level detail and fixes \u2192 [bold]ails auth login[/bold][/dim]")
+        console.print()
 
     _print_scorecard(
         result,
@@ -959,45 +1048,6 @@ def _short_path(file_path: str) -> str:
         if part.endswith(".md") and part[:1].isupper():
             return str(Path(*parts[i:]))
     return p.name
-
-
-_HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
-
-
-def _aggregate_hints(hints: tuple[Any, ...]) -> list[tuple[str, str]]:
-    """Aggregate per-file hints into system-wide summary lines with severity.
-
-    Returns list of (severity, message) tuples, sorted worst-first.
-    """
-    by_type: dict[str, list[Any]] = {}
-    for h in hints:
-        by_type.setdefault(h.diagnostic_type, []).append(h)
-
-    lines: list[tuple[str, str]] = []
-    for dtype, group in sorted(by_type.items(), key=lambda x: -len(x[1])):
-        n_files = len({h.file for h in group})
-        total_count = sum(h.count for h in group)
-        s = "s" if total_count != 1 else ""
-        # Worst severity across all hints of this type
-        worst_sev = min(
-            (getattr(h, "severity", "warning") for h in group),
-            key=lambda sv: _HINT_SEV_ORDER.get(sv, 9),
-        )
-
-        templates: dict[str, str] = {
-            "CORE:C:0044": f"{n_files} files have overlapping topics — differentiate with named constructs",
-            "CORE:C:0046": f"{total_count} contradicting instruction{s} across {n_files} files",
-            "CORE:C:0041": f"{n_files} files have instructions diluted by surrounding content",
-            "CORE:C:0051": f"{n_files} files have vague instructions overall",
-            "CORE:C:0047": f"{total_count} instruction{s} buried in {n_files} files",
-            "CORE:D:0002": f"Unbalanced topics in {n_files} files",
-            "CORE:C:0050": f"{n_files} files lack named constructs",
-        }
-        lines.append((worst_sev, templates.get(dtype, f"{total_count} {dtype} issue{s} in {n_files} files")))
-
-    # Sort by severity (errors first)
-    lines.sort(key=lambda x: _HINT_SEV_ORDER.get(x[0], 9))
-    return lines
 
 
 @app.command(rich_help_panel="Commands")

@@ -65,8 +65,14 @@ def _run_pipeline(target: Path) -> dict[str, Any]:
     lint_result = AilsClient().lint(ruleset_map) if ruleset_map else None
     server_report = lint_result.report if lint_result else None
     hints = lint_result.hints if lint_result else ()
+    cross_file_coordinates = lint_result.cross_file_coordinates if lint_result else ()
     result = merge_results(
-        m_findings, content_findings + client_findings, server_report, hints=hints, project_root=target
+        m_findings,
+        content_findings + client_findings,
+        server_report,
+        hints=hints,
+        cross_file_coordinates=cross_file_coordinates,
+        project_root=target,
     )
     return json_formatter.format_combined_result(result)
 
