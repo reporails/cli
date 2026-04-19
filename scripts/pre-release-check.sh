@@ -65,6 +65,13 @@ python3 -m venv "$VENV"
 "$VENV/bin/ails" check --help > /dev/null || fail "ails check --help failed"
 ok "Wheel installs and runs"
 
+# 5b. Verify all expected entry points exist
+step "Verify entry points"
+for cmd in ails reporails-cli reporails-mcp; do
+  "$VENV/bin/$cmd" --help > /dev/null 2>&1 || fail "Entry point '$cmd' not found or broken"
+done
+ok "All entry points present"
+
 # 6. Verify ONNX model bundled
 step "Verify ONNX model"
 "$VENV/bin/python" -c "

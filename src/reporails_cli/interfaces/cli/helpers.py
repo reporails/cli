@@ -249,7 +249,9 @@ def _print_map_text(target: Path, agents: list[Any], elapsed_ms: float) -> None:
         for label, dir_path in agent.detected_directories.items():
             console.print(f"  {label}: {dir_path}")
         if agent.config_files:
-            console.print(f"  config: {agent.config_files[0].relative_to(target)}")
+            cf = agent.config_files[0]
+            if cf.is_relative_to(target):
+                console.print(f"  config: {cf.relative_to(target)}")
         console.print()
 
     _print_section("Classification", _detect_classification(target))

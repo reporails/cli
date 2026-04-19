@@ -1,14 +1,13 @@
 # pylint: disable=C0302
-# ruff: noqa: C901, SIM102, SIM108, N806, PERF401, F541, RUF034
+# ruff: noqa: C901, SIM102, SIM108, N806, PERF401, RUF034
 """Mapper — client-side spectrograph for instruction file analysis.
 
 Classifies instruction files into atoms, embeds them, clusters by topic,
 and produces a compact RulesetMap. This module is the client-side component
-of the reporails architecture. It contains NO equation constants — only
-classification, embedding, and clustering logic.
+of the reporails architecture — classification, embedding, and clustering.
 
 The RulesetMap is the wire format: ~32KB covering an entire instruction
-ruleset, suitable for transmission to the server for equation evaluation.
+ruleset, suitable for transmission to the diagnostic API.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ class Atom:
     text: str
     kind: str  # heading | excitation
     charge: str  # CONSTRAINT | DIRECTIVE | IMPERATIVE | NEUTRAL | AMBIGUOUS
-    charge_value: int  # q: -1 (constraint), 0 (neutral/ambiguous), +1 (directive/imperative). NOT b_i.
+    charge_value: int  # q: -1 (constraint), 0 (neutral/ambiguous), +1 (directive/imperative)
     modality: str  # imperative | direct | absolute | hedged | none
     specificity: str  # named | abstract
     scope_conditional: bool = False  # True when conditional frame (if/when/unless) detected
@@ -213,6 +212,14 @@ KNOWN_CODE_TOKENS: set[str] = {
     "parametrize",
 }
 
+# Single-pass regex for all KNOWN_CODE_TOKENS.  Sorted longest-first so
+# the alternation engine prefers longer matches (e.g. "dataclasses" over
+# "dataclass"), though word-boundary assertions make this a safety belt.
+_KNOWN_TOKEN_RE = re.compile(
+    r"(?<![`\w])(" + "|".join(re.escape(t) for t in sorted(KNOWN_CODE_TOKENS, key=len, reverse=True)) + r")(?![`\w])",
+    re.IGNORECASE,
+)
+
 # Abbreviations that look like dotted names but aren't code
 _DOTTED_EXCLUSIONS: set[str] = {
     "e.g",
@@ -227,6 +234,8 @@ _DOTTED_EXCLUSIONS: set[str] = {
     "a.m.",
     "p.m.",
 }
+
+_DOTTED_EXCLUSIONS_NORMALIZED: frozenset[str] = frozenset(e.rstrip(".") for e in _DOTTED_EXCLUSIONS)
 
 # Patterns that look like code but aren't in backticks
 CODE_SHAPE_RE = re.compile(
@@ -778,6 +787,208 @@ def _find_verb_idx(lowers: list[str]) -> int:
     return -1
 
 
+# Conditional marker set excluding "for" — reused across scope detection.
+_COND_CHECK = _CONDITIONAL_MARKERS - {"for"}
+
+
+def _detect_scope_conditional(doc: Any, has_cond_prefix: bool) -> bool:
+    """Detect conditional scope frame from first 8 tokens of a spaCy doc."""
+    lowers = [t.text.lower() for t in doc[:8]]
+    has_cond = any(w in _COND_CHECK for w in lowers)
+    return has_cond_prefix or has_cond
+
+
+def _is_root_in_backtick(
+    root_lower: str,
+    clean: str,
+    md_text: str,
+    inline_tokens: list[InlineToken] | None,
+) -> bool:
+    """Check if the ROOT word falls inside a backtick span."""
+    if inline_tokens is not None:
+        for itok in inline_tokens:
+            if itok.text.lower() == root_lower:
+                return itok.format == "backtick"
+        return False
+    # Regex fallback: position-0 heuristic for direct calls
+    root_pos = clean.lower().find(root_lower)
+    if root_pos == -1 or root_pos != 0:
+        return False
+    return any(root_lower in _CLASSIFY_WORD_RE.findall(m.group().lower()) for m in _BACKTICK_RE.finditer(md_text))
+
+
+def _is_advcl_rescue_candidate(doc: Any) -> bool:
+    """Check if position-0 token qualifies for advcl verb rescue."""
+    return (
+        len(doc) > 0
+        and doc[0].tag_ in {"VB", "VBP"}
+        and doc[0].dep_ in ("advcl", "ccomp", "ROOT")
+        and doc[0].text.lower() in _ALL_VERBS
+        and doc[0].text.lower() not in _VERBS_AMBIGUOUS
+    )
+
+
+def _check_colon_label(doc: Any, root: Any) -> tuple[str, int, str, str, bool] | None:
+    """Detect 'Noun: verb ...' label pattern in early tokens.
+
+    Returns NEUTRAL result if a noun-colon label is found, None otherwise.
+    Guard: skip when position 0 is a known verb (verb-object-colon pattern).
+    """
+    if len(doc) > 0 and doc[0].text.lower() in _ALL_VERBS:
+        return None
+    for tok in doc:
+        if tok.i >= root.i:
+            break
+        if tok.text == ":" and 0 < tok.i <= 4:
+            if any(t.text.lower() in _CONDITIONAL_MARKERS for t in doc[: tok.i]):
+                break  # conditional clause break, not a label
+            prev = doc[tok.i - 1]
+            if prev.tag_ in {"NN", "NNS", "NNP", "NNPS"}:
+                return ("NEUTRAL", 0, "none", "p3_spacy_colon_label", False)
+    return None
+
+
+def _check_postcolon_verb(doc: Any) -> tuple[str, int, str, str, bool] | None:
+    """Post-colon verb rescue: conditional markers before colon, verb after.
+
+    Returns IMPERATIVE result if a conditional-colon-verb pattern is found,
+    None otherwise. Shared by NN and non-verb tag branches.
+    """
+    colon_idx = next((t.i for t in doc if t.text == ":"), -1)
+    if colon_idx <= 0:
+        return None
+    if not any(t.text.lower() in _CONDITIONAL_MARKERS for t in doc[:colon_idx]):
+        return None
+    for pt in (t for t in doc if t.i > colon_idx):
+        if pt.i > colon_idx + 3:
+            break
+        if pt.text.lower() in _ALL_VERBS and pt.tag_ in {"VB", "VBP", "VBG", "VBN"}:
+            return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_postcolon_verb", True)
+    return None
+
+
+def _classify_nn_tag(
+    doc: Any,
+    root: Any,
+    has_subj: bool,
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool]:
+    """POS classification for NN/NNS/NNP/NNPS root tags."""
+    # Lexicon override: imperative verbs mistagged as nouns at position 0
+    if root.i == 0 and root.text.lower() in _ALL_VERBS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0", sc)
+    # Position-0 verb rescue: non-ambiguous verb demoted by spaCy
+    t0_lower = doc[0].text.lower() if len(doc) > 0 else ""
+    if root.i > 0 and not has_subj and t0_lower in _ALL_VERBS and t0_lower not in _VERBS_AMBIGUOUS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue", sc)
+    # Post-colon verb rescue
+    pcv = _check_postcolon_verb(doc)
+    if pcv is not None:
+        return pcv
+    return ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
+
+
+def _classify_vb_vbp_tag(
+    doc: Any,
+    root: Any,
+    tag: str,
+    has_subj: bool,
+    has_cond_prefix: bool,
+    *,
+    shallow: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """POS classification for VB/VBP root tags.
+
+    Returns 5-tuple result or None to fall through to lexicon.
+    """
+    subj_trace = f"p3_spacy_{tag.lower()}_subj"
+    if has_subj:
+        return ("NEUTRAL", 0, "none", subj_trace, False)
+    # In shallow mode, only charge if pre-root words are context words
+    if shallow and root.i > 0:
+        pre_words = {t.text.lower() for t in doc[: root.i]}
+        if not (pre_words <= _CONTEXT_WORDS):
+            return None  # fall through to lexicon
+    # Lexicon cross-check: only charge confirmed verbs
+    if root.text.lower() not in _ALL_VERBS:
+        return None  # fall through to lexicon
+    sc = _detect_scope_conditional(doc, has_cond_prefix)
+    if tag == "VBP":
+        next_tok = doc[root.i + 1] if root.i + 1 < len(doc) else None
+        if next_tok and (next_tok.tag_ == "DT" or next_tok.dep_ == "dobj"):
+            return ("IMPERATIVE", 1, "imperative", "p3_spacy_vbp_det", sc)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_vbp!amb", sc)
+    return ("IMPERATIVE", 1, "imperative", "p3_spacy_vb", sc)
+
+
+def _classify_nonverb_tag(
+    doc: Any,
+    root: Any,
+    tag: str,
+) -> tuple[str, int, str, str, bool]:
+    """POS classification for non-verb root tags (JJ, RB, CD, etc.)."""
+    if root.i == 0 and root.text.lower() in _ALL_VERBS:
+        amb = "!amb" if root.text.lower() in _VERBS_AMBIGUOUS else ""
+        return ("IMPERATIVE", 1, "imperative", f"p3_spacy_{tag.lower()}_verb0{amb}", False)
+    # Post-colon verb rescue for conditional markers as ROOT
+    pcv = _check_postcolon_verb(doc)
+    if pcv is not None:
+        # Rename trace for non-verb branch
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_postcolon_verb", True)
+    return ("NEUTRAL", 0, "none", f"p3_spacy_{tag.lower()}", False)
+
+
+_VERB0_RESCUE_DEPS = frozenset({"csubj", "compound", "nmod", "dep", "amod", "advcl", "ccomp"})
+
+
+def _check_verb0_rescue(
+    doc: Any,
+    root: Any,
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """Check position-0 verb rescue: advcl rescue and general dep-demotion rescue.
+
+    Returns IMPERATIVE result if position 0 has a non-ambiguous verb that
+    spaCy demoted, or None to continue classification.
+    """
+    if root.i == 0 or len(doc) == 0:
+        return None
+    t0_lower = doc[0].text.lower()
+    if t0_lower not in _ALL_VERBS or t0_lower in _VERBS_AMBIGUOUS:
+        return None
+    # advcl/ccomp rescue (verb at pos 0 demoted by clause boundary)
+    if doc[0].tag_ in {"VB", "VBP"} and doc[0].dep_ in ("advcl", "ccomp", "ROOT"):
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_vb_advcl_rescue", sc)
+    # General rescue (csubj, compound, nmod, etc.)
+    if doc[0].dep_ in _VERB0_RESCUE_DEPS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_verb0_rescue", sc)
+    return None
+
+
+_PAST_TENSE_TAGS = frozenset({"VBZ", "VBD", "VBN", "VBG"})
+
+
+def _spacy_pre_checks(
+    doc: Any,
+    root: Any,
+    clean: str,
+    md_text: str,
+    has_cond_prefix: bool,
+    inline_tokens: list[InlineToken] | None,
+) -> tuple[str, int, str, str, bool] | None:
+    """Run pre-POS checks: backtick filter, verb0 rescue, colon label."""
+    if _is_root_in_backtick(root.text.lower(), clean, md_text, inline_tokens):
+        return ("NEUTRAL", 0, "none", "p3_spacy_backtick", False)
+    rescue = _check_verb0_rescue(doc, root, has_cond_prefix)
+    if rescue is not None:
+        return rescue
+    return _check_colon_label(doc, root)
+
+
 def _classify_phase3_spacy(
     clean: str,
     md_text: str,
@@ -807,217 +1018,303 @@ def _classify_phase3_spacy(
     if root is None:
         return None
 
+    pre = _spacy_pre_checks(doc, root, clean, md_text, has_cond_prefix, inline_tokens)
+    if pre is not None:
+        return pre
+
+    has_subj = any(child.dep_ in ("nsubj", "nsubjpass") for child in root.children)
     tag = root.tag_
 
-    # Backtick filter: neutralise when the ROOT word is inside a backtick span.
-    # Two paths: inline_tokens (AST-derived, used by pipeline) and regex
-    # fallback (used by direct classify_charge calls from tests/calibration).
-    _root_lower = root.text.lower()
-    if inline_tokens is not None:
-        # AST path: check if the FIRST token matching ROOT word is backtick.
-        # Must be first-occurrence — "Run `uv run`" has ROOT "Run" (plain)
-        # but a different "run" inside backticks.
-        for itok in inline_tokens:
-            if itok.text.lower() == _root_lower:
-                if itok.format == "backtick":
-                    return ("NEUTRAL", 0, "none", "p3_spacy_backtick", False)
-                break  # first occurrence is not backtick — stop
-    else:
-        # Regex fallback: position-0 heuristic for direct calls
-        _root_pos_in_clean = clean.lower().find(_root_lower)
-        if _root_pos_in_clean != -1:
-            _in_backtick = False
-            for m in _BACKTICK_RE.finditer(md_text):
-                span_lower = m.group().lower()
-                if _root_lower in _CLASSIFY_WORD_RE.findall(span_lower):
-                    if _root_pos_in_clean == 0:
-                        _in_backtick = True
-                        break
-            if _in_backtick:
-                return ("NEUTRAL", 0, "none", "p3_spacy_backtick", False)
-
-    # Position-0 advcl verb rescue: when a colon or dash creates a clause
-    # boundary, spaCy demotes the imperative verb at position 0 to advcl or
-    # ccomp and picks a verb from the after-clause as ROOT. But the instruction
-    # IS the pre-clause verb. "Check kill list: do not test..." has ROOT="test"
-    # with has_subj=True, but "Check" at position 0 is the imperative.
-    if (
-        root.i > 0
-        and len(doc) > 0
-        and doc[0].tag_ in {"VB", "VBP"}
-        and doc[0].dep_ in ("advcl", "ccomp", "ROOT")
-        and doc[0].text.lower() in _ALL_VERBS
-        and doc[0].text.lower() not in _VERBS_AMBIGUOUS
-    ):
-        cond_check = _CONDITIONAL_MARKERS - {"for"}
-        lowers = [t.text.lower() for t in doc[:8]]
-        has_cond = any(w in cond_check for w in lowers)
-        sc = has_cond_prefix or has_cond
-        return ("IMPERATIVE", 1, "imperative", "p3_spacy_vb_advcl_rescue", sc)
-
-    # Colon filter: "Noun: verb ..." label pattern — only when the colon
-    # appears in the first 4 tokens (actual labels like "Testing:" or
-    # "Security: be mindful").  Mid-sentence colons ("When X: do Y") are
-    # clause breaks, not labels.
-    #
-    # Guard: skip when position 0 is a known verb — "Read theory state: ..."
-    # is "Verb Object: continuation", not a descriptive label.
-    _t0_is_verb = len(doc) > 0 and doc[0].text.lower() in _ALL_VERBS
-    if not _t0_is_verb:
-        for tok in doc:
-            if tok.i >= root.i:
-                break
-            if tok.text == ":" and 0 < tok.i <= 4:
-                # Guard: if any word before the colon is a conditional marker,
-                # this is a conditional clause break ("before X: do Y"), not
-                # a descriptive label.
-                _pre_colon_has_cond = any(t.text.lower() in _CONDITIONAL_MARKERS for t in doc[: tok.i])
-                if _pre_colon_has_cond:
-                    break  # not a label — fall through to normal classification
-                prev = doc[tok.i - 1]
-                if prev.tag_ in {"NN", "NNS", "NNP", "NNPS"}:
-                    return ("NEUTRAL", 0, "none", "p3_spacy_colon_label", False)
-
-    # Check for subject dependents
-    has_subj = any(child.dep_ in ("nsubj", "nsubjpass") for child in root.children)
-
-    # General position-0 verb rescue: spaCy commonly demotes position-0
-    # imperative verbs to csubj, compound, nmod, or other non-root deps
-    # and picks a later word as ROOT. When position 0 has a known verb
-    # from our corpus-calibrated lexicon, it's the imperative regardless
-    # of what spaCy thinks ROOT is.
-    # Examples: "Create custom commands..." (Create=csubj, ROOT=workflows)
-    #           "Verify data location is..." (Verify=csubj, ROOT=is)
-    #           "Use Taskmaster to expand..." (Use=compound, ROOT=expand)
-    #           "Update docs/roadmap.md if..." (Update=nmod, ROOT=added)
-    if root.i > 0 and len(doc) > 0:
-        _t0_lower = doc[0].text.lower()
-        if (
-            _t0_lower in _ALL_VERBS
-            and _t0_lower not in _VERBS_AMBIGUOUS
-            and doc[0].dep_ in ("csubj", "compound", "nmod", "dep", "amod", "advcl", "ccomp")
-        ):
-            cond_check = _CONDITIONAL_MARKERS - {"for"}
-            lowers = [t.text.lower() for t in doc[:8]]
-            has_cond = any(w in cond_check for w in lowers)
-            sc = has_cond_prefix or has_cond
-            return ("IMPERATIVE", 1, "imperative", "p3_spacy_verb0_rescue", sc)
-
-    # POS classification
+    # POS classification by tag group
     if tag in {"NN", "NNS", "NNP", "NNPS"}:
-        # Lexicon override: spaCy often mistaggs imperative verbs as nouns
-        # ("Use", "List", "Report", "Focus", etc.).  If the root is at
-        # position 0 and the word is in our verb lexicon, treat as VB.
-        if root.i == 0 and root.text.lower() in _ALL_VERBS:
-            cond_check = _CONDITIONAL_MARKERS - {"for"}
-            lowers = [t.text.lower() for t in doc[:8]]
-            has_cond = any(w in cond_check for w in lowers)
-            sc = has_cond_prefix or has_cond
-            return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0", sc)
-        # Position-0 verb rescue: spaCy picked an NN as ROOT but position 0
-        # has a known non-ambiguous verb — "Audit conditions", "Scan experiments/".
-        # The verb was demoted (compound, amod, etc.) but is the imperative.
-        # Excludes _VERBS_AMBIGUOUS ("Cache operations", "Process body") which
-        # are genuinely noun compounds.
-        _t0_lower = doc[0].text.lower()
-        if root.i > 0 and not has_subj and _t0_lower in _ALL_VERBS and _t0_lower not in _VERBS_AMBIGUOUS:
-            cond_check = _CONDITIONAL_MARKERS - {"for"}
-            lowers = [t.text.lower() for t in doc[:8]]
-            has_cond = any(w in cond_check for w in lowers)
-            sc = has_cond_prefix or has_cond
-            return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue", sc)
-        # Post-colon verb rescue: "[conditional frame]: [verb] ..."
-        # spaCy picked a noun from after the colon as ROOT (often a path
-        # component like "experiments"), but there's a known verb right after
-        # the colon. Only fires when a conditional marker appears pre-colon,
-        # confirming this is a conditional instruction, not a label.
-        # E.g. "IMMEDIATELY before writing conditions: Re-read ..."
-        _colon_idx = next((t.i for t in doc if t.text == ":"), -1)
-        if _colon_idx > 0:
-            _pre_has_cond = any(t.text.lower() in _CONDITIONAL_MARKERS for t in doc[:_colon_idx])
-            if _pre_has_cond:
-                _post_colon = [t for t in doc if t.i > _colon_idx]
-                for _pt in _post_colon[:3]:
-                    if _pt.text.lower() in _ALL_VERBS and _pt.tag_ in {"VB", "VBP", "VBG", "VBN"}:
-                        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_postcolon_verb", True)
-        return ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
-    if tag == "VBZ":
-        return ("NEUTRAL", 0, "none", "p3_spacy_vbz", False)
-    if tag == "VBD":
-        return ("NEUTRAL", 0, "none", "p3_spacy_vbd", False)
-    if tag == "VBN":
-        return ("NEUTRAL", 0, "none", "p3_spacy_vbn", False)
-    if tag == "VBG":
-        return ("NEUTRAL", 0, "none", "p3_spacy_vbg", False)
-
-    if tag == "VB":
-        if has_subj:
-            return ("NEUTRAL", 0, "none", "p3_spacy_vb_subj", False)
-        # In shallow mode (bold-label recursive), only charge if all tokens
-        # before the root are context words (adverbs, conditionals, etc.).
-        # Mid-sentence VB buried in descriptive text is noise.
-        if shallow and root.i > 0:
-            pre_words = {t.text.lower() for t in doc[: root.i]}
-            if not (pre_words <= _CONTEXT_WORDS):
-                return None  # fall through to lexicon
-        # Lexicon cross-check: spaCy often mistaggs tech nouns as VB
-        # ("Plugin", "Vite", "Frontend", "Sarif").  Only charge when
-        # the root word is independently confirmed as a verb by our
-        # corpus-calibrated lexicon.  Unknown words fall through to the
-        # lexicon path which has its own disambiguation.
-        if root.text.lower() not in _ALL_VERBS:
-            return None  # fall through to lexicon
-        # Imperative — detect scope
-        cond_check = _CONDITIONAL_MARKERS - {"for"}
-        lowers = [t.text.lower() for t in doc[:8]]
-        has_cond = any(w in cond_check for w in lowers)
-        sc = has_cond_prefix or has_cond
-        return ("IMPERATIVE", 1, "imperative", "p3_spacy_vb", sc)
-
-    if tag == "VBP":
-        if has_subj:
-            return ("NEUTRAL", 0, "none", "p3_spacy_vbp_subj", False)
-        # In shallow mode, same restriction as VB.
-        if shallow and root.i > 0:
-            pre_words = {t.text.lower() for t in doc[: root.i]}
-            if not (pre_words <= _CONTEXT_WORDS):
-                return None
-        # Same lexicon cross-check as VB — fall through for unknown words
-        if root.text.lower() not in _ALL_VERBS:
-            return None
-        # No subject — likely imperative, but VBP is ambiguous
-        cond_check = _CONDITIONAL_MARKERS - {"for"}
-        lowers = [t.text.lower() for t in doc[:8]]
-        has_cond = any(w in cond_check for w in lowers)
-        sc = has_cond_prefix or has_cond
-        # Check if next token is DT or has dobj dependency
-        next_tok = doc[root.i + 1] if root.i + 1 < len(doc) else None
-        if next_tok and (next_tok.tag_ == "DT" or next_tok.dep_ == "dobj"):
-            return ("IMPERATIVE", 1, "imperative", "p3_spacy_vbp_det", sc)
-        return ("IMPERATIVE", 1, "imperative", "p3_spacy_vbp!amb", sc)
-
-    # Non-verb tags (JJ, RB, CD, etc.) → NEUTRAL
-    # But rescue known verbs at position 0 that spaCy mistagged
-    # (e.g. "Close" as JJ, "Scan" as JJ).
-    if tag not in {"VB", "VBP", "VBZ", "VBD", "VBN", "VBG"}:
-        if root.i == 0 and root.text.lower() in _ALL_VERBS:
-            amb = "!amb" if root.text.lower() in _VERBS_AMBIGUOUS else ""
-            return ("IMPERATIVE", 1, "imperative", f"p3_spacy_{tag.lower()}_verb0{amb}", False)
-        # Post-colon verb rescue (same logic as NN branch): conditional
-        # markers like "After", "Before", "When" can be ROOT (IN/RB/etc.)
-        # with the imperative verb after the colon.
-        _colon_idx_nv = next((t.i for t in doc if t.text == ":"), -1)
-        if _colon_idx_nv > 0:
-            _pre_has_cond_nv = any(t.text.lower() in _CONDITIONAL_MARKERS for t in doc[:_colon_idx_nv])
-            if _pre_has_cond_nv:
-                _post_colon_nv = [t for t in doc if t.i > _colon_idx_nv]
-                for _pt in _post_colon_nv[:3]:
-                    if _pt.text.lower() in _ALL_VERBS and _pt.tag_ in {"VB", "VBP", "VBG", "VBN"}:
-                        return ("IMPERATIVE", 1, "imperative", "p3_spacy_postcolon_verb", True)
+        return _classify_nn_tag(doc, root, has_subj, has_cond_prefix)
+    if tag in _PAST_TENSE_TAGS:
         return ("NEUTRAL", 0, "none", f"p3_spacy_{tag.lower()}", False)
+    if tag in {"VB", "VBP"}:
+        return _classify_vb_vbp_tag(doc, root, tag, has_subj, has_cond_prefix, shallow=shallow)
+    return _classify_nonverb_tag(doc, root, tag)
 
-    # Unrecognized — fall through to lexicon
+
+def _classify_phase1(
+    clean: str,
+    words: list[str],
+    lowers: list[str],
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """Phase 1: Negation/prohibition patterns → CONSTRAINT."""
+    if _NEGATION_PHRASES_RE.match(clean):
+        return "CONSTRAINT", -1, "direct", "p1_negation_phrase", False
+    if _PROHIBITION_START_RE.match(clean):
+        # "No X is/are/was/were Y" is descriptive, not a prohibition.
+        if lowers[0] == "no" and any(
+            v in {"is", "are", "was", "were", "has", "have", "does", "did"} for v in lowers[1:8]
+        ):
+            pass  # fall through — descriptive "No X is Y" pattern
+        else:
+            return "CONSTRAINT", -1, "absolute" if lowers[0] == "never" else "direct", "p1_prohibition_start", False
+    if words[0] in ("NOT", "NO", "NEVER"):
+        return "CONSTRAINT", -1, "absolute", "p1_caps_negation", False
+    first_clause = re.split(r"[,;.]", clean, maxsplit=1)[0]
+    if _MID_NEGATION_RE.search(first_clause):
+        return "CONSTRAINT", -1, "direct", "p1_mid_negation", has_cond_prefix
+    if _LATE_DONOT_RE.search(first_clause):
+        return "CONSTRAINT", -1, "direct", "p1_late_donot", has_cond_prefix
     return None
+
+
+_NEGATION_WORDS = frozenset({"not", "never", "n't"})
+
+
+def _modal_result(
+    next_negated: bool,
+    modality: str,
+    directive_trace: str,
+    negated_trace: str,
+) -> tuple[str, int, str, str, bool]:
+    """Return CONSTRAINT if negated, DIRECTIVE otherwise."""
+    if next_negated:
+        return "CONSTRAINT", -1, modality, negated_trace, False
+    return "DIRECTIVE", 1, modality, directive_trace, False
+
+
+def _check_modal_word(
+    w: str,
+    i: int,
+    lowers: list[str],
+) -> tuple[str, int, str, str, bool] | None:
+    """Check a single word for modal/hedged/you-will patterns. Returns result or None."""
+    next_negated = i + 1 < len(lowers) and lowers[i + 1] in _NEGATION_WORDS
+    if w in _MODAL_ABSOLUTE:
+        return _modal_result(next_negated, "absolute", f"p2_modal_{w}", "p2_modal_negated")
+    if w in _MODAL_HEDGED:
+        if next_negated:
+            return "CONSTRAINT", -1, "hedged", f"p2_hedged_{w}_negated", False
+        is_positioned = (
+            w == "should"
+            or i == 0
+            or (i > 0 and lowers[i - 1] in ("you", "we"))
+            or (i > 0 and lowers[i - 1] in _CONDITIONAL_MARKERS)
+        )
+        return ("DIRECTIVE", 1, "hedged", f"p2_hedged_{w}", False) if is_positioned else None
+    if w == "will" and i > 0 and lowers[i - 1] == "you":
+        return _modal_result(next_negated, "absolute", "p2_you_will", "p2_you_will_not")
+    return None
+
+
+def _classify_phase2(
+    lowers: list[str],
+) -> tuple[str, int, str, str, bool] | None:
+    """Phase 2: Modal verbs and absolute adverbs → DIRECTIVE."""
+    for i, w in enumerate(lowers):
+        result = _check_modal_word(w, i, lowers)
+        if result is not None:
+            return result
+    for w in lowers[:6]:
+        if w in _ABSOLUTE_ADVERBS:
+            if w == "only" and not any(v in _ALL_VERBS for v in lowers):
+                continue
+            return "DIRECTIVE", 1, "absolute", f"p2_adverb_{w}", False
+    return None
+
+
+# Determiners for verb-noun disambiguation in Phase 3c
+_DETERMINERS: frozenset[str] = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "any",
+        "all",
+        "each",
+        "every",
+        "this",
+        "that",
+        "these",
+        "those",
+        "your",
+        "our",
+        "my",
+        "its",
+        "their",
+        "his",
+        "her",
+        "no",
+        "some",
+        "both",
+        "either",
+        "neither",
+    }
+)
+
+# Declarative sentence starters for Phase 3g
+_DECLARATIVE_STARTS: frozenset[str] = frozenset(
+    _PROBABLE_SUBJECTS
+    | {
+        "the",
+        "a",
+        "an",
+        "its",
+        "their",
+        "our",
+        "your",
+        "my",
+        "his",
+        "her",
+    }
+)
+
+
+def _classify_phase3e_break(
+    clean: str,
+) -> tuple[str, int, str, str, bool] | None:
+    """Phase 3e: verb after sentence/clause break."""
+    sentences = re.split(r"(?<=[.!?:;])\s+", clean)
+    for sent in sentences[1:]:
+        sw = _classify_words(sent)
+        if not sw:
+            continue
+        sl = [w.lower() for w in sw]
+        if sl[0] in _ALL_VERBS:
+            has_cond = any(w in _CONDITIONAL_MARKERS for w in sl[:6])
+            amb = "!amb" if sl[0] in _VERBS_AMBIGUOUS else ""
+            return "IMPERATIVE", 1, "imperative", f"p3e_break_{sl[0]}{amb}", has_cond
+        if sl[0] in _CONDITIONAL_MARKERS:
+            return "IMPERATIVE", 1, "imperative", "p3e_break_cond", True
+    return None
+
+
+def _classify_phase3d_context(
+    lowers: list[str],
+    verb_idx: int,
+    pre: set[str],
+) -> tuple[str, int, str, str, bool] | None:
+    """Phase 3d: verb after context words only."""
+    if not (pre <= _CONTEXT_WORDS):
+        return None
+    has_cond = bool(pre & _CONDITIONAL_MARKERS)
+    if "not" in pre:
+        return "CONSTRAINT", -1, "direct", "p3d_context_not", has_cond
+    verb = lowers[verb_idx]
+    amb = "!amb" if verb in _VERBS_AMBIGUOUS else ""
+    return "IMPERATIVE", 1, "imperative", f"p3d_context_{verb}{amb}", has_cond
+
+
+def _classify_phase3_deep(
+    clean: str,
+    lowers: list[str],
+    verb_idx: int,
+    pre: set[str],
+) -> tuple[str, int, str, str, bool]:
+    """Phase 3 deep detection: sub-phases 3d-3g (mid-sentence verb detection)."""
+    # 3d: Verb after context words only
+    p3d = _classify_phase3d_context(lowers, verb_idx, pre)
+    if p3d is not None:
+        return p3d
+
+    # 3e: Verb after sentence/clause break
+    p3e = _classify_phase3e_break(clean)
+    if p3e is not None:
+        return p3e
+
+    # 3f: Conditional marker at sentence start
+    if lowers[0] in _CONDITIONAL_MARKERS:
+        return "IMPERATIVE", 1, "imperative", f"p3f_cond_{lowers[0]}", True
+
+    # 3g: Mid-sentence verb with conditional marker before it
+    if lowers[0] not in _DECLARATIVE_STARTS and verb_idx <= 7 and pre & _CONDITIONAL_MARKERS:
+        verb = lowers[verb_idx]
+        amb = "!amb" if verb in _VERBS_AMBIGUOUS else ""
+        if "not" in pre:
+            return "CONSTRAINT", -1, "direct", f"p3g_mid_not{amb}", True
+        return "IMPERATIVE", 1, "imperative", f"p3g_mid_{verb}{amb}", True
+
+    return "NEUTRAL", 0, "none", "fallthrough", False
+
+
+def _classify_phase3_lexicon(
+    clean: str,
+    lowers: list[str],
+    verb_idx: int,
+    *,
+    shallow: bool,
+) -> tuple[str, int, str, str, bool]:
+    """Phase 3 fallback: verb lexicon detection (when spaCy unavailable or returns None).
+
+    Covers sub-phases 3c through 3g.
+    """
+    # 3c: Verb at position 0
+    if verb_idx == 0:
+        verb = lowers[0]
+        amb = ""
+        if verb in _VERBS_AMBIGUOUS:
+            pos1 = lowers[1] if len(lowers) > 1 else ""
+            if pos1 not in _DETERMINERS:
+                amb = "!amb"
+        has_cond = any(w in _COND_CHECK for w in lowers[1:8])
+        return "IMPERATIVE", 1, "imperative", f"p3c_verb0_{verb}{amb}", has_cond
+
+    if shallow:
+        return "NEUTRAL", 0, "none", "p3_shallow_stop", False
+
+    return _classify_phase3_deep(clean, lowers, verb_idx, set(lowers[:verb_idx]))
+
+
+_NEUTRAL_RESULT: tuple[str, int, str, str, bool] = ("NEUTRAL", 0, "none", "fallthrough", False)
+
+
+def _classify_phase3b_bold(md_text: str) -> tuple[str, int, str, str, bool] | None:
+    """Phase 3b: Bold label + verb after it — shallow recursive call."""
+    after = _after_bold_label(md_text)
+    if after is None:
+        return None
+    after_clean = _strip_md_for_classify(after)
+    if not after_clean:
+        return None
+    sub_c, sub_cv, sub_m, _sub_trace, sub_sc = classify_charge(
+        after,
+        plain_text=after_clean,
+        _shallow=True,
+    )
+    if sub_cv != 0:
+        return sub_c, sub_cv, sub_m, "p3b_bold_label", sub_sc
+    return None
+
+
+def _classify_phase3(
+    clean: str,
+    md_text: str,
+    lowers: list[str],
+    has_cond_prefix: bool,
+    *,
+    shallow: bool,
+    inline_tokens: list[InlineToken] | None,
+) -> tuple[str, int, str, str, bool]:
+    """Phase 3: Imperative verb detection (spaCy + lexicon fallback)."""
+    # 3b: Bold label recursive
+    if not shallow:
+        p3b = _classify_phase3b_bold(md_text)
+        if p3b is not None:
+            return p3b
+
+    # 3_spacy: primary Phase 3
+    nlp = get_models().nlp
+    if nlp is not None:
+        result = _classify_phase3_spacy(
+            clean,
+            md_text,
+            nlp,
+            has_cond_prefix,
+            shallow=shallow,
+            inline_tokens=inline_tokens,
+        )
+        if result is not None:
+            return result
+
+    # 3c-3g: fallback verb lexicon
+    verb_idx = _find_verb_idx(lowers)
+    if verb_idx == -1:
+        return "NEUTRAL", 0, "none", "p3_no_verb", False
+    return _classify_phase3_lexicon(clean, lowers, verb_idx, shallow=shallow)
 
 
 def classify_charge(
@@ -1046,10 +1343,7 @@ def classify_charge(
     (deep mid-sentence detection) are skipped to avoid noise from
     descriptive text after bold labels.
     """
-    if plain_text is not None:
-        clean = plain_text.strip().lstrip("-+>#0123456789. ")
-    else:
-        clean = _strip_md_for_classify(md_text)
+    clean = plain_text.strip().lstrip("-+>#0123456789. ") if plain_text is not None else _strip_md_for_classify(md_text)
     if len(clean) < 3:
         return "NEUTRAL", 0, "none", "short_text", False
 
@@ -1057,193 +1351,24 @@ def classify_charge(
     if not words:
         return "NEUTRAL", 0, "none", "no_words", False
     lowers = [w.lower() for w in words]
+    has_cond_prefix = lowers[0] in _CONDITIONAL_MARKERS
 
-    # Helper: detect conditional scope frame from sentence-initial markers
-    has_cond_prefix = lowers[0] in _CONDITIONAL_MARKERS if lowers else False
+    p1 = _classify_phase1(clean, words, lowers, has_cond_prefix)
+    if p1 is not None:
+        return p1
 
-    # ── Phase 1: CONSTRAINT ──
-    if _NEGATION_PHRASES_RE.match(clean):
-        return "CONSTRAINT", -1, "direct", "p1_negation_phrase", False
-    if _PROHIBITION_START_RE.match(clean):
-        # "No X is/are/was/were Y" is descriptive, not a prohibition.
-        if lowers[0] == "no" and any(
-            v in {"is", "are", "was", "were", "has", "have", "does", "did"} for v in lowers[1:8]
-        ):
-            pass  # fall through — descriptive "No X is Y" pattern
-        else:
-            return "CONSTRAINT", -1, "absolute" if lowers[0] == "never" else "direct", "p1_prohibition_start", False
-    if words[0] in ("NOT", "NO", "NEVER"):
-        return "CONSTRAINT", -1, "absolute", "p1_caps_negation", False
-    # First-clause restriction for mid-sentence negation.
-    _first_clause = re.split(r"[,;.]", clean, maxsplit=1)[0]
-    if _MID_NEGATION_RE.search(_first_clause):
-        return "CONSTRAINT", -1, "direct", "p1_mid_negation", has_cond_prefix
-    if _LATE_DONOT_RE.search(_first_clause):
-        return "CONSTRAINT", -1, "direct", "p1_late_donot", has_cond_prefix
+    p2 = _classify_phase2(lowers)
+    if p2 is not None:
+        return p2
 
-    # ── Phase 2: DIRECTIVE ──
-    for i, w in enumerate(lowers):
-        if w in _MODAL_ABSOLUTE:
-            if i + 1 < len(lowers) and lowers[i + 1] in ("not", "never", "n't"):
-                return "CONSTRAINT", -1, "absolute", "p2_modal_negated", False
-            return "DIRECTIVE", 1, "absolute", f"p2_modal_{w}", False
-        if w in _MODAL_HEDGED:
-            if i + 1 < len(lowers) and lowers[i + 1] in ("not", "never", "n't"):
-                return "CONSTRAINT", -1, "hedged", f"p2_hedged_{w}_negated", False
-            # "should" fires at any position — corpus data shows "X should Y"
-            # is always a directive regardless of subject.  "could"/"might" only
-            # fire at position 0 or after you/we/conditional (ambiguous otherwise).
-            if w == "should":
-                return "DIRECTIVE", 1, "hedged", f"p2_hedged_{w}", False
-            if (
-                i == 0
-                or (i > 0 and lowers[i - 1] in ("you", "we"))
-                or (i > 0 and lowers[i - 1] in _CONDITIONAL_MARKERS)
-            ):
-                return "DIRECTIVE", 1, "hedged", f"p2_hedged_{w}", False
-            continue
-        if w == "will" and i > 0 and lowers[i - 1] == "you":
-            if i + 1 < len(lowers) and lowers[i + 1] in ("not", "never", "n't"):
-                return "CONSTRAINT", -1, "absolute", "p2_you_will_not", False
-            return "DIRECTIVE", 1, "absolute", "p2_you_will", False
-    for w in lowers[:6]:
-        if w in _ABSOLUTE_ADVERBS:
-            if w == "only" and not any(v in _ALL_VERBS for v in lowers):
-                continue
-            return "DIRECTIVE", 1, "absolute", f"p2_adverb_{w}", False
-
-    # ── Phase 3: IMPERATIVE ──
-
-    # 3a: DISABLED — 20.7% precision.
-
-    # 3b: Bold label + verb after it — shallow recursive call.
-    if not _shallow:
-        after = _after_bold_label(md_text)
-        if after is not None:
-            after_clean = _strip_md_for_classify(after)
-            if after_clean:
-                sub_c, sub_cv, sub_m, _sub_trace, sub_sc = classify_charge(
-                    after,
-                    plain_text=after_clean,
-                    _shallow=True,
-                )
-                if sub_cv != 0:
-                    return sub_c, sub_cv, sub_m, "p3b_bold_label", sub_sc
-
-    # 3_spacy: primary Phase 3 (spaCy dependency parse)
-    nlp = get_models().nlp
-    if nlp is not None:
-        result = _classify_phase3_spacy(
-            clean,
-            md_text,
-            nlp,
-            has_cond_prefix,
-            shallow=_shallow,
-            inline_tokens=inline_tokens,
-        )
-        if result is not None:
-            return result
-
-    # 3c-3g: fallback verb lexicon (when spaCy unavailable or returns None)
-    verb_idx = _find_verb_idx(lowers)
-    if verb_idx == -1:
-        return "NEUTRAL", 0, "none", "p3_no_verb", False
-
-    # 3c: Verb at position 0
-    if verb_idx == 0:
-        verb = lowers[0]
-        # Ambiguity check: verb-noun words (test, build, state, ...) are
-        # ambiguous UNLESS position 1 is a determiner — "State the X" is
-        # clearly imperative (VB DT NN), "State machine" is a compound noun.
-        _DETERMINERS = {
-            "the",
-            "a",
-            "an",
-            "any",
-            "all",
-            "each",
-            "every",
-            "this",
-            "that",
-            "these",
-            "those",
-            "your",
-            "our",
-            "my",
-            "its",
-            "their",
-            "his",
-            "her",
-            "no",
-            "some",
-            "both",
-            "either",
-            "neither",
-        }
-        amb = ""
-        if verb in _VERBS_AMBIGUOUS:
-            pos1 = lowers[1] if len(lowers) > 1 else ""
-            if pos1 not in _DETERMINERS:
-                amb = "!amb"
-        cond_check = _CONDITIONAL_MARKERS - {"for"}
-        has_cond = any(w in cond_check for w in lowers[1:8])
-        return "IMPERATIVE", 1, "imperative", f"p3c_verb0_{verb}{amb}", has_cond
-
-    # In shallow mode (recursive from 3b), skip deep detection phases 3d-3g
-    if _shallow:
-        return "NEUTRAL", 0, "none", "p3_shallow_stop", False
-
-    # 3d: Verb after context words only
-    pre = set(lowers[:verb_idx])
-    if pre <= _CONTEXT_WORDS:
-        has_cond = bool(pre & _CONDITIONAL_MARKERS)
-        if "not" in pre:
-            return "CONSTRAINT", -1, "direct", "p3d_context_not", has_cond
-        verb = lowers[verb_idx]
-        amb = "!amb" if verb in _VERBS_AMBIGUOUS else ""
-        return "IMPERATIVE", 1, "imperative", f"p3d_context_{verb}{amb}", has_cond
-
-    # 3e: Verb after sentence/clause break
-    sentences = re.split(r"(?<=[.!?:;])\s+", clean)
-    if len(sentences) > 1:
-        for sent in sentences[1:]:
-            sw = _classify_words(sent)
-            if not sw:
-                continue
-            sl = [w.lower() for w in sw]
-            if sl[0] in _ALL_VERBS:
-                has_cond = any(w in _CONDITIONAL_MARKERS for w in sl[:6])
-                amb = "!amb" if sl[0] in _VERBS_AMBIGUOUS else ""
-                return "IMPERATIVE", 1, "imperative", f"p3e_break_{sl[0]}{amb}", has_cond
-            if sl[0] in _CONDITIONAL_MARKERS:
-                return "IMPERATIVE", 1, "imperative", "p3e_break_cond", True
-
-    # 3f: Conditional marker at sentence start
-    if lowers[0] in _CONDITIONAL_MARKERS:
-        return "IMPERATIVE", 1, "imperative", f"p3f_cond_{lowers[0]}", True
-
-    # 3g: Mid-sentence verb with conditional marker before it
-    _DECLARATIVE_STARTS = _PROBABLE_SUBJECTS | {
-        "the",
-        "a",
-        "an",
-        "its",
-        "their",
-        "our",
-        "your",
-        "my",
-        "his",
-        "her",
-    }
-    if lowers[0] not in _DECLARATIVE_STARTS and verb_idx <= 7:
-        if pre & _CONDITIONAL_MARKERS:
-            verb = lowers[verb_idx]
-            amb = "!amb" if verb in _VERBS_AMBIGUOUS else ""
-            if "not" in pre:
-                return "CONSTRAINT", -1, "direct", f"p3g_mid_not{amb}", True
-            return "IMPERATIVE", 1, "imperative", f"p3g_mid_{verb}{amb}", True
-
-    return "NEUTRAL", 0, "none", "fallthrough", False
+    return _classify_phase3(
+        clean,
+        md_text,
+        lowers,
+        has_cond_prefix,
+        shallow=_shallow,
+        inline_tokens=inline_tokens,
+    )
 
 
 def check_specificity(
@@ -1267,17 +1392,23 @@ def check_specificity(
     text_no_bt = _BACKTICK_RE.sub("", text)
     unformatted: list[str] = []
 
-    for tok in KNOWN_CODE_TOKENS:
-        pat = re.compile(r"(?<![`\w])" + re.escape(tok) + r"(?![`\w])", re.IGNORECASE)
-        if pat.search(text_no_bt):
-            if not any(tok.lower() in bt.lower() for bt in backtick_content):
+    # Pre-lowercase backtick content once for O(1)-ish lookups below.
+    bt_lower = {bt.lower() for bt in backtick_content}
+
+    # Single regex pass finds all known code tokens in one engine invocation.
+    seen: set[str] = set()
+    for m in _KNOWN_TOKEN_RE.finditer(text_no_bt):
+        tok = m.group(1).lower()
+        if tok not in seen:
+            seen.add(tok)
+            if not any(tok in bt for bt in bt_lower):
                 unformatted.append(tok)
 
     for m in CODE_SHAPE_RE.finditer(text_no_bt):
         token = m.group(1)
-        if token.lower().rstrip(".") in {e.rstrip(".") for e in _DOTTED_EXCLUSIONS}:
+        if token.lower().rstrip(".") in _DOTTED_EXCLUSIONS_NORMALIZED:
             continue
-        if token not in unformatted and not any(token in bt for bt in backtick_content):
+        if token not in unformatted and not any(token in bt for bt in bt_lower):
             unformatted.append(token)
 
     # Named if ANY construct is identified — backtick-wrapped OR unformatted known token.
@@ -1354,6 +1485,26 @@ def _split_at_softbreaks(children: list[Any]) -> list[list[Any]]:
     return [s for s in segments if s]
 
 
+def _append_content_tokens(
+    content: str,
+    fmt: str,
+    md_parts: list[str],
+    plain_parts: list[str],
+    inline_tokens: list[InlineToken],
+    md_prefix: str = "",
+) -> None:
+    """Append text content with format tracking to md/plain/inline collectors."""
+    md_parts.append(f"{md_prefix}{content}" if md_prefix else content)
+    plain_parts.append(content)
+    for word in content.split():
+        inline_tokens.append(InlineToken(text=word, format=fmt))
+
+
+# Maps markdown-it open/close tokens to their markdown marker and stack format.
+_FORMAT_OPEN = {"strong_open": ("**", "bold"), "em_open": ("*", "italic")}
+_FORMAT_CLOSE = {"strong_close": "**", "em_close": "*"}
+
+
 def _extract_texts(
     segment: list[Any],
 ) -> tuple[str, str, list[InlineToken]]:
@@ -1369,39 +1520,22 @@ def _extract_texts(
     format_stack: list[str] = ["plain"]
 
     for child in segment:
-        if child.type == "text":
-            md_parts.append(child.content)
-            plain_parts.append(child.content)
-            current_fmt = format_stack[-1]
-            for word in child.content.split():
-                inline_tokens.append(InlineToken(text=word, format=current_fmt))
+        if child.type in ("text", "html_inline"):
+            _append_content_tokens(child.content, format_stack[-1], md_parts, plain_parts, inline_tokens)
         elif child.type == "code_inline":
             md_parts.append(f"`{child.content}`")
             plain_parts.append(child.content)
             for word in child.content.split():
                 inline_tokens.append(InlineToken(text=word, format="backtick"))
-        elif child.type == "strong_open":
-            md_parts.append("**")
-            format_stack.append("bold")
-        elif child.type == "strong_close":
-            md_parts.append("**")
+        elif child.type in _FORMAT_OPEN:
+            marker, fmt = _FORMAT_OPEN[child.type]
+            md_parts.append(marker)
+            format_stack.append(fmt)
+        elif child.type in _FORMAT_CLOSE:
+            md_parts.append(_FORMAT_CLOSE[child.type])
             if len(format_stack) > 1:
                 format_stack.pop()
-        elif child.type == "em_open":
-            md_parts.append("*")
-            format_stack.append("italic")
-        elif child.type == "em_close":
-            md_parts.append("*")
-            if len(format_stack) > 1:
-                format_stack.pop()
-        elif child.type in ("link_open", "link_close"):
-            pass  # skip link markers, text child handles content
-        elif child.type == "html_inline":
-            md_parts.append(child.content)
-            plain_parts.append(child.content)
-            current_fmt = format_stack[-1]
-            for word in child.content.split():
-                inline_tokens.append(InlineToken(text=word, format=current_fmt))
+        # link_open, link_close: skip — text child handles content
 
     md_text = "".join(md_parts).strip()
     plain_text = "".join(plain_parts).strip()
@@ -1472,6 +1606,202 @@ def _classify_content(
     return classify_charge(md_text, plain_text=plain_text, inline_tokens=inline_tokens)
 
 
+def _make_fence_atom(tok: Any) -> Atom:
+    """Create a code block atom from a fence token."""
+    lang = (tok.info or "").strip().lower()
+    return Atom(
+        line=tok.map[0] + 1 if tok.map else 0,
+        text=tok.content[:200],
+        kind="excitation",
+        charge="NEUTRAL",
+        charge_value=0,
+        modality="none",
+        specificity="named" if lang else "abstract",
+        format="code_block",
+        named_tokens=[lang] if lang else [],
+        file_path="",
+        plain_text=f"code_block:{lang}" if lang else "code_block",
+    )
+
+
+def _specificity_fields(text: str) -> dict[str, Any]:
+    """Build specificity-related Atom fields from text."""
+    spec, named, unformatted, italic, bold = check_specificity(text)
+    return {
+        "specificity": spec,
+        "named_tokens": named,
+        "unformatted_code": unformatted,
+        "italic_tokens": italic,
+        "bold_tokens": bold,
+        "token_count": len(_BACKTICK_RE.sub("x", text).split()),
+    }
+
+
+def _tok_line(tok: Any, line_offset: int) -> int:
+    """Extract line number from a markdown-it token."""
+    return (tok.map[0] if tok.map else 0) + line_offset + 1
+
+
+def _make_heading_atom(
+    tok: Any,
+    tokens: list[Any],
+    i: int,
+    line_offset: int,
+) -> tuple[Atom, str]:
+    """Create a heading atom and return (atom, heading_text)."""
+    heading_text = tokens[i + 1].content if i + 1 < len(tokens) and tokens[i + 1].type == "inline" else ""
+    charge, cv, mod, rule, sc = classify_charge(heading_text)
+    sf = _specificity_fields(heading_text)
+    atom = Atom(
+        line=_tok_line(tok, line_offset),
+        text=heading_text,
+        kind="heading",
+        charge=charge,
+        charge_value=cv,
+        modality=mod,
+        specificity=sf["specificity"],
+        format="heading",
+        depth=int(tok.tag[1]),
+        named_tokens=sf["named_tokens"],
+        token_count=sf["token_count"],
+        rule=rule,
+        scope_conditional=sc,
+    )
+    return atom, heading_text
+
+
+def _collect_table_cells(tokens: list[Any], start: int) -> tuple[str, int]:
+    """Collect table cells from tr_open to tr_close. Returns (cell_text, next_index)."""
+    cells: list[str] = []
+    j = start + 1
+    while j < len(tokens) and tokens[j].type != "tr_close":
+        if tokens[j].type == "inline":
+            cells.append(tokens[j].content.strip())
+        j += 1
+    return " | ".join(cells), j + 1
+
+
+def _make_table_row_atom(
+    tok: Any,
+    tokens: list[Any],
+    i: int,
+    line_offset: int,
+    pos_idx: int,
+    current_heading: str,
+) -> tuple[Atom | None, int]:
+    """Create a table row atom. Returns (atom_or_None, next_token_index)."""
+    cell_text, next_i = _collect_table_cells(tokens, i)
+    if len(cell_text) < 5:
+        return None, next_i
+    sf = _specificity_fields(cell_text)
+    atom = Atom(
+        line=_tok_line(tok, line_offset),
+        text=cell_text,
+        kind="excitation",
+        charge="NEUTRAL",
+        charge_value=0,
+        modality="none",
+        specificity=sf["specificity"],
+        format="table",
+        named_tokens=sf["named_tokens"],
+        italic_tokens=sf["italic_tokens"],
+        bold_tokens=sf["bold_tokens"],
+        unformatted_code=sf["unformatted_code"],
+        position_index=pos_idx,
+        token_count=sf["token_count"],
+        heading_context=current_heading,
+    )
+    return atom, next_i
+
+
+def _make_inline_atom(
+    md_text: str,
+    plain_text: str,
+    fmt: str,
+    base_line: int,
+    seg_idx: int,
+    pos_idx: int,
+    current_heading: str,
+    inline_tokens: list[InlineToken],
+) -> Atom:
+    """Create an inline content atom with charge classification."""
+    charge, cv, mod, rule_trace, scope_cond = _classify_content(
+        md_text,
+        plain_text,
+        fmt,
+        inline_tokens=inline_tokens,
+    )
+    sf = _specificity_fields(md_text)
+    return Atom(
+        line=base_line + seg_idx,
+        text=md_text,
+        kind="excitation",
+        charge=charge,
+        charge_value=cv,
+        modality=mod,
+        scope_conditional=scope_cond,
+        specificity=sf["specificity"],
+        format=fmt,
+        named_tokens=sf["named_tokens"],
+        italic_tokens=sf["italic_tokens"],
+        bold_tokens=sf["bold_tokens"],
+        unformatted_code=sf["unformatted_code"],
+        position_index=pos_idx,
+        token_count=sf["token_count"],
+        heading_context=current_heading,
+        plain_text=plain_text,
+        rule=rule_trace,
+        ambiguous=rule_trace.endswith("!amb"),
+    )
+
+
+# Map block types from markdown-it token types
+_BLOCK_TYPES = {
+    "bullet_list_open": "bullet_list",
+    "ordered_list_open": "ordered_list",
+    "blockquote_open": "blockquote",
+    "table_open": "table",
+}
+_BLOCK_CLOSE = {
+    "bullet_list_close",
+    "ordered_list_close",
+    "blockquote_close",
+    "table_close",
+}
+
+
+def _process_inline_segments(
+    tok: Any,
+    line_offset: int,
+    block_stack: list[str],
+    pos_idx: int,
+    current_heading: str,
+    atoms: list[Atom],
+) -> int:
+    """Process inline token segments, appending atoms. Returns updated pos_idx."""
+    base_line = _tok_line(tok, line_offset)
+    fmt = _determine_format(block_stack)
+    if fmt == "table":
+        return pos_idx
+    for seg_idx, segment in enumerate(_split_at_softbreaks(tok.children)):
+        md_text, plain_text, inline_toks = _extract_texts(segment)
+        if len(md_text) >= 5:
+            atoms.append(
+                _make_inline_atom(
+                    md_text,
+                    plain_text,
+                    fmt,
+                    base_line,
+                    seg_idx,
+                    pos_idx,
+                    current_heading,
+                    inline_toks,
+                )
+            )
+            pos_idx += 1
+    return pos_idx
+
+
 def tokenize(content: str) -> list[Atom]:
     """Split instruction file content into classified atoms.
 
@@ -1486,20 +1816,6 @@ def tokenize(content: str) -> list[Atom]:
     current_heading = ""
     block_stack: list[str] = []
 
-    # Map block types from markdown-it token types
-    _BLOCK_TYPES = {
-        "bullet_list_open": "bullet_list",
-        "ordered_list_open": "ordered_list",
-        "blockquote_open": "blockquote",
-        "table_open": "table",
-    }
-    _BLOCK_CLOSE = {
-        "bullet_list_close",
-        "ordered_list_close",
-        "blockquote_close",
-        "table_close",
-    }
-
     i = 0
     while i < len(tokens):
         tok = tokens[i]
@@ -1511,170 +1827,53 @@ def tokenize(content: str) -> list[Atom]:
             if block_stack:
                 block_stack.pop()
 
-        # Emit code block atoms (fence) — captures language tag for mermaid detection
         if tok.type == "fence":
-            lang = (tok.info or "").strip().lower()
-            atoms.append(
-                Atom(
-                    line=tok.map[0] + 1 if tok.map else 0,
-                    text=tok.content[:200],
-                    kind="excitation",
-                    charge="NEUTRAL",
-                    charge_value=0,
-                    modality="none",
-                    specificity="named" if lang else "abstract",
-                    format="code_block",
-                    named_tokens=[lang] if lang else [],
-                    file_path="",
-                    plain_text=f"code_block:{lang}" if lang else "code_block",
-                )
-            )
+            atoms.append(_make_fence_atom(tok))
             i += 1
             continue
 
-        # Skip horizontal rules
         if tok.type == "hr":
             i += 1
             continue
 
-        # Headings: depth from tag, text from next inline token
         if tok.type == "heading_open":
-            depth = int(tok.tag[1])
-            line_num = (tok.map[0] if tok.map else 0) + line_offset + 1
-            # Next token is the inline with heading text
-            if i + 1 < len(tokens) and tokens[i + 1].type == "inline":
-                heading_text = tokens[i + 1].content
-            else:
-                heading_text = ""
-            current_heading = heading_text
-            # Headings are content — "## Never push to main" is a constraint.
-            h_charge, h_cv, h_mod, h_rule, h_sc = classify_charge(heading_text)
-            h_spec, h_named, _h_unfmt, _h_italic, _h_bold = check_specificity(heading_text)
-            atoms.append(
-                Atom(
-                    line=line_num,
-                    text=heading_text,
-                    kind="heading",
-                    charge=h_charge,
-                    charge_value=h_cv,
-                    modality=h_mod,
-                    specificity=h_spec,
-                    format="heading",
-                    depth=depth,
-                    named_tokens=h_named,
-                    token_count=len(heading_text.split()),
-                    rule=h_rule,
-                    scope_conditional=h_sc,
-                )
-            )
-            i += 3  # skip heading_open, inline, heading_close
+            atom, current_heading = _make_heading_atom(tok, tokens, i, line_offset)
+            atoms.append(atom)
+            i += 3
             continue
 
-        # Table rows: collect cells, join with " | ", one atom per row
         if tok.type == "tr_open":
-            line_num = (tok.map[0] if tok.map else 0) + line_offset + 1
-            cells: list[str] = []
-            j = i + 1
-            while j < len(tokens) and tokens[j].type != "tr_close":
-                if tokens[j].type == "inline":
-                    cells.append(tokens[j].content.strip())
-                j += 1
-            cell_text = " | ".join(cells)
-            if len(cell_text) >= 5:
-                spec, named, unformatted, italic, bold = check_specificity(
-                    cell_text,
-                )
-                token_count = len(_BACKTICK_RE.sub("x", cell_text).split())
-                atoms.append(
-                    Atom(
-                        line=line_num,
-                        text=cell_text,
-                        kind="excitation",
-                        charge="NEUTRAL",
-                        charge_value=0,
-                        modality="none",
-                        specificity=spec,
-                        format="table",
-                        named_tokens=named,
-                        italic_tokens=italic,
-                        bold_tokens=bold,
-                        unformatted_code=unformatted,
-                        position_index=pos_idx,
-                        token_count=token_count,
-                        heading_context=current_heading,
-                    )
-                )
+            row_atom, next_i = _make_table_row_atom(
+                tok,
+                tokens,
+                i,
+                line_offset,
+                pos_idx,
+                current_heading,
+            )
+            if row_atom is not None:
+                atoms.append(row_atom)
                 pos_idx += 1
-            i = j + 1  # skip past tr_close
+            i = next_i
             continue
 
-        # Process inline content tokens
         if tok.type == "inline" and tok.children:
-            base_line = (tok.map[0] if tok.map else 0) + line_offset + 1
-            fmt = _determine_format(block_stack)
-
-            # Table inlines are handled by tr_open above
-            if fmt == "table":
-                i += 1
-                continue
-
-            segments = _split_at_softbreaks(tok.children)
-            for seg_idx, segment in enumerate(segments):
-                md_text, plain_text, inline_tokens = _extract_texts(segment)
-                if len(md_text) < 5:
-                    continue
-
-                charge, cv, mod, rule_trace, scope_cond = _classify_content(
-                    md_text,
-                    plain_text,
-                    fmt,
-                    inline_tokens=inline_tokens,
-                )
-                spec, named, unformatted, italic, bold = check_specificity(
-                    md_text,
-                )
-                token_count = len(_BACKTICK_RE.sub("x", md_text).split())
-
-                atoms.append(
-                    Atom(
-                        line=base_line + seg_idx,
-                        text=md_text,
-                        kind="excitation",
-                        charge=charge,
-                        charge_value=cv,
-                        modality=mod,
-                        scope_conditional=scope_cond,
-                        specificity=spec,
-                        format=fmt,
-                        named_tokens=named,
-                        italic_tokens=italic,
-                        bold_tokens=bold,
-                        unformatted_code=unformatted,
-                        position_index=pos_idx,
-                        token_count=token_count,
-                        heading_context=current_heading,
-                        plain_text=plain_text,
-                        rule=rule_trace,
-                        ambiguous=rule_trace.endswith("!amb"),
-                    )
-                )
-                pos_idx += 1
+            pos_idx = _process_inline_segments(
+                tok,
+                line_offset,
+                block_stack,
+                pos_idx,
+                current_heading,
+                atoms,
+            )
 
         i += 1
 
-    # Post-classification pass: split multi-sentence atoms when sub-sentences
-    # carry different charges. Catches both "Don't X. Use Y instead." (charged
-    # atom with charge flip) and "You are X. Never do Y." (neutral atom with
-    # embedded constraint). Without this, compound sentences get classified by
-    # their first clause and charged sub-sentences are lost.
     atoms = _split_mixed_charge_atoms(atoms)
 
-    # Assign confidence scores based on rule trace reliability.
     for atom in atoms:
         atom.charge_confidence = _rule_confidence(atom.rule, atom.charge)
 
-    # Scan neutral atoms for embedded charge markers.
-    # Runs AFTER confidence scoring so it can lower confidence for flagged atoms.
     _scan_neutral_for_embedded_markers(atoms)
 
     return atoms
@@ -1687,6 +1886,51 @@ _SENTENCE_SPLIT_RE = re.compile(
     r"(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)"
     r"[.!?]\s+(?=[A-Z*])"
 )
+
+
+def _split_sentences(text: str) -> list[str] | None:
+    """Split text at sentence boundaries. Returns None if fewer than 2 sentences."""
+    splits = list(_SENTENCE_SPLIT_RE.finditer(text))
+    if not splits:
+        return None
+    boundaries = [0] + [m.end() for m in splits] + [len(text)]
+    sentences = [text[boundaries[i] : boundaries[i + 1]].strip() for i in range(len(boundaries) - 1)]
+    sentences = [s for s in sentences if len(s) >= 5]
+    return sentences if len(sentences) >= 2 else None
+
+
+def _atom_from_sentence(
+    sent: str,
+    atom: Atom,
+    charge: str,
+    cv: int,
+    mod: str,
+    rule: str,
+    scope: bool,
+) -> Atom:
+    """Create an atom from a sub-sentence of a split atom."""
+    spec, named, unformatted, italic, bold = check_specificity(sent)
+    return Atom(
+        line=atom.line,
+        text=sent,
+        kind="excitation",
+        charge=charge,
+        charge_value=cv,
+        modality=mod,
+        scope_conditional=scope,
+        specificity=spec,
+        format=atom.format,
+        named_tokens=named,
+        italic_tokens=italic,
+        bold_tokens=bold,
+        unformatted_code=unformatted,
+        position_index=atom.position_index,
+        token_count=len(_BACKTICK_RE.sub("x", sent).split()),
+        heading_context=atom.heading_context,
+        plain_text=re.sub(r"[*_`]+", "", sent).strip(),
+        rule=rule,
+        ambiguous=rule.endswith("!amb"),
+    )
 
 
 def _split_mixed_charge_atoms(atoms: list[Atom]) -> list[Atom]:
@@ -1710,62 +1954,25 @@ def _split_mixed_charge_atoms(atoms: list[Atom]) -> list[Atom]:
             result.append(atom)
             continue
 
-        # Try to split at sentence boundaries
-        splits = list(_SENTENCE_SPLIT_RE.finditer(atom.text))
-        if not splits:
-            result.append(atom)
-            continue
-
-        # Build sentence segments from split points
-        boundaries = [0] + [m.end() for m in splits] + [len(atom.text)]
-        sentences = [atom.text[boundaries[i] : boundaries[i + 1]].strip() for i in range(len(boundaries) - 1)]
-        sentences = [s for s in sentences if len(s) >= 5]
-
-        if len(sentences) < 2:
+        sentences = _split_sentences(atom.text)
+        if sentences is None:
             result.append(atom)
             continue
 
         # Classify each sentence independently
         classified = []
         for sent in sentences:
-            plain = _BACKTICK_RE.sub("x", sent)
-            plain = re.sub(r"[*_]+", "", plain).strip()
+            plain = re.sub(r"[*_]+", "", _BACKTICK_RE.sub("x", sent)).strip()
             charge, cv, mod, rule, scope = _classify_content(sent, plain, atom.format)
             classified.append((sent, charge, cv, mod, rule, scope))
 
         # Only split if charges actually differ
-        charges = {cv for _, _, cv, _, _, _ in classified}
-        if len(charges) < 2:
+        if len({cv for _, _, cv, _, _, _ in classified}) < 2:
             result.append(atom)
             continue
 
-        # Produce separate atoms for each sentence
         for sent, charge, cv, mod, rule, scope in classified:
-            spec, named, unformatted, italic, bold = check_specificity(sent)
-            token_count = len(_BACKTICK_RE.sub("x", sent).split())
-            result.append(
-                Atom(
-                    line=atom.line,
-                    text=sent,
-                    kind="excitation",
-                    charge=charge,
-                    charge_value=cv,
-                    modality=mod,
-                    scope_conditional=scope,
-                    specificity=spec,
-                    format=atom.format,
-                    named_tokens=named,
-                    italic_tokens=italic,
-                    bold_tokens=bold,
-                    unformatted_code=unformatted,
-                    position_index=atom.position_index,
-                    token_count=token_count,
-                    heading_context=atom.heading_context,
-                    plain_text=re.sub(r"[*_`]+", "", sent).strip(),
-                    rule=rule,
-                    ambiguous=rule.endswith("!amb"),
-                )
-            )
+            result.append(_atom_from_sentence(sent, atom, charge, cv, mod, rule, scope))
 
     # Re-index positions
     pos_idx = 0
@@ -1830,27 +2037,18 @@ _MEDIUM_CONFIDENCE_RULES = frozenset(
 def _rule_confidence(rule: str, charge: str) -> float:
     """Assign confidence score based on which classification rule fired."""
     if charge == "NEUTRAL":
-        # Neutral classifications from explicit rules are high confidence.
-        # Fallthrough neutrals are slightly lower (nothing matched).
-        if rule == "fallthrough":
-            return 0.85
-        return 0.95
+        # Neutral from explicit rules: high confidence.
+        # Fallthrough neutrals: slightly lower (nothing matched).
+        return 0.85 if rule == "fallthrough" else 0.95
 
     if rule in _HIGH_CONFIDENCE_RULES:
         return 0.95
-
     if rule in _MEDIUM_CONFIDENCE_RULES:
         return 0.80
-
-    # Ambiguous rules (verb-noun words)
     if rule.endswith("!amb"):
         return 0.60
-
-    # Conditional/scope rules
     if "cond" in rule or "3f_" in rule or "3g_" in rule:
         return 0.70
-
-    # Default for any other charged rule
     return 0.75
 
 
@@ -1946,6 +2144,57 @@ def _embed_text(atom: Atom) -> str:
 # ──────────────────────────────────────────────────────────────────
 
 
+def _compute_centroid(embeddings_norm: Any, member_indices: list[int]) -> tuple[float, ...]:
+    """Compute L2-normalized centroid from member vectors."""
+    import numpy as np
+
+    member_vecs = embeddings_norm[member_indices]
+    mean_vec = member_vecs.mean(axis=0)
+    norm = float(np.linalg.norm(mean_vec))
+    if norm > 1e-12:
+        mean_vec = mean_vec / norm
+    return tuple(float(x) for x in mean_vec.tolist())
+
+
+def _build_topic_clusters(
+    clusters: dict[int, list[Atom]],
+    indices: dict[int, list[int]],
+    embeddings_norm: Any,
+) -> list[TopicCluster]:
+    """Build TopicCluster list from cluster assignments and normalized embeddings."""
+    result: list[TopicCluster] = []
+    for tid in sorted(clusters):
+        cluster_atoms = clusters[tid]
+        charged = [a for a in cluster_atoms if a.charge_value != 0]
+        n_total = len(cluster_atoms)
+        j = len(charged) / n_total if n_total else 0.0
+        centroid = _compute_centroid(embeddings_norm, indices[tid])
+        result.append(TopicCluster(topic_id=tid, atoms=cluster_atoms, charged=charged, j=j, centroid=centroid))
+    return result
+
+
+def _run_agglomerative_clustering(
+    embedded: list[Atom],
+) -> tuple[Any, Any]:
+    """Run AgglomerativeClustering on embedded atoms. Returns (embeddings_norm, labels)."""
+    import numpy as np
+    from sklearn.cluster import AgglomerativeClustering
+    from sklearn.preprocessing import normalize
+
+    vecs = np.array(
+        [list(a.embedding_int8) for a in embedded if a.embedding_int8 is not None],
+        dtype=np.float32,
+    )
+    embeddings_norm = normalize(vecs, norm="l2")
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=TOPIC_CLUSTER_THRESHOLD,
+        metric="euclidean",
+        linkage="average",
+    )
+    return embeddings_norm, clustering.fit_predict(embeddings_norm)
+
+
 def cluster_topics(
     atoms: list[Atom],
 ) -> list[TopicCluster]:
@@ -1957,39 +2206,20 @@ def cluster_topics(
 
     Falls back to single cluster when embeddings are missing.
     """
-    import numpy as np
-
     exc = [a for a in atoms if a.kind != "heading"]
     if not exc:
         return []
 
-    # Use pre-computed embeddings (already set by map_ruleset)
     embedded = [a for a in exc if a.embedding_int8 is not None]
     if len(embedded) < 2:
-        # Not enough embeddings — single cluster
         charged = [a for a in exc if a.charge_value != 0]
         j = len(charged) / len(exc) if exc else 0.0
         for a in exc:
             a.cluster_id = 0
         return [TopicCluster(topic_id=0, atoms=exc, charged=charged, j=j)]
 
-    # Dequantize int8 embeddings to float32 for clustering
-    vecs = np.array([list(a.embedding_int8) for a in embedded if a.embedding_int8 is not None], dtype=np.float32)
+    embeddings_norm, labels = _run_agglomerative_clustering(embedded)
 
-    from sklearn.cluster import AgglomerativeClustering
-    from sklearn.preprocessing import normalize
-
-    embeddings_norm = normalize(vecs, norm="l2")
-    clustering = AgglomerativeClustering(
-        n_clusters=None,
-        distance_threshold=TOPIC_CLUSTER_THRESHOLD,
-        metric="euclidean",
-        linkage="average",
-    )
-    labels = clustering.fit_predict(embeddings_norm)
-
-    # Per-label index bookkeeping so we can compute centroids from the
-    # normalized float32 vectors we already have (no re-encoding needed).
     clusters: dict[int, list[Atom]] = {}
     indices: dict[int, list[int]] = {}
     for i, (atom, label) in enumerate(zip(embedded, labels, strict=True)):
@@ -1998,40 +2228,11 @@ def cluster_topics(
         clusters.setdefault(lbl, []).append(atom)
         indices.setdefault(lbl, []).append(i)
 
-    # Assign unembedded atoms (headings already filtered, but safety net) to cluster -1
     for a in exc:
         if a.embedding_int8 is None:
             a.cluster_id = -1
 
-    result: list[TopicCluster] = []
-    for tid in sorted(clusters):
-        cluster_atoms = clusters[tid]
-        charged = [a for a in cluster_atoms if a.charge_value != 0]
-        n_total = len(cluster_atoms)
-        n_chg = len(charged)
-        j = n_chg / n_total if n_total else 0.0
-
-        # Centroid: mean of L2-normalized member vectors, re-normalized to the
-        # unit sphere. Closed 2026-04 wire-format gap: ClusterRecord.centroid
-        # was declared but never populated, forcing server consumers to re-derive.
-        member_vecs = embeddings_norm[indices[tid]]
-        mean_vec = member_vecs.mean(axis=0)
-        norm = float(np.linalg.norm(mean_vec))
-        if norm > 1e-12:
-            mean_vec = mean_vec / norm
-        centroid = tuple(float(x) for x in mean_vec.tolist())
-
-        result.append(
-            TopicCluster(
-                topic_id=tid,
-                atoms=cluster_atoms,
-                charged=charged,
-                j=j,
-                centroid=centroid,
-            )
-        )
-
-    return result
+    return _build_topic_clusters(clusters, indices, embeddings_norm)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -2214,6 +2415,33 @@ _MAX_IMPORT_DEPTH = 5
 _FENCED_BLOCK_RE = re.compile(r"^(`{3,}|~{3,}).*?^\1", re.MULTILINE | re.DOTALL)
 
 
+def _resolve_import_target(
+    ref: str,
+    source_path: Path,
+    visited: set[str],
+) -> Path | None:
+    """Resolve an @path reference to a file path.
+
+    Returns the resolved Path if it should be expanded, or None if it should
+    be left as-is (non-expandable ext, circular, broken, etc.).
+    """
+    if ref.startswith("~"):
+        target = Path(ref).expanduser()
+    else:
+        target = source_path.parent / ref
+    try:
+        target = target.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None  # circular or broken symlink
+    if target.suffix.lower() in _NON_EXPANDABLE_EXT:
+        return None
+    if str(target) in visited:
+        return None
+    if not target.is_file():
+        return None
+    return target
+
+
 def expand_imports(
     content: str,
     source_path: Path,
@@ -2239,53 +2467,23 @@ def expand_imports(
     if visited is None:
         visited = {str(source_path.resolve())}
 
-    # Find fenced code block ranges to skip
-    code_ranges: list[tuple[int, int]] = []
-    for m in _FENCED_BLOCK_RE.finditer(content):
-        code_ranges.append((m.start(), m.end()))
+    code_ranges = [(m.start(), m.end()) for m in _FENCED_BLOCK_RE.finditer(content)]
 
     def _in_code_block(pos: int) -> bool:
         return any(start <= pos < end for start, end in code_ranges)
 
     def _replace(match: re.Match[str]) -> str:
         if _in_code_block(match.start()):
-            return match.group(0)  # inside code block — don't expand
-
-        ref = match.group(1)
-
-        # Resolve path relative to importing file
-        if ref.startswith("~"):
-            target = Path(ref).expanduser()
-        else:
-            target = source_path.parent / ref
-
-        # Resolve symlinks — catches circular symlinks (ELOOP)
-        try:
-            target = target.resolve(strict=False)
-        except (OSError, RuntimeError):
-            return match.group(0)  # circular or broken symlink
-
-        # Skip known non-markdown extensions
-        if target.suffix.lower() in _NON_EXPANDABLE_EXT:
             return match.group(0)
-
-        # Circular import detection
-        target_key = str(target)
-        if target_key in visited:
+        target = _resolve_import_target(match.group(1), source_path, visited)
+        if target is None:
             return match.group(0)
-
-        # Read and recursively expand
-        if not target.is_file():
-            return match.group(0)  # broken reference — leave as-is
-
         try:
             imported = target.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return match.group(0)
-
-        visited.add(target_key)
-        expanded = expand_imports(imported, target, depth=depth + 1, visited=visited)
-        return expanded
+        visited.add(str(target))
+        return expand_imports(imported, target, depth=depth + 1, visited=visited)
 
     return _IMPORT_REF_RE.sub(_replace, content)
 
@@ -2303,13 +2501,8 @@ def map_file(path: Path) -> tuple[list[Atom], str]:
     return atoms, content_hash(content)
 
 
-def _parse_frontmatter_description(path: Path) -> str:
-    """Extract name + description from YAML frontmatter.
-
-    These fields are surfaced into the model's base context by all agents
-    (Agent Skills standard) for skill/agent discoverability. The combined
-    string is what competes for attention even when the file isn't invoked.
-    """
+def _extract_frontmatter_yaml(path: Path) -> str:
+    """Read a file and return the raw YAML frontmatter block, or empty string."""
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -2317,49 +2510,48 @@ def _parse_frontmatter_description(path: Path) -> str:
     if not text.startswith("---"):
         return ""
     end = text.find("\n---", 3)
-    if end == -1:
+    return text[3:end] if end != -1 else ""
+
+
+def _parse_frontmatter_description(path: Path) -> str:
+    """Extract name + description from YAML frontmatter.
+
+    These fields are surfaced into the model's base context by all agents
+    (Agent Skills standard) for skill/agent discoverability. The combined
+    string is what competes for attention even when the file isn't invoked.
+    """
+    raw = _extract_frontmatter_yaml(path)
+    if not raw:
         return ""
     try:
         import yaml
 
-        data = yaml.safe_load(text[3:end])
+        data = yaml.safe_load(raw)
         if not isinstance(data, dict):
             return ""
         name = str(data.get("name", ""))
         desc = str(data.get("description", ""))
-        if name and desc:
-            return f"{name}: {desc}"
-        return name or desc
+        return f"{name}: {desc}" if name and desc else (name or desc)
     except Exception:  # yaml.YAMLError; yaml imported in try scope
         return ""
 
 
 def _parse_frontmatter_globs(path: Path) -> tuple[str, ...]:
     """Extract globs from YAML frontmatter of a rule/skill file."""
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ()
-    lines = text.split("\n")
-    if not lines or lines[0].strip() != "---":
-        return ()
-    # Find closing ---
-    for i, line in enumerate(lines[1:], 1):
-        if line.strip() == "---":
-            front = "\n".join(lines[1:i])
-            break
-    else:
+    raw = _extract_frontmatter_yaml(path)
+    if not raw:
         return ()
     try:
         import yaml
 
-        data = yaml.safe_load(front)
-        if isinstance(data, dict) and "globs" in data:
-            globs = data["globs"]
-            if isinstance(globs, list):
-                return tuple(str(g) for g in globs)
-            if isinstance(globs, str):
-                return (globs,)
+        data = yaml.safe_load(raw)
+        if not isinstance(data, dict) or "globs" not in data:
+            return ()
+        globs = data["globs"]
+        if isinstance(globs, list):
+            return tuple(str(g) for g in globs)
+        if isinstance(globs, str):
+            return (globs,)
     except Exception:  # yaml.YAMLError; yaml imported in try scope
         pass
     return ()
@@ -2391,6 +2583,42 @@ def _load_registry() -> dict[str, dict[str, Any]]:
     return configs
 
 
+def _find_best_registry_match(
+    rel_lower: str,
+    registry: dict[str, dict[str, Any]],
+) -> tuple[str, dict[str, Any]] | None:
+    """Find the most specific registry pattern match for a file path.
+
+    Returns (agent_id, properties) or None if no match.
+    """
+    import fnmatch
+
+    from reporails_cli.core.agents import _extract_patterns, _extract_properties
+
+    best: tuple[int, str, dict[str, Any]] | None = None  # (specificity, agent, props)
+
+    for agent_id, config in registry.items():
+        for ft in (config.get("file_types") or {}).values():
+            patterns = _extract_patterns(ft) if isinstance(ft, dict) else []
+            props = ft.get("properties", {}) if isinstance(ft, dict) else {}
+            if not props:
+                props = _extract_properties(ft) if isinstance(ft, dict) else {}
+            for pat in patterns:
+                pat_lower = pat.lower()
+                candidates = [pat_lower]
+                if "**/" in pat_lower:
+                    candidates.append(pat_lower.replace("**/", ""))
+                    candidates.append(pat_lower.replace("**/", "*/"))
+                if any(fnmatch.fnmatch(rel_lower, c) for c in candidates):
+                    specificity = len(pat_lower.split("*")[0])
+                    if best is None or specificity > best[0]:
+                        best = (specificity, agent_id, props)
+
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
 def _detect_file_loading(
     path: Path,
     root: Path,
@@ -2405,52 +2633,187 @@ def _detect_file_loading(
         (loading, scope, globs, agent)
     """
     rel = str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
-    rel_lower = rel.lower()
+    match = _find_best_registry_match(rel.lower(), registry)
+    if match is None:
+        return "session_start", "global", (), "generic"
 
-    import fnmatch
+    agent_id, props = match
+    loading = props.get("loading", "session_start")
+    scope = props.get("scope", "global")
+    globs: tuple[str, ...] = ()
+    if loading in ("on_demand", "on_invocation"):
+        globs = _parse_frontmatter_globs(path)
+    if loading == "on_demand" and not globs:
+        loading = "session_start"
+        scope = "global"
+    return loading, scope, globs, agent_id
 
-    # Collect all matches, then pick the most specific (longest literal prefix).
-    # This prevents catch-all patterns like **/AGENTS.md from beating
-    # directory-scoped patterns like .gemini/agents/*.md.
-    best_match: tuple[int, str, str, dict[str, Any]] | None = None  # (specificity, agent, ft_name, props)
 
-    for agent_id, config in registry.items():
-        for _ft_name, ft in (config.get("file_types") or {}).items():
-            # Support both v0.3.0 (patterns + properties) and v0.5.0 (scopes)
-            from reporails_cli.core.agents import _extract_patterns, _extract_properties
+def _embed_atoms_deduped(atoms: list[Atom], encoder: Any) -> None:
+    """Embed atoms with deduplication. Atoms with identical text share embeddings."""
+    texts = [_embed_text(a) for a in atoms]
+    unique_texts: list[str] = []
+    text_index: dict[str, int] = {}
+    atom_to_unique: list[int] = []
+    for t in texts:
+        idx = text_index.get(t)
+        if idx is None:
+            idx = len(unique_texts)
+            text_index[t] = idx
+            unique_texts.append(t)
+        atom_to_unique.append(idx)
+    unique_embeddings = encoder.encode(unique_texts)
+    for atom, u_idx in zip(atoms, atom_to_unique, strict=True):
+        atom.embedding_int8 = _quantize_int8(unique_embeddings[u_idx])
 
-            patterns = _extract_patterns(ft) if isinstance(ft, dict) else []
-            props = ft.get("properties", {}) if isinstance(ft, dict) else {}
-            if not props:
-                props = _extract_properties(ft) if isinstance(ft, dict) else {}
-            for pat in patterns:
-                pat_lower = pat.lower()
-                # Try multiple normalizations for ** glob patterns
-                candidates = [pat_lower]
-                if "**/" in pat_lower:
-                    candidates.append(pat_lower.replace("**/", ""))  # zero depth
-                    candidates.append(pat_lower.replace("**/", "*/"))  # one depth
-                matched = any(fnmatch.fnmatch(rel_lower, c) for c in candidates)
-                if matched:
-                    # Specificity = length of literal prefix before first glob char
-                    specificity = len(pat_lower.split("*")[0])
-                    if best_match is None or specificity > best_match[0]:
-                        best_match = (specificity, agent_id, _ft_name, props)
 
-    if best_match:
-        _, agent_id, _, props = best_match
-        loading = props.get("loading", "session_start")
-        scope = props.get("scope", "global")
-        globs: tuple[str, ...] = ()
-        if loading in ("on_demand", "on_invocation"):
-            globs = _parse_frontmatter_globs(path)
-        if loading == "on_demand" and not globs:
-            loading = "session_start"
-            scope = "global"
-        return loading, scope, globs, agent_id
+def _classify_file(
+    path: Path,
+    map_cache: Any,
+    all_atoms: list[Atom],
+    atoms_needing_embed: list[Atom],
+) -> str:
+    """Classify a single file: tokenize or use cache. Returns content hash."""
+    from reporails_cli.core.mapper.map_cache import (
+        CachedFileEntry,
+        atoms_to_dicts,
+        dicts_to_atoms,
+    )
 
-    # Fallback: single file = session_start, global, generic
-    return "session_start", "global", (), "generic"
+    raw_content = path.read_text(encoding="utf-8", errors="replace")
+    content = expand_imports(raw_content, path)
+    chash = content_hash(content)
+
+    cached = map_cache.get(chash) if map_cache else None
+    if cached is not None:
+        atoms = dicts_to_atoms(cached.atoms)
+        for a in atoms:
+            a.file_path = str(path)
+        all_atoms.extend(atoms)
+    else:
+        atoms = tokenize(content)
+        for a in atoms:
+            a.file_path = str(path)
+        all_atoms.extend(atoms)
+        atoms_needing_embed.extend(atoms)
+        if map_cache is not None:
+            map_cache.put(chash, CachedFileEntry(chash, atoms_to_dicts(atoms)))
+
+    return chash
+
+
+def _update_cache_after_embedding(
+    map_cache: Any,
+    all_atoms: list[Atom],
+    atoms_needing_embed: list[Atom],
+    file_records: list[FileRecord],
+) -> None:
+    """Update cache entries with embeddings for newly-embedded atoms."""
+    from reporails_cli.core.mapper.map_cache import CachedFileEntry, atoms_to_dicts
+
+    by_file: dict[str, list[Atom]] = {}
+    for a in all_atoms:
+        by_file.setdefault(a.file_path, []).append(a)
+    embed_set = {id(a) for a in atoms_needing_embed}
+    for frec in file_records:
+        file_atoms = by_file.get(frec.path, [])
+        if any(id(a) in embed_set for a in file_atoms):
+            map_cache.put(frec.content_hash, CachedFileEntry(frec.content_hash, atoms_to_dicts(file_atoms)))
+
+
+def _embed_file_descriptions(file_records: list[FileRecord], encoder: Any) -> None:
+    """Embed frontmatter descriptions for on_invocation files."""
+    desc_texts = [fr.description for fr in file_records if fr.description]
+    if not desc_texts:
+        return
+    desc_embeddings = encoder.encode(desc_texts)
+    desc_idx = 0
+    for fr in file_records:
+        if fr.description:
+            fr.description_embedding = _quantize_int8(desc_embeddings[desc_idx])
+            desc_idx += 1
+
+
+def _build_ruleset_map(
+    file_records: list[FileRecord],
+    all_atoms: list[Atom],
+    topics: list[TopicCluster],
+) -> RulesetMap:
+    """Assemble the final RulesetMap from classified and clustered data."""
+    cluster_records = [
+        ClusterRecord(
+            id=tc.topic_id,
+            n_atoms=len(tc.atoms),
+            n_charged=len(tc.charged),
+            n_neutral=len(tc.atoms) - len(tc.charged),
+            centroid=tc.centroid,
+        )
+        for tc in topics
+    ]
+
+    n_charged = sum(1 for a in all_atoms if a.charge_value != 0)
+    summary = RulesetSummary(
+        n_atoms=len(all_atoms),
+        n_charged=n_charged,
+        n_neutral=len(all_atoms) - n_charged,
+        n_topics=len(topics),
+        n_topics_charged=sum(1 for tc in topics if tc.charged),
+    )
+
+    return RulesetMap(
+        schema_version=SCHEMA_VERSION,
+        embedding_model=EMBEDDING_MODEL,
+        generated_at=datetime.now(UTC).isoformat(),
+        files=tuple(file_records),
+        atoms=tuple(all_atoms),
+        clusters=tuple(cluster_records),
+        summary=summary,
+    )
+
+
+def _validate_and_log(ruleset: RulesetMap) -> None:
+    """Validate atoms, log findings, raise on errors."""
+    findings = validate_atoms(ruleset.atoms)
+    for f in findings:
+        if f.severity == "error":
+            logger.error("Map validation: [%s] L%d: %s — %s", f.rule, f.line, f.message, f.text)
+        elif f.severity == "warn":
+            logger.warning("Map validation: [%s] L%d: %s — %s", f.rule, f.line, f.message, f.text)
+    errors = [f for f in findings if f.severity == "error"]
+    if errors:
+        raise ValueError(
+            f"Map validation failed with {len(errors)} error(s). First: [{errors[0].rule}] {errors[0].message}"
+        )
+
+
+def _classify_all_files(
+    paths: list[Path],
+    root: Path,
+    map_cache: Any,
+    registry: dict[str, dict[str, Any]],
+) -> tuple[list[FileRecord], list[Atom], list[Atom]]:
+    """Classify all instruction files. Returns (file_records, all_atoms, atoms_needing_embed)."""
+    file_records: list[FileRecord] = []
+    all_atoms: list[Atom] = []
+    atoms_needing_embed: list[Atom] = []
+
+    for path in paths:
+        chash = _classify_file(path, map_cache, all_atoms, atoms_needing_embed)
+        loading, scope, globs, agent = _detect_file_loading(path, root, registry)
+        desc = _parse_frontmatter_description(path) if loading == "on_invocation" else ""
+        file_records.append(
+            FileRecord(
+                path=str(path),
+                content_hash=chash,
+                loading=loading,
+                scope=scope,
+                globs=globs,
+                agent=agent,
+                description=desc,
+            )
+        )
+
+    return file_records, all_atoms, atoms_needing_embed
 
 
 def map_ruleset(
@@ -2469,191 +2832,45 @@ def map_ruleset(
     (by content hash) reuse cached atoms and embeddings. Only changed
     files are re-tokenized and re-embedded. Clustering always re-runs.
     """
-    from reporails_cli.core.mapper.map_cache import (
-        CachedFileEntry,
-        MapCache,
-        atoms_to_dicts,
-        dicts_to_atoms,
-    )
+    from reporails_cli.core.mapper.map_cache import MapCache
 
     if models is None:
         models = get_models()
     if root is None:
         root = paths[0].parent if paths else Path(".")
 
-    # Load incremental cache
     map_cache: MapCache | None = None
     if cache_dir is not None:
         map_cache = MapCache(cache_dir)
         map_cache.load()
 
-    registry = _load_registry()
+    file_records, all_atoms, atoms_needing_embed = _classify_all_files(
+        paths,
+        root,
+        map_cache,
+        _load_registry(),
+    )
 
-    # Classify all files — cache hits skip tokenization
-    file_records: list[FileRecord] = []
-    all_atoms: list[Atom] = []
-    atoms_needing_embed: list[Atom] = []  # only uncached atoms need embedding
-
-    for path in paths:
-        raw_content = path.read_text(encoding="utf-8", errors="replace")
-        # Expand @path inline imports (Claude Code, Gemini CLI).
-        # The model sees expanded content — the mapper must too.
-        content = expand_imports(raw_content, path)
-        chash = content_hash(content)
-
-        # Check cache
-        cached = map_cache.get(chash) if map_cache else None
-        if cached is not None:
-            atoms = dicts_to_atoms(cached.atoms)
-            # Restore file_path (cache stores it, but verify)
-            for a in atoms:
-                a.file_path = str(path)
-            all_atoms.extend(atoms)
-            # Cached atoms already have embeddings — no re-embed needed
-        else:
-            atoms = tokenize(content)
-            for a in atoms:
-                a.file_path = str(path)
-            all_atoms.extend(atoms)
-            # All atoms need embedding — headings included
-            atoms_needing_embed.extend(atoms)
-            # Store in cache (without embeddings yet — we'll update after embedding)
-            if map_cache is not None:
-                map_cache.put(chash, CachedFileEntry(chash, atoms_to_dicts(atoms)))
-
-        loading, scope, globs, agent = _detect_file_loading(path, root, registry)
-        # Extract frontmatter description for on_invocation files — these
-        # descriptions are always in the model's base context (Agent Skills
-        # standard: name+description surfaced for discoverability).
-        desc = _parse_frontmatter_description(path) if loading == "on_invocation" else ""
-        file_records.append(
-            FileRecord(
-                path=str(path),
-                content_hash=chash,
-                loading=loading,
-                scope=scope,
-                globs=globs,
-                agent=agent,
-                description=desc,
-            )
-        )
-
-    # Embed only uncached non-heading atoms. Dedup by embedding-text
-    # (same atom text + same heading_context = same embedding) so repeated
-    # patterns like "Use `ruff`" under the same heading only hit the
-    # encoder once per run.
+    # Embed uncached atoms
     if atoms_needing_embed:
-        texts = [_embed_text(a) for a in atoms_needing_embed]
-        unique_texts: list[str] = []
-        text_index: dict[str, int] = {}
-        atom_to_unique: list[int] = []
-        for t in texts:
-            idx = text_index.get(t)
-            if idx is None:
-                idx = len(unique_texts)
-                text_index[t] = idx
-                unique_texts.append(t)
-            atom_to_unique.append(idx)
-        unique_embeddings = models.st.encode(unique_texts)
-        for atom, u_idx in zip(atoms_needing_embed, atom_to_unique, strict=True):
-            atom.embedding_int8 = _quantize_int8(unique_embeddings[u_idx])
-
-        # Update cache with embeddings
+        _embed_atoms_deduped(atoms_needing_embed, models.st)
         if map_cache is not None:
-            # Group newly-embedded atoms by file, update cache entries
-            by_file: dict[str, list[Atom]] = {}
-            for a in all_atoms:
-                by_file.setdefault(a.file_path, []).append(a)
-            for frec in file_records:
-                file_atoms = by_file.get(frec.path, [])
-                if any(a in atoms_needing_embed for a in file_atoms):
-                    map_cache.put(frec.content_hash, CachedFileEntry(frec.content_hash, atoms_to_dicts(file_atoms)))
+            _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records)
 
     # Evict stale cache entries and save
     if map_cache is not None:
-        known_hashes = {fr.content_hash for fr in file_records}
-        map_cache.evict_stale(known_hashes)
+        map_cache.evict_stale({fr.content_hash for fr in file_records})
         map_cache.save()
 
-    # Embed check: ensure ALL atoms have embeddings (cached or fresh)
-    exc = list(all_atoms)
-    unembedded = [a for a in exc if a.embedding_int8 is None]
+    # Ensure ALL atoms have embeddings (cached atoms may lack them)
+    unembedded = [a for a in all_atoms if a.embedding_int8 is None]
     if unembedded:
-        # Same dedup as above
-        texts = [_embed_text(a) for a in unembedded]
-        unique_texts = []
-        text_index = {}
-        atom_to_unique = []
-        for t in texts:
-            idx = text_index.get(t)
-            if idx is None:
-                idx = len(unique_texts)
-                text_index[t] = idx
-                unique_texts.append(t)
-            atom_to_unique.append(idx)
-        unique_embeddings = models.st.encode(unique_texts)
-        for atom, u_idx in zip(unembedded, atom_to_unique, strict=True):
-            atom.embedding_int8 = _quantize_int8(unique_embeddings[u_idx])
+        _embed_atoms_deduped(unembedded, models.st)
 
-    # Embed file descriptions (on_invocation files only — their name+description
-    # is always in the model's base context per Agent Skills standard).
-    desc_texts = [fr.description for fr in file_records if fr.description]
-    if desc_texts and models is not None:
-        desc_embeddings = models.st.encode(desc_texts)
-        desc_idx = 0
-        for fr in file_records:
-            if fr.description:
-                fr.description_embedding = _quantize_int8(desc_embeddings[desc_idx])
-                desc_idx += 1
+    _embed_file_descriptions(file_records, models.st)
 
-    # Cluster by topic
-    topics = cluster_topics(all_atoms)
-    cluster_records: list[ClusterRecord] = []
-    for tc in topics:
-        cluster_records.append(
-            ClusterRecord(
-                id=tc.topic_id,
-                n_atoms=len(tc.atoms),
-                n_charged=len(tc.charged),
-                n_neutral=len(tc.atoms) - len(tc.charged),
-                centroid=tc.centroid,
-            )
-        )
-
-    # Summary
-    n_charged = sum(1 for a in exc if a.charge_value != 0)
-    n_topics_charged = sum(1 for tc in topics if tc.charged)
-
-    summary = RulesetSummary(
-        n_atoms=len(exc),
-        n_charged=n_charged,
-        n_neutral=len(exc) - n_charged,
-        n_topics=len(topics),
-        n_topics_charged=n_topics_charged,
-    )
-
-    ruleset = RulesetMap(
-        schema_version=SCHEMA_VERSION,
-        embedding_model=EMBEDDING_MODEL,
-        generated_at=datetime.now(UTC).isoformat(),
-        files=tuple(file_records),
-        atoms=tuple(all_atoms),
-        clusters=tuple(cluster_records),
-        summary=summary,
-    )
-
-    # Validate — log warnings, raise on errors
-    findings = validate_atoms(ruleset.atoms)
-    errors = [f for f in findings if f.severity == "error"]
-    warns = [f for f in findings if f.severity == "warn"]
-    for f in errors:
-        logger.error("Map validation: [%s] L%d: %s — %s", f.rule, f.line, f.message, f.text)
-    for f in warns:
-        logger.warning("Map validation: [%s] L%d: %s — %s", f.rule, f.line, f.message, f.text)
-    if errors:
-        raise ValueError(
-            f"Map validation failed with {len(errors)} error(s). First: [{errors[0].rule}] {errors[0].message}"
-        )
+    ruleset = _build_ruleset_map(file_records, all_atoms, cluster_topics(all_atoms))
+    _validate_and_log(ruleset)
 
     return ruleset
 
@@ -2912,6 +3129,27 @@ _STRONG_CHARGE_RE = re.compile(
 _QUOTED_ATOM_RE = re.compile(r'^["\u201c\u201e]')
 
 
+_VALID_CHARGES = frozenset({"CONSTRAINT", "DIRECTIVE", "IMPERATIVE", "NEUTRAL", "AMBIGUOUS"})
+_VALID_MODS = frozenset({"imperative", "direct", "absolute", "hedged", "none"})
+
+
+def _validate_atom_schema(a: Atom, findings: list[MapFinding]) -> None:
+    """Check schema and consistency invariants for a single atom."""
+    cv, chg, mod = a.charge_value, a.charge, a.modality
+    _checks: list[tuple[bool, str, str]] = [
+        (chg not in _VALID_CHARGES, "schema", f"Invalid charge: {chg}"),
+        (mod not in _VALID_MODS, "schema", f"Invalid modality: {mod}"),
+        (cv not in (-1, 0, 1), "schema", f"Invalid charge_value: {cv}"),
+        (cv == 0 and chg not in ("NEUTRAL", "AMBIGUOUS"), "consistency", f"charge_value=0 but charge={chg}"),
+        (cv != 0 and chg == "NEUTRAL", "consistency", "charge_value!=0 but charge=NEUTRAL"),
+        (cv == 0 and mod != "none", "consistency", f"NEUTRAL with modality={mod}"),
+        (cv != 0 and mod == "none", "consistency", "Charged with modality=none"),
+    ]
+    for condition, rule, message in _checks:
+        if condition:
+            findings.append(MapFinding("error", rule, message, a.line, a.text[:80], chg))
+
+
 def validate_atoms(atoms: tuple[Atom, ...] | list[Atom]) -> list[MapFinding]:
     """Validate atoms against deterministic invariants.
 
@@ -2924,146 +3162,45 @@ def validate_atoms(atoms: tuple[Atom, ...] | list[Atom]) -> list[MapFinding]:
     Returns list of findings. Empty list = clean.
     """
     findings: list[MapFinding] = []
-    valid_charges = {"CONSTRAINT", "DIRECTIVE", "IMPERATIVE", "NEUTRAL", "AMBIGUOUS"}
-    valid_mods = {"imperative", "direct", "absolute", "hedged", "none"}
-
     exc: list[Atom] = []
 
     for a in atoms:
-        # ── Schema invariants ──
-        if a.charge not in valid_charges:
-            findings.append(
-                MapFinding(
-                    "error",
-                    "schema",
-                    f"Invalid charge: {a.charge}",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        if a.modality not in valid_mods:
-            findings.append(
-                MapFinding(
-                    "error",
-                    "schema",
-                    f"Invalid modality: {a.modality}",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        if a.charge_value not in (-1, 0, 1):
-            findings.append(
-                MapFinding(
-                    "error",
-                    "schema",
-                    f"Invalid charge_value: {a.charge_value}",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        if a.charge_value == 0 and a.charge not in ("NEUTRAL", "AMBIGUOUS"):
-            findings.append(
-                MapFinding(
-                    "error",
-                    "consistency",
-                    f"charge_value=0 but charge={a.charge}",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        if a.charge_value != 0 and a.charge == "NEUTRAL":
-            findings.append(
-                MapFinding(
-                    "error",
-                    "consistency",
-                    f"charge_value≠0 but charge=NEUTRAL",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        if a.charge_value == 0 and a.modality != "none":
-            findings.append(
-                MapFinding(
-                    "error",
-                    "consistency",
-                    f"NEUTRAL with modality={a.modality}",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        if a.charge_value != 0 and a.modality == "none":
-            findings.append(
-                MapFinding(
-                    "error",
-                    "consistency",
-                    f"Charged with modality=none",
-                    a.line,
-                    a.text[:80],
-                    a.charge,
-                )
-            )
-        # Charged headings are valid — "## Never push to main" is a constraint.
-
+        _validate_atom_schema(a, findings)
         if a.kind == "excitation":
             exc.append(a)
 
-    # ── Deterministic charge invariants ──
+    # Deterministic charge invariants
     for a in exc:
         clean = _strip_md_for_classify(a.text)
-
         if _MUST_CONSTRAINT_RE.match(clean) and a.charge_value != -1:
+            msg = f"Negation at start but charge={a.charge}"
+            findings.append(MapFinding("warn", "must_constraint", msg, a.line, a.text[:80], a.charge))
+        is_unquoted_neutral = (
+            a.charge_value == 0 and not _QUOTED_ATOM_RE.match(a.text.strip()) and _STRONG_CHARGE_RE.search(a.text)
+        )
+        if is_unquoted_neutral:
             findings.append(
                 MapFinding(
-                    "warn",
-                    "must_constraint",
-                    f"Negation at start but charge={a.charge}",
+                    "info",
+                    "suspicious_neutral",
+                    "NEUTRAL atom contains strong charge word",
                     a.line,
                     a.text[:80],
                     a.charge,
                 )
             )
 
-        # NEUTRAL with strong charge words (skip quoted examples)
-        if a.charge_value == 0 and not _QUOTED_ATOM_RE.match(a.text.strip()):
-            if _STRONG_CHARGE_RE.search(a.text):
-                findings.append(
-                    MapFinding(
-                        "info",
-                        "suspicious_neutral",
-                        "NEUTRAL atom contains strong charge word",
-                        a.line,
-                        a.text[:80],
-                        a.charge,
-                    )
-                )
-
-    # ── Statistical checks ──
+    # Statistical checks
     n_exc = len(exc)
     if n_exc > 0:
         n_charged = sum(1 for a in exc if a.charge_value != 0)
         ratio = n_charged / n_exc
         if ratio > 0.90:
-            findings.append(
-                MapFinding(
-                    "warn",
-                    "distribution",
-                    f"Charge ratio {ratio:.0%} ({n_charged}/{n_exc}) — unusually high",
-                )
-            )
+            msg = f"Charge ratio {ratio:.0%} ({n_charged}/{n_exc}) — unusually high"
+            findings.append(MapFinding("warn", "distribution", msg))
         if ratio < 0.05 and n_exc > 10:
-            findings.append(
-                MapFinding(
-                    "warn",
-                    "distribution",
-                    f"Charge ratio {ratio:.0%} ({n_charged}/{n_exc}) — unusually low",
-                )
-            )
+            msg = f"Charge ratio {ratio:.0%} ({n_charged}/{n_exc}) — unusually low"
+            findings.append(MapFinding("warn", "distribution", msg))
 
     return findings
 

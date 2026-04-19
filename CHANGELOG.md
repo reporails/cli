@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.2
+
+### Added
+
+- Inline Pro diagnostic counts per file card — free tier shows `⊕ N Pro diagnostics (K errors)` inside each file card instead of a separate Hints section
+- Cross-file coordinate section — free tier shows which files interact (file ↔ file, type, count) without line-level detail
+- Pro diagnostic counts in scorecard — `+ N Pro diagnostics (K errors · M warnings)` shows scale of findings available with upgrade
+- Integrated CTA — `See all N findings with fixes → ails auth login` replaces the previous dim afterthought
+- `reporails-cli` script alias in `pyproject.toml` — `uvx reporails-cli check` now works
+- Entry point verification gate in `scripts/pre-release-check.sh`
+
+### Changed
+
+- Extract display logic from `interfaces/cli/main.py` into `formatters/text/display.py`, `display_constants.py`, and `scorecard.py` — eliminates 12 pylint structural violations, reduces `main.py` from 1118 to 315 lines
+- Replace Hints section with inline per-file Pro diagnostic counts and cross-file coordinates — interaction diagnostics shown in context, not disconnected
+- Mapper daemon closes inherited FDs before daemonizing — prevents parent process (npx, CI) from hanging on pipe EOF
+- Mapper daemon detects orphaned state (PPID=1) and shuts down within 30s — prevents indefinite persistence after ephemeral parent exits
+- Fail-fast audit — add `logger.warning()` on 4 critical-path catches, narrow 12 bare `except Exception:` to specific types, justify 16 remaining with inline comments
+- Scrub internal notation from code comments and docstrings
+- Rewrite READMEs for 0.5.x — current output format, correct flags, five categories
+- Update tier spec — cross-file from "Blocked" to "Coordinate" for free tier
+
+### Fixed
+
+- Pre-compile `KNOWN_CODE_TOKENS` regex as single alternation pattern at module level — eliminates ~26,500 `re.compile()` calls per typical run
+- Fix `ails map` crash when agent config files exist outside project directory (`~/.claude/settings.json`)
+- Add `scikit-learn` to runtime dependencies — required by mapper topic clustering
+- Fix `uvx reporails-cli` — add `reporails-cli` script alias so `uvx` resolves the executable
+- Fix post-publish smoke test — use `uvx --from reporails-cli ails` instead of `uvx reporails-cli`
+- Log warning when mapper fails instead of silent degradation
+- Fix duplicate Install section in README, align npm description
+
 ## 0.5.1
 
 Patch release — 0.5.0 published with a direct URL dependency (`en-core-web-sm`) that PyPI accepted but pip/uvx cannot resolve. The spaCy language model is now auto-downloaded on first run instead of declared as a dependency.

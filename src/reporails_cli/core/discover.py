@@ -249,7 +249,9 @@ def generate_backbone_yaml(target: Path, agents: list[DetectedAgent]) -> str:
             agent_data["main_instruction_file"] = str(root_files[0].relative_to(target))
         agent_data.update(agent.detected_directories)
         if agent.config_files:
-            agent_data["config"] = str(agent.config_files[0].relative_to(target))
+            cf = agent.config_files[0]
+            if cf.is_relative_to(target):
+                agent_data["config"] = str(cf.relative_to(target))
         agents_data[agent.agent_type.id] = agent_data
 
     data["agents"] = agents_data or {}
