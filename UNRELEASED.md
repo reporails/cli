@@ -11,6 +11,7 @@
 
 ### Changed
 
+- [FORMATTERS]: Extract display logic from `interfaces/cli/main.py` into `formatters/text/display.py`, `display_constants.py`, and `scorecard.py` — eliminates 12 pylint structural violations, reduces `main.py` from 1118 to 315 lines
 - [CLI]: Replace Hints section with inline per-file Pro diagnostic counts and cross-file coordinates — interaction diagnostics shown in context, not disconnected
 - [CORE]: Mapper daemon closes inherited FDs before daemonizing — prevents parent process (npx, CI) from hanging on pipe EOF
 - [CORE]: Mapper daemon detects orphaned state (PPID=1) and shuts down within 30s — prevents indefinite persistence after ephemeral parent exits
@@ -22,6 +23,10 @@
 
 ### Fixed
 
+- [CORE]: Pre-compile `KNOWN_CODE_TOKENS` regex as single alternation pattern at module level — eliminates ~26,500 `re.compile()` calls per typical run in `check_specificity()`
+- [CORE]: Fix `ails map` crash when agent config files exist outside project directory (`~/.claude/settings.json`)
+- [TESTS]: Migrate 63 smoke tests from old `ValidationResult` JSON format (`violations`, `score`, `level`) to `CombinedResult` format (`files`, `stats`, `compliance_band`)
+- [TESTS]: Remove tests for removed commands (`dismiss`, `judge`, `update`)
 - [BUILD]: Add `scikit-learn` to runtime dependencies — required by mapper topic clustering (`AgglomerativeClustering`)
 - [BUILD]: Fix `uvx reporails-cli` — add `reporails-cli` script alias so `uvx` resolves the executable
 - [BUILD]: Fix post-publish smoke test — use `uvx --from reporails-cli ails` instead of `uvx reporails-cli`

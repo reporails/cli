@@ -153,32 +153,34 @@ def resolve_location(
     Returns:
         Location string (e.g., "CLAUDE.md:0" or ".:0")
     """
+    path = _resolve_location_path(rule, classified_files, root)
+    return f"{path}:0" if path else ".:0"
+
+
+def _resolve_location_path(
+    rule: Rule,
+    classified_files: list[ClassifiedFile],
+    root: Path | None,
+) -> str | None:
+    """Find the best file path for violation attribution. Returns None for project root."""
     if rule.match is None:
-        return ".:0"
+        return None
 
-    # For main type or match-all, prefer main file
-    if rule.match.type is None or rule.match.type == "main":
-        path = _first_classified_path(classified_files, root, "main")
-        if path:
-            return f"{path}:0"
+    # For explicit "main" match type, only look for main files
+    if rule.match.type == "main":
+        return _first_classified_path(classified_files, root, "main")
 
-    # For typed matches, find a file of that type — don't fall back to
-    # unrelated files (a config rule shouldn't attribute to a memory file)
+    # For typed matches, find a file of that type
     if rule.match.type:
         type_names = rule.match.type if isinstance(rule.match.type, list) else [rule.match.type]
-        path = _first_classified_path(classified_files, root, *type_names)
-        if path:
-            return f"{path}:0"
-        # No files of this type — attribute to project root, not a random file
-        return ".:0"
+        return _first_classified_path(classified_files, root, *type_names)
 
-    # Wildcard match — prefer main file, then any file
+    # Wildcard match (type is None) — prefer main file, then any file
     path = _first_classified_path(classified_files, root, "main")
     if path:
-        return f"{path}:0"
+        return path
 
     if classified_files:
-        cf = classified_files[0]
-        return f"{_relativize(cf.path, root)}:0"
+        return _relativize(classified_files[0].path, root)
 
-    return ".:0"
+    return None

@@ -26,54 +26,72 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
     return result
 
 
-def _run_pipeline(target: Path) -> dict[str, Any]:
-    """Run the full check pipeline and return CombinedResult as dict."""
+def _discover_files(target: Path) -> tuple[list[Any], str, list[Any]] | None:
+    """Detect agents and discover instruction files. Returns (detected, agent, files) or None."""
     from reporails_cli.core.agents import detect_agents, get_all_instruction_files, resolve_agent
-    from reporails_cli.core.api_client import AilsClient
-    from reporails_cli.core.client_checks import run_client_checks
     from reporails_cli.core.config import get_project_config
-    from reporails_cli.core.merger import merge_results
-    from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
-    from reporails_cli.formatters import json as json_formatter
 
     config = get_project_config(target)
     detected = detect_agents(target)
     effective_agent, _, _ = resolve_agent(config.default_agent, detected)
     instruction_files = get_all_instruction_files(target, agents=detected)
     if not instruction_files:
-        return {"error": "No instruction files found"}
+        return None
+    return detected, effective_agent, instruction_files
 
-    # Build map first
-    ruleset_map = None
+
+def _build_map(target: Path, instruction_files: list[Any]) -> Any:
+    """Build ruleset map, returning None on failure."""
     try:
         from reporails_cli.core.mapper import map_ruleset
 
         cache_dir = target / ".ails" / ".cache"
-        ruleset_map = map_ruleset(list(instruction_files), cache_dir=cache_dir)
+        return map_ruleset(list(instruction_files), cache_dir=cache_dir)
     except (ImportError, RuntimeError) as exc:
-        logger.warning("Mapper unavailable in MCP validate: %s", exc)
+        logger.warning("Mapper unavailable in MCP: %s", exc)
+        return None
 
-    # M probes (mechanical + deterministic)
+
+def _merge_with_server(
+    m_findings: list[Any],
+    client_findings: list[Any],
+    ruleset_map: Any,
+    target: Path,
+) -> Any:
+    """Merge local findings with server diagnostics, returning CombinedResult."""
+    from reporails_cli.core.api_client import AilsClient
+    from reporails_cli.core.merger import merge_results
+
+    lint_result = AilsClient().lint(ruleset_map) if ruleset_map else None
+    return merge_results(
+        m_findings,
+        client_findings,
+        lint_result.report if lint_result else None,
+        hints=lint_result.hints if lint_result else (),
+        cross_file_coordinates=lint_result.cross_file_coordinates if lint_result else (),
+        project_root=target,
+    )
+
+
+def _run_pipeline(target: Path) -> dict[str, Any]:
+    """Run the full check pipeline and return CombinedResult as dict."""
+    from reporails_cli.core.client_checks import run_client_checks
+    from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
+    from reporails_cli.formatters import json as json_formatter
+
+    discovery = _discover_files(target)
+    if discovery is None:
+        return {"error": "No instruction files found"}
+    _detected, effective_agent, instruction_files = discovery
+
+    ruleset_map = _build_map(target, instruction_files)
     m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
-
-    # Content quality + client checks on map
     content_findings = (
         run_content_quality_checks(ruleset_map, target, instruction_files, agent=effective_agent) if ruleset_map else []
     )
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
 
-    lint_result = AilsClient().lint(ruleset_map) if ruleset_map else None
-    server_report = lint_result.report if lint_result else None
-    hints = lint_result.hints if lint_result else ()
-    cross_file_coordinates = lint_result.cross_file_coordinates if lint_result else ()
-    result = merge_results(
-        m_findings,
-        content_findings + client_findings,
-        server_report,
-        hints=hints,
-        cross_file_coordinates=cross_file_coordinates,
-        project_root=target,
-    )
+    result = _merge_with_server(m_findings, content_findings + client_findings, ruleset_map, target)
     return json_formatter.format_combined_result(result)
 
 
@@ -127,24 +145,12 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
     if not target.is_dir():
         return {"error": f"Path is not a directory: {target}"}
     try:
-        from reporails_cli.core.agents import detect_agents, get_all_instruction_files, resolve_agent
-        from reporails_cli.core.config import get_project_config
-
-        config = get_project_config(target)
-        detected = detect_agents(target)
-        _agent, _, _ = resolve_agent(config.default_agent, detected)
-        instruction_files = get_all_instruction_files(target, agents=detected)
-        if not instruction_files:
+        discovery = _discover_files(target)
+        if discovery is None:
             return {"auto_fixed": [], "summary": {"auto_fixed_count": 0}}
+        _detected, _agent, instruction_files = discovery
 
-        ruleset_map = None
-        try:
-            from reporails_cli.core.mapper import map_ruleset
-
-            cache_dir = target / ".ails" / ".cache"
-            ruleset_map = map_ruleset(list(instruction_files), cache_dir=cache_dir)
-        except (ImportError, RuntimeError) as exc:
-            logger.warning("Mapper unavailable in MCP heal: %s", exc)
+        ruleset_map = _build_map(target, instruction_files)
 
         fixes: list[dict[str, str]] = []
         if ruleset_map is not None:
