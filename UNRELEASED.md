@@ -27,6 +27,7 @@
 - [CORE]: Fix `ails map` crash when agent config files exist outside project directory (`~/.claude/settings.json`)
 - [TESTS]: Migrate 63 smoke tests from old `ValidationResult` JSON format (`violations`, `score`, `level`) to `CombinedResult` format (`files`, `stats`, `compliance_band`)
 - [TESTS]: Remove tests for removed commands (`dismiss`, `judge`, `update`)
+- [TESTS]: Fix rule-count assertion — auto-detect now fires agent-scoped rules from file type detection
 - [BUILD]: Add `scikit-learn` to runtime dependencies — required by mapper topic clustering (`AgglomerativeClustering`)
 - [BUILD]: Fix `uvx reporails-cli` — add `reporails-cli` script alias so `uvx` resolves the executable
 - [BUILD]: Fix post-publish smoke test — use `uvx --from reporails-cli ails` instead of `uvx reporails-cli`
