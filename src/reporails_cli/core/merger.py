@@ -99,6 +99,7 @@ class CombinedResult:
     stats: CombinedStats = field(default_factory=CombinedStats)
     offline: bool = True
     hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
+    cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
 
 
 def merge_results(
@@ -106,6 +107,7 @@ def merge_results(
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
     hints: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[Any, ...] = (),
     project_root: Path | None = None,
 ) -> CombinedResult:
     """Merge M-probe findings, client checks, and server diagnostics.
@@ -215,4 +217,5 @@ def merge_results(
         ),
         offline=server_report is None,
         hints=hints,
+        cross_file_coordinates=cross_file_coordinates,
     )

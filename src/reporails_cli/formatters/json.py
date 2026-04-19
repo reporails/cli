@@ -252,14 +252,23 @@ def format_combined_result(result: Any) -> dict[str, Any]:
             for cf in result.cross_file
         ]
     if result.hints:
-        data["hints"] = [
+        pro_total = sum(h.count for h in result.hints)
+        pro_errors = sum(getattr(h, "error_count", 0) for h in result.hints)
+        pro_warnings = sum(getattr(h, "warning_count", 0) for h in result.hints)
+        data["pro"] = {
+            "count": pro_total,
+            "errors": pro_errors,
+            "warnings": pro_warnings,
+        }
+    if result.cross_file_coordinates:
+        data["cross_file_coordinates"] = [
             {
-                "file": h.file,
-                "type": h.diagnostic_type,
-                "count": h.count,
-                "summary": h.summary,
+                "file_1": c.file_1,
+                "file_2": c.file_2,
+                "type": c.finding_type,
+                "count": c.count,
             }
-            for h in result.hints
+            for c in result.cross_file_coordinates
         ]
     if result.quality is not None and result.quality.compliance_band:
         data["compliance_band"] = result.quality.compliance_band

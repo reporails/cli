@@ -106,7 +106,21 @@ def start_daemon(cache_dir: Path) -> int:
     # Child — become daemon
     try:
         os.setsid()
-        # Redirect std streams
+
+        # Close inherited FDs above stderr before redirecting.
+        # Without this, the daemon child holds references to the parent's
+        # pipes (e.g., npx's stdio: "inherit"), preventing EOF and causing
+        # the parent to hang indefinitely waiting for pipe closure.
+        import resource
+
+        max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+        import contextlib
+
+        for fd in range(3, min(max_fd, 1024)):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+        # Redirect std streams to /dev/null
         devnull = os.open(os.devnull, os.O_RDWR)
         os.dup2(devnull, 0)
         os.dup2(devnull, 1)
@@ -190,11 +204,23 @@ def _daemon_main(cache_dir: Path) -> None:
     threading.Thread(target=_warmup, name="mapper-warmup", daemon=True).start()
 
     last_activity = time.monotonic()
+    _orphan_check_interval = 30  # seconds between PPID checks
+    _last_orphan_check = last_activity
 
     while not _shutdown:
         # Idle timeout check
         if time.monotonic() - last_activity > _IDLE_TIMEOUT_S:
             break
+
+        # Orphan detection: if parent died (PPID=1 on Linux), shut down.
+        # Prevents the daemon from persisting indefinitely after an
+        # ephemeral parent (npx, CI runner) exits without cleanup.
+        now = time.monotonic()
+        if now - _last_orphan_check > _orphan_check_interval:
+            _last_orphan_check = now
+            if os.getppid() == 1:
+                logger.debug("Parent process died (PPID=1), shutting down daemon")
+                break
 
         try:
             conn, _ = server_sock.accept()

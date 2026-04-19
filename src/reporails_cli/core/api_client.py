@@ -57,6 +57,20 @@ class Hint:
 
 
 @dataclass(frozen=True)
+class CrossFileCoordinate:
+    """Aggregated cross-file finding for free tier (no lines, no detail).
+
+    Shows WHICH files interact and the type/count, but not WHERE or HOW.
+    The detection is the gift; the fix is the product.
+    """
+
+    file_1: str
+    file_2: str
+    finding_type: str  # "conflict" | "repetition"
+    count: int
+
+
+@dataclass(frozen=True)
 class CrossFileFinding:
     """A cross-file conflict or repetition."""
 
@@ -130,6 +144,7 @@ class LintResult:
 
     report: RulesetReport
     hints: tuple[Hint, ...] = ()
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = ()
     tier: str = "free"
 
 
@@ -507,6 +522,21 @@ def _deserialize_hints(data: dict[str, Any]) -> tuple[Hint, ...]:
     return tuple(items)
 
 
+def _deserialize_cross_file_coordinates(data: dict[str, Any]) -> tuple[CrossFileCoordinate, ...]:
+    """Deserialize the cross_file_coordinates section of the API response."""
+    items: list[CrossFileCoordinate] = []
+    for c in data.get("cross_file_coordinates", []):
+        f1 = c.get("file_1")
+        f2 = c.get("file_2")
+        ft = c.get("finding_type")
+        cnt = c.get("count")
+        if any(v is None for v in (f1, f2, ft, cnt)):
+            logger.warning("Skipping cross_file_coordinate with missing field: %s", c)
+            continue
+        items.append(CrossFileCoordinate(file_1=f1, file_2=f2, finding_type=ft, count=cnt))
+    return tuple(items)
+
+
 def _deserialize_lint_result(data: dict[str, Any]) -> LintResult:
     """Deserialize API JSON response to LintResult."""
     report_data = data.get("report")
@@ -521,4 +551,9 @@ def _deserialize_lint_result(data: dict[str, Any]) -> LintResult:
         stats=report_data.get("stats", {}),
     )
 
-    return LintResult(report=report, hints=_deserialize_hints(data), tier=data.get("tier", "free"))
+    return LintResult(
+        report=report,
+        hints=_deserialize_hints(data),
+        cross_file_coordinates=_deserialize_cross_file_coordinates(data),
+        tier=data.get("tier", "free"),
+    )
