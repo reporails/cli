@@ -1,9 +1,4 @@
-"""Regex execution engine + SARIF output.
-
-Executes compiled regex checks against target files and produces
-SARIF-compatible output matching the downstream pipeline format.
-"""
-# pylint: disable=too-many-lines
+"""Regex execution engine + SARIF output."""
 
 from __future__ import annotations
 
@@ -14,7 +9,7 @@ import signal
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from reporails_cli.core.models import LocalFinding, Rule
+from reporails_cli.core.models import LocalFinding
 from reporails_cli.core.regex.compiler import (
     CombinedPattern,
     CompiledCheck,
@@ -38,12 +33,10 @@ def _strip_frontmatter(content: str) -> str:
 
 
 def _find_line_number(content: str, match: re.Match[str]) -> int:
-    """Count newlines before match start position."""
     return content[: match.start()].count("\n") + 1
 
 
 def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
-    """Extract a snippet around the match for SARIF output."""
     text = match.group(0)
     return text[:max_len] + "..." if len(text) > max_len else text
 
@@ -59,15 +52,15 @@ def _file_matches_path_filter(file_path: str, path_includes: tuple[str, ...]) ->
         if "{{" in pattern:
             continue
         if "**" in pattern:
-            clean_pattern = pattern.lstrip("./")
-            if p.match(clean_pattern):
+            clean = pattern.lstrip("./")
+            if p.match(clean):
                 return True
-            if "**/" in clean_pattern:
-                collapsed = clean_pattern.replace("**/", "")
+            if "**/" in clean:
+                collapsed = clean.replace("**/", "")
                 if fnmatch.fnmatch(rel, collapsed) or fnmatch.fnmatch(filename, collapsed):
                     return True
             continue
-        if any(fnmatch.fnmatch(candidate, pattern) for candidate in (file_path, filename, rel)):
+        if any(fnmatch.fnmatch(c, pattern) for c in (file_path, filename, rel)):
             return True
     return False
 
@@ -390,7 +383,27 @@ def _scan_file(
         signal.signal(signal.SIGALRM, prev)
 
 
-def run_validation(  # pylint: disable=too-many-locals
+def _scan_all_targets(
+    scan_targets: list[Path],
+    scan_root: Path,
+    universal: list[CompiledCheck],
+    by_pattern: dict[str, list[CompiledCheck]],
+    exclude_dirs: list[str] | None,
+) -> dict[str, Any]:
+    """Scan all targets and return SARIF-shaped dict."""
+    results: list[dict[str, Any]] = []
+    rule_defs: dict[str, dict[str, Any]] = {}
+    for file_path in scan_targets:
+        if not file_path.is_file() or _should_exclude(file_path, scan_root, exclude_dirs):
+            continue
+        individual = universal + _get_applicable_checks(file_path, scan_root, [], by_pattern)
+        if not individual or not _is_text_file(file_path):
+            continue
+        _scan_file(file_path, scan_root, individual, results, rule_defs)
+    return _build_sarif(results, list(rule_defs.values()))
+
+
+def run_validation(
     yml_paths: list[Path],
     target: Path,
     extra_targets: list[Path] | None = None,
@@ -415,61 +428,22 @@ def run_validation(  # pylint: disable=too-many-locals
         return {"runs": []}
 
     scan_root = target if target.is_dir() else target.parent
-    results: list[dict[str, Any]] = []
-    rule_defs: dict[str, dict[str, Any]] = {}
-
     universal, by_pattern = _partition_checks(ruleset.checks)
-
-    for file_path in scan_targets:
-        if not file_path.is_file():
-            continue
-        if _should_exclude(file_path, scan_root, exclude_dirs):
-            continue
-
-        path_checks = _get_applicable_checks(file_path, scan_root, [], by_pattern)
-        individual = universal + path_checks
-
-        if not individual:
-            continue
-
-        if not _is_text_file(file_path):
-            continue
-        _scan_file(
-            file_path,
-            scan_root,
-            individual,
-            results,
-            rule_defs,
-        )
-
-    return _build_sarif(results, list(rule_defs.values()))
+    return _scan_all_targets(scan_targets, scan_root, universal, by_pattern, exclude_dirs)
 
 
-def run_checks(  # noqa: C901
-    yml_paths: list[Path],
-    target: Path,
-    instruction_files: list[Path] | None = None,
-    exclude_dirs: list[str] | None = None,
-    body_only_paths: set[Path] | None = None,
-) -> list[LocalFinding]:
-    """Execute regex validation and return LocalFinding list.
-
-    Handles expect semantics correctly:
-    - expect: absent → regex MATCH = violation (content should not be present)
-    - expect: present → regex NO MATCH = violation (content should be present)
-    """
+def _load_check_expectations(yml_paths: list[Path]) -> tuple[dict[str, str], dict[str, str]]:
+    """Load expect and message values from check definitions."""
     import yaml
 
-    # Load check definitions to get expect values (deterministic checks only)
-    expect_map: dict[str, str] = {}  # check_id -> "present" | "absent"
-    message_map: dict[str, str] = {}  # check_id -> message
+    expect_map: dict[str, str] = {}
+    message_map: dict[str, str] = {}
     for yml_path in yml_paths:
         if not yml_path.exists():
             continue
         try:
             data = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
             for check_def in data.get("checks", []):
-                # Only deterministic (regex) checks — skip mechanical, content_query, fallback
                 if check_def.get("type") != "deterministic":
                     continue
                 if check_def.get("fallback"):
@@ -477,63 +451,68 @@ def run_checks(  # noqa: C901
                 cid = check_def.get("id", "")
                 expect_map[cid] = check_def.get("expect", "present")
                 message_map[cid] = check_def.get("message", "")
-        except (yaml.YAMLError, OSError):
+        except Exception:  # yaml.YAMLError or OSError; skip unreadable files
             continue
+    return expect_map, message_map
 
-    # Run regex engine — returns SARIF with matches
-    sarif = run_validation(
-        yml_paths,
-        target,
-        instruction_files=instruction_files,
-        exclude_dirs=exclude_dirs,
-        body_only_paths=body_only_paths,
-    )
 
-    # Collect which (check_id, file) pairs had matches
-    matched_pairs: set[tuple[str, str]] = set()
-    match_details: dict[tuple[str, str], tuple[int, str]] = {}  # (check_id, file) -> (line, msg)
-
+def _collect_sarif_matches(
+    sarif: dict[str, Any],
+) -> tuple[set[tuple[str, str]], dict[tuple[str, str], tuple[int, str]]]:
+    """Extract matched (check_id, file) pairs and details from SARIF output."""
+    pairs: set[tuple[str, str]] = set()
+    details: dict[tuple[str, str], tuple[int, str]] = {}
     for run in sarif.get("runs", []):
         for result in run.get("results", []):
-            check_id = result.get("ruleId", "")
+            cid = result.get("ruleId", "")
             msg = result.get("message", {}).get("text", "")
-            file_path = ""
-            line = 0
+            fp, ln = "", 0
             for loc in result.get("locations", []):
                 phys = loc.get("physicalLocation", {})
-                file_path = phys.get("artifactLocation", {}).get("uri", "")
-                line = phys.get("region", {}).get("startLine", 0)
+                fp = phys.get("artifactLocation", {}).get("uri", "")
+                ln = phys.get("region", {}).get("startLine", 0)
                 break
-            matched_pairs.add((check_id, file_path))
-            match_details[(check_id, file_path)] = (line, msg)
+            pairs.add((cid, fp))
+            details[(cid, fp)] = (ln, msg)
+    return pairs, details
 
-    findings: list[LocalFinding] = []
 
-    # Get scanned files for expect:present checks (need to know what WASN'T matched)
+def _resolve_scanned_files(
+    target: Path,
+    instruction_files: list[Path] | None,
+    exclude_dirs: list[str] | None,
+) -> list[str]:
+    """Build list of relative file paths that were scanned."""
     scan_root = target if target.is_dir() else target.parent
-    scan_targets = _resolve_scan_targets(target, instruction_files, None)
-    scanned_files = []
-    for fp in scan_targets:
+    scanned: list[str] = []
+    for fp in _resolve_scan_targets(target, instruction_files, None):
         if fp.is_file() and not _should_exclude(fp, scan_root, exclude_dirs):
             try:
-                scanned_files.append(str(fp.relative_to(scan_root)))
+                scanned.append(str(fp.relative_to(scan_root)))
             except ValueError:
-                scanned_files.append(str(fp))
+                scanned.append(str(fp))
+    return scanned
 
+
+def _emit_expect_findings(
+    expect_map: dict[str, str],
+    message_map: dict[str, str],
+    matched_pairs: set[tuple[str, str]],
+    match_details: dict[tuple[str, str], tuple[int, str]],
+    scanned_files: list[str],
+) -> list[LocalFinding]:
+    """Convert expect/match results to LocalFinding list."""
+    findings: list[LocalFinding] = []
     for check_id, expect in expect_map.items():
-        # Convert dot-separated ID to colon-separated
         parts = check_id.split(".")
         rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}" if len(parts) >= 3 else check_id
-        check_suffix = ""
-        if "check" in parts:
-            idx = parts.index("check")
-            if idx + 1 < len(parts):
-                check_suffix = f"check:{parts[idx + 1]}"
-
+        check_suffix = (
+            f"check:{parts[parts.index('check') + 1]}"
+            if "check" in parts and parts.index("check") + 1 < len(parts)
+            else ""
+        )
         msg = message_map.get(check_id, "")
-
         if expect == "absent":
-            # Match = violation
             for file_path in scanned_files:
                 if (check_id, file_path) in matched_pairs:
                     line, match_msg = match_details[(check_id, file_path)]
@@ -549,7 +528,6 @@ def run_checks(  # noqa: C901
                         )
                     )
         else:
-            # expect: present — NO match = violation
             findings.extend(
                 LocalFinding(
                     file=file_path,
@@ -563,8 +541,28 @@ def run_checks(  # noqa: C901
                 for file_path in scanned_files
                 if (check_id, file_path) not in matched_pairs
             )
-
     return findings
+
+
+def run_checks(
+    yml_paths: list[Path],
+    target: Path,
+    instruction_files: list[Path] | None = None,
+    exclude_dirs: list[str] | None = None,
+    body_only_paths: set[Path] | None = None,
+) -> list[LocalFinding]:
+    """Execute regex validation and return LocalFinding list."""
+    expect_map, message_map = _load_check_expectations(yml_paths)
+    sarif = run_validation(
+        yml_paths,
+        target,
+        instruction_files=instruction_files,
+        exclude_dirs=exclude_dirs,
+        body_only_paths=body_only_paths,
+    )
+    matched_pairs, match_details = _collect_sarif_matches(sarif)
+    scanned_files = _resolve_scanned_files(target, instruction_files, exclude_dirs)
+    return _emit_expect_findings(expect_map, message_map, matched_pairs, match_details, scanned_files)
 
 
 def checks_per_file(
@@ -592,8 +590,3 @@ def checks_per_file(
         result[rel] = base_ids + path_ids
 
     return result
-
-
-def get_checks_paths(rules: dict[str, Rule]) -> list[Path]:
-    """Get list of checks.yml paths for rules that have them and exist."""
-    return [r.yml_path for r in rules.values() if r.yml_path is not None and r.yml_path.exists()]

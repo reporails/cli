@@ -283,54 +283,47 @@ _KIND_ENC = {"heading": 0, "excitation": 1}
 _STYLE_ENC = {"backtick": 0, "italic": 1, "bold": 2, "none": 3}
 
 
-def _strip_and_serialize(ruleset_map: RulesetMap) -> dict[str, Any]:  # noqa: C901
-    """Serialize RulesetMap to v2 wire format (obfuscated field names).
+def _serialize_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
+    """Serialize a single atom to v2 wire format."""
+    d: dict[str, Any] = {
+        "line": a.line,
+        "t": _KIND_ENC.get(a.kind, 1),
+        "c": _CHARGE_ENC.get(a.charge, 3),
+        "cv": a.charge_value,
+        "m": _MODALITY_ENC.get(a.modality, 4),
+        "s": _SPECIFICITY_ENC.get(a.specificity, 1),
+        "sc": a.scope_conditional,
+        "f": _FORMAT_ENC.get(a.format, 0),
+        "pi": a.position_index,
+        "tc": a.token_count,
+        "fi": file_idx.get(a.file_path, -1),
+        "k": a.cluster_id,
+    }
+    il = [
+        *[{"term": tok, "s": 0} for tok in a.named_tokens],
+        *[{"term": tok, "s": 1} for tok in a.italic_tokens],
+        *[{"term": tok, "s": 2} for tok in a.bold_tokens],
+        *[{"term": tok, "s": 3} for tok in a.unformatted_code],
+    ]
+    if il:
+        d["il"] = il
+    if a.embedding_int8 is not None:
+        raw = bytes(v & 0xFF for v in a.embedding_int8)
+        d["e"] = base64.b64encode(raw).decode("ascii")
+    if a.heading_context:
+        d["hc"] = a.heading_context
+    if a.depth is not None:
+        d["d"] = a.depth
+    if a.ambiguous:
+        d["a"] = True
+    if a.embedded_charge_markers:
+        d["ecm"] = list(a.embedded_charge_markers)
+    return d
 
-    Strips text, plain_text, rule, role, topics from atoms.
-    Replaces semantic field names with short codes and enum strings with integers.
-    Instruction content never leaves the client.
-    """
+
+def _serialize_files(ruleset_map: RulesetMap) -> list[dict[str, Any]]:
+    """Serialize file entries to v2 wire format."""
     import numpy as np
-
-    # File index lookup — atoms reference files by position, not path string
-    file_idx = {f.path: i for i, f in enumerate(ruleset_map.files)}
-
-    atoms_out: list[dict[str, Any]] = []
-    for a in ruleset_map.atoms:
-        d: dict[str, Any] = {
-            "line": a.line,
-            "t": _KIND_ENC.get(a.kind, 1),
-            "c": _CHARGE_ENC.get(a.charge, 3),
-            "cv": a.charge_value,
-            "m": _MODALITY_ENC.get(a.modality, 4),
-            "s": _SPECIFICITY_ENC.get(a.specificity, 1),
-            "sc": a.scope_conditional,
-            "f": _FORMAT_ENC.get(a.format, 0),
-            "pi": a.position_index,
-            "tc": a.token_count,
-            "fi": file_idx.get(a.file_path, -1),
-            "k": a.cluster_id,
-        }
-        il = [
-            *[{"term": tok, "s": 0} for tok in a.named_tokens],
-            *[{"term": tok, "s": 1} for tok in a.italic_tokens],
-            *[{"term": tok, "s": 2} for tok in a.bold_tokens],
-            *[{"term": tok, "s": 3} for tok in a.unformatted_code],
-        ]
-        if il:
-            d["il"] = il
-        if a.embedding_int8 is not None:
-            raw = bytes(v & 0xFF for v in a.embedding_int8)
-            d["e"] = base64.b64encode(raw).decode("ascii")
-        if a.heading_context:
-            d["hc"] = a.heading_context
-        if a.depth is not None:
-            d["d"] = a.depth
-        if a.ambiguous:
-            d["a"] = True
-        if a.embedded_charge_markers:
-            d["ecm"] = list(a.embedded_charge_markers)
-        atoms_out.append(d)
 
     files_out = []
     for f in ruleset_map.files:
@@ -349,6 +342,12 @@ def _strip_and_serialize(ruleset_map: RulesetMap) -> dict[str, Any]:  # noqa: C9
             raw = np.asarray(f.description_embedding, dtype=np.int8).tobytes()
             fd["description_embedding_b64"] = base64.b64encode(raw).decode("ascii")
         files_out.append(fd)
+    return files_out
+
+
+def _serialize_clusters(ruleset_map: RulesetMap) -> list[dict[str, Any]]:
+    """Serialize cluster entries to v2 wire format."""
+    import numpy as np
 
     clusters_out = []
     for c in ruleset_map.clusters:
@@ -362,14 +361,25 @@ def _strip_and_serialize(ruleset_map: RulesetMap) -> dict[str, Any]:  # noqa: C9
             raw = np.asarray(c.centroid, dtype=np.float32).tobytes()
             cd["centroid_b64"] = base64.b64encode(raw).decode("ascii")
         clusters_out.append(cd)
+    return clusters_out
+
+
+def _strip_and_serialize(ruleset_map: RulesetMap) -> dict[str, Any]:
+    """Serialize RulesetMap to v2 wire format (obfuscated field names).
+
+    Strips text, plain_text, rule, role, topics from atoms.
+    Replaces semantic field names with short codes and enum strings with integers.
+    Instruction content never leaves the client.
+    """
+    file_idx = {f.path: i for i, f in enumerate(ruleset_map.files)}
 
     return {
         "schema_version": "2",
         "embedding_model": ruleset_map.embedding_model,
         "generated_at": ruleset_map.generated_at,
-        "files": files_out,
-        "atoms": atoms_out,
-        "clusters": clusters_out,
+        "files": _serialize_files(ruleset_map),
+        "atoms": [_serialize_atom(a, file_idx) for a in ruleset_map.atoms],
+        "clusters": _serialize_clusters(ruleset_map),
         "summary": {
             "n_atoms": ruleset_map.summary.n_atoms,
             "n_charged": ruleset_map.summary.n_charged,

@@ -136,38 +136,13 @@ def start_daemon(cache_dir: Path) -> int:
     return 0  # unreachable
 
 
-def _daemon_main(cache_dir: Path) -> None:
-    """Main daemon loop: bind socket, warm models in background, serve requests.
-
-    Socket is bound BEFORE model warmup so the parent's ``start_daemon`` can
-    return as soon as the socket exists (microseconds after fork) and
-    proceed with file discovery + M probes in parallel with model loading.
-    ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
-    ``ping`` and ``shutdown`` are answered immediately regardless.
-    """
-    # CRITICAL: install the torch import blocker in the forked daemon
-    # child. The parent installed it at CLI entry, but after fork this
-    # child re-enters Python's import machinery and must reinstall so
-    # the blocker survives in this process's sys.meta_path. Without this,
-    # the daemon's `import spacy` would drag in torch (~20s) on cold start.
+def _init_daemon_process(cache_dir: Path) -> None:
+    """Initialize daemon process: torch blocker, PID file, ML noise suppression."""
     from reporails_cli.core import _torch_blocker
 
     _torch_blocker.install()
-
-    # Write PID file
     _pid_path(cache_dir).write_text(str(os.getpid()))
 
-    # Set up signal handlers for graceful shutdown
-    _shutdown = False
-
-    def _handle_signal(_signum: int, _frame: object) -> None:
-        nonlocal _shutdown
-        _shutdown = True
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
-    # Suppress ML library noise before any ML library is imported in this process
     import logging as _logging
 
     os.environ["TRANSFORMERS_VERBOSITY"] = "error"
@@ -177,17 +152,9 @@ def _daemon_main(cache_dir: Path) -> None:
     for lib in ("sentence_transformers", "transformers", "huggingface_hub"):
         _logging.getLogger(lib).setLevel(_logging.ERROR)
 
-    # Create Unix socket BEFORE starting model warmup, so the parent can
-    # return from start_daemon() as soon as the socket exists.
-    sock_path = _socket_path(cache_dir)
-    sock_path.unlink(missing_ok=True)
-    server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server_sock.bind(str(sock_path))
-    server_sock.listen(_SOCKET_BACKLOG)
-    server_sock.settimeout(1.0)  # poll for shutdown
 
-    # Warm models in a background thread. map_ruleset handlers block on this
-    # event; ping/shutdown do not. Parallel warmup loads spaCy + ST concurrently.
+def _start_model_warmup() -> tuple[Any, threading.Event]:
+    """Start model warmup in a background thread. Returns (models, warmup_done)."""
     from reporails_cli.core.mapper.mapper import get_models
 
     models = get_models()
@@ -202,25 +169,60 @@ def _daemon_main(cache_dir: Path) -> None:
             warmup_done.set()
 
     threading.Thread(target=_warmup, name="mapper-warmup", daemon=True).start()
+    return models, warmup_done
+
+
+def _is_orphaned(last_check: float, interval: float) -> tuple[bool, float]:
+    """Check if parent died (PPID=1). Returns (orphaned, updated_last_check)."""
+    now = time.monotonic()
+    if now - last_check > interval:
+        if os.getppid() == 1:
+            logger.debug("Parent process died (PPID=1), shutting down daemon")
+            return True, now
+        return False, now
+    return False, last_check
+
+
+def _daemon_main(cache_dir: Path) -> None:
+    """Main daemon loop: bind socket, warm models in background, serve requests.
+
+    Socket is bound BEFORE model warmup so the parent's ``start_daemon`` can
+    return as soon as the socket exists (microseconds after fork) and
+    proceed with file discovery + M probes in parallel with model loading.
+    ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
+    ``ping`` and ``shutdown`` are answered immediately regardless.
+    """
+    _init_daemon_process(cache_dir)
+
+    _shutdown = False
+
+    def _handle_signal(_signum: int, _frame: object) -> None:
+        nonlocal _shutdown
+        _shutdown = True
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
+    sock_path = _socket_path(cache_dir)
+    sock_path.unlink(missing_ok=True)
+    server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server_sock.bind(str(sock_path))
+    server_sock.listen(_SOCKET_BACKLOG)
+    server_sock.settimeout(1.0)
+
+    models, warmup_done = _start_model_warmup()
 
     last_activity = time.monotonic()
-    _orphan_check_interval = 30  # seconds between PPID checks
-    _last_orphan_check = last_activity
+    orphan_check_interval = 30
+    last_orphan_check = last_activity
 
     while not _shutdown:
-        # Idle timeout check
         if time.monotonic() - last_activity > _IDLE_TIMEOUT_S:
             break
 
-        # Orphan detection: if parent died (PPID=1 on Linux), shut down.
-        # Prevents the daemon from persisting indefinitely after an
-        # ephemeral parent (npx, CI runner) exits without cleanup.
-        now = time.monotonic()
-        if now - _last_orphan_check > _orphan_check_interval:
-            _last_orphan_check = now
-            if os.getppid() == 1:
-                logger.debug("Parent process died (PPID=1), shutting down daemon")
-                break
+        orphaned, last_orphan_check = _is_orphaned(last_orphan_check, orphan_check_interval)
+        if orphaned:
+            break
 
         try:
             conn, _ = server_sock.accept()
@@ -237,7 +239,6 @@ def _daemon_main(cache_dir: Path) -> None:
         finally:
             conn.close()
 
-    # Cleanup
     server_sock.close()
     sock_path.unlink(missing_ok=True)
     _pid_path(cache_dir).unlink(missing_ok=True)

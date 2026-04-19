@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.api_client import AilsClient, _strip_and_serialize
+from reporails_cli.core.api_client import (
+    AilsClient,
+    LintResult,
+    _deserialize_cross_file_coordinates,
+    _deserialize_hints,
+    _deserialize_lint_result,
+    _strip_and_serialize,
+)
 from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
 
 
@@ -153,3 +160,78 @@ class TestV2WireFormat:
         # Optional fields not present when default/empty
         for key in ("il", "e", "hc", "d", "a", "ecm"):
             assert key not in a, f"Optional field '{key}' present when it should be absent"
+
+
+class TestDeserializeHints:
+    def test_valid_hints(self) -> None:
+        data = {
+            "hints": [
+                {
+                    "file": "CLAUDE.md",
+                    "diagnostic_type": "CORE:C:0044",
+                    "count": 3,
+                    "summary": "3 topics",
+                    "severity": "error",
+                    "error_count": 2,
+                    "warning_count": 1,
+                },
+            ]
+        }
+        hints = _deserialize_hints(data)
+        assert len(hints) == 1
+        assert hints[0].file == "CLAUDE.md"
+        assert hints[0].error_count == 2
+        assert hints[0].severity == "error"
+
+    def test_missing_fields_skipped(self) -> None:
+        hints = _deserialize_hints({"hints": [{"file": "x.md"}]})
+        assert len(hints) == 0
+
+    def test_empty(self) -> None:
+        assert _deserialize_hints({}) == ()
+        assert _deserialize_hints({"hints": []}) == ()
+
+
+class TestDeserializeCrossFileCoordinates:
+    def test_valid_coordinates(self) -> None:
+        data = {
+            "cross_file_coordinates": [
+                {"file_1": "a.md", "file_2": "b.md", "finding_type": "conflict", "count": 2},
+                {"file_1": "c.md", "file_2": "d.md", "finding_type": "repetition", "count": 1},
+            ]
+        }
+        coords = _deserialize_cross_file_coordinates(data)
+        assert len(coords) == 2
+        assert coords[0].finding_type == "conflict"
+        assert coords[0].count == 2
+
+    def test_missing_fields_skipped(self) -> None:
+        coords = _deserialize_cross_file_coordinates({"cross_file_coordinates": [{"file_1": "a.md"}]})
+        assert len(coords) == 0
+
+    def test_empty(self) -> None:
+        assert _deserialize_cross_file_coordinates({}) == ()
+
+
+class TestDeserializeLintResult:
+    def test_full_response_with_coordinates(self) -> None:
+        data = {
+            "report": {"per_file": [], "cross_file": [], "quality": {"compliance_band": "HIGH"}, "stats": {}},
+            "hints": [{"file": "CLAUDE.md", "diagnostic_type": "CORE:C:0044", "count": 3, "summary": "3 topics"}],
+            "cross_file_coordinates": [
+                {"file_1": "a.md", "file_2": "b.md", "finding_type": "conflict", "count": 1},
+            ],
+            "tier": "free",
+        }
+        result = _deserialize_lint_result(data)
+        assert isinstance(result, LintResult)
+        assert result.tier == "free"
+        assert len(result.hints) == 1
+        assert len(result.cross_file_coordinates) == 1
+
+    def test_pro_tier_no_hints_or_coordinates(self) -> None:
+        data = {"report": {"per_file": [], "cross_file": [], "quality": {}, "stats": {}}, "tier": "pro"}
+        result = _deserialize_lint_result(data)
+        assert result.tier == "pro"
+        assert result.hints == ()
+        assert result.cross_file_coordinates == ()

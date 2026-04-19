@@ -65,12 +65,23 @@ def _relative_display_path(file_path: str) -> str:
     return normalize_finding_path(file_path)
 
 
-def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:  # noqa: C901
-    """Run all 5 D-level checks on atoms from a single file."""
+def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:
+    """Run all D-level checks on atoms from a single file."""
     findings: list[LocalFinding] = []
+    charged = [a for a in atoms if a.charge_value != 0]
 
-    # 1. Unformatted code tokens
-    findings.extend(
+    findings.extend(_check_unformatted_code(atoms, filepath))
+    findings.extend(_check_heading_instructions(atoms, filepath))
+    findings.extend(_check_bold_patterns(charged, filepath))
+    findings.extend(_check_broad_scope(charged, filepath))
+    findings.extend(_check_ordering_and_orphans(charged, filepath))
+
+    return findings
+
+
+def _check_unformatted_code(atoms: list[Atom], filepath: str) -> list[LocalFinding]:
+    """Check for code tokens missing backtick formatting."""
+    return [
         LocalFinding(
             file=filepath,
             line=a.line,
@@ -82,10 +93,12 @@ def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:  # noqa
         )
         for a in atoms
         for code_tok in a.unformatted_code
-    )
+    ]
 
-    # 6. Instruction in heading — headings should organize, not instruct
-    findings.extend(
+
+def _check_heading_instructions(atoms: list[Atom], filepath: str) -> list[LocalFinding]:
+    """Check for instructions placed in headings instead of body text."""
+    return [
         LocalFinding(
             file=filepath,
             line=a.line,
@@ -101,10 +114,12 @@ def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:  # noqa
         )
         for a in atoms
         if a.kind == "heading" and a.charge_value != 0
-    )
+    ]
 
-    # 2. Bold pattern analysis
-    charged = [a for a in atoms if a.charge_value != 0]
+
+def _check_bold_patterns(charged: list[Atom], filepath: str) -> list[LocalFinding]:
+    """Check for harmful bold emphasis on directive atoms."""
+    findings: list[LocalFinding] = []
     for a in charged:
         bold_spans = _BOLD_TERM_RE.findall(a.text)
         if not bold_spans:
@@ -138,8 +153,12 @@ def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:  # noqa
                     source="client_check",
                 )
             )
+    return findings
 
-    # 3. Scope warnings
+
+def _check_broad_scope(charged: list[Atom], filepath: str) -> list[LocalFinding]:
+    """Check for overly broad conditional scope terms."""
+    findings: list[LocalFinding] = []
     for a in charged:
         if not a.scope_conditional:
             continue
@@ -163,8 +182,13 @@ def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:  # noqa
                     source="client_check",
                 )
             )
+    return findings
 
-    # 4. Instruction ordering
+
+def _check_ordering_and_orphans(charged: list[Atom], filepath: str) -> list[LocalFinding]:
+    """Check charge ordering within clusters and detect orphan constraints."""
+    findings: list[LocalFinding] = []
+
     clusters: dict[int, list[Atom]] = {}
     for a in charged:
         if a.cluster_id >= 0:
@@ -198,7 +222,6 @@ def _check_file(atoms: list[Atom], filepath: str) -> list[LocalFinding]:  # noqa
         # requires a prohibition when there's a behavior to suppress.
         # "Use ruff" stands alone. Only flag constraints-only (missing directive).
         elif constraints:
-            # 5. One-sided constraints
             rep = min(constraints, key=lambda a: a.position_index)
             findings.append(
                 LocalFinding(
