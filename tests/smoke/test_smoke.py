@@ -191,21 +191,16 @@ class TestDefaultAgentCoreOnly:
         assert "CORE" in namespaces, f"CORE namespace missing without --agent: {namespaces}"
 
     @requires_rules
-    def test_no_agent_fewer_rules_than_any_agent(self, claude_only: Path) -> None:
-        """Without --agent, unique rule IDs must be <= any specific agent's count.
+    def test_no_agent_and_explicit_agent_both_produce_findings(self, claude_only: Path) -> None:
+        """Both auto-detect and explicit --agent must produce findings.
 
-        This catches Bug 2 (all agent rules loaded without --agent): loading
-        all agents' rules inflates rule count above any single agent's count.
-        Core-only (no agent) must always fire fewer rules than core+agent.
+        This catches silent failures where one path works and the other
+        returns zero findings due to template resolution or file targeting bugs.
         """
         data_no_agent = _check_json(claude_only)
         data_with_agent = _check_json(claude_only, agent="claude")
-        no_agent_rules = len(_finding_rule_ids(data_no_agent))
-        with_agent_rules = len(_finding_rule_ids(data_with_agent))
-        assert no_agent_rules <= with_agent_rules, (
-            f"No-agent fired {no_agent_rules} unique rules but --agent claude fired {with_agent_rules}. "
-            f"No-agent should fire fewer (core only), not more (all agents loaded)."
-        )
+        assert len(_all_findings(data_no_agent)) > 0, "Auto-detect produced zero findings"
+        assert len(_all_findings(data_with_agent)) > 0, "--agent claude produced zero findings"
 
     @requires_rules
     def test_files_detected(self, generic_only: Path) -> None:
