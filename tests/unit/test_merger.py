@@ -5,8 +5,10 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.api_client import (
+    CrossFileCoordinate,
     Diagnostic,
     FileAnalysis,
+    Hint,
     QualityResult,
     RulesetReport,
 )
@@ -82,3 +84,35 @@ class TestMergeResults:
     def test_offline_flag(self, server_report: RulesetReport | None) -> None:
         result = merge_results([], [], server_report)
         assert result.offline == (server_report is None)
+
+    def test_hints_pass_through(self) -> None:
+        hints = (
+            Hint(
+                file="CLAUDE.md",
+                diagnostic_type="CORE:C:0044",
+                count=3,
+                summary="3 topics",
+                error_count=1,
+                warning_count=2,
+            ),
+            Hint(file="rules.md", diagnostic_type="CORE:C:0047", count=5, summary="5 buried"),
+        )
+        result = merge_results([], [], RulesetReport(), hints=hints)
+        assert len(result.hints) == 2
+        assert result.hints[0].count == 3
+        assert result.hints[1].diagnostic_type == "CORE:C:0047"
+
+    def test_cross_file_coordinates_pass_through(self) -> None:
+        coords = (
+            CrossFileCoordinate(file_1="a.md", file_2="b.md", finding_type="conflict", count=2),
+            CrossFileCoordinate(file_1="c.md", file_2="d.md", finding_type="repetition", count=1),
+        )
+        result = merge_results([], [], RulesetReport(), cross_file_coordinates=coords)
+        assert len(result.cross_file_coordinates) == 2
+        assert result.cross_file_coordinates[0].finding_type == "conflict"
+        assert result.cross_file_coordinates[1].count == 1
+
+    def test_empty_coordinates_and_hints_by_default(self) -> None:
+        result = merge_results([], [], None)
+        assert result.hints == ()
+        assert result.cross_file_coordinates == ()

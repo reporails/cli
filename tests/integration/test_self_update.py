@@ -115,6 +115,7 @@ class TestSelfUpdateIntegration:
                 "*.pyc",
                 ".git",
                 ".pytest_cache",
+                ".ails",
                 "dist",
             ),
         )

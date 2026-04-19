@@ -17,8 +17,8 @@ research/
 
 # Project caches (backbone.yml is committed, caches are not)
 .ails/.cache/
-# Prevent stray .ails in subdirectories
-*/.ails/
+# Prevent stray .ails caches in any subdirectory (fixtures, nested projects)
+**/.ails/.cache/
 
 .env
 

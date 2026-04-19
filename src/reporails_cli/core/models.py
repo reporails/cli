@@ -201,7 +201,7 @@ class Violation:
 
 
 @dataclass(frozen=True)
-class JudgmentRequest:  # pylint: disable=too-many-instance-attributes
+class JudgmentRequest:
     """Request for host LLM to evaluate semantic rule."""
 
     rule_id: str

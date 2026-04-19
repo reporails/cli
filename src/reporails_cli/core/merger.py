@@ -1,7 +1,7 @@
 """Result merger — combines local findings with server diagnostics.
 
 Deduplicates when server and local checks fire on the same (file, line, rule),
-keeping the server version (richer fix text from equation computation).
+keeping the server version (richer fix text from server diagnostics).
 All file paths are normalized to project-relative before dedup and output.
 """
 
@@ -66,7 +66,7 @@ class FindingItem:
     file: str
     line: int
     severity: str  # "error" | "warning" | "info"
-    rule: str  # theory-native label or rule_id
+    rule: str  # diagnostic rule identifier or rule_id
     message: str
     fix: str = ""
     source: str = "local"  # "m_probe" | "client_check" | "server"
@@ -99,6 +99,78 @@ class CombinedResult:
     stats: CombinedStats = field(default_factory=CombinedStats)
     offline: bool = True
     hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
+    cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
+
+
+def _collect_server_diagnostics(
+    server_report: RulesetReport,
+    norm_fn: object,
+) -> tuple[list[FindingItem], set[tuple[str, int, str]]]:
+    """Extract server diagnostics as FindingItems and build dedup key set."""
+    items: list[FindingItem] = []
+    server_keys: set[tuple[str, int, str]] = set()
+    for fa in server_report.per_file:
+        for diag in fa.diagnostics:
+            norm_file = norm_fn(diag.file)  # type: ignore[operator]
+            server_keys.add((norm_file, diag.line, diag.rule))
+            items.append(
+                FindingItem(
+                    file=norm_file,
+                    line=diag.line,
+                    severity=diag.severity,
+                    rule=diag.rule,
+                    message=diag.message,
+                    fix=diag.fix,
+                    source="server",
+                    line_2=diag.line_2,
+                )
+            )
+    return items, server_keys
+
+
+def _merge_local_findings(
+    local_findings: list[LocalFinding],
+    server_keys: set[tuple[str, int, str]],
+    source: str,
+    norm_fn: object,
+) -> tuple[list[FindingItem], int]:
+    """Convert local findings to FindingItems, deduplicating against server keys."""
+    items: list[FindingItem] = []
+    for finding in local_findings:
+        norm_file = norm_fn(finding.file)  # type: ignore[operator]
+        if (norm_file, finding.line, finding.rule) not in server_keys:
+            items.append(
+                FindingItem(
+                    file=norm_file,
+                    line=finding.line,
+                    severity=finding.severity,
+                    rule=finding.rule,
+                    message=finding.message,
+                    fix=finding.fix,
+                    source=source,
+                )
+            )
+    return items, len(items)
+
+
+def _compute_stats(
+    items: list[FindingItem],
+    cross_file: tuple[CrossFileFinding, ...],
+    m_probe_count: int,
+    client_count: int,
+) -> CombinedStats:
+    """Compute aggregate statistics from merged findings."""
+    return CombinedStats(
+        total_findings=len(items),
+        errors=sum(1 for f in items if f.severity == "error"),
+        warnings=sum(1 for f in items if f.severity == "warning"),
+        infos=sum(1 for f in items if f.severity == "info"),
+        cross_file_conflicts=sum(1 for cf in cross_file if cf.finding_type == "conflict"),
+        cross_file_repetitions=sum(1 for cf in cross_file if cf.finding_type == "repetition"),
+        m_probe_count=m_probe_count,
+        client_check_count=client_count,
+        server_diagnostic_count=len(items) - m_probe_count - client_count,
+    )
 
 
 def merge_results(
@@ -106,6 +178,7 @@ def merge_results(
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
     hints: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[Any, ...] = (),
     project_root: Path | None = None,
 ) -> CombinedResult:
     """Merge M-probe findings, client checks, and server diagnostics.
@@ -114,103 +187,31 @@ def merge_results(
     When present, deduplicates: server diagnostic at same (file, line, rule)
     replaces the local finding. All paths normalized to project-relative.
     """
+
     def _norm(fp: str) -> str:
         return normalize_finding_path(fp, project_root)
-    items: list[FindingItem] = []
 
-    # Collect server diagnostics and build dedup set
+    items: list[FindingItem] = []
     server_keys: set[tuple[str, int, str]] = set()
-    server_count = 0
-    cross_file: tuple[CrossFileFinding, ...] = ()
-    quality: QualityResult | None = None
-    per_file: tuple[FileAnalysis, ...] = ()
 
     if server_report is not None:
-        cross_file = server_report.cross_file
-        quality = server_report.quality
-        per_file = server_report.per_file
+        server_items, server_keys = _collect_server_diagnostics(server_report, _norm)
+        items.extend(server_items)
 
-        for fa in server_report.per_file:
-            for diag in fa.diagnostics:
-                norm_file = _norm(diag.file)
-                server_keys.add((norm_file, diag.line, diag.rule))
-                items.append(
-                    FindingItem(
-                        file=norm_file,
-                        line=diag.line,
-                        severity=diag.severity,
-                        rule=diag.rule,
-                        message=diag.message,
-                        fix=diag.fix,
-                        source="server",
-                        line_2=diag.line_2,
-                    )
-                )
-                server_count += 1
-
-    # Convert local findings, deduplicating against server
-    m_probe_count = 0
-    client_count = 0
-    for finding in m_probe_findings:
-        norm_file = _norm(finding.file)
-        key = (norm_file, finding.line, finding.rule)
-        if key not in server_keys:
-            items.append(
-                FindingItem(
-                    file=norm_file,
-                    line=finding.line,
-                    severity=finding.severity,
-                    rule=finding.rule,
-                    message=finding.message,
-                    fix=finding.fix,
-                    source="m_probe",
-                )
-            )
-            m_probe_count += 1
-
-    for finding in client_check_findings:
-        norm_file = _norm(finding.file)
-        key = (norm_file, finding.line, finding.rule)
-        if key not in server_keys:
-            items.append(
-                FindingItem(
-                    file=norm_file,
-                    line=finding.line,
-                    severity=finding.severity,
-                    rule=finding.rule,
-                    message=finding.message,
-                    fix=finding.fix,
-                    source="client_check",
-                )
-            )
-            client_count += 1
-
-    # Sort by file, severity, line
+    m_items, m_count = _merge_local_findings(m_probe_findings, server_keys, "m_probe", _norm)
+    c_items, c_count = _merge_local_findings(client_check_findings, server_keys, "client_check", _norm)
+    items.extend(m_items)
+    items.extend(c_items)
     items.sort(key=lambda f: (f.file, _SEVERITY_ORDER.get(f.severity, 9), f.line))
 
-    # Compute stats
-    errors = sum(1 for f in items if f.severity == "error")
-    warnings = sum(1 for f in items if f.severity == "warning")
-    infos = sum(1 for f in items if f.severity == "info")
-    conflicts = sum(1 for cf in cross_file if cf.finding_type == "conflict")
-    repetitions = sum(1 for cf in cross_file if cf.finding_type == "repetition")
-
+    cross_file = server_report.cross_file if server_report else ()
     return CombinedResult(
         findings=tuple(items),
         cross_file=cross_file,
-        quality=quality,
-        per_file_analysis=per_file,
-        stats=CombinedStats(
-            total_findings=len(items),
-            errors=errors,
-            warnings=warnings,
-            infos=infos,
-            cross_file_conflicts=conflicts,
-            cross_file_repetitions=repetitions,
-            m_probe_count=m_probe_count,
-            client_check_count=client_count,
-            server_diagnostic_count=server_count,
-        ),
+        quality=server_report.quality if server_report else None,
+        per_file_analysis=server_report.per_file if server_report else (),
+        stats=_compute_stats(items, cross_file, m_count, c_count),
         offline=server_report is None,
         hints=hints,
+        cross_file_coordinates=cross_file_coordinates,
     )

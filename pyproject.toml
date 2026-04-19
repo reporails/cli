@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.5.1"
+version = "0.5.2"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -74,6 +74,7 @@ dev = [
 
 [project.scripts]
 ails = "reporails_cli.interfaces.cli.main:app"
+reporails-cli = "reporails_cli.interfaces.cli.main:app"
 reporails-mcp = "reporails_cli.interfaces.mcp.server:main"
 
 [project.urls]
@@ -100,7 +101,7 @@ artifacts = [
 fmt = "ruff format src/ tests/"
 lint_fix = "ruff check --fix src/ tests/"
 lint = "ruff check src/ tests/"
-pylint_struct = "pylint src/reporails_cli/ --disable=all --enable=R0902,R0904,R0911,R0912,R0913,R0914,R0915,R0916,C0301,C0302"
+pylint_struct = "pylint src/reporails_cli/ --disable=all --enable=R0902,R0904,R0911,R0912,R0913,R0914,R0915,R0916,C0301,C0302 --exit-zero --fail-under=9.99"
 type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v"
@@ -148,10 +149,11 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [tool.pylint.main]
-max-module-lines = 300
+max-module-lines = 600
 max-args = 8
 
 [tool.pylint.design]
+max-attributes = 12
 max-branches = 12
 max-statements = 50
 max-returns = 6

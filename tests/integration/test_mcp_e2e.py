@@ -479,5 +479,3 @@ class TestScanDeltaResilience:
     def test_garbage_level(self) -> None:
         d = self._compute("garbage")
         assert d is not None
-
-
