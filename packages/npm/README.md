@@ -2,12 +2,14 @@
 
 AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 97 rules.
 
-### Beta — first 100 users free.
+### Beta phase — Moving fast, feedback welcome.
 
 ## Quick Start
 
 ```bash
 npx @reporails/cli check
+# or
+uvx --from reporails-cli ails check
 ```
 
 No install, no account. Actionable findings in seconds:
@@ -37,6 +39,8 @@ npx @reporails/cli check
 
 # Permanent install (puts ails on PATH + configures MCP)
 npx @reporails/cli install
+# or
+uvx --from reporails-cli ails install
 ```
 
 Once installed, use `ails` directly:
