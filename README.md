@@ -1,6 +1,6 @@
 # Reporails CLI
 
-AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 90+ rules.
+AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 97 rules.
 
 ### Beta — first 100 users free. Moving fast, feedback welcome.
 
@@ -24,27 +24,28 @@ ails update               # Upgrade to latest version
 ```
 
 ```
-Reporails — Diagnostics
+Reporails — Diagnostics — Pro (beta)
 
   ┌─ Main (1)
-  │ CLAUDE.md  4 dir / 3 con · 73% prose
-  │   ⚠       Missing tech stack declaration  CORE:C:0034
-  │   ⚠       Missing testing documentation  CORE:C:0005
-  │     2 brief · 2 orphan
+  │ CLAUDE.md
+  │   ⚠       Missing directory layout — show the project …  CORE:C:0035
+  │   ⚠ L9    7 of 7 instruction(s) lack effective reinfor…  CORE:C:0053
+  │     ... and 16 more
+  │     1 misordered · 1 orphan · 1 ambiguous
   │
-  └─ 10 findings
+  └─ 21 findings
 
-  ── Summary ──────────────────────────────────────────────
+  ── Summary ────────────────────────────────────────────────────────
 
-  Score: 7.4 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (1.2s)
+  Score: 7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (1.3s)
   Agent: Claude
 
   Scope:
-    capabilities: 1 main
-    instructions: 4 directive / 11 prose (73%)
+    capabilities: 2 main
+    instructions: 4 directive / 7 prose (50%)
                   3 constraint
 
-  10 findings · 8 warnings · 2 info
+  21 findings · 4 warnings · 1 info
   Compliance: HIGH
 ```
 
@@ -145,7 +146,7 @@ Or without the action:
 
 ## What It Checks
 
-90+ rules across five categories:
+97 rules across five categories:
 
 - **Structure** — File organization, discoverability, size limits, modularity
 - **Content** — Clarity, specificity, reinforcement patterns, tech stack, domain terminology

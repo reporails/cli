@@ -1,6 +1,6 @@
 # @reporails/cli
 
-AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 90+ rules.
+AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 97 rules.
 
 ### Beta — first 100 users free.
 
@@ -13,18 +13,19 @@ npx @reporails/cli check
 No install, no account. Actionable findings in seconds:
 
 ```
-Reporails — Diagnostics
+Reporails — Diagnostics — Pro (beta)
 
   ┌─ Main (1)
-  │ CLAUDE.md  4 dir / 3 con · 73% prose
-  │   ⚠       Missing tech stack declaration  CORE:C:0034
-  │   ⚠       Missing testing documentation  CORE:C:0005
-  │     2 brief · 2 orphan
+  │ CLAUDE.md
+  │   ⚠       Missing directory layout — show the project …  CORE:C:0035
+  │   ⚠ L9    7 of 7 instruction(s) lack effective reinfor…  CORE:C:0053
+  │     ... and 16 more
+  │     1 misordered · 1 orphan · 1 ambiguous
   │
-  └─ 10 findings
+  └─ 21 findings
 
-  Score: 7.4 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (1.2s)
-  10 findings · 8 warnings · 2 info
+  Score: 7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (1.3s)
+  21 findings · 4 warnings · 1 info
   Compliance: HIGH
 ```
 
@@ -48,30 +49,31 @@ ails auth login            # Unlock full diagnostics (GitHub sign-in)
 
 ## Supported Agents
 
-| Agent   | Instruction files                                         |
-|---------|-----------------------------------------------------------|
-| Claude  | `CLAUDE.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md` |
-| Codex   | `AGENTS.md`, `CODEX.md`, `agents/*.md`                    |
-| Copilot | `.github/copilot-instructions.md`                         |
-| Gemini  | `GEMINI.md`, `.gemini/rules/*.md`                         |
-| Cursor  | `.cursorrules`, `.cursor/rules/*.md`                      |
+| Agent | Base config | Rules | Skills | Agents | Other |
+|-------|-------------|-------|--------|--------|-------|
+| Claude | `CLAUDE.md`, `.local.md` | `.claude/rules/**/*.md` | `.claude/skills/**/SKILL.md` | `.claude/agents/**/*.md` | commands, output-styles, memory, MCP, settings |
+| Codex | `AGENTS.md`, `.override.md` | `.codex/rules/*.rules` | `.agents/skills/**/SKILL.md` | `.codex/agents/*.toml` | hooks, config |
+| Copilot | `.github/copilot-instructions.md` | `.github/instructions/**/*.md` | `.github/skills/**/SKILL.md` | `.github/agents/*.agent.md` | hooks, prompts, MCP |
+| Cursor | `.cursorrules`, `AGENTS.md` | `.cursor/rules/**/*.mdc` | `.cursor/skills/**/SKILL.md` | `.cursor/agents/*.md` | hooks, notepads, MCP, policy |
+| Gemini | `GEMINI.md`, `AGENTS.md` | — | `.gemini/skills/**/SKILL.md` | `.gemini/agents/*.md` | commands, extensions, settings |
+
+Auto-detects which agents are present. Scans project-level, user-level (`~/`), and managed (`/etc/`) paths.
 
 ## Commands
 
-| Command              | Description                                |
-|----------------------|--------------------------------------------|
-| `check [PATH]`      | Validate instruction files (90+ rules)     |
-| `explain RULE_ID`   | Show rule details and fix guidance         |
-| `heal`              | Auto-fix common violations                 |
-| `auth login`        | Sign in with GitHub                        |
-| `auth status`       | Check auth state                           |
-| `auth logout`       | Remove stored credentials                  |
-| `install [PATH]`    | Install MCP server for detected agents     |
-| `version`           | Show version info                          |
+| Command | Description |
+|---------|-------------|
+| `check [PATH]` | Validate instruction files (97 rules) |
+| `explain RULE_ID` | Show rule details and fix guidance |
+| `heal` | Auto-fix common violations |
+| `install [PATH]` | Install CLI to PATH + MCP server |
+| `update` | Upgrade to latest version |
+| `auth login` | Sign in with GitHub |
+| `version` | Show version info |
 
 ## What It Checks
 
-90+ rules across five categories:
+97 rules across five categories:
 
 - **Structure** — File organization, size limits, modularity
 - **Content** — Specificity, reinforcement, tech stack, domain terminology
@@ -79,14 +81,17 @@ ails auth login            # Unlock full diagnostics (GitHub sign-in)
 - **Maintenance** — Versioning, review processes
 - **Governance** — Security policies, credential protection
 
-## Offline vs Authenticated
+## Free vs Pro
 
-| Feature              | Offline     | Authenticated                |
-|----------------------|-------------|------------------------------|
-| Mechanical checks    | 70+ rules   | 70+ rules                    |
-| Content checks       | 25+ rules   | 25+ rules                    |
-| Cross-file analysis  | —           | Conflicts, repetition        |
-| Compliance scoring   | —           | Per-instruction strength     |
+| Feature | Free | Pro |
+|---------|------|-----|
+| Mechanical + structural rules | 97 rules, full detail | 97 rules, full detail |
+| Content-quality checks (embedding-based) | Full detail | Full detail |
+| Client checks (ordering, orphan, format, bold, scope) | Full detail | Full detail |
+| Per-atom diagnostics (specificity, modality, brevity) | Full detail | Full detail |
+| Interaction diagnostics (conflicts, competition, coupling) | Count per file | Full detail (line, fix, effect) |
+| Cross-file analysis (conflicts, repetition) | Coordinates only | Full |
+| Compliance band + system score | — | Full |
 
 ## GitHub Actions
 
