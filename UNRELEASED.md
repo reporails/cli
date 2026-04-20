@@ -6,6 +6,11 @@
 - [CORE]: Add "pass" to ambiguous verb set — prevents status labels from triggering imperative classification
 - [CORE]: Late-constraint guard catches negation after sentence/clause boundaries in imperative-classified atoms
 
+### Added
+- [CLI]: `ails update` command — upgrades CLI to latest version via `uv tool upgrade`
+- [CLI]: `ails install` now installs `ails` to PATH (via `uv tool install`) in addition to MCP config
+- [CLI]: MCP config uses direct binary path when available (faster startup, works offline)
+
 ### Changed
 - [CORE]: Global mapper daemon — single process at `~/.reporails/daemon/` serves all projects
 - [CORE]: Map cache moved to `~/.reporails/cache/map-cache.json` with LRU eviction (cap 5000)

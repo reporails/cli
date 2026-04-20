@@ -31,19 +31,19 @@ Reporails — Diagnostics
 ## Install
 
 ```bash
-# Zero install — always latest
+# One-shot (no install needed)
 npx @reporails/cli check
 
-# Or install globally
-npm install -g @reporails/cli
+# Permanent install (puts ails on PATH + configures MCP)
+npx @reporails/cli install
 ```
 
-Once installed globally, use `ails` directly:
+Once installed, use `ails` directly:
 
 ```bash
-ails check
-ails auth login    # Unlock full diagnostics (GitHub sign-in)
-ails check         # Now with cross-file analysis + compliance scoring
+ails check                 # Validate instruction files
+ails update                # Upgrade to latest version
+ails auth login            # Unlock full diagnostics (GitHub sign-in)
 ```
 
 ## Supported Agents

@@ -4,26 +4,23 @@ AI Instruction Diagnostics for coding agents. Validates the entire agentic instr
 
 ### Beta — first 100 users free. Moving fast, feedback welcome.
 
-## Quick Start (No install)
+## Quick Start
 
 ```bash
 npx @reporails/cli check
-# or
-uvx --from reporails-cli ails check
 ```
 
 ## Install
 
 ```bash
-npm install -g @reporails/cli
-# or
-pip install reporails-cli
+npx @reporails/cli install
 ```
 
-Then just:
+This installs `ails` to your PATH and configures the MCP server for detected agents. From then on:
 
 ```bash
 ails check
+ails update               # Upgrade to latest version
 ```
 
 ```
@@ -76,7 +73,8 @@ ails check -v                    # Verbose: all findings with rule IDs
 
 ails explain CORE:S:0001         # Explain a specific rule
 ails heal                        # Auto-fix common violations
-ails install                     # Install MCP server for detected agents
+ails install                     # Install CLI to PATH + MCP server
+ails update                      # Upgrade to latest version
 ails version                     # Show version info
 ```
 
