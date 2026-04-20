@@ -81,7 +81,7 @@ class Atom:
     rule: str = ""  # which classifier rule fired (p1_negation_phrase, p3c_verb0_use, etc.)
     ambiguous: bool = False  # True when charge depends on verb-noun interpretation
     charge_confidence: float = 1.0  # 0.0-1.0 confidence in charge classification
-    embedded_charge_markers: list[str] = field(default_factory=list)  # charge markers found in neutral atoms
+    embedded_charge_markers: list[str] = field(default_factory=list)  # opposite-direction markers
     # Optional fields (topographer-classified maps)
     topics: tuple[str, ...] = ()  # noun phrases from topographer
     role: str = ""  # directive | constraint | anchor | glue
@@ -538,6 +538,7 @@ _VERBS_AMBIGUOUS: set[str] = {
     "name",
     "outline",
     "override",
+    "pass",
     "plan",
     "process",
     "prototype",
@@ -828,22 +829,82 @@ def _is_advcl_rescue_candidate(doc: Any) -> bool:
     )
 
 
-def _check_colon_label(doc: Any, root: Any) -> tuple[str, int, str, str, bool] | None:
-    """Detect 'Noun: verb ...' label pattern in early tokens.
+_POST_COLON_NEGATION = frozenset({"never", "no", "not", "don't", "do", "avoid"})
 
-    Returns NEUTRAL result if a noun-colon label is found, None otherwise.
-    Guard: skip when position 0 is a known verb (verb-object-colon pattern).
+# Labels before colon/dash that are meta-descriptions, not instruction headers.
+# "fix: correct a bug" is a commit type definition, not an instruction.
+_META_LABELS = frozenset(
+    {
+        "fix",
+        "feat",
+        "chore",
+        "docs",
+        "refactor",
+        "test",
+        "ci",
+        "build",
+        "perf",
+        "style",
+        "goal",
+        "purpose",
+        "pattern",
+        "example",
+        "impact",
+        "default",
+        "note",
+        "result",
+        "output",
+        "input",
+        "return",
+        "trigger",
+        "both",
+        "screenshot",
+    }
+)
+
+
+def _check_colon_label(doc: Any, root: Any) -> tuple[str, int, str, str, bool] | None:  # noqa: ARG001
+    """Detect 'Noun: ...' label pattern in early tokens.
+
+    Scans all tokens in first 5 positions (not limited to pre-root) because
+    spaCy often assigns ROOT to the label noun itself.
+
+    Returns:
+    - CONSTRAINT if post-colon text starts with negation
+    - IMPERATIVE if post-colon text starts with a non-ambiguous verb
+    - NEUTRAL if post-colon text is descriptive or label is meta
+    - None if no colon-label pattern found
     """
     if len(doc) > 0 and doc[0].text.lower() in _ALL_VERBS:
         return None
     for tok in doc:
-        if tok.i >= root.i:
+        if tok.i > 5:
             break
         if tok.text == ":" and 0 < tok.i <= 4:
             if any(t.text.lower() in _CONDITIONAL_MARKERS for t in doc[: tok.i]):
                 break  # conditional clause break, not a label
             prev = doc[tok.i - 1]
             if prev.tag_ in {"NN", "NNS", "NNP", "NNPS"}:
+                # Skip meta-labels (commit types, purpose statements)
+                label_text = doc[: tok.i].text.lower()
+                if any(ml in label_text for ml in _META_LABELS):
+                    return ("NEUTRAL", 0, "none", "p3_spacy_colon_label", False)
+                # Skip function-like labels (camelCase or contains uppercase mid-word)
+                label_raw = doc[: tok.i].text
+                if any(c.isupper() for c in label_raw[1:] if c.isalpha()):
+                    # camelCase or PascalCase label → description
+                    if any(c.islower() for c in label_raw):
+                        return ("NEUTRAL", 0, "none", "p3_spacy_colon_label", False)
+                # Check post-colon tokens for charge indicators
+                post = [t for t in doc if t.i > tok.i and not t.is_space]
+                if post:
+                    first_word = post[0].text.lower()
+                    # Negation after colon → CONSTRAINT
+                    if first_word in _POST_COLON_NEGATION:
+                        return ("CONSTRAINT", -1, "direct", "p3_colon_label_constraint", False)
+                    # Non-ambiguous verb after colon → IMPERATIVE
+                    if first_word in _ALL_VERBS and first_word not in _VERBS_AMBIGUOUS:
+                        return ("IMPERATIVE", 1, "imperative", "p3_colon_label_imperative", False)
                 return ("NEUTRAL", 0, "none", "p3_spacy_colon_label", False)
     return None
 
@@ -875,7 +936,7 @@ def _classify_nn_tag(
 ) -> tuple[str, int, str, str, bool]:
     """POS classification for NN/NNS/NNP/NNPS root tags."""
     # Lexicon override: imperative verbs mistagged as nouns at position 0
-    if root.i == 0 and root.text.lower() in _ALL_VERBS:
+    if root.i == 0 and root.text.lower() in _ALL_VERBS and root.text.lower() not in _VERBS_AMBIGUOUS:
         sc = _detect_scope_conditional(doc, has_cond_prefix)
         return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0", sc)
     # Position-0 verb rescue: non-ambiguous verb demoted by spaCy
@@ -883,10 +944,14 @@ def _classify_nn_tag(
     if root.i > 0 and not has_subj and t0_lower in _ALL_VERBS and t0_lower not in _VERBS_AMBIGUOUS:
         sc = _detect_scope_conditional(doc, has_cond_prefix)
         return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue", sc)
-    # Post-colon verb rescue
+    # Post-colon verb rescue (conditional markers before colon)
     pcv = _check_postcolon_verb(doc)
     if pcv is not None:
         return pcv
+    # Colon-label rescue: "Label: Use X" / "Label: Never Y"
+    cl = _check_colon_label(doc, root)
+    if cl is not None:
+        return cl
     return ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
 
 
@@ -971,6 +1036,20 @@ def _check_verb0_rescue(
 
 _PAST_TENSE_TAGS = frozenset({"VBZ", "VBD", "VBN", "VBG"})
 
+_LATE_CONSTRAINT_RE = re.compile(
+    r"[.:;\u2014\u2013\-]\s*(?:do not|don't|never|avoid|must not|should not|cannot|no )\b",
+    re.IGNORECASE,
+)
+
+
+def _has_late_constraint(text: str) -> bool:
+    """True if text has constraint language after a sentence/clause boundary.
+
+    Catches compound instructions like 'Prefer X. Do not introduce Y' and
+    'Label — Avoid X' where the positive verb at the start masks a constraint.
+    """
+    return bool(_LATE_CONSTRAINT_RE.search(text))
+
 
 def _spacy_pre_checks(
     doc: Any,
@@ -1020,19 +1099,34 @@ def _classify_phase3_spacy(
 
     pre = _spacy_pre_checks(doc, root, clean, md_text, has_cond_prefix, inline_tokens)
     if pre is not None:
-        return pre
+        result = pre
+    else:
+        has_subj = any(child.dep_ in ("nsubj", "nsubjpass") for child in root.children)
+        tag = root.tag_
 
-    has_subj = any(child.dep_ in ("nsubj", "nsubjpass") for child in root.children)
-    tag = root.tag_
+        # POS classification by tag group
+        if tag in {"NN", "NNS", "NNP", "NNPS"}:
+            result = _classify_nn_tag(doc, root, has_subj, has_cond_prefix)
+        elif tag in _PAST_TENSE_TAGS:
+            cl = _check_colon_label(doc, root)
+            result = cl if cl is not None else ("NEUTRAL", 0, "none", f"p3_spacy_{tag.lower()}", False)
+        elif tag in {"VB", "VBP"}:
+            vb_result = _classify_vb_vbp_tag(doc, root, tag, has_subj, has_cond_prefix, shallow=shallow)
+            if vb_result is not None:
+                result = vb_result
+            else:
+                return None  # fall through to lexicon
+        else:
+            result = _classify_nonverb_tag(doc, root, tag)
 
-    # POS classification by tag group
-    if tag in {"NN", "NNS", "NNP", "NNPS"}:
-        return _classify_nn_tag(doc, root, has_subj, has_cond_prefix)
-    if tag in _PAST_TENSE_TAGS:
-        return ("NEUTRAL", 0, "none", f"p3_spacy_{tag.lower()}", False)
-    if tag in {"VB", "VBP"}:
-        return _classify_vb_vbp_tag(doc, root, tag, has_subj, has_cond_prefix, shallow=shallow)
-    return _classify_nonverb_tag(doc, root, tag)
+    # Late-constraint guard: if classified IMPERATIVE but text contains
+    # constraint language after a sentence boundary or colon, the atom is
+    # a compound instruction — mark AMBIGUOUS to avoid charge inversion.
+    if result is not None and result[1] == 1:  # charge_value == 1 (positive)
+        if _has_late_constraint(clean):
+            return ("AMBIGUOUS", 0, "none", "p3_compound_ambiguous", False)
+
+    return result
 
 
 def _classify_phase1(
@@ -1875,6 +1969,7 @@ def tokenize(content: str) -> list[Atom]:
         atom.charge_confidence = _rule_confidence(atom.rule, atom.charge)
 
     _scan_neutral_for_embedded_markers(atoms)
+    _scan_charged_for_compound_markers(atoms)
 
     return atoms
 
@@ -2125,6 +2220,34 @@ def _scan_neutral_for_embedded_markers(atoms: list[Atom]) -> None:
             atom.embedded_charge_markers = markers
             atom.charge = "AMBIGUOUS"
             atom.charge_confidence = 0.0
+
+
+def _scan_charged_for_compound_markers(atoms: list[Atom]) -> None:
+    """Detect opposite-direction markers in charged atoms.
+
+    A directive like "mention it — don't delete it" contains both a
+    directive verb and a constraint negation.  The classifier picks one
+    charge; this scanner records the opposite-direction signal so the
+    equation can skip false-positive conflict detection between the
+    compound instruction and an aligned constraint.
+
+    Unlike the neutral scanner, this does NOT change the atom's charge.
+    """
+    for atom in atoms:
+        if atom.charge_value == 0 or atom.kind == "heading":
+            continue
+        text = atom.text
+        opposite: list[str] = []
+        if atom.charge_value == 1:
+            for m in _EMBEDDED_CONSTRAINT_RE.finditer(text):
+                opposite.append(f"constraint:{m.group().strip()}")
+        else:
+            for m in _EMBEDDED_DIRECTIVE_RE.finditer(text):
+                opposite.append(f"directive:{m.group().strip()}")
+            for m in _EMBEDDED_IMPERATIVE_RE.finditer(text):
+                opposite.append(f"imperative:{m.group(1).strip()}")
+        if opposite:
+            atom.embedded_charge_markers = opposite
 
 
 def _embed_text(atom: Atom) -> str:
@@ -2857,9 +2980,9 @@ def map_ruleset(
         if map_cache is not None:
             _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records)
 
-    # Evict stale cache entries and save
+    # Enforce cache cap (LRU eviction) and save
     if map_cache is not None:
-        map_cache.evict_stale({fr.content_hash for fr in file_records})
+        map_cache.enforce_cap()
         map_cache.save()
 
     # Ensure ALL atoms have embeddings (cached atoms may lack them)
@@ -2926,6 +3049,8 @@ def _atom_to_dict(atom: Atom) -> dict[str, Any]:
         d["rule"] = atom.rule
     if atom.ambiguous:
         d["ambiguous"] = True
+    if atom.embedded_charge_markers:
+        d["embedded_charge_markers"] = list(atom.embedded_charge_markers)
     return d
 
 
@@ -2981,6 +3106,7 @@ def _atom_from_dict(d: dict[str, Any]) -> Atom:
         depth=d.get("depth"),
         rule=d.get("rule", ""),
         ambiguous=d.get("ambiguous", False),
+        embedded_charge_markers=d.get("embedded_charge_markers", []),
         topics=tuple(d.get("topics", [])),
         role=d.get("role", ""),
     )

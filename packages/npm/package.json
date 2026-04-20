@@ -1,6 +1,6 @@
 {
   "name": "@reporails/cli",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "AI instruction diagnostics for coding agents",
   "type": "module",
   "bin": {

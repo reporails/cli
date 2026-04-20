@@ -22,6 +22,27 @@ def get_reporails_home() -> Path:
     return REPORAILS_HOME
 
 
+def get_daemon_dir() -> Path:
+    """Get ~/.reporails/daemon/ — global daemon socket and PID."""
+    return REPORAILS_HOME / "daemon"
+
+
+def get_global_cache_dir() -> Path:
+    """Get ~/.reporails/cache/ — shared map-cache location."""
+    return REPORAILS_HOME / "cache"
+
+
+def get_project_cache_dir(project_root: Path) -> Path:
+    """Get per-project cache dir under global home.
+
+    Layout: ~/.reporails/cache/projects/<12-char-hash>/
+    Uses git remote URL hash for consistency across clones.
+    """
+    from reporails_cli.core.analytics import get_project_id
+
+    return REPORAILS_HOME / "cache" / "projects" / get_project_id(project_root)
+
+
 def get_rules_path() -> Path:
     """Get path to rules directory.
 
