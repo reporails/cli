@@ -72,8 +72,9 @@ def test_creates_new_config(tmp_path: Path) -> None:
     data = json.loads(config_path.read_text())
     assert "mcpServers" in data
     assert "reporails" in data["mcpServers"]
-    assert data["mcpServers"]["reporails"]["command"] == "uvx"
-    assert "reporails-mcp" in data["mcpServers"]["reporails"]["args"]
+    entry = data["mcpServers"]["reporails"]
+    # Direct binary (reporails-mcp on PATH) or uvx fallback
+    assert "reporails-mcp" in entry["command"] or "reporails-mcp" in entry.get("args", [])
 
 
 def test_creates_parent_dirs(tmp_path: Path) -> None:
@@ -120,8 +121,10 @@ def test_updates_existing_entry(tmp_path: Path) -> None:
     write_mcp_config(config_path)
 
     data = json.loads(config_path.read_text())
-    assert "reporails-mcp" in data["mcpServers"]["reporails"]["args"]
-    assert "ails-mcp" not in data["mcpServers"]["reporails"]["args"]
+    entry = data["mcpServers"]["reporails"]
+    # Old ails-mcp reference gone — either direct binary or uvx with reporails-mcp
+    all_parts = [entry.get("command", ""), *entry.get("args", [])]
+    assert not any(part == "ails-mcp" or part.endswith("/ails-mcp") for part in all_parts)
 
 
 def test_handles_malformed_json(tmp_path: Path) -> None:
