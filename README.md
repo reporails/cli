@@ -2,18 +2,22 @@
 
 AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 97 rules.
 
-### Beta — first 100 users free. Moving fast, feedback welcome.
+### Beta phase — Moving fast, feedback welcome.
 
 ## Quick Start
 
 ```bash
 npx @reporails/cli check
+# or
+uvx --from reporails-cli ails check
 ```
 
 ## Install
 
 ```bash
 npx @reporails/cli install
+# or
+uvx --from reporails-cli ails install
 ```
 
 This installs `ails` to your PATH and configures the MCP server for detected agents. From then on:
@@ -81,21 +85,21 @@ ails version                     # Show version info
 
 ### Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | Findings found (strict mode) |
-| 2 | Invalid input (bad path, unknown agent/format/rule) |
+| Code | Meaning                                             |
+|------|-----------------------------------------------------|
+| 0    | Success                                             |
+| 1    | Findings found (strict mode)                        |
+| 2    | Invalid input (bad path, unknown agent/format/rule) |
 
 ## Supported Agents
 
-| Agent | Base config | Rules | Skills | Agents | Other |
-|-------|-------------|-------|--------|--------|-------|
-| Claude | `CLAUDE.md`, `.local.md` | `.claude/rules/**/*.md` | `.claude/skills/**/SKILL.md` | `.claude/agents/**/*.md` | commands, output-styles, memory, MCP, settings |
-| Codex | `AGENTS.md`, `.override.md` | `.codex/rules/*.rules` | `.agents/skills/**/SKILL.md` | `.codex/agents/*.toml` | hooks, config |
-| Copilot | `.github/copilot-instructions.md` | `.github/instructions/**/*.md` | `.github/skills/**/SKILL.md` | `.github/agents/*.agent.md` | hooks, prompts, MCP |
-| Cursor | `.cursorrules`, `AGENTS.md` | `.cursor/rules/**/*.mdc` | `.cursor/skills/**/SKILL.md` | `.cursor/agents/*.md` | hooks, notepads, MCP, policy |
-| Gemini | `GEMINI.md`, `AGENTS.md` | — | `.gemini/skills/**/SKILL.md` | `.gemini/agents/*.md` | commands, extensions, settings |
+| Agent   | Base config                       | Rules                          | Skills                       | Agents                      | Other                                          |
+|---------|-----------------------------------|--------------------------------|------------------------------|-----------------------------|------------------------------------------------|
+| Claude  | `CLAUDE.md`, `.local.md`          | `.claude/rules/**/*.md`        | `.claude/skills/**/SKILL.md` | `.claude/agents/**/*.md`    | commands, output-styles, memory, MCP, settings |
+| Codex   | `AGENTS.md`, `.override.md`       | `.codex/rules/*.rules`         | `.agents/skills/**/SKILL.md` | `.codex/agents/*.toml`      | hooks, config                                  |
+| Copilot | `.github/copilot-instructions.md` | `.github/instructions/**/*.md` | `.github/skills/**/SKILL.md` | `.github/agents/*.agent.md` | hooks, prompts, MCP                            |
+| Cursor  | `.cursorrules`, `AGENTS.md`       | `.cursor/rules/**/*.mdc`       | `.cursor/skills/**/SKILL.md` | `.cursor/agents/*.md`       | hooks, notepads, MCP, policy                   |
+| Gemini  | `GEMINI.md`, `AGENTS.md`          | —                              | `.gemini/skills/**/SKILL.md` | `.gemini/agents/*.md`       | commands, extensions, settings                 |
 
 Auto-detects which agents are present. Scans project-level, user-level (`~/`), and managed (`/etc/`) paths.
 
@@ -156,15 +160,15 @@ Or without the action:
 
 ## Free vs Pro
 
-| Feature | Free | Pro |
-|---------|------|-----|
-| Mechanical + structural rules | 97 rules, full detail | 97 rules, full detail |
-| Content-quality checks (embedding-based) | Full detail | Full detail |
-| Client checks (ordering, orphan, format, bold, scope) | Full detail | Full detail |
-| Per-atom diagnostics (specificity, modality, brevity) | Full detail | Full detail |
-| Interaction diagnostics (conflicts, competition, coupling) | Count per file | Full detail (line, fix, effect) |
-| Cross-file analysis (conflicts, repetition) | Coordinates only | Full |
-| Compliance band + system score | — | Full |
+| Feature                                                    | Free                  | Pro                             |
+|------------------------------------------------------------|-----------------------|---------------------------------|
+| Mechanical + structural rules                              | 97 rules, full detail | 97 rules, full detail           |
+| Content-quality checks (embedding-based)                   | Full detail           | Full detail                     |
+| Client checks (ordering, orphan, format, bold, scope)      | Full detail           | Full detail                     |
+| Per-atom diagnostics (specificity, modality, brevity)      | Full detail           | Full detail                     |
+| Interaction diagnostics (conflicts, competition, coupling) | Count per file        | Full detail (line, fix, effect) |
+| Cross-file analysis (conflicts, repetition)                | Coordinates only      | Full                            |
+| Compliance band + system score                             | —                     | Full                            |
 
 Free tier requires no account. Pro shows you *how many* interaction problems exist and *where* cross-file conflicts are — enough to know if your instructions are working. Pro gives the full detail: which line, what to fix, and how strong the effect is.
 
