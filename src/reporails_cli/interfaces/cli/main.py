@@ -112,13 +112,12 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         _handle_no_instruction_files(effective_agent, output_format, console)
         return
 
-    # 1a. EAGERLY start the mapper daemon BEFORE any other expensive work.
-    _cache_dir = target / ".ails" / ".cache"
+    # 1a. EAGERLY start the global mapper daemon BEFORE any other expensive work.
     _suppress_ml_noise()
     try:
         from reporails_cli.core.mapper.daemon_client import ensure_daemon
 
-        ensure_daemon(_cache_dir)
+        ensure_daemon()
     except (ImportError, OSError):
         pass
 
@@ -137,14 +136,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
             from reporails_cli.core.mapper.daemon_client import map_ruleset_via_daemon
 
-            ruleset_map = map_ruleset_via_daemon(list(instruction_files), target, _cache_dir)
+            ruleset_map = map_ruleset_via_daemon(list(instruction_files), target)
 
             if ruleset_map is None:
                 # Daemon unreachable (fork failed, Windows, etc.) — fall back
                 # to in-process mapping, which still benefits from MapCache.
                 if show_progress:
                     spinner.update("[bold]Loading models...[/bold]")  # type: ignore[union-attr]
-                ruleset_map = _map_in_process(instruction_files, _cache_dir)
+                ruleset_map = _map_in_process(instruction_files)
         except (ImportError, RuntimeError) as exc:
             logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)
             if verbose:
@@ -223,7 +222,7 @@ def _suppress_ml_noise() -> None:
         _logging.getLogger(lib).setLevel(_logging.ERROR)
 
 
-def _map_in_process(instruction_files: list[Path], cache_dir: Path) -> Any:
+def _map_in_process(instruction_files: list[Path]) -> Any:
     """Run mapper in-process with stderr suppressed. Returns RulesetMap or None.
 
     Does NOT eagerly call ``get_models().warmup()`` — when the MapCache is
@@ -234,12 +233,14 @@ def _map_in_process(instruction_files: list[Path], cache_dir: Path) -> Any:
     """
     import io as _io
 
+    from reporails_cli.core.bootstrap import get_global_cache_dir
+
     saved_stderr = sys.stderr
     sys.stderr = _io.StringIO()
     try:
         from reporails_cli.core.mapper import map_ruleset
 
-        return map_ruleset(list(instruction_files), cache_dir=cache_dir)
+        return map_ruleset(list(instruction_files), cache_dir=get_global_cache_dir())
     except (ImportError, RuntimeError) as exc:
         logger.warning("In-process mapper unavailable: %s", exc)
         return None

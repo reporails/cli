@@ -81,7 +81,7 @@ class Atom:
     rule: str = ""  # which classifier rule fired (p1_negation_phrase, p3c_verb0_use, etc.)
     ambiguous: bool = False  # True when charge depends on verb-noun interpretation
     charge_confidence: float = 1.0  # 0.0-1.0 confidence in charge classification
-    embedded_charge_markers: list[str] = field(default_factory=list)  # charge markers found in neutral atoms
+    embedded_charge_markers: list[str] = field(default_factory=list)  # opposite-direction markers
     # Optional fields (topographer-classified maps)
     topics: tuple[str, ...] = ()  # noun phrases from topographer
     role: str = ""  # directive | constraint | anchor | glue
@@ -1875,6 +1875,7 @@ def tokenize(content: str) -> list[Atom]:
         atom.charge_confidence = _rule_confidence(atom.rule, atom.charge)
 
     _scan_neutral_for_embedded_markers(atoms)
+    _scan_charged_for_compound_markers(atoms)
 
     return atoms
 
@@ -2125,6 +2126,34 @@ def _scan_neutral_for_embedded_markers(atoms: list[Atom]) -> None:
             atom.embedded_charge_markers = markers
             atom.charge = "AMBIGUOUS"
             atom.charge_confidence = 0.0
+
+
+def _scan_charged_for_compound_markers(atoms: list[Atom]) -> None:
+    """Detect opposite-direction markers in charged atoms.
+
+    A directive like "mention it — don't delete it" contains both a
+    directive verb and a constraint negation.  The classifier picks one
+    charge; this scanner records the opposite-direction signal so the
+    equation can skip false-positive conflict detection between the
+    compound instruction and an aligned constraint.
+
+    Unlike the neutral scanner, this does NOT change the atom's charge.
+    """
+    for atom in atoms:
+        if atom.charge_value == 0 or atom.kind == "heading":
+            continue
+        text = atom.text
+        opposite: list[str] = []
+        if atom.charge_value == 1:
+            for m in _EMBEDDED_CONSTRAINT_RE.finditer(text):
+                opposite.append(f"constraint:{m.group().strip()}")
+        else:
+            for m in _EMBEDDED_DIRECTIVE_RE.finditer(text):
+                opposite.append(f"directive:{m.group().strip()}")
+            for m in _EMBEDDED_IMPERATIVE_RE.finditer(text):
+                opposite.append(f"imperative:{m.group(1).strip()}")
+        if opposite:
+            atom.embedded_charge_markers = opposite
 
 
 def _embed_text(atom: Atom) -> str:
@@ -2857,9 +2886,9 @@ def map_ruleset(
         if map_cache is not None:
             _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records)
 
-    # Evict stale cache entries and save
+    # Enforce cache cap (LRU eviction) and save
     if map_cache is not None:
-        map_cache.evict_stale({fr.content_hash for fr in file_records})
+        map_cache.enforce_cap()
         map_cache.save()
 
     # Ensure ALL atoms have embeddings (cached atoms may lack them)
@@ -2926,6 +2955,8 @@ def _atom_to_dict(atom: Atom) -> dict[str, Any]:
         d["rule"] = atom.rule
     if atom.ambiguous:
         d["ambiguous"] = True
+    if atom.embedded_charge_markers:
+        d["embedded_charge_markers"] = list(atom.embedded_charge_markers)
     return d
 
 
@@ -2981,6 +3012,7 @@ def _atom_from_dict(d: dict[str, Any]) -> Atom:
         depth=d.get("depth"),
         rule=d.get("rule", ""),
         ambiguous=d.get("ambiguous", False),
+        embedded_charge_markers=d.get("embedded_charge_markers", []),
         topics=tuple(d.get("topics", [])),
         role=d.get("role", ""),
     )

@@ -104,8 +104,10 @@ class ProjectCache:
 
     @property
     def cache_dir(self) -> Path:
-        """Get project's cache directory (.ails/.cache/)."""
-        return self.reporails_dir / ".cache"
+        """Get project's cache directory (~/.reporails/cache/projects/<hash>/)."""
+        from reporails_cli.core.bootstrap import get_project_cache_dir
+
+        return get_project_cache_dir(self.target)
 
     @property
     def file_map_path(self) -> Path:
