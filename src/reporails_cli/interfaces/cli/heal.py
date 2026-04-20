@@ -30,7 +30,6 @@ def _build_ruleset_map(
     from reporails_cli.interfaces.cli.main import _suppress_ml_noise
 
     _suppress_ml_noise()
-    cache_dir = target / ".ails" / ".cache"
 
     if show_progress:
         console.print("[bold]Mapping instruction files...[/bold]")
@@ -38,12 +37,12 @@ def _build_ruleset_map(
     try:
         from reporails_cli.core.mapper.daemon_client import ensure_daemon, map_ruleset_via_daemon
 
-        ensure_daemon(cache_dir)
-        ruleset_map = map_ruleset_via_daemon(list(instruction_files), target, cache_dir)
+        ensure_daemon()
+        ruleset_map = map_ruleset_via_daemon(list(instruction_files), target)
         if ruleset_map is None:
             from reporails_cli.interfaces.cli.main import _map_in_process
 
-            ruleset_map = _map_in_process(instruction_files, cache_dir)
+            ruleset_map = _map_in_process(instruction_files)
         return ruleset_map
     except (ImportError, RuntimeError) as exc:
         logger.warning("Mapper unavailable in heal: %s", exc)

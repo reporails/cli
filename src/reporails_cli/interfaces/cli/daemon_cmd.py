@@ -2,31 +2,30 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import typer
 
 from reporails_cli.interfaces.cli.helpers import console
 
-daemon_app = typer.Typer(name="daemon", help="Manage the mapper daemon.")
+daemon_app = typer.Typer(name="daemon", help="Manage the global mapper daemon.")
 
 
 @daemon_app.command()
 def start(
-    path: str = typer.Argument(".", help="Project root"),
+    path: str | None = typer.Argument(None, help="[Deprecated] Ignored — daemon is global.", hidden=True),
 ) -> None:
     """Start the mapper daemon (keeps models loaded in background)."""
     from reporails_cli.core.mapper.daemon import is_daemon_running, start_daemon
 
-    cache_dir = Path(path).resolve() / ".ails" / ".cache"
+    if path is not None and path != ".":
+        console.print("[yellow]Note: path argument is deprecated. The daemon is now global.[/yellow]")
 
-    if is_daemon_running(cache_dir):
+    if is_daemon_running():
         console.print("[dim]Daemon already running.[/dim]")
         return
 
     console.print("Starting mapper daemon...")
-    pid = start_daemon(cache_dir)
-    if is_daemon_running(cache_dir):
+    pid = start_daemon()
+    if is_daemon_running():
         console.print(f"[green]Daemon started[/green] (PID {pid})")
     else:
         console.print("[red]Failed to start daemon.[/red]")
@@ -35,13 +34,15 @@ def start(
 
 @daemon_app.command()
 def stop(
-    path: str = typer.Argument(".", help="Project root"),
+    path: str | None = typer.Argument(None, help="[Deprecated] Ignored.", hidden=True),
 ) -> None:
     """Stop the mapper daemon."""
     from reporails_cli.core.mapper.daemon import stop_daemon
 
-    cache_dir = Path(path).resolve() / ".ails" / ".cache"
-    if stop_daemon(cache_dir):
+    if path is not None and path != ".":
+        console.print("[yellow]Note: path argument is deprecated. The daemon is now global.[/yellow]")
+
+    if stop_daemon():
         console.print("[green]Daemon stopped.[/green]")
     else:
         console.print("[dim]Daemon not running.[/dim]")
@@ -49,19 +50,20 @@ def stop(
 
 @daemon_app.command()
 def status(
-    path: str = typer.Argument(".", help="Project root"),
+    path: str | None = typer.Argument(None, help="[Deprecated] Ignored.", hidden=True),
 ) -> None:
     """Show daemon status."""
     from reporails_cli.core.mapper.daemon import is_daemon_running
     from reporails_cli.core.mapper.daemon_client import ping
 
-    cache_dir = Path(path).resolve() / ".ails" / ".cache"
+    if path is not None and path != ".":
+        console.print("[yellow]Note: path argument is deprecated. The daemon is now global.[/yellow]")
 
-    if not is_daemon_running(cache_dir):
+    if not is_daemon_running():
         console.print("Daemon: [dim]not running[/dim]")
         return
 
-    resp = ping(cache_dir)
+    resp = ping()
     if resp and resp.get("ok"):
         console.print(f"Daemon: [green]running[/green] (PID {resp.get('pid', '?')})")
     else:

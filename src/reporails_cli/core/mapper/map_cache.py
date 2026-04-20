@@ -1,18 +1,20 @@
-"""Per-file atom and embedding cache for incremental map updates.
+"""Shared atom and embedding cache for incremental map updates.
 
 Stores classified atoms and int8 embeddings keyed by content hash.
 On subsequent runs, unchanged files skip tokenization and embedding
 entirely. Only re-clustering runs every time (cheap, depends on full
 atom set).
 
-Cache location: .ails/.cache/map-cache.json
+Cache location: ~/.reporails/cache/map-cache.json (global, shared across projects)
 Invalidation: content hash mismatch, model name change, schema version change.
+Eviction: LRU when entry count exceeds cap.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,7 +28,7 @@ from reporails_cli.core.mapper.mapper import (
 logger = logging.getLogger(__name__)
 
 _CACHE_VERSION = 1
-_MAX_CACHE_ENTRIES = 500  # enough for large monorepos
+_MAX_CACHE_ENTRIES = 5000  # global cache serves all projects
 
 
 @dataclass
@@ -35,18 +37,20 @@ class CachedFileEntry:
 
     content_hash: str
     atoms: list[dict[str, Any]] = field(default_factory=list)
+    last_used: str = ""  # ISO timestamp for LRU eviction
 
 
 class MapCache:
-    """Per-file atom cache with content-hash keying.
+    """Global atom cache with content-hash keying and LRU eviction.
 
     Usage:
-        cache = MapCache(project_root / ".ails" / ".cache")
+        cache = MapCache(get_global_cache_dir())
         cache.load()
         entry = cache.get("sha256:abc...")
         if entry is None:
             atoms = tokenize(content)
-            cache.put(content_hash, CachedFileEntry(content_hash, [asdict(a) for a in atoms]))
+            cache.put(content_hash, CachedFileEntry(content_hash, [...]))
+        cache.enforce_cap()
         cache.save()
     """
 
@@ -81,6 +85,7 @@ class MapCache:
             self._entries[chash] = CachedFileEntry(
                 content_hash=chash,
                 atoms=entry_data.get("atoms", []),
+                last_used=entry_data.get("last_used", ""),
             )
         logger.debug("Map cache loaded: %d entries", len(self._entries))
 
@@ -93,7 +98,9 @@ class MapCache:
             "version": _CACHE_VERSION,
             "model": self._model,
             "schema": self._schema,
-            "entries": {chash: {"atoms": entry.atoms} for chash, entry in self._entries.items()},
+            "entries": {
+                chash: {"atoms": entry.atoms, "last_used": entry.last_used} for chash, entry in self._entries.items()
+            },
         }
         tmp = self.cache_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
@@ -102,27 +109,43 @@ class MapCache:
         logger.debug("Map cache saved: %d entries", len(self._entries))
 
     def get(self, content_hash: str) -> CachedFileEntry | None:
-        """Look up cached atoms by content hash. Returns None on miss."""
-        return self._entries.get(content_hash)
+        """Look up cached atoms by content hash. Touches last_used on hit."""
+        entry = self._entries.get(content_hash)
+        if entry is not None:
+            entry.last_used = _now_iso()
+            self._dirty = True
+        return entry
 
     def put(self, content_hash: str, entry: CachedFileEntry) -> None:
         """Store atoms for a content hash."""
+        entry.last_used = _now_iso()
         self._entries[content_hash] = entry
         self._dirty = True
 
-    def evict_stale(self, known_hashes: set[str]) -> int:
-        """Remove entries not in the current file set. Returns count evicted."""
-        stale = set(self._entries.keys()) - known_hashes
-        for h in stale:
-            del self._entries[h]
-        if stale:
-            self._dirty = True
-        return len(stale)
+    def enforce_cap(self) -> int:
+        """Evict least-recently-used entries exceeding the cap. Returns count evicted."""
+        if len(self._entries) <= _MAX_CACHE_ENTRIES:
+            return 0
+        sorted_entries = sorted(self._entries.items(), key=lambda kv: kv[1].last_used)
+        to_evict = len(self._entries) - _MAX_CACHE_ENTRIES
+        for chash, _ in sorted_entries[:to_evict]:
+            del self._entries[chash]
+        self._dirty = True
+        return to_evict
+
+    def evict_stale(self, known_hashes: set[str]) -> int:  # noqa: ARG002
+        """Deprecated — use enforce_cap() for global cache. No-op."""
+        return 0
 
     @property
     def size(self) -> int:
         """Number of cached entries."""
         return len(self._entries)
+
+
+def _now_iso() -> str:
+    """Current UTC time as compact ISO string."""
+    return time.strftime("%Y%m%dT%H%M%S", time.gmtime())
 
 
 def atoms_to_dicts(atoms: list[Atom]) -> list[dict[str, Any]]:
