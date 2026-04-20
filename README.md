@@ -153,14 +153,19 @@ Or without the action:
 - **Maintenance** — Versioning, review processes
 - **Governance** — Security policies, credential protection, permissions
 
-## Offline vs Authenticated
+## Free vs Pro
 
-| Feature | Offline | Authenticated |
-|---------|---------|---------------|
-| Mechanical checks | 70+ rules | 70+ rules |
-| Content-quality checks | 25+ rules | 25+ rules |
-| Cross-file analysis | — | Conflicts, repetition |
-| Compliance scoring | — | Per-instruction strength |
+| Feature | Free | Pro |
+|---------|------|-----|
+| Mechanical + structural rules | 97 rules, full detail | 97 rules, full detail |
+| Content-quality checks (embedding-based) | Full detail | Full detail |
+| Client checks (ordering, orphan, format, bold, scope) | Full detail | Full detail |
+| Per-atom diagnostics (specificity, modality, brevity) | Full detail | Full detail |
+| Interaction diagnostics (conflicts, competition, coupling) | Count per file | Full detail (line, fix, effect) |
+| Cross-file analysis (conflicts, repetition) | Coordinates only | Full |
+| Compliance band + system score | — | Full |
+
+Free tier requires no account. Pro shows you *how many* interaction problems exist and *where* cross-file conflicts are — enough to know if your instructions are working. Pro gives the full detail: which line, what to fix, and how strong the effect is.
 
 ## Performance
 
