@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from reporails_cli.core.agents import detect_agents
@@ -14,10 +15,16 @@ MCP_PROJECT_CONFIGS: dict[str, str] = {
     "codex": ".codex/mcp.json",
 }
 
-MCP_SERVER_ENTRY: dict[str, str | list[str]] = {
-    "command": "uvx",
-    "args": ["--refresh", "--from", "reporails-cli", "reporails-mcp"],
-}
+
+def _mcp_server_entry() -> dict[str, str | list[str]]:
+    """Build MCP server entry — use direct binary if on PATH, uvx fallback."""
+    mcp_bin = shutil.which("reporails-mcp")
+    if mcp_bin:
+        return {"command": mcp_bin, "args": []}
+    return {
+        "command": "uvx",
+        "args": ["--refresh", "--from", "reporails-cli", "reporails-mcp"],
+    }
 
 
 def detect_mcp_targets(project_root: Path) -> list[tuple[str, Path]]:
@@ -48,9 +55,10 @@ def write_mcp_config(config_path: Path) -> bool:
     Returns:
         True if the file was written successfully.
     """
-    args = MCP_SERVER_ENTRY["args"]
+    server = _mcp_server_entry()
+    args = server["args"]
     entry: dict[str, str | list[str]] = {
-        "command": str(MCP_SERVER_ENTRY["command"]),
+        "command": str(server["command"]),
         "args": list(args) if isinstance(args, list) else [str(args)],
     }
 

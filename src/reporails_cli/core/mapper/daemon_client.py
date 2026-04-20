@@ -1,4 +1,4 @@
-"""Daemon client — talks to the mapper daemon over Unix socket.
+"""Daemon client — talks to the global mapper daemon over Unix socket.
 
 Falls back gracefully: if daemon is not running or unreachable,
 returns None and caller uses in-process mapping.
@@ -15,13 +15,15 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def _socket_path(cache_dir: Path) -> Path:
-    return cache_dir / "mapper.sock"
+def _socket_path() -> Path:
+    from reporails_cli.core.bootstrap import get_daemon_dir
+
+    return get_daemon_dir() / "mapper.sock"
 
 
-def connect(cache_dir: Path, timeout: float = 5.0) -> socket.socket | None:
-    """Connect to daemon socket. Returns None if unreachable."""
-    sock_path = _socket_path(cache_dir)
+def connect(timeout: float = 5.0) -> socket.socket | None:
+    """Connect to global daemon socket. Returns None if unreachable."""
+    sock_path = _socket_path()
     if not sock_path.exists():
         return None
     try:
@@ -55,9 +57,9 @@ def send_request(sock: socket.socket, request: dict[str, Any], timeout: float = 
         sock.close()
 
 
-def ping(cache_dir: Path) -> dict[str, Any] | None:
+def ping() -> dict[str, Any] | None:
     """Ping daemon. Returns response dict or None if unreachable."""
-    sock = connect(cache_dir)
+    sock = connect()
     if sock is None:
         return None
     return send_request(sock, {"cmd": "ping"}, timeout=5.0)
@@ -66,13 +68,12 @@ def ping(cache_dir: Path) -> dict[str, Any] | None:
 def map_ruleset_via_daemon(
     paths: list[Path],
     root: Path,
-    cache_dir: Path,
 ) -> Any:
-    """Map ruleset via daemon. Returns RulesetMap or None on failure.
+    """Map ruleset via global daemon. Returns RulesetMap or None on failure.
 
     Caller should fall back to in-process mapping when this returns None.
     """
-    sock = connect(cache_dir)
+    sock = connect()
     if sock is None:
         return None
 
@@ -110,15 +111,15 @@ def map_ruleset_via_daemon(
         return None
 
 
-def ensure_daemon(cache_dir: Path) -> bool:
-    """Ensure daemon is running. Start it if not. Returns True if available."""
+def ensure_daemon() -> bool:
+    """Ensure global daemon is running. Start it if not. Returns True if available."""
     from reporails_cli.core.mapper.daemon import is_daemon_running, start_daemon
 
-    if is_daemon_running(cache_dir):
+    if is_daemon_running():
         return True
 
     try:
-        start_daemon(cache_dir)
-        return is_daemon_running(cache_dir)
+        start_daemon()
+        return is_daemon_running()
     except OSError:
         return False

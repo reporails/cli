@@ -40,13 +40,13 @@ def _discover_files(target: Path) -> tuple[list[Any], str, list[Any]] | None:
     return detected, effective_agent, instruction_files
 
 
-def _build_map(target: Path, instruction_files: list[Any]) -> Any:
+def _build_map(target: Path, instruction_files: list[Any]) -> Any:  # noqa: ARG001
     """Build ruleset map, returning None on failure."""
     try:
+        from reporails_cli.core.bootstrap import get_global_cache_dir
         from reporails_cli.core.mapper import map_ruleset
 
-        cache_dir = target / ".ails" / ".cache"
-        return map_ruleset(list(instruction_files), cache_dir=cache_dir)
+        return map_ruleset(list(instruction_files), cache_dir=get_global_cache_dir())
     except (ImportError, RuntimeError) as exc:
         logger.warning("Mapper unavailable in MCP: %s", exc)
         return None
