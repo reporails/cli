@@ -88,15 +88,15 @@ ails version                     # Show version info
 
 ## Supported Agents
 
-| Agent | Instruction files |
-|-------|-------------------|
-| Claude | `CLAUDE.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md` |
-| Codex | `AGENTS.md`, `CODEX.md`, `agents/*.md` |
-| Copilot | `.github/copilot-instructions.md` |
-| Gemini | `GEMINI.md`, `.gemini/rules/*.md` |
-| Cursor | `.cursorrules`, `.cursor/rules/*.md` |
+| Agent | Base config | Rules | Skills | Agents | Other |
+|-------|-------------|-------|--------|--------|-------|
+| Claude | `CLAUDE.md`, `.local.md` | `.claude/rules/**/*.md` | `.claude/skills/**/SKILL.md` | `.claude/agents/**/*.md` | commands, output-styles, memory, MCP, settings |
+| Codex | `AGENTS.md`, `.override.md` | `.codex/rules/*.rules` | `.agents/skills/**/SKILL.md` | `.codex/agents/*.toml` | hooks, config |
+| Copilot | `.github/copilot-instructions.md` | `.github/instructions/**/*.md` | `.github/skills/**/SKILL.md` | `.github/agents/*.agent.md` | hooks, prompts, MCP |
+| Cursor | `.cursorrules`, `AGENTS.md` | `.cursor/rules/**/*.mdc` | `.cursor/skills/**/SKILL.md` | `.cursor/agents/*.md` | hooks, notepads, MCP, policy |
+| Gemini | `GEMINI.md`, `AGENTS.md` | — | `.gemini/skills/**/SKILL.md` | `.gemini/agents/*.md` | commands, extensions, settings |
 
-The CLI auto-detects which agents are present in your project.
+Auto-detects which agents are present. Scans project-level, user-level (`~/`), and managed (`/etc/`) paths.
 
 ## Configuration
 
