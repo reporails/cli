@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.3
+
+### Added
+
+- `ails update` command — upgrades CLI to latest version via `uv tool upgrade`
+- `ails install` now installs `ails` to PATH (via `uv tool install`) in addition to MCP config
+- MCP config uses direct binary path when available (faster startup, works offline)
+
+### Changed
+
+- Global mapper daemon — single process at `~/.reporails/daemon/` serves all projects (~1GB RAM saved per additional project)
+- Map cache moved to `~/.reporails/cache/map-cache.json` with LRU eviction (cap 5000)
+- Per-project caches moved to `~/.reporails/cache/projects/<hash>/`
+- `ails daemon start/stop/status` no longer require a path argument (daemon is global, path arg deprecated)
+- Project `.ails/` directory is now config-only — no runtime artifacts written there
+
+### Fixed
+
+- Eliminate charge inversions in classifier — compound instructions ("Use X. Do not Y") now marked AMBIGUOUS instead of wrongly charged (0.30% → 0.03% inversion rate)
+- Colon-label rescue for "Label: Use X" / "Label: Never Y" patterns previously neutralized as headings
+- Add "pass" to ambiguous verb set — prevents status labels from triggering imperative classification
+- Late-constraint guard catches negation after sentence/clause boundaries in imperative-classified atoms
+
 ## 0.5.2
 
 ### Added
