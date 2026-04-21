@@ -191,24 +191,62 @@ def clear_agent_cache() -> None:
 # ─── Public API ─────────────────────────────────────────────────────────
 
 
+_DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
+    {
+        # VCS
+        ".git",
+        ".svn",
+        ".hg",
+        # Python
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".env",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        # JS/TS
+        "node_modules",
+        # Build output
+        "dist",
+        "build",
+        "target",
+        "out",
+        # Data / artifacts (instruction files never live here)
+        "data",
+        "datasets",
+        # Vendored
+        "vendor",
+        # IDE / OS
+        ".idea",
+        ".vscode",
+    }
+)
+
+
 def _load_project_exclude_dirs(target: Path) -> frozenset[str]:
-    """Load exclude_dirs from .ails/config.yml if it exists."""
+    """Load exclude_dirs from .ails/config.yml, merged with built-in defaults.
+
+    Built-in defaults cover directories that never contain instruction files
+    (VCS internals, caches, node_modules, data). Project-level exclude_dirs
+    extend — not replace — these defaults.
+    """
     config_path = target / ".ails" / "config.yml"
     if not config_path.exists():
-        return frozenset()
+        return _DEFAULT_EXCLUDE_DIRS
     try:
         from reporails_cli.core.utils import load_yaml_file
 
         data = load_yaml_file(config_path)
         if not data:
             logger.warning("Project config is empty: %s", config_path)
-            return frozenset()
+            return _DEFAULT_EXCLUDE_DIRS
         dirs = data.get("exclude_dirs", [])
         if isinstance(dirs, list):
-            return frozenset(str(d) for d in dirs)
+            return _DEFAULT_EXCLUDE_DIRS | frozenset(str(d) for d in dirs)
     except Exception:  # glob expansion; skip unresolvable patterns
         logger.warning("Failed to load project config %s", config_path, exc_info=True)
-    return frozenset()
+    return _DEFAULT_EXCLUDE_DIRS
 
 
 def _agent_has_marker(target: Path, agent_type: AgentType) -> bool:
