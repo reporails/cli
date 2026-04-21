@@ -18,6 +18,7 @@ import json  # noqa: E402
 import logging  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
+from collections.abc import Callable  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -114,25 +115,31 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     # 1a. EAGERLY start the global mapper daemon BEFORE any other expensive work.
     _suppress_ml_noise()
-    try:
-        from reporails_cli.core.mapper.daemon_client import ensure_daemon
-
-        ensure_daemon()
-    except (ImportError, OSError):
-        pass
 
     show_progress = sys.stdout.isatty() and output_format not in ("json", "github")
+    _progress: Callable[[str], None] = (
+        (lambda msg: print(msg, file=sys.stderr, flush=True)) if verbose and not show_progress else (lambda _: None)
+    )
 
-    spinner = console.status("[bold]Discovering files...[/bold]") if show_progress else nullcontext()
+    spinner = console.status("[bold]Starting...[/bold]") if show_progress else nullcontext()
 
     start_time = time.perf_counter()
 
     with spinner:
+        try:
+            from reporails_cli.core.mapper.daemon_client import ensure_daemon
+
+            _progress("Starting mapper daemon...")
+            ensure_daemon()
+        except (ImportError, OSError):
+            pass
+
         # 2. Build map (needed before M probes to enable content_query checks)
         ruleset_map = None
         try:
             if show_progress:
                 spinner.update("[bold]Mapping...[/bold]")  # type: ignore[union-attr]
+            _progress("Mapping instruction files...")
 
             from reporails_cli.core.mapper.daemon_client import map_ruleset_via_daemon
 
@@ -141,6 +148,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             if ruleset_map is None:
                 # Daemon unreachable (fork failed, Windows, etc.) — fall back
                 # to in-process mapping, which still benefits from MapCache.
+                _progress("Daemon unavailable, loading models in-process...")
                 if show_progress:
                     spinner.update("[bold]Loading models...[/bold]")  # type: ignore[union-attr]
                 ruleset_map = _map_in_process(instruction_files)
@@ -152,6 +160,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         # 3. Run M probes (mechanical + structural deterministic)
         if show_progress:
             spinner.update("[bold]Running M probes...[/bold]")  # type: ignore[union-attr]
+        _progress("Running M probes...")
         m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
 
         # 4. Run content-quality checks + client checks on map
@@ -160,6 +169,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         if ruleset_map is not None:
             if show_progress:
                 spinner.update("[bold]Running content checks...[/bold]")  # type: ignore[union-attr]
+            _progress("Running content checks...")
             content_findings = run_content_quality_checks(ruleset_map, target, instruction_files, agent=effective_agent)
             client_findings = run_client_checks(ruleset_map)
 
