@@ -1,7 +1,7 @@
 # Unreleased
 
 ### Added
-- [FORMATTERS]: Per-surface health scores in `ails check` summary scorecard
+- [FORMATTERS]: Per-surface health scores with file counts in `ails check` summary scorecard
 
 ### Fixed
 - [CORE]: Charge classifier misses for `append`, `stage`, `compose` and 5 other verbs

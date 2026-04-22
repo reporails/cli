@@ -71,8 +71,8 @@ def print_score_line(score: float, tw: int) -> None:
 
 # ── Surface health ────────────────────────────────────────────────────
 
-_SURFACE_NAMES = {"main": "Main", "rule": "Rules", "skill": "Skills", "agent": "Agents"}
-_SURFACE_ORDER = ["main", "rule", "skill", "agent"]
+_SURFACE_NAMES = {"main": "Main", "rule": "Rules", "skill": "Skills", "agent": "Agents", "memory": "Memory"}
+_SURFACE_ORDER = ["main", "rule", "skill", "agent", "memory"]
 
 
 @dataclass
@@ -149,11 +149,12 @@ def compute_surface_scores(result: Any) -> list[SurfaceHealth]:
 
 
 def _surface_cell(s: SurfaceHealth, bar_width: int = 10) -> str:
-    """Format one surface as a Rich-markup cell: 'Name:   ▓▓▓▓▓▓░░░░  7.2'."""
+    """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓░░░░  7.2'."""
+    label = f"{s.name} ({s.file_count}):"
     filled = round(bar_width * s.score / 10)
     bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
-    return f"{s.name + ':':8s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+    return f"{label:16s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
@@ -237,11 +238,12 @@ class ScopeInfo:
     n_atoms: int = 0
 
 
-def _render_scope(scope: ScopeInfo) -> None:
+def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
     """Render the Scope section of the scorecard."""
     console.print()
     console.print("  Scope:")
-    if scope.type_str:
+    # capabilities line is replaced by surface health bars when available
+    if scope.type_str and not has_surface_health:
         console.print(f"    capabilities: {scope.type_str}")
     instr_parts = []
     if scope.n_dir or scope.n_prose:
@@ -341,7 +343,7 @@ def print_scorecard(
     console.print(f"  Agent: {agent_name}")
 
     if scope is not None:
-        _render_scope(scope)
+        _render_scope(scope, has_surface_health=bool(surface_health))
 
     if surface_health:
         _render_surface_health(surface_health)
