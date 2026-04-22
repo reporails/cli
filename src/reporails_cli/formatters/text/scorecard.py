@@ -14,6 +14,7 @@ from rich.console import Console
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     RULE_CATEGORY_MAP,
+    classify_file,
     finding_category,
     get_term_width,
 )
@@ -66,6 +67,105 @@ def print_score_line(score: float, tw: int) -> None:
     bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
     console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  [dim]{bar}[/dim]")
+
+
+# ── Surface health ────────────────────────────────────────────────────
+
+_SURFACE_NAMES = {"main": "Main", "rule": "Rules", "skill": "Skills", "agent": "Agents"}
+_SURFACE_ORDER = ["main", "rule", "skill", "agent"]
+
+
+@dataclass
+class SurfaceHealth:
+    """Per-surface health score for the scorecard."""
+
+    name: str
+    score: float
+    file_count: int
+    finding_count: int
+
+
+def compute_surface_scores(result: Any) -> list[SurfaceHealth]:
+    """Compute per-surface health scores from combined result."""
+    # Group findings by surface
+    surface_findings: dict[str, list[Any]] = {}
+    for f in result.findings:
+        tag = classify_file(f.file).split(":")[0]
+        surface_findings.setdefault(tag, []).append(f)
+
+    # Group per-file analysis by surface (for compliance band + atom counts)
+    surface_analysis: dict[str, list[Any]] = {}
+    for fa in result.per_file_analysis:
+        tag = classify_file(fa.file).split(":")[0]
+        surface_analysis.setdefault(tag, []).append(fa)
+
+    # Collect all surfaces that have findings or analysis
+    all_keys = set(surface_findings) | set(surface_analysis)
+
+    surfaces = []
+    for key in _SURFACE_ORDER:
+        if key not in all_keys:
+            continue
+        display_name = _SURFACE_NAMES.get(key, key.title())
+        findings = surface_findings.get(key, [])
+        analyses = surface_analysis.get(key, [])
+
+        n_errors = sum(1 for f in findings if f.severity == "error")
+        n_warnings = sum(1 for f in findings if f.severity == "warning")
+        n_infos = sum(1 for f in findings if f.severity == "info")
+        n_atoms = sum(fa.stats.get("atoms", 0) for fa in analyses)
+        n_files = max(len(analyses), len({f.file for f in findings}))
+
+        # Derive compliance band (majority vote across files in surface)
+        bands = [fa.compliance_band for fa in analyses if fa.compliance_band]
+        has_band = bool(bands)
+        if has_band:
+            # Majority band: most files determine the surface band
+            band_counts: Counter[str] = Counter(bands)
+            majority_band = band_counts.most_common(1)[0][0]
+        else:
+            majority_band = ""
+
+        # Score: same formula as compute_score
+        if n_errors + n_warnings + n_infos == 0:
+            score = 10.0
+        else:
+            base = 6.0
+            if has_band:
+                base = 8.5 if majority_band == "HIGH" else 5.5 if majority_band == "MODERATE" else 3.0
+            denom = max(n_atoms, n_errors + n_warnings + n_infos, 1)
+            penalty = min(4.0, (n_errors / denom) * 30) + min(2.0, (n_warnings / denom) * 2)
+            score = round(max(0.0, min(10.0, base - penalty)), 1)
+
+        surfaces.append(
+            SurfaceHealth(
+                name=display_name,
+                score=score,
+                file_count=n_files,
+                finding_count=len(findings),
+            )
+        )
+    return surfaces
+
+
+def _surface_cell(s: SurfaceHealth, bar_width: int = 10) -> str:
+    """Format one surface as a Rich-markup cell: 'Name:   ▓▓▓▓▓▓░░░░  7.2'."""
+    filled = round(bar_width * s.score / 10)
+    bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
+    color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
+    return f"{s.name + ':':8s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+
+
+def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
+    """Render compact 2-column per-surface health bars."""
+    if not surfaces:
+        return
+    console.print()
+    for i in range(0, len(surfaces), 2):
+        left = _surface_cell(surfaces[i])
+        right = _surface_cell(surfaces[i + 1]) if i + 1 < len(surfaces) else ""
+        sep = "    " if right else ""
+        console.print(f"  {left}{sep}{right}")
 
 
 # ── Category bars ─────────────────────────────────────────────────────
@@ -228,6 +328,7 @@ def print_scorecard(
     elapsed_ms: float = 0,
     agent: str = "",
     scope: ScopeInfo | None = None,
+    surface_health: list[SurfaceHealth] | None = None,
 ) -> None:
     """Print the bottom scorecard — the payoff users scroll to."""
     hint_errors, hint_warnings = _hint_totals(result)
@@ -241,6 +342,9 @@ def print_scorecard(
 
     if scope is not None:
         _render_scope(scope)
+
+    if surface_health:
+        _render_surface_health(surface_health)
 
     visible_findings, pro_total = _render_results_summary(result, has_quality, hint_errors, hint_warnings)
 

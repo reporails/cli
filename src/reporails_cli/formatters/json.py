@@ -272,4 +272,13 @@ def format_combined_result(result: Any) -> dict[str, Any]:
         ]
     if result.quality is not None and result.quality.compliance_band:
         data["compliance_band"] = result.quality.compliance_band
+
+    from reporails_cli.formatters.text.scorecard import compute_surface_scores
+
+    surfaces = compute_surface_scores(result)
+    if surfaces:
+        data["surface_health"] = [
+            {"name": s.name, "score": s.score, "file_count": s.file_count, "finding_count": s.finding_count}
+            for s in surfaces
+        ]
     return data
