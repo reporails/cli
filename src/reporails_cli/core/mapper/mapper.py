@@ -373,6 +373,8 @@ _VERBS_SUPPLEMENT: set[str] = {
     "advise",
     "analyze",
     "annotate",
+    "answer",
+    "append",
     "assess",
     "assign",
     "assist",
@@ -385,12 +387,15 @@ _VERBS_SUPPLEMENT: set[str] = {
     "clarify",
     "classify",
     "collaborate",
+    "collect",
     "compare",
+    "compose",
     "confirm",
     "consolidate",
     "coordinate",
     "continue",
     "convert",
+    "cross",
     "customize",
     "debounce",
     "deduplicate",
@@ -426,6 +431,7 @@ _VERBS_SUPPLEMENT: set[str] = {
     "integrate",
     "investigate",
     "iterate",
+    "leave",
     "leverage",
     "limit",
     "link",
@@ -484,6 +490,7 @@ _VERBS_SUPPLEMENT: set[str] = {
     "scan",
     "scope",
     "serialize",
+    "stage",
     "seed",
     "select",
     "send",
@@ -939,11 +946,20 @@ def _classify_nn_tag(
     if root.i == 0 and root.text.lower() in _ALL_VERBS and root.text.lower() not in _VERBS_AMBIGUOUS:
         sc = _detect_scope_conditional(doc, has_cond_prefix)
         return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0", sc)
+    # Ambiguous verb at position 0 with no subject: likely imperative.
+    # "Test behavior" (imperative) vs "Test results showed" (noun + subj).
+    if root.i == 0 and not has_subj and root.text.lower() in _VERBS_AMBIGUOUS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0!amb", sc)
     # Position-0 verb rescue: non-ambiguous verb demoted by spaCy
     t0_lower = doc[0].text.lower() if len(doc) > 0 else ""
     if root.i > 0 and not has_subj and t0_lower in _ALL_VERBS and t0_lower not in _VERBS_AMBIGUOUS:
         sc = _detect_scope_conditional(doc, has_cond_prefix)
         return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue", sc)
+    # Position-0 ambiguous verb rescue: demoted by spaCy, no subject
+    if root.i > 0 and not has_subj and t0_lower in _VERBS_AMBIGUOUS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue!amb", sc)
     # Post-colon verb rescue (conditional markers before colon)
     pcv = _check_postcolon_verb(doc)
     if pcv is not None:
@@ -1103,6 +1119,23 @@ def _classify_phase3_spacy(
     else:
         has_subj = any(child.dep_ in ("nsubj", "nsubjpass") for child in root.children)
         tag = root.tag_
+
+        # Position-0 nsubj rescue: spaCy demoted a known verb to noun-subject.
+        # "Extract display logic" → spaCy: Extract(nsubj) display(ROOT/VBP)
+        # "Group related local variables" → Group(nsubj) related(ROOT/VBD)
+        # In instruction files, position-0 non-ambiguous verbs tagged as
+        # nsubj are always misparsed imperatives. The ambiguous-verb guard
+        # prevents false positives; the nsubj dep guard limits to cases
+        # where spaCy explicitly assigned subject role to position 0.
+        if has_subj and root.i > 0 and not shallow:
+            t0 = doc[0]
+            if (
+                t0.dep_ in ("nsubj", "nsubjpass")
+                and t0.text.lower() in _ALL_VERBS
+                and t0.text.lower() not in _VERBS_AMBIGUOUS
+            ):
+                sc = _detect_scope_conditional(doc, has_cond_prefix)
+                return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue", sc)
 
         # POS classification by tag group
         if tag in {"NN", "NNS", "NNP", "NNPS"}:
