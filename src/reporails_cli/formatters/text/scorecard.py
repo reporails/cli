@@ -83,10 +83,30 @@ class SurfaceHealth:
     score: float
     file_count: int
     finding_count: int
+    errors: int = 0
+    warnings: int = 0
+    infos: int = 0
 
 
-def compute_surface_scores(result: Any) -> list[SurfaceHealth]:
-    """Compute per-surface health scores from combined result."""
+def compute_surface_scores(
+    result: Any,
+    ruleset_map: Any = None,
+) -> list[SurfaceHealth]:
+    """Compute per-surface health scores from combined result.
+
+    When ruleset_map is provided, file counts come from the mapper's
+    discovery (all scanned files), not just files with findings.
+    """
+    # Count files per surface from ruleset_map (authoritative file list)
+    surface_file_counts: dict[str, int] = {}
+    if ruleset_map is not None:
+        try:
+            for fr in ruleset_map.files:
+                tag = classify_file(fr.path).split(":")[0]
+                surface_file_counts[tag] = surface_file_counts.get(tag, 0) + 1
+        except (AttributeError, TypeError):
+            pass
+
     # Group findings by surface
     surface_findings: dict[str, list[Any]] = {}
     for f in result.findings:
@@ -99,8 +119,8 @@ def compute_surface_scores(result: Any) -> list[SurfaceHealth]:
         tag = classify_file(fa.file).split(":")[0]
         surface_analysis.setdefault(tag, []).append(fa)
 
-    # Collect all surfaces that have findings or analysis
-    all_keys = set(surface_findings) | set(surface_analysis)
+    # Collect all surfaces from any source
+    all_keys = set(surface_findings) | set(surface_analysis) | set(surface_file_counts)
 
     surfaces = []
     for key in _SURFACE_ORDER:
@@ -114,7 +134,8 @@ def compute_surface_scores(result: Any) -> list[SurfaceHealth]:
         n_warnings = sum(1 for f in findings if f.severity == "warning")
         n_infos = sum(1 for f in findings if f.severity == "info")
         n_atoms = sum(fa.stats.get("atoms", 0) for fa in analyses)
-        n_files = max(len(analyses), len({f.file for f in findings}))
+        # File count: prefer mapper discovery, fall back to findings/analysis
+        n_files = surface_file_counts.get(key, max(len(analyses), len({f.file for f in findings})))
 
         # Derive compliance band (majority vote across files in surface)
         bands = [fa.compliance_band for fa in analyses if fa.compliance_band]
@@ -143,6 +164,9 @@ def compute_surface_scores(result: Any) -> list[SurfaceHealth]:
                 score=score,
                 file_count=n_files,
                 finding_count=len(findings),
+                errors=n_errors,
+                warnings=n_warnings,
+                infos=n_infos,
             )
         )
     return surfaces
@@ -283,11 +307,11 @@ def _render_cross_file_counts(result: Any) -> None:
 
 def _render_results_summary(
     result: Any,
-    has_quality: bool,
+    has_quality: bool,  # noqa: ARG001 — kept for API stability
     hint_errors: int,
     hint_warnings: int,
 ) -> tuple[int, int]:
-    """Render findings, pro diagnostics, cross-file, and compliance. Returns (visible_findings, pro_total)."""
+    """Render findings, pro diagnostics, and cross-file counts. Returns (visible_findings, pro_total)."""
     s = result.stats
     visible_findings = s.total_findings
     parts = []
@@ -310,11 +334,6 @@ def _render_results_summary(
         console.print(f"  [dim]+ {pro_total} Pro diagnostics{pro_detail}[/dim]")
 
     _render_cross_file_counts(result)
-
-    if has_quality:
-        band = result.quality.compliance_band
-        band_color = "green" if band == "HIGH" else "yellow" if band == "MODERATE" else "red"
-        console.print(f"  Compliance: [{band_color}]{band}[/{band_color}]")
 
     return visible_findings, pro_total
 

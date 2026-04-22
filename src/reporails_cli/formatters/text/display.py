@@ -403,7 +403,7 @@ def print_text_result(
 
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
-    surface_health = compute_surface_scores(result)
+    surface_health = compute_surface_scores(result, ruleset_map=ruleset_map)
 
     print_scorecard(
         result,

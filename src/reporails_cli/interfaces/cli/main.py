@@ -203,7 +203,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     # 7. Format and display
     if output_format == "json":
-        data = json_formatter.format_combined_result(result)
+        data = json_formatter.format_combined_result(result, ruleset_map=ruleset_map)
         data["elapsed_ms"] = round(elapsed_ms, 1)
         print(json.dumps(data, indent=2))
     elif output_format == "github":
