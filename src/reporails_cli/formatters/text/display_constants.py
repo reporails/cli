@@ -48,7 +48,7 @@ AGGREGATE_LABELS: dict[str, str] = {
     "CORE:C:0043": "weak",
     "CORE:E:0003": "bold issues",
     "CORE:C:0041": "diluted",
-    "CORE:C:0044": "competing",
+    "CORE:C:0044": "overloaded",
     "CORE:C:0046": "conflicting",
     "CORE:C:0047": "buried",
     "CORE:D:0002": "unbalanced",
@@ -90,14 +90,14 @@ SEV_WEIGHT = {"error": 0, "warning": 1, "info": 2}
 HRULE = "\u2500" * 56
 
 HINT_TYPE_LABELS = {
-    "CORE:C:0044": "topic competition",
+    "CORE:C:0044": "topic overload",
     "CORE:C:0047": "buried instructions",
     "CORE:C:0046": "conflicts",
     "CORE:C:0041": "content dilution",
     "CORE:C:0051": "vague overall",
     "CORE:D:0002": "unbalanced topics",
     "CORE:C:0050": "low named coverage",
-    "CORE:C:0053": "low reinforcement",
+    "CORE:C:0053": "isolated instructions",
     "CORE:C:0040": "repetition",
 }
 

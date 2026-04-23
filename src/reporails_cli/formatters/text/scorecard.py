@@ -317,7 +317,7 @@ def _render_results_summary(
     parts = []
     if s.errors:
         parts.append(f"[red]{s.errors} errors[/red]")
-    parts.append(f"{s.warnings} warnings")
+    parts.append(f"[yellow]{s.warnings} warnings[/yellow]")
     parts.append(f"{s.infos} info")
 
     console.print()
