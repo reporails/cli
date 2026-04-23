@@ -1,0 +1,7 @@
+checks:
+- id: CURSOR.S.0001.has_globs
+  type: mechanical
+  check: frontmatter_key
+  args:
+    key: globs
+  message: "Path-scoped rule must declare a 'globs' key in frontmatter"

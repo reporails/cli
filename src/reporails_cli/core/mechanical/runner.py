@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
-from reporails_cli.core.models import Check, ClassifiedFile, Rule, Violation
+from reporails_cli.core.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,15 @@ def dispatch_single_check(
 
     passed = result.passed if check.expect == "present" else not result.passed
     if not passed:
+        # Check-level severity/message override rule-level defaults
+        sev = Severity(check.severity) if check.severity else rule.severity
+        msg = check.message or result.message
         violation = Violation(
             rule_id=rule.id,
             rule_title=rule.title,
             location=result.location or location,
-            message=result.message,
-            severity=rule.severity,
+            message=msg,
+            severity=sev,
             check_id=check.id,
         )
         return violation, result
@@ -88,24 +91,24 @@ def run_mechanical_checks(
     Returns:
         List of Violation objects for failed checks
     """
+    from reporails_cli.core.classification import match_files
+
     violations: list[Violation] = []
 
-    # Index classified files by type for surface-existence checks
-    types_present = {cf.file_type for cf in classified_files}
-
     for rule in rules.values():
-        # Skip rules whose target surface doesn't exist in this project.
-        # A rule with match: {type: config} shouldn't fire when no config files exist.
-        if rule.match and rule.match.type:
-            match_types = [rule.match.type] if isinstance(rule.match.type, str) else rule.match.type
-            if not any(mt in types_present for mt in match_types):
+        # Filter classified files by rule match criteria (type, scope, format, etc.)
+        if rule.match:
+            matched = match_files(classified_files, rule.match)
+            if not matched:
                 continue
+        else:
+            matched = classified_files
 
-        location = resolve_location(rule, classified_files, target)
+        location = resolve_location(rule, matched, target)
         for check in rule.checks:
             if check.type != "mechanical":
                 continue
-            violation, _result = dispatch_single_check(check, rule, target, classified_files, location)
+            violation, _result = dispatch_single_check(check, rule, target, matched, location)
             if violation:
                 violations.append(violation)
 

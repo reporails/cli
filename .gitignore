@@ -1,40 +1,16 @@
+# Basic ignores
 .idea
 .venv
 __pycache__
-.ails/maps
-
-# Framework docs (symlinked from framework repo)
-checks/*/*.md
-docs/capability-levels.md
-
-# Docs - WIP / internal (specs and infra are tracked)
-docs/tmp/
-docs/
-docs/plans/
-docs/cms/
-docs/cli-migration-guide.md
-research/
-
-# Project caches (backbone.yml is committed, caches are not)
-.ails/.cache/
-# Prevent stray .ails caches in any subdirectory (fixtures, nested projects)
-**/.ails/.cache/
-
 .env
 
-# Claude Code (machine-specific)
-.claude/plans/
-.claude/mcp.json
-.claude/settings.local.json
-packages/npm/.claude/settings.local.json
-.mcp.json
+# Docs - WIP / internal (specs and infra are tracked)
+docs/
 
-# Development internals
+# Claude specific - Dev internals (root only; test fixtures in framework/ are tracked)
+/.claude/
+.mcp.json
 CLAUDE.md
-.claude/agents/
-.claude/rules/
-.claude/hooks/
-.claude/skills/
 
 # Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
 # (dev-only, not committed; populated on clone and in CI before hatch build)
