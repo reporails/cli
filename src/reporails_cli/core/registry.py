@@ -151,6 +151,10 @@ def load_rules(  # pylint: disable=too-many-locals
         agent_prefix = agent_config.prefix or agent.upper()
         rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
 
+    # 4c. Handle supersession: agent rules that supersede CORE rules
+    # inherit the CORE checks and replace the CORE rule in the set.
+    _apply_supersession(rules)
+
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
     disabled: set[str] = set(config.disabled_rules or [])
@@ -170,7 +174,7 @@ def infer_agent_from_rule_id(rule_id: str) -> str:
     """Infer agent name from a rule ID prefix.
 
     Returns lowercase agent name for agent-specific rules (e.g., "claude"
-    for CLAUDE:S:0001), empty string for CORE/RRAILS rules.
+    for CLAUDE:S:0012), empty string for CORE/RRAILS rules.
     """
     prefix = rule_id.split(":")[0] if ":" in rule_id else ""
     if not prefix or prefix in _AGNOSTIC_PREFIXES:
@@ -189,6 +193,27 @@ def _is_other_agent_rule(rule_id: str, agent_prefix: str) -> bool:
     if namespace in ("CORE", "RRAILS"):
         return False
     return agent_prefix not in namespace
+
+
+def _apply_supersession(rules: dict[str, Rule]) -> None:
+    """Handle rule supersession: agent rules inherit CORE checks and replace CORE rules.
+
+    When CLAUDE:S:0012 supersedes CORE:S:0038, the CORE checks are inherited
+    (unless explicitly replaced), and the CORE rule is removed from the set.
+    Modifies the rules dict in place.
+    """
+    superseded_ids: set[str] = set()
+    for rule_id, rule in list(rules.items()):
+        if not rule.supersedes or rule.supersedes not in rules:
+            continue
+        parent = rules[rule.supersedes]
+        superseded_ids.add(rule.supersedes)
+        # Inherit parent checks that aren't replaced by the agent rule
+        replaced_ids = {c.replaces for c in rule.checks if c.replaces}
+        inherited = [c for c in parent.checks if c.id not in replaced_ids]
+        rules[rule_id] = replace(rule, checks=inherited + list(rule.checks))
+    for sid in superseded_ids:
+        del rules[sid]
 
 
 def _apply_agent_overrides(

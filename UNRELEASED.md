@@ -4,7 +4,7 @@
 - [FORMATTERS]: Per-surface health scores with file counts in `ails check` summary scorecard
 - [CORE]: Check-level `replaces`, `severity`, `message` override fields on `Check` model
 - [CORE]: `Severity.LOW` (weight 1.5) and `Severity.INFO` (weight 1.0) severity levels
-- [CORE]: Rule inheritance via `supersedes` — agent rules inherit CORE checks
+- [CORE]: Rule inheritance via `supersedes` — agent rules inherit and optionally replace CORE checks
 - [CORE]: `frontmatter_extra_keys` mechanical check for detecting unrecognized frontmatter keys
 - [RULES]: CLAUDE:S:0012 path-scope-declared — detects `globs:` misuse and extra frontmatter keys
 - [RULES]: CURSOR:S:0001 path-scope-declared with `supersedes: CORE:S:0038`
