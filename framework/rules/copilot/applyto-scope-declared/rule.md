@@ -14,6 +14,7 @@ backed_by:
 - copilot-custom-instructions
 - copilot-custom-instructions-vscode
 match: {type: scoped_rule}
+supersedes: CORE:S:0038
 ---
 
 # ApplyTo Scope Declared
