@@ -16,8 +16,8 @@
 - [CORE]: Non-ambiguous verbs demoted to `nsubj` by spaCy misparse not rescued
 - [CORE]: Quote-scope-aware sentence splitting — don't split inside quoted or parenthetical spans
 - [CORE]: Backtick filter false positives on position-0 verbs appearing in later backtick spans
-- [CORE]: M-probe pipeline skipped deterministic checks in mixed-type rules
-- [CORE]: Deterministic check file targeting used only `match.type`, ignoring `match.scope`
+- [CORE]: M-probe pipeline skipped deterministic checks in mixed-type (mechanical+deterministic) rules
+- [CORE]: Deterministic check file targeting now uses `match_files()` for full property-based matching
 - [FORMATTERS]: Surface file counts from mapper discovery, not just files with findings
 - [FORMATTERS]: IP-clean display labels for topic overload and isolated instructions
 - [RULES]: CORE:S:0038 made agent-agnostic with plain test fixtures

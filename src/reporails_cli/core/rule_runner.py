@@ -55,19 +55,9 @@ def _collect_mechanical_findings(
     return findings
 
 
-def _group_rules_by_match_type(
-    rules: dict[str, Rule],
-) -> dict[str | None, dict[str, Rule]]:
-    """Group deterministic rules by their match.type for targeted file scanning."""
-    groups: dict[str | None, dict[str, Rule]] = {}
-    for rid, r in rules.items():
-        if r.type != RuleType.DETERMINISTIC:
-            continue
-        match_type = None
-        if r.match and r.match.type:
-            match_type = r.match.type if isinstance(r.match.type, str) else None
-        groups.setdefault(match_type, {})[rid] = r
-    return groups
+def _has_deterministic_checks(rule: Rule) -> bool:
+    """Return True if the rule contains at least one deterministic check."""
+    return any(c.type == "deterministic" for c in rule.checks)
 
 
 def _collect_deterministic_findings(
@@ -76,22 +66,33 @@ def _collect_deterministic_findings(
     instruction_files: list[Path],
     classified: list[Any],
 ) -> list[LocalFinding]:
-    """Run deterministic checks grouped by match type."""
-    from reporails_cli.core.regex import get_checks_paths, run_checks
+    """Run deterministic checks against matched target files.
 
-    files_by_type: dict[str, list[Path]] = {}
-    for cf in classified:
-        files_by_type.setdefault(cf.file_type, []).append(cf.path)
+    Uses property-based matching (match_files) so rules targeting specific
+    scopes, formats, or other properties get the correct file set.
+    Rules of any type are included if they contain deterministic checks.
+    """
+    from reporails_cli.core.classification import match_files
+    from reporails_cli.core.regex import run_checks
 
     findings: list[LocalFinding] = []
-    for match_type, group_rules in _group_rules_by_match_type(rules).items():
-        yml_paths = get_checks_paths(group_rules)
-        if not yml_paths:
+    for rule in rules.values():
+        if rule.type != RuleType.DETERMINISTIC and not _has_deterministic_checks(rule):
             continue
-        target_files = instruction_files if match_type is None else files_by_type.get(match_type, [])
+        if not rule.yml_path or not rule.yml_path.exists():
+            continue
+
+        # Resolve target files: match criteria → classified files, or all instruction files
+        if rule.match:
+            matched = match_files(classified, rule.match)
+            target_files = [cf.path for cf in matched]
+        else:
+            target_files = instruction_files
+
         if not target_files:
             continue
-        findings.extend(run_checks(yml_paths, project_dir, instruction_files=target_files))
+
+        findings.extend(run_checks([rule.yml_path], project_dir, instruction_files=target_files))
     return findings
 
 
