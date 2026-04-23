@@ -1148,12 +1148,12 @@ class TestInstallCommand:
         assert "Restart" in result.output
 
     def test_install_no_agents(self, tmp_path: Path) -> None:
-        """Install on empty project exits 1."""
+        """Install on empty project succeeds with guidance message."""
         project = tmp_path / "empty"
         project.mkdir()
 
         result = runner.invoke(app, ["install", str(project)])
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "No supported agents" in result.output
 
     def test_install_missing_path(self) -> None:

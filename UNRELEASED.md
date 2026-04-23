@@ -20,4 +20,5 @@
 - [CORE]: Mechanical and deterministic checks now use `match_files()` for full property-based targeting
 - [FORMATTERS]: Surface file counts from mapper discovery, not just files with findings
 - [FORMATTERS]: IP-clean display labels — "topic overload" and "isolated instructions"
-- [RULES]: CORE:S:0038 made agent-agnostic with plain test fixtures
+- [RULES]: CORE:S:0038 agent-agnostic with plain test fixtures
+- [TESTS]: Smoke test expects exit 0 for `ails install` on empty project
