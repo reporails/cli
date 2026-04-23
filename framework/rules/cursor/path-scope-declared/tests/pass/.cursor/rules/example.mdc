@@ -1,0 +1,7 @@
+---
+globs: ["src/**/*.ts"]
+---
+
+# Style Guide
+
+TypeScript conventions for the project.
