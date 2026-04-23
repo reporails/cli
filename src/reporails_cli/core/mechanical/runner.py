@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
-from reporails_cli.core.models import Check, ClassifiedFile, Rule, Violation
+from reporails_cli.core.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,15 @@ def dispatch_single_check(
 
     passed = result.passed if check.expect == "present" else not result.passed
     if not passed:
+        # Check-level severity/message override rule-level defaults
+        sev = Severity(check.severity) if check.severity else rule.severity
+        msg = check.message or result.message
         violation = Violation(
             rule_id=rule.id,
             rule_title=rule.title,
             location=result.location or location,
-            message=result.message,
-            severity=rule.severity,
+            message=msg,
+            severity=sev,
             check_id=check.id,
         )
         return violation, result
