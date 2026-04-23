@@ -319,6 +319,7 @@ def _dispatch(
         return {"ok": True}
 
     if cmd == "map_ruleset":
+        warmup_done.wait(timeout=120)
         return _handle_map_ruleset(request, models)
 
     return {"ok": False, "error": f"unknown command: {cmd}"}

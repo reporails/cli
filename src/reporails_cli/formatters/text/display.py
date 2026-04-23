@@ -401,6 +401,10 @@ def print_text_result(
     _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx)
     _render_cross_file_coordinates(result, sev_icons)
 
+    from reporails_cli.formatters.text.scorecard import compute_surface_scores
+
+    surface_health = compute_surface_scores(result, ruleset_map=ruleset_map)
+
     print_scorecard(
         result,
         has_quality,
@@ -409,4 +413,5 @@ def print_text_result(
         elapsed_ms=elapsed_ms,
         agent=_detect_agent_name(ruleset_map),
         scope=scope,
+        surface_health=surface_health,
     )

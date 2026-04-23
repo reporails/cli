@@ -446,3 +446,41 @@ def content_absent(
         except OSError:
             continue
     return CheckResult(passed=True, message="Forbidden pattern not found")
+
+
+def frontmatter_extra_keys(
+    root: Path,
+    args: dict[str, Any],
+    classified_files: list[ClassifiedFile],
+) -> CheckResult:
+    """Check that frontmatter contains only allowed keys.
+
+    Args (via args dict):
+        allowed: list of allowed key names (e.g., ["paths"])
+    """
+    allowed = set(args.get("allowed", []))
+    if not allowed:
+        return CheckResult(passed=False, message="frontmatter_extra_keys: no allowed keys specified")
+    for match in _get_target_files(args, classified_files, root):
+        if not match.is_file():
+            continue
+        try:
+            content = match.read_text(encoding="utf-8")
+            if not content.startswith("---"):
+                continue
+            end = content.find("---", 3)
+            if end < 0:
+                continue
+            fm = yaml.safe_load(content[3:end])
+            if not isinstance(fm, dict):
+                continue
+            extra = sorted(k for k in fm if k not in allowed)
+            if extra:
+                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                keys_str = ", ".join(extra)
+                allowed_str = ", ".join(sorted(allowed))
+                msg = f"Unrecognized frontmatter keys: {keys_str} — only {allowed_str} is processed"
+                return CheckResult(passed=False, message=msg, location=f"{rel}:1")
+        except (OSError, ValueError):
+            continue
+    return CheckResult(passed=True, message="No extra frontmatter keys")

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.4
+
+### Added
+
+- Per-surface health scores with file counts in scorecard
+- Rule inheritance via `supersedes` — agent rules inherit and optionally replace CORE checks
+- Check-level `replaces`, `severity`, `message` override fields; `Severity.LOW` and `Severity.INFO` levels
+- `frontmatter_extra_keys` mechanical check — warns when frontmatter has keys the agent ignores
+- CLAUDE:S:0012 path-scope-declared — detects `globs:` misuse, enforces `paths:` as the correct key
+- CURSOR:S:0001 and COPILOT:S:0001 path-scope-declared with `supersedes: CORE:S:0038`
+
+### Fixed
+
+- Charge classifier misses for `append`, `stage`, `compose` and 5 other verbs; ambiguous/nsubj verb rescue at position 0
+- Quote-scope-aware sentence splitting — don't split inside quoted or parenthetical spans
+- Backtick filter false positives on position-0 verbs appearing in later backtick spans
+- M-probe pipeline skipped deterministic checks in mixed-type rules; mechanical and deterministic checks now use `match_files()` for full property-based targeting
+- Show progress output during mapper startup — fixes silent hang on projects with instruction files
+- Add default `exclude_dirs` to prevent walking massive non-instruction trees
+- CORE:S:0038 made agent-agnostic with plain test fixtures
+
 ## 0.5.3
 
 ### Added

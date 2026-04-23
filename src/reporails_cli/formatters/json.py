@@ -203,11 +203,12 @@ def format_heal_result(
     return result
 
 
-def format_combined_result(result: Any) -> dict[str, Any]:
+def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, Any]:
     """Format CombinedResult as JSON dict.
 
     Args:
         result: CombinedResult from merger
+        ruleset_map: Optional RulesetMap for accurate file counts
 
     Returns:
         Dict with findings, stats, compliance
@@ -272,4 +273,13 @@ def format_combined_result(result: Any) -> dict[str, Any]:
         ]
     if result.quality is not None and result.quality.compliance_band:
         data["compliance_band"] = result.quality.compliance_band
+
+    from reporails_cli.formatters.text.scorecard import compute_surface_scores
+
+    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map)
+    if surfaces:
+        data["surface_health"] = [
+            {"name": s.name, "score": s.score, "file_count": s.file_count, "finding_count": s.finding_count}
+            for s in surfaces
+        ]
     return data

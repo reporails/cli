@@ -373,6 +373,8 @@ _VERBS_SUPPLEMENT: set[str] = {
     "advise",
     "analyze",
     "annotate",
+    "answer",
+    "append",
     "assess",
     "assign",
     "assist",
@@ -385,12 +387,15 @@ _VERBS_SUPPLEMENT: set[str] = {
     "clarify",
     "classify",
     "collaborate",
+    "collect",
     "compare",
+    "compose",
     "confirm",
     "consolidate",
     "coordinate",
     "continue",
     "convert",
+    "cross",
     "customize",
     "debounce",
     "deduplicate",
@@ -426,6 +431,7 @@ _VERBS_SUPPLEMENT: set[str] = {
     "integrate",
     "investigate",
     "iterate",
+    "leave",
     "leverage",
     "limit",
     "link",
@@ -484,6 +490,7 @@ _VERBS_SUPPLEMENT: set[str] = {
     "scan",
     "scope",
     "serialize",
+    "stage",
     "seed",
     "select",
     "send",
@@ -804,17 +811,39 @@ def _is_root_in_backtick(
     clean: str,
     md_text: str,
     inline_tokens: list[InlineToken] | None,
+    root_position: int = 0,
 ) -> bool:
-    """Check if the ROOT word falls inside a backtick span."""
+    """Check if the ROOT word falls inside a backtick span.
+
+    When root_position is 0, checks only the first occurrence in inline_tokens
+    to avoid false positives from the same word appearing both as a position-0
+    verb and inside a later backtick span (e.g., "Build the wheel with `uv build`").
+    """
     if inline_tokens is not None:
+        if root_position == 0:
+            # Position-0 ROOT: only check if the first token matches and is backtick
+            for itok in inline_tokens:
+                if itok.text.lower() == root_lower:
+                    return itok.format == "backtick"
+                # First non-whitespace token reached — if it's not the root word,
+                # the root is plain text at position 0, not backticked
+                if itok.text.strip():
+                    return False
+            return False
         for itok in inline_tokens:
             if itok.text.lower() == root_lower:
                 return itok.format == "backtick"
         return False
-    # Regex fallback: position-0 heuristic for direct calls
+    # Regex fallback for direct calls (no inline_tokens).
+    # Position-0 verbs are never code identifiers — only check backtick
+    # when the root is NOT at position 0 in the text.
     root_pos = clean.lower().find(root_lower)
-    if root_pos == -1 or root_pos != 0:
+    if root_pos == -1:
         return False
+    if root_pos == 0:
+        # Position-0: check if the very first word is inside a backtick span
+        first_bt = _BACKTICK_RE.search(md_text)
+        return first_bt is not None and first_bt.start() == 0 and root_lower in first_bt.group().lower()
     return any(root_lower in _CLASSIFY_WORD_RE.findall(m.group().lower()) for m in _BACKTICK_RE.finditer(md_text))
 
 
@@ -863,7 +892,7 @@ _META_LABELS = frozenset(
 )
 
 
-def _check_colon_label(doc: Any, root: Any) -> tuple[str, int, str, str, bool] | None:  # noqa: ARG001
+def _check_colon_label(doc: Any, root: Any) -> tuple[str, int, str, str, bool] | None:
     """Detect 'Noun: ...' label pattern in early tokens.
 
     Scans all tokens in first 5 positions (not limited to pre-root) because
@@ -876,6 +905,9 @@ def _check_colon_label(doc: Any, root: Any) -> tuple[str, int, str, str, bool] |
     - None if no colon-label pattern found
     """
     if len(doc) > 0 and doc[0].text.lower() in _ALL_VERBS:
+        return None
+    # Skip if ROOT is a verb before the colon — the verb is the instruction
+    if root.tag_ in {"VB", "VBP"} and any(t.text == ":" and t.i > root.i for t in doc[:6]):
         return None
     for tok in doc:
         if tok.i > 5:
@@ -939,11 +971,20 @@ def _classify_nn_tag(
     if root.i == 0 and root.text.lower() in _ALL_VERBS and root.text.lower() not in _VERBS_AMBIGUOUS:
         sc = _detect_scope_conditional(doc, has_cond_prefix)
         return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0", sc)
+    # Ambiguous verb at position 0 with no subject: likely imperative.
+    # "Test behavior" (imperative) vs "Test results showed" (noun + subj).
+    if root.i == 0 and not has_subj and root.text.lower() in _VERBS_AMBIGUOUS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0!amb", sc)
     # Position-0 verb rescue: non-ambiguous verb demoted by spaCy
     t0_lower = doc[0].text.lower() if len(doc) > 0 else ""
     if root.i > 0 and not has_subj and t0_lower in _ALL_VERBS and t0_lower not in _VERBS_AMBIGUOUS:
         sc = _detect_scope_conditional(doc, has_cond_prefix)
         return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue", sc)
+    # Position-0 ambiguous verb rescue: demoted by spaCy, no subject
+    if root.i > 0 and not has_subj and t0_lower in _VERBS_AMBIGUOUS:
+        sc = _detect_scope_conditional(doc, has_cond_prefix)
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nn_verb0_rescue!amb", sc)
     # Post-colon verb rescue (conditional markers before colon)
     pcv = _check_postcolon_verb(doc)
     if pcv is not None:
@@ -969,7 +1010,7 @@ def _classify_vb_vbp_tag(
     Returns 5-tuple result or None to fall through to lexicon.
     """
     subj_trace = f"p3_spacy_{tag.lower()}_subj"
-    if has_subj:
+    if has_subj and not has_cond_prefix:
         return ("NEUTRAL", 0, "none", subj_trace, False)
     # In shallow mode, only charge if pre-root words are context words
     if shallow and root.i > 0:
@@ -1059,12 +1100,23 @@ def _spacy_pre_checks(
     has_cond_prefix: bool,
     inline_tokens: list[InlineToken] | None,
 ) -> tuple[str, int, str, str, bool] | None:
-    """Run pre-POS checks: backtick filter, verb0 rescue, colon label."""
-    if _is_root_in_backtick(root.text.lower(), clean, md_text, inline_tokens):
-        return ("NEUTRAL", 0, "none", "p3_spacy_backtick", False)
+    """Run pre-POS checks: verb0 rescue, backtick filter, colon label."""
+    # Verb0 rescue runs BEFORE backtick filter: "Use `createAIClient()`"
+    # has a backticked ROOT (createAIClient) but the verb at position 0
+    # is the instruction. The verb takes precedence over the object.
     rescue = _check_verb0_rescue(doc, root, has_cond_prefix)
     if rescue is not None:
         return rescue
+    # Backtick filter: ROOT inside backticks → NEUTRAL (code reference).
+    # Skip when the sentence has imperative structure — the backticked word
+    # is the object of the instruction, not a code reference.
+    # Imperative signals: known verb at pos 0, conditional prefix, "Please".
+    t0_lower = doc[0].text.lower() if len(doc) > 0 else ""
+    has_imperative_signal = t0_lower in _ALL_VERBS or has_cond_prefix or t0_lower in {"to", "please", "re"}
+    if not has_imperative_signal and _is_root_in_backtick(
+        root.text.lower(), clean, md_text, inline_tokens, root_position=root.i
+    ):
+        return ("NEUTRAL", 0, "none", "p3_spacy_backtick", False)
     return _check_colon_label(doc, root)
 
 
@@ -1103,6 +1155,23 @@ def _classify_phase3_spacy(
     else:
         has_subj = any(child.dep_ in ("nsubj", "nsubjpass") for child in root.children)
         tag = root.tag_
+
+        # Position-0 nsubj rescue: spaCy demoted a known verb to noun-subject.
+        # "Extract display logic" → spaCy: Extract(nsubj) display(ROOT/VBP)
+        # "Group related local variables" → Group(nsubj) related(ROOT/VBD)
+        # In instruction files, position-0 non-ambiguous verbs tagged as
+        # nsubj are always misparsed imperatives. The ambiguous-verb guard
+        # prevents false positives; the nsubj dep guard limits to cases
+        # where spaCy explicitly assigned subject role to position 0.
+        if has_subj and root.i > 0 and not shallow:
+            t0 = doc[0]
+            if (
+                t0.dep_ in ("nsubj", "nsubjpass")
+                and t0.text.lower() in _ALL_VERBS
+                and t0.text.lower() not in _VERBS_AMBIGUOUS
+            ):
+                sc = _detect_scope_conditional(doc, has_cond_prefix)
+                return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue", sc)
 
         # POS classification by tag group
         if tag in {"NN", "NNS", "NNP", "NNPS"}:
@@ -1983,11 +2052,59 @@ _SENTENCE_SPLIT_RE = re.compile(
 )
 
 
+def _build_scope_mask(text: str) -> list[bool]:
+    """Build a per-character mask: True where the character is inside quotes or parens.
+
+    Tracks: "..." (straight quotes toggle), \u201c...\u201d (curly), (...).
+    Backtick spans are not tracked here — they're handled by inline_tokens.
+    """
+    mask = [False] * len(text)
+    in_straight_quote = False
+    in_curly_quote = False
+    paren_depth = 0
+    for i, ch in enumerate(text):
+        if ch == '"':
+            if in_straight_quote:
+                # Closing — mark this char as inside, then exit
+                mask[i] = True
+                in_straight_quote = False
+                continue
+            else:
+                in_straight_quote = True
+        elif ch == "\u201c":
+            in_curly_quote = True
+        elif ch == "\u201d" and in_curly_quote:
+            mask[i] = True
+            in_curly_quote = False
+            continue
+        elif ch == "(" and not in_straight_quote and not in_curly_quote:
+            paren_depth += 1
+        elif ch == ")" and paren_depth > 0:
+            mask[i] = True
+            paren_depth -= 1
+            continue
+        if in_straight_quote or in_curly_quote or paren_depth > 0:
+            mask[i] = True
+    return mask
+
+
 def _split_sentences(text: str) -> list[str] | None:
-    """Split text at sentence boundaries. Returns None if fewer than 2 sentences."""
-    splits = list(_SENTENCE_SPLIT_RE.finditer(text))
+    """Split text at sentence and em-dash boundaries outside quoted scope.
+
+    Boundaries inside "..." or (...) are skipped — those are inline
+    examples, not real instruction boundaries.
+    Returns None if fewer than 2 sentences.
+    """
+    candidates = list(_SENTENCE_SPLIT_RE.finditer(text))
+    if not candidates:
+        return None
+
+    scope_mask = _build_scope_mask(text)
+    # Keep only boundaries that fall outside quotes/parens
+    splits = [m for m in candidates if not scope_mask[m.start()]]
     if not splits:
         return None
+
     boundaries = [0] + [m.end() for m in splits] + [len(text)]
     sentences = [text[boundaries[i] : boundaries[i + 1]].strip() for i in range(len(boundaries) - 1)]
     sentences = [s for s in sentences if len(s) >= 5]
@@ -2231,7 +2348,7 @@ def _scan_charged_for_compound_markers(atoms: list[Atom]) -> None:
     equation can skip false-positive conflict detection between the
     compound instruction and an aligned constraint.
 
-    Unlike the neutral scanner, this does NOT change the atom's charge.
+    Does NOT change the atom's charge.
     """
     for atom in atoms:
         if atom.charge_value == 0 or atom.kind == "heading":

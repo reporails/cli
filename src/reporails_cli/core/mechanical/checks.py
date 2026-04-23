@@ -158,6 +158,8 @@ def frontmatter_key(
     import yaml
 
     key = str(args.get("key", ""))
+    alt_key = str(args.get("alt_key", ""))
+    keys = [key] + ([alt_key] if alt_key else [])
     for match in _get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
@@ -167,11 +169,14 @@ def frontmatter_key(
                 end = content.find("---", 3)
                 if end > 0:
                     fm = yaml.safe_load(content[3:end])
-                    if isinstance(fm, dict) and key in fm:
-                        return CheckResult(passed=True, message=f"Key '{key}' found")
+                    if isinstance(fm, dict):
+                        for k in keys:
+                            if k in fm:
+                                return CheckResult(passed=True, message=f"Key '{k}' found")
         except (OSError, ValueError):
             continue
-    return CheckResult(passed=False, message=f"Frontmatter key '{key}' not found")
+    label = " or ".join(f"'{k}'" for k in keys)
+    return CheckResult(passed=False, message=f"Frontmatter key {label} not found")
 
 
 def file_count(
@@ -251,6 +256,7 @@ from reporails_cli.core.mechanical.checks_advanced import (  # noqa: E402
     extract_imports,
     file_absent,
     filename_matches_pattern,
+    frontmatter_extra_keys,
     frontmatter_present,
     frontmatter_valid_glob,
     frontmatter_valid_yaml,
@@ -284,6 +290,7 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "check_import_targets_exist": check_import_targets_exist,
     "file_absent": file_absent,
     "filename_matches_pattern": filename_matches_pattern,
+    "frontmatter_extra_keys": frontmatter_extra_keys,
     # Aliases for signal catalog naming
     "glob_match": file_exists,
     "max_line_count": line_count,

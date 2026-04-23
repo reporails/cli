@@ -11,13 +11,18 @@ match: {scope: path_scoped}
 
 # Path Scope Declared
 
-Path-scoped rules must declare which paths they apply to. Without a scope declaration, the rule's applicability is ambiguous.
+Path-scoped instruction files must declare which paths they apply to via a frontmatter key. Without a scope declaration, the file loads for all contexts instead of being scoped to specific files.
+
+Each agent uses a different frontmatter key for path scoping:
+- Claude: `paths`
+- Cursor: `globs`
+- Copilot: `applyTo`
 
 ## Antipatterns
 
-- **Scoped rule file without `globs` frontmatter.** A rule in `.claude/rules/` that omits the `globs` key has no declared scope. The agent cannot determine which files the rule applies to, making it effectively invisible to path-based discovery.
-- **Using `paths` instead of `globs`.** The check looks for the `globs` frontmatter key specifically. A rule that declares its scope under a different key name (e.g., `paths`, `applies_to`) will fail this check.
-- **Empty frontmatter block.** A rule file with `---` / `---` but no keys inside still fails -- the `globs` key must be present, not just the frontmatter block.
+- **Scoped file without frontmatter scope key.** Loads for all contexts instead of being scoped, wasting context tokens.
+- **Using the wrong key for the agent.** Each agent checks a specific key — the wrong key is silently ignored.
+- **Empty frontmatter block.** A file with `---` / `---` but no keys still fails — the scope key must be present.
 
 ## Pass / Fail
 
@@ -25,7 +30,7 @@ Path-scoped rules must declare which paths they apply to. Without a scope declar
 
 ~~~~markdown
 ---
-globs: src/**/*.py
+paths: src/**/*.py
 ---
 # Testing Design
 
@@ -45,4 +50,4 @@ Tests exist to catch bugs, not to confirm the implementation works.
 
 ## Limitations
 
-Checks that the `globs` frontmatter key is present. Does not validate whether the glob patterns are correct or match actual file paths.
+Core check verifies frontmatter is present. Agent-level overrides check the specific scope key (e.g., `paths` for Claude, `globs` for Cursor, `applyTo` for Copilot).

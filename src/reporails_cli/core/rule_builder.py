@@ -95,6 +95,9 @@ def _load_checks(frontmatter: dict[str, Any]) -> list[Check]:
             query=item.get("query"),
             expect=item.get("expect", "present"),
             metadata_keys=item.get("metadata_keys", []),
+            replaces=item.get("replaces", ""),
+            severity=item.get("severity", ""),
+            message=item.get("message", ""),
         )
         for item in frontmatter.get("checks", [])
     ]
