@@ -10,6 +10,7 @@ from __future__ import annotations
 import errno
 import logging
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from reporails_cli.core.agents import DetectedAgent, get_all_instruction_files
@@ -227,11 +228,17 @@ def get_applicable_rules(
         elif rule.match.type in present_types:
             applicable[rule_id] = rule
 
-    # Handle supersession: if rule A supersedes rule B, drop B
+    # Handle supersession: if rule A supersedes rule B, merge B's checks
+    # into A (keeping A's replacements) then drop B.
     superseded_ids: set[str] = set()
-    for rule in applicable.values():
+    for rule_id, rule in list(applicable.items()):
         if rule.supersedes and rule.supersedes in applicable:
             superseded_ids.add(rule.supersedes)
+            parent = applicable[rule.supersedes]
+            # Inherit parent checks that aren't replaced by the agent rule
+            replaced_ids = {c.replaces for c in rule.checks if c.replaces}
+            inherited = [c for c in parent.checks if c.id not in replaced_ids]
+            applicable[rule_id] = replace(rule, checks=inherited + list(rule.checks))
 
     if superseded_ids:
         applicable = {k: v for k, v in applicable.items() if k not in superseded_ids}
