@@ -218,8 +218,8 @@ def _check_ordering_and_orphans(charged: list[Atom], filepath: str) -> list[Loca
                         source="client_check",
                     )
                 )
-        # Directives-only is valid — the golden pattern (+1, 0, -1) only
-        # requires a prohibition when there's a behavior to suppress.
+        # Directives-only is valid — a prohibition is only needed when
+        # there's a specific behavior to suppress.
         # "Use ruff" stands alone. Only flag constraints-only (missing directive).
         elif constraints:
             rep = min(constraints, key=lambda a: a.position_index)
