@@ -50,7 +50,8 @@ class Severity(str, Enum):
     CRITICAL = "critical"  # Weight: 5.5
     HIGH = "high"  # Weight: 4.0
     MEDIUM = "medium"  # Weight: 2.5
-    LOW = "low"  # Weight: 1.0
+    LOW = "low"  # Weight: 1.5
+    INFO = "info"  # Weight: 1.0
 
 
 class Tier(str, Enum):
@@ -138,6 +139,9 @@ class Check:
     query: str | None = None  # Content query function name (type=content_query)
     expect: str = "present"  # "present" = no match is violation; "absent" = match is violation
     metadata_keys: list[str] = field(default_factory=list)  # D→M metadata bus keys
+    replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
+    severity: str = ""  # Check-level severity override (empty = use rule severity)
+    message: str = ""  # Check-level message (empty = use check result message)
 
 
 @dataclass(frozen=True)
