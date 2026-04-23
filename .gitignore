@@ -7,8 +7,8 @@ __pycache__
 # Docs - WIP / internal (specs and infra are tracked)
 docs/
 
-# Claude specific - Dev internals
-.claude/
+# Claude specific - Dev internals (root only; test fixtures in framework/ are tracked)
+/.claude/
 .mcp.json
 CLAUDE.md
 
