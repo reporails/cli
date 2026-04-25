@@ -12,6 +12,14 @@ checks:
   expect: absent
   severity: medium
   message: "Claude Code reads 'paths:' not 'globs:' — rules with 'globs:' frontmatter have no path scoping"
+- id: CLAUDE.S.0012.paths_resolve
+  type: mechanical
+  check: frontmatter_valid_glob
+  args:
+    path: ".claude/rules"
+    require_matches: true
+  message: "Path glob in frontmatter does not match any files in the project"
+  severity: info
 - id: CLAUDE.S.0012.extra_frontmatter_keys
   type: mechanical
   check: frontmatter_extra_keys

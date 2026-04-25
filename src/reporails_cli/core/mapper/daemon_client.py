@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,8 @@ def _socket_path() -> Path:
 
 def connect(timeout: float = 5.0) -> socket.socket | None:
     """Connect to global daemon socket. Returns None if unreachable."""
+    if sys.platform == "win32":
+        return None
     sock_path = _socket_path()
     if not sock_path.exists():
         return None

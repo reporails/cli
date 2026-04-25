@@ -171,7 +171,7 @@ def _filter_dismissed_violations(  # pylint: disable=too-many-locals
     for v in violations:
         raw_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
         try:
-            rel_path = str(Path(raw_path).relative_to(scan_root))
+            rel_path = Path(raw_path).relative_to(scan_root).as_posix()
         except ValueError:
             rel_path = raw_path
 
@@ -222,7 +222,7 @@ def _filter_cached_judgments(  # pylint: disable=too-many-locals
     for jr in judgment_requests:
         raw_path = jr.location.rsplit(":", 1)[0] if ":" in jr.location else jr.location
         try:
-            rel_path = str(Path(raw_path).relative_to(scan_root))
+            rel_path = Path(raw_path).relative_to(scan_root).as_posix()
         except ValueError:
             rel_path = raw_path
         try:

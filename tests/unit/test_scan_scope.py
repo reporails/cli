@@ -111,7 +111,7 @@ class TestDetectAgentsScope:
         for a in agents:
             all_files.extend(a.instruction_files)
 
-        paths = {str(f) for f in all_files}
+        paths = {f.as_posix() for f in all_files}
         assert any(p.endswith("/CLAUDE.md") and "child" not in p for p in paths), "Should find root CLAUDE.md"
         assert any("child/CLAUDE.md" in p for p in paths), "Should find child CLAUDE.md via ** pattern"
 

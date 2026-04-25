@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0003
 slug: shallow-heading-hierarchy
-title: "Shallow Heading Hierarchy"
+title: Shallow Heading Hierarchy
 category: structure
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study]
 match: {format: freeform}
 ---
 

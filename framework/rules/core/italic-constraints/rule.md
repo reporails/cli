@@ -5,7 +5,6 @@ title: "Italic Constraints"
 category: efficiency
 type: mechanical
 severity: medium
-backed_by: []
 match: {}
 ---
 

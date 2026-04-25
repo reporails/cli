@@ -1,11 +1,14 @@
 ---
 id: CORE:S:0004
 slug: exact-filename-convention
-title: "Exact Filename Convention"
+title: Exact Filename Convention
 category: structure
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, builder-ai-instruction-best-practices,
+  claude-md-guide, claude-md-optimization-study, enterprise-claude-usage, evaluating-agents-md,
+  fowler-context-engineering-agents, instruction-limits-principles, microsoft-awesome-copilot-blog,
+  osmani-ai-coding-workflow, sewell-agents-md-tips, sewell-codex-vs-claude, spec-writing-for-agents]
 match: {format: [freeform, frontmatter, schema_validated]}
 ---
 
@@ -40,4 +43,4 @@ rules@latest.md
 
 ## Limitations
 
-Checks that the expected file exists. Does not evaluate file contents.
+Validates the filename against `^[A-Za-z0-9._-]+$`. Does not check parent directory names — a file at `BAD NAME/valid-file.md` would pass.

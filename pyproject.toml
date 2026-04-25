@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.5.4"
+version = "0.5.5"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -25,6 +25,9 @@ dependencies = [
     "mcp>=1.0.0",
     "packaging>=23.0",
     "markdown-it-py>=3.0.0",
+    # Cross-platform regex timeout (built into the matcher; works on Windows
+    # where SIGALRM is unavailable). Drop-in replacement for stdlib `re`.
+    "regex>=2024.11.6",
     # Embedding stack — ONNX Runtime + HF tokenizers on bundled MiniLM-L6-v2.
     # No torch, no sentence-transformers. See core/_torch_blocker.py and
     # core/mapper/onnx_embedder.py for the reason and the wiring.

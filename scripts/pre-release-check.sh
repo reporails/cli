@@ -23,9 +23,12 @@ step "Ruff lint"
 uv run ruff check src/ tests/ || fail "ruff check failed"
 ok "Lint clean"
 
-step "Mypy"
-uv run mypy src/ || fail "mypy failed"
-ok "Types clean"
+step "Mypy (host + win32)"
+# Separate cache dirs so each platform stays warm across runs.
+# Cold: ~50s combined. Warm: ~3s combined.
+uv run mypy src/ || fail "mypy failed (host)"
+uv run mypy --platform=win32 --cache-dir=.mypy_cache_win32 src/ || fail "mypy failed (win32) — Windows type-stub gap will break Windows CI"
+ok "Types clean (host + win32)"
 
 # 2. Unit tests
 step "Unit tests"

@@ -238,6 +238,6 @@ def partition_violations(violations: list[Violation]) -> tuple[list[Violation], 
 def _rel_path(fpath: Path, scan_root: Path) -> str:
     """Return relative path string, falling back to name if outside scan_root."""
     try:
-        return str(fpath.relative_to(scan_root))
+        return fpath.relative_to(scan_root).as_posix()
     except ValueError:
         return fpath.name

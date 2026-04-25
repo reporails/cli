@@ -1,0 +1,7 @@
+checks:
+- id: CORE.S.0026.extract-imports
+  type: mechanical
+  check: extract_imports
+- id: CORE.S.0026.import-targets-exist
+  type: mechanical
+  check: check_import_targets_exist

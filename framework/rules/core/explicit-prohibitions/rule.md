@@ -1,11 +1,15 @@
 ---
 id: CORE:C:0019
 slug: explicit-prohibitions
-title: "Explicit Prohibitions"
+title: Explicit Prohibitions
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agents-md-impact-efficiency, builder-ai-instruction-best-practices,
+  claude-code-issue-13579, claude-md-guide, claudemd-best-practices-backbone-yml-pattern,
+  developer-context-cursor-study, enterprise-claude-usage, fowler-pushing-ai-autonomy,
+  openai-community-agents-md-optimization, osmani-ai-coding-workflow, prompthub-cursor-rules-analysis,
+  sewell-agents-md-tips, spec-writing-for-agents]
 match: {format: freeform}
 ---
 # Explicit Prohibitions
@@ -38,4 +42,4 @@ Follow the project conventions.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for at least one constraint atom (NEVER, MUST NOT, DO NOT). Does not evaluate whether the prohibitions cover the project's actual risk areas.

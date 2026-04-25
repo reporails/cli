@@ -3,14 +3,24 @@
 .venv
 __pycache__
 .env
+.mypy_cache
+.mypy_cache_win32
+.pytest_cache
+.ruff_cache
 
-# Docs - WIP / internal (specs and infra are tracked)
-docs/
+# Internal specs
+specs/
 
-# Claude specific - Dev internals (root only; test fixtures in framework/ are tracked)
+# Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/
-.mcp.json
-CLAUDE.md
+/.mcp.json
+/CLAUDE.md
+
+# Pre-existing local rule-harness scaffolds with the wrong filename for CORE
+# rules (should be AGENTS.md — agent-agnostic). 0.5.6 will rename these and
+# track them properly. Until then they live local-only.
+framework/rules/**/tests/**/CLAUDE.md
+framework/rules/**/tests/**/.claude/
 
 # Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
 # (dev-only, not committed; populated on clone and in CI before hatch build)

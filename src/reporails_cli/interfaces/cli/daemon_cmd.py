@@ -24,7 +24,12 @@ def start(
         return
 
     console.print("Starting mapper daemon...")
-    pid = start_daemon()
+    try:
+        pid = start_daemon()
+    except OSError as exc:
+        console.print(f"[red]{exc}[/red]")
+        console.print("[dim]Use 'ails check' directly — it falls back to in-process mapping.[/dim]")
+        raise typer.Exit(1) from None
     if is_daemon_running():
         console.print(f"[green]Daemon started[/green] (PID {pid})")
     else:

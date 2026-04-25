@@ -7,15 +7,6 @@ directive: >-
 
 depends_on: {}
 
-agents:
-  claude:
-    main_instruction_file: CLAUDE.md
-    config: .claude/settings.json
-    mcp: .claude/mcp.json
-    skills: .claude/skills/
-    rules: .claude/rules/
-    sub_agents: .claude/agents/
-
 modules:
   core: src/reporails_cli/core/
   interfaces: src/reporails_cli/interfaces/
@@ -31,7 +22,7 @@ bundled:
 
 artifacts:
   changelog: UNRELEASED.md
-  specs: docs/specs/
+  specs: specs/cli/
 
 context:
   role: developer

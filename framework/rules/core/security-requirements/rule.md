@@ -1,12 +1,14 @@
 ---
 id: CORE:C:0011
 slug: security-requirements
-title: "Security Requirements"
+title: Security Requirements
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
-match: {format: freeform}
+backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, developer-context-cursor-study,
+  evaluating-agents-md, fowler-pushing-ai-autonomy, openai-community-agents-md-optimization,
+  prompthub-cursor-rules-analysis]
+match: {type: main}
 ---
 # Security Requirements
 
@@ -44,4 +46,4 @@ Be careful with environment files.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Security", "Boundaries", "Sensitive", or "Access". Does not verify the section defines actionable security constraints.

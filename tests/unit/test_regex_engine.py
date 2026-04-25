@@ -747,6 +747,16 @@ class TestPerformance:
         assert len(_sarif_results(sarif)) == 100
         assert elapsed < 5.0, f"100 files took {elapsed:.1f}s"
 
+    def test_validation_completes_on_simple_pattern(self, tmp_path: Path) -> None:
+        """run_validation produces correct results — sanity check the regex library wiring."""
+        rule_yml = _write_rule(
+            tmp_path,
+            {"checks": [{"id": "SIMPLE", "pattern-regex": "hello", "message": "found it"}]},
+        )
+        _write_target(tmp_path, "hello world\n")
+        sarif = run_validation([rule_yml], tmp_path)
+        assert len(_sarif_results(sarif)) == 1
+
 
 # ===========================================================================
 # 7. INTEGRATION: FULL PIPELINE EDGE CASES

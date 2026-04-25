@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0031.file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0031.line-count
+  type: mechanical
+  check: line_count
+  args:
+    max: 500

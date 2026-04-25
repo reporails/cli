@@ -1,11 +1,11 @@
 ---
 id: CORE:G:0004
 slug: forbidden-commands-defined
-title: "Forbidden Commands Defined"
+title: Forbidden Commands Defined
 category: governance
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [claude-code-issue-13579, spec-writing-for-agents]
 match: {type: main}
 ---
 # Forbidden Commands Defined
@@ -38,4 +38,4 @@ Use `git reset` to undo changes.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for at least one constraint atom defining forbidden operations. Does not verify the forbidden list covers the project's actual dangerous commands.

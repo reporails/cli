@@ -1,11 +1,16 @@
 ---
 id: CORE:C:0034
 slug: tech-stack-declared
-title: "Tech Stack Declared"
+title: Tech Stack Declared
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
+  awesome-copilot-meta-instructions, claude-md-optimization-study, developer-context-cursor-study,
+  dometrain-claude-md-guide, fowler-context-engineering-agents, fowler-pushing-ai-autonomy,
+  instruction-limits-principles, microsoft-awesome-copilot-blog, openai-community-agents-md-optimization,
+  osmani-ai-coding-workflow, prompthub-cursor-rules-analysis, sewell-agents-md-tips,
+  spec-writing-for-agents]
 match: {type: main}
 ---
 # Tech Stack Declared
@@ -44,4 +49,4 @@ We use Python and some testing tools.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Stack", "Tech", "Language", "Runtime", or "Framework". Does not verify the section lists the actual technologies used.

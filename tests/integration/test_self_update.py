@@ -34,14 +34,17 @@ def wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _create_venv(base: Path, name: str = "venv") -> Path:
-    """Create a fresh venv and return its python path."""
+    """Create a fresh venv and return its python path (cross-platform)."""
     venv_dir = base / name
     subprocess.run(
         [sys.executable, "-m", "venv", str(venv_dir)],
         check=True,
         capture_output=True,
     )
-    python = venv_dir / "bin" / "python"
+    if sys.platform == "win32":
+        python = venv_dir / "Scripts" / "python.exe"
+    else:
+        python = venv_dir / "bin" / "python"
     assert python.exists(), f"venv python not found at {python}"
     return python
 
@@ -154,7 +157,10 @@ class TestSelfUpdateIntegration:
             capture_output=True,
         )
 
-        venv_bin = tmp_path / "venv" / "bin" / "ails"
+        if sys.platform == "win32":
+            venv_bin = tmp_path / "venv" / "Scripts" / "ails.exe"
+        else:
+            venv_bin = tmp_path / "venv" / "bin" / "ails"
         assert venv_bin.exists(), "ails entry point not installed"
 
         result = subprocess.run(

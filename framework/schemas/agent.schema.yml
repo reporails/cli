@@ -1,16 +1,15 @@
 # Agent configuration schema v0.5.0
 #
 # Foundational assumption: coding agents are more alike than different.
-# All agents occupy the same M1 (governance) × M2 (loading) tensor space.
-# An instruction surface has the same tensor coordinate regardless of which
-# agent reads it — the agent determines the file path, the tensor determines
-# the quality criteria.
+# An instruction file has the same quality properties regardless of which
+# agent reads it — the agent determines the file path, the properties
+# determine the quality criteria.
 #
-# Each file_type is a CAPABILITY (skills, rules, agents, etc.) with shared
+# Each file_type is a capability (skills, rules, agents, etc.) with shared
 # properties and one or more SCOPES (project, user, managed, auto, local).
 # Scopes determine where instances live and carry scope-specific properties
 # (patterns, precedence, vcs, maintainer). Shared properties (format,
-# cardinality, lifecycle, loading) are declared once at capability level.
+# cardinality, lifecycle, loading) are declared once on the capability.
 version: "0.5.0"
 
 fields:
@@ -50,7 +49,7 @@ fields:
       type: object
       description: "A capability with shared properties and scoped pattern sets."
       properties:
-        # Capability-level (shared across all scopes)
+        # Shared across all scopes
         required:
           type: boolean
           default: false
@@ -107,7 +106,7 @@ fields:
                 type: enum
                 values: [human, agent, system, hybrid]
                 description: "Who maintains the file"
-              # Any capability-level property can be overridden per scope
+              # Any shared property can be overridden per scope
               format: { type: [enum, array], values: [freeform, frontmatter, schema_validated] }
               scope: { type: enum, values: [global, path_scoped, task_scoped] }
               cardinality: { type: enum, values: [singleton, optional, collection, hierarchical, chain] }
@@ -122,16 +121,9 @@ fields:
       type: string
       pattern: "^[A-Z_]+:[SCDEGM*]:[0-9]{4}$|^[A-Z_]+:\\*$"
 
-  overrides:
-    required: false
-    type: object
-    description: "Per-rule severity overrides keyed by coordinate (e.g., RRAILS:C:0008)"
-    additionalProperties:
-      type: object
-      properties:
-        severity:
-          type: enum
-          values: [critical, high, medium, low]
+  # NOTE: severity overrides belong in project.schema.yml rules.overrides, not here.
+  # The agent schema no longer defines overrides — agent config.yml should
+  # use excludes for rules that don't apply to the agent.
 
 validation:
   - rule: "agent uppercase must be in reserved_agent_prefixes (see rule.schema.yml)"

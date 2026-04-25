@@ -1,0 +1,9 @@
+checks:
+- id: CODEX.S.0003.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CODEX.S.0003.valid-event-types
+  type: deterministic
+  expect: present
+  pattern-regex: (?:SessionStart|PreToolUse|PermissionRequest|PostToolUse|UserPromptSubmit|Stop)
+  message: No recognized Codex event type names found in hook configuration

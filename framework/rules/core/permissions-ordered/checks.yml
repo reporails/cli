@@ -1,0 +1,9 @@
+checks:
+- id: CORE.G.0003.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CORE.G.0003.has-permission-structure
+  expect: present
+  message: No permission configuration found in settings
+  pattern-regex: '"permissions"\s*:'
+  type: deterministic

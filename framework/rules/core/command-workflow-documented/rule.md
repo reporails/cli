@@ -1,12 +1,13 @@
 ---
 id: CORE:C:0021
 slug: command-workflow-documented
-title: "Command Workflow Documented"
+title: Command Workflow Documented
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
-match: {format: freeform}
+backed_by: [agent-readmes-empirical-study, developer-context-cursor-study, dometrain-claude-md-guide,
+  osmani-ai-coding-workflow]
+match: {type: main}
 ---
 # Command Workflow Documented
 
@@ -45,4 +46,4 @@ The instruction file must document command workflows — ordered sequences of st
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Workflow", "Process", or "Pipeline". Does not verify the section documents a complete sequence of steps.

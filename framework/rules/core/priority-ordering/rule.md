@@ -1,10 +1,14 @@
 ---
 id: CORE:C:0036
 slug: priority-ordering
-title: "Critical Instructions at Edges"
+title: Critical Instructions at Edges
 category: coherence
 type: mechanical
 severity: high
+backed_by: [builder-ai-instruction-best-practices, claude-md-guide, claudemd-best-practices-mermaid-for-workflows,
+  enterprise-claude-usage, fowler-context-engineering-agents, instruction-limits-principles,
+  lost-in-the-middle-long-contexts, rules-directory-mechanics, sewell-agents-md-tips,
+  spec-writing-for-agents]
 match: {format: freeform}
 ---
 

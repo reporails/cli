@@ -1,0 +1,6 @@
+checks:
+- id: CORE.S.0028.has-type-field
+  type: deterministic
+  expect: present
+  pattern-regex: '"type"\s*:'
+  message: No handler with a type field found in hooks configuration

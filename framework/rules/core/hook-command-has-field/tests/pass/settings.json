@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "PreToolUse": [{ "type": "command", "command": "npm run lint" }]
+  }
+}

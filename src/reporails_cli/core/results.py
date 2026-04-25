@@ -198,7 +198,7 @@ class ValidationResult:  # pylint: disable=too-many-instance-attributes
     """Complete validation output."""
 
     score: float  # 0.0-10.0 scale
-    level: Level  # Capability level
+    level: Level  # Maturity level
     violations: tuple[Violation, ...]  # Immutable
     judgment_requests: tuple[JudgmentRequest, ...]
     rules_checked: int  # Deterministic rules checked

@@ -4,3 +4,17 @@ checks:
   check: frontmatter_key
   args:
     key: applyTo
+- id: COPILOT.S.0001.uses_wrong_key
+  type: deterministic
+  pattern-regex: '(?m)^(paths|globs):'
+  expect: absent
+  severity: medium
+  message: "Copilot reads 'applyTo:' — 'paths:' and 'globs:' are for Claude/Cursor and have no effect here"
+- id: COPILOT.S.0001.applyto_resolves
+  type: mechanical
+  check: frontmatter_valid_glob
+  args:
+    path: ".github/instructions"
+    require_matches: true
+  message: "applyTo glob does not match any files in the project"
+  severity: info

@@ -1,11 +1,14 @@
 ---
 id: CORE:C:0013
 slug: project-description-present
-title: "Project Description Present"
+title: Project Description Present
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
+  awesome-copilot-meta-instructions, claude-md-guide, developer-context-cursor-study,
+  evaluating-agents-md, instruction-limits-principles, microsoft-awesome-copilot-blog,
+  openai-community-agents-md-optimization, osmani-ai-coding-workflow, spec-writing-for-agents]
 match: {type: main}
 ---
 # Project Description Present
@@ -47,4 +50,4 @@ AI instruction validator for coding agents.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Description", "About", or "Overview". Does not evaluate whether the description accurately represents the project.

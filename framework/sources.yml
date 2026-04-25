@@ -1,8 +1,9 @@
 # Source Registry — Core Package
 # Schema: schemas/sources.schema.yml
+# Official agent documentation now referenced via 'source' field on rules and config file_types.
+# This file contains research and community evidence only.
 - id: advanced-context-engineering
-  url: 
-    https://raw.githubusercontent.com/humanlayer/advanced-context-engineering-for-coding-agents/main/ace-fca.md
+  url: https://raw.githubusercontent.com/humanlayer/advanced-context-engineering-for-coding-agents/main/ace-fca.md
   type: research
   weight: 0.8
   title: Advanced Context Engineering for Coding Agents
@@ -21,14 +22,8 @@
   type: research
   weight: 0.8
   title: The Impact of AGENTS.md Files on Coding Agent Efficiency
-- id: agents-md-spec
-  url: https://agents.md/
-  type: official
-  weight: 1.0
-  title: Agents.md Specification
 - id: awesome-copilot-meta-instructions
-  url: 
-    https://raw.githubusercontent.com/github/awesome-copilot/main/instructions/instructions.instructions.md
+  url: https://raw.githubusercontent.com/github/awesome-copilot/main/instructions/instructions.instructions.md
   type: community
   weight: 0.6
   title: Awesome Copilot Meta-Instructions
@@ -36,147 +31,31 @@
   url: https://www.builder.io/c/docs/ai-instruction-best-practices
   type: community
   weight: 0.6
-- id: building-skills-for-claude
-  url: 
-    https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf?hsLang=en
-  type: official
-  weight: 1.0
-  title: The Complete Guide to Building Skills for Claude
-- id: claude-4-best-practices
-  url: 
-    https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices
-  type: official
-  weight: 1.0
-  title: Claude 4 Best Practices
-- id: claude-code-hooks
-  url: https://docs.anthropic.com/en/docs/claude-code/hooks
-  type: official
-  weight: 1.0
-  title: Claude Code Hooks Guide
 - id: claude-code-issue-13579
   url: https://github.com/anthropics/claude-code/issues/13579
   type: community
   weight: 0.6
   title: 'Claude Code Issue #13579 - Token Waste'
-- id: claude-code-memory
-  url: https://code.claude.com/docs/en/memory
-  type: official
-  weight: 1.0
-  title: Claude Code Memory Documentation
-- id: claude-code-settings
-  url: https://code.claude.com/docs/en/settings
-  type: official
-  weight: 1.0
-  title: Claude Code Settings Documentation
-- id: claude-context-windows
-  url: https://docs.anthropic.com/en/docs/build-with-claude/context-windows
-  type: official
-  weight: 1.0
-  title: Claude Context Windows
 - id: claude-md-guide
   url: https://www.builder.io/blog/claude-md-guide
   type: community
   weight: 0.6
   title: Claude.md Guide - Builder.io
 - id: claude-md-optimization-study
-  url: 
-    https://arize.com/blog/claude-md-best-practices-learned-from-optimizing-claude-code-with-prompt-learning/
+  url: https://arize.com/blog/claude-md-best-practices-learned-from-optimizing-claude-code-with-prompt-learning/
   type: research
   weight: 0.8
   title: Claude.md Best Practices - Arize
 - id: claudemd-best-practices-backbone-yml-pattern
-  url: 
-    https://dev.to/cleverhoods/claudemd-best-practices-the-backboneyml-pattern-30fi
+  url: https://dev.to/cleverhoods/claudemd-best-practices-the-backboneyml-pattern-30fi
   type: internal
   weight: 0.6
   title: 'CLAUDE.md Best Practices: The backbone.yml Pattern'
 - id: claudemd-best-practices-mermaid-for-workflows
-  url: 
-    https://dev.to/cleverhoods/claudemd-best-practices-mermaid-for-workflows-khb
+  url: https://dev.to/cleverhoods/claudemd-best-practices-mermaid-for-workflows-khb
   type: internal
   weight: 0.6
   title: 'CLAUDE.md Best Practices: Mermaid for Workflows'
-- id: codex-agent-loop
-  url: https://openai.com/index/unrolling-the-codex-agent-loop/
-  type: official
-  weight: 1.0
-  title: Unrolling the Codex Agent Loop
-- id: codex-agents-md
-  url: https://developers.openai.com/codex/guides/agents-md
-  type: official
-  weight: 1.0
-  title: Codex Agents.md Guide
-- id: codex-developers-2025
-  url: https://developers.openai.com/blog/openai-for-developers-2025/
-  type: official
-  weight: 1.0
-- id: codex-eval-skills
-  url: https://developers.openai.com/blog/eval-skills/
-  type: official
-  weight: 1.0
-- id: codex-exec-plans
-  url: https://developers.openai.com/cookbook/articles/codex_exec_plans
-  type: official
-  weight: 1.0
-- id: codex-introducing
-  url: https://openai.com/index/introducing-codex/
-  type: official
-  weight: 1.0
-- id: codex-prompting-guide
-  url: 
-    https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide/
-  type: official
-  weight: 1.0
-- id: codex-skills-guide
-  url: https://developers.openai.com/codex/skills/
-  type: official
-  weight: 1.0
-- id: codex-skills-shell-compaction
-  url: https://developers.openai.com/blog/skills-shell-tips/
-  type: official
-  weight: 1.0
-- id: copilot-about-coding-agent
-  url: 
-    https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent
-  type: official
-  weight: 0.9
-- id: copilot-ai-best-practices-vscode
-  url: https://code.visualstudio.com/docs/copilot/copilot-tips-and-tricks
-  type: official
-  weight: 0.9
-- id: copilot-cli-best-practices
-  url: https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices
-  type: official
-  weight: 1.0
-  title: Copilot CLI Best Practices
-- id: copilot-coding-agent-best-practices
-  url: 
-    https://docs.github.com/copilot/how-tos/agents/copilot-coding-agent/best-practices-for-using-copilot-to-work-on-tasks
-  type: official
-  weight: 1.0
-  title: Best Practices for Using Copilot Coding Agent
-- id: copilot-coding-agent-results
-  url: 
-    https://docs.github.com/en/copilot/tutorials/coding-agent/get-the-best-results
-  type: official
-  weight: 1.0
-  title: Get the Best Results from Copilot Coding Agent
-- id: copilot-coding-agent-tasks
-  url: 
-    https://docs.github.com/en/copilot/how-tos/agents/copilot-coding-agent/best-practices-for-using-copilot-to-work-on-tasks
-  type: official
-  weight: 0.9
-- id: copilot-custom-instructions
-  url: 
-    https://docs.github.com/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot
-  type: official
-  weight: 1.0
-  title: Adding Repository Custom Instructions for GitHub Copilot
-- id: copilot-custom-instructions-vscode
-  url: 
-    https://code.visualstudio.com/docs/copilot/customization/custom-instructions
-  type: official
-  weight: 0.9
 - id: developer-context-cursor-study
   url: https://arxiv.org/html/2512.18925
   type: research
@@ -209,8 +88,7 @@
   weight: 0.6
   title: Assessing Quality of AI Coding Agents - Martin Fowler
 - id: fowler-context-engineering-agents
-  url: 
-    https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html
+  url: https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html
   type: community
   weight: 0.6
   title: Context Engineering for Coding Agents - Martin Fowler
@@ -230,20 +108,14 @@
   weight: 0.8
   title: 'Lost in the Middle: How Language Models Use Long Contexts'
 - id: microsoft-awesome-copilot-blog
-  url: 
-    https://developer.microsoft.com/blog/introducing-awesome-github-copilot-customizations-repo
+  url: https://developer.microsoft.com/blog/introducing-awesome-github-copilot-customizations-repo
   type: community
   weight: 0.6
 - id: monorepo-claude-md-organization
-  url: 
-    https://dev.to/anvodev/how-i-organized-my-claudemd-in-a-monorepo-with-too-many-contexts-37k7
+  url: https://dev.to/anvodev/how-i-organized-my-claudemd-in-a-monorepo-with-too-many-contexts-37k7
   type: community
   weight: 0.6
   title: Monorepo Claude.md Organization
-- id: openai-codex-own-agents-md
-  url: https://developers.openai.com/codex/guides/agents-md/
-  type: official
-  weight: 1.0
 - id: openai-community-agents-md-optimization
   url: https://community.openai.com/t/agents-md-file-optimization/1369152
   type: community
@@ -276,8 +148,3 @@
   type: research
   weight: 0.8
   title: Writing Good Specs for AI Agents - Addy Osmani
-- id: using-claude-md-files
-  url: https://claude.com/blog/using-claude-md-files
-  type: official
-  weight: 1.0
-  title: Using CLAUDE.md Files - Anthropic

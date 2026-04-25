@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -155,6 +154,13 @@ def load_rules(  # pylint: disable=too-many-locals
     # inherit the CORE checks and replace the CORE rule in the set.
     _apply_supersession(rules)
 
+    # 4d. Handle inheritance: rules that inherit checks from a parent
+    # without replacing the parent (both stay active).
+    _apply_inheritance(rules)
+
+    # 4e. Validate depends_on: detect circular dependency chains.
+    _validate_depends_on(rules)
+
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
     disabled: set[str] = set(config.disabled_rules or [])
@@ -211,9 +217,64 @@ def _apply_supersession(rules: dict[str, Rule]) -> None:
         # Inherit parent checks that aren't replaced by the agent rule
         replaced_ids = {c.replaces for c in rule.checks if c.replaces}
         inherited = [c for c in parent.checks if c.id not in replaced_ids]
-        rules[rule_id] = replace(rule, checks=inherited + list(rule.checks))
+        rules[rule_id] = rule.model_copy(update={"checks": inherited + list(rule.checks)})
     for sid in superseded_ids:
         del rules[sid]
+
+
+def _apply_inheritance(rules: dict[str, Rule]) -> None:
+    """Handle rule inheritance: child accumulates parent checks, both rules stay active.
+
+    When CLAUDE:S:0015 inherits CORE:S:0038, the CORE checks are copied into
+    the child (unless explicitly replaced), but the CORE rule stays in the set.
+    Modifies the rules dict in place.
+    """
+    for rule_id, rule in list(rules.items()):
+        if not rule.inherited or rule.inherited not in rules:
+            continue
+        parent = rules[rule.inherited]
+        replaced_ids = {c.replaces for c in rule.checks if c.replaces}
+        parent_checks = [c for c in parent.checks if c.id not in replaced_ids]
+        rules[rule_id] = rule.model_copy(update={"checks": parent_checks + list(rule.checks)})
+
+
+def _validate_depends_on(rules: dict[str, Rule]) -> None:
+    """Validate depends_on references and detect circular dependency chains.
+
+    Logs warnings for invalid references and circular chains rather than
+    raising errors, so rule loading is resilient to bad metadata.
+    """
+    for rule_id, rule in rules.items():
+        for dep_id in rule.depends_on:
+            if dep_id not in rules:
+                logger.warning("Rule %s depends_on %s which is not loaded", rule_id, dep_id)
+
+    _detect_dependency_cycles(rules)
+
+
+def _detect_dependency_cycles(rules: dict[str, Rule]) -> None:
+    """Detect circular depends_on chains via DFS. Logs warnings for cycles."""
+    visited: set[str] = set()
+    in_stack: set[str] = set()
+
+    def _has_cycle(rid: str) -> bool:
+        if rid in in_stack:
+            return True
+        if rid in visited:
+            return False
+        visited.add(rid)
+        in_stack.add(rid)
+        rule = rules.get(rid)
+        if rule:
+            for dep in rule.depends_on:
+                if dep in rules and _has_cycle(dep):
+                    return True
+        in_stack.discard(rid)
+        return False
+
+    for rule_id in rules:
+        if rule_id not in visited and _has_cycle(rule_id):
+            logger.warning("Circular depends_on chain detected involving %s", rule_id)
 
 
 def _apply_agent_overrides(
@@ -231,7 +292,7 @@ def _apply_agent_overrides(
             if new_severity:
                 try:
                     parsed_severity = Severity(new_severity)
-                    new_rule = replace(new_rule, severity=parsed_severity)
+                    new_rule = new_rule.model_copy(update={"severity": parsed_severity})
                 except ValueError:
                     logger.warning("Invalid severity '%s' in override for %s, skipping", new_severity, rule_id)
 
@@ -247,11 +308,11 @@ def _apply_agent_overrides(
                 if check_severity:
                     try:
                         parsed_severity = Severity(check_severity)
-                        new_rule = replace(new_rule, severity=parsed_severity)
+                        new_rule = new_rule.model_copy(update={"severity": parsed_severity})
                     except ValueError:
                         pass
             new_checks.append(check)
-        result[rule_id] = replace(new_rule, checks=new_checks)
+        result[rule_id] = new_rule.model_copy(update={"checks": new_checks})
     return result
 
 

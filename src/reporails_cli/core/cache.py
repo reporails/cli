@@ -139,7 +139,7 @@ class ProjectCache:
     def save_file_map(self, files: list[Path]) -> None:
         """Save file map to cache."""
         self.ensure_dir()
-        relative_paths = [str(f.relative_to(self.target)) for f in files]
+        relative_paths = [f.relative_to(self.target).as_posix() for f in files]
         data = {
             "version": 1,
             "target": str(self.target),
@@ -277,7 +277,7 @@ def cache_verdict(target: Path, jr: Any, verdict: str, reason: str) -> None:
     import contextlib
 
     with contextlib.suppress(ValueError):
-        file_path = str(Path(file_path).relative_to(target))
+        file_path = Path(file_path).relative_to(target).as_posix()
 
     cache_judgments(
         target,
@@ -298,7 +298,7 @@ def cache_violation_dismissal(target: Path, violation: Any) -> None:
     import contextlib
 
     with contextlib.suppress(ValueError):
-        file_path = str(Path(file_path).relative_to(target))
+        file_path = Path(file_path).relative_to(target).as_posix()
 
     cache_judgments(
         target,
@@ -345,7 +345,7 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disab
         if not full_path.exists():
             continue
         try:
-            file_path = str(full_path.relative_to(target.resolve()))
+            file_path = full_path.relative_to(target.resolve()).as_posix()
         except ValueError:
             continue  # Path traversal -- outside project root
 

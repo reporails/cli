@@ -1,0 +1,9 @@
+checks:
+- id: CURSOR.S.0005.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CURSOR.S.0005.prompt-has-field
+  type: deterministic
+  expect: present
+  pattern-regex: '"prompt"\s*:\s*"[^"]+"'
+  message: No prompt handler with a prompt field found
