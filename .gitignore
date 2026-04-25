@@ -7,10 +7,10 @@ __pycache__
 # Internal specs
 specs/
 
-# Claude specific - Dev internals (root only; test fixtures in framework/ are tracked)
+# Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/
-.mcp.json
-CLAUDE.md
+/.mcp.json
+/CLAUDE.md
 
 # Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
 # (dev-only, not committed; populated on clone and in CI before hatch build)
