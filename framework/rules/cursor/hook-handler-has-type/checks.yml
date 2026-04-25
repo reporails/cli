@@ -1,0 +1,9 @@
+checks:
+- id: CURSOR.S.0003.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CURSOR.S.0003.handler-has-type
+  type: deterministic
+  expect: present
+  pattern-regex: '"type"\s*:\s*"(command|prompt)"'
+  message: No handler with a valid type field (command or prompt) found

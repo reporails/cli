@@ -1,0 +1,9 @@
+checks:
+- id: CURSOR.S.0002.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CURSOR.S.0002.valid-event-types
+  type: deterministic
+  expect: present
+  pattern-regex: (?:sessionStart|sessionEnd|preToolUse|postToolUse|postToolUseFailure|subagentStart|subagentStop|beforeShellExecution|afterShellExecution|beforeMCPExecution|afterMCPExecution|beforeReadFile|afterFileEdit|beforeSubmitPrompt|preCompact|stop|afterAgentResponse|afterAgentThought|beforeTabFileRead|afterTabFileEdit)
+  message: No recognized Cursor event type names found in hook configuration

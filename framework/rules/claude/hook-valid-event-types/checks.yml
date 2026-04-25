@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0005.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0005.valid_event_types
+  expect: present
+  message: No recognized event type names found in hook configuration
+  pattern-regex: (?:SessionStart|UserPromptSubmit|UserPromptExpansion|PreToolUse|PermissionRequest|PermissionDenied|PostToolUse|PostToolUseFailure|PostToolBatch|Notification|SubagentStart|SubagentStop|TaskCreated|TaskCompleted|Stop|StopFailure|TeammateIdle|InstructionsLoaded|ConfigChange|CwdChanged|FileChanged|WorktreeCreate|WorktreeRemove|PreCompact|PostCompact|Elicitation|ElicitationResult|SessionEnd)
+  type: deterministic

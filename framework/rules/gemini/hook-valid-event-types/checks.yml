@@ -1,0 +1,9 @@
+checks:
+- id: GEMINI.S.0001.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: GEMINI.S.0001.valid-event-types
+  type: deterministic
+  expect: present
+  pattern-regex: (?:SessionStart|SessionEnd|BeforeAgent|AfterAgent|BeforeModel|AfterModel|BeforeToolSelection|BeforeTool|AfterTool|PreCompress|Notification)
+  message: No recognized Gemini event type names found in hook configuration

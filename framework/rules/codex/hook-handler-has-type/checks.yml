@@ -1,0 +1,9 @@
+checks:
+- id: CODEX.S.0004.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CODEX.S.0004.handler-has-type
+  type: deterministic
+  expect: present
+  pattern-regex: '"type"\s*:\s*"command"'
+  message: No handler with type command found
