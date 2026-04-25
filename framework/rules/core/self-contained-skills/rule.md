@@ -1,11 +1,12 @@
 ---
 id: CORE:S:0017
 slug: self-contained-skills
-title: "Self Contained Skills"
+title: Self Contained Skills
 category: structure
 type: mechanical
-severity: medium
-backed_by: []
+severity: low
+backed_by: [enterprise-claude-usage, fowler-context-engineering-agents, fowler-pushing-ai-autonomy,
+  microsoft-awesome-copilot-blog, osmani-ai-coding-workflow]
 match: {type: skill}
 ---
 # Self Contained Skills
@@ -49,4 +50,4 @@ Check the deployment URL afterward.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for headings containing "Input", "Process", "Output", or "Constraints". Does not verify each section is complete or that the skill is genuinely self-contained.

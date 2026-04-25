@@ -11,6 +11,11 @@ checks:
     - Process
     - Output
     - Constraints
-    message: Skill is not self-contained — include Input, Process, Output, and Constraints
-      sections
+    - Steps
+    - Workflow
+    - Prerequisites
+    - Requirements
+    - Result
+    - Limitations
+    message: Skill lacks structural sections (Input/Process/Output/Constraints or equivalent headings)
   expect: present

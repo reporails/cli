@@ -1,12 +1,14 @@
 ---
 id: CORE:C:0026
 slug: cross-agent-compatibility
-title: "Cross Agent Compatibility"
+title: Cross Agent Compatibility
 category: coherence
 type: deterministic
 severity: high
-backed_by: []
-match: {format: freeform}
+backed_by: [agentic-coding-adoption-github, claude-md-guide, claude-md-optimization-study,
+  claudemd-best-practices-backbone-yml-pattern, enterprise-claude-usage, fowler-pushing-ai-autonomy,
+  microsoft-awesome-copilot-blog, osmani-ai-coding-workflow, sewell-codex-vs-claude]
+match: {type: main}
 ---
 # Cross Agent Compatibility
 
@@ -41,4 +43,4 @@ Claude users should check `CLAUDE.md` for details.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for agent-specific filenames (CLAUDE.md, .cursorrules, copilot-instructions.md) referenced in content. Does not detect agent-specific terminology or conventions that don't mention filenames.

@@ -1,11 +1,12 @@
 ---
 id: CORE:S:0019
 slug: single-topic-per-section
-title: "Single Topic Per Section"
+title: Single Topic Per Section
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [developer-context-cursor-study, lost-in-the-middle-long-contexts, openai-community-agents-md-optimization,
+  rules-directory-mechanics, spec-writing-for-agents]
 match: {format: freeform}
 ---
 # Single Topic Per Section

@@ -1,12 +1,13 @@
 ---
 id: CORE:C:0024
 slug: domain-terminology-used
-title: "Domain Terminology Used"
+title: Domain Terminology Used
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
-match: {format: freeform}
+backed_by: [agent-readmes-empirical-study, developer-context-cursor-study, dometrain-claude-md-guide,
+  sewell-agents-md-tips, spec-writing-for-agents]
+match: {type: main}
 ---
 # Domain Terminology Used
 
@@ -39,4 +40,4 @@ Reference the backbone for project structure.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Terminology", "Glossary", "Terms", or "Domain". Does not verify the section defines project-specific terms.

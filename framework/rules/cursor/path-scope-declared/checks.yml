@@ -5,3 +5,17 @@ checks:
   args:
     key: globs
   message: "Path-scoped rule must declare a 'globs' key in frontmatter"
+- id: CURSOR.S.0001.uses_paths_key
+  type: deterministic
+  pattern-regex: '(?m)^paths:'
+  expect: absent
+  severity: medium
+  message: "Cursor reads 'globs:' not 'paths:' — rules with 'paths:' frontmatter have no path scoping in Cursor"
+- id: CURSOR.S.0001.globs_resolve
+  type: mechanical
+  check: frontmatter_valid_glob
+  args:
+    path: ".cursor/rules"
+    require_matches: true
+  message: "Glob in frontmatter does not match any files in the project"
+  severity: info

@@ -1,11 +1,12 @@
 ---
 id: CORE:G:0002
 slug: no-credentials
-title: "No Credentials"
+title: No Credentials
 category: governance
 type: deterministic
 severity: medium
-backed_by: []
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, dometrain-claude-md-guide,
+  openai-community-agents-md-optimization, spec-writing-for-agents]
 match: {format: [freeform, frontmatter, schema_validated]}
 ---
 

@@ -1,12 +1,17 @@
 ---
 id: CORE:C:0007
 slug: workflow-definitions
-title: "Workflow Definitions"
+title: Workflow Definitions
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
-match: {format: freeform}
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, agentic-coding-adoption-github,
+  agents-md-impact-efficiency, claude-code-issue-13579, claudemd-best-practices-mermaid-for-workflows,
+  developer-context-cursor-study, dometrain-claude-md-guide, enterprise-claude-usage,
+  flowbench-workflow-format-benchmark, fowler-context-engineering-agents, fowler-pushing-ai-autonomy,
+  microsoft-awesome-copilot-blog, openai-community-agents-md-optimization, osmani-ai-coding-workflow,
+  prompthub-cursor-rules-analysis, sewell-agents-md-tips, spec-writing-for-agents]
+match: {type: main}
 ---
 # Workflow Definitions
 
@@ -44,4 +49,4 @@ Install with `uv sync` and start developing.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Workflow", "Process", "Pipeline", or "Steps". Does not verify the section defines repeatable processes with ordered steps.

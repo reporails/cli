@@ -1,11 +1,16 @@
 ---
 id: CORE:E:0002
 slug: instruction-file-size-limit
-title: "Instruction File Size Limit"
+title: Instruction File Size Limit
 category: efficiency
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, builder-ai-instruction-best-practices,
+  claude-md-guide, claudemd-best-practices-mermaid-for-workflows, developer-context-cursor-study,
+  dometrain-claude-md-guide, enterprise-claude-usage, evaluating-agents-md, fowler-context-engineering-agents,
+  fowler-pushing-ai-autonomy, instruction-limits-principles, lost-in-the-middle-long-contexts,
+  monorepo-claude-md-organization, openai-community-agents-md-optimization, rules-directory-mechanics,
+  sewell-agents-md-tips, spec-writing-for-agents]
 match: {format: freeform}
 ---
 
@@ -41,4 +46,4 @@ Individual instruction files must stay within size limits. Oversized files excee
 
 ## Limitations
 
-Structural check with limited semantic understanding.
+Counts raw lines (max 300) regardless of line length or content density. A file with 300 single-word lines and one with 300 dense paragraphs are treated equally.

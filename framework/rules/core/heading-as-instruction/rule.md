@@ -5,7 +5,6 @@ title: "Heading As Instruction"
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
 match: {format: freeform}
 ---
 

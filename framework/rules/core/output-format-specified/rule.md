@@ -1,12 +1,13 @@
 ---
 id: CORE:C:0025
 slug: output-format-specified
-title: "Output Format Specified"
+title: Output Format Specified
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
-match: {format: freeform}
+backed_by: [agent-readmes-empirical-study, claude-code-issue-13579, developer-context-cursor-study,
+  fowler-pushing-ai-autonomy, prompthub-cursor-rules-analysis]
+match: {type: main}
 ---
 # Output Format Specified
 
@@ -40,4 +41,4 @@ Use markdown tables for multi-row output.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Output", "Format", or "Display". Does not verify the section specifies concrete format requirements.

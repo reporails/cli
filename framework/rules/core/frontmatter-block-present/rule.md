@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0006
 slug: frontmatter-block-present
-title: "Frontmatter Block Present"
+title: Frontmatter Block Present
 category: structure
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, rules-directory-mechanics]
 match: {type: scoped_rule}
 ---
 
