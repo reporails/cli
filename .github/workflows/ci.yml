@@ -5,6 +5,11 @@ on:
     branches:
       # Release branches: run QA on every push (e.g. 0.1.4)
       - "[0-9]*.[0-9]*.[0-9]*"
+      - main
+  pull_request:
+    branches:
+      - "[0-9]*.[0-9]*.[0-9]*"
+      - main
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -37,3 +42,6 @@ jobs:
 
       - name: Integration tests
         run: uv run poe test_integration
+
+      - name: Smoke tests
+        run: uv run poe test_smoke

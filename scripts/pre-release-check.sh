@@ -23,9 +23,13 @@ step "Ruff lint"
 uv run ruff check src/ tests/ || fail "ruff check failed"
 ok "Lint clean"
 
-step "Mypy"
+step "Mypy (host platform)"
 uv run mypy src/ || fail "mypy failed"
-ok "Types clean"
+ok "Types clean (host)"
+
+step "Mypy (cross-platform: win32)"
+uv run mypy --platform=win32 src/ || fail "mypy --platform=win32 failed — Windows type-stub gap will break Windows CI"
+ok "Types clean (win32)"
 
 # 2. Unit tests
 step "Unit tests"
