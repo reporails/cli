@@ -242,7 +242,7 @@ def classify_files(
     classified: list[ClassifiedFile] = []
     for file_path in files:
         try:
-            rel = str(file_path.relative_to(scan_root))
+            rel = file_path.relative_to(scan_root).as_posix()
         except ValueError:
             rel = str(file_path)
 
@@ -307,7 +307,7 @@ def resolve_match_to_paths(
     paths: list[str] = []
     for cf in targets:
         try:
-            paths.append(str(cf.path.relative_to(scan_root)))
+            paths.append(cf.path.relative_to(scan_root).as_posix())
         except ValueError:
             paths.append(str(cf.path))
     return paths

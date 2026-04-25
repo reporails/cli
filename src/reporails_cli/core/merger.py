@@ -43,7 +43,7 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
     # Project-relative first — paths within the project get short relative form
     if project_root is not None:
         try:
-            return str(resolved.relative_to(project_root))
+            return resolved.relative_to(project_root).as_posix()
         except ValueError:
             pass  # Not within project — fall through
 
@@ -51,7 +51,7 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
     home = Path.home()
     if resolved.is_absolute():
         try:
-            return "~/" + str(resolved.relative_to(home))
+            return "~/" + resolved.relative_to(home).as_posix()
         except ValueError:
             pass
 
