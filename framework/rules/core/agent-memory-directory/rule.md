@@ -1,12 +1,13 @@
 ---
 id: CORE:S:0023
 slug: agent-memory-directory
-title: "Agent Memory Directory"
+title: Agent Memory Directory
 category: structure
 type: mechanical
 severity: medium
 backed_by: []
 match: {type: memory}
+source: https://code.claude.com/docs/en/memory#auto-memory
 ---
 
 # Agent Memory Directory
@@ -41,4 +42,4 @@ project/
 
 ## Limitations
 
-Checks that the memory directory exists. Does not evaluate directory contents or memory file quality.
+Checks that the memory directory exists. Does not verify it is writable, contains expected subdirectories, or that memory files within it are valid.

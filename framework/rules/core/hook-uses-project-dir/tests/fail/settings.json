@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "PreToolUse": [{ "type": "command", "command": "/home/user/project/lint.sh" }]
+  }
+}

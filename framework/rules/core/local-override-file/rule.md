@@ -1,17 +1,17 @@
 ---
 id: CORE:S:0022
 slug: local-override-file
-title: "Local Override File"
+title: Local Override File
 category: structure
-type: mechanical
-severity: medium
-backed_by: []
+type: deterministic
+severity: low
+backed_by: [claude-md-guide]
 match: {type: override}
 ---
 
 # Local Override File
 
-A local override file must exist and contain at least 20 characters of substantive content. Override files allow user-specific customizations without modifying committed instruction files.
+A local override file, when present, should contain at least 20 characters of substantive content. Override files allow user-specific customizations without modifying committed instruction files. The override file is optional — not all projects need user-specific overrides.
 
 ## Antipatterns
 

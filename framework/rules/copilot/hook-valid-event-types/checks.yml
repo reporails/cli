@@ -1,0 +1,9 @@
+checks:
+- id: COPILOT.S.0003.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: COPILOT.S.0003.valid-event-types
+  type: deterministic
+  expect: present
+  pattern-regex: (?:SessionStart|SessionEnd|UserPromptSubmit|userPromptSubmitted|PreToolUse|preToolUse|PostToolUse|postToolUse|PreCompact|SubagentStart|SubagentStop|Stop|sessionStart|sessionEnd|errorOccurred)
+  message: No recognized Copilot event type names found in hook configuration

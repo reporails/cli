@@ -33,10 +33,14 @@ jobs:
           fi
 
   qa:
-    name: QA gate
+    name: QA gate (${{ matrix.os }})
     needs: check-release
     if: needs.check-release.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +54,12 @@ jobs:
       - name: Lint
         run: uv run poe lint
 
-      - name: Type check
+      - name: Type check (host platform)
         run: uv run poe type
+
+      - name: Type check (cross-platform)
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run mypy --platform=win32 src/
 
       - name: Unit tests
         run: uv run poe test_unit
@@ -59,31 +67,19 @@ jobs:
       - name: Integration tests
         run: uv run poe test_integration
 
-  publish:
-    name: Publish release
+      # Smoke tests intentionally not gated in CI yet — environment-dependent.
+      # Re-enable once the smoke suite is hermetic.
+
+  build:
+    name: Build wheel + sdist
     needs: [check-release, qa]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-    environment: release
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-
-      - name: Create tag and GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.check-release.outputs.version }}"
-          git tag "$VERSION"
-          git push origin "$VERSION"
-          gh release create "$VERSION" \
-            --title "v$VERSION" \
-            --generate-notes
 
       - name: Install dependencies
         run: uv sync
@@ -99,20 +95,88 @@ jobs:
           # sdist separately for PyPI (model not included — source-only)
           uv build --sdist
 
-      - name: Verify wheel install
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  verify-wheel:
+    name: Verify wheel (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install wheel in fresh venv (cross-platform)
         run: |
-          python -m venv /tmp/verify-wheel
-          /tmp/verify-wheel/bin/pip install dist/*.whl --quiet
-          /tmp/verify-wheel/bin/ails version
-          /tmp/verify-wheel/bin/ails check --help > /dev/null
-          # Verify ONNX model is bundled (content checks need it)
-          /tmp/verify-wheel/bin/python -c "
-          from reporails_cli.bundled import get_models_path
-          onnx = get_models_path() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
-          assert onnx.exists(), f'ONNX model missing from wheel: {onnx}'
-          print(f'ONNX model verified: {onnx.stat().st_size / 1024 / 1024:.0f} MB')
+          python -m venv venv-verify
+          python -c "
+          import glob, subprocess, sys
+          from pathlib import Path
+          venv = Path('venv-verify')
+          pip = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('pip.exe' if sys.platform == 'win32' else 'pip')
+          wheels = glob.glob('dist/*.whl')
+          assert len(wheels) == 1, f'Expected 1 wheel, got {wheels}'
+          subprocess.run([str(pip), 'install', wheels[0], '--quiet'], check=True)
           "
-          echo "Wheel verification passed"
+        shell: bash
+
+      - name: Smoke check + ONNX model present
+        run: |
+          python -c "
+          import subprocess, sys
+          from pathlib import Path
+          venv = Path('venv-verify')
+          ails = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('ails.exe' if sys.platform == 'win32' else 'ails')
+          py = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('python.exe' if sys.platform == 'win32' else 'python')
+          subprocess.run([str(ails), 'version'], check=True)
+          subprocess.run([str(ails), 'check', '--help'], check=True, stdout=subprocess.DEVNULL)
+          subprocess.run([str(py), '-c',
+              'from reporails_cli.bundled import get_models_path;'
+              'onnx = get_models_path() / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
+              'assert onnx.exists(), f\"ONNX missing: {onnx}\";'
+              'print(f\"ONNX OK: {onnx.stat().st_size // 1024 // 1024} MB\")'
+          ], check=True)
+          "
+        shell: bash
+
+  publish:
+    name: Publish release
+    needs: [check-release, verify-wheel]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

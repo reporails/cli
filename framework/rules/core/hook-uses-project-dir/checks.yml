@@ -1,0 +1,6 @@
+checks:
+- id: CORE.G.0006.no-hardcoded-paths
+  type: deterministic
+  expect: absent
+  pattern-regex: '"command"\s*:\s*"/(home|Users|tmp|var|etc|opt)/'
+  message: Hook command contains hardcoded absolute path — use the agent's project directory variable

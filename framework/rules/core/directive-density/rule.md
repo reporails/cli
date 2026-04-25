@@ -1,11 +1,13 @@
 ---
 id: CORE:D:0001
 slug: directive-density
-title: "Directive Density"
+title: Directive Density
 category: direction
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, claude-md-guide,
+  developer-context-cursor-study, fowler-pushing-ai-autonomy, openai-community-agents-md-optimization,
+  osmani-ai-coding-workflow, spec-writing-for-agents]
 match: {format: freeform}
 see_also: []
 ---

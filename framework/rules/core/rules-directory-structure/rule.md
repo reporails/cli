@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0025
 slug: rules-directory-structure
-title: "Rules Directory Structure"
+title: Rules Directory Structure
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [claude-md-guide]
 match: {type: scoped_rule}
 ---
 

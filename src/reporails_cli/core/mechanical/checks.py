@@ -206,7 +206,7 @@ def line_count(
         if not match.is_file():
             continue
         try:
-            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+            rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
             count = len(match.read_text(encoding="utf-8").splitlines())
             if count > max_lines:
                 return CheckResult(
@@ -236,7 +236,7 @@ def byte_size(
     for match in _get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
-        rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+        rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
         size = match.stat().st_size
         if size > max_bytes:
             return CheckResult(passed=False, message=f"{match.name}: {size}B exceeds max", location=f"{rel}:0")

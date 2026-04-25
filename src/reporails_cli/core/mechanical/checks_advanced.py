@@ -63,14 +63,14 @@ def frontmatter_valid_yaml(
             checked += 1
             fm = yaml.safe_load(content[3:end])
             if not isinstance(fm, dict):
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
                 return CheckResult(
                     passed=False,
                     message=f"Frontmatter is not a YAML mapping in {match.name}",
                     location=f"{rel}:1",
                 )
         except yaml.YAMLError as e:
-            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+            rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
             return CheckResult(
                 passed=False,
                 message=f"Invalid YAML in {match.name}: {e}",
@@ -100,7 +100,7 @@ def valid_markdown(
             m = _BROKEN_HEADING_RE.search(content)
             if m:
                 line_num = content[: m.start()].count("\n") + 1
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
                 return CheckResult(
                     passed=False,
                     message=f"Broken heading (missing space after #) in {match.name}",
@@ -221,35 +221,58 @@ def frontmatter_valid_glob(
     args: dict[str, Any],
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check that YAML frontmatter path entries use valid glob syntax."""
+    """Check that YAML frontmatter path entries use valid glob syntax.
+
+    When require_matches is true, also checks that each glob pattern
+    matches at least one file in the project root.
+    """
     path = str(args.get("path", ""))
+    require_matches = args.get("require_matches", False)
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=True, message=f"Directory not found: {path} (OK)")
+    unresolved: list[str] = []
     for f in target.iterdir():
         if not f.is_file() or f.suffix != ".md":
             continue
-        try:
-            content = f.read_text(encoding="utf-8")
-            if not content.startswith("---"):
-                continue
-            end = content.find("---", 3)
-            if end < 0:
-                continue
-            fm = yaml.safe_load(content[3:end])
-            if not isinstance(fm, dict):
-                continue
-            paths = fm.get("globs") or fm.get("paths") or []
-            if isinstance(paths, str):
-                paths = [paths]
-            for p in paths:
-                if not isinstance(p, str):
-                    return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
-                if p.count("[") != p.count("]"):
-                    return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
-        except (OSError, yaml.YAMLError):
-            continue
+        result = _validate_file_globs(f, root, require_matches, unresolved)
+        if result is not None:
+            return result
+    if unresolved:
+        return CheckResult(passed=False, message=f"Path globs match no files: {', '.join(unresolved)}")
     return CheckResult(passed=True, message="All frontmatter path entries valid")
+
+
+def _validate_file_globs(
+    f: Path,
+    root: Path,
+    require_matches: bool,
+    unresolved: list[str],
+) -> CheckResult | None:
+    """Validate glob entries in a single file's frontmatter. Returns CheckResult on error, None to continue."""
+    try:
+        content = f.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            return None
+        end = content.find("---", 3)
+        if end < 0:
+            return None
+        fm = yaml.safe_load(content[3:end])
+        if not isinstance(fm, dict):
+            return None
+        paths = fm.get("globs") or fm.get("paths") or fm.get("applyTo") or []
+        if isinstance(paths, str):
+            paths = [paths]
+        for p in paths:
+            if not isinstance(p, str):
+                return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
+            if p.count("[") != p.count("]"):
+                return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
+            if require_matches and not any(True for _ in root.glob(p)):
+                unresolved.append(f"{f.name}: {p}")
+    except (OSError, yaml.YAMLError):
+        pass
+    return None
 
 
 def count_at_most(
@@ -412,7 +435,7 @@ def file_absent(
 
     matches = _resolve_glob_targets(search_pattern, root)
     if matches:
-        name = str(matches[0].relative_to(root)) if matches[0].is_relative_to(root) else matches[0].name
+        name = matches[0].relative_to(root).as_posix() if matches[0].is_relative_to(root) else matches[0].name
         return CheckResult(passed=False, message=f"Forbidden file exists: {name}")
     if direct_path.exists():
         rel = f"{scope_dir}/{pattern}" if scope_dir else pattern
@@ -476,7 +499,7 @@ def frontmatter_extra_keys(
                 continue
             extra = sorted(k for k in fm if k not in allowed)
             if extra:
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
                 keys_str = ", ".join(extra)
                 allowed_str = ", ".join(sorted(allowed))
                 msg = f"Unrecognized frontmatter keys: {keys_str} — only {allowed_str} is processed"

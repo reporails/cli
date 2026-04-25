@@ -5,14 +5,22 @@ on:
     branches:
       # Release branches: run QA on every push (e.g. 0.1.4)
       - "[0-9]*.[0-9]*.[0-9]*"
+      - main
+  pull_request:
+    branches:
+      - "[0-9]*.[0-9]*.[0-9]*"
+      - main
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   qa:
-    name: QA gate
-    runs-on: ubuntu-latest
+    name: QA gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -34,3 +42,7 @@ jobs:
 
       - name: Integration tests
         run: uv run poe test_integration
+
+      # Smoke tests intentionally not gated in CI yet — a few test cases have
+      # environment-dependent assumptions that pass locally but fail on the GH
+      # runner. Re-enable once the smoke suite is hermetic.

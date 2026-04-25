@@ -238,7 +238,7 @@ def discover_rules(  # pylint: disable=too-many-locals
             continue
 
         if filter_path:
-            rel = str(slug_dir.relative_to(root))
+            rel = slug_dir.relative_to(root).as_posix()
             if not rel.startswith(filter_path.rstrip("/")):
                 continue
 

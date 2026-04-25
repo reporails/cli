@@ -10,55 +10,56 @@ env:
 
 jobs:
   smoke-pypi:
-    name: "Smoke: pip install from PyPI"
+    name: "Smoke: pip install from PyPI (${{ matrix.os }})"
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Wait for PyPI propagation
+      - name: Wait for PyPI propagation + install
+        shell: bash
         run: |
           for i in 1 2 3 4 5 6; do
-            if pip install reporails-cli --dry-run --quiet 2>/dev/null; then break; fi
+            if pip install reporails-cli --quiet 2>/dev/null; then break; fi
             echo "Waiting for PyPI propagation (attempt $i)..."
             sleep 30
           done
 
-      - name: Install from PyPI
-        run: pip install reporails-cli
-
-      - name: Verify ails command exists
+      - name: Verify ails command + ONNX model + smoke check
+        shell: bash
         run: |
-          which ails
           ails version
-
-      - name: Verify ONNX model bundled
-        run: |
           python -c "
           from reporails_cli.bundled import get_models_path
           onnx = get_models_path() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
           assert onnx.exists(), f'ONNX model missing: {onnx}'
-          print(f'OK: {onnx.stat().st_size / 1024 / 1024:.0f} MB')
+          print(f'OK: {onnx.stat().st_size // 1024 // 1024} MB')
           "
-
-      - name: Smoke check
-        run: |
-          mkdir /tmp/smoke-project
-          echo "# Test Project" > /tmp/smoke-project/CLAUDE.md
-          ails check /tmp/smoke-project -f json
+          mkdir -p smoke-project
+          echo "# Test Project" > smoke-project/CLAUDE.md
+          ails check smoke-project -f json
 
   smoke-uvx:
-    name: "Smoke: uvx ephemeral install"
+    name: "Smoke: uvx ephemeral install (${{ matrix.os }})"
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
 
       - name: Wait for PyPI propagation
+        shell: bash
         run: |
           for i in 1 2 3 4 5 6; do
             if uvx --from reporails-cli ails version 2>/dev/null; then break; fi
@@ -66,19 +67,22 @@ jobs:
             sleep 30
           done
 
-      - name: Verify uvx runs ails
-        run: uvx --from reporails-cli ails version
-
-      - name: Smoke check
+      - name: Verify uvx + smoke check
+        shell: bash
         run: |
-          mkdir /tmp/smoke-project
-          echo "# Test Project" > /tmp/smoke-project/CLAUDE.md
-          uvx --from reporails-cli ails check /tmp/smoke-project -f json
+          uvx --from reporails-cli ails version
+          mkdir -p smoke-project
+          echo "# Test Project" > smoke-project/CLAUDE.md
+          uvx --from reporails-cli ails check smoke-project -f json
 
   smoke-npx:
-    name: "Smoke: npx @reporails/cli"
+    name: "Smoke: npx @reporails/cli (${{ matrix.os }})"
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -89,6 +93,7 @@ jobs:
           version: "latest"
 
       - name: Wait for npm propagation
+        shell: bash
         run: |
           for i in 1 2 3 4 5 6; do
             if npx --yes @reporails/cli version 2>/dev/null; then break; fi
@@ -96,11 +101,10 @@ jobs:
             sleep 20
           done
 
-      - name: Verify npx runs ails
-        run: npx --yes @reporails/cli version
-
-      - name: Smoke check
+      - name: Verify npx + smoke check
+        shell: bash
         run: |
-          mkdir /tmp/smoke-project
-          echo "# Test Project" > /tmp/smoke-project/CLAUDE.md
-          npx --yes @reporails/cli check /tmp/smoke-project -f json
+          npx --yes @reporails/cli version
+          mkdir -p smoke-project
+          echo "# Test Project" > smoke-project/CLAUDE.md
+          npx --yes @reporails/cli check smoke-project -f json

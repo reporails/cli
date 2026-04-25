@@ -1,11 +1,13 @@
 ---
 id: CORE:C:0014
 slug: agent-role-defined
-title: "Agent Role Defined"
+title: Agent Role Defined
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, developer-context-cursor-study, fowler-pushing-ai-autonomy,
+  microsoft-awesome-copilot-blog, openai-community-agents-md-optimization, osmani-ai-coding-workflow,
+  spec-writing-for-agents]
 match: {type: main}
 ---
 # Agent Role Defined
@@ -42,4 +44,4 @@ against mechanical and deterministic rules.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for a role definition atom (explicit role assignment or "you are" pattern). Does not evaluate whether the defined role is appropriate for the project.

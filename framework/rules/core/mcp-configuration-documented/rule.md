@@ -1,11 +1,12 @@
 ---
 id: CORE:C:0027
 slug: mcp-configuration-documented
-title: "Mcp Configuration Documented"
+title: Mcp Configuration Documented
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [dometrain-claude-md-guide, enterprise-claude-usage, fowler-context-engineering-agents,
+  fowler-pushing-ai-autonomy, microsoft-awesome-copilot-blog, spec-writing-for-agents]
 match: {type: main}
 ---
 # Mcp Configuration Documented
@@ -40,4 +41,4 @@ The agent can use filesystem and github tools.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "MCP", "Server", or "Tools". Does not verify the section documents actual MCP server configuration.

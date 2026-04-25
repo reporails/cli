@@ -1,12 +1,15 @@
 ---
 id: CORE:C:0016
 slug: code-block-examples-present
-title: "Code Block Examples Present"
+title: Code Block Examples Present
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
-match: {format: freeform}
+backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, builder-ai-instruction-best-practices,
+  claudemd-best-practices-mermaid-for-workflows, developer-context-cursor-study, dometrain-claude-md-guide,
+  flowbench-workflow-format-benchmark, fowler-pushing-ai-autonomy, openai-community-agents-md-optimization,
+  osmani-ai-coding-workflow, sewell-agents-md-tips, spec-writing-for-agents]
+match: {type: main}
 ---
 # Code Block Examples Present
 

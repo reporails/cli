@@ -25,5 +25,24 @@ file_types:
         vcs: committed
         maintainer: human
 
+  skills:
+    source: https://agentskills.io/specification
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".agents/skills/**/SKILL.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.agents/skills/**/SKILL.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
 # No excludes — generic supports all core rules including cross-agent compatibility
 # No severity overrides

@@ -1,12 +1,13 @@
 ---
 id: CORE:S:0012
 slug: agent-documents-filenames
-title: "Agent Documents Filenames"
+title: Agent Documents Filenames
 category: structure
 type: deterministic
 severity: medium
 backed_by: []
 match: {type: scoped_rule}
+source: https://agents.md/
 ---
 
 # Agent Documents Filenames

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.models import Category, PatternConfidence, RuleType
+from reporails_cli.core.models import Category, PatternConfidence, Rule, RuleType
 from reporails_cli.core.registry import build_rule
 
 MINIMAL_FRONTMATTER = {
@@ -140,6 +140,115 @@ class TestBuildRulePatternConfidence:
         fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": "bogus"}
         with pytest.raises(ValueError):
             build_rule(fm, Path("test.md"), None)
+
+
+class TestBuildRuleNewFields:
+    """Test inherited and depends_on parsing."""
+
+    def test_inherited_parsed(self) -> None:
+        fm = {**MINIMAL_FRONTMATTER, "inherited": "CORE:S:0038"}
+        rule = build_rule(fm, Path("test.md"), None)
+        assert rule.inherited == "CORE:S:0038"
+
+    def test_inherited_none_when_absent(self) -> None:
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
+        assert rule.inherited is None
+
+    def test_depends_on_parsed(self) -> None:
+        fm = {**MINIMAL_FRONTMATTER, "depends_on": ["CORE:S:0001", "CORE:S:0002"]}
+        rule = build_rule(fm, Path("test.md"), None)
+        assert rule.depends_on == ["CORE:S:0001", "CORE:S:0002"]
+
+    def test_depends_on_empty_when_absent(self) -> None:
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
+        assert rule.depends_on == []
+
+
+class TestApplyInheritance:
+    """Test _apply_inheritance merges checks without removing parent."""
+
+    def test_inheritance_merges_checks(self) -> None:
+        from reporails_cli.core.models import Check
+        from reporails_cli.core.registry import _apply_inheritance
+
+        parent_check = Check(id="CORE.S.0038.has_frontmatter", type="mechanical", check="frontmatter_present")
+        child_check = Check(id="CLAUDE.S.0015.has_paths_key", type="mechanical", check="frontmatter_key")
+
+        rules: dict[str, Rule] = {
+            "CORE:S:0038": Rule(
+                id="CORE:S:0038",
+                title="Parent",
+                category=Category.STRUCTURE,
+                type=RuleType.MECHANICAL,
+                checks=[parent_check],
+                slug="parent",
+            ),
+            "CLAUDE:S:0015": Rule(
+                id="CLAUDE:S:0015",
+                title="Child",
+                category=Category.STRUCTURE,
+                type=RuleType.MECHANICAL,
+                checks=[child_check],
+                inherited="CORE:S:0038",
+                slug="child",
+            ),
+        }
+        _apply_inheritance(rules)
+
+        # Parent stays
+        assert "CORE:S:0038" in rules
+        # Child has both checks
+        child = rules["CLAUDE:S:0015"]
+        assert len(child.checks) == 2
+        assert child.checks[0].id == "CORE.S.0038.has_frontmatter"
+        assert child.checks[1].id == "CLAUDE.S.0015.has_paths_key"
+
+    def test_inheritance_missing_parent_is_noop(self) -> None:
+        from reporails_cli.core.registry import _apply_inheritance
+
+        rules: dict[str, Rule] = {
+            "CLAUDE:S:0015": Rule(
+                id="CLAUDE:S:0015",
+                title="Child",
+                category=Category.STRUCTURE,
+                type=RuleType.MECHANICAL,
+                checks=[],
+                inherited="CORE:S:9999",
+                slug="child",
+            ),
+        }
+        _apply_inheritance(rules)
+        assert len(rules["CLAUDE:S:0015"].checks) == 0
+
+
+class TestValidateDependsOn:
+    """Test _validate_depends_on cycle detection."""
+
+    def test_no_cycle_passes_silently(self) -> None:
+        from reporails_cli.core.registry import _validate_depends_on
+
+        rules: dict[str, Rule] = {
+            "A": Rule(
+                id="A", title="A", category=Category.STRUCTURE, type=RuleType.MECHANICAL, depends_on=["B"], slug="a"
+            ),
+            "B": Rule(id="B", title="B", category=Category.STRUCTURE, type=RuleType.MECHANICAL, slug="b"),
+        }
+        _validate_depends_on(rules)  # Should not raise
+
+    def test_cycle_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        from reporails_cli.core.registry import _validate_depends_on
+
+        rules: dict[str, Rule] = {
+            "A": Rule(
+                id="A", title="A", category=Category.STRUCTURE, type=RuleType.MECHANICAL, depends_on=["B"], slug="a"
+            ),
+            "B": Rule(
+                id="B", title="B", category=Category.STRUCTURE, type=RuleType.MECHANICAL, depends_on=["A"], slug="b"
+            ),
+        }
+        with caplog.at_level("WARNING"):
+            _validate_depends_on(rules)
+        assert "Circular depends_on" in caplog.text
 
 
 class TestInferAgentFromRuleId:

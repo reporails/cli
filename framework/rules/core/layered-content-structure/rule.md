@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0016
 slug: layered-content-structure
-title: "Layered Content Structure"
+title: Layered Content Structure
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [developer-context-cursor-study, lost-in-the-middle-long-contexts, spec-writing-for-agents]
 match: {format: freeform}
 ---
 # Layered Content Structure

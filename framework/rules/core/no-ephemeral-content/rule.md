@@ -1,11 +1,11 @@
 ---
 id: CORE:C:0029
 slug: no-ephemeral-content
-title: "No Ephemeral Content"
+title: No Ephemeral Content
 category: coherence
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [claude-code-issue-13579, spec-writing-for-agents]
 match: {format: freeform}
 ---
 

@@ -1,11 +1,13 @@
 ---
 id: CORE:S:0037
 slug: subdirectory-instruction-files
-title: "Subdirectory Instruction Files"
+title: Subdirectory Instruction Files
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [agents-md-impact-efficiency, builder-ai-instruction-best-practices, claude-md-guide,
+  instruction-limits-principles, monorepo-claude-md-organization, openai-community-agents-md-optimization,
+  sewell-agents-md-tips, spec-writing-for-agents]
 match: {cardinality: hierarchical}
 ---
 

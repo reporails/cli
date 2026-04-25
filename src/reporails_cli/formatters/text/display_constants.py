@@ -207,7 +207,7 @@ def short_path(file_path: str) -> str:
     home = Path.home()
     if p.is_absolute():
         try:
-            rel = str(p.relative_to(home))
+            rel = p.relative_to(home).as_posix()
             if "memory" in p.parts:
                 idx = p.parts.index("memory")
                 return "~/" + str(Path(*p.parts[idx:]))

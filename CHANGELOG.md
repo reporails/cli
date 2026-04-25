@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.5.5
+
+### Added
+
+- Rules: Populate `backed_by` source IDs on CORE rules from `docs/sources.yml` (research evidence references)
+- Rule layering: `inherited` field — child accumulates parent checks without replacing parent
+- Rule layering: `depends_on` field — declare execution ordering with circular dependency detection
+- Path validation: `CLAUDE.S.0012.paths_resolve` check — verifies frontmatter globs match actual files
+- Schema: `source` field (URI) on rules — links to the official agent documentation a rule enforces
+- Rules: CORE:S:0026 `import-references-used` — verify `@path` imports resolve to existing files
+- Rules: CORE:G:0003 `permissions-ordered` — permission configuration must be present in settings
+- Rules: CORE:C:0037 `static-before-dynamic` — separate stable from dynamic content with headings
+- Rules: CORE:S:0031 `skill-file-length` — 500-line ceiling on `SKILL.md` files
+- Rules: 22 hook rules — 5 CORE base rules with `depends_on` chain, plus agent-specific overrides for Claude, Codex, Copilot, Cursor, and Gemini
+- Registry: Add `hooks` file_type to Claude config — hooks are a distinct surface from config
+
+### Changed
+
+- Checks: `frontmatter_valid_glob` reads `applyTo` frontmatter key for Copilot scope validation
+- Schema: Migrate `Check`, `Rule`, `FileMatch`, `FileTypeDeclaration`, `ClassifiedFile` from dataclasses to Pydantic models
+- Schema: `rule.schema.yml` v0.7.0 → v0.8.0 — added 9 missing check functions, `inherited`, `depends_on`, check-level `replaces`/`severity`/`message`
+- Schema: Remove `overrides` from `agent.schema.yml` — severity overrides are a project-level setting
+- Project: Fix stale `docs/specs/` references in `backbone.yml`, `CLAUDE.md`, `discover.py`
+- Rules: Fix type mismatches in CORE:S:0018, CORE:S:0022; missing args in CLAUDE:S:0003
+- Rules: Downgrade CORE:S:0017 `self-contained-skills` to low severity, accept alternative heading names
+- Rules: Downgrade CORE:S:0022 `local-override-file` to low severity (override file is optional)
+- Rules: 5 Claude hook rules rewritten — recognized event names, handler types, and `$CLAUDE_PROJECT_DIR` use
+- Rules: Renamed Claude skill slugs and Codex slugs (clean names replace sentence fragments)
+- Rules: 12 project-level CORE rules narrowed to `match: {type: main}` — fixes false positives on agent and skill files
+- Sources: Move official agent documentation references from `backed_by` into per-rule `source` URLs
+- Registry: Fix Claude memory cardinality `singleton` → `collection`, add rules domain field
+- Repo hygiene: Add `.ignore` at repo root so Claude Code does not index test fixtures as real configuration
+- CI: Add `windows-latest` to CI matrix — run lint, type check, and tests on both Ubuntu and Windows
+- Tests: Skip symlink tests on Windows (require admin/Developer Mode)
+
+### Fixed
+
+- Regex engine: Replace POSIX-only `signal.SIGALRM` timeout with cross-platform `_timeout_guard` context manager — fixes `AttributeError` crash on Windows (#17)
+- Daemon: Add `sys.platform` guards to `start_daemon`, `stop_daemon`, and daemon client for `os.fork`/`fcntl`/`AF_UNIX` — clear error message on Windows instead of raw `ImportError`
+- Auth: Guard `chmod(0o600)` on credentials file — warn on Windows where NTFS ACLs don't support mode bits
+- Self-update: Fix ephemeral install detection to check Windows `uv\tools\` path
+- Rules: Fix double-negation patterns in 5 Claude hook rules (`expect: absent` + `pattern-not-regex` → `expect: present` + `pattern-regex`)
+- Rules: Fix broken `byte_size` check on CLAUDE:S:0003 — replaced with `description` field presence check
+
+### Removed
+
+- Remove CORE:M:0001 `freshness-marker` — no agent documentation supports it
+
 ## 0.5.4
 
 ### Added
@@ -183,7 +231,7 @@ Added fail scaffold system — auto-generates fail fixtures for structural M che
 
 ### Scorecard redesign
 
-Scorecard moved to bottom of output — violations shown first, score as conclusion. Category table redesigned with mini bars, centered columns, and severity-colored icons. Capability moved to own line below score, elapsed time shown in top-right. Semantic color output throughout — score, bar, capability level, violations, friction, and category table use green/yellow/red (ASCII mode disables colors). Pending semantic checks shown inline with violations using `?` icon. "Setup:" replaced with "Scope:" showing instruction files by agent directory labels.
+Scorecard moved to bottom of output — violations shown first, score as conclusion. Category table redesigned with mini bars, centered columns, and severity-colored icons. Maturity level moved to own line below score, elapsed time shown in top-right. Semantic color output throughout — score, bar, level, violations, friction, and category table use green/yellow/red (ASCII mode disables colors). Pending semantic checks shown inline with violations using `?` icon. "Setup:" replaced with "Scope:" showing instruction files by agent directory labels.
 
 ### `ails heal` simplified
 
@@ -270,7 +318,7 @@ Agent detection, rule loading, glob resolution, and template binding are now cac
 - Content rule violations attributed to root instruction file instead of skill files.
 - Per-file size violations attributed to the violating file, not the rule-level target.
 - Cache hash crash on non-UTF8 instruction files.
-- Feature merge in capability detection used overwrite instead of OR.
+- Feature merge in agent feature lookup used overwrite instead of OR.
 - Regex compiler crash on malformed rule YAML and binary YAML files.
 - Mechanical checks crash on string args from YAML.
 - `detect_orphan_features` crash on L0 projects (no instruction files).

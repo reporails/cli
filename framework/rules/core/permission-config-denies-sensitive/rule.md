@@ -1,12 +1,13 @@
 ---
 id: CORE:G:0005
 slug: permission-config-denies-sensitive
-title: "Permission Config Denies Sensitive"
+title: Permission Config Denies Sensitive
 category: governance
 type: mechanical
 severity: medium
 backed_by: []
 match: {type: config}
+source: https://code.claude.com/docs/en/settings
 ---
 # Permission Config Denies Sensitive
 
@@ -40,4 +41,4 @@ See `credentials.json` for API keys.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for at least one constraint atom restricting access to secrets or credentials. Does not verify the restrictions match the project's actual sensitive files.

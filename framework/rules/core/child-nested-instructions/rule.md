@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0011
 slug: child-nested-instructions
-title: "Child Nested Instructions"
+title: Child Nested Instructions
 category: structure
 type: deterministic
 severity: medium
-backed_by: []
+backed_by: [openai-community-agents-md-optimization, rules-directory-mechanics, sewell-agents-md-tips]
 match: {cardinality: hierarchical}
 ---
 # Child Nested Instructions

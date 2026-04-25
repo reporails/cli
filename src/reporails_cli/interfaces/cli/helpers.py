@@ -243,7 +243,7 @@ def _print_map_text(target: Path, agents: list[Any], elapsed_ms: float) -> None:
 
     for agent in agents:
         root_files = [f for f in agent.instruction_files if f.parent == target]
-        main_file = str(root_files[0].relative_to(target)) if root_files else "?"
+        main_file = root_files[0].relative_to(target).as_posix() if root_files else "?"
         console.print(f"[bold]{agent.agent_type.name}[/bold]")
         console.print(f"  main: {main_file}")
         for label, dir_path in agent.detected_directories.items():

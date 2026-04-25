@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0024
 slug: import-targets-resolve
-title: "Import Targets Resolve"
+title: Import Targets Resolve
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [developer-context-cursor-study]
 match: {format: freeform}
 ---
 
@@ -41,4 +41,4 @@ Import references in instruction files must resolve to existing files. Broken im
 
 ## Limitations
 
-Checks that the expected file exists. Does not evaluate file contents.
+Extracts `@import` references and verifies each target file exists on disk. Does not validate the content of imported files, detect circular imports, or check import syntax correctness.

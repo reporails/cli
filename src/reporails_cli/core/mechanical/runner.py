@@ -119,7 +119,7 @@ def _relativize(path: Path, root: Path | None) -> str:
     """Return path relative to root, or just the name as fallback."""
     if root is not None:
         try:
-            return str(path.relative_to(root))
+            return path.relative_to(root).as_posix()
         except ValueError:
             pass
     return path.name

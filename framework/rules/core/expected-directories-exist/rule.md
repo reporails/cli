@@ -1,11 +1,13 @@
 ---
 id: CORE:S:0008
 slug: expected-directories-exist
-title: "Expected Directories Exist"
+title: Expected Directories Exist
 category: structure
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agentic-coding-adoption-github, awesome-copilot-meta-instructions, builder-ai-instruction-best-practices,
+  claude-md-guide, developer-context-cursor-study, fowler-context-engineering-agents,
+  microsoft-awesome-copilot-blog, rules-directory-mechanics]
 match: {type: config}
 ---
 

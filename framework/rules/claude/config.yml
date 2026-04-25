@@ -8,6 +8,7 @@ name: Claude Code
 
 file_types:
   main:
+    source: https://code.claude.com/docs/en/memory#claude-md-files
     required: true
     format: freeform
     scope: global
@@ -35,6 +36,7 @@ file_types:
         maintainer: system
 
   override:
+    source: https://code.claude.com/docs/en/memory#import-additional-files
     format: freeform
     scope: global
     cardinality: optional
@@ -48,6 +50,7 @@ file_types:
         maintainer: human
 
   child_instruction:
+    source: https://code.claude.com/docs/en/memory#how-claude-md-files-load
     format: freeform
     scope: path_scoped
     cardinality: collection
@@ -61,6 +64,7 @@ file_types:
         maintainer: human
 
   rules:
+    source: https://code.claude.com/docs/en/memory#organize-rules-with-clauderules
     format: [frontmatter, freeform]
     scope: path_scoped
     cardinality: collection
@@ -78,8 +82,10 @@ file_types:
         vcs: external
         maintainer: human
         loading: session_start
+        domain: user
 
   skills:
+    source: https://code.claude.com/docs/en/skills
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -105,6 +111,7 @@ file_types:
         maintainer: system
 
   agents:
+    source: https://code.claude.com/docs/en/sub-agents
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: collection
@@ -123,6 +130,7 @@ file_types:
         maintainer: human
 
   commands:
+    source: https://code.claude.com/docs/en/skills
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: collection
@@ -141,6 +149,7 @@ file_types:
         maintainer: human
 
   output_styles:
+    source: https://code.claude.com/docs/en/output-styles
     format: [frontmatter, freeform]
     scope: global
     cardinality: collection
@@ -158,7 +167,24 @@ file_types:
         vcs: external
         maintainer: human
 
+  hooks:
+    # Hooks configured in settings.json, skill/agent frontmatter, plugin hooks.json
+    # 28+ events, 5 types (command/HTTP/mcp_tool/prompt/agent)
+    source: https://code.claude.com/docs/en/hooks
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: [".claude/settings.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   config:
+    source: https://code.claude.com/docs/en/settings
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -200,6 +226,7 @@ file_types:
         cardinality: collection
 
   mcp:
+    source: https://code.claude.com/docs/en/settings
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -225,14 +252,15 @@ file_types:
         maintainer: system
 
   memory:
+    source: https://code.claude.com/docs/en/memory#auto-memory
     format: freeform
     scope: global
-    cardinality: singleton
+    cardinality: collection
     lifecycle: mutable
     loading: session_start
     scopes:
       auto:
-        patterns: ["~/.claude/projects/*/memory/MEMORY.md"]
+        patterns: ["~/.claude/projects/*/memory/"]
         precedence: auto
         vcs: external
         maintainer: agent
@@ -241,6 +269,7 @@ file_types:
     # Per-subagent persistent memory. Scope chosen via `memory:` frontmatter field
     # on the agent definition (user|project|local) — mutually exclusive per subagent.
     # MEMORY.md (first 200 lines / 25KB) injected into subagent system prompt at startup.
+    source: https://code.claude.com/docs/en/sub-agents#enable-persistent-memory
     format: freeform
     scope: task_scoped
     cardinality: collection
@@ -264,6 +293,7 @@ file_types:
         maintainer: agent
 
   worktree_include:
+    source: https://code.claude.com/docs/en/cli-reference
     format: freeform
     scope: global
     cardinality: singleton
@@ -277,6 +307,7 @@ file_types:
         maintainer: human
 
   keybindings:
+    source: https://code.claude.com/docs/en/keybindings
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -286,6 +317,22 @@ file_types:
       user:
         patterns: ["~/.claude/keybindings.json"]
         precedence: user
+        vcs: external
+        maintainer: human
+
+  plugins:
+    # External plugin directories: .claude-plugin/plugin.json manifest
+    # Bundles skills, agents, hooks, MCP, LSP, monitors, bin/, settings, output-styles/
+    source: https://code.claude.com/docs/en/plugins
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".claude-plugin/plugin.json"]
+        precedence: project
         vcs: external
         maintainer: human
 

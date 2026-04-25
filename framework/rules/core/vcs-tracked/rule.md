@@ -1,11 +1,13 @@
 ---
 id: CORE:G:0001
 slug: vcs-tracked
-title: "Vcs Tracked"
+title: Vcs Tracked
 category: governance
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, agentic-coding-adoption-github,
+  agents-md-impact-efficiency, claude-code-issue-13579, claude-md-guide, dometrain-claude-md-guide,
+  openai-community-agents-md-optimization, rules-directory-mechanics, spec-writing-for-agents]
 match: {format: [freeform, frontmatter, schema_validated]}
 ---
 
@@ -38,4 +40,4 @@ $ git ls-files .claude/rules/testing.md
 
 ## Limitations
 
-Structural check with limited semantic understanding.
+Verifies a `.git` directory exists. Does not check that individual instruction files are tracked, committed, or pushed to a remote.

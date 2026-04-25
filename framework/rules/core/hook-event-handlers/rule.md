@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0020
 slug: hook-event-handlers
-title: "Hook Event Handlers"
+title: Hook Event Handlers
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [enterprise-claude-usage, fowler-context-engineering-agents, instruction-limits-principles]
 match: {type: config}
 ---
 # Hook Event Handlers
@@ -38,4 +38,4 @@ Before committing, the linter runs automatically.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Hook", "Event", "Trigger", or "Pre-commit". Does not verify the section documents actual event handler configurations.

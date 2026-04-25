@@ -1,12 +1,16 @@
 ---
 id: CORE:C:0008
 slug: validation-commands-present
-title: "Validation Commands Present"
+title: Validation Commands Present
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
-match: {format: freeform}
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, awesome-copilot-meta-instructions,
+  builder-ai-instruction-best-practices, claude-code-issue-13579, developer-context-cursor-study,
+  enterprise-claude-usage, fowler-pushing-ai-autonomy, instruction-limits-principles,
+  openai-community-agents-md-optimization, osmani-ai-coding-workflow, prompthub-cursor-rules-analysis,
+  sewell-agents-md-tips, spec-writing-for-agents]
+match: {type: main}
 ---
 # Validation Commands Present
 
@@ -43,4 +47,4 @@ Install dependencies with `uv sync`.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Validation", "Verify", "QA", "Lint", or "Check". Does not verify the section contains runnable validation commands.

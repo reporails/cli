@@ -1,11 +1,21 @@
-"""Data models for reporails. All models are frozen (immutable) where possible."""
+"""Data models for reporails.
+
+Schema-mapped types (Check, Rule, FileMatch, FileTypeDeclaration, ClassifiedFile)
+use Pydantic BaseModel — frozen, validated, and self-documenting. The model IS
+the schema: use Rule.model_json_schema() to export.
+
+Internal types (LocalFinding, Violation, JudgmentRequest, JudgmentResponse)
+remain plain dataclasses — no schema contract needed.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Category(str, Enum):
@@ -47,11 +57,11 @@ class Execution(str, Enum):
 class Severity(str, Enum):
     """Violation severity levels."""
 
-    CRITICAL = "critical"  # Weight: 5.5
-    HIGH = "high"  # Weight: 4.0
-    MEDIUM = "medium"  # Weight: 2.5
-    LOW = "low"  # Weight: 1.5
-    INFO = "info"  # Weight: 1.0
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
 
 
 class Tier(str, Enum):
@@ -83,27 +93,33 @@ class Level(str, Enum):
     L6 = "L6"  # Adaptive
 
 
-@dataclass(frozen=True)
-class FileTypeDeclaration:
+# ---------------------------------------------------------------------------
+# Schema-mapped models (Pydantic) — frozen, validated
+# ---------------------------------------------------------------------------
+
+
+class FileTypeDeclaration(BaseModel):
     """A typed file declaration from agent config file_types section."""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str  # "main", "scoped_rule", "skill", etc.
     patterns: tuple[str, ...]  # glob patterns
     required: bool = False
-    properties: dict[str, str | list[str]] = field(default_factory=dict)  # property name → value(s)
+    properties: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class ClassifiedFile:
+class ClassifiedFile(BaseModel):
     """A file matched to a type declaration with resolved properties."""
+
+    model_config = ConfigDict(frozen=True)
 
     path: Path
     file_type: str  # type name from FileTypeDeclaration.name
-    properties: dict[str, str | list[str]] = field(default_factory=dict)
+    properties: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class FileMatch:  # pylint: disable=too-many-instance-attributes
+class FileMatch(BaseModel):
     """Property-based file targeting. None properties are wildcards.
 
     Each property can be:
@@ -111,6 +127,8 @@ class FileMatch:  # pylint: disable=too-many-instance-attributes
     - str: exact match
     - list[str]: OR match (value must be in the list)
     """
+
+    model_config = ConfigDict(frozen=True)
 
     type: list[str] | str | None = None
     scope: list[str] | str | None = None
@@ -124,29 +142,35 @@ class FileMatch:  # pylint: disable=too-many-instance-attributes
     precedence: list[str] | str | None = None
 
 
-@dataclass(frozen=True)
-class Check:
+class Check(BaseModel):
     """A specific check within a rule.
 
     Checks have a type matching their gate: mechanical (Python function),
     deterministic (regex pattern), or content_query (atom-based).
     """
 
-    id: str  # e.g., "CORE:S:0001:check:0001"
+    model_config = ConfigDict(frozen=True)
+
+    id: str  # e.g., "CORE.S.0001.file-exists"
     type: str = "deterministic"  # "mechanical" | "deterministic" | "content_query"
     check: str | None = None  # Mechanical function name
     args: dict[str, Any] | None = None  # Mechanical/content_query arguments
     query: str | None = None  # Content query function name (type=content_query)
     expect: str = "present"  # "present" = no match is violation; "absent" = match is violation
-    metadata_keys: list[str] = field(default_factory=list)  # D→M metadata bus keys
+    metadata_keys: list[str] = Field(default_factory=list)  # D→M metadata bus keys
     replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
     severity: str = ""  # Check-level severity override (empty = use rule severity)
     message: str = ""  # Check-level message (empty = use check result message)
 
 
-@dataclass(frozen=True)
-class Rule:  # pylint: disable=too-many-instance-attributes
-    """A rule definition loaded from framework frontmatter."""
+class Rule(BaseModel):
+    """A rule definition loaded from framework frontmatter.
+
+    The single source of truth for rule structure. Use Rule.model_json_schema()
+    to export the schema for external consumers.
+    """
+
+    model_config = ConfigDict(frozen=True)
 
     # Required (from frontmatter)
     id: str  # e.g., "CORE:S:0001"
@@ -160,15 +184,16 @@ class Rule:  # pylint: disable=too-many-instance-attributes
     execution: Execution = Execution.LOCAL  # Where checks run
     match: FileMatch | None = None  # Property-based file targeting
     supersedes: str | None = None  # Coordinate of rule this replaces
+    inherited: str | None = None  # Coordinate of parent rule to inherit checks from (both stay active)
+    depends_on: list[str] = Field(default_factory=list)  # Rule coordinates that must pass first
 
     # Checks (all rule types)
-    checks: list[Check] = field(default_factory=list)
+    checks: list[Check] = Field(default_factory=list)
 
     # References
-    sources: list[str] = field(default_factory=list)
-    see_also: list[str] = field(default_factory=list)
-    backed_by: list[str] = field(default_factory=list)  # Source IDs from sources.yml
-    concern: str | None = None  # Content concern: identity, directive, knowledge, constraint
+    sources: list[str] = Field(default_factory=list)
+    see_also: list[str] = Field(default_factory=list)
+    backed_by: list[str] = Field(default_factory=list)  # Source IDs from sources.yml
 
     # Pattern quality
     pattern_confidence: PatternConfidence | None = None
@@ -176,6 +201,11 @@ class Rule:  # pylint: disable=too-many-instance-attributes
     # Paths (set after loading)
     md_path: Path | None = None
     yml_path: Path | None = None
+
+
+# ---------------------------------------------------------------------------
+# Internal types (dataclasses) — no schema contract
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)

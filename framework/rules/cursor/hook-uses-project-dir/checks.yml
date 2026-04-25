@@ -1,0 +1,9 @@
+checks:
+- id: CURSOR.G.0001.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CURSOR.G.0001.uses-project-dir
+  type: deterministic
+  expect: present
+  pattern-regex: (?:\$CURSOR_PROJECT_DIR|\$CLAUDE_PROJECT_DIR|\$\{CURSOR_PROJECT_DIR\})
+  message: No hook command references $CURSOR_PROJECT_DIR

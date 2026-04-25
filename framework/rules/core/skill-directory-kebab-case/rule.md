@@ -1,12 +1,13 @@
 ---
 id: CORE:S:0018
 slug: skill-directory-kebab-case
-title: "Skill Directory Kebab Case"
+title: Skill Directory Kebab Case
 category: structure
-type: mechanical
+type: deterministic
 severity: medium
 backed_by: []
 match: {type: skill}
+source: https://code.claude.com/docs/en/skills
 ---
 # Skill Directory Kebab Case
 

@@ -1,0 +1,9 @@
+checks:
+- id: CURSOR.S.0004.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: CURSOR.S.0004.command-has-field
+  type: deterministic
+  expect: present
+  pattern-regex: '"command"\s*:\s*"[^"]+"'
+  message: No command handler with a command field found
