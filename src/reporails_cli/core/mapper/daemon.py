@@ -99,7 +99,10 @@ def _become_daemon() -> None:
     """Detach from parent, close inherited FDs, redirect stdio, run daemon loop.
 
     Called in the forked child process. Never returns — calls os._exit(0).
+    Unreachable on Windows: callers gate on sys.platform before forking.
     """
+    if sys.platform == "win32":
+        return
     try:
         os.setsid()
 
@@ -236,7 +239,12 @@ def _daemon_main() -> None:
 
     Lifecycle: idle timeout only — no parent-process tracking. The global
     daemon isn't a child of any specific CLI process.
+
+    Unreachable on Windows: callers gate on sys.platform before invoking.
     """
+    if sys.platform == "win32":
+        return
+
     _init_daemon_process()
 
     _shutdown = False

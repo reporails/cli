@@ -748,19 +748,19 @@ class TestPerformance:
         assert len(_sarif_results(sarif)) == 100
         assert elapsed < 5.0, f"100 files took {elapsed:.1f}s"
 
-    def test_timeout_guard_noop_without_sigalrm(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_timeout_guard yields without error when SIGALRM is unavailable (Windows)."""
+    def test_timeout_guard_noop_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_timeout_guard yields without error on Windows (no SIGALRM)."""
         from reporails_cli.core.regex import runner
 
-        monkeypatch.setattr(runner, "_HAS_SIGALRM", False)
+        monkeypatch.setattr(runner.sys, "platform", "win32")
         with runner._timeout_guard(1.0):
             pass  # Should not raise
 
-    def test_validation_works_without_sigalrm(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """run_validation produces correct results when SIGALRM is unavailable (Windows)."""
+    def test_validation_works_on_windows(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """run_validation produces correct results on Windows (no SIGALRM)."""
         from reporails_cli.core.regex import runner
 
-        monkeypatch.setattr(runner, "_HAS_SIGALRM", False)
+        monkeypatch.setattr(runner.sys, "platform", "win32")
         rule_yml = _write_rule(
             tmp_path,
             {"checks": [{"id": "WIN", "pattern-regex": "hello", "message": "found it"}]},

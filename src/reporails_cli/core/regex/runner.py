@@ -7,6 +7,7 @@ import fnmatch
 import logging
 import re
 import signal
+import sys
 from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -115,8 +116,6 @@ def _is_text_file(file_path: Path) -> bool:
 
 _REGEX_TIMEOUT_S = 0.5
 
-_HAS_SIGALRM = hasattr(signal, "SIGALRM")
-
 
 class _RegexTimeoutError(Exception):
     """Raised when a regex search exceeds the time limit."""
@@ -124,8 +123,8 @@ class _RegexTimeoutError(Exception):
 
 @contextlib.contextmanager
 def _timeout_guard(seconds: float) -> Iterator[None]:
-    """POSIX signal-based timeout; no-op on platforms without SIGALRM."""
-    if not _HAS_SIGALRM:
+    """POSIX signal-based timeout; no-op on Windows (no SIGALRM)."""
+    if sys.platform == "win32":
         yield
         return
 
