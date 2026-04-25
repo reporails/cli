@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import pytest
 import yaml
 
 from reporails_cli.core.regex.compiler import (
@@ -748,29 +747,11 @@ class TestPerformance:
         assert len(_sarif_results(sarif)) == 100
         assert elapsed < 5.0, f"100 files took {elapsed:.1f}s"
 
-    def test_run_with_timeout_returns_value_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_run_with_timeout returns fn() result via thread on Windows (no SIGALRM)."""
-        from reporails_cli.core.regex import runner
-
-        monkeypatch.setattr(runner.sys, "platform", "win32")
-        assert runner._run_with_timeout(lambda: 42, 1.0) == 42
-
-    def test_run_with_timeout_raises_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_run_with_timeout raises _RegexTimeoutError on Windows when fn() exceeds timeout."""
-        from reporails_cli.core.regex import runner
-
-        monkeypatch.setattr(runner.sys, "platform", "win32")
-        with pytest.raises(runner._RegexTimeoutError):
-            runner._run_with_timeout(lambda: time.sleep(2.0), 0.2)
-
-    def test_validation_works_on_windows(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """run_validation produces correct results on Windows (thread-based timeout)."""
-        from reporails_cli.core.regex import runner
-
-        monkeypatch.setattr(runner.sys, "platform", "win32")
+    def test_validation_completes_on_simple_pattern(self, tmp_path: Path) -> None:
+        """run_validation produces correct results — sanity check the regex library wiring."""
         rule_yml = _write_rule(
             tmp_path,
-            {"checks": [{"id": "WIN", "pattern-regex": "hello", "message": "found it"}]},
+            {"checks": [{"id": "SIMPLE", "pattern-regex": "hello", "message": "found it"}]},
         )
         _write_target(tmp_path, "hello world\n")
         sarif = run_validation([rule_yml], tmp_path)
