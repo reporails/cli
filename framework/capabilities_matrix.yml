@@ -1,0 +1,68 @@
+# Agent capability matrix — single source of truth
+#
+# Connection rule: every capability listed here MUST have a corresponding
+# file_types entry in the agent's config.yml. The validation script
+# (scripts/validate_registry.py) enforces this.
+version: "1.0.0"
+
+# Implemented scope — these agents have full config.yml and audited docs.
+# The rest are cataloged but not reconciled.
+implemented: [claude, codex, copilot, cursor, gemini]
+
+# Capability taxonomy — stable IDs mapped to human labels.
+taxonomy:
+  root:          "Root instruction"
+  scoped:        "Scoped rules"
+  skills:        "Skills"
+  hooks:         "Hooks"
+  mcp:           "MCP / tool servers"
+  subagents:     "Subagents"
+  memory:        "Memory"
+  enterprise:    "Enterprise policy"
+  plugins:       "Plugins"
+  agents_md:     "AGENTS.md"
+  cross_read:    "Cross-agent read"
+  user_surfaces: "User surfaces"
+  config:        "Config file"
+  templates:     "Prompt templates"
+  output:        "Output customization"
+
+# Matrix: agent_id → list of capability IDs present
+# Absent capabilities are implicitly false.
+# Sorted alphabetically by agent_id.
+agents:
+  aider:      [root, user_surfaces, config]
+  amazonq:    [root, scoped, hooks, mcp, subagents, enterprise, plugins, agents_md, cross_read, user_surfaces, config]
+  amp:        [root, scoped, skills, mcp, enterprise, agents_md, cross_read, user_surfaces, config]
+  augment:    [root, scoped, mcp, agents_md, cross_read, user_surfaces, config]
+  bito:       [root, enterprise, agents_md, cross_read, user_surfaces, config]
+  blackbox:   [skills, user_surfaces, config]
+  bolt:       [root, config, templates]
+  claude:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, user_surfaces, config, output]
+  cline:      [root, scoped, skills, hooks, mcp, cross_read, user_surfaces, config]
+  coderabbit: [scoped, memory, enterprise, agents_md, cross_read, config, templates]
+  codex:      [root, scoped, skills, hooks, mcp, subagents, enterprise, plugins, agents_md, cross_read, user_surfaces, config]
+  cody:       [root, mcp, enterprise, user_surfaces, config, templates]
+  continue:   [root, scoped, mcp, enterprise, user_surfaces, config, templates]
+  copilot:    [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
+  cursor:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output]
+  devin:      [root, scoped, mcp, memory, enterprise, agents_md, user_surfaces, config, templates]
+  gemini:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
+  goose:      [root, scoped, mcp, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
+  jetbrains:  [root, scoped, mcp, enterprise, user_surfaces, config]
+  junie:      [root, agents_md, user_surfaces, config]
+  kilo:       [root, scoped, skills, mcp, enterprise, agents_md, user_surfaces, config, templates, output]
+  lovable:    [root, scoped]
+  opencode:   [root, scoped, skills, hooks, mcp, subagents, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output]
+  openhands:  [root, skills, mcp, subagents, agents_md, config]
+  qodo:       [scoped, mcp, subagents, enterprise, agents_md, user_surfaces, config, output]
+  replit:     [root, memory, config]
+  roo:        [root, scoped, skills, mcp, agents_md, cross_read, user_surfaces, config]
+  sourcery:   [scoped, enterprise, user_surfaces, config]
+  sweep:      [root, skills, agents_md, cross_read, config, templates]
+  tabnine:    [root, mcp, enterprise, user_surfaces, config]
+  trae:       [root, scoped, mcp, user_surfaces, config, output]
+  void:       [root, user_surfaces]
+  warp:       [root, scoped, cross_read, templates]
+  windsurf:   [root, scoped, skills, mcp, memory, agents_md, user_surfaces, config, templates]
+  zed:        [root, mcp, agents_md, cross_read, user_surfaces, config, output]
