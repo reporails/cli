@@ -4,7 +4,7 @@ AI instruction validator — validates instruction files against mechanical, det
 
 ## Session Start
 
-Read `.ails/backbone.yml` for project structure and agent registry. Read `docs/specs/` for architecture decisions before modifying `src/reporails_cli/core/` modules. Specs document the tradeoffs behind current designs and prevent re-solving settled questions.
+Read `.ails/backbone.yml` for project structure and agent registry. Read `specs/` for architecture decisions before modifying `src/reporails_cli/core/` modules. Specs document the tradeoffs behind current designs and prevent re-solving settled questions.
 
 ## Commands
 
@@ -30,7 +30,7 @@ Read `.ails/backbone.yml` for project structure and agent registry. Read `docs/s
 ## Boundaries
 
 - Scope searches to `src/` or `tests/` using `Grep --type py` for Python files and `Glob "src/**/*.py"` for file discovery. Targeted searches return relevant results faster than broad scans. *Do NOT `grep` the entire repo.*
-- Read `docs/specs/*.md` before modifying `src/reporails_cli/core/` modules. Specs contain design constraints that aren't visible in the code alone.
+- Read `specs/` before modifying `src/reporails_cli/core/` modules. Specs contain design constraints that aren't visible in the code alone.
 - Sensitive file restrictions (`.env`, `credentials*`, `*.pem`) are in `.claude/rules/sensitive-files.md`
 
 ## Architecture
