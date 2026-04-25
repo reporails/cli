@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from reporails_cli.core.applicability import get_applicable_rules
 from reporails_cli.core.models import Category, FileMatch, Rule, RuleType
 
@@ -41,7 +39,7 @@ class TestGetApplicableRulesTargetFiltering:
 
     def test_supersession_drops_superseded_rule(self) -> None:
         """If rule A supersedes rule B, and both are applicable, B is dropped."""
-        rule_a = replace(_make_rule("CORE:S:0010"), supersedes="CORE:S:0001")
+        rule_a = _make_rule("CORE:S:0010").model_copy(update={"supersedes": "CORE:S:0001"})
         rules = {
             "CORE:S:0001": _make_rule("CORE:S:0001"),
             "CORE:S:0010": rule_a,

@@ -1,5 +1,5 @@
 # Rule frontmatter schema
-version: "0.7.0"
+version: "0.9.0"
 
 types:
   - mechanical
@@ -132,20 +132,20 @@ fields:
         type: enum
         values: [managed, project, user, auto]
 
+  source:
+    required: false
+    type: string
+    format: uri
+    description: "Official documentation URL this rule enforces. The authoritative spec for re-validation. When present, supersedes backed_by for verification."
+
   backed_by:
     required: false
     type: array
-    description: "Evidence sources backing this rule. References source IDs from docs/sources.yml."
+    description: "Evidence sources backing this rule. Fallback when no source URL exists. References source IDs from docs/sources.yml."
     items:
       type: string
       pattern: "^[a-z][a-z0-9-]*$"
       description: "Source ID (matches id field in docs/sources.yml)"
-
-  concern:
-    required: false
-    type: enum
-    values: [identity, directive, knowledge, constraint]
-    description: "Content concern classification. Null for formal/structural rules."
 
   checks:
     required: false
@@ -168,6 +168,7 @@ fields:
         type: string
         description: "Mechanical check function name (see values for available checks)"
         values:
+          # checks.py — basic structural checks
           - file_exists
           - directory_exists
           - directory_contains
@@ -176,12 +177,22 @@ fields:
           - file_count
           - line_count
           - byte_size
+          # checks_advanced.py — extended checks
+          - frontmatter_present
+          - frontmatter_valid_yaml
+          - frontmatter_valid_glob
+          - frontmatter_extra_keys
+          - valid_markdown
           - path_resolves
           - extract_imports
           - aggregate_byte_size
           - import_depth
           - directory_file_types
-          - frontmatter_valid_glob
+          - count_at_most
+          - count_at_least
+          - check_import_targets_exist
+          - filename_matches_pattern
+          - file_absent
           - content_absent
       args:
         required: false
@@ -207,6 +218,21 @@ fields:
         type: boolean
         default: false
         description: "Whether pattern operates across the full target set (not per-file)"
+      # shared optional fields
+      replaces:
+        required: false
+        type: string
+        pattern: "^[A-Z_]+\\.[SCDEGM]\\.[0-9]{4}\\.[a-z][a-z0-9-]*$"
+        description: "Check ID from superseded rule to replace during inheritance"
+      severity:
+        required: false
+        type: enum
+        values: [critical, high, medium, low, info]
+        description: "Check-level severity override (empty = use rule severity)"
+      message:
+        required: false
+        type: string
+        description: "Check-level human-readable message override"
       # content_query
       query:
         required_if: "type == content_query"
@@ -217,7 +243,21 @@ fields:
     required: false
     type: string
     pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
-    description: "Coordinate of replaced rule. 1:1 only."
+    description: "Coordinate of replaced rule. 1:1 only. Parent is removed from active set; checks are inherited unless replaced."
+
+  inherited:
+    required: false
+    type: string
+    pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
+    description: "Coordinate of parent rule to inherit checks from. Both rules remain active. Child accumulates parent checks without removing parent."
+
+  depends_on:
+    required: false
+    type: array
+    description: "Rule coordinates that must pass before this rule fires. Circular dependencies are a build error."
+    items:
+      type: string
+      pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
 
   see_also:
     required: false
@@ -259,6 +299,10 @@ validation:
   - rule: "supersedes target must be a valid rule coordinate"
   - rule: "No circular supersessions"
   - rule: "Each rule may be superseded by at most one other rule"
+  - rule: "inherited target must be a valid rule coordinate"
+  - rule: "A rule cannot declare both supersedes and inherited"
+  - rule: "depends_on targets must be valid rule coordinates"
+  - rule: "No circular depends_on chains"
   - rule: "Severity is a rule-level field (one per rule, not per check)"
   - rule: "Slots are immutable — deleted rules are tombstoned, never reused"
   - rule: "Tier derived from backed_by: core (weight >= 0.8), experimental (< 0.8 or empty)"
@@ -266,16 +310,15 @@ validation:
 examples:
   core_mechanical: |
     ---
-    id: CORE:M:0001
-    slug: version-controlled
-    title: Version Controlled
-    category: maintenance
+    id: CORE:S:0001
+    slug: size-limits
+    title: Size Limits
+    category: structure
     type: mechanical
     severity: critical
     backed_by:
       - claude-code-best-practices
-    match: {}
-    see_also: [CLAUDE:M:0001]
+    match: {type: main}
     ---
 
   core_deterministic: |
@@ -330,4 +373,28 @@ examples:
     backed_by:
       - claude-code-best-practices
     match: {}
+    ---
+
+  with_inheritance: |
+    ---
+    id: CLAUDE:S:0015
+    slug: rules-have-frontmatter
+    title: Rules Have Valid Frontmatter
+    category: structure
+    type: mechanical
+    severity: medium
+    inherited: CORE:S:0038
+    match: {type: scoped_rule}
+    ---
+
+  with_depends_on: |
+    ---
+    id: CORE:C:0042
+    slug: coherent-scope-usage
+    title: Coherent Scope Usage
+    category: coherence
+    type: deterministic
+    severity: medium
+    depends_on: [CORE:S:0038]
+    match: {scope: path_scoped}
     ---
