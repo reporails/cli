@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import logging
 import re
 import signal
+from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -113,24 +115,27 @@ def _is_text_file(file_path: Path) -> bool:
 
 _REGEX_TIMEOUT_S = 0.5
 
+_HAS_SIGALRM = hasattr(signal, "SIGALRM")
+
 
 class _RegexTimeoutError(Exception):
     """Raised when a regex search exceeds the time limit."""
 
 
-def _alarm_handler(_signum: int, _frame: object) -> None:
-    raise _RegexTimeoutError
+@contextlib.contextmanager
+def _timeout_guard(seconds: float) -> Iterator[None]:
+    """POSIX signal-based timeout; no-op on platforms without SIGALRM."""
+    if not _HAS_SIGALRM:
+        yield
+        return
 
+    def _handler(_signum: int, _frame: object) -> None:
+        raise _RegexTimeoutError
 
-def _safe_search(pat: re.Pattern[str], content: str) -> re.Match[str] | None:
-    """Run pat.search with a signal-based timeout against catastrophic backtracking."""
-    prev = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S)
+    prev = signal.signal(signal.SIGALRM, _handler)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
-        return pat.search(content)
-    except _RegexTimeoutError:
-        logger.warning("Regex timed out after %.1fs: %s", _REGEX_TIMEOUT_S, pat.pattern[:80])
-        return None
+        yield
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, prev)
@@ -263,16 +268,12 @@ def _emit_results(
 
 def _safe_finditer(pat: re.Pattern[str], content: str) -> list[re.Match[str]]:
     """Run pat.finditer with a signal-based timeout against catastrophic backtracking."""
-    prev = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S)
     try:
-        return list(pat.finditer(content))
+        with _timeout_guard(_REGEX_TIMEOUT_S):
+            return list(pat.finditer(content))
     except _RegexTimeoutError:
         logger.warning("Regex finditer timed out after %.1fs: %s", _REGEX_TIMEOUT_S, pat.pattern[:80])
         return []
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, prev)
 
 
 def _retry_shadowed(
@@ -284,27 +285,23 @@ def _retry_shadowed(
     rule_defs: dict[str, dict[str, Any]],
 ) -> None:
     """Retry shadowed checks under a single timeout guard."""
-    prev = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S * 2)
     try:
-        for group_name, check in group_to_check.items():
-            if group_name in matched_checks:
-                continue
-            if check.patterns:
-                m = check.patterns[0].search(content)
-                if m:
-                    _emit_results(check, [m], file_uri, content, results, rule_defs)
-            elif check.either_patterns:
-                for pat in check.either_patterns:
-                    m = pat.search(content)
+        with _timeout_guard(_REGEX_TIMEOUT_S * 2):
+            for group_name, check in group_to_check.items():
+                if group_name in matched_checks:
+                    continue
+                if check.patterns:
+                    m = check.patterns[0].search(content)
                     if m:
                         _emit_results(check, [m], file_uri, content, results, rule_defs)
-                        break
+                elif check.either_patterns:
+                    for pat in check.either_patterns:
+                        m = pat.search(content)
+                        if m:
+                            _emit_results(check, [m], file_uri, content, results, rule_defs)
+                            break
     except _RegexTimeoutError:
         logger.warning("Shadowed check retry timed out after %.1fs", _REGEX_TIMEOUT_S * 2)
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, prev)
 
 
 def _scan_combined(
@@ -364,23 +361,19 @@ def _scan_file(
     if combined_patterns:
         _scan_combined(content, file_uri, combined_patterns, results, rule_defs)
 
-    prev = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_S * len(checks))
     try:
-        for check in checks:
-            matches = _match_check(check, content, body_content)
-            if not matches:
-                continue
+        with _timeout_guard(_REGEX_TIMEOUT_S * len(checks)):
+            for check in checks:
+                matches = _match_check(check, content, body_content)
+                if not matches:
+                    continue
 
-            if first_match_only:
-                _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
-            else:
-                _emit_results(check, matches, file_uri, content, results, rule_defs)
+                if first_match_only:
+                    _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
+                else:
+                    _emit_results(check, matches, file_uri, content, results, rule_defs)
     except _RegexTimeoutError:
         logger.warning("File scan timed out: %s", file_path)
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, prev)
 
 
 def _scan_all_targets(
