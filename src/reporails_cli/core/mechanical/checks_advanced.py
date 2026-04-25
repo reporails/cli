@@ -221,35 +221,58 @@ def frontmatter_valid_glob(
     args: dict[str, Any],
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check that YAML frontmatter path entries use valid glob syntax."""
+    """Check that YAML frontmatter path entries use valid glob syntax.
+
+    When require_matches is true, also checks that each glob pattern
+    matches at least one file in the project root.
+    """
     path = str(args.get("path", ""))
+    require_matches = args.get("require_matches", False)
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=True, message=f"Directory not found: {path} (OK)")
+    unresolved: list[str] = []
     for f in target.iterdir():
         if not f.is_file() or f.suffix != ".md":
             continue
-        try:
-            content = f.read_text(encoding="utf-8")
-            if not content.startswith("---"):
-                continue
-            end = content.find("---", 3)
-            if end < 0:
-                continue
-            fm = yaml.safe_load(content[3:end])
-            if not isinstance(fm, dict):
-                continue
-            paths = fm.get("globs") or fm.get("paths") or []
-            if isinstance(paths, str):
-                paths = [paths]
-            for p in paths:
-                if not isinstance(p, str):
-                    return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
-                if p.count("[") != p.count("]"):
-                    return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
-        except (OSError, yaml.YAMLError):
-            continue
+        result = _validate_file_globs(f, root, require_matches, unresolved)
+        if result is not None:
+            return result
+    if unresolved:
+        return CheckResult(passed=False, message=f"Path globs match no files: {', '.join(unresolved)}")
     return CheckResult(passed=True, message="All frontmatter path entries valid")
+
+
+def _validate_file_globs(
+    f: Path,
+    root: Path,
+    require_matches: bool,
+    unresolved: list[str],
+) -> CheckResult | None:
+    """Validate glob entries in a single file's frontmatter. Returns CheckResult on error, None to continue."""
+    try:
+        content = f.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            return None
+        end = content.find("---", 3)
+        if end < 0:
+            return None
+        fm = yaml.safe_load(content[3:end])
+        if not isinstance(fm, dict):
+            return None
+        paths = fm.get("globs") or fm.get("paths") or fm.get("applyTo") or []
+        if isinstance(paths, str):
+            paths = [paths]
+        for p in paths:
+            if not isinstance(p, str):
+                return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
+            if p.count("[") != p.count("]"):
+                return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
+            if require_matches and not any(True for _ in root.glob(p)):
+                unresolved.append(f"{f.name}: {p}")
+    except (OSError, yaml.YAMLError):
+        pass
+    return None
 
 
 def count_at_most(
