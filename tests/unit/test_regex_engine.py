@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from reporails_cli.core.regex.compiler import (
@@ -746,6 +747,27 @@ class TestPerformance:
 
         assert len(_sarif_results(sarif)) == 100
         assert elapsed < 5.0, f"100 files took {elapsed:.1f}s"
+
+    def test_timeout_guard_noop_without_sigalrm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_timeout_guard yields without error when SIGALRM is unavailable (Windows)."""
+        from reporails_cli.core.regex import runner
+
+        monkeypatch.setattr(runner, "_HAS_SIGALRM", False)
+        with runner._timeout_guard(1.0):
+            pass  # Should not raise
+
+    def test_validation_works_without_sigalrm(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """run_validation produces correct results when SIGALRM is unavailable (Windows)."""
+        from reporails_cli.core.regex import runner
+
+        monkeypatch.setattr(runner, "_HAS_SIGALRM", False)
+        rule_yml = _write_rule(
+            tmp_path,
+            {"checks": [{"id": "WIN", "pattern-regex": "hello", "message": "found it"}]},
+        )
+        _write_target(tmp_path, "hello world\n")
+        sarif = run_validation([rule_yml], tmp_path)
+        assert len(_sarif_results(sarif)) == 1
 
 
 # ===========================================================================

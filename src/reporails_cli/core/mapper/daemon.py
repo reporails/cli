@@ -16,6 +16,7 @@ import logging
 import os
 import signal
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
@@ -67,6 +68,8 @@ def is_daemon_running() -> bool:
 
 def stop_daemon() -> bool:
     """Send shutdown command to daemon. Returns True if stopped."""
+    if sys.platform == "win32":
+        return False
     if not is_daemon_running():
         return False
     sock_path = _socket_path()
@@ -92,11 +95,50 @@ def stop_daemon() -> bool:
     return True
 
 
+def _become_daemon() -> None:
+    """Detach from parent, close inherited FDs, redirect stdio, run daemon loop.
+
+    Called in the forked child process. Never returns — calls os._exit(0).
+    """
+    try:
+        os.setsid()
+
+        # Close inherited FDs above stderr before redirecting.
+        # Without this, the daemon child holds references to the parent's
+        # pipes (e.g., npx's stdio: "inherit"), preventing EOF and causing
+        # the parent to hang indefinitely waiting for pipe closure.
+        import resource
+
+        max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+        import contextlib
+
+        for fd in range(3, min(max_fd, 1024)):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+        # Redirect std streams to /dev/null
+        devnull = os.open(os.devnull, os.O_RDWR)
+        os.dup2(devnull, 0)
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+        os.close(devnull)
+
+        _daemon_main()
+    except Exception:  # daemon child must not crash on transient errors
+        pass
+    finally:
+        os._exit(0)  # daemon child must not return
+
+
 def start_daemon() -> int:
     """Start global daemon in a forked subprocess. Returns child PID.
 
     Uses flock on mapper.lock to serialize concurrent starts.
+    Requires Unix (fork/AF_UNIX) — raises OSError on Windows.
     """
+    if sys.platform == "win32":
+        raise OSError("Mapper daemon requires Unix (fork/AF_UNIX). Use 'ails check' directly on Windows.")
+
     import fcntl
 
     daemon_dir = _daemon_dir()
@@ -139,35 +181,7 @@ def start_daemon() -> int:
                     break
             return pid
 
-        # Child — become daemon
-        try:
-            os.setsid()
-
-            # Close inherited FDs above stderr before redirecting.
-            # Without this, the daemon child holds references to the parent's
-            # pipes (e.g., npx's stdio: "inherit"), preventing EOF and causing
-            # the parent to hang indefinitely waiting for pipe closure.
-            import resource
-
-            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
-            import contextlib
-
-            for fd in range(3, min(max_fd, 1024)):
-                with contextlib.suppress(OSError):
-                    os.close(fd)
-
-            # Redirect std streams to /dev/null
-            devnull = os.open(os.devnull, os.O_RDWR)
-            os.dup2(devnull, 0)
-            os.dup2(devnull, 1)
-            os.dup2(devnull, 2)
-            os.close(devnull)
-
-            _daemon_main()
-        except Exception:  # daemon child must not crash on transient errors
-            pass
-        finally:
-            os._exit(0)  # daemon child must not return
+        _become_daemon()
 
         return 0  # unreachable
     finally:
@@ -220,8 +234,8 @@ def _daemon_main() -> None:
     ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
     ``ping`` and ``shutdown`` are answered immediately regardless.
 
-    Lifecycle: idle timeout only (no orphan detection). The global daemon
-    isn't a child of any specific CLI process.
+    Lifecycle: idle timeout only — no parent-process tracking. The global
+    daemon isn't a child of any specific CLI process.
     """
     _init_daemon_process()
 

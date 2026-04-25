@@ -35,8 +35,10 @@ def is_ephemeral_install() -> bool:
     if method in (InstallMethod.DEV, InstallMethod.PIPX, InstallMethod.PIP):
         return False
     if method == InstallMethod.UV:
-        # Persistent uv tool installs go to ~/.local/share/uv/tools/
-        # Ephemeral uvx goes to cache dirs
+        # Persistent uv tool installs go to ~/.local/share/uv/tools/ (Unix)
+        # or %APPDATA%\uv\tools\ (Windows). Ephemeral uvx goes to cache dirs.
+        if sys.platform == "win32":
+            return "\\uv\\tools\\" not in sys.prefix
         return "/.local/share/uv/tools/" not in sys.prefix
     return False
 

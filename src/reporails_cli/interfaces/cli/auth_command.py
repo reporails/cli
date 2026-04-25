@@ -7,6 +7,7 @@ The API key is stored in ~/.reporails/credentials.yml (not in the project).
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from pathlib import Path
 
@@ -60,8 +61,11 @@ def _write_credentials(api_key: str, github_login: str, tier: str) -> None:
         ),
         encoding="utf-8",
     )
-    # Restrict permissions to owner only
-    path.chmod(0o600)
+    # Restrict permissions to owner only (NTFS ACLs don't support mode bits)
+    if sys.platform == "win32":
+        logger.warning("File permissions not enforced on Windows — secure %s manually", path)
+    else:
+        path.chmod(0o600)
 
 
 def _clear_credentials() -> None:
