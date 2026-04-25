@@ -192,7 +192,7 @@ def record_scan(
     Args:
         target: Project root
         score: Validation score
-        level: Capability level
+        level: Maturity level
         violations_count: Number of violations
         rules_checked: Number of rules checked
         elapsed_ms: Scan duration

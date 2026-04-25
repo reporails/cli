@@ -32,7 +32,7 @@ outputs:
     description: 'Validation score (0-10)'
     value: ${{ steps.check.outputs.score }}
   level:
-    description: 'Capability level (L0-L6)'
+    description: 'Maturity level (L0-L6)'
     value: ${{ steps.check.outputs.level }}
   violations:
     description: 'Number of violations found'

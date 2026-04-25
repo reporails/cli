@@ -36,7 +36,7 @@ fields:
         expected_level:
           type: string
           pattern: "^L[1-6]$"
-          description: "Target capability level for this component"
+          description: "Target maturity level for this component"
         role:
           type: enum
           values: [coordinator, component, library, docs]
@@ -82,7 +82,7 @@ fields:
   tiers:
     required: false
     type: object
-    description: "Orthogonal to levels: evidence confidence vs concern level"
+    description: "Tier filter for rule activation by evidence confidence."
     properties:
       core:
         type: boolean

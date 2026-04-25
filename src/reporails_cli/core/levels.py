@@ -49,7 +49,7 @@ def get_level_labels() -> dict[Level, str]:
 # ===========================================================================
 
 # Baseline property values — "main" instruction file defaults.
-# All 8 axes from the instruction topology tensor.
+# All 8 axes from the instruction file property space.
 # Properties that match these contribute zero depth.
 _BASELINE: dict[str, str] = {
     "format": "freeform",

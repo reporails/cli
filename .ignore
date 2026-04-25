@@ -1,0 +1,5 @@
+# Prevent Claude Code from discovering .claude directories inside test fixtures
+# as real configuration. Ripgrep (used by Claude for file discovery) respects
+# .ignore files with .gitignore syntax.
+framework/rules/**/tests/**
+tests/fixtures/**
