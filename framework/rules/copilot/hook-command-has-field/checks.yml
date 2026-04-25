@@ -1,0 +1,9 @@
+checks:
+- id: COPILOT.S.0005.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: COPILOT.S.0005.command-has-field
+  type: deterministic
+  expect: present
+  pattern-regex: '"command"\s*:\s*"[^"]+"'
+  message: No command handler with a command field found

@@ -1,0 +1,6 @@
+checks:
+- id: CORE.S.0027.has-hooks-key
+  type: deterministic
+  expect: present
+  pattern-regex: '"hooks"\s*:'
+  message: No hooks configuration found

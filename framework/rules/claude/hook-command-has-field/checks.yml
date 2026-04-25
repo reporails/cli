@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0004.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0004.command_hook_has_command
+  expect: present
+  message: No command handler with a command field found
+  pattern-regex: '"command"\s*:\s*"[^"]+"'
+  type: deterministic

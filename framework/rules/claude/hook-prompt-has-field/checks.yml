@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0007.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0007.prompt_hook_has_prompt
+  expect: present
+  message: No prompt or agent handler with a prompt field found
+  pattern-regex: '"prompt"\s*:\s*"[^"]+"'
+  type: deterministic

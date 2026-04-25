@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0006.settings_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0006.handler_has_type
+  expect: present
+  message: No handler with a valid type field (command, http, mcp_tool, prompt, or agent) found
+  pattern-regex: '"type"\s*:\s*"(command|http|mcp_tool|prompt|agent)"'
+  type: deterministic
