@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import re
-import signal
-import sys
-import threading
-from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+import regex as re
 
 from reporails_cli.core.models import LocalFinding
 from reporails_cli.core.regex.compiler import (
@@ -40,7 +37,7 @@ def _find_line_number(content: str, match: re.Match[str]) -> int:
 
 
 def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
-    text = match.group(0)
+    text: str = match.group(0)
     return text[:max_len] + "..." if len(text) > max_len else text
 
 
@@ -117,60 +114,19 @@ def _is_text_file(file_path: Path) -> bool:
 _REGEX_TIMEOUT_S = 0.5
 
 
-class _RegexTimeoutError(Exception):
-    """Raised when a regex search exceeds the time limit."""
-
-
-def _run_with_timeout[T](fn: Callable[[], T], seconds: float) -> T:
-    """Run fn() with a timeout. Raises _RegexTimeoutError on timeout.
-
-    POSIX: signal.SIGALRM interrupts the running call.
-    Windows: fn() runs in a daemon thread; the calling thread joins with
-    timeout. On timeout the thread keeps running (Python can't kill threads)
-    but is daemonized so it won't block process exit.
-    """
-    if sys.platform == "win32":
-        return _run_with_thread_timeout(fn, seconds)
-
-    def _handler(_signum: int, _frame: object) -> None:
-        raise _RegexTimeoutError
-
-    prev = signal.signal(signal.SIGALRM, _handler)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
-    try:
-        return fn()
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, prev)
-
-
-def _run_with_thread_timeout[T](fn: Callable[[], T], seconds: float) -> T:
-    """Thread-based timeout for platforms without SIGALRM."""
-    result_holder: list[T] = []
-    exc_holder: list[BaseException] = []
-
-    def _target() -> None:
-        try:
-            result_holder.append(fn())
-        except BaseException as e:
-            exc_holder.append(e)
-
-    t = threading.Thread(target=_target, daemon=True)
-    t.start()
-    t.join(timeout=seconds)
-    if t.is_alive():
-        raise _RegexTimeoutError
-    if exc_holder:
-        raise exc_holder[0]
-    return result_holder[0]
-
-
 def _match_check(
     check: CompiledCheck,
     content: str,
     body_content: str | None = None,
 ) -> list[re.Match[str]]:
-    """Execute a single compiled check against file content."""
+    """Execute a single compiled check against file content.
+
+    No per-pattern `timeout=` here — the `regex` library is already immune to
+    most catastrophic-backtracking patterns that hang stdlib `re`, and adding
+    `timeout=` to every search ~doubles per-call overhead. ReDoS protection
+    rides on `_safe_finditer` (combined-alternation paths, where rule authors
+    most plausibly hit pathological cases) plus the 1 MB file-size cap.
+    """
     if check.body_only:
         content = body_content if body_content is not None else _strip_frontmatter(content)
     if check.either_patterns:
@@ -291,10 +247,10 @@ def _emit_results(
 
 
 def _safe_finditer(pat: re.Pattern[str], content: str) -> list[re.Match[str]]:
-    """Run pat.finditer with a timeout against catastrophic backtracking."""
+    """Run pat.finditer with the regex library's native timeout against catastrophic backtracking."""
     try:
-        return _run_with_timeout(lambda: list(pat.finditer(content)), _REGEX_TIMEOUT_S)
-    except _RegexTimeoutError:
+        return list(pat.finditer(content, timeout=_REGEX_TIMEOUT_S))
+    except TimeoutError:
         logger.warning("Regex finditer timed out after %.1fs: %s", _REGEX_TIMEOUT_S, pat.pattern[:80])
         return []
 
@@ -307,27 +263,20 @@ def _retry_shadowed(
     results: list[dict[str, Any]],
     rule_defs: dict[str, dict[str, Any]],
 ) -> None:
-    """Retry shadowed checks under a single timeout guard."""
-
-    def _scan() -> None:
-        for group_name, check in group_to_check.items():
-            if group_name in matched_checks:
-                continue
-            if check.patterns:
-                m = check.patterns[0].search(content)
+    """Retry shadowed checks. No per-pattern timeout — see _match_check note."""
+    for group_name, check in group_to_check.items():
+        if group_name in matched_checks:
+            continue
+        if check.patterns:
+            m = check.patterns[0].search(content)
+            if m:
+                _emit_results(check, [m], file_uri, content, results, rule_defs)
+        elif check.either_patterns:
+            for pat in check.either_patterns:
+                m = pat.search(content)
                 if m:
                     _emit_results(check, [m], file_uri, content, results, rule_defs)
-            elif check.either_patterns:
-                for pat in check.either_patterns:
-                    m = pat.search(content)
-                    if m:
-                        _emit_results(check, [m], file_uri, content, results, rule_defs)
-                        break
-
-    try:
-        _run_with_timeout(_scan, _REGEX_TIMEOUT_S * 2)
-    except _RegexTimeoutError:
-        logger.warning("Shadowed check retry timed out after %.1fs", _REGEX_TIMEOUT_S * 2)
+                    break
 
 
 def _scan_combined(
@@ -387,20 +336,14 @@ def _scan_file(
     if combined_patterns:
         _scan_combined(content, file_uri, combined_patterns, results, rule_defs)
 
-    def _scan() -> None:
-        for check in checks:
-            matches = _match_check(check, content, body_content)
-            if not matches:
-                continue
-            if first_match_only:
-                _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
-            else:
-                _emit_results(check, matches, file_uri, content, results, rule_defs)
-
-    try:
-        _run_with_timeout(_scan, _REGEX_TIMEOUT_S * len(checks))
-    except _RegexTimeoutError:
-        logger.warning("File scan timed out: %s", file_path)
+    for check in checks:
+        matches = _match_check(check, content, body_content)
+        if not matches:
+            continue
+        if first_match_only:
+            _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
+        else:
+            _emit_results(check, matches, file_uri, content, results, rule_defs)
 
 
 def _scan_all_targets(
