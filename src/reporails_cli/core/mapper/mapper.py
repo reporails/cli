@@ -2872,7 +2872,7 @@ def _detect_file_loading(
     Returns:
         (loading, scope, globs, agent)
     """
-    rel = str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
     match = _find_best_registry_match(rel.lower(), registry)
     if match is None:
         return "session_start", "global", (), "generic"

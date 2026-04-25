@@ -748,16 +748,23 @@ class TestPerformance:
         assert len(_sarif_results(sarif)) == 100
         assert elapsed < 5.0, f"100 files took {elapsed:.1f}s"
 
-    def test_timeout_guard_noop_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_timeout_guard yields without error on Windows (no SIGALRM)."""
+    def test_run_with_timeout_returns_value_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_run_with_timeout returns fn() result via thread on Windows (no SIGALRM)."""
         from reporails_cli.core.regex import runner
 
         monkeypatch.setattr(runner.sys, "platform", "win32")
-        with runner._timeout_guard(1.0):
-            pass  # Should not raise
+        assert runner._run_with_timeout(lambda: 42, 1.0) == 42
+
+    def test_run_with_timeout_raises_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_run_with_timeout raises _RegexTimeoutError on Windows when fn() exceeds timeout."""
+        from reporails_cli.core.regex import runner
+
+        monkeypatch.setattr(runner.sys, "platform", "win32")
+        with pytest.raises(runner._RegexTimeoutError):
+            runner._run_with_timeout(lambda: time.sleep(2.0), 0.2)
 
     def test_validation_works_on_windows(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """run_validation produces correct results on Windows (no SIGALRM)."""
+        """run_validation produces correct results on Windows (thread-based timeout)."""
         from reporails_cli.core.regex import runner
 
         monkeypatch.setattr(runner.sys, "platform", "win32")

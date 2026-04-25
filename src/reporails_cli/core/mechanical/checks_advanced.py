@@ -63,14 +63,14 @@ def frontmatter_valid_yaml(
             checked += 1
             fm = yaml.safe_load(content[3:end])
             if not isinstance(fm, dict):
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
                 return CheckResult(
                     passed=False,
                     message=f"Frontmatter is not a YAML mapping in {match.name}",
                     location=f"{rel}:1",
                 )
         except yaml.YAMLError as e:
-            rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+            rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
             return CheckResult(
                 passed=False,
                 message=f"Invalid YAML in {match.name}: {e}",
@@ -100,7 +100,7 @@ def valid_markdown(
             m = _BROKEN_HEADING_RE.search(content)
             if m:
                 line_num = content[: m.start()].count("\n") + 1
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
                 return CheckResult(
                     passed=False,
                     message=f"Broken heading (missing space after #) in {match.name}",
@@ -435,7 +435,7 @@ def file_absent(
 
     matches = _resolve_glob_targets(search_pattern, root)
     if matches:
-        name = str(matches[0].relative_to(root)) if matches[0].is_relative_to(root) else matches[0].name
+        name = matches[0].relative_to(root).as_posix() if matches[0].is_relative_to(root) else matches[0].name
         return CheckResult(passed=False, message=f"Forbidden file exists: {name}")
     if direct_path.exists():
         rel = f"{scope_dir}/{pattern}" if scope_dir else pattern
@@ -499,7 +499,7 @@ def frontmatter_extra_keys(
                 continue
             extra = sorted(k for k in fm if k not in allowed)
             if extra:
-                rel = str(match.relative_to(root)) if match.is_relative_to(root) else match.name
+                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
                 keys_str = ", ".join(extra)
                 allowed_str = ", ".join(sorted(allowed))
                 msg = f"Unrecognized frontmatter keys: {keys_str} — only {allowed_str} is processed"

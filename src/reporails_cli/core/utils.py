@@ -135,7 +135,7 @@ def relative_to_safe(path: Path, base: Path) -> str:
         Relative path string, or absolute if not relative to base
     """
     try:
-        return str(path.relative_to(base))
+        return path.relative_to(base).as_posix()
     except ValueError:
         return str(path)
 

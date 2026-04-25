@@ -261,7 +261,7 @@ def build_surface_summary(agents: list[DetectedAgent], target: Path) -> dict[str
     for agent in agents:
         for f in agent.instruction_files:
             with contextlib.suppress(ValueError):
-                rel = str(f.relative_to(target))
+                rel = f.relative_to(target).as_posix()
                 if rel not in root_files:
                     root_files.append(rel)
                     continue
