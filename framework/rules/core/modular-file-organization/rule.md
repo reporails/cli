@@ -1,11 +1,13 @@
 ---
 id: CORE:S:0010
 slug: modular-file-organization
-title: "Modular File Organization"
+title: Modular File Organization
 category: structure
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agents-md-impact-efficiency, builder-ai-instruction-best-practices, claude-md-guide,
+  claudemd-best-practices-mermaid-for-workflows, fowler-context-engineering-agents,
+  instruction-limits-principles, rules-directory-mechanics, spec-writing-for-agents]
 match: {format: freeform}
 ---
 
@@ -37,4 +39,4 @@ CLAUDE.md              (single file, no other instruction files)
 
 ## Limitations
 
-Checks that the expected file exists and that at least 2 instruction files are present. Does not evaluate file contents or whether the split is meaningful.
+Counts instruction files and enforces a minimum of 2. Does not evaluate whether the files are meaningfully different — two duplicate files would pass.

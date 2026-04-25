@@ -1,12 +1,12 @@
 ---
 id: CORE:C:0032
 slug: agent-neutral-main-file
-title: "Agent Neutral Main File"
+title: Agent Neutral Main File
 category: coherence
 type: deterministic
 severity: high
-backed_by: []
-match: {format: freeform}
+backed_by: [enterprise-claude-usage, instruction-limits-principles, rules-directory-mechanics]
+match: {type: main}
 ---
 
 # Agent Neutral Main File

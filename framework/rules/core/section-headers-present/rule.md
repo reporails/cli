@@ -1,11 +1,12 @@
 ---
 id: CORE:S:0002
 slug: section-headers-present
-title: "Section Headers Present"
+title: Section Headers Present
 category: structure
 type: mechanical
 severity: critical
-backed_by: []
+backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, claude-md-guide,
+  spec-writing-for-agents]
 match: {format: freeform}
 ---
 # Section Headers Present
@@ -44,4 +45,4 @@ Keep files under 500 lines.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks that the file contains at least one markdown heading. Does not evaluate whether the headings create a meaningful organizational structure.

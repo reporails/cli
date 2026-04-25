@@ -1,11 +1,13 @@
 ---
 id: CORE:C:0017
 slug: no-inline-style-rules
-title: "No Inline Style Rules"
+title: No Inline Style Rules
 category: coherence
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, claude-md-optimization-study,
+  developer-context-cursor-study, dometrain-claude-md-guide, instruction-limits-principles,
+  spec-writing-for-agents]
 match: {format: freeform}
 ---
 

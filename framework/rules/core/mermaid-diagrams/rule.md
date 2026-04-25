@@ -5,6 +5,10 @@ title: "Flowcharts for Procedures"
 category: coherence
 type: mechanical
 severity: low
+backed_by:
+- claudemd-best-practices-mermaid-for-workflows
+- flowbench-workflow-format-benchmark
+- fowler-pushing-ai-autonomy
 match: {format: freeform}
 ---
 

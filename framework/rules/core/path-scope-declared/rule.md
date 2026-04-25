@@ -1,11 +1,12 @@
 ---
 id: CORE:S:0038
 slug: path-scope-declared
-title: "Path Scope Declared"
+title: Path Scope Declared
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [awesome-copilot-meta-instructions, fowler-context-engineering-agents,
+  rules-directory-mechanics]
 match: {scope: path_scoped}
 ---
 

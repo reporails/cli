@@ -1,10 +1,17 @@
 ---
 id: CORE:C:0038
 slug: instruction-rationale-present
-title: "Instruction Rationale Present"
+title: Instruction Rationale Present
 category: coherence
 type: mechanical
 severity: medium
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, agentic-coding-adoption-github,
+  awesome-copilot-meta-instructions, claude-code-issue-13579, claude-md-guide, claude-md-optimization-study,
+  claudemd-best-practices-mermaid-for-workflows, developer-context-cursor-study, dometrain-claude-md-guide,
+  enterprise-claude-usage, fowler-assessing-quality-agents, fowler-pushing-ai-autonomy,
+  instruction-limits-principles, openai-community-agents-md-optimization, osmani-ai-coding-workflow,
+  prompthub-cursor-rules-analysis, rules-directory-mechanics, sewell-agents-md-tips,
+  spec-writing-for-agents]
 match: {format: freeform}
 ---
 

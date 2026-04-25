@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0005
 slug: identity-fields-in-frontmatter
-title: "Identity Fields In Frontmatter"
+title: Identity Fields In Frontmatter
 category: structure
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions]
 match: {type: scoped_rule}
 ---
 

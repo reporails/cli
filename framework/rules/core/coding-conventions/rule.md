@@ -1,12 +1,18 @@
 ---
 id: CORE:C:0012
 slug: coding-conventions
-title: "Coding Conventions"
+title: Coding Conventions
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
-match: {format: freeform}
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
+  awesome-copilot-meta-instructions, claude-md-guide, claude-md-optimization-study,
+  developer-context-cursor-study, dometrain-claude-md-guide, enterprise-claude-usage,
+  evaluating-agents-md, fowler-assessing-quality-agents, fowler-context-engineering-agents,
+  fowler-pushing-ai-autonomy, microsoft-awesome-copilot-blog, openai-community-agents-md-optimization,
+  osmani-ai-coding-workflow, prompthub-cursor-rules-analysis, sewell-agents-md-tips,
+  spec-writing-for-agents]
+match: {type: main}
 ---
 # Coding Conventions
 
@@ -44,4 +50,4 @@ tests/ contains pytest suites.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Conventions", "Formatting", "Style", or "Lint". Does not verify the section specifies actionable rules.

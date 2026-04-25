@@ -1,0 +1,9 @@
+checks:
+- id: CLAUDE.S.0003.skill_file_exists
+  type: mechanical
+  check: file_exists
+- id: CLAUDE.S.0003.has_description
+  expect: present
+  message: Skill SKILL.md missing description field in frontmatter
+  pattern-regex: 'description:\s*\S'
+  type: deterministic

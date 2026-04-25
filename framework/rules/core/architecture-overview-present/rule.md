@@ -1,11 +1,14 @@
 ---
 id: CORE:C:0033
 slug: architecture-overview-present
-title: "Architecture Overview Present"
+title: Architecture Overview Present
 category: coherence
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
+  awesome-copilot-meta-instructions, claudemd-best-practices-backbone-yml-pattern,
+  developer-context-cursor-study, dometrain-claude-md-guide, evaluating-agents-md,
+  fowler-pushing-ai-autonomy, osmani-ai-coding-workflow, sewell-agents-md-tips, spec-writing-for-agents]
 match: {type: main}
 ---
 # Architecture Overview Present
@@ -47,4 +50,4 @@ Run `make build` to compile.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Architecture", "Structure", or "Layout". Does not evaluate whether the content under that heading actually describes the system architecture.

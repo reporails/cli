@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0009
 slug: valid-markdown-syntax
-title: "Valid Markdown Syntax"
+title: Valid Markdown Syntax
 category: structure
 type: mechanical
 severity: critical
-backed_by: []
+backed_by: [agentic-coding-adoption-github]
 match: {format: freeform}
 ---
 # Valid Markdown Syntax
@@ -42,4 +42,4 @@ title: Project
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks that the file parses into at least one content atom. Catches empty files and files with only frontmatter, but does not detect all structural issues — an unclosed code block that still produces some atoms before the fence would pass.

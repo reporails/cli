@@ -1,11 +1,14 @@
 ---
 id: CORE:C:0022
 slug: safety-gate-directives
-title: "Safety Gate Directives"
+title: Safety Gate Directives
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, claude-code-issue-13579,
+  developer-context-cursor-study, enterprise-claude-usage, fowler-pushing-ai-autonomy,
+  openai-community-agents-md-optimization, osmani-ai-coding-workflow, sewell-agents-md-tips,
+  spec-writing-for-agents]
 match: {format: freeform}
 ---
 # Safety Gate Directives
@@ -44,4 +47,4 @@ It would be good to run tests before committing.
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for at least one constraint atom (NEVER, MUST NOT, ALWAYS). Does not evaluate whether the safety constraints cover all critical operations.

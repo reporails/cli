@@ -1,11 +1,15 @@
 ---
 id: CORE:C:0035
 slug: directory-layout-documented
-title: "Directory Layout Documented"
+title: Directory Layout Documented
 category: coherence
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
+  awesome-copilot-meta-instructions, claude-md-optimization-study, claudemd-best-practices-backbone-yml-pattern,
+  developer-context-cursor-study, dometrain-claude-md-guide, evaluating-agents-md,
+  fowler-pushing-ai-autonomy, instruction-limits-principles, sewell-agents-md-tips,
+  spec-writing-for-agents]
 match: {type: main}
 ---
 
@@ -43,4 +47,4 @@ See the repository for the full structure.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Directory", "Layout", "Structure", or "Tree". Does not verify the section contains an actual directory tree or file listing.

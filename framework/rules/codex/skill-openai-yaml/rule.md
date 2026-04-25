@@ -1,19 +1,24 @@
 ---
 id: CODEX:S:0002
-slug: codex-skill-directory-contains-agents-openai-yaml-with-displ
-title: Codex Skill Directory Contains Agents/Openai.Yaml With Display Name, 
-  Icon, And Policy Fields
+slug: skill-openai-yaml
+title: "Skill OpenAI YAML"
 category: structure
 type: deterministic
 severity: low
-backed_by:
-- codex-skills-guide
+backed_by: []
 match: {type: skill}
+source: https://developers.openai.com/codex/skills
 ---
 
 # Codex Skill Metadata Present
 
 Codex skill directories SHOULD contain an `agents/openai.yaml` file with `display_name`, icon, and invocation policy fields. This metadata controls how the skill appears in the Codex UI and whether it can be triggered implicitly.
+
+## Antipatterns
+
+- **Missing metadata file.** Creating a skill directory with code and prompts but no `agents/openai.yaml`. The skill works but appears without a display name or icon in the Codex UI.
+- **Implicit invocation disabled by default.** Omitting `allow_implicit_invocation: true` means the skill can only be triggered explicitly. If intended to be automatically triggered, this field must be set.
+- **Generic display name.** Using `display_name: "Skill"` instead of a descriptive name like `"Code Review"`. The display name is what users see in the Codex interface.
 
 ## Pass / Fail
 

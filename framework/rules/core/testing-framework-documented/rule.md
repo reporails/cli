@@ -1,12 +1,15 @@
 ---
 id: CORE:C:0005
 slug: testing-framework-documented
-title: "Testing Framework Documented"
+title: Testing Framework Documented
 category: coherence
 type: mechanical
 severity: medium
-backed_by: []
-match: {format: freeform}
+backed_by: [advanced-context-engineering, agent-readmes-empirical-study, agentic-coding-adoption-github,
+  agents-md-impact-efficiency, awesome-copilot-meta-instructions, claude-md-optimization-study,
+  developer-context-cursor-study, openai-community-agents-md-optimization, osmani-ai-coding-workflow,
+  prompthub-cursor-rules-analysis, spec-writing-for-agents]
+match: {type: main}
 ---
 # Testing Framework Documented
 
@@ -44,4 +47,4 @@ Make sure everything passes before committing.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Testing", "Tests", or "Test". Does not verify the section describes how to run tests or which framework is used.

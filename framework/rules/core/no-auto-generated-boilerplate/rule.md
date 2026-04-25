@@ -1,11 +1,12 @@
 ---
 id: CORE:C:0030
 slug: no-auto-generated-boilerplate
-title: "No Auto Generated Boilerplate"
+title: No Auto Generated Boilerplate
 category: coherence
 type: deterministic
 severity: high
-backed_by: []
+backed_by: [claude-md-guide, developer-context-cursor-study, dometrain-claude-md-guide,
+  fowler-context-engineering-agents, instruction-limits-principles, openai-community-agents-md-optimization]
 match: {format: freeform}
 ---
 

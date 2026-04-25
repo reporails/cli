@@ -1,11 +1,11 @@
 ---
 id: CORE:G:0008
 slug: mcp-config-declares-servers
-title: "Mcp Config Declares Servers"
+title: Mcp Config Declares Servers
 category: governance
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [enterprise-claude-usage, fowler-context-engineering-agents]
 match: {type: config}
 ---
 # Mcp Config Declares Servers
@@ -40,4 +40,4 @@ See the settings file for details.
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "MCP" or "mcpServers". Does not verify the config declares valid server entries with tool allowlists.

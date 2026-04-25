@@ -5,7 +5,9 @@ title: "Related Instructions Grouped"
 category: efficiency
 type: mechanical
 severity: medium
-backed_by: []
+backed_by:
+- claude-md-guide
+- spec-writing-for-agents
 match: {format: freeform}
 ---
 # Related Instructions Grouped

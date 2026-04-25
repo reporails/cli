@@ -1,11 +1,16 @@
 ---
 id: CORE:S:0007
 slug: root-instruction-file-exists
-title: "Root Instruction File Exists"
+title: Root Instruction File Exists
 category: structure
 type: mechanical
 severity: critical
-backed_by: []
+backed_by: [agentic-coding-adoption-github, agents-md-impact-efficiency, builder-ai-instruction-best-practices,
+  claude-md-guide, claude-md-optimization-study, claudemd-best-practices-backbone-yml-pattern,
+  dometrain-claude-md-guide, enterprise-claude-usage, evaluating-agents-md, fowler-context-engineering-agents,
+  instruction-limits-principles, microsoft-awesome-copilot-blog, openai-community-agents-md-optimization,
+  prompthub-cursor-rules-analysis, rules-directory-mechanics, sewell-agents-md-tips,
+  spec-writing-for-agents]
 match: {type: main}
 ---
 
@@ -41,4 +46,4 @@ project/
 
 ## Limitations
 
-Checks that the expected file exists. Does not evaluate file contents.
+Verifies at least one root instruction file exists at known paths. Does not validate the file's content, format, or whether multiple conflicting root files are present.

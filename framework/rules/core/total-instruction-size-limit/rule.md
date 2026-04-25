@@ -1,11 +1,13 @@
 ---
 id: CORE:E:0001
 slug: total-instruction-size-limit
-title: "Total Instruction Size Limit"
+title: Total Instruction Size Limit
 category: efficiency
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [advanced-context-engineering, agents-md-impact-efficiency, developer-context-cursor-study,
+  fowler-context-engineering-agents, lost-in-the-middle-long-contexts, osmani-ai-coding-workflow,
+  spec-writing-for-agents]
 match: {format: freeform}
 ---
 
@@ -40,4 +42,4 @@ Total: 125 KB -- exceeds the 100 KB limit.
 
 ## Limitations
 
-Structural check with limited semantic understanding.
+Sums byte size across all instruction files (max 100 KB). Does not break down which files are over-contributing or warn when approaching the limit — it is a hard ceiling only.

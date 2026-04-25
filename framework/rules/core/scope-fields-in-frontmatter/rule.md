@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0013
 slug: scope-fields-in-frontmatter
-title: "Scope Fields In Frontmatter"
+title: Scope Fields In Frontmatter
 category: structure
 type: deterministic
 severity: medium
-backed_by: []
+backed_by: [awesome-copilot-meta-instructions, rules-directory-mechanics]
 match: {type: scoped_rule}
 ---
 

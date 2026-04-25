@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0021
 slug: settings-scope-declared
-title: "Settings Scope Declared"
+title: Settings Scope Declared
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [enterprise-claude-usage]
 match: {type: config}
 ---
 # Settings Scope Declared
@@ -42,4 +42,4 @@ version: 1.0
 
 ## Limitations
 
-Checks for headings matching topic keywords. Does not evaluate the quality or completeness of the content under those headings.
+Checks for a heading containing "Settings", "Scope", or "Configuration". Does not verify the content under that heading actually declares a scope level — only that the heading exists.

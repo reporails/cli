@@ -1,11 +1,12 @@
 ---
 id: CORE:S:0014
 slug: descriptive-filenames
-title: "Descriptive Filenames"
+title: Descriptive Filenames
 category: structure
 type: mechanical
 severity: high
-backed_by: []
+backed_by: [awesome-copilot-meta-instructions, instruction-limits-principles, microsoft-awesome-copilot-blog,
+  rules-directory-mechanics, spec-writing-for-agents]
 match: {type: scoped_rule}
 ---
 # Descriptive Filenames

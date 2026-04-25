@@ -1,11 +1,11 @@
 ---
 id: CORE:S:0015
 slug: skill-entry-point-present
-title: "Skill Entry Point Present"
+title: Skill Entry Point Present
 category: structure
 type: mechanical
 severity: medium
-backed_by: []
+backed_by: [enterprise-claude-usage, fowler-context-engineering-agents]
 match: {type: skill}
 ---
 # Skill Entry Point Present
@@ -44,4 +44,4 @@ Entry point: SKILL.md
 
 ## Limitations
 
-Uses content analysis on mapped instruction atoms. Results depend on mapper quality and may miss edge cases.
+Checks for a named token matching "SKILL.md" in the content. Does not verify the SKILL.md file actually exists at the referenced path.
