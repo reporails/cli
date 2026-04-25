@@ -237,7 +237,7 @@ def fix_ordering(atoms: list[Atom], lines: list[str]) -> list[MechanicalFix]:
 
 
 # ──────────────────────────────────────────────────────────────────
-# Orchestrator
+# Entry point
 # ──────────────────────────────────────────────────────────────────
 
 

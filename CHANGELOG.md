@@ -183,7 +183,7 @@ Added fail scaffold system — auto-generates fail fixtures for structural M che
 
 ### Scorecard redesign
 
-Scorecard moved to bottom of output — violations shown first, score as conclusion. Category table redesigned with mini bars, centered columns, and severity-colored icons. Capability moved to own line below score, elapsed time shown in top-right. Semantic color output throughout — score, bar, capability level, violations, friction, and category table use green/yellow/red (ASCII mode disables colors). Pending semantic checks shown inline with violations using `?` icon. "Setup:" replaced with "Scope:" showing instruction files by agent directory labels.
+Scorecard moved to bottom of output — violations shown first, score as conclusion. Category table redesigned with mini bars, centered columns, and severity-colored icons. Maturity level moved to own line below score, elapsed time shown in top-right. Semantic color output throughout — score, bar, level, violations, friction, and category table use green/yellow/red (ASCII mode disables colors). Pending semantic checks shown inline with violations using `?` icon. "Setup:" replaced with "Scope:" showing instruction files by agent directory labels.
 
 ### `ails heal` simplified
 
@@ -270,7 +270,7 @@ Agent detection, rule loading, glob resolution, and template binding are now cac
 - Content rule violations attributed to root instruction file instead of skill files.
 - Per-file size violations attributed to the violating file, not the rule-level target.
 - Cache hash crash on non-UTF8 instruction files.
-- Feature merge in capability detection used overwrite instead of OR.
+- Feature merge in agent feature lookup used overwrite instead of OR.
 - Regex compiler crash on malformed rule YAML and binary YAML files.
 - Mechanical checks crash on string args from YAML.
 - `detect_orphan_features` crash on L0 projects (no instruction files).

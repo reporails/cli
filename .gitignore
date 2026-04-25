@@ -4,8 +4,8 @@
 __pycache__
 .env
 
-# Docs - WIP / internal (specs and infra are tracked)
-docs/
+# Internal specs
+specs/
 
 # Claude specific - Dev internals (root only; test fixtures in framework/ are tracked)
 /.claude/

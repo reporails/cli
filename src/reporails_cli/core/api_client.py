@@ -48,7 +48,7 @@ class Hint:
     """
 
     file: str
-    diagnostic_type: str  # "c(N)", "conflict", etc.
+    diagnostic_type: str
     count: int
     summary: str
     severity: str = "warning"  # worst severity of the gated diagnostics
