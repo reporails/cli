@@ -121,8 +121,7 @@ fields:
       type: string
       pattern: "^[A-Z_]+:[SCDEGM*]:[0-9]{4}$|^[A-Z_]+:\\*$"
 
-  # NOTE: severity overrides are a project-level concern, not an agent concern.
-  # Use project.schema.yml rules.overrides instead.
+  # NOTE: severity overrides belong in project.schema.yml rules.overrides, not here.
   # The agent schema no longer defines overrides — agent config.yml should
   # use excludes for rules that don't apply to the agent.
 

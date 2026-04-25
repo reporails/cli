@@ -62,7 +62,7 @@ fields:
     required: true
     type: enum
     values: [structure, coherence, direction, efficiency, maintenance, governance]
-    description: "Rule concern area. Maps to category letter in coordinate: S/C/D/E/M/G"
+    description: "Quality category. Maps to the category letter in the rule coordinate (S/C/D/E/M/G)."
 
   type:
     required: true
