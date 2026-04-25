@@ -199,7 +199,7 @@ def _detect_paths(target: Path) -> dict[str, str | None]:
             if candidate_path.is_dir():
                 children = [c for c in candidate_path.iterdir() if c.is_dir() and not c.name.startswith((".", "__"))]
                 if len(children) == 1 and key == "src":
-                    paths[key] = str(children[0].relative_to(target)) + "/"
+                    paths[key] = children[0].relative_to(target).as_posix() + "/"
                 else:
                     paths[key] = candidate + "/"
                 break
