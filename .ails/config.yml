@@ -6,6 +6,7 @@ exclude_dirs:
   - _archived
   - .venv
   - docs
+  - specs
   - framework
   - .mypy_cache
   - .ruff_cache
