@@ -101,6 +101,33 @@ CLIENT=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin
 ok "Content checks producing $CLIENT findings"
 rm -rf "$SMOKE_DIR"
 
+# 8. Branch ↔ version alignment — if HEAD is a release branch named X.Y.Z,
+#    pyproject.version must match. Catches "branch cut but never bumped"
+#    drift before release.
+step "Branch ↔ version alignment"
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+PYPROJECT_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+if echo "$BRANCH" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  if [ "$BRANCH" = "$PYPROJECT_VERSION" ]; then
+    ok "Branch $BRANCH matches pyproject.version $PYPROJECT_VERSION"
+  else
+    fail "Branch $BRANCH but pyproject.version is $PYPROJECT_VERSION — bump pyproject (and packages/npm/package.json + both READMEs) to match the branch"
+  fi
+else
+  echo -e "  ${DIM}skipped (branch '$BRANCH' is not a release branch)${RESET}"
+fi
+
+# 9. Config + README sync — pyproject.toml ↔ packages/npm/package.json + READMEs
+step "Config + README sync"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if SYNC_OUT=$("$SCRIPT_DIR/check-config-sync.sh" 2>&1); then
+  echo -e "$SYNC_OUT" | tail -1 | sed 's/^/  /'
+  ok "Configs in sync"
+else
+  echo -e "$SYNC_OUT" | sed 's/^/  /'
+  fail "pyproject.toml / package.json / READMEs out of sync"
+fi
+
 # Cleanup
 rm -rf "$(dirname "$VENV")"
 
