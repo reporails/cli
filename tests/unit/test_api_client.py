@@ -10,6 +10,13 @@ from reporails_cli.core.api_client import (
     _deserialize_lint_result,
     _strip_and_serialize,
 )
+from reporails_cli.core.funnel import (
+    UNIVERSAL_ATOM_CAP,
+    WIRE_MAX_CLUSTERS,
+    WIRE_MAX_FILES,
+    LintResponse,
+    preflight_oversized,
+)
 from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
 
 
@@ -25,16 +32,19 @@ def _make_map() -> RulesetMap:
 
 
 class TestAilsClient:
-    def test_lint_returns_none_without_server(self) -> None:
+    def test_lint_empty_response_without_server(self) -> None:
         """No local fallback — lint requires the API."""
         client = AilsClient(base_url="")
-        result = client.lint(_make_map())
-        assert result is None
+        response = client.lint(_make_map())
+        assert isinstance(response, LintResponse)
+        assert response.result is None
+        assert response.funnel_error is None
 
-    def test_lint_returns_none_on_unreachable_server(self) -> None:
+    def test_lint_empty_response_on_unreachable_server(self) -> None:
         client = AilsClient(base_url="https://localhost:1")
-        result = client.lint(_make_map())
-        assert result is None
+        response = client.lint(_make_map())
+        assert isinstance(response, LintResponse)
+        assert response.result is None
 
     def test_custom_base_url(self) -> None:
         client = AilsClient(base_url="https://custom.example.com")
@@ -162,6 +172,109 @@ class TestV2WireFormat:
             assert key not in a, f"Optional field '{key}' present when it should be absent"
 
 
+class TestPayloadCaps:
+    """Preflight rejects oversized payloads before the HTTP round-trip."""
+
+    def test_within_caps_returns_none(self) -> None:
+        assert preflight_oversized({"files": [], "atoms": [], "clusters": []}, has_api_key=True) is None
+
+    def test_files_over_cap(self) -> None:
+        payload = {"files": [{}] * (WIRE_MAX_FILES + 1), "atoms": [], "clusters": []}
+        err = preflight_oversized(payload, has_api_key=True)
+        assert err is not None
+        assert err.error == "payload_too_large"
+        assert err.limit == WIRE_MAX_FILES
+
+    def test_atoms_over_cap(self) -> None:
+        payload = {"files": [], "atoms": [{}] * (UNIVERSAL_ATOM_CAP + 1), "clusters": []}
+        err = preflight_oversized(payload, has_api_key=True)
+        assert err is not None
+        assert err.error == "atom_cap_exceeded"
+        assert err.limit == UNIVERSAL_ATOM_CAP
+
+    def test_clusters_over_cap(self) -> None:
+        payload = {"files": [], "atoms": [], "clusters": [{}] * (WIRE_MAX_CLUSTERS + 1)}
+        err = preflight_oversized(payload, has_api_key=True)
+        assert err is not None
+        assert err.error == "payload_too_large"
+        assert err.limit == WIRE_MAX_CLUSTERS
+
+    def test_at_cap_boundary_passes(self) -> None:
+        payload = {
+            "files": [{}] * WIRE_MAX_FILES,
+            "atoms": [{}] * UNIVERSAL_ATOM_CAP,
+            "clusters": [{}] * WIRE_MAX_CLUSTERS,
+        }
+        assert preflight_oversized(payload, has_api_key=True) is None
+
+    def test_lint_skips_http_when_over_cap(self) -> None:
+        """Oversized payload short-circuits before any network call."""
+        from unittest.mock import patch
+
+        from reporails_cli.core.mapper.mapper import RulesetMap, RulesetSummary
+
+        rm = RulesetMap(
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=(),
+            atoms=(),
+            summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+        )
+        oversized = {
+            "schema_version": "2",
+            "embedding_model": "test",
+            "generated_at": "2026-01-01T00:00:00Z",
+            "files": [{}],  # one file so the empty-payload guard doesn't fire first
+            "atoms": [],
+            "clusters": [{}] * (WIRE_MAX_CLUSTERS + 1),
+            "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
+        }
+        with (
+            patch("reporails_cli.core.api_client._strip_and_serialize", return_value=oversized),
+            patch("httpx.post") as mock_post,
+        ):
+            client = AilsClient(base_url="https://example.test", tier="pro")
+            response = client.lint(rm)
+        assert response.result is None
+        assert response.funnel_error is not None
+        assert response.funnel_error.error == "payload_too_large"
+        mock_post.assert_not_called()
+
+    def test_lint_skips_http_when_no_files(self) -> None:
+        """Empty-files payload short-circuits — Worker would 400 missing_content_hash."""
+        from unittest.mock import patch
+
+        from reporails_cli.core.mapper.mapper import RulesetMap, RulesetSummary
+
+        rm = RulesetMap(
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=(),
+            atoms=(),
+            summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+        )
+        empty_payload = {
+            "schema_version": "2",
+            "embedding_model": "test",
+            "generated_at": "2026-01-01T00:00:00Z",
+            "files": [],
+            "atoms": [],
+            "clusters": [],
+            "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
+        }
+        with (
+            patch("reporails_cli.core.api_client._strip_and_serialize", return_value=empty_payload),
+            patch("httpx.post") as mock_post,
+        ):
+            client = AilsClient(base_url="https://example.test", tier="pro")
+            response = client.lint(rm)
+        assert response.result is None
+        assert response.funnel_error is None
+        mock_post.assert_not_called()
+
+
 class TestDeserializeHints:
     def test_valid_hints(self) -> None:
         data = {
@@ -221,11 +334,11 @@ class TestDeserializeLintResult:
             "cross_file_coordinates": [
                 {"file_1": "a.md", "file_2": "b.md", "finding_type": "conflict", "count": 1},
             ],
-            "tier": "free",
+            "tier": "anonymous",
         }
         result = _deserialize_lint_result(data)
         assert isinstance(result, LintResult)
-        assert result.tier == "free"
+        assert result.tier == "anonymous"
         assert len(result.hints) == 1
         assert len(result.cross_file_coordinates) == 1
 
