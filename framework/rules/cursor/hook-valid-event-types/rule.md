@@ -13,7 +13,7 @@ supersedes: CORE:S:0027
 
 # Hook Valid Event Types
 
-Hook event keys in `.cursor/hooks.json` MUST use recognized Cursor event type names (18 events). Unrecognized event names are silently ignored, so a typo means the hook never fires.
+Hook event keys in `.cursor/hooks.json` MUST use recognized Cursor event type names (20 events). Unrecognized event names are silently ignored, so a typo means the hook never fires.
 
 ## Antipatterns
 
