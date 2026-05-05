@@ -176,7 +176,9 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         # 5. Server call (stub — returns None offline)
         if show_progress:
             spinner.update("[bold]Checking server...[/bold]")  # type: ignore[union-attr]
-        lint_result = AilsClient().lint(ruleset_map) if ruleset_map is not None else None
+        response = AilsClient().lint(ruleset_map) if ruleset_map is not None else None
+        lint_result = response.result if response else None
+        funnel_error = response.funnel_error if response else None
         server_report = lint_result.report if lint_result else None
         hints = lint_result.hints if lint_result else ()
         cross_file_coordinates = lint_result.cross_file_coordinates if lint_result else ()
@@ -211,7 +213,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
         print(github_formatter.format_combined_annotations(result))
     else:
-        print_text_result(result, elapsed_ms, ascii, verbose, ruleset_map=ruleset_map)
+        print_text_result(result, elapsed_ms, ascii, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error)
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 

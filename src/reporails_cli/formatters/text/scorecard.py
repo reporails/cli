@@ -172,13 +172,17 @@ def compute_surface_scores(
     return surfaces
 
 
-def _surface_cell(s: SurfaceHealth, bar_width: int = 10) -> str:
-    """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓░░░░  7.2'."""
+def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
+    """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓▓▓▓▓▓░░░░  7.2'.
+
+    bar_width=15 is the smallest width that visually distinguishes 6.9 from 7.2
+    under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
+    """
     label = f"{s.name} ({s.file_count}):"
     filled = round(bar_width * s.score / 10)
     bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
-    return f"{label:16s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+    return f"{label:13s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:

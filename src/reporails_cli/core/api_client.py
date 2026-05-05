@@ -15,6 +15,11 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from reporails_cli.core.funnel import (
+    LintResponse,
+    parse_error_body,
+    preflight_oversized,
+)
 from reporails_cli.core.mapper.mapper import RulesetMap
 
 logger = logging.getLogger(__name__)
@@ -205,18 +210,18 @@ class AilsClient:
         self.tier = tier or os.environ.get("AILS_TIER") or _tier_from_config() or "free"
         self.timeout = timeout
 
-    def lint(self, ruleset_map: RulesetMap) -> LintResult | None:
+    def lint(self, ruleset_map: RulesetMap) -> LintResponse:
         """Run diagnostics on a ruleset map via the API.
 
-        Returns LintResult with report + hints (tier-gated), or None on failure.
-        Requires network — diagnostics run server-side only.
+        Returns LintResponse — `.result` on 2xx, `.funnel_error` on a tier-aware
+        4xx or local preflight rejection, both None on network failure.
         """
         if not self.base_url:
             logger.debug("No server URL configured — diagnostics unavailable offline")
-            return None
+            return LintResponse()
         return self._lint_remote(ruleset_map)
 
-    def _lint_remote(self, ruleset_map: RulesetMap) -> LintResult | None:
+    def _lint_remote(self, ruleset_map: RulesetMap) -> LintResponse:
         """POST text-stripped RulesetMap to diagnostic API.
 
         In production: CLI → Worker (/v1/diagnose, Bearer rr_*) → FastAPI.
@@ -226,38 +231,55 @@ class AilsClient:
             import httpx
         except ImportError:
             logger.debug("httpx not installed — cannot use remote diagnostics")
-            return None
+            return LintResponse()
+
+        payload = _strip_and_serialize(ruleset_map)
+        if not payload.get("files"):
+            # No instruction files mapped — the Worker would reject with
+            # `missing_content_hash` (no content_hash to extract). Skip the
+            # round-trip; server diagnostics aren't meaningful without files.
+            logger.warning("No instruction files in payload — skipping remote diagnostics")
+            return LintResponse()
+        cap_error = preflight_oversized(payload, has_api_key=bool(self.api_key))
+        if cap_error is not None:
+            logger.warning("Preflight rejected payload: %s (%d/%d)", cap_error.error, cap_error.size, cap_error.limit)
+            return LintResponse(funnel_error=cap_error)
+        return self._post_payload(httpx, payload)
+
+    def _post_payload(self, httpx: Any, payload: dict[str, Any]) -> LintResponse:
+        """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
+        dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
+        if dev_mode:
+            url = f"{self.base_url.rstrip('/')}/diagnose"
+            headers: dict[str, str] = {"X-Tier": self.tier}
+        else:
+            url = f"{self.base_url.rstrip('/')}/v1/diagnose"
+            headers = {}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            payload = _strip_and_serialize(ruleset_map)
-            dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
-
-            if dev_mode:
-                # Direct to FastAPI — no Worker, no Bearer auth
-                url = f"{self.base_url.rstrip('/')}/diagnose"
-                headers: dict[str, str] = {"X-Tier": self.tier}
-            else:
-                # Through Worker — Bearer auth, /v1/diagnose path
-                url = f"{self.base_url.rstrip('/')}/v1/diagnose"
-                headers = {}
-                if self.api_key:
-                    headers["Authorization"] = f"Bearer {self.api_key}"
-
             resp = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
             resp.raise_for_status()
-            return _deserialize_lint_result(resp.json())
+            return LintResponse(result=_deserialize_lint_result(resp.json()))
         except httpx.TimeoutException:
-            logger.debug("Remote diagnostic request timed out after %.1fs", self.timeout)
-            return None
+            logger.warning("Remote diagnostic request timed out after %.1fs", self.timeout)
+            return LintResponse()
         except httpx.HTTPStatusError as exc:
-            logger.debug("Remote diagnostic returned HTTP %d: %s", exc.response.status_code, exc)
-            return None
+            funnel_err = parse_error_body(exc.response.status_code, exc.response.text)
+            if funnel_err is not None:
+                logger.warning(
+                    "Server returned %d %s for tier=%s", exc.response.status_code, funnel_err.error, funnel_err.tier
+                )
+                return LintResponse(funnel_error=funnel_err)
+            logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", exc.response.status_code)
+            return LintResponse()
         except httpx.HTTPError as exc:
-            logger.debug("Remote diagnostic network error: %s", exc)
-            return None
+            logger.warning("Remote diagnostic network error: %s", exc)
+            return LintResponse()
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
-            logger.debug("Remote diagnostic response malformed: %s", exc)
-            return None
+            logger.warning("Remote diagnostic response malformed: %s", exc)
+            return LintResponse()
 
 
 # ──────────────────────────────────────────────────────────────────
