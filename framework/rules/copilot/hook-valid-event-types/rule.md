@@ -13,12 +13,12 @@ source: https://code.visualstudio.com/docs/copilot/customization/hooks
 
 # Hook Valid Event Types
 
-Hook event keys in `.github/hooks/*.json` or VS Code hook config MUST use recognized Copilot event type names (13 events). Unrecognized event names are silently ignored, so a typo means the hook never fires.
+Hook event keys in `.github/hooks/*.json` or VS Code hook config MUST use recognized Copilot event type names. The VS Code Copilot doc lists eight events in PascalCase: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `SubagentStart`, `SubagentStop`, `Stop`. Unrecognized event names — including camelCase variants like `preToolUse` — are silently ignored, so the hook never fires.
 
 ## Antipatterns
 
-- **Camel-case typos.** Writing event names with wrong capitalization. Copilot silently ignores unrecognized keys.
-- **Cross-agent event names.** Using event names from another agent (e.g., Claude's `PreToolUse` instead of Copilot's convention).
+- **camelCase variants.** Writing `preToolUse`, `sessionStart`, or `userPromptSubmitted` — Copilot's event names are uniformly PascalCase, and the camelCase aliases are not recognized.
+- **Cross-agent event names.** Using event names from another agent (e.g., `SessionEnd` is a Claude/Cursor event, not a Copilot one).
 - **Deprecated event names.** Using event names from older versions that have been renamed or removed.
 
 ## Pass / Fail
