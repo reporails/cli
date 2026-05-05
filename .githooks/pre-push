@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Pre-push hook — runs release verification checks before pushing.
+# Skips on non-release branches (only runs on version branches and main).
+
+remote="$1"
+url="$2"
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+
+# Only gate release-relevant branches
+case "$branch" in
+  main|[0-9]*.[0-9]*.[0-9]*)
+    echo "Pre-push: release branch detected ($branch), running checks..."
+    exec "$(git rev-parse --show-toplevel)/scripts/pre-release-check.sh"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
