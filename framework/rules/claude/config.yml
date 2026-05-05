@@ -148,6 +148,22 @@ file_types:
         vcs: external
         maintainer: human
 
+  scheduled_tasks:
+    # Desktop-local scheduled tasks. Cloud-side "Routines" are not local files
+    # and are out of scope for this validator.
+    source: https://code.claude.com/docs/en/desktop-scheduled-tasks
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: mutable
+    loading: on_invocation
+    scopes:
+      user:
+        patterns: ["~/.claude/scheduled-tasks/**/SKILL.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
   output_styles:
     source: https://code.claude.com/docs/en/output-styles
     format: [frontmatter, freeform]

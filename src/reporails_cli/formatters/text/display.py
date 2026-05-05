@@ -376,8 +376,14 @@ def print_text_result(
     ascii_mode: bool,
     verbose: bool,
     ruleset_map: object = None,
+    funnel_error: object = None,
 ) -> None:
-    """Print compact text output: files sorted worst-first, aggregated counts, scorecard at bottom."""
+    """Print compact text output: files sorted worst-first, aggregated counts, scorecard at bottom.
+
+    `funnel_error` is a FunnelError from the API client when a 4xx response or
+    local preflight rejected the payload — surfaces the upgrade CTA below the
+    scorecard so users see why server diagnostics are missing.
+    """
     from reporails_cli.core.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
@@ -385,25 +391,37 @@ def print_text_result(
 
     project_root = Path.cwd()
     all_files, scope = _collect_files_and_scope(result, ruleset_map, project_root)
-
     has_quality = result.quality is not None and bool(result.quality.compliance_band)
     tier = _detect_tier(result, has_quality)
     scope.type_str = file_type_summary(all_files) if all_files else "0 files"
 
     _print_header(tier)
-
     if not result.findings:
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
+        _render_funnel_cta(funnel_error)
         return
 
-    sev_icons = get_sev_icons(ascii_mode)
-    hints_idx = _build_hints_by_file(result.hints, project_root)
-    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx)
-    _render_cross_file_coordinates(result, sev_icons)
+    _render_findings_and_scorecard(result, ruleset_map, ascii_mode, verbose, scope, has_quality, tier, elapsed_ms)
+    _render_funnel_cta(funnel_error)
 
+
+def _render_findings_and_scorecard(
+    result: Any,
+    ruleset_map: Any,
+    ascii_mode: bool,
+    verbose: bool,
+    scope: Any,
+    has_quality: bool,
+    tier: str,
+    elapsed_ms: float,
+) -> None:
+    """Render file groups, cross-file coordinates, and the bottom scorecard."""
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
-    surface_health = compute_surface_scores(result, ruleset_map=ruleset_map)
+    sev_icons = get_sev_icons(ascii_mode)
+    hints_idx = _build_hints_by_file(result.hints, Path.cwd())
+    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx)
+    _render_cross_file_coordinates(result, sev_icons)
 
     print_scorecard(
         result,
@@ -413,5 +431,21 @@ def print_text_result(
         elapsed_ms=elapsed_ms,
         agent=_detect_agent_name(ruleset_map),
         scope=scope,
-        surface_health=surface_health,
+        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map),
     )
+
+
+def _render_funnel_cta(funnel_error: object) -> None:
+    """Render the conversion CTA + bug-report link when a FunnelError is present."""
+    from reporails_cli.core.funnel import BUG_REPORT_URL, FunnelError, format_cta
+
+    if not isinstance(funnel_error, FunnelError):
+        return
+    cta = format_cta(funnel_error)
+    if not cta:
+        return
+    console.print()
+    console.print("  [yellow]⚠[/yellow]  Server diagnostics unavailable.")
+    console.print(f"  {cta}")
+    console.print(f"  [dim]Did you see an error? Let us know: [bold]{BUG_REPORT_URL}[/bold][/dim]")
+    console.print()

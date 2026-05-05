@@ -5,5 +5,5 @@ checks:
 - id: COPILOT.S.0004.handler-has-type
   type: deterministic
   expect: present
-  pattern-regex: '"type"\s*:\s*"(command|prompt)"'
-  message: No handler with a valid type field (command or prompt) found
+  pattern-regex: '"type"\s*:\s*"command"'
+  message: No handler with a valid type field found — VS Code Copilot supports only "command"

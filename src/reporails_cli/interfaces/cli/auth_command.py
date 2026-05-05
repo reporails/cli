@@ -270,3 +270,26 @@ def logout() -> None:
     username = creds.get("github_login", "?")
     _clear_credentials()
     console.print(f"\n  [green]Logged out.[/] Credentials for @{username} removed.\n")
+
+
+@auth_app.command("token")
+def token() -> None:
+    """Print the stored API key to stdout for use in CI environments.
+
+    Treat this output like a secret — the key is the value to set as
+    `AILS_API_KEY` in your CI provider's secret store, or to pass via the
+    GitHub Action's `api-key` input. Pipes cleanly:
+
+        AILS_API_KEY=$(ails auth token)
+        gh secret set REPORAILS_API_KEY -b "$(ails auth token)"
+
+    Exits non-zero if not authenticated, so scripts can detect missing
+    credentials.
+    """
+    creds = _read_credentials()
+    if not creds.get("api_key"):
+        console.print("\n  Not authenticated. Run [bold]ails auth login[/] to sign in.\n")
+        raise typer.Exit(1)
+
+    # Plain print so the key pipes cleanly without rich formatting.
+    print(creds["api_key"])

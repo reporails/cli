@@ -13,12 +13,12 @@ source: https://code.visualstudio.com/docs/copilot/customization/hooks
 
 # Hook Handler Has Type
 
-Each hook handler object in `.github/hooks/*.json` or VS Code hook config MUST contain a `"type"` field set to `command` or `prompt`. Without a type field, Copilot cannot dispatch the handler and the hook silently does nothing.
+Each hook handler object in `.github/hooks/*.json` or VS Code hook config MUST contain a `"type"` field set to `command`. The VS Code Copilot hooks reference states each hook entry must have `type: "command"`. Without a type field, Copilot cannot dispatch the handler and the hook silently does nothing.
 
 ## Antipatterns
 
 - **Missing type field.** Defining a handler with only `"command"` but no `"type"` key.
-- **Invalid type value.** Setting `"type": "shell"` or `"type": "script"` instead of `command` or `prompt`.
+- **Invalid type value.** Setting `"type": "prompt"`, `"type": "shell"`, or `"type": "script"` — Copilot supports only `command`. (`prompt` is a Cursor-specific hook type and is not recognized by VS Code Copilot.)
 
 ## Pass / Fail
 
