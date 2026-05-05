@@ -165,8 +165,12 @@ def _with_url(text: str, url: str) -> str:
 
 _CTA_TEMPLATES: dict[tuple[str, str], str] = {
     ("rate_limit_exceeded", "anonymous"): "Anonymous limit hit ({err.limit}/hr). Run `ails auth login` to raise it 40x",
-    ("rate_limit_exceeded", "pro"): "Hit your hourly limit ({err.limit}/hr) — file an issue with your use case so we can raise it",
-    ("payload_too_large", "anonymous"): "Project too large for anonymous (2 MB cap). Run `ails auth login` to raise it to 20 MB",
+    ("rate_limit_exceeded", "pro"): (
+        "Hit your hourly limit ({err.limit}/hr) — file an issue with your use case so we can raise it"
+    ),
+    ("payload_too_large", "anonymous"): (
+        "Project too large for anonymous (2 MB cap). Run `ails auth login` to raise it to 20 MB"
+    ),
     ("payload_too_large", "pro"): "Project exceeds the per-request payload cap — let us know your use case",
     ("atom_cap_exceeded", "anonymous"): (
         "Project too dense ({err.size:,} atoms, {err.limit:,} cap). "
