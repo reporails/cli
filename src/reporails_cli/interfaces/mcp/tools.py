@@ -62,7 +62,8 @@ def _merge_with_server(
     from reporails_cli.core.api_client import AilsClient
     from reporails_cli.core.merger import merge_results
 
-    lint_result = AilsClient().lint(ruleset_map) if ruleset_map else None
+    response = AilsClient().lint(ruleset_map) if ruleset_map else None
+    lint_result = response.result if response else None
     return merge_results(
         m_findings,
         client_findings,

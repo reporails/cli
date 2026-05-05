@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.5.5"
+version = "0.5.6"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -82,7 +82,7 @@ reporails-mcp = "reporails_cli.interfaces.mcp.server:main"
 
 [project.urls]
 Homepage = "https://reporails.com"
-Documentation = "https://reporails.com/rules"
+Documentation = "https://github.com/reporails/cli#readme"
 Repository = "https://github.com/reporails/cli"
 Issues = "https://github.com/reporails/cli/issues"
 

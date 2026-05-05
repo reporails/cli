@@ -271,9 +271,6 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
             }
             for c in result.cross_file_coordinates
         ]
-    if result.quality is not None and result.quality.compliance_band:
-        data["compliance_band"] = result.quality.compliance_band
-
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
     surfaces = compute_surface_scores(result, ruleset_map=ruleset_map)

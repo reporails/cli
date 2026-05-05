@@ -13,7 +13,7 @@ supersedes: CORE:S:0027
 
 # Hook Valid Event Types
 
-Hook event keys in `.claude/settings.json` MUST use recognized Claude Code event type names (28 events as of 2026-04-25). Unrecognized event names are silently ignored, so a typo like `"PreTooluse"` (lowercase u) means the hook never fires.
+Hook event keys in `.claude/settings.json` MUST use recognized Claude Code event type names (29 events as of 2026-04-29). Unrecognized event names are silently ignored, so a typo like `"PreTooluse"` (lowercase u) means the hook never fires.
 
 
 ## Antipatterns

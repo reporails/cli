@@ -1,8 +1,8 @@
-# Reporails CLI
+# Reporails CLI (v0.5.6)
 
-AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 97 rules.
-
-### Beta phase — Moving fast, feedback welcome.
+> **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 92+ rules across six categories. Supports Claude, Codex, Copilot, Cursor, and Gemini.**
+> 
+> *Beta phase - moving fast, feedback welcome.*
 
 ## Quick Start
 
@@ -12,7 +12,39 @@ npx @reporails/cli check
 uvx --from reporails-cli ails check
 ```
 
-## Install
+No install, no account. Actionable findings in seconds - fix them, run again, watch the score improve:
+
+```
+Reporails - Diagnostics
+
+  ┌─ Main (4)  61 directive / 9 constraint · 71% prose
+  │ CLAUDE.md  10 dir / 1 con / 1 amb · 71% prose
+  │           Missing tech stack declaration - list languages, frameworks, and runtimes  CORE:C:0034
+  │           Missing MCP documentation - describe MCP server configuration if applicable  CORE:C:0027
+  │     ... and 3 more
+  │     4 brief · 1 orphan
+  │
+  └─ 181 findings
+
+  [⋯ Agents (3) · Skills (10) · Rules (13)  +318 findings ⋯]
+
+  ── Summary ────────────────────────────────────────────────────────
+
+  Score: 7.3 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (3.9s)
+  Agent: Claude
+
+  Scope:
+    instructions: 277 directive / 448 prose (56%)
+                  75 constraint / 10 ambiguous
+
+  Main (4):     ▓▓▓▓▓▓▓▓▓▓░░░░░   6.9    Rules (13):   ▓▓▓▓▓▓▓▓▓▓▓▓░░░   7.9
+  Skills (10):  ▓▓▓▓▓▓▓▓▓▓▓░░░░   7.2    Agents (3):   ▓▓▓▓▓▓▓▓▓▓░░░░░   6.9
+
+  499 findings · 5 errors · 416 warnings · 70 info
+  2 cross-file conflicts · 7 cross-file repetitions
+```
+
+## Install permanently
 
 ```bash
 npx @reporails/cli install
@@ -20,162 +52,50 @@ npx @reporails/cli install
 uvx --from reporails-cli ails install
 ```
 
-This installs `ails` to your PATH and configures the MCP server for detected agents. From then on:
+Puts `ails` on your PATH.
+
+## Anonymous vs signed
+
+Anonymous mode needs no account. Signing in raises the rate / payload caps and unlocks per-finding fix text and exact cross-file conflict locations.
 
 ```bash
-ails check
-ails update               # Upgrade to latest version
+# GitHub Device Flow - authorize in browser
+ails auth login
 ```
 
-```
-Reporails — Diagnostics — Pro (beta)
+Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md).
 
-  ┌─ Main (1)
-  │ CLAUDE.md
-  │   ⚠       Missing directory layout — show the project …  CORE:C:0035
-  │   ⚠ L9    7 of 7 instruction(s) lack effective reinfor…  CORE:C:0053
-  │     ... and 16 more
-  │     1 misordered · 1 orphan · 1 ambiguous
-  │
-  └─ 21 findings
+## In CI
 
-  ── Summary ────────────────────────────────────────────────────────
-
-  Score: 7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (1.3s)
-  Agent: Claude
-
-  Scope:
-    capabilities: 2 main
-    instructions: 4 directive / 7 prose (50%)
-                  3 constraint
-
-  21 findings · 4 warnings · 1 info
-  Compliance: HIGH
-```
-
-Fix the issues, run again, watch your score improve.
-
-## Authentication
-
-Offline diagnostics work without an account. For server-enhanced diagnostics (cross-file analysis, compliance scoring), sign up for the beta:
-
-```bash
-ails auth login       # GitHub Device Flow — authorize in browser
-ails auth status      # Check current auth state
-ails auth logout      # Remove stored credentials
-```
-
-## Commands
-
-```bash
-ails check                       # Validate instruction files
-ails check -f json               # JSON output
-ails check -f github             # GitHub Actions annotations
-ails check --strict              # Exit 1 on any finding
-ails check --agent claude        # Agent-specific rules only
-ails check --exclude-dirs vendor # Exclude directory from scanning
-ails check -v                    # Verbose: all findings with rule IDs
-
-ails explain CORE:S:0001         # Explain a specific rule
-ails heal                        # Auto-fix common violations
-ails install                     # Install CLI to PATH + MCP server
-ails update                      # Upgrade to latest version
-ails version                     # Show version info
-```
-
-### Exit codes
-
-| Code | Meaning                                             |
-|------|-----------------------------------------------------|
-| 0    | Success                                             |
-| 1    | Findings found (strict mode)                        |
-| 2    | Invalid input (bad path, unknown agent/format/rule) |
-
-## Supported Agents
-
-| Agent   | Base config                       | Rules                          | Skills                       | Agents                      | Other                                          |
-|---------|-----------------------------------|--------------------------------|------------------------------|-----------------------------|------------------------------------------------|
-| Claude  | `CLAUDE.md`, `.local.md`          | `.claude/rules/**/*.md`        | `.claude/skills/**/SKILL.md` | `.claude/agents/**/*.md`    | commands, output-styles, memory, MCP, settings |
-| Codex   | `AGENTS.md`, `.override.md`       | `.codex/rules/*.rules`         | `.agents/skills/**/SKILL.md` | `.codex/agents/*.toml`      | hooks, config                                  |
-| Copilot | `.github/copilot-instructions.md` | `.github/instructions/**/*.md` | `.github/skills/**/SKILL.md` | `.github/agents/*.agent.md` | hooks, prompts, MCP                            |
-| Cursor  | `.cursorrules`, `AGENTS.md`       | `.cursor/rules/**/*.mdc`       | `.cursor/skills/**/SKILL.md` | `.cursor/agents/*.md`       | hooks, notepads, MCP, policy                   |
-| Gemini  | `GEMINI.md`, `AGENTS.md`          | —                              | `.gemini/skills/**/SKILL.md` | `.gemini/agents/*.md`       | commands, extensions, settings                 |
-
-Auto-detects which agents are present. Scans project-level, user-level (`~/`), and managed (`/etc/`) paths.
-
-## Configuration
-
-Project config in `.ails/config.yml`:
+Run on every PR so instruction-quality regressions (contradictions, oversized files, weak reinforcement) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-default_agent: claude          # Default agent (run: ails config set default_agent claude)
-exclude_dirs: [vendor, dist]   # Directories to skip
-disabled_rules: [CORE:C:0010]  # Rules to disable
+- uses: reporails/cli/action
+  with:
+    api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - sign-in for full diagnostic detail
+    strict: "true"                              # exit 1 if any rule fires
+    min-score: "7.0"                            # exit 1 if score < 7.0
 ```
 
-Set values via CLI: `ails config set <key> <value>`
+Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
 
-### Global defaults
+## Documentation
 
-Global config in `~/.reporails/config.yml` applies to all projects. Project config overrides global.
+- [Getting Started](https://github.com/reporails/cli/blob/main/docs/getting-started.md) - install, first run, what the output means
+- [Agent Support](https://github.com/reporails/cli/blob/main/docs/agent-support.md) - which agents are recognized and what's covered
+- [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md) - anonymous vs signed in, what each mode includes
+- [Configuration](https://github.com/reporails/cli/blob/main/docs/configuration.md) - disabling rules, project / global config, exclude paths
+- [Score Guide](https://github.com/reporails/cli/blob/main/docs/score-guide.md) - how the score is built and what it tells you
+- [FAQ](https://github.com/reporails/cli/blob/main/docs/faq.md) - common questions
 
-```bash
-ails config set --global default_agent claude
-```
+## Built and validated for
 
-## GitHub Actions
-
-Add `ails check` as a CI gate with inline PR annotations:
-
-```yaml
-name: Reporails
-on:
-  pull_request:
-    paths: ['CLAUDE.md', '.claude/**', 'AGENTS.md', '.cursorrules']
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: reporails/cli/action
-        with:
-          strict: "true"
-```
-
-Or without the action:
-
-```yaml
-      - run: pip install reporails-cli && ails check . --format github --strict
-```
-
-## What It Checks
-
-97 rules across five categories:
-
-- **Structure** — File organization, discoverability, size limits, modularity
-- **Content** — Clarity, specificity, reinforcement patterns, tech stack, domain terminology
-- **Efficiency** — Token usage, instruction elaboration, formatting
-- **Maintenance** — Versioning, review processes
-- **Governance** — Security policies, credential protection, permissions
-
-## Free vs Pro
-
-| Feature                                                    | Free                  | Pro                             |
-|------------------------------------------------------------|-----------------------|---------------------------------|
-| Mechanical + structural rules                              | 97 rules, full detail | 97 rules, full detail           |
-| Content-quality checks (embedding-based)                   | Full detail           | Full detail                     |
-| Client checks (ordering, orphan, format, bold, scope)      | Full detail           | Full detail                     |
-| Per-atom diagnostics (specificity, modality, brevity)      | Full detail           | Full detail                     |
-| Interaction diagnostics (conflicts, competition, coupling) | Count per file        | Full detail (line, fix, effect) |
-| Cross-file analysis (conflicts, repetition)                | Coordinates only      | Full                            |
-| Compliance band + system score                             | —                     | Full                            |
-
-Free tier requires no account. Pro shows you *how many* interaction problems exist and *where* cross-file conflicts are — enough to know if your instructions are working. Pro gives the full detail: which line, what to fix, and how strong the effect is.
-
-## Performance
-
-The embedding model is bundled in the wheel. First run may download the spaCy language model (~13 MB). Subsequent runs complete in under 2 seconds for typical projects.
+- **Claude** — [Anthropic](https://github.com/anthropics)
+- **Codex** — [OpenAI](https://github.com/openai)
+- **Copilot** — [GitHub](https://github.com/github)
+- **Cursor** — [Anysphere](https://github.com/cursor)
+- **Gemini** — [Google](https://github.com/google-gemini)
 
 ## License
 
-[BUSL 1.1](LICENSE) — converts to Apache 2.0 three years after each release.
+[BUSL 1.1](LICENSE) - converts to Apache 2.0 three years after each release.

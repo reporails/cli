@@ -26,6 +26,12 @@ inputs:
   from-source:
     description: 'Install CLI from local checkout instead of PyPI (for CI testing of the action itself).'
     default: 'false'
+  api-key:
+    description: 'API key for full diagnostics. Pass via secrets.REPORAILS_API_KEY from the calling workflow. Empty = anonymous tier.'
+    default: ''
+  server-url:
+    description: 'Override the diagnostic server URL. Defaults to production. Used for staging/dev deployments.'
+    default: ''
 
 outputs:
   score:
@@ -63,6 +69,9 @@ runs:
     - name: Run ails check
       id: check
       shell: bash
+      env:
+        AILS_API_KEY: ${{ inputs.api-key }}
+        AILS_SERVER_URL: ${{ inputs.server-url }}
       run: |
         # Build command
         CMD="ails check ${{ inputs.path }} --format github --ascii"
