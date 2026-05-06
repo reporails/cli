@@ -93,6 +93,40 @@ fields:
         default: true
         description: "Enforce rules backed by community sources only (weight < 0.8)"
 
+  agents:
+    required: false
+    type: object
+    description: "Per-agent overrides keyed by agent id (claude, codex, cursor, etc.)."
+    additionalProperties:
+      type: object
+      properties:
+        fallback_filenames:
+          type: array
+          items: { type: string }
+          description: |
+            Additional instruction filenames to scan for this agent's `main`
+            surface. Use to mirror Codex `project_doc_fallback_filenames` (e.g.
+            ["TEAM_GUIDE.md", ".agents.md"]) without round-tripping through the
+            agent's own home config.
+
+  surfaces:
+    required: false
+    type: object
+    description: |
+      Per-surface include/exclude pattern adjustments. Keys are
+      `<agent_id>.<file_type>` (e.g. `codex.main`, `cursor.rules`).
+    additionalProperties:
+      type: object
+      properties:
+        include:
+          type: array
+          items: { type: string }
+          description: "Additional glob patterns to scan for this surface."
+        exclude:
+          type: array
+          items: { type: string }
+          description: "Glob patterns whose matches are dropped from this surface."
+
 defaults:
   schema_version: "0.1.0"
   agent: "claude"
@@ -140,3 +174,15 @@ examples:
     tiers:
       core: true
       experimental: false
+
+  with_surface_adjustments: |
+    schema_version: "0.1.0"
+    agent: codex
+    agents:
+      codex:
+        fallback_filenames: ["TEAM_GUIDE.md", ".agents.md"]
+    surfaces:
+      cursor.rules:
+        exclude: ["**/draft/**"]
+      claude.skills:
+        include: [".github/skills/**/SKILL.md"]
