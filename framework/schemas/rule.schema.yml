@@ -93,7 +93,7 @@ fields:
         description: "Named file type (main, scoped_rule, skill, config, override, memory, mcp, managed)"
       scope:
         type: enum
-        values: [global, path_scoped, task_scoped, user, system]
+        values: [global, path_scoped, task_scoped, nested, user, system]
       format:
         type: [enum, array]
         values: [freeform, frontmatter, schema_validated]
