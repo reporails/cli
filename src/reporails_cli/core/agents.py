@@ -249,36 +249,41 @@ def _load_project_exclude_dirs(target: Path) -> frozenset[str]:
     return _DEFAULT_EXCLUDE_DIRS
 
 
-def _agent_has_marker(target: Path, agent_type: AgentType) -> bool:
-    """Fast existence check — does this agent likely exist in the project?
+def _scan_marker_at(target: Path, agent_type: AgentType) -> bool:
+    """Check whether agent markers exist at exactly this directory level.
 
-    Checks for root-level instruction files or agent-specific directories.
-    Returns False only when we're certain the agent is absent (a few stat() calls).
-    Uses os.path.lexists to detect symlinks (even broken/circular ones).
-
-    Root-level files are matched case-insensitively (claude.md == CLAUDE.md)
-    because repos in the wild use both conventions.
+    Root-level files match case-SENSITIVELY per agent specs. The agents.md
+    spec lists exact filenames ("AGENTS.override.md, AGENTS.md, TEAM_GUIDE.md,
+    .agents.md. Filenames not on this list are ignored for instruction
+    discovery.") so wrong-case copies (e.g. `agents.md` lowercase) are not
+    real instruction files.
     """
-    # Build lowercase index of root files once per call (cheap — root only)
     try:
-        root_lower = {
-            entry.name.lower(): entry.name
-            for entry in os.scandir(target)
-            if entry.is_file(follow_symlinks=False) or entry.is_symlink()
+        root_files = {
+            entry.name for entry in os.scandir(target) if entry.is_file(follow_symlinks=False) or entry.is_symlink()
         }
     except OSError:
-        root_lower = {}
+        root_files = set()
 
     for pattern in agent_type.instruction_patterns:
-        # Patterns with path separators or globs — check exact path
         if "/" in pattern or "*" in pattern:
             if os.path.lexists(target / pattern):
                 return True
-        else:
-            # Root-level file — case-insensitive match
-            if pattern.lower() in root_lower:
-                return True
+        elif pattern in root_files:
+            return True
     return any((target / dir_path).is_dir() for _, dir_path in agent_type.directory_patterns)
+
+
+def _agent_has_marker(target: Path, agent_type: AgentType) -> bool:
+    """Fast existence check — does this agent likely apply at target?
+
+    Checks the target directory only. Cwd is the project root for discovery
+    (per resolve_project_root); files in ancestor directories are out of scope.
+
+    Root-level files match case-insensitively (claude.md == CLAUDE.md) since
+    repos in the wild use both conventions.
+    """
+    return _scan_marker_at(target, agent_type)
 
 
 def detect_agents(  # pylint: disable=too-many-locals
@@ -288,6 +293,8 @@ def detect_agents(  # pylint: disable=too-many-locals
     """Detect coding agents in the target directory.
 
     Uses config.yml file_types from bundled framework for discovery.
+    Per-surface include/exclude and Codex fallback filenames come from the
+    project's `.ails/config.yml` (and `.ails/config.local.yml`).
     Cached per target path.
     """
     cache_key = str(target)
@@ -298,6 +305,15 @@ def detect_agents(  # pylint: disable=too-many-locals
     # Load project exclude_dirs early so discovery skips noise directories
     project_excludes = _load_project_exclude_dirs(target)
 
+    # Load project config for per-surface include/exclude + fallback filenames
+    project_config = None
+    try:
+        from reporails_cli.core.config import get_project_config
+
+        project_config = get_project_config(target)
+    except Exception:
+        logger.debug("Project config load failed for %s", target, exc_info=True)
+
     detected: list[DetectedAgent] = []
 
     for agent_id, agent_type in get_known_agents().items():
@@ -306,7 +322,9 @@ def detect_agents(  # pylint: disable=too-many-locals
             continue
 
         # Config-driven discovery from bundled config.yml
-        config_result = _discover_from_config(target, agent_id, rules_paths, project_excludes)
+        config_result = _discover_from_config(
+            target, agent_id, rules_paths, project_excludes, project_config=project_config
+        )
         if config_result is None:
             continue
 
