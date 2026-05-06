@@ -15,23 +15,56 @@ from reporails_cli.core.models import (
     Violation,
 )
 
+# Project-root marker directories that signal "this is a project". Used by
+# _find_project_root for cache-key derivation and mapper coordination — NOT
+# by discovery (see agent_discovery.resolve_project_root).
+#
+# Only IDE-workspace markers and the GitHub root marker are treated as project
+# signals. Agent-specific config dirs (.cursor/, .claude/, .codex/, .gemini/,
+# .agents/) are NOT project-root indicators — they can legitimately exist in
+# subdirectories (per-package agent configs in monorepos), so using them as
+# project-root signals would misidentify subprojects as the actual project root.
+_PROJECT_MARKER_DIRS: frozenset[str] = frozenset(
+    {
+        ".vscode",
+        ".idea",
+        ".github",
+    }
+)
+
 
 def _find_project_root(target: Path) -> Path:
-    """Walk up from target to find project root (nearest backbone > .git > target).
+    """Walk up from target to find project root for cache/mapper purposes.
 
-    Nearest backbone wins: if the target itself has a backbone.yml, that IS
-    the project root — don't walk past it to a parent coordination root.
+    Priority (closer wins; first match returned):
+      1. .ails/backbone.yml — Reporails-aware project marker
+      2. .git — version control root
+      3. Any IDE / agent config directory: .vscode/, .idea/, .cursor/,
+         .claude/, .codex/, .gemini/, .github/
+
+    Falls back to `target` if no marker is found anywhere up the tree. Used
+    for cache key derivation and mapper coordination so that worktrees and
+    subdirectories of the same repo share one cache namespace.
+
+    Discovery does NOT consult this function — see
+    agent_discovery.resolve_project_root for discovery boundary semantics.
     """
     current = target if target.is_dir() else target.parent
     first_git = None
+    first_marker = None
     while current != current.parent:
-        if (current / ".git").exists() and first_git is None:
-            first_git = current
         backbone = current / ".ails" / "backbone.yml"
         if backbone.exists():
             return current
+        if (current / ".git").exists() and first_git is None:
+            first_git = current
+        if first_marker is None:
+            for marker in _PROJECT_MARKER_DIRS:
+                if (current / marker).is_dir():
+                    first_marker = current
+                    break
         current = current.parent
-    return first_git or target
+    return first_git or first_marker or target
 
 
 _SEVERITY_ORDER = {
