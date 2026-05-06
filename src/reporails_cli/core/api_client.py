@@ -222,44 +222,46 @@ class AilsClient:
         return self._lint_remote(ruleset_map)
 
     def _lint_remote(self, ruleset_map: RulesetMap) -> LintResponse:
-        """POST text-stripped RulesetMap to diagnostic API.
-
-        In production: CLI → Worker (/v1/diagnose, Bearer rr_*) → FastAPI.
-        In local dev (AILS_DEV_MODE): CLI → FastAPI directly (/diagnose, X-Tier header).
-        """
+        """POST the projected RulesetMap to the diagnostic backend."""
         try:
             import httpx
         except ImportError:
             logger.debug("httpx not installed — cannot use remote diagnostics")
             return LintResponse()
 
-        payload = _strip_and_serialize(ruleset_map)
+        from reporails_cli.core.payload import encode_msgpack, project_payload
+
+        payload = project_payload(ruleset_map)
         if not payload.get("files"):
-            # No instruction files mapped — the Worker would reject with
-            # `missing_content_hash` (no content_hash to extract). Skip the
-            # round-trip; server diagnostics aren't meaningful without files.
             logger.warning("No instruction files in payload — skipping remote diagnostics")
             return LintResponse()
         cap_error = preflight_oversized(payload, has_api_key=bool(self.api_key))
         if cap_error is not None:
             logger.warning("Preflight rejected payload: %s (%d/%d)", cap_error.error, cap_error.size, cap_error.limit)
             return LintResponse(funnel_error=cap_error)
-        return self._post_payload(httpx, payload)
+        body = encode_msgpack(payload)
+        from reporails_cli.core.funnel import preflight_byte_size
 
-    def _post_payload(self, httpx: Any, payload: dict[str, Any]) -> LintResponse:
+        byte_error = preflight_byte_size(len(body), has_api_key=bool(self.api_key))
+        if byte_error is not None:
+            logger.warning("Preflight rejected payload bytes: %d > %d", byte_error.size, byte_error.limit)
+            return LintResponse(funnel_error=byte_error)
+        return self._post_payload(httpx, body)
+
+    def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
         dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
         if dev_mode:
             url = f"{self.base_url.rstrip('/')}/diagnose"
-            headers: dict[str, str] = {"X-Tier": self.tier}
+            headers: dict[str, str] = {"X-Tier": self.tier, "Content-Type": "application/msgpack"}
         else:
             url = f"{self.base_url.rstrip('/')}/v1/diagnose"
-            headers = {}
+            headers = {"Content-Type": "application/msgpack"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            resp = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
+            resp = httpx.post(url, content=body, headers=headers, timeout=self.timeout)
             resp.raise_for_status()
             return LintResponse(result=_deserialize_lint_result(resp.json()))
         except httpx.TimeoutException:
