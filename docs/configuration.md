@@ -1,8 +1,8 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.7"
+last_updated: 2026-05-06
 ---
 
 # Configuration
@@ -94,6 +94,64 @@ For one-off runs, pass `--exclude-dirs` on the command line:
 
 ```bash
 ails check --exclude-dirs examples --exclude-dirs third_party
+```
+
+## Per-surface include / exclude
+
+Each agent has a set of *surfaces* — `main` (the primary instruction file), `nested_context` (subdirectory variants), `rules`, `skills`, `agents`, etc. The `surfaces` key lets you adjust the glob patterns each surface scans, without modifying the bundled framework configs:
+
+```yaml
+# .ails/config.yml
+surfaces:
+  cursor.rules:
+    exclude: ["**/draft/**"]            # drop matches under draft/ from Cursor rules
+  claude.skills:
+    include: [".github/skills/**/SKILL.md"]   # also scan .github/skills/ for Claude
+  codex.main:
+    exclude: ["**/legacy/AGENTS.md"]    # drop legacy AGENTS.md from Codex's main candidates
+```
+
+Keys are `<agent_id>.<file_type>` (e.g. `cursor.rules`, `claude.main`, `codex.nested_context`). Each entry may set:
+
+- `include`: additional glob patterns to scan **on top of** the agent's bundled patterns.
+- `exclude`: glob patterns whose matches are dropped from the surface's results.
+
+Patterns match relative to the project root (the directory you ran `ails check` from).
+
+## Codex fallback filenames
+
+Codex supports `project_doc_fallback_filenames` in its own `~/.codex/config.toml` to recognize alternative instruction filenames (e.g. `TEAM_GUIDE.md`, `.agents.md`). Reading that user-home config from the validator is fragile — CI users have different homes — so Reporails reads the same setting from the project's own `.ails/config.yml`:
+
+```yaml
+# .ails/config.yml
+agents:
+  codex:
+    fallback_filenames: ["TEAM_GUIDE.md", ".agents.md"]
+```
+
+These filenames are added as `**/<filename>` to Codex's `main` surface — they classify the same way `AGENTS.md` does and pick up the same rules.
+
+## Local overrides — `.ails/config.local.yml`
+
+Personal or CI-specific config that should not be committed goes in `.ails/config.local.yml`. The file is layered on top of `.ails/config.yml`:
+
+- Object keys merge recursively.
+- Array keys extend (the local list is appended to the committed list).
+- Scalar keys are replaced.
+
+```yaml
+# .ails/config.local.yml — gitignored
+surfaces:
+  claude.main:
+    exclude: ["**/legacy/CLAUDE.md"]    # I personally don't care about legacy/
+```
+
+When `ails config set …` writes `.ails/config.yml`, it also writes `.ails/.gitignore` listing `config.local.yml` and `.gitignore` itself — the gitignore is per-machine scaffolding (recreated on the next `ails config set`) and doesn't need to be committed. If you create `.ails/` manually, add the two lines yourself:
+
+```
+# .ails/.gitignore
+.gitignore
+config.local.yml
 ```
 
 ## Severity overrides
