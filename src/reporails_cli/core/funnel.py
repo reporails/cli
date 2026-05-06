@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 UNIVERSAL_ATOM_CAP = 10_000
 BUG_REPORT_URL = "https://github.com/reporails/cli/issues"
+BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
 WIRE_MAX_FILES = 500
 WIRE_MAX_CLUSTERS = 2000
 
@@ -164,6 +166,45 @@ def _preflight_url(error: str, tier: str) -> str:
     if tier != "pro" or error not in _CONTACT_SUFFIXES:
         return ""
     return f"https://reporails.com/contact/{_CONTACT_SUFFIXES[error]}?utm_source=cli"
+
+
+def _cli_version() -> str:
+    """Return the installed CLI version, or 'unknown' if metadata is missing."""
+    try:
+        from importlib.metadata import version
+
+        return version("reporails-cli")
+    except Exception:  # importlib.metadata.PackageNotFoundError + defensive
+        return "unknown"
+
+
+def format_bug_report_url(err: FunnelError) -> str:
+    """Return the GitHub-issues URL for the bug-report exit ramp.
+
+    For ``unknown_error`` (an unrecognized 4xx body or a transport failure that
+    surfaced as "actual error") we deep-link to ``/issues/new`` with the title
+    and a triage-ready body prefilled, so the user lands one click + a few
+    lines from a filed issue. For known funnel errors (rate limit, payload too
+    large) we return the plain ``/issues`` index — those are usage signals,
+    not bug reports, and a deep link would invite spurious "feature request"
+    issues.
+    """
+    if err.error != "unknown_error" or not err.message:
+        return BUG_REPORT_URL
+
+    title = f"[CLI] {err.message}"
+    body = (
+        "## What happened\n\n"
+        f"{err.message}\n\n"
+        "## Environment\n\n"
+        f"- reporails-cli: {_cli_version()}\n"
+        f"- OS: {sys.platform}\n"
+        f"- Python: {sys.version.split()[0]}\n\n"
+        "## Steps to reproduce\n\n"
+        "<please describe the command you ran and the project shape>\n"
+    )
+    params = urlencode({"title": title, "body": body, "labels": "bug"})
+    return f"{BUG_REPORT_NEW_URL}?{params}"
 
 
 def merge_utm(url: str, source: str = "cli") -> str:
