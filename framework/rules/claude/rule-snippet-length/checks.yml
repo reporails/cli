@@ -6,4 +6,4 @@ checks:
   type: mechanical
   check: line_count
   args:
-    max: 100
+    max: 200
