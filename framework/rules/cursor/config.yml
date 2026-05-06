@@ -1,5 +1,15 @@
 # Cursor Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
+#
+# Synced from .claude/skills/audit-agent/assets/registry/cursor/config.yml
+# Last verified: 2026-05-06
+#
+# Items intentionally NOT included here (not measurable on disk):
+#   - User Rules (Cursor Settings UI text)
+#   - Team Rules (Cursor dashboard, cloud-managed)
+#   - Cursor Automations (cloud-only, no on-disk file)
+#   - Design Mode (in-app UI)
+#   - CLI --output-format (CLI flag, not a file)
 
 agent: cursor
 version: "0.5.0"
@@ -8,7 +18,10 @@ name: Cursor
 
 file_types:
   main:
-    # AGENTS.md is Cursor's freeform root instruction (no frontmatter)
+    # AGENTS.md walked from project root through ancestors of cwd. Per docs:
+    # "Cursor supports AGENTS.md in the project root and subdirectories. ...
+    # combined with parent directories, with more specific instructions taking precedence."
+    source: https://cursor.com/docs/rules
     format: freeform
     scope: global
     cardinality: chain
@@ -21,14 +34,34 @@ file_types:
         vcs: committed
         maintainer: human
 
+  nested_context:
+    # Subdirectory AGENTS.md files surfaced when running from a deeper cwd.
+    # Per Cursor docs: nested AGENTS.md combined with parent directories,
+    # closer files take precedence. scope: nested captures the subtree-by-location.
+    source: https://cursor.com/docs/rules
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   rules:
-    # .cursor/rules/ with MDC frontmatter — 4 activation modes:
-    # alwaysApply (global), intelligent (agent decides), globs (path-scoped), manual (@mention)
+    # .cursor/rules/ with MDC frontmatter — 4 activation modes per file:
+    # alwaysApply (always loaded), intelligent (agent decides), globs (file-scoped),
+    # manual (@-mention only). globs frontmatter makes this path_scoped — the
+    # path filter is in-file, not just at the surface level.
+    source: https://cursor.com/docs/rules
     format: [frontmatter, freeform]
-    scope: global
+    scope: path_scoped
     cardinality: collection
     lifecycle: static
-    loading: session_start
+    loading: on_demand
     scopes:
       project:
         patterns: [".cursor/rules/**/*.mdc", ".cursor/rules/**/*.md"]
@@ -37,6 +70,8 @@ file_types:
         maintainer: human
 
   legacy_cursorrules:
+    # Deprecated, replaced by .cursor/rules/
+    source: https://cursor.com/docs/rules
     deprecated: true
     format: freeform
     scope: global
@@ -51,6 +86,8 @@ file_types:
         maintainer: human
 
   skills:
+    # Cross-agent skill paths supported (.claude/skills, .codex/skills, .agents/skills)
+    source: https://cursor.com/docs/skills
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -69,6 +106,8 @@ file_types:
         maintainer: human
 
   agents:
+    # Built-in subagents: Explore, Bash, Browser. Cross-agent paths supported.
+    source: https://cursor.com/docs/subagents
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: collection
@@ -87,9 +126,11 @@ file_types:
         maintainer: human
 
   hooks:
+    # 20+ events; command + prompt hook types
+    source: https://cursor.com/docs/hooks
     format: schema_validated
     scope: global
-    cardinality: singleton
+    cardinality: collection
     lifecycle: static
     loading: session_start
     scopes:
@@ -113,6 +154,7 @@ file_types:
         maintainer: system
 
   mcp:
+    source: https://cursor.com/docs/mcp
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -130,8 +172,46 @@ file_types:
         vcs: external
         maintainer: human
 
+  commands:
+    # Slash commands — freeform markdown
+    source: https://cursor.com/docs/context/commands
+    format: freeform
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".cursor/commands/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  config:
+    # Cursor settings — both project (.vscode/settings.json or .cursor/settings.json)
+    # and user (~/.cursor/settings.json) levels
+    source: https://cursor.com/docs/cli/reference/configuration
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".vscode/settings.json", ".cursor/settings.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.cursor/settings.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
   managed_policy:
-    # MDM on macOS (.mobileconfig), Group Policy on Windows (ADMX/ADML), policy.json on Linux
+    # MDM on macOS (.mobileconfig), Group Policy on Windows (ADMX/ADML),
+    # policy.json on Linux
+    source: https://cursor.com/docs/enterprise
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -144,10 +224,43 @@ file_types:
         vcs: external
         maintainer: system
 
+  plugins:
+    # .cursor-plugin/ manifest — marketplace + team marketplaces
+    source: https://cursor.com/docs/plugins
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursor-plugin/plugin.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  bugbot:
+    # BugBot project-level review instructions
+    source: https://cursor.com/docs/bugbot
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursor/BUGBOT.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   bugbot_rules:
-    # Auto-generated from PR feedback and reviewer comments, managed by Bugbot
+    # Auto-generated learned rules under .cursor/rules/ — agent-managed.
+    # Bugbot decides when each rule applies (auto-promoted/disabled), so the
+    # path-filter aspect is agent-driven rather than user-authored frontmatter.
+    source: https://cursor.com/docs/bugbot
     format: frontmatter
-    scope: path_scoped
+    scope: global
     cardinality: collection
     lifecycle: mutable
     loading: on_demand
@@ -157,6 +270,20 @@ file_types:
         precedence: project
         vcs: committed
         maintainer: agent
+
+  ignore:
+    source: https://cursor.com/docs/reference/ignore-file
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".cursorignore"]
+        precedence: project
+        vcs: committed
+        maintainer: human
 
 excludes:
   - CLAUDE:*
