@@ -25,3 +25,5 @@
 - [src/reporails_cli/interfaces/cli/config_command.py]: `ails config set` now writes `.ails/.gitignore` listing `.gitignore` itself and `config.local.yml` whenever `.ails/config.yml` is created/updated, so layered local config stays out of version control by default.
 
 - [src/reporails_cli/formatters/text]: The text formatter's surface classifier now distinguishes `main` (root-level instruction file) from `nested` (subdirectory copies). The scorecard and group renderer show a separate "Nested" section; nested file paths display the full relative path (`packages/web/CLAUDE.md`) rather than just `parent/CLAUDE.md` so users can locate the file.
+
+- [tests/unit/test_scan_scope.py]: `test_codex_fallback_filenames_surface` now creates `.codex/config.toml` in the fixture so codex passes the codex/generic disambiguation deterministically. Without the marker, the test was HOME-dependent: locally a `~/.codex/` user dir let codex through, but a fresh CI runner without `~/.codex/` dropped codex and the fallback patterns never fired.
