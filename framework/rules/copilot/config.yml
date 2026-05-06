@@ -1,5 +1,16 @@
 # GitHub Copilot Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
+#
+# Synced from .claude/skills/audit-agent/assets/registry/copilot/config.yml
+# Last verified: 2026-05-06
+#
+# Items intentionally NOT included here (not measurable on disk):
+#   - Copilot Memory: cloud-hosted (GitHub), no local file
+#   - Copilot Spaces: GitHub web UI, no local file
+#   - Org instructions: GitHub org settings, web-managed
+#   - GitHub MCP via web UI: not local file
+#   - Copilot Extensions: cloud-hosted GitHub Apps
+#   - chat.* / github.copilot.* settings (covered by `config` file_type at .vscode/settings.json)
 
 agent: copilot
 version: "0.5.0"
@@ -8,6 +19,9 @@ name: GitHub Copilot
 
 file_types:
   main:
+    # .github/copilot-instructions.md only — repository-root file.
+    # AGENTS.md cross-agent read is a separate file_type (`agents_md` below).
+    source: https://docs.github.com/en/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot
     required: true
     format: freeform
     scope: global
@@ -16,12 +30,48 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: [".github/copilot-instructions.md", "**/AGENTS.md"]
+        patterns: [".github/copilot-instructions.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  agents_md:
+    # AGENTS.md cross-agent read — directory tree walking, nearest ancestor wins.
+    # chat.useAgentsMdFile enables it; chat.useNestedAgentsMdFiles (experimental)
+    # enables recursive subfolder discovery.
+    source: https://code.visualstudio.com/docs/copilot/customization/custom-instructions
+    format: freeform
+    scope: global
+    cardinality: chain
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  nested_context:
+    # Per-directory AGENTS.md surfaced when running from a deeper cwd. Path-scoping
+    # comes from file LOCATION (no frontmatter), captured by scope: nested.
+    source: https://code.visualstudio.com/docs/copilot/customization/custom-instructions
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
         precedence: project
         vcs: committed
         maintainer: human
 
   rules:
+    # Path-scoped instructions with applyTo / excludeAgent frontmatter.
+    # VS Code also reads .claude/rules/ for cross-agent compatibility.
+    source: https://code.visualstudio.com/docs/copilot/customization/custom-instructions
     format: [frontmatter, freeform]
     scope: path_scoped
     cardinality: collection
@@ -40,6 +90,8 @@ file_types:
         maintainer: human
 
   skills:
+    # Custom skill discovery paths configurable via chat.agentSkillsLocations.
+    source: https://code.visualstudio.com/docs/copilot/customization/agent-skills
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -58,6 +110,7 @@ file_types:
         maintainer: human
 
   agents:
+    source: https://code.visualstudio.com/docs/copilot/customization/custom-agents
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: collection
@@ -76,6 +129,8 @@ file_types:
         maintainer: human
 
   hooks:
+    # 6 events on GitHub coding agent, 8 events in VS Code.
+    source: https://docs.github.com/en/copilot/reference/hooks-configuration
     format: schema_validated
     scope: global
     cardinality: collection
@@ -89,6 +144,8 @@ file_types:
         maintainer: human
 
   prompts:
+    # Reusable prompt templates — manually invoked, not auto-applied.
+    source: https://code.visualstudio.com/docs/copilot/customization/prompt-files
     format: [frontmatter, freeform]
     scope: global
     cardinality: collection
@@ -102,6 +159,7 @@ file_types:
         maintainer: human
 
   mcp:
+    source: https://docs.github.com/en/copilot/customizing-copilot/extending-copilot-coding-agent-with-mcp
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -110,6 +168,21 @@ file_types:
     scopes:
       project:
         patterns: [".vscode/mcp.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  config:
+    # VS Code settings (chat.* and github.copilot.* namespaces)
+    source: https://code.visualstudio.com/docs/copilot/reference/copilot-settings
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".vscode/settings.json"]
         precedence: project
         vcs: committed
         maintainer: human

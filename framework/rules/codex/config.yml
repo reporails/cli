@@ -4,6 +4,17 @@
 # AGENTS.md is a cross-agent standard (agents.md) — its presence alone
 # does not indicate a Codex project. Detection requires .codex/ markers
 # (config.toml, rules/, agents/, hooks.json) or AGENTS.override.md.
+#
+# Synced from .claude/skills/audit-agent/assets/registry/codex/config.yml
+# Last verified: 2026-05-06
+#
+# Items intentionally NOT included here (cannot be statically measured):
+#   - fallback_main: project_doc_fallback_filenames is user-configurable in
+#     ~/.codex/config.toml; the validator cannot statically know what filenames
+#     a user has declared.
+#   - plugins: marketplace install path not documented in stable form.
+#   - scheduled_tasks: Codex Desktop Automations on-disk path not documented.
+#   - cloud-managed requirements / macOS MDM preferences (not flat files).
 
 agent: codex
 version: "0.5.0"
@@ -12,9 +23,13 @@ name: OpenAI Codex
 
 file_types:
   main:
+    # AGENTS.md walked from project root to cwd, concatenated (chain).
+    # Per-directory order: AGENTS.override.md > AGENTS.md > project_doc_fallback_filenames.
+    # Combined byte cap: project_doc_max_bytes (32 KiB default).
+    source: https://developers.openai.com/codex/guides/agents-md/
     format: freeform
     scope: global
-    cardinality: singleton
+    cardinality: chain
     lifecycle: static
     loading: session_start
     scopes:
@@ -27,12 +42,16 @@ file_types:
         patterns: ["~/.codex/AGENTS.md", "~/.codex/AGENTS.override.md"]
         precedence: user
         vcs: external
+        cardinality: singleton
         maintainer: human
 
   override:
+    # AGENTS.override.md — same walk as main, checked first at each directory level.
+    # Also recognized at ~/.codex/AGENTS.override.md (declared on `main.user` above).
+    source: https://developers.openai.com/codex/guides/agents-md/
     format: freeform
     scope: global
-    cardinality: optional
+    cardinality: chain
     lifecycle: mutable
     loading: session_start
     scopes:
@@ -42,7 +61,30 @@ file_types:
         vcs: committed
         maintainer: human
 
+  nested_context:
+    # Per-package AGENTS.md in subdirectories below cwd. Codex's chain walk goes
+    # project-root → cwd, so files BELOW cwd aren't eagerly loaded — but a user
+    # who cd's into those subdirectories will pick them up. scope: nested
+    # captures the subtree-by-location semantic without overloading `global`.
+    source: https://developers.openai.com/codex/guides/agents-md/
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   skills:
+    # 6 discovery scopes per Codex docs: CWD .agents/skills, parent ../.agents/skills,
+    # repo root .agents/skills, user ~/.agents/skills + ~/.codex/skills, admin
+    # /etc/codex/skills (Linux/macOS) or %ProgramData%\OpenAI\Codex\skills (Windows),
+    # and system bundled (no on-disk path).
+    source: https://developers.openai.com/codex/skills/
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -60,16 +102,19 @@ file_types:
         vcs: external
         maintainer: human
       system:
-        patterns: ["/etc/codex/skills/**/SKILL.md"]
+        patterns:
+          - "/etc/codex/skills/**/SKILL.md"
+          - "C:/ProgramData/OpenAI/Codex/skills/**/SKILL.md"
         precedence: managed
         vcs: external
         maintainer: system
 
   skill_metadata:
-    # Per-skill optional: display info, policy, MCP dependencies
+    # Per-skill optional: zero or one openai.yaml per skill
+    source: https://developers.openai.com/codex/skills/
     format: schema_validated
     scope: task_scoped
-    cardinality: collection
+    cardinality: optional
     lifecycle: static
     loading: on_invocation
     scopes:
@@ -80,6 +125,7 @@ file_types:
         maintainer: human
 
   agents:
+    source: https://developers.openai.com/codex/subagents
     format: schema_validated
     scope: task_scoped
     cardinality: collection
@@ -98,6 +144,9 @@ file_types:
         maintainer: human
 
   rules:
+    # Starlark .rules — execution control via prefix_rule(). Both project and
+    # user scopes documented.
+    source: https://developers.openai.com/codex/rules
     format: schema_validated
     scope: global
     cardinality: collection
@@ -109,13 +158,22 @@ file_types:
         precedence: project
         vcs: committed
         maintainer: human
+      user:
+        patterns: ["~/.codex/rules/*.rules"]
+        precedence: user
+        vcs: external
+        maintainer: human
 
   hooks:
+    # 6 events: SessionStart, PreToolUse, PostToolUse, PermissionRequest,
+    # UserPromptSubmit, Stop. Requires [features] codex_hooks = true.
+    # Hooks can also live inline in [hooks] table inside config.toml.
+    source: https://developers.openai.com/codex/hooks
     format: schema_validated
     scope: global
-    cardinality: singleton
+    cardinality: collection
     lifecycle: static
-    loading: session_start
+    loading: on_demand
     scopes:
       project:
         patterns: [".codex/hooks.json"]
@@ -129,10 +187,13 @@ file_types:
         maintainer: human
 
   config:
-    # contains harness settings AND attention-channel instructions/developer_instructions fields
+    # User-level singleton: ~/.codex/config.toml.
+    # Project-level chain: .codex/config.toml walked from project root to cwd
+    # (closest wins). Trusted projects only.
+    source: https://developers.openai.com/codex/config-advanced/
     format: schema_validated
     scope: global
-    cardinality: singleton
+    cardinality: chain
     lifecycle: static
     loading: session_start
     scopes:
@@ -146,8 +207,43 @@ file_types:
         precedence: user
         vcs: external
         maintainer: human
+        cardinality: singleton
+
+  mcp:
+    # MCP servers in [mcp_servers.<id>] tables. Both user and project config.toml
+    # accept the section; project scope requires trusted-project status.
+    source: https://developers.openai.com/codex/mcp
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".codex/config.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.codex/config.toml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  enterprise:
+    # Admin-enforced requirements.toml. Constrains approval policy, sandbox,
+    # MCP allowlists, hooks, command rules, filesystem permissions.
+    source: https://developers.openai.com/codex/enterprise/managed-configuration
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
       system:
-        patterns: ["/etc/codex/requirements.toml"]
+        patterns:
+          - "/etc/codex/requirements.toml"
+          - "C:/ProgramData/OpenAI/Codex/requirements.toml"
         precedence: managed
         vcs: external
         maintainer: system
