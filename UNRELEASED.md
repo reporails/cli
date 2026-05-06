@@ -23,3 +23,5 @@
 - [src/reporails_cli/core/config.py]: `.ails/config.local.yml` (gitignored) now layers on top of the committed `.ails/config.yml` for personal/CI-specific overrides — object keys merge recursively, array keys extend, scalar keys are replaced.
 
 - [src/reporails_cli/interfaces/cli/config_command.py]: `ails config set` now writes `.ails/.gitignore` listing `.gitignore` itself and `config.local.yml` whenever `.ails/config.yml` is created/updated, so layered local config stays out of version control by default.
+
+- [src/reporails_cli/formatters/text]: The text formatter's surface classifier now distinguishes `main` (root-level instruction file) from `nested` (subdirectory copies). The scorecard and group renderer show a separate "Nested" section; nested file paths display the full relative path (`packages/web/CLAUDE.md`) rather than just `parent/CLAUDE.md` so users can locate the file.
