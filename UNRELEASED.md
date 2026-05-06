@@ -15,3 +15,11 @@
 - [src/reporails_cli/core/registry.py]: `depends_on` now resolves through supersession. When `CODEX:S:0003 supersedes CORE:S:0027`, rules that depend on `CORE:S:0027` (e.g., `CORE:S:0030`, `CORE:G:0006`) are satisfied by `CODEX:S:0003` instead of warning that the dependency is "not loaded". `_apply_supersession` now returns a `{superseded_id: successor_id}` map, and `_validate_depends_on` consults it before emitting the missing-dependency warning.
 
 - [framework/rules]: Added `nested_context` declarations for codex / cursor / copilot / generic agents so per-package `**/AGENTS.md` files in monorepos are surfaced and validated under the agent's on-demand loading model rather than being skipped. Fixed `cursor.rules` (now `scope: path_scoped` to reflect frontmatter-based path filtering) and `cursor.bugbot_rules` (now `scope: global` since BugBot decides applicability).
+
+### Added
+
+- [framework/schemas/project.schema.yml]: New `surfaces` and `agents` keys for `.ails/config.yml`. `surfaces.<agent>.<file_type>.include` / `.exclude` adjusts which globs each agent surface scans without modifying bundled configs. `agents.<id>.fallback_filenames` mirrors Codex `project_doc_fallback_filenames` so per-project alternative instruction filenames (e.g. `TEAM_GUIDE.md`) are picked up by the validator.
+
+- [src/reporails_cli/core/config.py]: `.ails/config.local.yml` (gitignored) now layers on top of the committed `.ails/config.yml` for personal/CI-specific overrides — object keys merge recursively, array keys extend, scalar keys are replaced.
+
+- [src/reporails_cli/interfaces/cli/config_command.py]: `ails config set` now writes `.ails/.gitignore` listing `.gitignore` itself and `config.local.yml` whenever `.ails/config.yml` is created/updated, so layered local config stays out of version control by default.
