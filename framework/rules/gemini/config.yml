@@ -1,5 +1,12 @@
 # Google Gemini Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
+#
+# Synced from .claude/skills/audit-agent/assets/registry/gemini/config.yml
+# Last verified: 2026-05-06
+#
+# Items intentionally NOT included here (not measurable on disk):
+#   - Cloud-managed enterprise policies (Google Cloud admin / Code Assist Enterprise)
+#   - Scheduled tasks (CLI itself doesn't have native scheduling — uses external cron)
 
 agent: gemini
 version: "0.5.0"
@@ -8,20 +15,24 @@ name: Google Gemini
 
 file_types:
   main:
+    # GEMINI.md walked from project root through ancestors of cwd to .git or home.
+    # All discovered files concatenated. Subdirectory GEMINI.md is "Just-In-Time"
+    # loaded on-demand (`nested_context`). User-scope file at ~/.gemini/GEMINI.md
+    # also doubles as the memory surface (agent appends to ## Gemini Added Memories).
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md
     required: true
     format: freeform
     scope: global
-    cardinality: singleton
+    cardinality: chain
     lifecycle: static
     loading: session_start
     scopes:
       project:
-        patterns: ["**/GEMINI.md", "**/AGENTS.md"]
+        patterns: ["**/GEMINI.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        # Also serves as memory surface (agent appends to ## Gemini Added Memories)
         patterns: ["~/.gemini/GEMINI.md"]
         precedence: user
         vcs: external
@@ -29,8 +40,12 @@ file_types:
         lifecycle: mutable
 
   nested_context:
+    # Subdirectory GEMINI.md files — Just-In-Time loaded when Gemini accesses
+    # files in those directories. scope: nested captures the location-based
+    # subtree applicability without overloading other scope values.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md
     format: freeform
-    scope: path_scoped
+    scope: nested
     cardinality: hierarchical
     lifecycle: static
     loading: on_demand
@@ -41,7 +56,24 @@ file_types:
         vcs: committed
         maintainer: human
 
+  cross_read:
+    # Cross-agent files (AGENTS.md, CONTEXT.md) when context.fileName is configured.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+    format: freeform
+    scope: global
+    cardinality: chain
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md", "**/CONTEXT.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   skills:
+    # `.agents/skills/` is the cross-agent alias supported by Gemini.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -60,6 +92,9 @@ file_types:
         maintainer: human
 
   agents:
+    # Subagents — built-ins: codebase_investigator, cli_help, generalist_agent,
+    # browser_agent (experimental). Custom agents invoked via @name syntax.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: collection
@@ -78,6 +113,8 @@ file_types:
         maintainer: human
 
   commands:
+    # TOML format with prompt + description, supports {{args}}, !{shell}, @{file}
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/custom-commands.md
     format: schema_validated
     scope: task_scoped
     cardinality: collection
@@ -96,7 +133,8 @@ file_types:
         maintainer: human
 
   hooks:
-    # 11 events configured in settings.json hooks key
+    # 11 events configured under hooks key in settings.json.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/index.md
     format: schema_validated
     scope: global
     cardinality: collection
@@ -115,6 +153,8 @@ file_types:
         maintainer: human
 
   config:
+    # Gemini supports both JSON and TOML settings files.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -146,16 +186,30 @@ file_types:
         precedence: managed
         vcs: external
         maintainer: system
-      system_policies:
-        patterns:
-          - "/etc/gemini-cli/policies"
-          - "/Library/Application Support/GeminiCli/policies"
-        precedence: managed
+
+  mcp:
+    # MCP servers under mcpServers key in settings.json/settings.toml.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/settings.json", ".gemini/settings.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/settings.json", "~/.gemini/settings.toml"]
+        precedence: user
         vcs: external
-        maintainer: system
-        cardinality: collection
+        maintainer: human
 
   extensions:
+    # Plugin system: bundles MCP servers, commands, skills, hooks, themes
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/writing-extensions.md
     format: schema_validated
     scope: global
     cardinality: collection
@@ -169,6 +223,7 @@ file_types:
         maintainer: human
 
   geminiignore:
+    source: https://github.com/google-gemini/gemini-cli
     format: freeform
     scope: global
     cardinality: singleton
@@ -177,6 +232,21 @@ file_types:
     scopes:
       project:
         patterns: [".geminiignore"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  system_prompt:
+    # Replace default system prompt entirely
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/system-prompt.md
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/system-prompt.md"]
         precedence: project
         vcs: committed
         maintainer: human

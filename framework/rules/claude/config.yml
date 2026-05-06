@@ -50,10 +50,13 @@ file_types:
         maintainer: human
 
   child_instruction:
+    # Subdirectory CLAUDE.md files. Path-scoping comes from file LOCATION
+    # (no frontmatter filter). scope: nested captures this — the file's
+    # subtree applicability is implicit in where the file lives.
     source: https://code.claude.com/docs/en/memory#how-claude-md-files-load
     format: freeform
-    scope: path_scoped
-    cardinality: collection
+    scope: nested
+    cardinality: hierarchical
     lifecycle: static
     loading: on_demand
     scopes:
@@ -184,8 +187,8 @@ file_types:
         maintainer: human
 
   hooks:
-    # Hooks configured in settings.json, skill/agent frontmatter, plugin hooks.json
-    # 28+ events, 5 types (command/HTTP/mcp_tool/prompt/agent)
+    # Hooks configured in settings.json, skill/agent frontmatter, plugin hooks/hooks.json
+    # 27 events, 5 types (command/HTTP/mcp_tool/prompt/agent). Verified 2026-05-06.
     source: https://code.claude.com/docs/en/hooks
     format: schema_validated
     scope: global
