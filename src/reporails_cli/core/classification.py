@@ -302,22 +302,44 @@ def _compute_ancestor_chain(scan_root: Path) -> set[Path]:
     return chain
 
 
+def _is_loose_leaf_pattern(pattern: str) -> bool:
+    """Pattern that can match a file at ANY directory depth.
+
+    A "loose" pattern is either a bare filename (e.g. `CLAUDE.md`) or starts
+    with `**/` (e.g. `**/CLAUDE.md`). Such patterns are location-ambiguous —
+    the same file matches them whether it lives at cwd, an ancestor, or a
+    descendant. These need ancestor-chain disambiguation to distinguish
+    `main` (eager) from `nested_context` (on-demand).
+
+    Path-prefixed patterns (e.g. `.github/copilot-instructions.md`,
+    `.claude/rules/**/*.md`) are NOT loose — the path prefix already
+    constrains where the file lives, so no further disambiguation is
+    needed.
+    """
+    if pattern.startswith("**/"):
+        return True
+    # Bare leaf with no path separators
+    return "/" not in pattern and "**" not in pattern
+
+
 def _location_matches_mode(
     file_path: Path,
     ft: FileTypeDeclaration,
     ancestor_chain: set[Path],
+    matched_pattern: str,
 ) -> bool:
     """Check whether file's location fits the file_type's loading model.
 
     Eager global file_types (scope=global, loading=session_start) — like
     `main`, `override`, `agents_md`, `cross_read` — match only files in cwd's
-    ancestor chain. The agent loads these at session start.
+    ancestor chain WHEN the matched pattern is a loose leaf glob (`**/X.md`
+    or bare `X.md`). For path-prefixed patterns like `.github/X.md` the
+    pattern itself constrains location, so the ancestor-chain check is
+    skipped.
 
-    Nested file_types (scope=nested) — like `nested_context` and
-    `child_instruction` — match only files OUTSIDE the ancestor chain
-    (descendants of cwd). Subtree applicability comes from file location
-    (no frontmatter); the agent loads these when descending into those
-    subdirectories.
+    Nested file_types (scope=nested) match only files OUTSIDE the ancestor
+    chain (descendants of cwd). Subtree applicability comes from file location
+    (no frontmatter); the agent loads these when descending into subdirs.
 
     Other file_types (path_scoped rules, skills, agents, configs, etc.)
     match anywhere their patterns find them.
@@ -328,7 +350,11 @@ def _location_matches_mode(
     in_ancestor_chain = parent in ancestor_chain
 
     if scope == "global" and loading == "session_start":
-        return in_ancestor_chain
+        # Only enforce ancestor-chain for loose leaf patterns; path-prefixed
+        # patterns already pin the file's location via the pattern itself.
+        if _is_loose_leaf_pattern(matched_pattern):
+            return in_ancestor_chain
+        return True
     if scope == "nested":
         return not in_ancestor_chain
     return True
@@ -367,9 +393,10 @@ def classify_files(
             rel = str(file_path)
 
         for ft in file_types:
-            if not _matches_any_pattern(rel, ft.patterns):
+            matched_pattern = _first_matching_pattern(rel, ft.patterns)
+            if matched_pattern is None:
                 continue
-            if not _location_matches_mode(file_path, ft, ancestor_chain):
+            if not _location_matches_mode(file_path, ft, ancestor_chain, matched_pattern):
                 continue
             props = dict(ft.properties)
             # Detect content_format for freeform files
@@ -486,13 +513,23 @@ def _matches_any_pattern(rel_path: str, patterns: tuple[str, ...]) -> bool:
     zero-or-more directory components by generating collapsed variants
     (e.g. ``a/**/b`` also tries ``a/b``).
     """
+    return _first_matching_pattern(rel_path, patterns) is not None
+
+
+def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | None:
+    """Return the first pattern that matches `rel_path`, or None.
+
+    Used by classify_files so downstream location-mode checks can inspect
+    the specific matched pattern (loose leaf vs path-prefixed) for its
+    location-disambiguation decision.
+    """
     p = PurePosixPath(rel_path)
     for pattern in patterns:
         clean = pattern.removeprefix("./")
         for variant in _expand_doublestar(clean):
             if p.match(variant):
-                return True
-    return False
+                return pattern
+    return None
 
 
 def _expand_doublestar(pattern: str) -> list[str]:
