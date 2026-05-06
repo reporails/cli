@@ -432,7 +432,7 @@ def _render_findings_and_scorecard(
         elapsed_ms=elapsed_ms,
         agent=_detect_agent_name(ruleset_map),
         scope=scope,
-        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map),
+        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd()),
     )
 
 
