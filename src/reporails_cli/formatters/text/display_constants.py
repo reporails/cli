@@ -125,11 +125,16 @@ CLIENT_CHECK_CATEGORY = {
 # ── File classification lookup tables ─────────────────────────────────
 
 _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))
-_MAIN_NAMES = frozenset(("CLAUDE.MD", "AGENTS.MD", ".CURSORRULES", ".WINDSURFRULES", "COPILOT-INSTRUCTIONS.MD"))
+# Case-sensitive — matches agent specs (CLAUDE.md, AGENTS.md uppercase per
+# Codex source `DEFAULT_AGENTS_MD_FILENAME = "AGENTS.md"` and the agents.md
+# spec). Wrong-case copies (e.g. `agents.md` lowercase in skill assets) are
+# not real instruction files.
+_MAIN_NAMES = frozenset(("CLAUDE.md", "AGENTS.md", ".cursorrules", ".windsurfrules", "copilot-instructions.md"))
 
-_TYPE_ORDER = ["main", "rule", "skill", "agent", "config", "memory", "file"]
+_TYPE_ORDER = ["main", "nested", "rule", "skill", "agent", "config", "memory", "file"]
 _TYPE_PLURALS = {
     "main": "main",
+    "nested": "nested",
     "rule": "rules",
     "skill": "skills",
     "agent": "agents",
@@ -186,16 +191,31 @@ def _classify_by_name(name: str, parts: tuple[str, ...]) -> str:
         return "config"
     if "memory" in parts:
         return "memory"
-    if name.upper() in _MAIN_NAMES:
-        return "main"
+    # Case-sensitive — matches discovery (walk_glob) and agent specs.
+    # Wrong-case copies (e.g. `agents.md` lowercase) are not instruction files.
+    if name in _MAIN_NAMES:
+        # Files at the project root are `main`; subdirectory copies of the
+        # same filename are `nested` (per scope: nested in agent.schema.yml).
+        # `parts` for a relative path like `tests/CLAUDE.md` has length 2;
+        # a root-level `CLAUDE.md` has length 1.
+        return "main" if len(parts) <= 1 else "nested"
     return ""
 
 
 def friendly_name(filepath: str, tag: str) -> str:
-    """Extract a friendly display name from the tag. Falls back to filename."""
+    """Extract a friendly display name from the tag. Falls back to filename.
+
+    For `nested` files (subdirectory copies of CLAUDE.md / AGENTS.md /
+    GEMINI.md), return the FULL relative path so users can locate the file
+    — `web/CLAUDE.md` alone is ambiguous when the file actually lives at
+    `packages/web/CLAUDE.md`.
+    """
     if ":" in tag:
         return tag.split(":", 1)[1]
     p = Path(filepath)
+    if tag == "nested" and not p.is_absolute():
+        # Show the full relative path for nested files so the user can find them
+        return p.as_posix()
     if p.parent.name and p.parent.name != ".":
         return f"{p.parent.name}/{p.name}"
     return p.name

@@ -172,9 +172,10 @@ def _print_file_card(
 
 # ── Group rendering ───────────────────────────────────────────────────
 
-_GROUP_ORDER = ("main", "agent", "skill", "rule", "config", "memory")
+_GROUP_ORDER = ("main", "nested", "agent", "skill", "rule", "config", "memory")
 _GROUP_LABELS = {
     "main": "Main",
+    "nested": "Nested",
     "agent": "Agents",
     "skill": "Skills",
     "rule": "Rules",
