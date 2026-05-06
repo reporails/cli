@@ -190,3 +190,4 @@ file_types:
 excludes:
   - CLAUDE:*
   - CODEX:*
+  - CORE:S:0033  # import-depth-within-limit — Copilot instructions files do not support chained @import

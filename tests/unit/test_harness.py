@@ -125,7 +125,7 @@ class TestDiscoverRules:
         _make_rule_dir(
             tmp_path,
             "excluded",
-            "id: CLAUDE:S:0001\nslug: excluded\ntitle: Excluded\n"
+            "id: CLAUDE:S:0004\nslug: excluded\ntitle: Excluded\n"
             "category: structure\ntype: mechanical\nlevel: L1\nchecks: []",
         )
 
@@ -142,13 +142,13 @@ class TestDiscoverRules:
         rule_dir = agent_dir / "test-rule"
         rule_dir.mkdir()
         (rule_dir / "rule.md").write_text(
-            "---\nid: CLAUDE:S:0001\nslug: test-rule\ntitle: Agent Rule\n"
+            "---\nid: CLAUDE:S:0004\nslug: test-rule\ntitle: Agent Rule\n"
             "category: structure\ntype: mechanical\nlevel: L1\nchecks: []\n---\n"
         )
 
         rules = discover_rules(tmp_path)
         assert len(rules) == 1
-        assert rules[0].rule_id == "CLAUDE:S:0001"
+        assert rules[0].rule_id == "CLAUDE:S:0004"
 
 
 # ── Agent config tests ───────────────────────────────────────────────
@@ -636,7 +636,7 @@ class TestGetRuleAgent:
         from reporails_cli.core.harness import _get_rule_agent
 
         prefix_map = {"CLAUDE": "claude", "CODEX": "codex"}
-        assert _get_rule_agent("CLAUDE:S:0001", prefix_map) == "claude"
+        assert _get_rule_agent("CLAUDE:S:0004", prefix_map) == "claude"
         assert _get_rule_agent("CODEX:S:0001", prefix_map) == "codex"
 
     def test_core_returns_none(self) -> None:
@@ -662,9 +662,9 @@ class TestMultiAgentHarness:
         claude_rule_dir = tmp_path / "claude" / "claude-rule"
         claude_rule_dir.mkdir(parents=True)
         (claude_rule_dir / "rule.md").write_text(
-            "---\nid: CLAUDE:S:0001\nslug: claude-rule\ntitle: Claude Rule\n"
+            "---\nid: CLAUDE:S:0004\nslug: claude-rule\ntitle: Claude Rule\n"
             "category: structure\ntype: mechanical\nlevel: L1\n"
-            "checks:\n- id: CLAUDE.S.0001.check\n  type: mechanical\n  severity: medium\n  check: file_exists\n---\n"
+            "checks:\n- id: CLAUDE.S.0004.check\n  type: mechanical\n  severity: medium\n  check: file_exists\n---\n"
         )
         pass_dir = claude_rule_dir / "tests" / "pass"
         pass_dir.mkdir(parents=True)
@@ -685,7 +685,7 @@ class TestMultiAgentHarness:
 
         results = run_harness(tmp_path)
         rule_ids = {r.rule_id for r in results}
-        assert "CLAUDE:S:0001" in rule_ids
+        assert "CLAUDE:S:0004" in rule_ids
         assert "CODEX:S:0001" in rule_ids
 
 

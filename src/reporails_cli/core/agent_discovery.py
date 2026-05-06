@@ -411,6 +411,16 @@ def discover_from_config(
     rule_files: list[Path] = []
     config_files: list[Path] = []
 
+    # Union of every per-surface exclude declared for this agent. Some agents
+    # have multiple surfaces that match the same paths (e.g. cursor.rules and
+    # cursor.bugbot_rules both match `.cursor/rules/**/*.mdc`). Applying each
+    # surface's exclude only within its own loop iteration leaves the file
+    # surfaced from the other surface — counter to the user's mental model
+    # ("I excluded draft, draft should be gone"). The union closes the gap.
+    agent_exclude_globs: list[str] = []
+    for ft_name in file_types:
+        agent_exclude_globs.extend(_surface_exclude_patterns(agent_id, ft_name, project_config))
+
     for ft_name, spec in file_types.items():
         if not isinstance(spec, dict):
             continue
@@ -428,10 +438,8 @@ def discover_from_config(
 
         found = glob_file_type_patterns(target, patterns, properties, extra_exclude_dirs)
 
-        # Apply per-surface exclude filters
-        exclude_globs = _surface_exclude_patterns(agent_id, ft_name, project_config)
-        if exclude_globs:
-            found = [p for p in found if not _matches_any_glob(p, exclude_globs, target)]
+        if agent_exclude_globs:
+            found = [p for p in found if not _matches_any_glob(p, agent_exclude_globs, target)]
 
         if bucket == "instruction":
             instruction_files.extend(found)

@@ -1,0 +1,9 @@
+checks:
+- id: CORE.S.0035.skill_dir_exists
+  type: mechanical
+  check: glob_match
+- id: CORE.S.0035.no_readme
+  type: mechanical
+  check: file_absent
+  args:
+    pattern: README.md

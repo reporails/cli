@@ -349,16 +349,16 @@ examples:
 
   agent_specific: |
     ---
-    id: CLAUDE:S:0001
-    slug: hierarchical-memory
-    title: Hierarchical Memory
+    id: CLAUDE:S:0005
+    slug: hook-valid-event-types
+    title: Hook Valid Event Types
     category: structure
-    type: mechanical
-    severity: medium
+    type: deterministic
+    severity: high
     backed_by:
-      - claude-code-memory
-    match: {type: scoped_rule}
-    see_also: [CLAUDE:S:0002, CORE:S:0002]
+      - claude-code-hooks
+    match: {type: config}
+    see_also: [CLAUDE:S:0006, CORE:S:0027]
     ---
 
   with_supersession: |

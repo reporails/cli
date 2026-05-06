@@ -222,7 +222,7 @@ class TestPayloadCaps:
             summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
         )
         oversized = {
-            "schema_version": "2",
+            "schema_version": "3",
             "embedding_model": "test",
             "generated_at": "2026-01-01T00:00:00Z",
             "files": [{}],  # one file so the empty-payload guard doesn't fire first
@@ -231,7 +231,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
         }
         with (
-            patch("reporails_cli.core.api_client._strip_and_serialize", return_value=oversized),
+            patch("reporails_cli.core.payload.project_payload", return_value=oversized),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")

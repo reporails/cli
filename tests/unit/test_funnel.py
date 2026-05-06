@@ -7,12 +7,14 @@ import json
 import pytest
 
 from reporails_cli.core.funnel import (
+    BUG_REPORT_NEW_URL,
     BUG_REPORT_URL,
     UNIVERSAL_ATOM_CAP,
     WIRE_MAX_CLUSTERS,
     WIRE_MAX_FILES,
     FunnelError,
     LintResponse,
+    format_bug_report_url,
     format_cta,
     merge_utm,
     parse_error_body,
@@ -24,6 +26,45 @@ def test_bug_report_url_points_to_github_issues() -> None:
     """Bug-report URL is the GitHub issues page; renderer prints it as the secondary CTA."""
     assert BUG_REPORT_URL.startswith("https://github.com/")
     assert BUG_REPORT_URL.endswith("/issues")
+
+
+def test_bug_report_new_url_points_to_issue_form() -> None:
+    """The ``/new`` variant is the deep-link target for prefilled bug reports."""
+    assert BUG_REPORT_NEW_URL.startswith("https://github.com/")
+    assert BUG_REPORT_NEW_URL.endswith("/issues/new")
+
+
+class TestFormatBugReportUrl:
+    def test_unknown_error_prefills_title_and_body(self) -> None:
+        err = FunnelError(error="unknown_error", message="HTTP 400 (unsupported_payload_version)")
+        url = format_bug_report_url(err)
+        assert url.startswith(f"{BUG_REPORT_NEW_URL}?")
+        # URL-encoded forms: title's `+` for spaces, body uses %0A for newlines.
+        assert "title=" in url
+        assert "%5BCLI%5D" in url  # "[CLI]" url-encoded
+        assert "HTTP+400" in url or "HTTP%20400" in url
+        assert "labels=bug" in url
+        assert "body=" in url
+
+    def test_unknown_error_url_encodes_special_chars(self) -> None:
+        err = FunnelError(error="unknown_error", message='HTTP 422 ("validation failed" / atoms)')
+        url = format_bug_report_url(err)
+        # `"`, `/`, and `(` must round-trip through urlencode without breaking the URL shape.
+        assert url.count("?") == 1
+        assert "%22validation+failed%22" in url or "%22validation%20failed%22" in url
+
+    def test_unknown_error_with_empty_message_falls_back_to_index(self) -> None:
+        err = FunnelError(error="unknown_error", message="")
+        assert format_bug_report_url(err) == BUG_REPORT_URL
+
+    def test_known_funnel_error_returns_plain_index(self) -> None:
+        # rate_limit_exceeded is an expected usage signal, not a bug report.
+        err = FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5, message="any")
+        assert format_bug_report_url(err) == BUG_REPORT_URL
+
+    def test_payload_too_large_returns_plain_index(self) -> None:
+        err = FunnelError(error="payload_too_large", tier="anonymous", limit=2_097_152, size=8_971_467)
+        assert format_bug_report_url(err) == BUG_REPORT_URL
 
 
 class TestParseErrorBody:

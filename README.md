@@ -1,4 +1,4 @@
-# Reporails CLI (v0.5.7)
+# Reporails CLI (v0.5.8)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 92+ rules across six categories. Supports Claude, Codex, Copilot, Cursor, and Gemini.**
 > 

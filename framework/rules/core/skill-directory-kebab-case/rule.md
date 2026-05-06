@@ -7,7 +7,7 @@ type: deterministic
 severity: medium
 backed_by: []
 match: {type: skill}
-source: https://code.claude.com/docs/en/skills
+source: https://agentskills.io/specification
 ---
 # Skill Directory Kebab Case
 
