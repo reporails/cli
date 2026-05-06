@@ -1,9 +1,6 @@
 default_agent: claude
 exclude_dirs:
   - fixtures
-  - research
-  - _archive
-  - _archived
   - .venv
   - docs
   - specs
