@@ -16,6 +16,13 @@ BUG_REPORT_URL = "https://github.com/reporails/cli/issues"
 WIRE_MAX_FILES = 500
 WIRE_MAX_CLUSTERS = 2000
 
+# Per-tier body byte caps. Mirrored locally so preflight_byte_size returns
+# a FunnelError before transmission instead of a server 4xx.
+WIRE_MAX_BYTES_BY_TIER = {
+    "anonymous": 2 * 1024 * 1024,
+    "pro": 20 * 1024 * 1024,
+}
+
 
 @dataclass(frozen=True)
 class FunnelError:
@@ -83,6 +90,29 @@ def parse_error_body(status_code: int, body_text: str) -> FunnelError | None:
         upgrade_url=str(body.get("upgrade_url", "")),
         support_url=str(body.get("support_url", "")),
         message=str(body.get("message", "")),
+    )
+
+
+def preflight_byte_size(
+    body_bytes: int,
+    has_api_key: bool,
+) -> FunnelError | None:
+    """Reject the request when the encoded body exceeds the worker's per-tier cap.
+
+    The backend enforces this cap before any processing. Catching it locally
+    surfaces the conversion CTA in the user's terminal instead of an opaque
+    server-side 413.
+    """
+    presumed_tier = "pro" if has_api_key else "anonymous"
+    limit = WIRE_MAX_BYTES_BY_TIER.get(presumed_tier, WIRE_MAX_BYTES_BY_TIER["anonymous"])
+    if body_bytes <= limit:
+        return None
+    return FunnelError(
+        error="payload_too_large",
+        tier=presumed_tier,
+        limit=limit,
+        size=body_bytes,
+        upgrade_url=_preflight_url("payload_too_large", presumed_tier),
     )
 
 

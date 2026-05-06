@@ -40,6 +40,7 @@ dependencies = [
     "spacy>=3.8.11,<4",
     # sklearn for topic clustering in mapper
     "scikit-learn>=1.4.0",
+    "msgpack>=1.0.0",
 ]
 
 [project.optional-dependencies]
