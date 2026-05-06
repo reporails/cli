@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.5.7"
+version = "0.5.8"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -40,6 +40,7 @@ dependencies = [
     "spacy>=3.8.11,<4",
     # sklearn for topic clustering in mapper
     "scikit-learn>=1.4.0",
+    "msgpack>=1.0.0",
 ]
 
 [project.optional-dependencies]

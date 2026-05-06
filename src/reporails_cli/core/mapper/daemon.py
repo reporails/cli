@@ -24,10 +24,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Idle timeout defaults to 1 hour; override with AILS_DAEMON_IDLE_S env var
-# (e.g. AILS_DAEMON_IDLE_S=5 for fast integration tests, or a large number
-# for long dev loops).
-_IDLE_TIMEOUT_S = int(os.environ.get("AILS_DAEMON_IDLE_S", "3600"))
+# Idle shutdown is opt-in via AILS_DAEMON_IDLE_S env var (seconds). Without
+# the override, the daemon runs in the background until explicitly stopped
+# (`ails daemon stop`) or killed — matching user expectations for a
+# background mapper. The env var stays available for integration tests that
+# want fast cleanup (e.g. AILS_DAEMON_IDLE_S=5).
+_IDLE_TIMEOUT_S_RAW = os.environ.get("AILS_DAEMON_IDLE_S")
+_IDLE_TIMEOUT_S: int | None = int(_IDLE_TIMEOUT_S_RAW) if _IDLE_TIMEOUT_S_RAW else None
 _SOCKET_BACKLOG = 2
 _MAX_REQUEST_BYTES = 10_000_000  # 10MB
 
@@ -237,8 +240,9 @@ def _daemon_main() -> None:
     ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
     ``ping`` and ``shutdown`` are answered immediately regardless.
 
-    Lifecycle: idle timeout only — no parent-process tracking. The global
-    daemon isn't a child of any specific CLI process.
+    Lifecycle: runs until explicit shutdown command, SIGTERM/SIGINT, or
+    optional idle timeout (opt-in via AILS_DAEMON_IDLE_S). No parent-process
+    tracking; the global daemon isn't a child of any specific CLI process.
 
     Unreachable on Windows: callers gate on sys.platform before invoking.
     """
@@ -268,7 +272,7 @@ def _daemon_main() -> None:
     last_activity = time.monotonic()
 
     while not _shutdown:
-        if time.monotonic() - last_activity > _IDLE_TIMEOUT_S:
+        if _IDLE_TIMEOUT_S is not None and time.monotonic() - last_activity > _IDLE_TIMEOUT_S:
             break
 
         try:

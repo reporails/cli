@@ -522,7 +522,7 @@ class TestMatchTypeScoping:
         assert "core-rules.md" in result.message
 
     def test_file_absent_scoped_ignores_root_readme(self, tmp_path: Path) -> None:
-        """Bug fix: CLAUDE:S:0001 — README.md at root should not trigger file_absent in skills."""
+        """Bug fix: CORE:S:0035 — README.md at root should not trigger file_absent in skills."""
         (tmp_path / "README.md").write_text("# Project readme")
         skills = tmp_path / ".claude" / "skills" / "test-skill"
         skills.mkdir(parents=True)

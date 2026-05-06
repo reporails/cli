@@ -98,18 +98,32 @@ class SurfaceHealth:
 def compute_surface_scores(
     result: Any,
     ruleset_map: Any = None,
+    project_root: Any = None,
 ) -> list[SurfaceHealth]:
     """Compute per-surface health scores from combined result.
 
     When ruleset_map is provided, file counts come from the mapper's
     discovery (all scanned files), not just files with findings.
+
+    `project_root` is used to relativize `ruleset_map.files` paths before
+    classification — `classify_file` distinguishes `main` (root-level) from
+    `nested` (subdirectory copies) by path-component count, which only works
+    on relative paths. `result.findings` and `result.per_file_analysis`
+    already carry relative paths; `ruleset_map.files` does not.
     """
+    from pathlib import Path
+
+    from reporails_cli.core.merger import normalize_finding_path
+
+    root = Path(project_root) if project_root is not None else Path.cwd()
+
     # Count files per surface from ruleset_map (authoritative file list)
     surface_file_counts: dict[str, int] = {}
     if ruleset_map is not None:
         try:
             for fr in ruleset_map.files:
-                tag = classify_file(fr.path).split(":")[0]
+                rel = normalize_finding_path(fr.path, root)
+                tag = classify_file(rel).split(":")[0]
                 surface_file_counts[tag] = surface_file_counts.get(tag, 0) + 1
         except (AttributeError, TypeError):
             pass

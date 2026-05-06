@@ -251,3 +251,4 @@ file_types:
 excludes:
   - CLAUDE:*
   - COPILOT:*
+  - CORE:S:0033  # import-depth-within-limit — Codex AGENTS.md does not support chained @import

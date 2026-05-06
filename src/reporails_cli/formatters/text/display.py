@@ -432,21 +432,22 @@ def _render_findings_and_scorecard(
         elapsed_ms=elapsed_ms,
         agent=_detect_agent_name(ruleset_map),
         scope=scope,
-        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map),
+        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd()),
     )
 
 
 def _render_funnel_cta(funnel_error: object) -> None:
     """Render the conversion CTA + bug-report link when a FunnelError is present."""
-    from reporails_cli.core.funnel import BUG_REPORT_URL, FunnelError, format_cta
+    from reporails_cli.core.funnel import FunnelError, format_bug_report_url, format_cta
 
     if not isinstance(funnel_error, FunnelError):
         return
     cta = format_cta(funnel_error)
     if not cta:
         return
+    bug_url = format_bug_report_url(funnel_error)
     console.print()
     console.print("  [yellow]⚠[/yellow]  Server diagnostics unavailable.")
     console.print(f"  {cta}")
-    console.print(f"  [dim]Did you see an error? Let us know: [bold]{BUG_REPORT_URL}[/bold][/dim]")
+    console.print(f"  [dim]Did you see an error? Let us know: [bold]{bug_url}[/bold][/dim]")
     console.print()

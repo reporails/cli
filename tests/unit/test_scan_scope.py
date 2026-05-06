@@ -490,3 +490,43 @@ class TestProjectConfigSurfaceAdjustments:
         names = {f.as_posix() for f in files}
         assert (keep / "CLAUDE.md").as_posix() in names
         assert (drop / "CLAUDE.md").as_posix() not in names
+
+    def test_exclude_unions_across_overlapping_surfaces(self, tmp_path: Path) -> None:
+        """An exclude on one surface drops matches from sibling surfaces too.
+
+        `cursor.rules` and `cursor.bugbot_rules` both glob `.cursor/rules/**/*.mdc`.
+        Without unioning, `surfaces.cursor.rules.exclude: [**/draft/**]` drops the
+        file from `cursor.rules` but `cursor.bugbot_rules` re-surfaces it. The
+        agent-wide union closes the gap: any exclude declared anywhere for the
+        agent applies to every surface of that agent.
+        """
+        from reporails_cli.core.agent_discovery import discover_from_config
+        from reporails_cli.core.config import get_project_config
+
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "AGENTS.md").write_text("# main")
+        cursor_dir = tmp_path / ".cursor"
+        cursor_dir.mkdir()
+        (cursor_dir / "config.yml").write_text("# cursor marker\n")
+        rules_dir = cursor_dir / "rules"
+        rules_dir.mkdir()
+        (rules_dir / "keep.mdc").write_text("---\ndescription: keep\n---\n# keep")
+        draft_dir = rules_dir / "draft"
+        draft_dir.mkdir()
+        (draft_dir / "draft.mdc").write_text("---\ndescription: draft\n---\n# draft")
+
+        ails = tmp_path / ".ails"
+        ails.mkdir()
+        (ails / "config.yml").write_text(
+            'schema_version: "0.1.0"\nsurfaces:\n  cursor.rules:\n    exclude: ["**/draft/**"]\n'
+        )
+
+        project_config = get_project_config(tmp_path)
+        result = discover_from_config(tmp_path, "cursor", project_config=project_config)
+        assert result is not None
+        instructions, rules, _configs = result
+        all_paths = {p.as_posix() for p in instructions + rules}
+        assert (rules_dir / "keep.mdc").as_posix() in all_paths
+        assert (draft_dir / "draft.mdc").as_posix() not in all_paths, (
+            "exclude on cursor.rules must also drop the file from cursor.bugbot_rules"
+        )

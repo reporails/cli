@@ -1,9 +1,9 @@
 checks:
-- id: CLAUDE.S.0010.file_in_scope
+- id: CORE.S.0033.file_in_scope
   type: mechanical
   check: file_exists
-- id: CLAUDE.S.0010.depth_check
+- id: CORE.S.0033.depth_check
   type: mechanical
   check: import_depth
   args:
-    max: 5
+    max: 10
