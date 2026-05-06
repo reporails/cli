@@ -152,14 +152,16 @@ def load_rules(  # pylint: disable=too-many-locals
 
     # 4c. Handle supersession: agent rules that supersede CORE rules
     # inherit the CORE checks and replace the CORE rule in the set.
-    _apply_supersession(rules)
+    superseded_by = _apply_supersession(rules)
 
     # 4d. Handle inheritance: rules that inherit checks from a parent
     # without replacing the parent (both stay active).
     _apply_inheritance(rules)
 
-    # 4e. Validate depends_on: detect circular dependency chains.
-    _validate_depends_on(rules)
+    # 4e. Validate depends_on: detect circular dependency chains. Supersession
+    # redirects are honored — a depends_on pointing at a superseded rule is
+    # satisfied by its active successor.
+    _validate_depends_on(rules, superseded_by)
 
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
@@ -201,25 +203,31 @@ def _is_other_agent_rule(rule_id: str, agent_prefix: str) -> bool:
     return agent_prefix not in namespace
 
 
-def _apply_supersession(rules: dict[str, Rule]) -> None:
+def _apply_supersession(rules: dict[str, Rule]) -> dict[str, str]:
     """Handle rule supersession: agent rules inherit CORE checks and replace CORE rules.
 
     When CLAUDE:S:0012 supersedes CORE:S:0038, the CORE checks are inherited
     (unless explicitly replaced), and the CORE rule is removed from the set.
     Modifies the rules dict in place.
+
+    Returns a mapping `{superseded_id: successor_id}` so downstream validators
+    (e.g. `_validate_depends_on`) can resolve `depends_on: [CORE:S:xxxx]`
+    references that point at a superseded rule. The successor satisfies the
+    dependency in place of the original.
     """
-    superseded_ids: set[str] = set()
+    superseded_by: dict[str, str] = {}
     for rule_id, rule in list(rules.items()):
         if not rule.supersedes or rule.supersedes not in rules:
             continue
         parent = rules[rule.supersedes]
-        superseded_ids.add(rule.supersedes)
+        superseded_by[rule.supersedes] = rule_id
         # Inherit parent checks that aren't replaced by the agent rule
         replaced_ids = {c.replaces for c in rule.checks if c.replaces}
         inherited = [c for c in parent.checks if c.id not in replaced_ids]
         rules[rule_id] = rule.model_copy(update={"checks": inherited + list(rule.checks)})
-    for sid in superseded_ids:
+    for sid in superseded_by:
         del rules[sid]
+    return superseded_by
 
 
 def _apply_inheritance(rules: dict[str, Rule]) -> None:
@@ -238,16 +246,24 @@ def _apply_inheritance(rules: dict[str, Rule]) -> None:
         rules[rule_id] = rule.model_copy(update={"checks": parent_checks + list(rule.checks)})
 
 
-def _validate_depends_on(rules: dict[str, Rule]) -> None:
+def _validate_depends_on(rules: dict[str, Rule], superseded_by: dict[str, str] | None = None) -> None:
     """Validate depends_on references and detect circular dependency chains.
 
     Logs warnings for invalid references and circular chains rather than
     raising errors, so rule loading is resilient to bad metadata.
+
+    `superseded_by` maps removed rule ids to their successor ids; a depends_on
+    pointing at a superseded rule is satisfied by the successor.
     """
+    redirects = superseded_by or {}
     for rule_id, rule in rules.items():
         for dep_id in rule.depends_on:
-            if dep_id not in rules:
-                logger.warning("Rule %s depends_on %s which is not loaded", rule_id, dep_id)
+            if dep_id in rules:
+                continue
+            if dep_id in redirects and redirects[dep_id] in rules:
+                # Dependency was superseded by an active rule — treat as satisfied.
+                continue
+            logger.warning("Rule %s depends_on %s which is not loaded", rule_id, dep_id)
 
     _detect_dependency_cycles(rules)
 

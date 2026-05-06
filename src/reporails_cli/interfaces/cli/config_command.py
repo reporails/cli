@@ -69,6 +69,41 @@ def _save_config(path: Path, data: dict[str, Any]) -> None:
     cp = _project_config_path(path)
     cp.parent.mkdir(parents=True, exist_ok=True)
     cp.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=True), encoding="utf-8")
+    _ensure_ails_gitignore(cp.parent)
+
+
+# .gitignore content for .ails/ — ignores itself plus the layered local config.
+# The .gitignore is per-machine scaffolding (recreated when `ails config set` runs);
+# it does not need to be tracked in version control.
+_AILS_GITIGNORE_LINES = (".gitignore", "config.local.yml")
+
+
+def _ensure_ails_gitignore(ails_dir: Path) -> None:
+    """Ensure `.ails/.gitignore` exists and lists `.gitignore` + `config.local.yml`.
+
+    Idempotent: if the file already lists both entries, no change. If it
+    exists but is missing entries, append the missing ones.
+    """
+    import contextlib
+
+    gitignore = ails_dir / ".gitignore"
+    if gitignore.exists():
+        try:
+            existing = gitignore.read_text(encoding="utf-8")
+        except OSError:
+            return
+        existing_lines = {line.strip() for line in existing.splitlines()}
+        missing = [entry for entry in _AILS_GITIGNORE_LINES if entry not in existing_lines]
+        if not missing:
+            return
+        suffix = "" if existing.endswith("\n") else "\n"
+        with contextlib.suppress(OSError):
+            gitignore.write_text(existing + suffix + "\n".join(missing) + "\n", encoding="utf-8")
+        return
+    body = "# Personal/CI overrides — see docs/configuration.md\n"
+    body += "\n".join(_AILS_GITIGNORE_LINES) + "\n"
+    with contextlib.suppress(OSError):
+        gitignore.write_text(body, encoding="utf-8")
 
 
 def _save_global_config(data: dict[str, Any]) -> None:

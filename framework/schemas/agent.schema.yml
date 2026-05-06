@@ -1,4 +1,4 @@
-# Agent configuration schema v0.5.0
+ # Agent configuration schema v0.5.0
 #
 # Foundational assumption: coding agents are more alike than different.
 # An instruction file has the same quality properties regardless of which
@@ -64,8 +64,13 @@ fields:
           description: "File content format(s). Shared across scopes."
         scope:
           type: enum
-          values: [global, path_scoped, task_scoped]
-          description: "Effect scope — what the surface applies to. Distinct from location scope (the scopes key)."
+          values: [global, path_scoped, task_scoped, nested]
+          description: |
+            Effect scope — what the surface applies to. Distinct from location scope (the scopes key).
+            - global: applies project-wide (e.g. main, override, agents_md, cross_read).
+            - path_scoped: applies via in-file frontmatter path filter (e.g. Claude rules with paths:, Cursor rules with globs:).
+            - task_scoped: invocation-time loading (skills, agents, commands).
+            - nested: applies to a subdirectory subtree by virtue of file location (no frontmatter); subdirectory CLAUDE.md / AGENTS.md / GEMINI.md.
         cardinality:
           type: enum
           values: [singleton, optional, collection, hierarchical, chain]
@@ -108,7 +113,7 @@ fields:
                 description: "Who maintains the file"
               # Any shared property can be overridden per scope
               format: { type: [enum, array], values: [freeform, frontmatter, schema_validated] }
-              scope: { type: enum, values: [global, path_scoped, task_scoped] }
+              scope: { type: enum, values: [global, path_scoped, task_scoped, nested] }
               cardinality: { type: enum, values: [singleton, optional, collection, hierarchical, chain] }
               lifecycle: { type: enum, values: [static, mutable, transient] }
               loading: { type: enum, values: [session_start, on_demand, on_invocation] }

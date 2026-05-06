@@ -1,9 +1,12 @@
 # Generic Agent Configuration (agents.md convention)
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Default agent when no --agent flag is specified.
+# Default agent when no --agent flag is specified or no specific agent detected.
 # Targets AGENTS.md — the cross-agent instruction standard.
-# See: https://agents.md
+# Spec: https://agents.md
+#
+# Synced from .claude/skills/audit-agent/assets/registry/generic/config.yml
+# Last verified: 2026-05-06
 
 agent: generic
 version: "0.5.0"
@@ -12,10 +15,14 @@ core: true
 
 file_types:
   main:
+    # Primary AGENTS.md per spec. cardinality: chain since "the closest one
+    # takes precedence" implies multiple files at multiple directory levels
+    # are legitimate (per-package precedence).
+    source: https://agents.md
     required: true
     format: freeform
     scope: global
-    cardinality: singleton
+    cardinality: chain
     lifecycle: static
     loading: session_start
     scopes:
@@ -25,7 +32,27 @@ file_types:
         vcs: committed
         maintainer: human
 
+  nested_context:
+    # Per-package AGENTS.md in subdirectories below cwd. Per spec: "Place another
+    # AGENTS.md inside each package. Agents automatically read the nearest file
+    # in the directory tree, so the closest one takes precedence."
+    # scope: nested captures the location-based subtree applicability.
+    source: https://agents.md
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   skills:
+    # Agent Skills standard — the .agents/skills/ convention is shared across
+    # multiple agents via this directory.
     source: https://agentskills.io/specification
     format: [frontmatter, freeform]
     scope: task_scoped
@@ -44,5 +71,7 @@ file_types:
         vcs: external
         maintainer: human
 
-# No excludes — generic supports all core rules including cross-agent compatibility
-# No severity overrides
+# No agent-specific override files. AGENTS.local.md and AGENTS.override.md are
+# NOT in the agents.md spec — those are extensions defined by individual agents
+# (e.g., Codex defines AGENTS.override.md).
+# No excludes — generic supports all core rules including cross-agent compatibility.

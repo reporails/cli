@@ -71,8 +71,15 @@ def print_score_line(score: float, tw: int) -> None:
 
 # ── Surface health ────────────────────────────────────────────────────
 
-_SURFACE_NAMES = {"main": "Main", "rule": "Rules", "skill": "Skills", "agent": "Agents", "memory": "Memory"}
-_SURFACE_ORDER = ["main", "rule", "skill", "agent", "memory"]
+_SURFACE_NAMES = {
+    "main": "Main",
+    "nested": "Nested",
+    "rule": "Rules",
+    "skill": "Skills",
+    "agent": "Agents",
+    "memory": "Memory",
+}
+_SURFACE_ORDER = ["main", "nested", "rule", "skill", "agent", "memory"]
 
 
 @dataclass

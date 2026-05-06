@@ -116,7 +116,7 @@ class GlobalConfig:
 
 @dataclass
 class ProjectConfig:  # pylint: disable=too-many-instance-attributes
-    """Project-level configuration (.ails/config.yml)."""
+    """Project-level configuration (.ails/config.yml + .ails/config.local.yml)."""
 
     framework_version: str | None = None  # Pin version
     packages: list[str] = field(default_factory=list)  # Project rule packages
@@ -125,6 +125,12 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     recommended: bool = True  # Include recommended rules (opt out with false)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
     default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
+    # Per-agent overrides keyed by agent id. Currently supports `fallback_filenames`
+    # (additional instruction filenames Codex / others may treat as candidates).
+    agents: dict[str, dict[str, object]] = field(default_factory=dict)
+    # Per-surface include/exclude pattern adjustments. Keys are `<agent_id>.<file_type>`.
+    # Each entry may have `include: [glob...]` and `exclude: [glob...]`.
+    surfaces: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 # =============================================================================
