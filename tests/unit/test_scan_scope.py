@@ -424,10 +424,20 @@ class TestProjectConfigSurfaceAdjustments:
         clear_agent_cache()
 
     def test_codex_fallback_filenames_surface(self, tmp_path: Path) -> None:
-        """`agents.codex.fallback_filenames` adds candidate main files for codex."""
+        """`agents.codex.fallback_filenames` adds candidate main files for codex.
+
+        `.codex/config.toml` is required to make codex unambiguously detected —
+        without it, the codex/generic disambiguation drops codex (per the
+        `_disambiguate_codex_generic` heuristic) and the fallback patterns
+        attached to the codex agent never fire. The fixture mirrors a real
+        Codex-using project.
+        """
         (tmp_path / ".git").mkdir()
         (tmp_path / "AGENTS.md").write_text("# main")
         (tmp_path / "TEAM_GUIDE.md").write_text("# fallback")
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "config.toml").write_text("# codex marker\n")
         ails = tmp_path / ".ails"
         ails.mkdir()
         (ails / "config.yml").write_text(
