@@ -286,7 +286,7 @@ class TestLoadRulesExcludes:
         )
         for slug, coord in (
             ("core-rule", "CORE:S:0001"),
-            ("claude-rule-a", "CLAUDE:S:0001"),
+            ("claude-rule-a", "CLAUDE:S:0004"),
             ("claude-rule-b", "CLAUDE:C:0002"),
             ("codex-rule", "CODEX:S:0001"),
         ):
@@ -303,7 +303,7 @@ class TestLoadRulesExcludes:
             rules = load_rules([tmp_path], agent="copilot")
 
         assert "CORE:S:0001" in rules
-        assert "CLAUDE:S:0001" not in rules
+        assert "CLAUDE:S:0004" not in rules
         assert "CLAUDE:C:0002" not in rules
         assert "CODEX:S:0001" not in rules
 
@@ -317,7 +317,7 @@ class TestLoadRulesExcludes:
         for slug, coord in (
             ("core-a", "CORE:S:0001"),
             ("core-b", "CORE:S:0002"),
-            ("claude-a", "CLAUDE:S:0001"),
+            ("claude-a", "CLAUDE:S:0004"),
         ):
             rule_dir = tmp_path / "core" / "structure" / slug
             rule_dir.mkdir(parents=True)
@@ -332,7 +332,7 @@ class TestLoadRulesExcludes:
 
         assert "CORE:S:0001" not in rules  # exact exclude
         assert "CORE:S:0002" in rules  # not excluded
-        assert "CLAUDE:S:0001" not in rules  # glob exclude
+        assert "CLAUDE:S:0004" not in rules  # glob exclude
 
 
 # =============================================================================
@@ -348,9 +348,9 @@ class TestPrefixNamespaceFiltering:
         [
             pytest.param("CORE:S:0001", "CLAUDE", False, id="core_always_kept"),
             pytest.param("RRAILS:C:0001", "CLAUDE", False, id="rrails_always_kept"),
-            pytest.param("CLAUDE:S:0001", "CLAUDE", False, id="own_namespace_kept"),
+            pytest.param("CLAUDE:S:0004", "CLAUDE", False, id="own_namespace_kept"),
             pytest.param("CODEX:S:0001", "CLAUDE", True, id="other_namespace_filtered"),
-            pytest.param("RRAILS_CLAUDE:S:0001", "CLAUDE", False, id="rrails_agent_kept"),
+            pytest.param("RRAILS_CLAUDE:S:0004", "CLAUDE", False, id="rrails_agent_kept"),
             pytest.param("RRAILS_CODEX:S:0001", "CLAUDE", True, id="rrails_other_filtered"),
         ],
     )
@@ -391,7 +391,7 @@ class TestPrefixNamespaceFiltering:
         )
         for slug, coord in (
             ("core-rule", "CORE:S:0001"),
-            ("claude-rule", "CLAUDE:S:0001"),
+            ("claude-rule", "CLAUDE:S:0004"),
             ("other-rule", "OTHER:S:0001"),
         ):
             rule_dir = tmp_path / "core" / "structure" / slug
@@ -404,7 +404,7 @@ class TestPrefixNamespaceFiltering:
             rules = load_rules([tmp_path], agent="claude")
 
         assert "CORE:S:0001" in rules
-        assert "CLAUDE:S:0001" in rules
+        assert "CLAUDE:S:0004" in rules
         assert "OTHER:S:0001" not in rules
 
 
@@ -419,13 +419,13 @@ class TestGlobExcludePatterns:
     @pytest.mark.parametrize(
         ("rule_id", "pattern", "should_match"),
         [
-            pytest.param("CLAUDE:S:0001", "CLAUDE:*", True, id="glob_namespace"),
+            pytest.param("CLAUDE:S:0004", "CLAUDE:*", True, id="glob_namespace"),
             pytest.param("CLAUDE:C:0002", "CLAUDE:*", True, id="glob_namespace_other_cat"),
             pytest.param("CORE:S:0001", "CLAUDE:*", False, id="glob_no_match_core"),
             pytest.param("CODEX:S:0001", "CODEX:*", True, id="glob_codex"),
             pytest.param("CORE:S:0001", "CORE:S:0001", True, id="exact_match"),
             pytest.param("CORE:S:0002", "CORE:S:0001", False, id="exact_no_match"),
-            pytest.param("RRAILS_CLAUDE:S:0001", "RRAILS_CLAUDE:*", True, id="glob_rrails_agent"),
+            pytest.param("RRAILS_CLAUDE:S:0004", "RRAILS_CLAUDE:*", True, id="glob_rrails_agent"),
         ],
     )
     def test_fnmatch_patterns(self, rule_id: str, pattern: str, should_match: bool) -> None:
