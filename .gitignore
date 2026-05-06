@@ -25,3 +25,10 @@ framework/rules/**/tests/**/.claude/
 # Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
 # (dev-only, not committed; populated on clone and in CI before hatch build)
 src/reporails_cli/bundled/models/
+
+# npm packaging — README.md is copied from the repo root by the prepack
+# script in packages/npm/package.json before `npm pack` / `npm publish`.
+# Keeping the file gitignored avoids the maintenance drift of two committed
+# READMEs while sidestepping the npmjs.com per-version display bug that the
+# previous symlink approach hit.
+packages/npm/README.md
