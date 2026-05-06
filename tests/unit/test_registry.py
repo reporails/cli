@@ -259,7 +259,7 @@ class TestInferAgentFromRuleId:
         [
             ("CORE:S:0001", ""),
             ("RRAILS:C:0003", ""),
-            ("CLAUDE:S:0001", "claude"),
+            ("CLAUDE:S:0004", "claude"),
             ("CODEX:S:0001", "codex"),
             ("COPILOT:S:0001", "copilot"),
             ("no-colon", ""),

@@ -119,6 +119,18 @@ def _apply_project_overrides(
     return out
 
 
+_FILE_TYPE_MATCH_ALIASES: dict[str, str] = {
+    # Agent configs use plural surface keys ("rules", "skills") for
+    # human readability; rules express match.type with the singular
+    # vocabulary ("scoped_rule", "skill") that names the underlying
+    # concept. The alias is applied only when tagging classified
+    # files for rule matching — surface lookup keys
+    # (f"{agent}.{file_type_name}") still use the literal config key.
+    "rules": "scoped_rule",
+    "skills": "skill",
+}
+
+
 def _parse_file_types(data: dict[str, object]) -> list[FileTypeDeclaration]:
     """Parse file_types dict from agent config into FileTypeDeclaration list.
 
@@ -413,7 +425,7 @@ def classify_files(
             classified.append(
                 ClassifiedFile(
                     path=file_path,
-                    file_type=ft.name,
+                    file_type=_FILE_TYPE_MATCH_ALIASES.get(ft.name, ft.name),
                     properties=props,
                 )
             )
