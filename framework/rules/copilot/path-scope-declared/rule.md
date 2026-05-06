@@ -1,7 +1,7 @@
 ---
 id: COPILOT:S:0001
-slug: applyto-scope-declared
-title: ApplyTo Scope Declared
+slug: path-scope-declared
+title: Path Scope Declared
 category: structure
 type: mechanical
 severity: high
@@ -11,9 +11,9 @@ supersedes: CORE:S:0038
 source: https://code.visualstudio.com/docs/copilot/customization/custom-instructions
 ---
 
-# ApplyTo Scope Declared
+# Path Scope Declared
 
-Scoped `.github/copilot-instructions.md` files MUST include an `applyTo` field in their YAML frontmatter to declare which file patterns the instructions target. Without `applyTo`, Copilot applies the instructions globally, which defeats the purpose of scoped instruction files and can cause irrelevant guidance to appear in unrelated contexts.
+Scoped `.github/copilot-instructions.md` files MUST include an `applyTo` field in their YAML frontmatter to declare which file patterns the instructions target. Without `applyTo`, Copilot applies the instructions globally, which defeats the purpose of scoped instruction files and can cause irrelevant guidance to appear in unrelated contexts. The slug aligns with the `path-scope-declared` family used by Claude (`paths:`) and Cursor (`globs:`); Copilot's frontmatter key is `applyTo:` per the VS Code Copilot docs.
 
 ## Antipatterns
 
