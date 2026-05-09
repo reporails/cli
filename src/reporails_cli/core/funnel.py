@@ -40,6 +40,15 @@ class FunnelError:
     support_url: str = ""
     message: str = ""
 
+    @property
+    def reset_phrase(self) -> str:
+        """Render reset_in as a CTA fragment: 'Try again in ~N min. ' or ''."""
+        if self.reset_in <= 0:
+            return ""
+        minutes = (self.reset_in + 59) // 60
+        label = "<1 min" if minutes <= 1 else f"~{minutes} min"
+        return f"Try again in {label}. "
+
 
 @dataclass(frozen=True)
 class LintResponse:
@@ -235,9 +244,9 @@ def _with_url(text: str, url: str) -> str:
 
 
 _CTA_TEMPLATES: dict[tuple[str, str], str] = {
-    ("rate_limit_exceeded", "anonymous"): "Anonymous limit hit ({err.limit}/hr). Run `ails auth login` to raise it 40x",
+    ("rate_limit_exceeded", "anonymous"): "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}Run `ails auth login` to raise it 40x",
     ("rate_limit_exceeded", "pro"): (
-        "Hit your hourly limit ({err.limit}/hr) — file an issue with your use case so we can raise it"
+        "Hit your hourly limit ({err.limit}/hr). {err.reset_phrase}File an issue with your use case so we can raise it"
     ),
     ("payload_too_large", "anonymous"): (
         "Project too large for anonymous (2 MB cap). Run `ails auth login` to raise it to 20 MB"

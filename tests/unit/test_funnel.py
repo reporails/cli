@@ -234,6 +234,34 @@ class TestMergeUtm:
         assert "utm_source=action" in merge_utm(url, source="action")
 
 
+class TestFunnelErrorResetPhrase:
+    def test_zero_reset_in_renders_empty(self) -> None:
+        assert FunnelError(error="rate_limit_exceeded", reset_in=0).reset_phrase == ""
+
+    def test_negative_reset_in_renders_empty(self) -> None:
+        # Defensive — server clock skew or stale entry should never produce
+        # "Try again in -5 min."
+        assert FunnelError(error="rate_limit_exceeded", reset_in=-30).reset_phrase == ""
+
+    def test_under_one_minute_rounds_up_to_one(self) -> None:
+        # 30 seconds reads as "<1 min" — telling a user "0 min" is worse
+        # than telling them "<1 min".
+        assert FunnelError(error="rate_limit_exceeded", reset_in=30).reset_phrase == "Try again in <1 min. "
+
+    def test_exact_minute_boundary(self) -> None:
+        # 60 seconds → 1 minute, but rendered as "<1 min" (the rounding-up
+        # rule kicks in only above 60s, so the prompt stays calibrated).
+        assert FunnelError(error="rate_limit_exceeded", reset_in=60).reset_phrase == "Try again in <1 min. "
+
+    def test_thirty_minutes(self) -> None:
+        assert FunnelError(error="rate_limit_exceeded", reset_in=1800).reset_phrase == "Try again in ~30 min. "
+
+    def test_rounds_up_partial_minute(self) -> None:
+        # 61 s should not render as "~1 min" (which collides with <1 min).
+        # Rounding up keeps the displayed wait honestly ≥ the real wait.
+        assert FunnelError(error="rate_limit_exceeded", reset_in=61).reset_phrase == "Try again in ~2 min. "
+
+
 class TestFormatCta:
     def test_anonymous_rate_limit_no_url(self) -> None:
         # In 0.5.6 the anonymous CTA emits no URL — `ails auth login` is the
@@ -243,6 +271,23 @@ class TestFormatCta:
         assert "Anonymous limit hit" in cta
         assert "5/hr" in cta
         assert "→" not in cta
+        # No reset_in → no retry hint.
+        assert "Try again" not in cta
+
+    def test_anonymous_rate_limit_with_reset_in(self) -> None:
+        # Server reset_in surfaces as a human retry hint between the limit
+        # blurb and the upgrade CTA.
+        err = FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5, reset_in=1800)
+        cta = format_cta(err)
+        assert "Anonymous limit hit" in cta
+        assert "Try again in ~30 min" in cta
+        assert "ails auth login" in cta
+
+    def test_pro_rate_limit_with_reset_in(self) -> None:
+        err = FunnelError(error="rate_limit_exceeded", tier="pro", limit=200, reset_in=120)
+        cta = format_cta(err)
+        assert "Hit your hourly limit" in cta
+        assert "Try again in ~2 min" in cta
 
     def test_pro_rate_limit(self) -> None:
         err = FunnelError(
@@ -253,7 +298,7 @@ class TestFormatCta:
         )
         cta = format_cta(err)
         assert "Hit your hourly limit" in cta
-        assert "file an issue" in cta
+        assert "File an issue" in cta
         assert "200/hr" in cta
         assert "utm_source=cli" in cta
 
