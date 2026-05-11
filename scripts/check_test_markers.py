@@ -24,6 +24,9 @@ PYPROJECT = ROOT / "pyproject.toml"
 
 LANE_MARKERS = {"unit", "integration", "e2e", "smoke", "architecture", "contract"}
 SUBSYS_PREFIX = "subsys_"
+# Lanes whose tests are cross-cutting by definition and therefore exempt from
+# the "at least one subsys_* marker" requirement.
+SUBSYS_EXEMPT_LANES = {"architecture", "contract"}
 
 # Audit mode: when False, the script reports without failing.
 FAIL_ON_MISSING = True
@@ -51,17 +54,18 @@ def _markers_on(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     out: set[str] = set()
     for dec in node.decorator_list:
         target = dec.func if isinstance(dec, ast.Call) else dec
-        # match `pytest.mark.<name>` and `mark.<name>`
-        if isinstance(target, ast.Attribute):
-            if (
-                isinstance(target.value, ast.Attribute)
-                and isinstance(target.value.value, ast.Name)
-                and target.value.value.id == "pytest"
-                and target.value.attr == "mark"
-            ):
-                out.add(target.attr)
-            elif isinstance(target.value, ast.Name) and target.value.id == "mark":
-                out.add(target.attr)
+        if not isinstance(target, ast.Attribute):
+            continue
+        value = target.value
+        is_pytest_mark = (
+            isinstance(value, ast.Attribute)
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "pytest"
+            and value.attr == "mark"
+        )
+        is_mark = isinstance(value, ast.Name) and value.id == "mark"
+        if is_pytest_mark or is_mark:
+            out.add(target.attr)
     return out
 
 
@@ -86,12 +90,45 @@ def _audit_file(path: Path, allowed_subsys: set[str]) -> list[tuple[str, str]]:
             gaps.append((label, "no lane marker"))
         elif len(lanes) > 1:
             gaps.append((label, f"multiple lane markers: {sorted(lanes)}"))
-        if not subsys:
+        if not subsys and not (lanes & SUBSYS_EXEMPT_LANES):
             gaps.append((label, "no subsys_* marker"))
         unknown = subsys - allowed_subsys
         if unknown:
             gaps.append((label, f"unknown subsystem marker(s): {sorted(unknown)}"))
     return gaps
+
+
+def _count_tests(path: Path) -> int:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError):
+        return 0
+    return sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+    )
+
+
+def _walk_test_files() -> list[Path]:
+    return [p for p in sorted(TESTS.rglob("test_*.py")) if "__pycache__" not in p.parts]
+
+
+def _print_summary(gaps: list[tuple[str, str]], total_tests: int, files_audited: int) -> None:
+    by_reason: dict[str, int] = {}
+    for _, reason in gaps:
+        bucket = reason.split(":")[0]
+        by_reason[bucket] = by_reason.get(bucket, 0) + 1
+    print(f"check_test_markers: {len(gaps)} gap(s) across {total_tests} test(s) in {files_audited} file(s)")
+    print("\nBy reason:")
+    for reason, count in sorted(by_reason.items(), key=lambda t: -t[1]):
+        print(f"  {count:4d}  {reason}")
+    if "-v" in sys.argv or "--verbose" in sys.argv:
+        print("\nDetails:")
+        for label, reason in gaps[:50]:
+            print(f"  - {label}: {reason}")
+        if len(gaps) > 50:
+            print(f"  ... and {len(gaps) - 50} more")
 
 
 def main() -> int:
@@ -103,45 +140,18 @@ def main() -> int:
         print("check_test_markers: no subsys_* markers registered in pyproject.toml")
         return 0
 
-    total_tests = 0
-    files_audited = 0
+    test_files = _walk_test_files()
     gaps: list[tuple[str, str]] = []
-    for path in sorted(TESTS.rglob("test_*.py")):
-        if "__pycache__" in path.parts:
-            continue
-        files_audited += 1
-        file_gaps = _audit_file(path, allowed_subsys)
-        gaps.extend(file_gaps)
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        total_tests += sum(
-            1
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
-        )
+    total_tests = 0
+    for path in test_files:
+        gaps.extend(_audit_file(path, allowed_subsys))
+        total_tests += _count_tests(path)
 
     if not gaps:
-        print(f"check_test_markers: {total_tests} test(s) across {files_audited} file(s); all tagged correctly")
+        print(f"check_test_markers: {total_tests} test(s) across {len(test_files)} file(s); all tagged correctly")
         return 0
 
-    by_reason: dict[str, int] = {}
-    for _, reason in gaps:
-        bucket = reason.split(":")[0]
-        by_reason[bucket] = by_reason.get(bucket, 0) + 1
-
-    print(f"check_test_markers: {len(gaps)} gap(s) across {total_tests} test(s) in {files_audited} file(s)")
-    print("\nBy reason:")
-    for reason, count in sorted(by_reason.items(), key=lambda t: -t[1]):
-        print(f"  {count:4d}  {reason}")
-
-    if "-v" in sys.argv or "--verbose" in sys.argv:
-        print("\nDetails:")
-        for label, reason in gaps[:50]:
-            print(f"  - {label}: {reason}")
-        if len(gaps) > 50:
-            print(f"  ... and {len(gaps) - 50} more")
+    _print_summary(gaps, total_tests, len(test_files))
 
     if FAIL_ON_MISSING:
         return 1
