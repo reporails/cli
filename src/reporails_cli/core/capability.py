@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.results import DetectedFeatures
+from reporails_cli.core.platform.dto.results import DetectedFeatures
 
 
 def get_feature_summary(features: DetectedFeatures) -> str:

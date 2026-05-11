@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.levels import determine_project_level
-from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration, Level
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration, Level
+from reporails_cli.core.platform.policy.levels import determine_project_level
 
 
 def _cf(

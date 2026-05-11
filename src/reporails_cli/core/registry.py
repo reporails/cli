@@ -7,16 +7,16 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.models import (
-    AgentConfig,
-    ProjectConfig,
-    Rule,
-    Severity,
-)
 from reporails_cli.core.platform.config.bootstrap import (
     get_agent_config,
     get_project_config,
     get_rules_path,
+)
+from reporails_cli.core.platform.dto.models import (
+    AgentConfig,
+    ProjectConfig,
+    Rule,
+    Severity,
 )
 from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file, parse_frontmatter
 from reporails_cli.core.rule_builder import (

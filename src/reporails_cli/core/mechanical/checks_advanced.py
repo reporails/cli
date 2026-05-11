@@ -20,7 +20,7 @@ from reporails_cli.core.mechanical.checks import (
     _resolve_glob_targets,
     _safe_float,
 )
-from reporails_cli.core.models import ClassifiedFile
+from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 
 def frontmatter_present(

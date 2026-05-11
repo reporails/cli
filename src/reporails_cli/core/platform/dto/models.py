@@ -262,7 +262,7 @@ class JudgmentResponse:
 
 
 # Re-exports for backward compatibility
-from reporails_cli.core.results import (  # noqa: E402
+from reporails_cli.core.platform.dto.results import (  # noqa: E402
     AgentConfig,
     CategoryStats,
     DetectedFeatures,

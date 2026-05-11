@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.applicability import (
+from reporails_cli.core.platform.policy.applicability import (
     detect_features_filesystem,
     resolve_symlinked_files,
 )
@@ -105,7 +105,7 @@ class TestResolveSymlinkedFiles:
         os.symlink(str(b), str(a))
         os.symlink(str(a), str(b))
 
-        with caplog.at_level(logging.WARNING, logger="reporails_cli.core.applicability"):
+        with caplog.at_level(logging.WARNING, logger="reporails_cli.core.platform.policy.applicability"):
             result = resolve_symlinked_files(project)
 
         assert result == []

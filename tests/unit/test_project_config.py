@@ -56,7 +56,7 @@ class TestGetProjectConfig:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_malformed_yaml_inherits_global(self, tmp_path: Path, make_config_file) -> None:
-        from reporails_cli.core.models import GlobalConfig
+        from reporails_cli.core.platform.dto.models import GlobalConfig
 
         make_config_file(": : :\n  bad yaml [[[")
         with patch(
@@ -82,7 +82,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_inherits_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
         """Project without default_agent inherits global value."""
-        from reporails_cli.core.models import GlobalConfig
+        from reporails_cli.core.platform.dto.models import GlobalConfig
 
         make_config_file("packages:\n  - custom\n")
         with patch(
@@ -96,7 +96,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_project_overrides_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
         """Project default_agent wins over global."""
-        from reporails_cli.core.models import GlobalConfig
+        from reporails_cli.core.platform.dto.models import GlobalConfig
 
         make_config_file("default_agent: cursor\n")
         with patch(
@@ -110,7 +110,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_inherits_global_recommended(self, tmp_path: Path, make_config_file) -> None:
         """Project without recommended key inherits global value."""
-        from reporails_cli.core.models import GlobalConfig
+        from reporails_cli.core.platform.dto.models import GlobalConfig
 
         make_config_file("packages:\n  - custom\n")
         with patch(
@@ -124,7 +124,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_project_overrides_global_recommended(self, tmp_path: Path, make_config_file) -> None:
         """Project explicit recommended: false wins over global true."""
-        from reporails_cli.core.models import GlobalConfig
+        from reporails_cli.core.platform.dto.models import GlobalConfig
 
         make_config_file("recommended: false\n")
         with patch(
@@ -138,7 +138,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_no_config_file_inherits_global(self, tmp_path: Path) -> None:
         """No .ails/config.yml — global defaults apply."""
-        from reporails_cli.core.models import GlobalConfig
+        from reporails_cli.core.platform.dto.models import GlobalConfig
 
         with patch(
             "reporails_cli.core.platform.config.config.get_global_config",

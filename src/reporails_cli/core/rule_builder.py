@@ -7,7 +7,8 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.config.bootstrap import get_framework_root
+from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
     Execution,
@@ -18,7 +19,6 @@ from reporails_cli.core.models import (
     Severity,
     Tier,
 )
-from reporails_cli.core.platform.config.bootstrap import get_framework_root
 
 # Threshold for core tier (from sources.schema.yml tier_derivation)
 CORE_WEIGHT_THRESHOLD = 0.8

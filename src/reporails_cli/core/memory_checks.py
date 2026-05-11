@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from reporails_cli.core.models import LocalFinding
+from reporails_cli.core.platform.dto.models import LocalFinding
 
 _MEMORY_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+\.md)\)(?:\s*[—\-]\s*(.+))?")
 _FRONTMATTER_REQUIRED = {"name", "description", "type"}

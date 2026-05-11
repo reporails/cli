@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.models import ClassifiedFile
+from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 
 def _safe_float(value: Any, default: float = float("inf")) -> float:

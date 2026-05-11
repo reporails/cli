@@ -6,12 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from reporails_cli.core.models import Level, Violation
+from reporails_cli.core.platform.dto.models import Level, Violation
 
 if TYPE_CHECKING:
     from reporails_cli.core.cache import AnalyticsEntry
 
-from reporails_cli.core.models import JudgmentRequest
+from reporails_cli.core.platform.dto.models import JudgmentRequest
 
 # =============================================================================
 # Feature Detection Models

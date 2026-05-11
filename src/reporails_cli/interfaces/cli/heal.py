@@ -82,7 +82,7 @@ def _apply_additive_fixes(
 ) -> list[dict[str, Any]]:
     """Run M probes and apply additive fixes (missing sections)."""
     from reporails_cli.core.fixers import apply_auto_fixes as _apply_auto_fixes
-    from reporails_cli.core.models import Severity, Violation
+    from reporails_cli.core.platform.dto.models import Severity, Violation
     from reporails_cli.core.rule_runner import run_m_probes
 
     if show_progress:

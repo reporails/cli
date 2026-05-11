@@ -58,7 +58,7 @@ class TestSymlinkIntegration:
         """Symlinked CLAUDE.md should appear in resolved_symlinks."""
         project, _external = symlink_project
 
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.platform.policy.applicability import detect_features_filesystem
 
         features = detect_features_filesystem(project)
         assert features.has_claude_md is True
@@ -73,7 +73,7 @@ class TestSymlinkIntegration:
         # Rewrite external file to be too long (trigger S1 if available)
         external.write_text("# Project\n\n" + "Line of content.\n" * 300)
 
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.platform.policy.applicability import detect_features_filesystem
 
         features = detect_features_filesystem(project)
         assert features.has_claude_md is True

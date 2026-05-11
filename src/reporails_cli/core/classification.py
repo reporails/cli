@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from reporails_cli.core.models import ClassifiedFile, FileMatch, FileTypeDeclaration
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 logger = logging.getLogger(__name__)

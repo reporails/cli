@@ -28,7 +28,7 @@ from reporails_cli.core.mechanical.runner import (
     resolve_location,
     run_mechanical_checks,
 )
-from reporails_cli.core.models import Category, Check, ClassifiedFile, FileMatch, Rule, RuleType, Severity
+from reporails_cli.core.platform.dto.models import Category, Check, ClassifiedFile, FileMatch, Rule, RuleType, Severity
 
 
 def _cf(root: Path, *rel_paths: str, file_type: str = "main") -> list[ClassifiedFile]:

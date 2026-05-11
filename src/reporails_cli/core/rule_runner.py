@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.models import LocalFinding, Rule, RuleType
+from reporails_cli.core.platform.dto.models import LocalFinding, Rule, RuleType
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def _collect_mechanical_findings(
 ) -> list[LocalFinding]:
     """Run mechanical checks and convert Violations to LocalFinding."""
     from reporails_cli.core.mechanical.runner import run_mechanical_checks
-    from reporails_cli.core.models import Execution
+    from reporails_cli.core.platform.dto.models import Execution
 
     mechanical_rules = {
         k: v for k, v in rules.items() if v.type == RuleType.MECHANICAL and v.execution == Execution.LOCAL

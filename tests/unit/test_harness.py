@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

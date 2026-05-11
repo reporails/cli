@@ -565,7 +565,7 @@ class TestScanDeltaResilience:
     """ScanDelta.compute must not crash on corrupted analytics cache."""
 
     def _compute(self, prev_level: str) -> Any:
-        from reporails_cli.core.models import ScanDelta
+        from reporails_cli.core.platform.dto.models import ScanDelta
 
         class FakePrev:
             score = 5.0

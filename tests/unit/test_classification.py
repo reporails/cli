@@ -11,7 +11,7 @@ from reporails_cli.core.classification import (
     detect_content_format,
     match_files,
 )
-from reporails_cli.core.models import ClassifiedFile, FileMatch, FileTypeDeclaration
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 
 # ═══════════════════════════════════════════════════════════════════════
 # detect_content_format — individual format detection
