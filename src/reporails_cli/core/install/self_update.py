@@ -115,7 +115,7 @@ def _verify_installed_version() -> str | None:
 def upgrade_cli(target_version: str | None = None) -> CliUpdateResult:  # pylint: disable=too-many-return-statements
     """Upgrade the CLI package to target version (or latest)."""
     from reporails_cli import __version__ as current_version
-    from reporails_cli.core.update_check import _fetch_latest_cli_version, _is_newer
+    from reporails_cli.core.install.update_check import _fetch_latest_cli_version, _is_newer
 
     method = detect_install_method()
 

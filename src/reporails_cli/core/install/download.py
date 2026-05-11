@@ -183,7 +183,7 @@ def is_recommended_installed() -> bool:
 def download_recommended(version: str | None = None) -> Path:  # pylint: disable=too-many-locals
     """Download recommended rules package from GitHub archive."""
     if version is None:
-        from reporails_cli.core.updater import get_latest_recommended_version
+        from reporails_cli.core.install.updater import get_latest_recommended_version
 
         version = get_latest_recommended_version() or RECOMMENDED_VERSION
 

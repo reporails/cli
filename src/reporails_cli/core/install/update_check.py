@@ -121,7 +121,7 @@ def check_for_updates() -> UpdateNotification | None:
             latest_recommended = cached.get("latest_recommended_version")
         else:
             # Fetch fresh versions
-            from reporails_cli.core.init import get_latest_recommended_version, get_latest_version
+            from reporails_cli.core.install.updater import get_latest_recommended_version, get_latest_version
 
             latest_cli = _fetch_latest_cli_version()
             latest_rules = get_latest_version()
@@ -190,7 +190,7 @@ def _execute_updates(notification: UpdateNotification, console: Any) -> bool:
     Returns:
         True if anything was updated, False otherwise.
     """
-    from reporails_cli.core.init import update_recommended, update_rules
+    from reporails_cli.core.install.updater import update_recommended, update_rules
 
     updated = False
 

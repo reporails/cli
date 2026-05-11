@@ -54,7 +54,7 @@ def install(
     path: str = typer.Argument(".", help="Project root"),
 ) -> None:
     """Install the reporails MCP server and ails command."""
-    from reporails_cli.core.mcp_install import detect_mcp_targets, write_mcp_config
+    from reporails_cli.core.install.mcp_install import detect_mcp_targets, write_mcp_config
 
     target = Path(path).resolve()
 

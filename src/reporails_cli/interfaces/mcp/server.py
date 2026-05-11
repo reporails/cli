@@ -5,7 +5,7 @@
 # transitively reach thinc/spacy. The MCP server is long-lived and
 # serves many tool calls; skipping the ~20s torch import makes first
 # validate/score calls fast. See `_torch_blocker` docstring for details.
-from reporails_cli.core import _torch_blocker
+from reporails_cli.core.platform.runtime import _torch_blocker
 
 _torch_blocker.install()
 # ─────────────────────────────────────────────────────────────────────

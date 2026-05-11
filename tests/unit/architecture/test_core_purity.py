@@ -43,6 +43,7 @@ _FORBIDDEN_SUBSYSTEM_PREFIXES = (
     "reporails_cli.core.discovery.",
     "reporails_cli.core.funnel.",
     "reporails_cli.core.heal.",
+    "reporails_cli.core.install.",
     "reporails_cli.core.lint.",
     "reporails_cli.core.mapper.",
 )

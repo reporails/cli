@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.download import _safe_extractall, _validate_rules_structure
+from reporails_cli.core.install.download import _safe_extractall, _validate_rules_structure
 
 
 class TestSafeExtractall:

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from reporails_cli.core.init import (
+from reporails_cli.core.install.download import (
     RECOMMENDED_VERSION,
     download_recommended,
     is_recommended_installed,
@@ -45,7 +45,7 @@ class TestIsRecommendedInstalled:
     @pytest.mark.subsys_lint
     def test_not_installed_when_missing(self, tmp_path: Path) -> None:
         with patch(
-            "reporails_cli.core.download.get_recommended_package_path",
+            "reporails_cli.core.install.download.get_recommended_package_path",
             return_value=tmp_path / "packages" / "recommended",
         ):
             assert is_recommended_installed() is False
@@ -56,7 +56,7 @@ class TestIsRecommendedInstalled:
         pkg_dir = tmp_path / "packages" / "recommended"
         pkg_dir.mkdir(parents=True)
         with patch(
-            "reporails_cli.core.download.get_recommended_package_path",
+            "reporails_cli.core.install.download.get_recommended_package_path",
             return_value=pkg_dir,
         ):
             assert is_recommended_installed() is False
@@ -68,7 +68,7 @@ class TestIsRecommendedInstalled:
         pkg_dir.mkdir(parents=True)
         (pkg_dir / "levels.yml").write_text("levels: {}")
         with patch(
-            "reporails_cli.core.download.get_recommended_package_path",
+            "reporails_cli.core.install.download.get_recommended_package_path",
             return_value=pkg_dir,
         ):
             assert is_recommended_installed() is True
@@ -101,10 +101,10 @@ class TestDownloadRecommended:
 
         with (
             patch(
-                "reporails_cli.core.download.get_recommended_package_path",
+                "reporails_cli.core.install.download.get_recommended_package_path",
                 return_value=pkg_dir,
             ),
-            patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.download.httpx.Client", return_value=mock_client),
         ):
             result = download_recommended(version=RECOMMENDED_VERSION)
 
@@ -139,10 +139,10 @@ class TestDownloadRecommended:
 
         with (
             patch(
-                "reporails_cli.core.download.get_recommended_package_path",
+                "reporails_cli.core.install.download.get_recommended_package_path",
                 return_value=pkg_dir,
             ),
-            patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.download.httpx.Client", return_value=mock_client),
         ):
             download_recommended(version=RECOMMENDED_VERSION)
 
@@ -167,10 +167,10 @@ class TestDownloadRecommended:
 
         with (
             patch(
-                "reporails_cli.core.download.get_recommended_package_path",
+                "reporails_cli.core.install.download.get_recommended_package_path",
                 return_value=pkg_dir,
             ),
-            patch("reporails_cli.core.download.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.download.httpx.Client", return_value=mock_client),
         ):
             result = download_recommended(version=RECOMMENDED_VERSION)
 

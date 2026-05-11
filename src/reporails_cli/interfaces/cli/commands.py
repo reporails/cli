@@ -64,7 +64,7 @@ def map(
 def show_version() -> None:
     """Show CLI version and install method."""
     from reporails_cli import __version__ as cli_version
-    from reporails_cli.core.self_update import detect_install_method
+    from reporails_cli.core.install.self_update import detect_install_method
 
     console.print(f"CLI:     {cli_version}")
     console.print(f"Install: {detect_install_method().value}")
