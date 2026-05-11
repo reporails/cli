@@ -10,9 +10,9 @@ from reporails_cli.core.mapper.mapper import (
     map_file,
     map_ruleset,
     save_ruleset_map,
-    tokenize,
 )
 from reporails_cli.core.mapper.models import Models, get_models
+from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import (
     Atom,
     ClusterRecord,
