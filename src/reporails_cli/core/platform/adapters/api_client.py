@@ -270,7 +270,7 @@ class AilsClient:
         except httpx.HTTPStatusError as exc:
             funnel_err = parse_error_body(exc.response.status_code, exc.response.text)
             if funnel_err is not None:
-                logger.warning(
+                logger.debug(
                     "Server returned %d %s for tier=%s", exc.response.status_code, funnel_err.error, funnel_err.tier
                 )
                 return LintResponse(funnel_error=funnel_err)

@@ -18,6 +18,7 @@
 - Internals: extracted `RulesetMap` and supporting dataclasses (`Atom`, `FileRecord`, `ClusterRecord`, `RulesetSummary`, `InlineToken`, `TopicCluster`) from `mapper/mapper.py` to `core/platform/dto/ruleset.py`; adapters now import wire-format types from the pure DTO layer and the adapter-boundary architecture test no longer needs an allowlist entry
 - Funnel: Rate-limit CTA now surfaces a "Try again in ~N min." hint when the server returns an accurate `reset_in`, between the limit blurb and the upgrade prompt
 - Funnel: CTA and bug-report URLs render as OSC 8 terminal hyperlinks with a short clickable label (`github.com/reporails/cli/issues/new`) instead of dumping the full percent-encoded prefilled URL; falls back to the short label on terminals without hyperlink support
+- Funnel: demoted the "Could not parse N response body" and "Server returned N for tier=" stderr warnings to debug logging so they no longer print above the diagnostic report; reworded the `unknown_error` CTA to `Diagnostics server returned HTTP <code>` (honest about what we know without claiming the body is unparseable)
 - Display: file rows now annotate duplicates with `(+alias)` labels — symlinked surfaces show the differing path component (e.g. `mintlify (+.claude)`), same-directory content-identical pairs show the alternate filename (e.g. `AGENTS.md (+CLAUDE.md)`)
 
 ### Fixed
