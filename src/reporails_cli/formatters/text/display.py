@@ -129,6 +129,31 @@ def _render_quality_compact(
         console.print(f"  [dim]{border}     {truncate(agg_line, tw - 8)}[/dim]")
 
 
+def _format_alias_suffix(canonical: str, aliases: list[str]) -> str:
+    """Build the ` (+alias1, +alias2)` label for a file with duplicates.
+
+    Picks the shortest distinguishing fragment per alias — the differing leading
+    path component when the alias lives under a different parent (e.g.
+    `.claude/skills/foo` vs canonical `.agents/skills/foo` → render `+.claude`),
+    or the filename when only the leaf differs (e.g. `AGENTS.md` vs `CLAUDE.md`
+    in the same dir → render `+CLAUDE.md`).
+    """
+    if not aliases:
+        return ""
+    canonical_parts = Path(canonical).parts
+    labels: list[str] = []
+    for alias in aliases:
+        alias_p = Path(alias)
+        alias_parts = alias_p.parts
+        label = alias_p.name
+        for i, (c, a) in enumerate(zip(canonical_parts, alias_parts, strict=False)):
+            if c != a:
+                label = a if i < len(alias_parts) - 1 else alias_p.name
+                break
+        labels.append(label)
+    return f" (+{', +'.join(labels)})"
+
+
 def _print_file_card(
     filepath: str,
     findings: list[Any],
@@ -136,6 +161,7 @@ def _print_file_card(
     verbose: bool,
     ruleset_map: Any = None,
     file_hints: list[Any] | None = None,
+    aliases_by_file: dict[str, list[str]] | None = None,
 ) -> None:
     """Print one file's card: name, stats, structural findings, then quality aggregate."""
     quality_counts: Counter[str] = Counter()
@@ -147,6 +173,8 @@ def _print_file_card(
             structural.append(f)
 
     name = friendly_name(filepath, classify_file(filepath))
+    alias_list = (aliases_by_file or {}).get(filepath, [])
+    name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
     stats = per_file_stats(filepath, ruleset_map)
     b = "\u2502"
     msg_width = get_term_width() - 35
@@ -199,6 +227,7 @@ def _render_one_group(
     verbose: bool,
     ruleset_map: Any,
     hints_by_file: dict[str, list[Any]],
+    aliases_by_file: dict[str, list[str]] | None = None,
 ) -> None:
     """Render a single file group: header, file cards, footer."""
     _render_group_header(gkey, group_files, ruleset_map)
@@ -217,6 +246,7 @@ def _render_one_group(
             verbose,
             ruleset_map=ruleset_map,
             file_hints=hints_by_file.get(filepath),
+            aliases_by_file=aliases_by_file,
         )
 
     console.print(f"  [dim]\u2514\u2500 {sum(len(fs) for _, fs in group_files)} findings[/dim]\n")
@@ -228,12 +258,13 @@ def _render_file_groups(
     verbose: bool,
     ruleset_map: Any,
     hints_by_file: dict[str, list[Any]],
+    aliases_by_file: dict[str, list[str]] | None = None,
 ) -> None:
     """Render all file groups with cards."""
     for gkey in _GROUP_ORDER:
         group_files = groups.get(gkey, [])
         if group_files:
-            _render_one_group(gkey, group_files, sev_icons, verbose, ruleset_map, hints_by_file)
+            _render_one_group(gkey, group_files, sev_icons, verbose, ruleset_map, hints_by_file, aliases_by_file)
 
 
 def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str]) -> None:
@@ -362,6 +393,39 @@ def _build_hints_by_file(hints: Any, project_root: Path) -> dict[str, list[Any]]
     return result
 
 
+def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str]]:
+    """Combine discovery-time symlink aliases with display-time same-dir content aliases.
+
+    `get_file_aliases` returns paths the discovery layer already collapsed
+    (symlinks to one inode). `compute_same_dir_content_aliases` runs against
+    the union of files referenced by findings — catches manual AGENTS.md /
+    CLAUDE.md pairs that classify under different agents but should render as
+    one row. Both alias sources are returned as project-relative posix strings
+    so `_print_file_card` can do a plain dict lookup.
+    """
+    from reporails_cli.core.agents import compute_same_dir_content_aliases, get_file_aliases
+    from reporails_cli.core.merger import normalize_finding_path
+
+    out: dict[str, list[str]] = {}
+    for canonical, alias_paths in get_file_aliases(project_root).items():
+        key = normalize_finding_path(str(canonical), project_root)
+        values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
+        if values:
+            out[key] = values
+
+    finding_paths: set[Path] = set()
+    if result.findings:
+        for f in result.findings:
+            p = Path(f.file)
+            finding_paths.add(p if p.is_absolute() else (project_root / p))
+    for canonical, alias_paths in compute_same_dir_content_aliases(finding_paths).items():
+        key = normalize_finding_path(str(canonical), project_root)
+        values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
+        if values:
+            out.setdefault(key, []).extend(values)
+    return out
+
+
 # ── Master display function ───────────────────────────────────────────
 
 
@@ -421,7 +485,8 @@ def _render_findings_and_scorecard(
 
     sev_icons = get_sev_icons(ascii_mode)
     hints_idx = _build_hints_by_file(result.hints, Path.cwd())
-    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx)
+    aliases_idx = _build_aliases_by_file(Path.cwd(), result)
+    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx, aliases_idx)
     _render_cross_file_coordinates(result, sev_icons)
 
     print_scorecard(
