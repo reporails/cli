@@ -186,7 +186,7 @@ markers = [
     "contract: Pure validator function in isolation",
     # Cost — orthogonal, additive
     "slow: Takes more than 1 second",
-    "requires_model: Needs bundled ONNX + spacy",
+    "requires_model: Needs the bundled ML runtime",
     "requires_network: Hits real external service",
     "real_deps: Needs API key or live backend",
     # Subsystem tags — one or more per test
