@@ -73,15 +73,16 @@ def parse_error_body(status_code: int, body_text: str) -> FunnelError | None:
     try:
         body = json.loads(body_text)
     except (json.JSONDecodeError, ValueError):
-        logger.warning("Could not parse %d response body as JSON: %r", status_code, body_text[:200])
+        logger.debug("Non-JSON %d response body: %r", status_code, body_text[:200])
         return FunnelError(
             error="unknown_error",
-            message=f"HTTP {status_code} with unparseable response body",
+            message=f"Diagnostics server returned HTTP {status_code}",
         )
     if not isinstance(body, dict):
+        logger.debug("Unexpected %d response shape: %r", status_code, body_text[:200])
         return FunnelError(
             error="unknown_error",
-            message=f"HTTP {status_code} with unexpected response shape",
+            message=f"Diagnostics server returned HTTP {status_code}",
         )
     error = body.get("error", "")
     if error not in _KNOWN_ERRORS:
