@@ -79,7 +79,10 @@ def main() -> int:
             stale.append((name, spec_rel, drift_seconds / 86400))
 
     if not stale:
-        print(f"spec-drift: {len(subs)} subsystems, no specs older than source beyond {STALE_THRESHOLD_DAYS}d threshold")
+        print(
+            f"spec-drift: {len(subs)} subsystems, no specs older than source "
+            f"beyond {STALE_THRESHOLD_DAYS}d threshold"
+        )
         return 0
 
     print(f"spec-drift: {len(stale)} subsystem(s) with potentially stale specs:")
