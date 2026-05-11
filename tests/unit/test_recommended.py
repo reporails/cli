@@ -7,6 +7,8 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from reporails_cli.core.init import (
     RECOMMENDED_VERSION,
     download_recommended,
@@ -39,6 +41,8 @@ def _make_archive(files: dict[str, str], prefix: str = "recommended-0.0.1") -> b
 class TestIsRecommendedInstalled:
     """Test is_recommended_installed checks."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_not_installed_when_missing(self, tmp_path: Path) -> None:
         with patch(
             "reporails_cli.core.download.get_recommended_package_path",
@@ -46,6 +50,8 @@ class TestIsRecommendedInstalled:
         ):
             assert is_recommended_installed() is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_not_installed_when_empty(self, tmp_path: Path) -> None:
         pkg_dir = tmp_path / "packages" / "recommended"
         pkg_dir.mkdir(parents=True)
@@ -55,6 +61,8 @@ class TestIsRecommendedInstalled:
         ):
             assert is_recommended_installed() is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_installed_when_has_content(self, tmp_path: Path) -> None:
         pkg_dir = tmp_path / "packages" / "recommended"
         pkg_dir.mkdir(parents=True)
@@ -69,6 +77,8 @@ class TestIsRecommendedInstalled:
 class TestDownloadRecommended:
     """Test download_recommended extraction and version tracking."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_extracts_and_strips_prefix(self, tmp_path: Path) -> None:
         """Archive with GitHub-style prefix is extracted correctly."""
         pkg_dir = tmp_path / "packages" / "recommended"
@@ -108,6 +118,8 @@ class TestDownloadRecommended:
         assert version_file.exists()
         assert version_file.read_text().strip() == RECOMMENDED_VERSION
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_clears_existing_before_download(self, tmp_path: Path) -> None:
         """Old content is removed before extracting new."""
         pkg_dir = tmp_path / "packages" / "recommended"
@@ -137,6 +149,8 @@ class TestDownloadRecommended:
         assert not (pkg_dir / "old_file.txt").exists()
         assert (pkg_dir / "new_file.yml").exists()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_writes_version_file(self, tmp_path: Path) -> None:
         """Version file should contain the requested version after download."""
         pkg_dir = tmp_path / "packages" / "recommended"

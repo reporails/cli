@@ -73,6 +73,9 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
 
 
 class TestListTools:
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
         """list_tools should return all four tools."""
         from reporails_cli.interfaces.mcp.server import list_tools
@@ -81,6 +84,9 @@ class TestListTools:
         names = {t.name for t in tools}
         assert names == {"validate", "score", "explain", "heal"}
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_validate_tool_path_optional(self) -> None:
         """validate tool should not require path (has default)."""
         from reporails_cli.interfaces.mcp.server import list_tools
@@ -110,6 +116,9 @@ _SHELL_OUT_PATTERNS = [
 
 
 class TestValidateTool:
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_returns_valid_json(self, level2_project: Path) -> None:
         """validate must return parseable JSON."""
@@ -117,6 +126,9 @@ class TestValidateTool:
         data = json.loads(text)  # Must not raise
         assert isinstance(data, dict)
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_json_has_files_and_stats(self, level2_project: Path) -> None:
         """validate JSON must contain files and stats keys."""
@@ -125,6 +137,9 @@ class TestValidateTool:
         assert "files" in data
         assert "stats" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_json_has_violations_grouped_by_file(self, level2_project: Path) -> None:
         """validate JSON must contain violations as a dict grouped by file."""
@@ -139,6 +154,9 @@ class TestValidateTool:
                     assert isinstance(entry, list)
                     assert len(entry) == 4  # [rule_id, line_ref, severity, message]
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_json_has_offline_flag(self, level2_project: Path) -> None:
         """validate JSON must contain offline flag."""
@@ -146,6 +164,9 @@ class TestValidateTool:
         data = json.loads(text)
         assert "offline" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_no_shell_out_guidance(self, level2_project: Path) -> None:
         """REGRESSION: validate must never tell the LLM to shell out."""
@@ -153,12 +174,18 @@ class TestValidateTool:
         for pattern in _SHELL_OUT_PATTERNS:
             assert pattern not in text, f"Shell-out pattern {pattern!r} found in validate response"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_missing_path_returns_error_json(self) -> None:
         """Non-existent path should return JSON error."""
         text = _call_tool("validate", {"path": "/tmp/no-such-path-xyz-mcp-test"})
         data = json.loads(text)
         assert "error" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_uninitialized_returns_error_json(self) -> None:
         """When framework is not initialized, should return JSON error."""
         with patch("reporails_cli.interfaces.mcp.server.is_initialized", return_value=False):
@@ -167,6 +194,9 @@ class TestValidateTool:
         assert "error" in data
         assert data["error"] == "not_initialized"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
         """RuntimeError from _run_pipeline must return JSON error, not crash."""
         with (
@@ -188,6 +218,9 @@ class TestValidateTool:
 
 
 class TestScoreTool:
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_returns_json_with_stats(self, level2_project: Path) -> None:
         """score should return JSON with findings summary."""
@@ -195,6 +228,9 @@ class TestScoreTool:
         data = json.loads(text)
         assert "total_findings" in data or "errors" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_offline_flag_present(self, level2_project: Path) -> None:
         """Score result should indicate offline status."""
@@ -209,6 +245,9 @@ class TestScoreTool:
 
 
 class TestExplainTool:
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_known_rule_returns_details(self, dev_rules_dir: Path) -> None:
         """Explaining a known rule should return readable text with rule ID and title."""
         from reporails_cli.interfaces.mcp.tools import explain_tool
@@ -218,6 +257,9 @@ class TestExplainTool:
         assert "CORE:S:0002" in result
         assert "Section Headers Present" in result
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_unknown_rule_returns_error(self) -> None:
         """Explaining an unknown rule should return an error."""
         text = _call_tool("explain", {"rule_id": "ZZZZZ999"})
@@ -231,6 +273,9 @@ class TestExplainTool:
 
 
 class TestUnknownTool:
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_returns_error(self) -> None:
         """Unknown tool name should return error JSON."""
         text = _call_tool("nonexistent_tool", {})
@@ -262,6 +307,9 @@ class TestCircuitBreaker:
     def teardown_method(self) -> None:
         self._reset_states()
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_first_call_succeeds(self, level2_project: Path) -> None:
         """First validate call should return normal JSON results."""
@@ -270,6 +318,9 @@ class TestCircuitBreaker:
         assert "error" not in data
         assert "files" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_second_call_succeeds(self, level2_project: Path) -> None:
         """Second validate call (unchanged files) should still succeed."""
@@ -279,6 +330,9 @@ class TestCircuitBreaker:
         assert "error" not in data
         assert "files" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_third_unchanged_triggers_breaker(self, level2_project: Path) -> None:
         """Third call without file changes must trigger circuit breaker."""
@@ -288,6 +342,9 @@ class TestCircuitBreaker:
         data = json.loads(text)
         assert data.get("error") == "circuit_breaker"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_edit_between_calls_resets_breaker(self, level2_project: Path) -> None:
         """Editing a file between validate calls should reset the breaker."""
@@ -302,6 +359,9 @@ class TestCircuitBreaker:
         assert "error" not in data
         assert "files" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_breaker_message_says_do_not_call_again(self, level2_project: Path) -> None:
         """Breaker message must instruct the LLM to stop calling validate."""
@@ -311,6 +371,9 @@ class TestCircuitBreaker:
         data = json.loads(text)
         assert "DO NOT call validate again" in data.get("message", "")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_different_paths_independent(self, level2_project: Path, tmp_path: Path) -> None:
         """Circuit breaker states are per-path, not global."""
@@ -328,6 +391,9 @@ class TestCircuitBreaker:
         data = json.loads(text)
         assert "error" not in data or data.get("error") != "circuit_breaker"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_fourth_unchanged_still_blocked(self, level2_project: Path) -> None:
         """Calls beyond the threshold must all be blocked."""
@@ -337,6 +403,9 @@ class TestCircuitBreaker:
         data = json.loads(text)
         assert data.get("error") == "circuit_breaker"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_absolute_ceiling(self, level2_project: Path) -> None:
         """After MAX_CALLS total calls, breaker triggers regardless of file changes."""
@@ -363,6 +432,9 @@ class TestCircuitBreaker:
 class TestScoreToolHelper:
     """Test the score_tool helper function directly."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     @requires_rules
     def test_returns_score_dict(self, level2_project: Path) -> None:
         from reporails_cli.interfaces.mcp.tools import score_tool
@@ -371,6 +443,9 @@ class TestScoreToolHelper:
         assert "total_findings" in result or "offline" in result
         assert "error" not in result
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_missing_path_returns_error(self) -> None:
         from reporails_cli.interfaces.mcp.tools import score_tool
 
@@ -391,15 +466,27 @@ class TestVerdictParsing:
 
         return _parse_verdict_string(s)
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_short_rule_id(self) -> None:
         assert self._parse("S1:CLAUDE.md:pass:OK") == ("S1", "CLAUDE.md", "pass", "OK")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_short_rule_id_fail(self) -> None:
         assert self._parse("C2:CLAUDE.md:fail:Missing") == ("C2", "CLAUDE.md", "fail", "Missing")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_coordinate_rule_id(self) -> None:
         assert self._parse("CORE:S:0001:CLAUDE.md:pass:Good") == ("CORE:S:0001", "CLAUDE.md", "pass", "Good")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_coordinate_rule_id_fail(self) -> None:
         assert self._parse("AILS:C:0002:.claude/rules/foo.md:fail:Bad") == (
             "AILS:C:0002",
@@ -408,10 +495,16 @@ class TestVerdictParsing:
             "Bad",
         )
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_short_with_line_number(self) -> None:
         """Line number in location must not be confused with verdict."""
         assert self._parse("S1:CLAUDE.md:42:pass:Has line") == ("S1", "CLAUDE.md:42", "pass", "Has line")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_coordinate_with_line_number(self) -> None:
         """Coordinate ID + line number in location must parse correctly."""
         assert self._parse("CORE:S:0001:CLAUDE.md:42:pass:Has line") == (
@@ -421,23 +514,41 @@ class TestVerdictParsing:
             "Has line",
         )
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_colons_in_reason(self) -> None:
         """Colons in the reason field should be preserved."""
         assert self._parse("S1:CLAUDE.md:pass:reason:with:colons") == ("S1", "CLAUDE.md", "pass", "reason:with:colons")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_empty_string(self) -> None:
         assert self._parse("") == ("", "", "", "")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_garbage(self) -> None:
         assert self._parse("garbage") == ("", "", "", "")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_just_colons(self) -> None:
         assert self._parse(":::") == ("", "", "", "")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_invalid_verdict_value(self) -> None:
         """Verdict must be 'pass' or 'fail'."""
         assert self._parse("S1:CLAUDE.md:maybe:unsure") == ("", "", "", "")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_no_location(self) -> None:
         """Missing location should return empty."""
         _rule_id, location, _verdict, _reason = self._parse("S1::pass:no loc")
@@ -463,19 +574,31 @@ class TestScanDeltaResilience:
         FakePrev.level = prev_level  # type: ignore[attr-defined]
         return ScanDelta.compute(5.0, "L3", 2, FakePrev())  # type: ignore[arg-type]
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_normal_level(self) -> None:
         d = self._compute("L2")
         assert d.level_improved is True
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_truncated_level(self) -> None:
         """'L' with no digit must not crash."""
         d = self._compute("L")
         assert d is not None  # No IndexError
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_empty_level(self) -> None:
         d = self._compute("")
         assert d is not None
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
     def test_garbage_level(self) -> None:
         d = self._compute("garbage")
         assert d is not None

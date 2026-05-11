@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from reporails_cli.core.cache import (
     ProjectAnalytics,
     ProjectCache,
@@ -26,6 +28,8 @@ from reporails_cli.core.cache import (
 
 
 class TestContentHash:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_deterministic_hash(self, tmp_path: Path) -> None:
         f = tmp_path / "test.md"
         f.write_text("hello world")
@@ -42,18 +46,24 @@ class TestContentHash:
 
 
 class TestGetProjectId:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_with_git_remote(self, tmp_path: Path) -> None:
         with patch("reporails_cli.core.analytics.get_git_remote", return_value="git@github.com:org/repo.git"):
             pid = get_project_id(tmp_path)
         assert len(pid) == 12
         assert pid.isalnum()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_without_git_remote(self, tmp_path: Path) -> None:
         with patch("reporails_cli.core.analytics.get_git_remote", return_value=None):
             pid = get_project_id(tmp_path)
         assert len(pid) == 12
         assert pid.isalnum()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_different_remotes_different_ids(self, tmp_path: Path) -> None:
         with patch("reporails_cli.core.analytics.get_git_remote", return_value="git@github.com:org/a.git"):
             id_a = get_project_id(tmp_path)
@@ -63,6 +73,8 @@ class TestGetProjectId:
 
 
 class TestGetProjectName:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_returns_directory_name(self, tmp_path: Path) -> None:
         name = get_project_name(tmp_path)
         assert name == tmp_path.resolve().name
@@ -74,6 +86,8 @@ class TestGetProjectName:
 
 
 class TestProjectCacheFileMap:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_round_trip(self, tmp_path: Path) -> None:
         cache = ProjectCache(tmp_path)
         # Create real files so get_cached_files validation passes
@@ -89,10 +103,14 @@ class TestProjectCacheFileMap:
         assert loaded["count"] == 2
         assert set(loaded["files"]) == {"a.md", "b.md"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_returns_none_on_missing(self, tmp_path: Path) -> None:
         cache = ProjectCache(tmp_path)
         assert cache.load_file_map() is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_returns_none_on_corrupt_json(self, tmp_path: Path) -> None:
         cache = ProjectCache(tmp_path)
         cache.ensure_dir()
@@ -106,6 +124,8 @@ class TestProjectCacheFileMap:
 
 
 class TestProjectCacheJudgment:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_set_then_get_hit(self, tmp_path: Path) -> None:
         cache = ProjectCache(tmp_path)
         results = {"C6": {"verdict": "pass", "reason": "ok"}}
@@ -114,6 +134,8 @@ class TestProjectCacheJudgment:
         cached = cache.get_cached_judgment("CLAUDE.md", "sha256:abc123")
         assert cached == results
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_get_with_wrong_hash_miss(self, tmp_path: Path) -> None:
         cache = ProjectCache(tmp_path)
         results = {"C6": {"verdict": "pass", "reason": "ok"}}
@@ -122,6 +144,8 @@ class TestProjectCacheJudgment:
         cached = cache.get_cached_judgment("CLAUDE.md", "sha256:DIFFERENT")
         assert cached is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_get_missing_file_returns_none(self, tmp_path: Path) -> None:
         cache = ProjectCache(tmp_path)
         assert cache.get_cached_judgment("nope.md", "sha256:x") is None
@@ -133,6 +157,8 @@ class TestProjectCacheJudgment:
 
 
 class TestProjectAnalytics:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_save_load_round_trip(self, tmp_path: Path) -> None:
         analytics = ProjectAnalytics(
             project_id="abc123def456",
@@ -153,10 +179,14 @@ class TestProjectAnalytics:
         assert loaded.project_name == "test-project"
         assert loaded.scan_count == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_load_returns_none_on_missing(self, tmp_path: Path) -> None:
         with patch("reporails_cli.core.analytics.get_analytics_dir", return_value=tmp_path):
             assert load_project_analytics("nonexistent") is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_load_returns_none_on_corrupt(self, tmp_path: Path) -> None:
         (tmp_path / "bad.json").write_text("not json")
         with patch("reporails_cli.core.analytics.get_analytics_dir", return_value=tmp_path):
@@ -184,6 +214,8 @@ class TestRecordScan:
                 instruction_files=1,
             )
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_creates_new_analytics(self, tmp_path: Path) -> None:
         target = tmp_path / "project"
         target.mkdir()
@@ -198,6 +230,8 @@ class TestRecordScan:
         assert data["scan_count"] == 1
         assert len(data["history"]) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_appends_to_existing(self, tmp_path: Path) -> None:
         target = tmp_path / "project"
         target.mkdir()
@@ -212,6 +246,8 @@ class TestRecordScan:
         assert data["scan_count"] == 2
         assert len(data["history"]) == 2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_caps_at_100_entries(self, tmp_path: Path) -> None:
         target = tmp_path / "project"
         target.mkdir()

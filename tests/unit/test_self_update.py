@@ -10,6 +10,8 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from reporails_cli.core.self_update import (
     InstallMethod,
     _build_upgrade_command,
@@ -29,6 +31,8 @@ from reporails_cli.core.self_update import (
 
 
 class TestDetectInstallMethod:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_dev_install_detected(self) -> None:
         """Editable installs should return DEV."""
         mock_dist = MagicMock()
@@ -38,6 +42,8 @@ class TestDetectInstallMethod:
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.DEV
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_uv_installer(self) -> None:
         """INSTALLER=uv should return UV."""
         mock_dist = MagicMock()
@@ -49,6 +55,8 @@ class TestDetectInstallMethod:
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.UV
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pip_installer(self) -> None:
         """INSTALLER=pip should return PIP."""
         mock_dist = MagicMock()
@@ -60,6 +68,8 @@ class TestDetectInstallMethod:
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIP
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pipx_location(self) -> None:
         """Dist path containing 'pipx' should return PIPX."""
         mock_dist = MagicMock()
@@ -76,11 +86,15 @@ class TestDetectInstallMethod:
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIPX
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_distribution_not_found(self) -> None:
         """Missing package should return UNKNOWN."""
         with patch("reporails_cli.core.self_update.distribution", side_effect=Exception("not found")):
             assert detect_install_method() == InstallMethod.UNKNOWN
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_no_installer_file_defaults_to_pip(self) -> None:
         """When INSTALLER is None, default to PIP."""
         mock_dist = MagicMock()
@@ -89,6 +103,8 @@ class TestDetectInstallMethod:
         with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIP
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_corrupt_direct_url_falls_through(self) -> None:
         """Corrupt direct_url.json should not crash, falls through to INSTALLER."""
         mock_dist = MagicMock()
@@ -107,30 +123,42 @@ class TestDetectInstallMethod:
 
 
 class TestBuildUpgradeCommand:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_uv_latest(self) -> None:
         cmd = _build_upgrade_command(InstallMethod.UV, None)
         assert cmd[:2] == ["uv", "pip"]
         assert "--refresh-package" in cmd
         assert "reporails-cli" in cmd
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_uv_pinned(self) -> None:
         cmd = _build_upgrade_command(InstallMethod.UV, "1.0.0")
         assert "reporails-cli==1.0.0" in cmd
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pip_latest(self) -> None:
         cmd = _build_upgrade_command(InstallMethod.PIP, None)
         assert "--no-cache-dir" in cmd
         assert "--upgrade" in cmd
         assert "reporails-cli" in cmd
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pip_pinned(self) -> None:
         cmd = _build_upgrade_command(InstallMethod.PIP, "2.0.0")
         assert "reporails-cli==2.0.0" in cmd
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pipx_latest(self) -> None:
         cmd = _build_upgrade_command(InstallMethod.PIPX, None)
         assert cmd == ["pipx", "upgrade", "reporails-cli"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pipx_pinned(self) -> None:
         cmd = _build_upgrade_command(InstallMethod.PIPX, "1.5.0")
         assert cmd == ["pipx", "install", "--force", "reporails-cli==1.5.0"]
@@ -142,6 +170,8 @@ class TestBuildUpgradeCommand:
 
 
 class TestVerifyInstalledVersion:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_success(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -149,12 +179,16 @@ class TestVerifyInstalledVersion:
         with patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_result):
             assert _verify_installed_version() == "1.2.3"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_failure_returns_none(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 1
         with patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_result):
             assert _verify_installed_version() is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_exception_returns_none(self) -> None:
         with patch("reporails_cli.core.self_update.subprocess.run", side_effect=OSError("boom")):
             assert _verify_installed_version() is None
@@ -166,6 +200,8 @@ class TestVerifyInstalledVersion:
 
 
 class TestUpgradeCli:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_dev_install_refuses(self) -> None:
         """Dev installs should return without running subprocess."""
         with (
@@ -177,6 +213,8 @@ class TestUpgradeCli:
         assert result.method == InstallMethod.DEV
         assert "uv sync" in result.message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_unknown_method_refuses(self) -> None:
         with (
             patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.UNKNOWN),
@@ -187,6 +225,8 @@ class TestUpgradeCli:
         assert result.method == InstallMethod.UNKNOWN
         assert "manually" in result.message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_already_at_latest(self) -> None:
         with (
             patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
@@ -198,6 +238,8 @@ class TestUpgradeCli:
         assert result.updated is False
         assert "Already at" in result.message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_pypi_unreachable(self) -> None:
         with (
             patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
@@ -208,6 +250,8 @@ class TestUpgradeCli:
         assert result.updated is False
         assert "PyPI" in result.message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_successful_upgrade(self) -> None:
         mock_run = MagicMock()
         mock_run.returncode = 0
@@ -227,6 +271,8 @@ class TestUpgradeCli:
         assert result.new_version == "0.2.0"
         assert result.method == InstallMethod.UV
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_subprocess_failure(self) -> None:
         mock_run = MagicMock()
         mock_run.returncode = 1
@@ -243,6 +289,8 @@ class TestUpgradeCli:
         assert result.updated is False
         assert "Permission denied" in result.message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_subprocess_timeout(self) -> None:
         with (
             patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
@@ -258,6 +306,8 @@ class TestUpgradeCli:
         assert result.updated is False
         assert "timed out" in result.message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_explicit_target_version(self) -> None:
         """When target_version is passed, skip PyPI fetch."""
         mock_run = MagicMock()
@@ -284,6 +334,8 @@ class TestUpgradeCli:
 class TestFormatUpdateMessageCliFlag:
     """Verify the message now tells users to run `ails update --cli`."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_cli_update_shows_cli_flag(self) -> None:
         from reporails_cli.core.update_check import UpdateNotification, format_update_message
 
@@ -291,6 +343,8 @@ class TestFormatUpdateMessageCliFlag:
         msg = format_update_message(n)
         assert "ails update --cli" in msg
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_rules_update_shows_plain_update(self) -> None:
         from reporails_cli.core.update_check import UpdateNotification, format_update_message
 
@@ -299,6 +353,8 @@ class TestFormatUpdateMessageCliFlag:
         assert "ails update" in msg
         assert "--cli" not in msg
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_both_updates_shows_both_commands(self) -> None:
         from reporails_cli.core.update_check import UpdateNotification, format_update_message
 

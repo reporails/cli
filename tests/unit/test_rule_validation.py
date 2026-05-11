@@ -8,12 +8,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import create_temp_rule_file
 
 
 class TestPatternOperators:
     """Test that all pattern operators are handled correctly."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_pattern_regex_matches(self, tmp_path: Path) -> None:
         """Simple pattern-regex should match content."""
         from reporails_cli.core.regex import run_validation
@@ -37,6 +41,8 @@ checks:
         results = result["runs"][0]["results"]
         assert len(results) > 0, "pattern-regex should find TODO"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_pattern_either_matches_any(self, tmp_path: Path) -> None:
         """pattern-either should match if any sub-pattern matches."""
         from reporails_cli.core.regex import run_validation
@@ -63,6 +69,8 @@ checks:
         results = result["runs"][0]["results"]
         assert len(results) > 0, "pattern-either should match 'jest'"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_patterns_block_with_not_regex(self, tmp_path: Path) -> None:
         """patterns block with pattern-not-regex (AND + negation)."""
         from reporails_cli.core.regex import run_validation
@@ -90,6 +98,8 @@ checks:
         results = result["runs"][0]["results"]
         assert len(results) > 0, "patterns block should match file without ## Commands"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_patterns_block_negation_suppresses(self, tmp_path: Path) -> None:
         """patterns block with pattern-not-regex should NOT match when negation hits."""
         from reporails_cli.core.regex import run_validation
@@ -117,6 +127,8 @@ checks:
         results = result["runs"][0]["results"]
         assert len(results) == 0, "pattern-not-regex should suppress match when ## Commands exists"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_pattern_operator_skipped(self, tmp_path: Path) -> None:
         """Rule with no recognized pattern operator should be skipped."""
         from reporails_cli.core.regex import run_validation
@@ -140,6 +152,8 @@ checks:
 class TestPathFiltering:
     """Test that path include filters work correctly."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_path_filter_includes_matching(self, tmp_path: Path) -> None:
         """Files matching path include patterns should be scanned."""
         from reporails_cli.core.regex import run_validation
@@ -167,6 +181,8 @@ checks:
         assert any(".md" in u for u in uris), "Should match .md file"
         assert not any(".txt" in u for u in uris), "Should not match .txt file"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_path_filter_scans_all_md(self, tmp_path: Path) -> None:
         """Rules without path filters should scan all markdown files."""
         from reporails_cli.core.regex import run_validation
@@ -191,6 +207,8 @@ checks:
 class TestLineNumbers:
     """Test that line numbers are correctly reported."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_line_number_accuracy(self, tmp_path: Path) -> None:
         """Line numbers in SARIF results should be accurate."""
         from reporails_cli.core.regex import run_validation

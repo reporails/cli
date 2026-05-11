@@ -64,6 +64,8 @@ def _make_result(
 class TestSeverityMapping:
     """Test _severity_to_command mapping."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     @pytest.mark.parametrize(
         "severity, expected",
         [
@@ -80,6 +82,8 @@ class TestSeverityMapping:
 class TestLocationParsing:
     """Test file:line parsing from violation location."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     @pytest.mark.parametrize(
         "location, expected_fragment",
         [
@@ -100,6 +104,8 @@ class TestLocationParsing:
 class TestEscaping:
     """Test special character escaping in workflow commands."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     @pytest.mark.parametrize(
         "input_str, expected",
         [
@@ -114,6 +120,8 @@ class TestEscaping:
     def test_escape_workflow_property(self, input_str: str, expected: str) -> None:
         assert github_formatter._escape_workflow_property(input_str) == expected
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     @pytest.mark.parametrize(
         "input_str, expected",
         [
@@ -126,6 +134,8 @@ class TestEscaping:
     def test_escape_workflow_data(self, input_str: str, expected: str) -> None:
         assert github_formatter._escape_workflow_data(input_str) == expected
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_title_with_special_chars(self) -> None:
         v = _make_violation(
             rule_id="CORE:S:0012",
@@ -137,11 +147,15 @@ class TestEscaping:
         # Colons in rule_id should be escaped in title property
         assert "[CORE%3AS%3A0012]" in output
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_percent_in_message_escaped_before_other_chars(self) -> None:
         """Percent must be escaped first to avoid double-escaping."""
         result = github_formatter._escape_workflow_data("100%\n")
         assert result == "100%25%0A"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_percent_in_property_escaped_before_other_chars(self) -> None:
         result = github_formatter._escape_workflow_property("100%\n:")
         assert result == "100%25%0A%3A"
@@ -150,11 +164,15 @@ class TestEscaping:
 class TestAnnotations:
     """Test format_annotations output."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_empty_violations_returns_empty(self) -> None:
         result = _make_result(violations=())
         output = github_formatter.format_annotations(result)
         assert output == ""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_single_violation_format(self) -> None:
         v = _make_violation(
             rule_id="CORE:S:0012",
@@ -170,6 +188,8 @@ class TestAnnotations:
         assert "line=45" in output
         assert "Multi-step procedure found" in output
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_multiple_violations_one_per_line(self) -> None:
         v1 = _make_violation(severity=Severity.HIGH, location="a.md:1")
         v2 = _make_violation(severity=Severity.MEDIUM, location="b.md:2")
@@ -180,6 +200,8 @@ class TestAnnotations:
         assert lines[0].startswith("::error ")
         assert lines[1].startswith("::warning ")
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_warning_severity(self) -> None:
         v = _make_violation(severity=Severity.LOW)
         result = _make_result(violations=(v,))
@@ -190,6 +212,8 @@ class TestAnnotations:
 class TestFormatResult:
     """Test full format_result output (annotations + JSON)."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_json_line_is_last(self) -> None:
         v = _make_violation()
         result = _make_result(violations=(v,))
@@ -199,6 +223,8 @@ class TestFormatResult:
         assert "score" in data
         assert "level" in data
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_json_line_contains_score_and_level(self) -> None:
         result = _make_result(score=8.5, level=Level.L4)
         output = github_formatter.format_result(result)
@@ -207,6 +233,8 @@ class TestFormatResult:
         assert data["score"] == 8.5
         assert data["level"] == "L4"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_empty_violations_only_json(self) -> None:
         result = _make_result(violations=())
         output = github_formatter.format_result(result)
@@ -215,6 +243,8 @@ class TestFormatResult:
         data = json.loads(lines[0])
         assert data["violations"] == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_delta_included_in_json(self) -> None:
         result = _make_result(score=7.5)
         delta = ScanDelta(
@@ -229,6 +259,8 @@ class TestFormatResult:
         assert data["score_delta"] == 0.5
         assert data["level_previous"] == "L2"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_annotations_before_json(self) -> None:
         v = _make_violation(location="CLAUDE.md:10")
         result = _make_result(violations=(v,))

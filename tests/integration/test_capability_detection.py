@@ -33,18 +33,24 @@ def _ft(
 class TestProjectLevelDetermination:
     """Test project level determination from file type properties."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_no_files_is_l0(self, tmp_path: Path) -> None:
         """No files → L0."""
         level, present = determine_project_level(tmp_path, [], [])
         assert level == Level.L0
         assert present == set()
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_main_only_is_l1(self, tmp_path: Path) -> None:
         """Main file with baseline properties → L1."""
         classified = [_cf("main")]
         level, _ = determine_project_level(tmp_path, [], classified)
         assert level == Level.L1
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     @pytest.mark.parametrize(
         "depth, expected_level",
         [
@@ -73,6 +79,8 @@ class TestProjectLevelDetermination:
         level, _ = determine_project_level(tmp_path, [], classified)
         assert level == expected_level
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_max_depth_wins(self, tmp_path: Path) -> None:
         """Level is driven by the type with most divergences."""
         classified = [
@@ -87,6 +95,8 @@ class TestProjectLevelDetermination:
 class TestProjectLevelDeterminism:
     """Test that project level determination is deterministic."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_same_input_same_output(self, tmp_path: Path) -> None:
         """Same files always give same level."""
         classified = [

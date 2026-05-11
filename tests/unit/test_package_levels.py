@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from reporails_cli.core.applicability import get_applicable_rules
 from reporails_cli.core.models import Category, FileMatch, Rule, RuleType
 
@@ -21,6 +23,8 @@ def _make_rule(rule_id: str, match_type: str = "main") -> Rule:
 class TestGetApplicableRulesTargetFiltering:
     """Test target-existence-based applicability filtering."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_rule_included_when_target_present(self) -> None:
         """A rule targeting 'main' is included when 'main' is present."""
         rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "main")}
@@ -29,6 +33,8 @@ class TestGetApplicableRulesTargetFiltering:
 
         assert "CORE:S:0001" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_rule_excluded_when_target_absent(self) -> None:
         """A rule targeting 'config' is excluded when 'config' is not present."""
         rules = {"CORE:S:0001": _make_rule("CORE:S:0001", "config")}
@@ -37,6 +43,8 @@ class TestGetApplicableRulesTargetFiltering:
 
         assert "CORE:S:0001" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_supersession_drops_superseded_rule(self) -> None:
         """If rule A supersedes rule B, and both are applicable, B is dropped."""
         rule_a = _make_rule("CORE:S:0010").model_copy(update={"supersedes": "CORE:S:0001"})

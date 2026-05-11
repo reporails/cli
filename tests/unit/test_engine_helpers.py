@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.core.cache import ProjectCache, content_hash
 from reporails_cli.core.engine_helpers import _filter_cached_judgments
 from reporails_cli.core.models import JudgmentRequest, Severity, Violation
@@ -53,6 +55,9 @@ def _make_violation(
 
 
 class TestFilterCachedJudgments:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_runtime
     def test_use_cache_false_returns_unchanged(self, tmp_path: Path) -> None:
         """When use_cache=False, inputs are returned as-is."""
         requests = [_make_request()]
@@ -69,6 +74,9 @@ class TestFilterCachedJudgments:
         assert result_reqs is requests
         assert result_viols is violations
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_runtime
     def test_empty_requests_returns_unchanged(self, tmp_path: Path) -> None:
         """When no judgment requests, returns ([], violations) unchanged."""
         violations = [_make_violation()]
@@ -84,6 +92,9 @@ class TestFilterCachedJudgments:
         assert result_reqs == []
         assert result_viols is violations
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_runtime
     def test_cache_hit_pass_filters_out_request(self, tmp_path: Path) -> None:
         """Cache hit with pass verdict filters the request out, no violation added."""
         # Create the instruction file
@@ -113,6 +124,9 @@ class TestFilterCachedJudgments:
         assert result_reqs == []
         assert result_viols == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_runtime
     def test_cache_hit_fail_adds_violation(self, tmp_path: Path) -> None:
         """Cache hit with non-pass verdict filters the request and adds a violation."""
         md_file = tmp_path / "CLAUDE.md"
@@ -148,6 +162,9 @@ class TestFilterCachedJudgments:
         assert v.severity == Severity.HIGH
         assert v.message == "missing context"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_runtime
     def test_cache_miss_keeps_request(self, tmp_path: Path) -> None:
         """Cache miss (no cached judgment) keeps the request in filtered list."""
         md_file = tmp_path / "CLAUDE.md"
@@ -168,6 +185,9 @@ class TestFilterCachedJudgments:
         assert result_reqs[0] is request
         assert result_viols == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_runtime
     def test_file_deleted_keeps_request(self, tmp_path: Path) -> None:
         """If the file no longer exists (OSError from content_hash), request is kept."""
         # Point location at a file that does not exist

@@ -24,6 +24,8 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="symlinks requir
 class TestResolveSymlinkedFiles:
     """Test resolve_symlinked_files() helper."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_symlinks_returns_empty(self, tmp_path: Path) -> None:
         """Regular files → no resolved symlinks."""
         project = tmp_path / "project"
@@ -34,6 +36,8 @@ class TestResolveSymlinkedFiles:
 
         assert result == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_external_symlink_detected(self, tmp_path: Path) -> None:
         """CLAUDE.md symlink to file outside project → detected."""
         project = tmp_path / "project"
@@ -52,6 +56,8 @@ class TestResolveSymlinkedFiles:
         assert len(result) == 1
         assert result[0] == external.resolve()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_internal_symlink_not_included(self, tmp_path: Path) -> None:
         """CLAUDE.md symlink to file within project → NOT included."""
         project = tmp_path / "project"
@@ -70,6 +76,8 @@ class TestResolveSymlinkedFiles:
         # Internal symlinks are handled by OpenGrep, so not included
         assert result == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_broken_symlink_ignored(self, tmp_path: Path) -> None:
         """Broken symlink → ignored, no crash."""
         project = tmp_path / "project"
@@ -82,6 +90,8 @@ class TestResolveSymlinkedFiles:
 
         assert result == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_circular_symlink_warns(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Circular symlink → skipped with warning log."""
         import logging
@@ -101,6 +111,8 @@ class TestResolveSymlinkedFiles:
         assert result == []
         assert any("Circular symlink detected" in msg for msg in caplog.messages)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_instruction_files_returns_empty(self, tmp_path: Path) -> None:
         """Project with no instruction files → empty list."""
         project = tmp_path / "project"
@@ -114,6 +126,8 @@ class TestResolveSymlinkedFiles:
 class TestSymlinkFeatureDetection:
     """Test symlink handling in detect_features_filesystem."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_symlinked_claude_md_detected_as_existing(self, tmp_path: Path) -> None:
         """Symlinked CLAUDE.md (external target) is detected as existing."""
         project = tmp_path / "project"
@@ -130,6 +144,8 @@ class TestSymlinkFeatureDetection:
         assert features.has_claude_md is True
         assert features.has_instruction_file is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_resolved_symlinks_stored_in_features(self, tmp_path: Path) -> None:
         """External symlinks are stored in features.resolved_symlinks."""
         project = tmp_path / "project"
@@ -146,6 +162,8 @@ class TestSymlinkFeatureDetection:
         assert len(features.resolved_symlinks) == 1
         assert features.resolved_symlinks[0] == external.resolve()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_symlinks_empty_resolved(self, tmp_path: Path) -> None:
         """Regular project has empty resolved_symlinks."""
         project = tmp_path / "project"
@@ -160,6 +178,8 @@ class TestSymlinkFeatureDetection:
 class TestRegexExtraTargets:
     """Test extra_targets parameter in regex run_validation."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_extra_targets_scanned(self, tmp_path: Path) -> None:
         """Extra targets should be included in the scan."""
         # Create a rule that matches "SHARED_CONTENT"
@@ -197,6 +217,8 @@ checks:
         results = sarif.get("runs", [{}])[0].get("results", [])
         assert len(results) > 0, "Extra target file should be scanned and matched"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_extra_targets_none_is_noop(self, tmp_path: Path) -> None:
         """No extra_targets → only main target scanned."""
         yml_file = tmp_path / "test.yml"

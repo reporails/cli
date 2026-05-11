@@ -159,6 +159,8 @@ def _finding_files(data: dict) -> set[str]:
 class TestDefaultAgentCoreOnly:
     """No --agent flag must apply core rules and produce real violations."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_core_rules_produce_violations(self, generic_only: Path) -> None:
         """Without --agent, core rules must produce violations on fixture content.
@@ -173,6 +175,8 @@ class TestDefaultAgentCoreOnly:
             f"Zero findings on generic_only fixture — core rules not matching files. stats={data.get('stats', {})}"
         )
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_findings_exist(self, generic_only: Path) -> None:
         """Fixture content has known gaps; must produce findings.
@@ -183,6 +187,8 @@ class TestDefaultAgentCoreOnly:
         total = data.get("stats", {}).get("total_findings", 0)
         assert total > 0, "Zero findings on generic_only fixture — rules are loaded but not matching content"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_no_agent_core_rules_present(self, generic_only: Path) -> None:
         """Without --agent, CORE rules must be present in findings."""
@@ -190,6 +196,8 @@ class TestDefaultAgentCoreOnly:
         namespaces = _finding_namespaces(data)
         assert "CORE" in namespaces, f"CORE namespace missing without --agent: {namespaces}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_no_agent_and_explicit_agent_both_produce_findings(self, claude_only: Path) -> None:
         """Both auto-detect and explicit --agent must produce findings.
@@ -202,6 +210,8 @@ class TestDefaultAgentCoreOnly:
         assert len(_all_findings(data_no_agent)) > 0, "Auto-detect produced zero findings"
         assert len(_all_findings(data_with_agent)) > 0, "--agent claude produced zero findings"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_files_detected(self, generic_only: Path) -> None:
         """Without --agent, auto-detect must find AGENTS.md and produce findings."""
@@ -218,26 +228,36 @@ class TestDefaultAgentCoreOnly:
 class TestAgentFileTargeting:
     """--agent flag must scope file discovery to the correct instruction file."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_claude_finds_claude_md(self, claude_only: Path) -> None:
         data = _check_json(claude_only, agent="claude")
         assert len(data.get("files", {})) > 0, "--agent claude should detect CLAUDE.md"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_codex_finds_agents_md(self, codex_only: Path) -> None:
         data = _check_json(codex_only, agent="codex")
         assert len(data.get("files", {})) > 0, "--agent codex should detect AGENTS.md"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_copilot_finds_its_file(self, copilot_only: Path) -> None:
         data = _check_json(copilot_only, agent="copilot")
         assert len(data.get("files", {})) > 0, "--agent copilot should detect copilot-instructions.md"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_wrong_agent_claude_on_codex(self, codex_only: Path) -> None:
         """--agent claude on a codex-only project must find no files."""
         output = _check_text(codex_only, agent="claude")
         assert "No instruction files found" in output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_wrong_agent_codex_on_claude(self, claude_only: Path) -> None:
         """--agent codex on a claude-only project must find no files."""
         output = _check_text(claude_only, agent="codex")
@@ -257,6 +277,8 @@ class TestAgentFileTargeting:
 class TestCrossAgentContamination:
     """Agent-scoped validation must never leak rules from other agents."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_codex_no_claude_rules(self, codex_only: Path) -> None:
         """--agent codex must produce findings, none from CLAUDE namespace."""
@@ -266,6 +288,8 @@ class TestCrossAgentContamination:
         claude_rules = {f["rule"] for f in findings if f["rule"].startswith("CLAUDE:")}
         assert not claude_rules, f"CLAUDE rules fired under --agent codex: {claude_rules}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_claude_no_other_agent_rules(self, claude_only: Path) -> None:
         """--agent claude must produce findings, none from other agent namespaces."""
@@ -275,6 +299,8 @@ class TestCrossAgentContamination:
         foreign = {f["rule"] for f in findings if f["rule"].split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "GEMINI")}
         assert not foreign, f"Foreign agent rules fired under --agent claude: {foreign}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_no_agent_multi_project_core_present(self, multi_agent: Path) -> None:
         """No --agent on a multi-agent project must produce findings with CORE rules."""
@@ -294,19 +320,27 @@ class TestCrossAgentContamination:
 class TestHintMessages:
     """Empty-project hints must name the correct instruction file per agent."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_no_agent_hints_agents_md(self, empty_dir: Path) -> None:
         output = _check_text(empty_dir)
         assert "AGENTS.md" in output, "Default hint should reference AGENTS.md"
         assert "CLAUDE.md" not in output, "Default hint must not reference CLAUDE.md"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_claude_hints_claude_md(self, empty_dir: Path) -> None:
         output = _check_text(empty_dir, agent="claude")
         assert "CLAUDE.md" in output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_codex_hints_agents_md(self, empty_dir: Path) -> None:
         output = _check_text(empty_dir, agent="codex")
         assert "AGENTS.md" in output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_copilot_hints_its_file(self, empty_dir: Path) -> None:
         output = _check_text(empty_dir, agent="copilot")
         assert "copilot-instructions.md" in output
@@ -321,6 +355,8 @@ class TestHintMessages:
 class TestMultiAgentProject:
     """Multi-agent projects must scope correctly per --agent flag."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_no_agent_scans_all_on_mixed_signals(self, multi_agent: Path) -> None:
         """Without --agent on multi-agent project, mixed signals → scan all instruction files."""
@@ -332,6 +368,8 @@ class TestMultiAgentProject:
         # Mixed signals: claude + copilot → scan all instruction files with core rules
         assert "CLAUDE.md" in files, f"Mixed signals should scan CLAUDE.md, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_agent_claude_scopes_to_claude_md(self, multi_agent: Path) -> None:
         """--agent claude on multi-agent project should scope to CLAUDE.md."""
@@ -343,6 +381,8 @@ class TestMultiAgentProject:
         foreign = {ns for ns in namespaces if ":" in ns} - {"CORE", "RRAILS", "CLAUDE"}
         assert not foreign, f"Non-Claude namespaced rules fired with --agent claude: {foreign}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_agent_codex_scopes_to_agents_md(self, multi_agent: Path) -> None:
         """--agent codex on multi-agent project should scope to AGENTS.md."""
@@ -366,6 +406,8 @@ class TestMultiAgentProject:
 class TestViolationLocationAccuracy:
     """Violation locations must reference the correct file, not a wrong one."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_claude_findings_reference_claude_md(self, claude_only: Path) -> None:
         """--agent claude findings must include CLAUDE.md (may also include infrastructure files)."""
@@ -375,6 +417,8 @@ class TestViolationLocationAccuracy:
         files = _finding_files(data)
         assert "CLAUDE.md" in files, f"Expected CLAUDE.md in findings, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_codex_findings_reference_agents_md(self, codex_only: Path) -> None:
         """--agent codex findings must include AGENTS.md (may also include infrastructure files)."""
@@ -384,6 +428,8 @@ class TestViolationLocationAccuracy:
         files = _finding_files(data)
         assert "AGENTS.md" in files, f"Expected AGENTS.md in findings, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_multi_agent_claude_only_claude_md(self, multi_agent: Path) -> None:
         """--agent claude on multi-agent project: findings include CLAUDE.md, not AGENTS.md."""
@@ -394,6 +440,8 @@ class TestViolationLocationAccuracy:
         assert "CLAUDE.md" in files, f"Expected CLAUDE.md in findings, got: {files}"
         assert "AGENTS.md" not in files, f"AGENTS.md should not appear with --agent claude, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_multi_agent_codex_only_agents_md(self, multi_agent: Path) -> None:
         """--agent codex on multi-agent project: findings include AGENTS.md, not CLAUDE.md."""
@@ -404,6 +452,8 @@ class TestViolationLocationAccuracy:
         assert "AGENTS.md" in files, f"Expected AGENTS.md in findings, got: {files}"
         assert "CLAUDE.md" not in files, f"CLAUDE.md should not appear with --agent codex, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_generic_findings_reference_agents_md(self, generic_only: Path) -> None:
         """No --agent on generic project: findings must exist and reference AGENTS.md."""
@@ -423,6 +473,8 @@ class TestViolationLocationAccuracy:
 class TestEmptyAgentString:
     """--agent '' must behave identically to no --agent flag."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_empty_string_detects_files(self, generic_only: Path) -> None:
         """--agent '' should auto-detect like no flag."""
@@ -431,6 +483,8 @@ class TestEmptyAgentString:
         assert set(data_no_flag.get("files", {}).keys()) == set(data_empty.get("files", {}).keys())
         assert data_no_flag.get("stats", {}).get("total_findings") == data_empty.get("stats", {}).get("total_findings")
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_empty_string_core_rules_present(self, generic_only: Path) -> None:
         """--agent '' must fire CORE rules."""
@@ -438,6 +492,8 @@ class TestEmptyAgentString:
         namespaces = _finding_namespaces(data)
         assert "CORE" in namespaces, f"CORE rules missing with --agent '': {namespaces}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_empty_string_hint_agents_md(self, empty_dir: Path) -> None:
         """--agent '' on empty project should hint AGENTS.md, not CLAUDE.md."""
         output = _check_text(empty_dir, agent="")
@@ -454,6 +510,8 @@ class TestEmptyAgentString:
 class TestNestedFileDiscovery:
     """Instruction files in subdirectories must be discovered and scanned."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_nested_claude_md_detected(self, nested_claude: Path) -> None:
         """CLAUDE.md in a nested subdirectory must be found by --agent claude."""
@@ -463,6 +521,8 @@ class TestNestedFileDiscovery:
         files = _finding_files(data)
         assert "CLAUDE.md" in files, f"Root CLAUDE.md not in finding files: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_nested_both_files_scanned(self, nested_claude: Path) -> None:
         """Root CLAUDE.md must appear in findings; nested may be folded into root location."""
@@ -472,6 +532,8 @@ class TestNestedFileDiscovery:
         files = _finding_files(data)
         assert "CLAUDE.md" in files, f"Root CLAUDE.md missing from findings: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_nested_has_findings(self, nested_claude: Path) -> None:
         """Project with nested CLAUDE.md files must produce findings."""
@@ -488,16 +550,22 @@ class TestNestedFileDiscovery:
 class TestConfigOnlyProject:
     """Config files (.claude/settings.json) without instruction files must not false-detect."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_config_only_no_files_detected(self, config_only: Path) -> None:
         """Project with only .claude/settings.json should report no instruction files."""
         output = _check_text(config_only)
         assert "No instruction files found" in output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_config_only_no_findings(self, config_only: Path) -> None:
         """Config-only project should produce no findings."""
         data = _check_json(config_only)
         assert len(data.get("files", {})) == 0, "Config-only project should have no files with findings"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_config_only_claude_agent_no_files(self, config_only: Path) -> None:
         """--agent claude on config-only project should find no instruction files."""
         output = _check_text(config_only, agent="claude")
@@ -518,6 +586,8 @@ class TestConfigOnlyProject:
 class TestViolationDeduplication:
     """JSON output must not contain duplicate violations."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_no_duplicate_findings(self, claude_only: Path) -> None:
         """Each (rule, file, line) tuple must appear at most once."""
@@ -528,6 +598,8 @@ class TestViolationDeduplication:
             assert key not in seen, f"Duplicate finding: {key}"
             seen.add(key)
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_finding_count_consistent(self, claude_only: Path) -> None:
         """Total findings from per-file counts must match stats.total_findings."""
@@ -551,6 +623,8 @@ class TestViolationDeduplication:
 class TestGenericAgentTemplateResolution:
     """--agent generic must resolve template vars from detected files."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_generic_agent_produces_findings(self, codex_only: Path) -> None:
         """--agent generic on a project with AGENTS.md must produce findings."""
@@ -561,6 +635,8 @@ class TestGenericAgentTemplateResolution:
             f"Template context likely empty — rules can't match files. stats={data.get('stats', {})}"
         )
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_generic_agent_has_findings(self, codex_only: Path) -> None:
         """--agent generic must produce findings on imperfect content."""
@@ -580,6 +656,8 @@ class TestGenericAgentTemplateResolution:
 class TestUnknownAgentValidation:
     """Unknown --agent values must produce an error, not silent failure."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_unknown_agent_exits_2(self, claude_only: Path) -> None:
         """--agent doesnotexist must exit with code 2."""
         result = runner.invoke(
@@ -594,6 +672,8 @@ class TestUnknownAgentValidation:
         assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
         assert "Unknown agent" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_unknown_agent_shows_known_list(self, claude_only: Path) -> None:
         """Error message must list valid agents."""
         result = runner.invoke(
@@ -608,6 +688,8 @@ class TestUnknownAgentValidation:
         assert "claude" in result.output
         assert "codex" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_uppercase_agent_no_match(self, claude_only: Path) -> None:
         """--agent CLAUDE (uppercase) finds no files — agents are case-sensitive."""
         result = runner.invoke(
@@ -635,6 +717,8 @@ class TestUnknownAgentValidation:
 class TestFormatValidation:
     """Invalid -f values must produce an error, not silent fallback."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_unknown_format_falls_through(self, claude_only: Path) -> None:
         """-f sarif falls through to text output (no format validation gate)."""
         result = runner.invoke(
@@ -661,6 +745,8 @@ class TestFormatValidation:
 class TestDefaultAgentConfig:
     """default_agent in .ails/config.yml must control agent scoping."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_config_default_agent_scopes_files(self, multi_agent_with_config: Path) -> None:
         """default_agent: claude in config must scope to CLAUDE.md without --agent flag."""
@@ -669,6 +755,8 @@ class TestDefaultAgentConfig:
         assert "AGENTS.md" not in files, f"default_agent: claude should not scan AGENTS.md, got: {files}"
         assert "CLAUDE.md" in files, f"default_agent: claude should scan CLAUDE.md, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_cli_flag_overrides_config(self, multi_agent_with_config: Path) -> None:
         """--agent codex must override default_agent: claude from config."""
@@ -677,6 +765,8 @@ class TestDefaultAgentConfig:
         assert "AGENTS.md" in files, f"--agent codex should scan AGENTS.md, got: {files}"
         assert "CLAUDE.md" not in files, f"--agent codex should not scan CLAUDE.md, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_no_config_mixed_signals_scans_all(self, multi_agent: Path) -> None:
         """Without config on multi-agent project, mixed signals → scan all instruction files."""
@@ -699,6 +789,8 @@ class TestDefaultAgentConfig:
 class TestConfigSetGet:
     """ails config set/get round-trips values correctly."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_set_then_get(self, tmp_path: Path) -> None:
         """set + get round-trip for a string key."""
         project = tmp_path / "project"
@@ -710,6 +802,8 @@ class TestConfigSetGet:
         assert result.exit_code == 0
         assert "claude" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_set_bool(self, tmp_path: Path) -> None:
         """set + get round-trip for a boolean key."""
         project = tmp_path / "project"
@@ -720,6 +814,8 @@ class TestConfigSetGet:
         assert result.exit_code == 0
         assert "False" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_set_list(self, tmp_path: Path) -> None:
         """set + get round-trip for a list key."""
         project = tmp_path / "project"
@@ -730,6 +826,8 @@ class TestConfigSetGet:
         assert result.exit_code == 0
         assert "vendor" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_get_unset_key(self, tmp_path: Path) -> None:
         """get on an unset known key shows (not set)."""
         project = tmp_path / "project"
@@ -738,6 +836,8 @@ class TestConfigSetGet:
         assert result.exit_code == 0
         assert "not set" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_set_unknown_key(self, tmp_path: Path) -> None:
         """set with an unknown key exits with code 2."""
         project = tmp_path / "project"
@@ -746,6 +846,8 @@ class TestConfigSetGet:
         assert result.exit_code == 2
         assert "Unknown config key" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_get_unknown_key(self, tmp_path: Path) -> None:
         """get with an unknown key exits with code 2."""
         project = tmp_path / "project"
@@ -759,6 +861,8 @@ class TestConfigSetGet:
 class TestConfigList:
     """ails config list shows all values."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_list_no_project_config(self, tmp_path: Path) -> None:
         """list with no project config exits cleanly."""
         project = tmp_path / "project"
@@ -766,6 +870,8 @@ class TestConfigList:
         result = runner.invoke(app, ["config", "list", "--path", str(project)])
         assert result.exit_code == 0
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_list_shows_values(self, tmp_path: Path) -> None:
         """list after setting values shows them."""
         project = tmp_path / "project"
@@ -793,6 +899,8 @@ class TestConfigGlobal:
             lambda: self.global_home / "config.yml",
         )
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_global_set_then_get(self) -> None:
         """--global set + get round-trip."""
         result = runner.invoke(app, ["config", "set", "--global", "default_agent", "claude"])
@@ -803,6 +911,8 @@ class TestConfigGlobal:
         assert result.exit_code == 0
         assert "claude" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_global_set_recommended(self) -> None:
         """--global set works for boolean key."""
         result = runner.invoke(app, ["config", "set", "--global", "recommended", "false"])
@@ -812,12 +922,16 @@ class TestConfigGlobal:
         assert result.exit_code == 0
         assert "False" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_global_rejects_non_global_key(self) -> None:
         """--global set with a project-only key errors."""
         result = runner.invoke(app, ["config", "set", "--global", "exclude_dirs", "vendor"])
         assert result.exit_code == 2
         assert "not supported in global config" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_global_list(self) -> None:
         """--global list shows only global config."""
         runner.invoke(app, ["config", "set", "--global", "default_agent", "claude"])
@@ -826,12 +940,16 @@ class TestConfigGlobal:
         assert result.exit_code == 0
         assert "default_agent: claude" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_global_list_empty(self) -> None:
         """--global list with no config shows empty message."""
         result = runner.invoke(app, ["config", "list", "--global"])
         assert result.exit_code == 0
         assert "No global configuration set" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_list_annotates_global_fallback(self, tmp_path: Path) -> None:
         """project list shows global values annotated with (global)."""
         project = tmp_path / "project"
@@ -848,6 +966,8 @@ class TestConfigGlobal:
             if line.startswith("exclude_dirs:"):
                 assert "(global)" not in line, f"exclude_dirs should not be global: {line}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_project_overrides_global_in_list(self, tmp_path: Path) -> None:
         """project value wins over global — no (global) annotation."""
         project = tmp_path / "project"
@@ -875,6 +995,8 @@ class TestGlobalDefaultsInCheck:
             lambda: self.global_home / "config.yml",
         )
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_global_default_agent_scopes_check(self, tmp_path: Path) -> None:
         """Global default_agent: claude scopes ails check to CLAUDE.md."""
@@ -892,6 +1014,8 @@ class TestGlobalDefaultsInCheck:
         assert "CLAUDE.md" in files, f"global default_agent: claude should scan CLAUDE.md, got: {files}"
         assert "AGENTS.md" not in files, f"global default_agent: claude should not scan AGENTS.md, got: {files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_project_default_agent_overrides_global(self, tmp_path: Path) -> None:
         """Project default_agent overrides global — check uses project value."""
@@ -925,18 +1049,26 @@ class TestGlobalDefaultsInCheck:
 class TestVersionCommand:
     """ails version must show version info and exit cleanly."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_exits_zero(self) -> None:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0, f"version failed:\n{result.output}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_shows_cli_version(self) -> None:
         result = runner.invoke(app, ["version"])
         assert "CLI:" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_shows_install_line(self) -> None:
         result = runner.invoke(app, ["version"])
         assert "Install:" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_shows_install_method(self) -> None:
         result = runner.invoke(app, ["version"])
         assert "Install:" in result.output
@@ -954,16 +1086,22 @@ class TestVersionCommand:
 class TestExplainCommand:
     """ails explain shows rule details or errors on unknown rule."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_known_rule_exits_zero(self) -> None:
         result = runner.invoke(app, ["explain", "CORE:S:0002"])
         assert result.exit_code == 0, f"explain failed:\n{result.output}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_known_rule_shows_id(self) -> None:
         result = runner.invoke(app, ["explain", "CORE:S:0002"])
         assert "CORE:S:0002" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_known_rule_shows_category(self) -> None:
         result = runner.invoke(app, ["explain", "CORE:S:0002"])
@@ -971,10 +1109,14 @@ class TestExplainCommand:
         output_lower = result.output.lower()
         assert "category" in output_lower or "structure" in output_lower
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_unknown_rule_exits_2(self) -> None:
         result = runner.invoke(app, ["explain", "FAKE:Z:9999"])
         assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_unknown_rule_shows_error(self) -> None:
         result = runner.invoke(app, ["explain", "FAKE:Z:9999"])
         assert "unknown" in result.output.lower() or "not found" in result.output.lower()
@@ -992,10 +1134,14 @@ class TestExplainCommand:
 class TestHealCommand:
     """ails heal applies auto-fixes and reports results."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_missing_path_errors(self) -> None:
         result = runner.invoke(app, ["heal", "/tmp/no-such-path-xyz-abc-987"])
         assert result.exit_code != 0
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_heal_runs_on_project(self, tmp_path: Path) -> None:
         """heal on a minimal project exits cleanly."""
@@ -1006,6 +1152,8 @@ class TestHealCommand:
         result = runner.invoke(app, ["heal", str(project)])
         assert result.exit_code in (0, None), f"heal failed:\n{result.output}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_heal_modifies_files(self, tmp_path: Path) -> None:
         """heal must actually modify files when fixes are available."""
@@ -1019,6 +1167,8 @@ class TestHealCommand:
         # Heal should add missing sections (e.g., ## Commands, ## Testing)
         assert len(content) >= len(original), "heal should not shrink files"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_heal_json_output(self, tmp_path: Path) -> None:
         """heal -f json must produce valid JSON with expected keys."""
@@ -1032,6 +1182,8 @@ class TestHealCommand:
         assert "auto_fixed" in data
         assert "summary" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_heal_with_agent(self, tmp_path: Path) -> None:
         """heal --agent claude scopes to CLAUDE.md."""
@@ -1042,6 +1194,8 @@ class TestHealCommand:
         result = runner.invoke(app, ["heal", str(project), "--agent", "claude"])
         assert result.exit_code in (0, None), f"heal --agent failed:\n{result.output}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_heal_empty_project(self, tmp_path: Path) -> None:
         """heal on empty project (no instruction files) exits cleanly."""
         project = tmp_path / "empty"
@@ -1064,12 +1218,16 @@ class TestHealCommand:
 class TestMapCommand:
     """ails map detects agents and project structure."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_text_output(self, claude_only: Path) -> None:
         result = runner.invoke(app, ["map", str(claude_only)])
         assert result.exit_code == 0, f"map failed:\n{result.output}"
         output_lower = result.output.lower()
         assert "claude" in output_lower
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_json_output_valid(self, claude_only: Path) -> None:
         result = runner.invoke(app, ["map", str(claude_only), "-o", "json"])
         assert result.exit_code == 0
@@ -1078,6 +1236,8 @@ class TestMapCommand:
         assert "agents" in data
         assert "auto_heal" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_yaml_output_valid(self, claude_only: Path) -> None:
         import yaml as yaml_lib
 
@@ -1087,6 +1247,8 @@ class TestMapCommand:
         assert data["version"] == 3
         assert "agents" in data
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_save_creates_backbone(self, tmp_path: Path) -> None:
         import yaml as yaml_lib
 
@@ -1101,6 +1263,8 @@ class TestMapCommand:
         data = yaml_lib.safe_load(backbone.read_text())
         assert data["version"] == 3
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_multi_agent_detected(self, multi_agent: Path) -> None:
         result = runner.invoke(app, ["map", str(multi_agent), "-o", "json"])
         assert result.exit_code == 0
@@ -1108,10 +1272,14 @@ class TestMapCommand:
         agents = data.get("agents", {})
         assert len(agents) >= 2, f"Expected multiple agents, got: {list(agents.keys())}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_missing_path_errors(self) -> None:
         result = runner.invoke(app, ["map", "/tmp/no-such-path-xyz-abc-987"])
         assert result.exit_code == 1
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_empty_dir_no_crash(self, tmp_path: Path) -> None:
         project = tmp_path / "empty"
         project.mkdir()
@@ -1134,6 +1302,8 @@ class TestMapCommand:
 class TestInstallCommand:
     """ails install detects agents and writes MCP config."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_install_detects_claude(self, tmp_path: Path) -> None:
         """Install on project with CLAUDE.md detects claude agent."""
         project = tmp_path / "project"
@@ -1147,6 +1317,8 @@ class TestInstallCommand:
         assert "claude" in result.output.lower()
         assert "Restart" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_install_no_agents(self, tmp_path: Path) -> None:
         """Install on empty project succeeds with guidance message."""
         project = tmp_path / "empty"
@@ -1156,10 +1328,14 @@ class TestInstallCommand:
         assert result.exit_code == 0
         assert "No supported agents" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_install_missing_path(self) -> None:
         result = runner.invoke(app, ["install", "/tmp/no-such-path-xyz-abc-987"])
         assert result.exit_code == 1
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_install_writes_config_file(self, tmp_path: Path) -> None:
         """Install must write an MCP config file."""
         project = tmp_path / "project"
@@ -1189,12 +1365,16 @@ class TestInstallCommand:
 class TestCheckFlags:
     """Additional flag coverage for ails check."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_strict_exits_1_on_violations(self, generic_only: Path) -> None:
         """--strict must exit 1 when violations exist."""
         result = runner.invoke(app, ["check", str(generic_only), "--strict"])
         assert result.exit_code == 1
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_json_output_valid(self, claude_only: Path) -> None:
         data = _check_json(claude_only, agent="claude")
@@ -1202,6 +1382,8 @@ class TestCheckFlags:
         assert "stats" in data
         assert isinstance(data["stats"]["total_findings"], int)
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_verbose_output(self, claude_only: Path) -> None:
         result = runner.invoke(app, ["check", str(claude_only), "-f", "text", "-v", "--agent", "claude"])
@@ -1209,6 +1391,8 @@ class TestCheckFlags:
         # Verbose mode shows more detail — at minimum, rule IDs
         assert "CORE:" in result.output
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_exclude_dir(self, tmp_path: Path) -> None:
         """--exclude-dir prevents scanning files in that directory."""
@@ -1229,6 +1413,8 @@ class TestCheckFlags:
         excluded_files = _finding_files(excluded_data)
         assert not any("vendor" in f for f in excluded_files), f"vendor dir not excluded: {excluded_files}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_ascii_mode(self, claude_only: Path) -> None:
         """--ascii must not produce Unicode box-drawing characters."""
@@ -1253,6 +1439,8 @@ class TestCheckFlags:
 class TestMechanicalChecksE2E:
     """Mechanical checks must produce violations in ails check output."""
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_missing_git_produces_findings(self, tmp_path: Path) -> None:
         """Project without .git directory — mechanical pipeline runs and produces findings."""
@@ -1269,6 +1457,8 @@ class TestMechanicalChecksE2E:
         total = data.get("stats", {}).get("total_findings", 0)
         assert total > 0, "Minimal project without .git should produce findings"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_findings_include_rule_metadata(self, tmp_path: Path) -> None:
         """Each finding has required fields: rule, line, message, severity."""
@@ -1286,6 +1476,8 @@ class TestMechanicalChecksE2E:
             assert "message" in f, f"Missing message in finding: {f}"
             assert "severity" in f, f"Missing severity in finding: {f}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_findings_have_line_numbers(self, tmp_path: Path) -> None:
         """Findings must have integer line numbers."""
@@ -1298,6 +1490,8 @@ class TestMechanicalChecksE2E:
         for f in _all_findings(data):
             assert isinstance(f["line"], int), f"Finding {f['rule']} has non-integer line: {f['line']}"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_mechanical_violations_in_text_output(self, tmp_path: Path) -> None:
         """Mechanical violations appear in text output (not just JSON)."""
@@ -1310,6 +1504,8 @@ class TestMechanicalChecksE2E:
         # Text output should contain violation indicators and reference the file
         assert "CLAUDE.md" in output, "Text output should reference the instruction file"
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_stats_reflect_mechanical_findings(self, claude_only: Path) -> None:
         """Stats include both mechanical and deterministic finding counts."""
@@ -1320,6 +1516,8 @@ class TestMechanicalChecksE2E:
         assert isinstance(stats["total_findings"], int)
         assert stats["total_findings"] >= 0
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_oversized_file_does_not_crash(self, tmp_path: Path) -> None:
         """Large instruction file is handled gracefully (no crash)."""
