@@ -4,7 +4,7 @@ version = "0.5.8"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 authors = [{ name = "Reporails Team" }]
 keywords = ["ai-instructions", "claude", "codex", "copilot", "cursor", "gemini", "diagnostics", "validation", "mcp"]
 classifiers = [
