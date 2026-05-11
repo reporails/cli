@@ -2914,7 +2914,7 @@ def _classify_file(
     atoms_needing_embed: list[Atom],
 ) -> str:
     """Classify a single file: tokenize or use cache. Returns content hash."""
-    from reporails_cli.core.mapper.map_cache import (
+    from reporails_cli.core.cache.map_cache import (
         CachedFileEntry,
         atoms_to_dicts,
         dicts_to_atoms,
@@ -2949,7 +2949,7 @@ def _update_cache_after_embedding(
     file_records: list[FileRecord],
 ) -> None:
     """Update cache entries with embeddings for newly-embedded atoms."""
-    from reporails_cli.core.mapper.map_cache import CachedFileEntry, atoms_to_dicts
+    from reporails_cli.core.cache.map_cache import CachedFileEntry, atoms_to_dicts
 
     by_file: dict[str, list[Atom]] = {}
     for a in all_atoms:
@@ -3072,7 +3072,7 @@ def map_ruleset(
     (by content hash) reuse cached atoms and embeddings. Only changed
     files are re-tokenized and re-embedded. Clustering always re-runs.
     """
-    from reporails_cli.core.mapper.map_cache import MapCache
+    from reporails_cli.core.cache.map_cache import MapCache
 
     if models is None:
         models = get_models()
