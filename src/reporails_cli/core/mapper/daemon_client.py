@@ -100,7 +100,7 @@ def map_ruleset_via_daemon(
     try:
         import tempfile
 
-        from reporails_cli.core.mapper.mapper import load_ruleset_map
+        from reporails_cli.core.mapper.serialize import load_ruleset_map
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(map_data, f)
