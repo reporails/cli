@@ -804,18 +804,6 @@ class TestConfigSetGet:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_set_bool(self, tmp_path: Path) -> None:
-        """set + get round-trip for a boolean key."""
-        project = tmp_path / "project"
-        project.mkdir()
-        runner.invoke(app, ["config", "set", "recommended", "false", "--path", str(project)])
-
-        result = runner.invoke(app, ["config", "get", "recommended", "--path", str(project)])
-        assert result.exit_code == 0
-        assert "False" in result.output
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
     def test_set_list(self, tmp_path: Path) -> None:
         """set + get round-trip for a list key."""
         project = tmp_path / "project"
@@ -877,12 +865,13 @@ class TestConfigList:
         project = tmp_path / "project"
         project.mkdir()
         runner.invoke(app, ["config", "set", "default_agent", "cursor", "--path", str(project)])
-        runner.invoke(app, ["config", "set", "recommended", "false", "--path", str(project)])
+        runner.invoke(app, ["config", "set", "exclude_dirs", "vendor,dist", "--path", str(project)])
 
         result = runner.invoke(app, ["config", "list", "--path", str(project)])
         assert result.exit_code == 0
         assert "default_agent: cursor" in result.output
-        assert "recommended: False" in result.output
+        assert "exclude_dirs:" in result.output
+        assert "vendor" in result.output
 
 
 @pytest.mark.e2e
@@ -913,14 +902,14 @@ class TestConfigGlobal:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_global_set_recommended(self) -> None:
-        """--global set works for boolean key."""
-        result = runner.invoke(app, ["config", "set", "--global", "recommended", "false"])
+    def test_global_set_tier(self) -> None:
+        """--global set works for string key."""
+        result = runner.invoke(app, ["config", "set", "--global", "tier", "pro"])
         assert result.exit_code == 0
 
-        result = runner.invoke(app, ["config", "get", "--global", "recommended"])
+        result = runner.invoke(app, ["config", "get", "--global", "tier"])
         assert result.exit_code == 0
-        assert "False" in result.output
+        assert "pro" in result.output
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1040,8 +1029,8 @@ class TestGlobalDefaultsInCheck:
 # ===========================================================================
 # Version Command
 #
-# `ails version` shows CLI, framework, and recommended versions plus
-# install method. Must always succeed regardless of installed state.
+# `ails version` shows CLI version plus install method. Must always
+# succeed regardless of installed state.
 # ===========================================================================
 
 

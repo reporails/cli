@@ -1,4 +1,4 @@
-"""Check for CLI, framework, and recommended updates, with 24-hour cache throttling."""
+"""Check for CLI and framework updates, with 24-hour cache throttling."""
 
 from __future__ import annotations
 
@@ -29,8 +29,6 @@ class UpdateNotification:
     cli_latest: str | None = None
     rules_current: str | None = None
     rules_latest: str | None = None
-    recommended_current: str | None = None
-    recommended_latest: str | None = None
 
     @property
     def has_cli_update(self) -> bool:
@@ -41,14 +39,8 @@ class UpdateNotification:
         return bool(self.rules_current and self.rules_latest and self.rules_current != self.rules_latest)
 
     @property
-    def has_recommended_update(self) -> bool:
-        return bool(
-            self.recommended_current and self.recommended_latest and self.recommended_current != self.recommended_latest
-        )
-
-    @property
     def has_any_update(self) -> bool:
-        return self.has_cli_update or self.has_rules_update or self.has_recommended_update
+        return self.has_cli_update or self.has_rules_update
 
 
 def _get_cache_path() -> Path:
@@ -72,18 +64,13 @@ def _read_cache() -> dict[str, str] | None:
     return None
 
 
-def _write_cache(
-    latest_cli: str | None,
-    latest_rules: str | None,
-    latest_recommended: str | None = None,
-) -> None:
+def _write_cache(latest_cli: str | None, latest_rules: str | None) -> None:
     cache_path = _get_cache_path()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "last_checked": datetime.now(UTC).isoformat(),
         "latest_cli_version": latest_cli,
         "latest_rules_version": latest_rules,
-        "latest_recommended_version": latest_recommended,
     }
     cache_path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -108,7 +95,7 @@ def _is_newer(current: str, latest: str) -> bool:
 
 
 def check_for_updates() -> UpdateNotification | None:
-    """Check for CLI, framework, and recommended updates. Returns None if everything is current.
+    """Check for CLI and framework updates. Returns None if everything is current.
 
     Reads from cache if checked within 24 hours. Silently returns None on any error.
     """
@@ -118,33 +105,24 @@ def check_for_updates() -> UpdateNotification | None:
         if cached is not None:
             latest_cli = cached.get("latest_cli_version")
             latest_rules = cached.get("latest_rules_version")
-            latest_recommended = cached.get("latest_recommended_version")
         else:
             # Fetch fresh versions
-            from reporails_cli.core.install.updater import get_latest_recommended_version, get_latest_version
+            from reporails_cli.core.install.updater import get_latest_version
 
             latest_cli = _fetch_latest_cli_version()
             latest_rules = get_latest_version()
-            latest_recommended = get_latest_recommended_version()
-            _write_cache(latest_cli, latest_rules, latest_recommended)
+            _write_cache(latest_cli, latest_rules)
 
         # Compare against installed versions
         from reporails_cli import __version__ as cli_version
-        from reporails_cli.core.platform.config.bootstrap import (
-            get_installed_recommended_version,
-            get_installed_version,
-        )
+        from reporails_cli.core.platform.config.bootstrap import get_installed_version
 
         installed_rules = get_installed_version()
-        installed_recommended = get_installed_recommended_version()
 
         cli_outdated = latest_cli and _is_newer(cli_version, latest_cli)
         rules_outdated = installed_rules and latest_rules and _is_newer(installed_rules, latest_rules)
-        recommended_outdated = (
-            installed_recommended and latest_recommended and _is_newer(installed_recommended, latest_recommended)
-        )
 
-        if not cli_outdated and not rules_outdated and not recommended_outdated:
+        if not cli_outdated and not rules_outdated:
             return None
 
         return UpdateNotification(
@@ -152,8 +130,6 @@ def check_for_updates() -> UpdateNotification | None:
             cli_latest=latest_cli if cli_outdated else None,
             rules_current=installed_rules if rules_outdated else None,
             rules_latest=latest_rules if rules_outdated else None,
-            recommended_current=installed_recommended if recommended_outdated else None,
-            recommended_latest=latest_recommended if recommended_outdated else None,
         )
     except (OSError, json.JSONDecodeError, ValueError, KeyError) as exc:
         logger.debug("Update check failed: %s", exc)
@@ -167,21 +143,19 @@ def format_update_message(notification: UpdateNotification) -> str:
         parts.append(f"CLI {notification.cli_current} → {notification.cli_latest}")
     if notification.has_rules_update:
         parts.append(f"framework {notification.rules_current} → {notification.rules_latest}")
-    if notification.has_recommended_update:
-        parts.append(f"recommended {notification.recommended_current} → {notification.recommended_latest}")
 
     detail = ", ".join(parts)
     commands = []
     if notification.has_cli_update:
         commands.append("ails update --cli")
-    if notification.has_rules_update or notification.has_recommended_update:
+    if notification.has_rules_update:
         commands.append("ails update")
     cmd = " && ".join(commands)
     return f"[dim]Update available: {detail}. Run: {cmd}[/dim]"
 
 
 def _execute_updates(notification: UpdateNotification, console: Any) -> bool:
-    """Perform the actual update (framework + recommended).
+    """Perform the framework update.
 
     Args:
         notification: Update notification with version info.
@@ -190,7 +164,7 @@ def _execute_updates(notification: UpdateNotification, console: Any) -> bool:
     Returns:
         True if anything was updated, False otherwise.
     """
-    from reporails_cli.core.install.updater import update_recommended, update_rules
+    from reporails_cli.core.install.updater import update_rules
 
     updated = False
 
@@ -198,12 +172,6 @@ def _execute_updates(notification: UpdateNotification, console: Any) -> bool:
         result = update_rules()
         if result.updated:
             console.print(f"[green]Updated:[/green] framework {result.previous_version} → {result.new_version}")
-            updated = True
-
-    if notification.has_recommended_update:
-        result = update_recommended()
-        if result.updated:
-            console.print(f"[green]Updated:[/green] recommended {result.previous_version} → {result.new_version}")
             updated = True
 
     if updated:
@@ -236,16 +204,13 @@ def prompt_for_updates(console: Any, no_update_check: bool = False) -> bool:  # 
     parts = []
     if notification.has_rules_update:
         parts.append(f"framework {notification.rules_current} → {notification.rules_latest}")
-    if notification.has_recommended_update:
-        parts.append(f"recommended {notification.recommended_current} → {notification.recommended_latest}")
     if notification.has_cli_update:
         parts.append(f"CLI {notification.cli_current} → {notification.cli_latest} (run: ails update --cli)")
 
     console.print(f"\n[cyan]Updates available:[/cyan] {', '.join(parts)}")
 
-    # Only prompt for auto-installable updates (rules + recommended)
-    has_installable = notification.has_rules_update or notification.has_recommended_update
-    if not has_installable:
+    # Only prompt for auto-installable updates (rules)
+    if not notification.has_rules_update:
         console.print()
         return False
 

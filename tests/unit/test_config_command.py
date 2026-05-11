@@ -40,19 +40,6 @@ class TestGlobalSet:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_writes_recommended_bool(self, tmp_path: Path) -> None:
-        global_home = tmp_path / ".reporails"
-        with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
-            return_value=global_home / "config.yml",
-        ):
-            result = runner.invoke(config_app, ["set", "--global", "recommended", "false"])
-        assert result.exit_code == 0
-        data = yaml.safe_load((global_home / "config.yml").read_text())
-        assert data["recommended"] is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
     def test_rejects_non_global_key(self) -> None:
         result = runner.invoke(config_app, ["set", "--global", "exclude_dirs", "vendor"])
         assert result.exit_code == 2
@@ -103,7 +90,7 @@ class TestGlobalList:
     @pytest.mark.subsys_cli_ux
     def test_shows_global_only(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
-        _write_global_config(global_home, "default_agent: claude\nrecommended: true\n")
+        _write_global_config(global_home, "default_agent: claude\ntier: pro\n")
         with patch(
             "reporails_cli.interfaces.cli.config_command._global_config_path",
             return_value=global_home / "config.yml",
@@ -111,7 +98,7 @@ class TestGlobalList:
             result = runner.invoke(config_app, ["list", "--global"])
         assert result.exit_code == 0
         assert "default_agent: claude" in result.output
-        assert "recommended: True" in result.output
+        assert "tier: pro" in result.output
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

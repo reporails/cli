@@ -167,14 +167,6 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 
 def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | dict[str, Any]:
     """Get detailed info about a specific rule."""
-    if rules_paths is None:
-        from reporails_cli.core.platform.adapters.registry import get_rules_dir
-        from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
-
-        rec_path = get_recommended_package_path()
-        if rec_path.is_dir():
-            rules_paths = [get_rules_dir(), rec_path]
-
     rule_id_upper = rule_id.upper()
     agent = infer_agent_from_rule_id(rule_id_upper)
     rules = load_rules(rules_paths, agent=agent)

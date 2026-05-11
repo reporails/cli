@@ -1,4 +1,4 @@
-"""Download and install rules and recommended packages."""
+"""Download and install rules from a release tarball or local framework copy."""
 
 from __future__ import annotations
 
@@ -13,16 +13,11 @@ import httpx
 
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config,
-    get_recommended_package_path,
     get_reporails_home,
     get_version_file,
 )
 
 logger = logging.getLogger(__name__)
-
-RECOMMENDED_REPO = "reporails/recommended"
-RECOMMENDED_VERSION = "0.3.0"
-RECOMMENDED_API_URL = "https://api.github.com/repos/reporails/recommended/releases/latest"
 
 RULES_VERSION = "0.5.0"
 RULES_EXPECTED_DIRS = ("core", "schemas")  # Minimum dirs after extraction
@@ -170,68 +165,6 @@ def download_rules() -> tuple[Path, int]:
     if config.framework_path and config.framework_path.exists():
         return copy_local_framework(config.framework_path)
     return download_from_github()
-
-
-def is_recommended_installed() -> bool:
-    """Check if recommended package is installed with content."""
-    pkg_path = get_recommended_package_path()
-    if not pkg_path.exists():
-        return False
-    return any(pkg_path.iterdir())
-
-
-def download_recommended(version: str | None = None) -> Path:  # pylint: disable=too-many-locals
-    """Download recommended rules package from GitHub archive."""
-    if version is None:
-        from reporails_cli.core.install.updater import get_latest_recommended_version
-
-        version = get_latest_recommended_version() or RECOMMENDED_VERSION
-
-    archive_url = f"https://github.com/{RECOMMENDED_REPO}/archive/refs/tags/{version}.tar.gz"
-    pkg_path = get_recommended_package_path()
-
-    if pkg_path.exists():
-        shutil.rmtree(pkg_path)
-    pkg_path.mkdir(parents=True, exist_ok=True)
-
-    try:
-        with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-            response = client.get(archive_url)
-            response.raise_for_status()
-    except httpx.HTTPError as e:
-        msg = f"Could not download recommended rules. Check your internet connection. ({e})"
-        raise RuntimeError(msg) from e
-
-    with TemporaryDirectory() as tmpdir:
-        tarball_path = Path(tmpdir) / "recommended.tar.gz"
-        tarball_path.write_bytes(response.content)
-
-        with tarfile.open(tarball_path, "r:gz") as tar:
-            _safe_extractall(tar, Path(tmpdir))
-
-        extracted_dirs = sorted(
-            (
-                d
-                for d in Path(tmpdir).iterdir()
-                if d.is_dir() and d.name != "__MACOSX" and d.name.startswith("recommended-")
-            ),
-            key=lambda d: d.name,
-        )
-        if extracted_dirs:
-            source_dir = extracted_dirs[0]
-            for item in source_dir.iterdir():
-                dest = pkg_path / item.name
-                if item.is_dir():
-                    shutil.copytree(item, dest)
-                else:
-                    shutil.copy2(item, dest)
-        else:
-            with tarfile.open(tarball_path, "r:gz") as tar:
-                _safe_extractall(tar, pkg_path)
-
-    version_file = pkg_path / ".version"
-    version_file.write_text(version + "\n", encoding="utf-8")
-    return pkg_path
 
 
 def sync_rules_to_local(local_checks_dir: Path) -> int:
