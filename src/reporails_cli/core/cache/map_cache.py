@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.mapper.mapper import (
+from reporails_cli.core.platform.dto.ruleset import (
     EMBEDDING_MODEL,
     SCHEMA_VERSION,
     Atom,

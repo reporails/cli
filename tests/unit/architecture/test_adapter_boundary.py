@@ -39,14 +39,7 @@ _FAIL_ON_VIOLATION = True
 
 # Known temporary exceptions. Each entry: (importer_path_relative_to_root, imported_module).
 # Removed as the corresponding migration phase completes.
-_KNOWN_EXCEPTIONS: set[tuple[str, str]] = {
-    # Phase 7 (`mapper/` cleanup) — `RulesetMap` and its supporting dataclasses
-    # (`Atom`, `FileRecord`, `ClusterRecord`, `RulesetSummary`) move from
-    # `mapper/mapper.py` into `core/platform/dto/`. After that move these
-    # imports retarget to `dto/` and the exceptions go away.
-    ("src/reporails_cli/core/platform/adapters/api_client.py", "reporails_cli.core.mapper.mapper"),
-    ("src/reporails_cli/core/platform/adapters/payload.py", "reporails_cli.core.mapper.mapper"),
-}
+_KNOWN_EXCEPTIONS: set[tuple[str, str]] = set()  # all entries resolved by Phase 7
 
 
 def _iter_imports(file_path: Path) -> list[str]:

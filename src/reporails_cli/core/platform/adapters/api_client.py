@@ -20,7 +20,7 @@ from reporails_cli.core.funnel import (
     parse_error_body,
     preflight_oversized,
 )
-from reporails_cli.core.mapper.mapper import RulesetMap
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 logger = logging.getLogger(__name__)
 

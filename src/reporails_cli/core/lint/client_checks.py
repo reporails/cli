@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import re
 
-from reporails_cli.core.mapper.mapper import Atom, RulesetMap
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 
 _BOLD_TERM_RE = re.compile(r"\*\*([^*]+)\*\*")
 _BOLD_NEGATION_RE = re.compile(

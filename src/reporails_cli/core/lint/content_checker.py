@@ -14,8 +14,8 @@ import logging
 from typing import Any
 
 from reporails_cli.core.lint.content_queries import QUERY_REGISTRY
-from reporails_cli.core.mapper.mapper import RulesetMap
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, LocalFinding, Rule
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 logger = logging.getLogger(__name__)
 

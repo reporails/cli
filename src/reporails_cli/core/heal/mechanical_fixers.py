@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from reporails_cli.core.mapper.mapper import Atom, RulesetMap
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 
 
 @dataclass(frozen=True)

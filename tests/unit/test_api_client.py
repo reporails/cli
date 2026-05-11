@@ -11,7 +11,6 @@ from reporails_cli.core.funnel import (
     LintResponse,
     preflight_oversized,
 )
-from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
 from reporails_cli.core.platform.adapters.api_client import (
     AilsClient,
     LintResult,
@@ -20,6 +19,7 @@ from reporails_cli.core.platform.adapters.api_client import (
     _deserialize_lint_result,
     _strip_and_serialize,
 )
+from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
 
 def _make_map() -> RulesetMap:
@@ -247,7 +247,7 @@ class TestPayloadCaps:
         """Oversized payload short-circuits before any network call."""
         from unittest.mock import patch
 
-        from reporails_cli.core.mapper.mapper import RulesetMap, RulesetSummary
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
 
         rm = RulesetMap(
             schema_version="1.0.0",
@@ -283,7 +283,7 @@ class TestPayloadCaps:
         """Empty-files payload short-circuits — Worker would 400 missing_content_hash."""
         from unittest.mock import patch
 
-        from reporails_cli.core.mapper.mapper import RulesetMap, RulesetSummary
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
 
         rm = RulesetMap(
             schema_version="1.0.0",

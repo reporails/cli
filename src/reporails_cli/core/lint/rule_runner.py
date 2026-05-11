@@ -130,8 +130,8 @@ def run_content_quality_checks(
     """
     from reporails_cli.core.classify import classify_files, load_file_types
     from reporails_cli.core.lint.content_checker import run_content_checks
-    from reporails_cli.core.mapper.mapper import RulesetMap as _RulesetMap
     from reporails_cli.core.platform.adapters.registry import load_rules
+    from reporails_cli.core.platform.dto.ruleset import RulesetMap as _RulesetMap
 
     if not isinstance(ruleset_map, _RulesetMap):
         return []
