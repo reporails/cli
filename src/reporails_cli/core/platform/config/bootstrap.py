@@ -38,7 +38,7 @@ def get_project_cache_dir(project_root: Path) -> Path:
     Layout: ~/.reporails/cache/projects/<12-char-hash>/
     Uses git remote URL hash for consistency across clones.
     """
-    from reporails_cli.core.analytics import get_project_id
+    from reporails_cli.core.platform.observability.analytics import get_project_id
 
     return REPORAILS_HOME / "cache" / "projects" / get_project_id(project_root)
 
@@ -103,7 +103,7 @@ def get_agent_config(agent: str) -> AgentConfig:
 
     Delegated to core.config. Re-exported here for backward compatibility.
     """
-    from reporails_cli.core.config import get_agent_config as _get_agent_config
+    from reporails_cli.core.platform.config.config import get_agent_config as _get_agent_config
 
     return _get_agent_config(agent)
 
@@ -163,7 +163,7 @@ def get_global_config() -> GlobalConfig:
 
     Delegated to core.config. Re-exported here for backward compatibility.
     """
-    from reporails_cli.core.config import get_global_config as _get_global_config
+    from reporails_cli.core.platform.config.config import get_global_config as _get_global_config
 
     return _get_global_config()
 
@@ -173,7 +173,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
 
     Delegated to core.config. Re-exported here for backward compatibility.
     """
-    from reporails_cli.core.config import get_project_config as _get_project_config
+    from reporails_cli.core.platform.config.config import get_project_config as _get_project_config
 
     return _get_project_config(project_root)
 

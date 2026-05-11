@@ -52,7 +52,7 @@ class UpdateNotification:
 
 
 def _get_cache_path() -> Path:
-    from reporails_cli.core.bootstrap import get_reporails_home
+    from reporails_cli.core.platform.config.bootstrap import get_reporails_home
 
     return get_reporails_home() / "cache" / CACHE_FILE
 
@@ -130,7 +130,7 @@ def check_for_updates() -> UpdateNotification | None:
 
         # Compare against installed versions
         from reporails_cli import __version__ as cli_version
-        from reporails_cli.core.bootstrap import (
+        from reporails_cli.core.platform.config.bootstrap import (
             get_installed_recommended_version,
             get_installed_version,
         )
@@ -218,7 +218,7 @@ def prompt_for_updates(console: Any, no_update_check: bool = False) -> bool:  # 
         return False
 
     # Respect global config
-    from reporails_cli.core.bootstrap import get_global_config
+    from reporails_cli.core.platform.config.bootstrap import get_global_config
 
     config = get_global_config()
     if not config.auto_update_check:

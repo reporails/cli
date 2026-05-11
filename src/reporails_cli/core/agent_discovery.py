@@ -293,7 +293,7 @@ def load_config_file_types(
     Returns the file_types dict or None if not found.
     """
 
-    from reporails_cli.core.bootstrap import get_agent_config_path
+    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
 
     candidates: list[Path] = []
     if rules_paths:
@@ -304,7 +304,7 @@ def load_config_file_types(
         if not path.exists():
             continue
         try:
-            from reporails_cli.core.utils import load_yaml_file
+            from reporails_cli.core.platform.utils.utils import load_yaml_file
 
             data = load_yaml_file(path)
             if not data:

@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Internals: relocated `core/{analytics,bootstrap,config,utils}.py` into the hexagonal platform substrate (`core/platform/{observability,config,utils}/`); no user-facing behavior change
 - Funnel: Rate-limit CTA now surfaces a "Try again in ~N min." hint when the server returns an accurate `reset_in`, between the limit blurb and the upgrade prompt
 - Display: file rows now annotate duplicates with `(+alias)` labels — symlinked surfaces show the differing path component (e.g. `mintlify (+.claude)`), same-directory content-identical pairs show the alternate filename (e.g. `AGENTS.md (+CLAUDE.md)`)
 

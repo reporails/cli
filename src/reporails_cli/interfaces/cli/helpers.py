@@ -70,7 +70,7 @@ def _resolve_recommended_rules(
             con.print("[yellow]Warning:[/yellow] Could not download recommended rules.")
 
     if use_recommended and not has_recommended:
-        from reporails_cli.core.bootstrap import get_recommended_package_path
+        from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
 
         rec_path = get_recommended_package_path()
         if rec_path.is_dir():
@@ -87,8 +87,8 @@ def _resolve_recommended_rules(
 
 def _handle_update_check(con: Console) -> None:
     """Print installed vs latest versions for framework and recommended."""
-    from reporails_cli.core.bootstrap import get_installed_recommended_version, get_installed_version
     from reporails_cli.core.init import get_latest_recommended_version, get_latest_version
+    from reporails_cli.core.platform.config.bootstrap import get_installed_recommended_version, get_installed_version
 
     current, current_rec = get_installed_version(), get_installed_recommended_version()
     with con.status("[bold]Checking for updates...[/bold]"):

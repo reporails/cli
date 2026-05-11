@@ -15,15 +15,6 @@ from pathlib import Path
 
 import httpx as httpx
 
-from reporails_cli.core.bootstrap import (
-    get_installed_version as get_installed_version,
-)
-from reporails_cli.core.bootstrap import (
-    get_recommended_package_path as get_recommended_package_path,
-)
-from reporails_cli.core.bootstrap import (
-    get_reporails_home as get_reporails_home,
-)
 from reporails_cli.core.download import (
     RECOMMENDED_API_URL as RECOMMENDED_API_URL,
 )
@@ -71,6 +62,15 @@ from reporails_cli.core.download import (
 )
 from reporails_cli.core.download import (
     write_version_file as write_version_file,
+)
+from reporails_cli.core.platform.config.bootstrap import (
+    get_installed_version as get_installed_version,
+)
+from reporails_cli.core.platform.config.bootstrap import (
+    get_recommended_package_path as get_recommended_package_path,
+)
+from reporails_cli.core.platform.config.bootstrap import (
+    get_reporails_home as get_reporails_home,
 )
 from reporails_cli.core.updater import (
     REQUIRED_SCHEMAS as REQUIRED_SCHEMAS,

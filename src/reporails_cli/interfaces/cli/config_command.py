@@ -38,7 +38,7 @@ def _project_config_path(path: Path) -> Path:
 
 
 def _global_config_path() -> Path:
-    from reporails_cli.core.bootstrap import get_global_config_path
+    from reporails_cli.core.platform.config.bootstrap import get_global_config_path
 
     return get_global_config_path()
 

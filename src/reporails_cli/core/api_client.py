@@ -161,7 +161,7 @@ class LintResult:
 def _tier_from_config() -> str:
     """Read tier from global config (~/.reporails/config.yml)."""
     try:
-        from reporails_cli.core.config import get_global_config
+        from reporails_cli.core.platform.config.config import get_global_config
 
         cfg = get_global_config()
         return cfg.tier

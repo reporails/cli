@@ -371,11 +371,11 @@ class TestCheckForUpdates:
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
             ),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_recommended_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value="0.1.0",
             ),
         ):
@@ -399,11 +399,11 @@ class TestCheckForUpdates:
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
             ),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_recommended_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value="0.1.0",
             ),
         ):
@@ -427,11 +427,11 @@ class TestCheckForUpdates:
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
             ),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_recommended_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value="0.1.0",
             ),
         ):
@@ -455,11 +455,11 @@ class TestCheckForUpdates:
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
             ),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_recommended_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value="0.1.0",
             ),
         ):
@@ -487,11 +487,11 @@ class TestCheckForUpdates:
             patch("reporails_cli.core.update_check._write_cache"),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
             ),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_recommended_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value="0.1.0",
             ),
         ):
@@ -527,11 +527,11 @@ class TestCheckForUpdates:
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value=None,
             ),
             patch(
-                "reporails_cli.core.bootstrap.get_installed_recommended_version",
+                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value=None,
             ),
         ):
@@ -560,7 +560,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=False),
             ),
         ):
@@ -575,7 +575,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
             patch("reporails_cli.core.update_check.check_for_updates", return_value=None),
@@ -591,7 +591,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
         ):
@@ -615,7 +615,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
             patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
@@ -640,7 +640,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
             patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
@@ -664,7 +664,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
             patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
@@ -688,7 +688,7 @@ class TestPromptForUpdates:
         with (
             patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
             patch(
-                "reporails_cli.core.bootstrap.get_global_config",
+                "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
             patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),

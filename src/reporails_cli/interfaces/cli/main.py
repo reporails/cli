@@ -60,7 +60,7 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
     """Resolve rules paths for explain command, auto-including recommended."""
     if rules:
         return [Path(r).resolve() for r in rules]
-    from reporails_cli.core.bootstrap import get_recommended_package_path
+    from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
     from reporails_cli.core.registry import get_rules_dir
 
     rec_path = get_recommended_package_path()
@@ -83,8 +83,8 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     from reporails_cli.core.agents import detect_agents, get_all_instruction_files
     from reporails_cli.core.api_client import AilsClient
     from reporails_cli.core.client_checks import run_client_checks
-    from reporails_cli.core.config import get_project_config
     from reporails_cli.core.merger import merge_results
+    from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.formatters import json as json_formatter
 
@@ -245,7 +245,7 @@ def _map_in_process(instruction_files: list[Path]) -> Any:
     """
     import io as _io
 
-    from reporails_cli.core.bootstrap import get_global_cache_dir
+    from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
     saved_stderr = sys.stderr
     sys.stderr = _io.StringIO()

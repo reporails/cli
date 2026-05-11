@@ -244,7 +244,10 @@ def _with_url(text: str, url: str) -> str:
 
 
 _CTA_TEMPLATES: dict[tuple[str, str], str] = {
-    ("rate_limit_exceeded", "anonymous"): "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}Run `ails auth login` to raise it 40x",
+    (
+        "rate_limit_exceeded",
+        "anonymous",
+    ): "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}Run `ails auth login` to raise it 40x",
     ("rate_limit_exceeded", "pro"): (
         "Hit your hourly limit ({err.limit}/hr). {err.reset_phrase}File an issue with your use case so we can raise it"
     ),

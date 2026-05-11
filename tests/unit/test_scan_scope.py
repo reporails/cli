@@ -545,7 +545,7 @@ class TestProjectConfigSurfaceAdjustments:
         agent applies to every surface of that agent.
         """
         from reporails_cli.core.agent_discovery import discover_from_config
-        from reporails_cli.core.config import get_project_config
+        from reporails_cli.core.platform.config.config import get_project_config
 
         (tmp_path / ".git").mkdir()
         (tmp_path / "AGENTS.md").write_text("# main")

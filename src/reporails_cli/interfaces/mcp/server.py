@@ -21,7 +21,7 @@ from mcp.server.stdio import stdio_server  # noqa: E402
 from mcp.types import TextContent, Tool  # noqa: E402
 
 from reporails_cli.core.agents import get_all_instruction_files  # noqa: E402
-from reporails_cli.core.bootstrap import is_initialized  # noqa: E402
+from reporails_cli.core.platform.config.bootstrap import is_initialized  # noqa: E402
 from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
     explain_tool,
     score_tool,

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _socket_path() -> Path:
-    from reporails_cli.core.bootstrap import get_daemon_dir
+    from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
 
     return get_daemon_dir() / "mapper.sock"
 

@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 
 import httpx
 
-from reporails_cli.core.bootstrap import (
+from reporails_cli.core.platform.config.bootstrap import (
     get_global_config,
     get_recommended_package_path,
     get_reporails_home,

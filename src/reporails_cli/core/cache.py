@@ -10,17 +10,17 @@ from pathlib import Path
 from typing import Any
 
 # Re-exports for backward compatibility (explicit re-export via `as` for mypy)
-from reporails_cli.core.analytics import AnalyticsEntry as AnalyticsEntry
-from reporails_cli.core.analytics import ProjectAnalytics as ProjectAnalytics
-from reporails_cli.core.analytics import get_analytics_dir as get_analytics_dir
-from reporails_cli.core.analytics import get_git_remote as get_git_remote
-from reporails_cli.core.analytics import get_previous_scan as get_previous_scan
-from reporails_cli.core.analytics import get_project_analytics_path as get_project_analytics_path
-from reporails_cli.core.analytics import get_project_id as get_project_id
-from reporails_cli.core.analytics import get_project_name as get_project_name
-from reporails_cli.core.analytics import load_project_analytics as load_project_analytics
-from reporails_cli.core.analytics import record_scan as record_scan
-from reporails_cli.core.analytics import save_project_analytics as save_project_analytics
+from reporails_cli.core.platform.observability.analytics import AnalyticsEntry as AnalyticsEntry
+from reporails_cli.core.platform.observability.analytics import ProjectAnalytics as ProjectAnalytics
+from reporails_cli.core.platform.observability.analytics import get_analytics_dir as get_analytics_dir
+from reporails_cli.core.platform.observability.analytics import get_git_remote as get_git_remote
+from reporails_cli.core.platform.observability.analytics import get_previous_scan as get_previous_scan
+from reporails_cli.core.platform.observability.analytics import get_project_analytics_path as get_project_analytics_path
+from reporails_cli.core.platform.observability.analytics import get_project_id as get_project_id
+from reporails_cli.core.platform.observability.analytics import get_project_name as get_project_name
+from reporails_cli.core.platform.observability.analytics import load_project_analytics as load_project_analytics
+from reporails_cli.core.platform.observability.analytics import record_scan as record_scan
+from reporails_cli.core.platform.observability.analytics import save_project_analytics as save_project_analytics
 
 
 def content_hash(path: Path) -> str:
@@ -105,7 +105,7 @@ class ProjectCache:
     @property
     def cache_dir(self) -> Path:
         """Get project's cache directory (~/.reporails/cache/projects/<hash>/)."""
-        from reporails_cli.core.bootstrap import get_project_cache_dir
+        from reporails_cli.core.platform.config.bootstrap import get_project_cache_dir
 
         return get_project_cache_dir(self.target)
 

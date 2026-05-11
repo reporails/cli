@@ -183,7 +183,7 @@ def _dir_has_content(target: Path, dirs: list[str]) -> bool:
 def _count_components(backbone_path: Path) -> int:
     """Count components declared in backbone.yml."""
     try:
-        from reporails_cli.core.utils import load_yaml_file
+        from reporails_cli.core.platform.utils.utils import load_yaml_file
 
         data = load_yaml_file(backbone_path)
         if not data:

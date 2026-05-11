@@ -29,7 +29,7 @@ FIXTURES = Path(__file__).parent.parent / "fixtures" / "projects"
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -991,7 +991,7 @@ class TestGlobalDefaultsInCheck:
         self.global_home = tmp_path / "fake_home" / ".reporails"
         self.global_home.mkdir(parents=True)
         monkeypatch.setattr(
-            "reporails_cli.core.bootstrap.get_global_config_path",
+            "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
             lambda: self.global_home / "config.yml",
         )
 

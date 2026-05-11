@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from reporails_cli.core.bootstrap import get_reporails_home
+from reporails_cli.core.platform.config.bootstrap import get_reporails_home
 
 
 def get_analytics_dir() -> Path:
