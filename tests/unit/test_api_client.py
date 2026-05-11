@@ -313,6 +313,110 @@ class TestPayloadCaps:
         mock_post.assert_not_called()
 
 
+class TestOutgoingHeaders:
+    """Asserts on the outgoing HTTP request shape.
+
+    The default `httpx` User-Agent (`python-httpx/*`) trips Cloudflare's
+    bot-fight rules on anonymous-tier requests, producing a 403 with a
+    "Just a moment..." HTML challenge. Cost-free unit assertion that
+    every outgoing diagnostic request carries a custom UA prevents the
+    next regression of the same shape.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_anonymous_post_carries_custom_user_agent(self) -> None:
+        from unittest.mock import patch
+
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
+
+        rm = RulesetMap(
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=(FileRecord(path="CLAUDE.md", content_hash="sha256:abc", agent="claude"),),
+            atoms=(),
+            summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+        )
+
+        captured: dict[str, dict[str, str]] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {
+                    "schema_version": "1.0.0",
+                    "score": 0.0,
+                    "level": "L1",
+                    "violations": [],
+                    "stats": {},
+                    "tier": "anonymous",
+                }
+
+        def _fake_post(url: str, **kwargs: object) -> _FakeResponse:
+            captured["headers"] = dict(kwargs.get("headers") or {})
+            return _FakeResponse()
+
+        with patch("httpx.post", side_effect=_fake_post):
+            client = AilsClient(base_url="https://example.test", tier="anonymous", api_key=None)
+            client.lint(rm)
+
+        ua = captured["headers"].get("User-Agent", "")
+        assert ua.startswith("reporails-cli/"), (
+            f"outgoing request UA must start with 'reporails-cli/' to avoid Cloudflare bot-fight 403; got {ua!r}"
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_authenticated_post_carries_custom_user_agent_and_bearer(self) -> None:
+        from unittest.mock import patch
+
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
+
+        rm = RulesetMap(
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=(FileRecord(path="CLAUDE.md", content_hash="sha256:abc", agent="claude"),),
+            atoms=(),
+            summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+        )
+
+        captured: dict[str, dict[str, str]] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {
+                    "schema_version": "1.0.0",
+                    "score": 0.0,
+                    "level": "L1",
+                    "violations": [],
+                    "stats": {},
+                    "tier": "pro",
+                }
+
+        def _fake_post(url: str, **kwargs: object) -> _FakeResponse:
+            captured["headers"] = dict(kwargs.get("headers") or {})
+            return _FakeResponse()
+
+        with patch("httpx.post", side_effect=_fake_post):
+            client = AilsClient(base_url="https://example.test", tier="pro", api_key="test-key")
+            client.lint(rm)
+
+        headers = captured["headers"]
+        assert headers.get("User-Agent", "").startswith("reporails-cli/")
+        assert headers.get("Authorization") == "Bearer test-key"
+
+
 class TestDeserializeHints:
     @pytest.mark.unit
     @pytest.mark.subsys_api
