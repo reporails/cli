@@ -63,16 +63,20 @@ class Models:
                     try:
                         import spacy
 
-                        # Phase 3 classification only reads tok.dep_ / tok.tag_ /
-                        # tok.text / tok.i / root.children. That needs tok2vec +
-                        # tagger + parser only; ner / lemmatizer / attribute_ruler
-                        # are dead weight on both load time and per-doc inference.
-                        # `en_core_web_sm` is a declared runtime dep (pinned in
-                        # pyproject.toml by URL since spaCy ships models on GitHub
-                        # Releases, not PyPI). If load still fails, fall through
-                        # to the lexicon fallback in classify.py.
+                        from reporails_cli.bundled import get_spacy_model_path
+
+                        # The dependency-parser branch of the classifier reads
+                        # tok.dep_ / tok.tag_ / tok.text / tok.i / root.children.
+                        # That needs tok2vec + tagger + parser only; ner /
+                        # lemmatizer / attribute_ruler are dead weight on both
+                        # load time and per-doc inference. The en_core_web_sm
+                        # pipeline ships inside the wheel under bundled/spacy/
+                        # so there's no PyPI dep and no runtime download. If the
+                        # bundled path is missing (e.g. running from a stripped
+                        # source tree), fall through to the lexicon fallback in
+                        # classify.py.
                         self._nlp = spacy.load(
-                            "en_core_web_sm",
+                            get_spacy_model_path(),
                             disable=["ner", "lemmatizer", "attribute_ruler"],
                         )
                     except (ImportError, OSError):

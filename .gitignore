@@ -26,9 +26,11 @@ specs/
 framework/rules/**/tests/**/CLAUDE.md
 framework/rules/**/tests/**/.claude/
 
-# Bundled ONNX embedding model — fetched by scripts/fetch_bundled_model.py
-# (dev-only, not committed; populated on clone and in CI before hatch build)
+# Bundled ML assets — fetched by scripts/fetch_bundled_model.py
+# (dev-only, not committed; populated on clone and in CI before hatch build).
+# ONNX embedder (~80 MB) + spaCy en_core_web_sm pipeline (~15 MB).
 src/reporails_cli/bundled/models/
+src/reporails_cli/bundled/spacy/
 
 # npm packaging — README.md is copied from the repo root by the prepack
 # script in packages/npm/package.json before `npm pack` / `npm publish`.

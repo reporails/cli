@@ -34,16 +34,12 @@ dependencies = [
     "onnxruntime>=1.18,<2",
     "tokenizers>=0.19,<1",
     "numpy>=1.26,<3",
-    # spaCy drives Phase 3 imperative classification in the mapper. It's a
-    # hard requirement — the fallback verb lexicon drops charge accuracy
-    # from 96% to ~78%. With the torch blocker active, spaCy loads in ~1s.
+    # spaCy provides the dependency-parser branch of the classifier. With
+    # the torch blocker active, spaCy loads in ~1s. The en_core_web_sm
+    # pipeline files ship inside the wheel under bundled/spacy/ rather
+    # than as a separate runtime dep — spaCy does not publish its language
+    # models on PyPI, so a direct-URL pin would block PyPI publication.
     "spacy>=3.8.11,<4",
-    # spaCy ships its language models out-of-band on GitHub Releases (PyPI
-    # does not host them). Pin the wheel directly so `uv sync` installs it
-    # alongside spaCy — uv venvs don't ship `pip`, so the historical
-    # `python -m spacy download en_core_web_sm` runtime fallback no longer
-    # works. Bump in lockstep with the spaCy minor.
-    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     # sklearn for topic clustering in mapper
     "scikit-learn>=1.4.0",
     "msgpack>=1.0.0",
@@ -96,12 +92,6 @@ Issues = "https://github.com/reporails/cli/issues"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-# `en_core_web_sm` is pinned by URL because spaCy publishes its language
-# models on GitHub Releases (not PyPI). The direct-reference toggle here is
-# scoped to that one dep; no other runtime dep uses a URL.
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reporails_cli"]
