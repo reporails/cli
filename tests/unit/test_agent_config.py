@@ -16,6 +16,7 @@ from reporails_cli.core.agents import (
     auto_detect_agent,
     get_known_agents,
 )
+from reporails_cli.core.platform.adapters.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 from reporails_cli.core.platform.config.bootstrap import get_agent_config
 from reporails_cli.core.platform.dto.models import (
     AgentConfig,
@@ -25,7 +26,6 @@ from reporails_cli.core.platform.dto.models import (
     RuleType,
     Severity,
 )
-from reporails_cli.core.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 
 # =============================================================================
 # get_agent_config tests
@@ -271,7 +271,7 @@ class TestLoadRulesExcludes:
             )
 
         agent_config = AgentConfig(agent="test", excludes=["CORE:S:0001"])
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules
@@ -290,7 +290,7 @@ class TestLoadRulesExcludes:
         )
 
         agent_config = AgentConfig(agent="test", excludes=["NONEXISTENT"])
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" in rules
@@ -335,7 +335,7 @@ class TestLoadRulesExcludes:
             prefix="COPILOT",
             excludes=["CLAUDE:*", "CODEX:*"],
         )
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="copilot")
 
         assert "CORE:S:0001" in rules
@@ -365,7 +365,7 @@ class TestLoadRulesExcludes:
             agent="test",
             excludes=["CORE:S:0001", "CLAUDE:*"],
         )
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules  # exact exclude
@@ -417,7 +417,7 @@ class TestPrefixNamespaceFiltering:
 
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
         agent_config = AgentConfig(agent="myagent", prefix="MYPREFIX")
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="myagent")
 
         assert "CORE:S:0001" in rules
@@ -444,7 +444,7 @@ class TestPrefixNamespaceFiltering:
 
         # No prefix — agent.upper() = "CLAUDE" used for filtering
         agent_config = AgentConfig(agent="claude")
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="claude")
 
         assert "CORE:S:0001" in rules

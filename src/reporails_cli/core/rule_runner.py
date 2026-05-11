@@ -103,7 +103,7 @@ def run_m_probes(
 ) -> list[LocalFinding]:
     """Run M-probe checks (mechanical + deterministic) against instruction files."""
     from reporails_cli.core.classification import classify_files, load_file_types
-    from reporails_cli.core.registry import load_rules
+    from reporails_cli.core.platform.adapters.registry import load_rules
 
     rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
     file_types = load_file_types(agent or "generic")
@@ -131,7 +131,7 @@ def run_content_quality_checks(
     from reporails_cli.core.classification import classify_files, load_file_types
     from reporails_cli.core.content_checker import run_content_checks
     from reporails_cli.core.mapper.mapper import RulesetMap as _RulesetMap
-    from reporails_cli.core.registry import load_rules
+    from reporails_cli.core.platform.adapters.registry import load_rules
 
     if not isinstance(ruleset_map, _RulesetMap):
         return []

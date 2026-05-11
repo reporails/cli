@@ -272,7 +272,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_additional_path_overrides_framework(self, tmp_path: Path) -> None:
-        from reporails_cli.core.registry import load_rules
+        from reporails_cli.core.platform.adapters.registry import load_rules
 
         # Create framework rules dir
         rules_dir = tmp_path / "rules"
@@ -298,7 +298,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
-        from reporails_cli.core.registry import load_rules
+        from reporails_cli.core.platform.adapters.registry import load_rules
 
         # Create framework rules
         rules_dir = tmp_path / "rules"
@@ -327,7 +327,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_disabled_nonexistent_rule_harmless(self, tmp_path: Path) -> None:
-        from reporails_cli.core.registry import load_rules
+        from reporails_cli.core.platform.adapters.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"
@@ -351,7 +351,7 @@ class TestLoadRulesWithPackages:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_project_root_backward_compat(self, tmp_path: Path) -> None:
-        from reporails_cli.core.registry import load_rules
+        from reporails_cli.core.platform.adapters.registry import load_rules
 
         rules_dir = tmp_path / "rules"
         core_dir = rules_dir / "core" / "structure"

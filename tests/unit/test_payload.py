@@ -7,7 +7,6 @@ import json
 import msgpack
 import pytest
 
-from reporails_cli.core.api_client import _strip_and_serialize
 from reporails_cli.core.mapper.mapper import (
     Atom,
     ClusterRecord,
@@ -15,7 +14,8 @@ from reporails_cli.core.mapper.mapper import (
     RulesetMap,
     RulesetSummary,
 )
-from reporails_cli.core.payload import (
+from reporails_cli.core.platform.adapters.api_client import _strip_and_serialize
+from reporails_cli.core.platform.adapters.payload import (
     WIRE_SCHEMA_VERSION_V3,
     encode_msgpack,
     project_payload,

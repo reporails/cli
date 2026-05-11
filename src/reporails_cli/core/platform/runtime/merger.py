@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.api_client import (
+from reporails_cli.core.platform.adapters.api_client import (
     CrossFileFinding,
     FileAnalysis,
     QualityResult,

@@ -78,7 +78,7 @@ def _resolve_recommended_rules(
                 if rec_path not in rules_paths:
                     rules_paths.append(rec_path)
             else:
-                from reporails_cli.core.registry import get_rules_dir
+                from reporails_cli.core.platform.adapters.registry import get_rules_dir
 
                 rules_paths = [get_rules_dir(), rec_path]
 

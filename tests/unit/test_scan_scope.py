@@ -22,7 +22,7 @@ from reporails_cli.core.agents import (
     get_all_scannable_files,
 )
 from reporails_cli.core.classification import classify_files, load_file_types
-from reporails_cli.core.engine_helpers import _find_project_root
+from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
 
 
 def _is_external(f: Path, scope: Path) -> bool:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.api_client import (
+from reporails_cli.core.platform.adapters.api_client import (
     CrossFileCoordinate,
     Diagnostic,
     FileAnalysis,
@@ -12,8 +12,8 @@ from reporails_cli.core.api_client import (
     QualityResult,
     RulesetReport,
 )
-from reporails_cli.core.merger import merge_results
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.runtime.merger import merge_results
 
 
 @pytest.fixture

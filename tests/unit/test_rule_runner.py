@@ -74,7 +74,7 @@ class TestRunMProbes:
     @pytest.mark.subsys_lint
     def test_no_agent_loads_only_core(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Without agent param, only CORE rules load — no agent-specific rules."""
-        from reporails_cli.core.registry import load_rules
+        from reporails_cli.core.platform.adapters.registry import load_rules
 
         rules = load_rules(project_root=level2_project, scan_root=level2_project)
         assert all(not k.startswith("CLAUDE:") for k in rules)

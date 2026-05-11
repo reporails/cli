@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.adapters.registry import build_rule
 from reporails_cli.core.platform.dto.models import Category, PatternConfidence, Rule, RuleType
-from reporails_cli.core.registry import build_rule
 
 MINIMAL_FRONTMATTER = {
     "id": "CORE:S:0001",
@@ -202,8 +202,8 @@ class TestApplyInheritance:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inheritance_merges_checks(self) -> None:
+        from reporails_cli.core.platform.adapters.registry import _apply_inheritance
         from reporails_cli.core.platform.dto.models import Check
-        from reporails_cli.core.registry import _apply_inheritance
 
         parent_check = Check(id="CORE.S.0038.has_frontmatter", type="mechanical", check="frontmatter_present")
         child_check = Check(id="CLAUDE.S.0015.has_paths_key", type="mechanical", check="frontmatter_key")
@@ -240,7 +240,7 @@ class TestApplyInheritance:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inheritance_missing_parent_is_noop(self) -> None:
-        from reporails_cli.core.registry import _apply_inheritance
+        from reporails_cli.core.platform.adapters.registry import _apply_inheritance
 
         rules: dict[str, Rule] = {
             "CLAUDE:S:0015": Rule(
@@ -263,7 +263,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_cycle_passes_silently(self) -> None:
-        from reporails_cli.core.registry import _validate_depends_on
+        from reporails_cli.core.platform.adapters.registry import _validate_depends_on
 
         rules: dict[str, Rule] = {
             "A": Rule(
@@ -276,7 +276,7 @@ class TestValidateDependsOn:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_cycle_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        from reporails_cli.core.registry import _validate_depends_on
+        from reporails_cli.core.platform.adapters.registry import _validate_depends_on
 
         rules: dict[str, Rule] = {
             "A": Rule(
@@ -308,6 +308,6 @@ class TestInferAgentFromRuleId:
         ],
     )
     def test_infer(self, rule_id: str, expected: str) -> None:
-        from reporails_cli.core.registry import infer_agent_from_rule_id
+        from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id
 
         assert infer_agent_from_rule_id(rule_id) == expected
