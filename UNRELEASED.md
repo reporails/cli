@@ -44,3 +44,5 @@
 - Discovery: skill and rule files that appear under multiple agent surfaces via symlinks (e.g. `.claude/skills/` → `.agents/skills/`) are now collapsed to one canonical entry, eliminating duplicate findings and inflated scoring
 
 ### Removed
+
+- CLI: removed the hidden `ails map` command (project topology detector). The underlying per-project detection primitives in `core/discovery/discover.py` (`_detect_classification`, `_detect_commands`, `_detect_meta`, `_detect_paths`) are retained as library helpers; only the user-facing command surface and its dedicated output formatters are gone.
