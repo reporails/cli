@@ -9,7 +9,7 @@ from typing import Any
 
 import regex as re
 
-from reporails_cli.core.models import LocalFinding
+from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.regex.compiler import (
     CombinedPattern,
     CompiledCheck,

@@ -28,7 +28,7 @@ class TestRunMProbes:
     def test_findings_are_local_finding(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Each finding should be a LocalFinding instance."""
         from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.models import LocalFinding
+        from reporails_cli.core.platform.dto.models import LocalFinding
         from reporails_cli.core.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)

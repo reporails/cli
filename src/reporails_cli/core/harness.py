@@ -23,7 +23,7 @@ import yaml
 
 from reporails_cli.core.classification import classify_files, load_file_types
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
-from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import parse_frontmatter
 from reporails_cli.core.regex import run_validation as run_regex_validation
 
@@ -1102,7 +1102,7 @@ def lint_rules(rules: list[RuleInfo]) -> list[LintError]:
     3. No duplicate rule IDs — across all namespaces
     4. Required frontmatter — id, slug, title, category, type, severity present
     """
-    from reporails_cli.core.models import CATEGORY_CODES
+    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 
     errors: list[LintError] = []
     seen_ids: dict[str, Path] = {}

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.applicability import detect_features_filesystem
+from reporails_cli.core.platform.policy.applicability import detect_features_filesystem
 
 
 class TestFeatureDetection:

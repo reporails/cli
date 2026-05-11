@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.models import FileMatch
 from reporails_cli.core.platform.config.bootstrap import is_initialized
+from reporails_cli.core.platform.dto.models import FileMatch
 from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import mcp as mcp_formatter
 

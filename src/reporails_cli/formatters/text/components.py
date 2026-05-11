@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from reporails_cli.core.models import ScanDelta
+from reporails_cli.core.platform.dto.models import ScanDelta
 
 if TYPE_CHECKING:
     from reporails_cli.core.agents import DetectedAgent

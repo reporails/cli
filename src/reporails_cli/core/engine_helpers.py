@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.cache import ProjectCache, content_hash, structural_hash
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.dto.models import (
     Category,
     CategoryStats,
     ClassifiedFile,

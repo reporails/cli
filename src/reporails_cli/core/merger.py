@@ -17,7 +17,7 @@ from reporails_cli.core.api_client import (
     QualityResult,
     RulesetReport,
 )
-from reporails_cli.core.models import LocalFinding
+from reporails_cli.core.platform.dto.models import LocalFinding
 
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 

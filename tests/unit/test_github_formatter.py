@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.dto.models import (
     FrictionEstimate,
     Level,
     ScanDelta,

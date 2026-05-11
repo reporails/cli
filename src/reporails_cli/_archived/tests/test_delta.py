@@ -9,7 +9,7 @@ Tests cover:
 from __future__ import annotations
 
 from reporails_cli.core.cache import AnalyticsEntry
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.dto.models import (
     FrictionEstimate,
     Level,
     ScanDelta,

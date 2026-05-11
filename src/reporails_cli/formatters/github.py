@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from reporails_cli.core.models import ScanDelta, Severity, ValidationResult
+from reporails_cli.core.platform.dto.models import ScanDelta, Severity, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 
 

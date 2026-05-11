@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 from reporails_cli.core.agents import DetectedAgent, get_all_instruction_files
-from reporails_cli.core.models import DetectedFeatures, Rule
+from reporails_cli.core.platform.dto.models import DetectedFeatures, Rule
 
 logger = logging.getLogger(__name__)
 

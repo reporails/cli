@@ -18,11 +18,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.models import Level
+from reporails_cli.core.platform.dto.models import Level
 
 if TYPE_CHECKING:
-    from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
-    from reporails_cli.core.results import DetectedFeatures
+    from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
+    from reporails_cli.core.platform.dto.results import DetectedFeatures
 
 # Level labels — canonical mapping (must match framework registry/levels.yml)
 LEVEL_LABELS: dict[Level, str] = {

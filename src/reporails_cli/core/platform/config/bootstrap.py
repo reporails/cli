@@ -11,7 +11,7 @@ from reporails_cli.core.bundled import get_bundled_package_root, get_bundled_rul
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from reporails_cli.core.models import AgentConfig, FileTypeDeclaration, GlobalConfig, ProjectConfig
+    from reporails_cli.core.platform.dto.models import AgentConfig, FileTypeDeclaration, GlobalConfig, ProjectConfig
 
 # Constants
 REPORAILS_HOME = Path.home() / ".reporails"

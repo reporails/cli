@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
-from reporails_cli.core.models import Check, ClassifiedFile, Rule, Severity, Violation
+from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
 

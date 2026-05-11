@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.levels import get_level_labels
-from reporails_cli.core.models import ScanDelta
+from reporails_cli.core.platform.dto.models import ScanDelta
+from reporails_cli.core.platform.policy.levels import get_level_labels
 from reporails_cli.formatters.text.chars import ASCII_MODE, get_chars
 from reporails_cli.formatters.text.components import (
     _category_result_color,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.models import Rule
+from reporails_cli.core.platform.dto.models import Rule
 from reporails_cli.core.regex.runner import (
     checks_per_file,
     run_checks,

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from reporails_cli.core.models import Violation
+from reporails_cli.core.platform.dto.models import Violation
 
 
 @dataclass(frozen=True)

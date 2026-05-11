@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.applicability import get_applicable_rules
-from reporails_cli.core.models import Category, FileMatch, Rule, RuleType
+from reporails_cli.core.platform.dto.models import Category, FileMatch, Rule, RuleType
+from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
 
 def _make_rule(rule_id: str, match_type: str = "main") -> Rule:

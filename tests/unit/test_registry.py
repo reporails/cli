@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.models import Category, PatternConfidence, Rule, RuleType
+from reporails_cli.core.platform.dto.models import Category, PatternConfidence, Rule, RuleType
 from reporails_cli.core.registry import build_rule
 
 MINIMAL_FRONTMATTER = {
@@ -202,7 +202,7 @@ class TestApplyInheritance:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inheritance_merges_checks(self) -> None:
-        from reporails_cli.core.models import Check
+        from reporails_cli.core.platform.dto.models import Check
         from reporails_cli.core.registry import _apply_inheritance
 
         parent_check = Check(id="CORE.S.0038.has_frontmatter", type="mechanical", check="frontmatter_present")

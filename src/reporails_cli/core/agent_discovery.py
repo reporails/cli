@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from reporails_cli.core.results import ProjectConfig
+    from reporails_cli.core.platform.dto.results import ProjectConfig
 
 logger = logging.getLogger(__name__)
 

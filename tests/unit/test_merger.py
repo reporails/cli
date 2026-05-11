@@ -13,7 +13,7 @@ from reporails_cli.core.api_client import (
     RulesetReport,
 )
 from reporails_cli.core.merger import merge_results
-from reporails_cli.core.models import LocalFinding
+from reporails_cli.core.platform.dto.models import LocalFinding
 
 
 @pytest.fixture

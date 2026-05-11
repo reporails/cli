@@ -26,7 +26,7 @@ import typer  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-from reporails_cli.core.models import FileMatch, LocalFinding  # noqa: E402
+from reporails_cli.core.platform.dto.models import FileMatch, LocalFinding  # noqa: E402
 from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules  # noqa: E402
 from reporails_cli.formatters import text as text_formatter  # noqa: E402
 from reporails_cli.formatters.text.display import print_text_result  # noqa: E402

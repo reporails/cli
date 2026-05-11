@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from reporails_cli.core.models import ScanDelta, ValidationResult
+from reporails_cli.core.platform.dto.models import ScanDelta, ValidationResult
 
 if TYPE_CHECKING:
     from reporails_cli.core.fixers import FixResult
-    from reporails_cli.core.models import JudgmentRequest, Violation
+    from reporails_cli.core.platform.dto.models import JudgmentRequest, Violation
 
 
 # ---------------------------------------------------------------------------
