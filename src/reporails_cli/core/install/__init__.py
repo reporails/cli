@@ -1,1 +1,1 @@
-"""Install subsystem — CLI setup, rule/recommended download + update, self-upgrade, MCP config."""
+"""Install subsystem — CLI setup, rule download + update, self-upgrade, MCP config."""

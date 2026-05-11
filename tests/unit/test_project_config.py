@@ -20,30 +20,15 @@ class TestGetProjectConfig:
         assert config.packages == []
         assert config.disabled_rules == []
         assert config.framework_version is None
-        assert config.recommended is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("framework_version: '0.1.0'\npackages:\n  - recommended\ndisabled_rules:\n  - S1\n")
+        make_config_file("framework_version: '0.1.0'\npackages:\n  - custom\ndisabled_rules:\n  - S1\n")
         config = get_project_config(tmp_path)
         assert config.framework_version == "0.1.0"
-        assert config.packages == ["recommended"]
+        assert config.packages == ["custom"]
         assert config.disabled_rules == ["S1"]
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_recommended_true_by_default(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("packages:\n  - custom\n")
-        config = get_project_config(tmp_path)
-        assert config.recommended is True
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_recommended_opt_out(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("recommended: false\n")
-        config = get_project_config(tmp_path)
-        assert config.recommended is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -61,11 +46,10 @@ class TestGetProjectConfig:
         make_config_file(": : :\n  bad yaml [[[")
         with patch(
             "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(default_agent="claude", recommended=False),
+            return_value=GlobalConfig(default_agent="claude"),
         ):
             config = get_project_config(tmp_path)
         assert config.default_agent == "claude"
-        assert config.recommended is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -108,45 +92,16 @@ class TestGlobalDefaultsMerged:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_inherits_global_recommended(self, tmp_path: Path, make_config_file) -> None:
-        """Project without recommended key inherits global value."""
-        from reporails_cli.core.platform.dto.models import GlobalConfig
-
-        make_config_file("packages:\n  - custom\n")
-        with patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(recommended=False),
-        ):
-            config = get_project_config(tmp_path)
-        assert config.recommended is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_project_overrides_global_recommended(self, tmp_path: Path, make_config_file) -> None:
-        """Project explicit recommended: false wins over global true."""
-        from reporails_cli.core.platform.dto.models import GlobalConfig
-
-        make_config_file("recommended: false\n")
-        with patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(recommended=True),
-        ):
-            config = get_project_config(tmp_path)
-        assert config.recommended is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
     def test_no_config_file_inherits_global(self, tmp_path: Path) -> None:
         """No .ails/config.yml — global defaults apply."""
         from reporails_cli.core.platform.dto.models import GlobalConfig
 
         with patch(
             "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(default_agent="claude", recommended=False),
+            return_value=GlobalConfig(default_agent="claude"),
         ):
             config = get_project_config(tmp_path)
         assert config.default_agent == "claude"
-        assert config.recommended is False
 
 
 class TestGetPackagePaths:

@@ -136,18 +136,6 @@ def get_global_packages_path() -> Path:
     return get_reporails_home() / "packages"
 
 
-def get_recommended_package_path() -> Path:
-    """Get path to recommended package.
-
-    Returns local override from global config if set, otherwise
-    ~/.reporails/packages/recommended/.
-    """
-    config = get_global_config()
-    if config.recommended_path and config.recommended_path.is_dir():
-        return config.recommended_path
-    return get_global_packages_path() / "recommended"
-
-
 def get_version_file() -> Path:
     """Get path to version file (~/.reporails/version)."""
     return get_reporails_home() / "version"
@@ -210,17 +198,6 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
 def get_installed_version() -> str | None:
     """Read installed framework version from ~/.reporails/version."""
     version_file = get_version_file()
-    if not version_file.exists():
-        return None
-    try:
-        return version_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-
-
-def get_installed_recommended_version() -> str | None:
-    """Read installed recommended package version from ~/.reporails/packages/recommended/.version."""
-    version_file = get_recommended_package_path() / ".version"
     if not version_file.exists():
         return None
     try:

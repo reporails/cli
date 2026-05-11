@@ -57,14 +57,10 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
 
 
 def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
-    """Resolve rules paths for explain command, auto-including recommended."""
+    """Resolve rules paths for explain command."""
     if rules:
         return [Path(r).resolve() for r in rules]
-    from reporails_cli.core.platform.adapters.registry import get_rules_dir
-    from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
-
-    rec_path = get_recommended_package_path()
-    return [get_rules_dir(), rec_path] if rec_path.is_dir() else None
+    return None
 
 
 @app.command(rich_help_panel="Commands")

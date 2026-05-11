@@ -69,13 +69,10 @@ def get_global_config() -> GlobalConfig:
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         framework_path = data.get("framework_path")
-        recommended_path = data.get("recommended_path")
         return GlobalConfig(
             framework_path=Path(framework_path) if framework_path else None,
-            recommended_path=Path(recommended_path) if recommended_path else None,
             auto_update_check=data.get("auto_update_check", True),
             default_agent=data.get("default_agent", ""),
-            recommended=data.get("recommended", True),
             tier=data.get("tier", ""),
         )
     except (yaml.YAMLError, OSError) as exc:
@@ -145,12 +142,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
 
     if not data:
         global_cfg = get_global_config()
-        return ProjectConfig(
-            default_agent=global_cfg.default_agent,
-            recommended=global_cfg.recommended,
-        )
-
-    has_recommended = "recommended" in data
+        return ProjectConfig(default_agent=global_cfg.default_agent)
 
     def _str_list(key: str) -> list[str]:
         val = data.get(key)
@@ -162,8 +154,6 @@ def get_project_config(project_root: Path) -> ProjectConfig:
 
     fw = data.get("framework_version")
     fw_str = fw if isinstance(fw, str) else None
-    rec = data.get("recommended", True)
-    rec_bool = bool(rec) if not isinstance(rec, bool) else rec
     da = data.get("default_agent", "")
     da_str = da if isinstance(da, str) else ""
     ovr = data.get("overrides", {})
@@ -174,7 +164,6 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         packages=_str_list("packages"),
         disabled_rules=_str_list("disabled_rules"),
         overrides=ovr_dict,
-        recommended=rec_bool,
         exclude_dirs=_str_list("exclude_dirs"),
         default_agent=da_str,
         agents=_str_dict("agents"),
@@ -184,6 +173,4 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     global_cfg = get_global_config()
     if not config.default_agent:
         config.default_agent = global_cfg.default_agent
-    if not has_recommended:
-        config.recommended = global_cfg.recommended
     return config

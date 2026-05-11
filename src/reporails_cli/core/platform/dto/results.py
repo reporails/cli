@@ -107,10 +107,8 @@ class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml)."""
 
     framework_path: Path | None = None  # Local override (dev)
-    recommended_path: Path | None = None  # Local override (dev)
     auto_update_check: bool = True
     default_agent: str = ""
-    recommended: bool = True
     tier: str = ""  # "free" | "pro" — overridden by AILS_TIER env var
 
 
@@ -122,7 +120,6 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     packages: list[str] = field(default_factory=list)  # Project rule packages
     disabled_rules: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
-    recommended: bool = True  # Include recommended rules (opt out with false)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
     default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
     # Per-agent overrides keyed by agent id. Currently supports `fallback_filenames`

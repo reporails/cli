@@ -1,7 +1,7 @@
 """Update check unit tests.
 
-Tests the 24-hour cached update check for CLI (PyPI), framework (GitHub),
-and recommended (GitHub). All network calls and filesystem access are mocked.
+Tests the 24-hour cached update check for CLI (PyPI) and framework (GitHub).
+All network calls and filesystem access are mocked.
 """
 
 from __future__ import annotations
@@ -56,30 +56,8 @@ class TestUpdateNotification:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    @pytest.mark.parametrize(
-        "current,latest,expected",
-        [
-            ("0.1.0", "0.2.0", True),
-            ("0.1.0", "0.1.0", False),
-            (None, None, False),
-            ("0.1.0", None, False),
-            (None, "0.2.0", False),
-        ],
-    )
-    def test_has_recommended_update(self, current: str | None, latest: str | None, expected: bool) -> None:
-        n = UpdateNotification(recommended_current=current, recommended_latest=latest)
-        assert n.has_recommended_update is expected
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
     def test_has_any_update_true_for_cli(self) -> None:
         n = UpdateNotification(cli_current="0.1.0", cli_latest="0.2.0")
-        assert n.has_any_update is True
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_has_any_update_true_for_recommended(self) -> None:
-        n = UpdateNotification(recommended_current="0.1.0", recommended_latest="0.2.0")
         assert n.has_any_update is True
 
     @pytest.mark.unit
@@ -149,14 +127,6 @@ class TestFormatUpdateMessage:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_recommended_only(self) -> None:
-        n = UpdateNotification(recommended_current="0.1.0", recommended_latest="0.2.0")
-        msg = format_update_message(n)
-        assert "recommended 0.1.0 → 0.2.0" in msg
-        assert "ails update" in msg
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
     def test_both_updates(self) -> None:
         n = UpdateNotification(
             cli_current="0.1.0",
@@ -167,22 +137,6 @@ class TestFormatUpdateMessage:
         msg = format_update_message(n)
         assert "CLI 0.1.0 → 0.2.0" in msg
         assert "framework 0.0.1 → 0.0.2" in msg
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_all_three_updates(self) -> None:
-        n = UpdateNotification(
-            cli_current="0.1.0",
-            cli_latest="0.2.0",
-            rules_current="0.0.1",
-            rules_latest="0.0.2",
-            recommended_current="0.1.0",
-            recommended_latest="0.2.0",
-        )
-        msg = format_update_message(n)
-        assert "CLI 0.1.0 → 0.2.0" in msg
-        assert "framework 0.0.1 → 0.0.2" in msg
-        assert "recommended 0.1.0 → 0.2.0" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +162,6 @@ class TestCacheReadWrite:
                     "last_checked": datetime.now(UTC).isoformat(),
                     "latest_cli_version": "99.0.0",
                     "latest_rules_version": "99.0.0",
-                    "latest_recommended_version": "99.0.0",
                 }
             )
         )
@@ -220,7 +173,7 @@ class TestCacheReadWrite:
 
         assert cached is not None
         assert cached["latest_cli_version"] == "99.0.0"
-        assert cached["latest_recommended_version"] == "99.0.0"
+        assert cached["latest_rules_version"] == "99.0.0"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -237,7 +190,6 @@ class TestCacheReadWrite:
                     "last_checked": old_time.isoformat(),
                     "latest_cli_version": "99.0.0",
                     "latest_rules_version": "99.0.0",
-                    "latest_recommended_version": "99.0.0",
                 }
             )
         )
@@ -279,33 +231,6 @@ class TestCacheReadWrite:
             cached = _read_cache()
 
         assert cached is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_cache_without_recommended_still_works(self, tmp_path: pytest.TempPathFactory) -> None:
-        """Old cache format without recommended field should still parse."""
-        from reporails_cli.core.install import update_check
-
-        cache_dir = tmp_path / "cache"
-        cache_dir.mkdir()
-        cache_file = cache_dir / "update-check.json"
-        cache_file.write_text(
-            json.dumps(
-                {
-                    "last_checked": datetime.now(UTC).isoformat(),
-                    "latest_cli_version": "1.0.0",
-                    "latest_rules_version": "1.0.0",
-                }
-            )
-        )
-
-        with patch.object(update_check, "_get_cache_path", return_value=cache_file):
-            from reporails_cli.core.install.update_check import _read_cache
-
-            cached = _read_cache()
-
-        assert cached is not None
-        assert cached.get("latest_recommended_version") is None
 
 
 # ---------------------------------------------------------------------------
@@ -366,17 +291,12 @@ class TestCheckForUpdates:
                 return_value={
                     "latest_cli_version": "99.0.0",
                     "latest_rules_version": "0.0.1",
-                    "latest_recommended_version": "0.1.0",
                 },
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
-            ),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
             ),
         ):
             result = check_for_updates()
@@ -394,17 +314,12 @@ class TestCheckForUpdates:
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "99.0.0",
-                    "latest_recommended_version": "0.1.0",
                 },
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
-            ),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
             ),
         ):
             result = check_for_updates()
@@ -415,34 +330,6 @@ class TestCheckForUpdates:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_returns_notification_when_recommended_outdated(self) -> None:
-        with (
-            patch(
-                "reporails_cli.core.install.update_check._read_cache",
-                return_value={
-                    "latest_cli_version": "0.1.0",
-                    "latest_rules_version": "0.0.1",
-                    "latest_recommended_version": "99.0.0",
-                },
-            ),
-            patch("reporails_cli.__version__", "0.1.0"),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_version",
-                return_value="0.0.1",
-            ),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
-            ),
-        ):
-            result = check_for_updates()
-
-        assert result is not None
-        assert result.has_recommended_update is True
-        assert result.recommended_latest == "99.0.0"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
     def test_returns_none_when_current(self) -> None:
         with (
             patch(
@@ -450,17 +337,12 @@ class TestCheckForUpdates:
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "0.0.1",
-                    "latest_recommended_version": "0.1.0",
                 },
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
-            ),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
             ),
         ):
             result = check_for_updates()
@@ -480,19 +362,11 @@ class TestCheckForUpdates:
                 "reporails_cli.core.install.updater.get_latest_version",
                 return_value="99.0.0",
             ),
-            patch(
-                "reporails_cli.core.install.updater.get_latest_recommended_version",
-                return_value="99.0.0",
-            ),
             patch("reporails_cli.core.install.update_check._write_cache"),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_installed_version",
                 return_value="0.0.1",
-            ),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
-                return_value="0.1.0",
             ),
         ):
             result = check_for_updates()
@@ -522,16 +396,11 @@ class TestCheckForUpdates:
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "99.0.0",
-                    "latest_recommended_version": None,
                 },
             ),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_installed_version",
-                return_value=None,
-            ),
-            patch(
-                "reporails_cli.core.platform.config.bootstrap.get_installed_recommended_version",
                 return_value=None,
             ),
         ):

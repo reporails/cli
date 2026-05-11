@@ -38,67 +38,6 @@ def _default_format() -> str:
     return "text"
 
 
-def _resolve_recommended_rules(
-    rules_paths: list[Path] | None,
-    project_config: Any,
-    format: str | None,
-    con: Console,
-) -> list[Path] | None:
-    """Download recommended rules if needed and append the package path."""
-    from reporails_cli.core.install.download import download_recommended, is_recommended_installed
-
-    use_recommended = project_config.recommended
-    has_recommended = (
-        rules_paths
-        and len(rules_paths) > 1
-        and any(
-            (p / "docs" / "sources.yml").exists() and p != (rules_paths[0] if rules_paths else None)
-            for p in rules_paths[1:]
-        )
-    )
-
-    if use_recommended and not has_recommended and not is_recommended_installed():
-        show = sys.stdout.isatty() and format not in ("json", "brief", "compact", "github", "agent")
-        try:
-            if show:
-                with con.status("[bold]Downloading recommended rules...[/bold]"):
-                    download_recommended()
-            else:
-                download_recommended()
-        except (FileNotFoundError, KeyError, OSError) as exc:
-            logger.debug("Failed to download recommended rules: %s", exc)
-            con.print("[yellow]Warning:[/yellow] Could not download recommended rules.")
-
-    if use_recommended and not has_recommended:
-        from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
-
-        rec_path = get_recommended_package_path()
-        if rec_path.is_dir():
-            if rules_paths is not None:
-                if rec_path not in rules_paths:
-                    rules_paths.append(rec_path)
-            else:
-                from reporails_cli.core.platform.adapters.registry import get_rules_dir
-
-                rules_paths = [get_rules_dir(), rec_path]
-
-    return rules_paths
-
-
-def _handle_update_check(con: Console) -> None:
-    """Print installed vs latest versions for framework and recommended."""
-    from reporails_cli.core.install.updater import get_latest_recommended_version, get_latest_version
-    from reporails_cli.core.platform.config.bootstrap import get_installed_recommended_version, get_installed_version
-
-    current, current_rec = get_installed_version(), get_installed_recommended_version()
-    with con.status("[bold]Checking for updates...[/bold]"):
-        latest, latest_rec = get_latest_version(), get_latest_recommended_version()
-    con.print(f"[bold]Framework:[/bold]  {current or 'not installed'} → {latest or 'unknown'}")
-    con.print(f"[bold]Recommended:[/bold] {current_rec or 'not installed'} → {latest_rec or 'unknown'}")
-    up_to_date = (latest and current == latest) and (latest_rec and current_rec == latest_rec)
-    con.print("\n[green]You are up to date.[/green]" if up_to_date else "\n[cyan]Run 'ails update' to update[/cyan]")
-
-
 VALID_FORMATS = {"text", "json", "compact", "brief", "github", "agent"}
 
 

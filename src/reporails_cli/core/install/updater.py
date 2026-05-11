@@ -1,4 +1,4 @@
-"""Update rules and recommended packages to latest or specific versions."""
+"""Update rules to the latest or a specific version."""
 
 from __future__ import annotations
 
@@ -10,17 +10,14 @@ from tempfile import TemporaryDirectory
 import httpx
 
 from reporails_cli.core.install.download import (
-    RECOMMENDED_API_URL,
     RULES_API_URL,
     RULES_TARBALL_URL,
     _safe_extractall,
     _validate_rules_structure,
     copy_bundled_yml_files,
-    download_recommended,
     write_version_file,
 )
 from reporails_cli.core.platform.config.bootstrap import (
-    get_installed_recommended_version,
     get_installed_version,
     get_reporails_home,
 )
@@ -137,19 +134,6 @@ def get_latest_version() -> str | None:
         return None
 
 
-def get_latest_recommended_version() -> str | None:
-    """Fetch the latest recommended release version from GitHub API."""
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(RECOMMENDED_API_URL)
-            response.raise_for_status()
-            data: dict[str, object] = response.json()
-            tag_name = data.get("tag_name")
-            return str(tag_name).removeprefix("v") if tag_name else None
-    except (httpx.HTTPError, KeyError):
-        return None
-
-
 def update_rules(version: str | None = None, force: bool = False) -> UpdateResult:
     """Update rules to specified version or latest."""
     if version:
@@ -204,54 +188,4 @@ def update_rules(version: str | None = None, force: bool = False) -> UpdateResul
         updated=True,
         rule_count=rule_count,
         message=f"Updated from {current_version or 'none'} to {target_version}.",
-    )
-
-
-def update_recommended(version: str | None = None, force: bool = False) -> UpdateResult:
-    """Update recommended package to specified version or latest."""
-    if version:
-        target_version = version.removeprefix("v")
-    else:
-        latest = get_latest_recommended_version()
-        if not latest:
-            return UpdateResult(
-                previous_version=get_installed_recommended_version(),
-                new_version="unknown",
-                updated=False,
-                rule_count=0,
-                message="Failed to fetch latest recommended version from GitHub.",
-            )
-        target_version = latest
-
-    current_version = get_installed_recommended_version()
-
-    if current_version == target_version and not force:
-        return UpdateResult(
-            previous_version=current_version,
-            new_version=target_version,
-            updated=False,
-            rule_count=0,
-            message=f"Recommended already at version {target_version}.",
-        )
-
-    try:
-        pkg_path = download_recommended(version=target_version)
-        rule_count = sum(1 for _ in pkg_path.rglob("*") if _.is_file())
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            return UpdateResult(
-                previous_version=current_version,
-                new_version=target_version,
-                updated=False,
-                rule_count=0,
-                message=f"Recommended version {target_version} not found.",
-            )
-        raise
-
-    return UpdateResult(
-        previous_version=current_version,
-        new_version=target_version,
-        updated=True,
-        rule_count=rule_count,
-        message=f"Recommended updated from {current_version or 'none'} to {target_version}.",
     )
