@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from reporails_cli.core.mapper.assemble import build_ruleset_map
 from reporails_cli.core.mapper.cluster import cluster_topics
 from reporails_cli.core.mapper.embed import _embed_atoms_deduped, _embed_file_descriptions
 from reporails_cli.core.mapper.imports import expand_imports
@@ -27,26 +27,12 @@ from reporails_cli.core.mapper.inspect import (
 from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.serialize import validate_atoms
-from reporails_cli.core.platform.dto.ruleset import (
-    EMBEDDING_MODEL,
-    SCHEMA_VERSION,
-    Atom,
-    ClusterRecord,
-    FileRecord,
-    RulesetMap,
-    RulesetSummary,
-    TopicCluster,
-)
+from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
 
 if TYPE_CHECKING:
     pass  # sentence_transformers types if needed
 
 logger = logging.getLogger(__name__)
-
-
-# ──────────────────────────────────────────────────────────────────
-# RULESET MAP CONSTRUCTION
-# ──────────────────────────────────────────────────────────────────
 
 
 def content_hash(text: str) -> str:
@@ -120,43 +106,6 @@ def _update_cache_after_embedding(
         file_atoms = by_file.get(frec.path, [])
         if any(id(a) in embed_set for a in file_atoms):
             map_cache.put(frec.content_hash, CachedFileEntry(frec.content_hash, atoms_to_dicts(file_atoms)))
-
-
-def _build_ruleset_map(
-    file_records: list[FileRecord],
-    all_atoms: list[Atom],
-    topics: list[TopicCluster],
-) -> RulesetMap:
-    """Assemble the final RulesetMap from classified and clustered data."""
-    cluster_records = [
-        ClusterRecord(
-            id=tc.topic_id,
-            n_atoms=len(tc.atoms),
-            n_charged=len(tc.charged),
-            n_neutral=len(tc.atoms) - len(tc.charged),
-            centroid=tc.centroid,
-        )
-        for tc in topics
-    ]
-
-    n_charged = sum(1 for a in all_atoms if a.charge_value != 0)
-    summary = RulesetSummary(
-        n_atoms=len(all_atoms),
-        n_charged=n_charged,
-        n_neutral=len(all_atoms) - n_charged,
-        n_topics=len(topics),
-        n_topics_charged=sum(1 for tc in topics if tc.charged),
-    )
-
-    return RulesetMap(
-        schema_version=SCHEMA_VERSION,
-        embedding_model=EMBEDDING_MODEL,
-        generated_at=datetime.now(UTC).isoformat(),
-        files=tuple(file_records),
-        atoms=tuple(all_atoms),
-        clusters=tuple(cluster_records),
-        summary=summary,
-    )
 
 
 def _validate_and_log(ruleset: RulesetMap) -> None:
@@ -257,7 +206,7 @@ def map_ruleset(
 
     _embed_file_descriptions(file_records, models.st)
 
-    ruleset = _build_ruleset_map(file_records, all_atoms, cluster_topics(all_atoms))
+    ruleset = build_ruleset_map(file_records, all_atoms, cluster_topics(all_atoms))
     _validate_and_log(ruleset)
 
     return ruleset
