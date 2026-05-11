@@ -22,6 +22,8 @@ from reporails_cli.core.stopwords_sync import check_staleness, sync_vocab
 
 
 class TestDecompose:
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     @pytest.mark.parametrize(
         "pattern, expected_flags, expected_prefix, expected_terms, expected_suffix",
         [
@@ -56,12 +58,18 @@ class TestDecompose:
         assert parts.terms == expected_terms
         assert parts.suffix == expected_suffix
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_decompose_returns_none_for_no_alternation(self) -> None:
         assert decompose(r"^---\n") is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_decompose_returns_none_for_single_term_group(self) -> None:
         assert decompose("(?:single)") is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_decompose_nested_groups_in_terms(self) -> None:
         """Terms can contain nested groups — they're regex fragments."""
         parts = decompose(r"(?:(?:confirm|ask)\s+before|risky|dangerous)")
@@ -70,11 +78,15 @@ class TestDecompose:
         assert parts.terms[0] == r"(?:confirm|ask)\s+before"
         assert parts.terms[1] == "risky"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_decompose_terms_with_char_classes(self) -> None:
         parts = decompose("(?:AKIA[A-Z0-9]{12,}|ghp_[A-Za-z0-9]{20,})")
         assert parts is not None
         assert parts.terms == ["AKIA[A-Z0-9]{12,}", "ghp_[A-Za-z0-9]{20,}"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_decompose_escaped_pipe_not_split(self) -> None:
         parts = decompose(r"(?:a\|b|c)")
         assert parts is not None
@@ -82,18 +94,24 @@ class TestDecompose:
 
 
 class TestRecompose:
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_round_trip_simple(self) -> None:
         original = "(?i)(?:foo|bar|baz)"
         parts = decompose(original)
         assert parts is not None
         assert recompose(parts) == original
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_round_trip_with_boundaries(self) -> None:
         original = r"(?i)\b(?:error|fail|crash)\b"
         parts = decompose(original)
         assert parts is not None
         assert recompose(parts) == original
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_recompose_with_new_terms(self) -> None:
         parts = PatternParts(
             flags="(?i)",
@@ -105,6 +123,8 @@ class TestRecompose:
         result = recompose(parts, ["new1", "new2"])
         assert result == r"(?i)\b(?:new1|new2)\b"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     @pytest.mark.parametrize(
         "pattern",
         [
@@ -124,35 +144,51 @@ class TestRecompose:
 
 
 class TestHelpers:
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_strip_flags_single(self) -> None:
         flags, rest = _strip_flags("(?i)abc")
         assert flags == "(?i)"
         assert rest == "abc"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_strip_flags_multiple(self) -> None:
         flags, rest = _strip_flags("(?i)(?s)abc")
         assert flags == "(?i)(?s)"
         assert rest == "abc"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_strip_flags_none(self) -> None:
         flags, rest = _strip_flags("abc")
         assert flags == ""
         assert rest == "abc"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_split_alternation_simple(self) -> None:
         assert _split_alternation("a|b|c") == ["a", "b", "c"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_split_alternation_nested_groups(self) -> None:
         result = _split_alternation("(?:a|b)|c")
         assert result == ["(?:a|b)", "c"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_split_alternation_char_class(self) -> None:
         result = _split_alternation("[a|b]|c")
         assert result == ["[a|b]", "c"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_is_guard_true(self) -> None:
         assert is_guard(r"(?s)\A[\s\S]+")
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_is_guard_false(self) -> None:
         assert not is_guard("(?i)(?:foo|bar)")
 
@@ -165,6 +201,8 @@ class TestExtractVocab:
         checks_path = rule_dir / "checks.yml"
         checks_path.write_text(yaml.dump({"checks": checks}), encoding="utf-8")
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_standalone_pattern_regex(self, tmp_path: Path) -> None:
         self._write_checks(
             tmp_path,
@@ -180,6 +218,8 @@ class TestExtractVocab:
         assert vocab is not None
         assert vocab["has_terms"] == ["foo", "bar", "baz"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_mechanical_content_absent(self, tmp_path: Path) -> None:
         self._write_checks(
             tmp_path,
@@ -196,6 +236,8 @@ class TestExtractVocab:
         assert vocab is not None
         assert vocab["fast_check"] == ["a", "b", "c"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_patterns_array_with_guard(self, tmp_path: Path) -> None:
         self._write_checks(
             tmp_path,
@@ -214,6 +256,8 @@ class TestExtractVocab:
         assert vocab is not None
         assert vocab["find_keywords"] == ["MUST", "NEVER", "ALWAYS"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_patterns_array_both_extractable(self, tmp_path: Path) -> None:
         self._write_checks(
             tmp_path,
@@ -235,6 +279,8 @@ class TestExtractVocab:
         assert vocab["dual_check"]["pattern-regex"] == ["push", "deploy", "delete"]
         assert vocab["dual_check"]["pattern-not-regex"] == ["risky", "dangerous"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_skips_semantic(self, tmp_path: Path) -> None:
         self._write_checks(
             tmp_path,
@@ -245,6 +291,8 @@ class TestExtractVocab:
         vocab = extract_vocab(tmp_path)
         assert vocab is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_skips_no_alternation(self, tmp_path: Path) -> None:
         self._write_checks(
             tmp_path,
@@ -259,6 +307,8 @@ class TestExtractVocab:
         vocab = extract_vocab(tmp_path)
         assert vocab is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_extract_no_checks_yml(self, tmp_path: Path) -> None:
         assert extract_vocab(tmp_path) is None
 
@@ -283,6 +333,8 @@ class TestSyncVocab:
         data = yaml.safe_load((rule_dir / "checks.yml").read_text(encoding="utf-8"))
         return data.get("checks", [])
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_standalone_pattern_regex(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -301,6 +353,8 @@ class TestSyncVocab:
         checks = self._read_checks(tmp_path)
         assert checks[0]["pattern-regex"] == "(?i)(?:foo|bar|baz)"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_mechanical_content_absent(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -320,6 +374,8 @@ class TestSyncVocab:
         checks = self._read_checks(tmp_path)
         assert checks[0]["args"]["pattern"] == "(?:a|b|c)"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_patterns_array_guard_plus_vocab(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -342,6 +398,8 @@ class TestSyncVocab:
         entry = checks[0]["patterns"][1]
         assert entry["pattern-not-regex"] == r"\b(MUST|NEVER|ALWAYS)\b"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_nested_format(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -369,6 +427,8 @@ class TestSyncVocab:
         assert checks[0]["patterns"][0]["pattern-regex"] == r"(?i)\b(?:push|deploy|delete)\b"
         assert checks[0]["patterns"][1]["pattern-not-regex"] == "(?i)(?:risky|dangerous|irreversible)"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_no_change_when_terms_match(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -385,6 +445,8 @@ class TestSyncVocab:
         assert result.updated == 0
         assert result.skipped == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_dry_run_does_not_write(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -401,6 +463,8 @@ class TestSyncVocab:
         sync_vocab(tmp_path, dry_run=True)
         assert (tmp_path / "checks.yml").read_text(encoding="utf-8") == original
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_missing_check_suffix(self, tmp_path: Path) -> None:
         self._setup_rule(
             tmp_path,
@@ -417,6 +481,8 @@ class TestSyncVocab:
         assert result.skipped == 1
         assert any("nonexistent" in m for m in result.messages)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_sync_preserves_wrapper(self, tmp_path: Path) -> None:
         """Sync preserves flags, prefix, suffix from the original pattern."""
         self._setup_rule(
@@ -439,6 +505,8 @@ class TestSyncVocab:
 
 
 class TestRoundTrip:
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     @pytest.mark.parametrize(
         "original_pattern",
         [
@@ -480,6 +548,8 @@ class TestRoundTrip:
 
 
 class TestStaleness:
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_stale_when_terms_differ(self, tmp_path: Path) -> None:
         (tmp_path / "checks.yml").write_text(
             yaml.dump(
@@ -503,6 +573,8 @@ class TestStaleness:
         assert result is not None
         assert result.stale is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_not_stale_when_terms_match(self, tmp_path: Path) -> None:
         (tmp_path / "checks.yml").write_text(
             yaml.dump(
@@ -526,5 +598,7 @@ class TestStaleness:
         assert result is not None
         assert result.stale is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
     def test_no_vocab_returns_none(self, tmp_path: Path) -> None:
         assert check_staleness(tmp_path) is None

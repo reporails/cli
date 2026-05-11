@@ -11,12 +11,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import create_temp_rule_file
 
 
 class TestRegexEngineResults:
     """Test that regex engine returns correct results."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_no_findings_returns_empty_results(
         self,
         tmp_path: Path,
@@ -44,6 +48,8 @@ checks:
             assert isinstance(results, list)
             assert len(results) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_findings_returned_correctly(
         self,
         tmp_path: Path,
@@ -70,6 +76,8 @@ checks:
         results = runs[0].get("results", [])
         assert len(results) > 0, "Expected findings in SARIF output"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_invalid_rule_handled_gracefully(
         self,
         tmp_path: Path,
@@ -90,6 +98,8 @@ checks:
         assert isinstance(result, dict), "Should return dict even on invalid rules"
         assert "runs" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_no_files_matched_is_not_error(
         self,
         tmp_path: Path,
@@ -120,6 +130,8 @@ checks:
 class TestSARIFOutputFormat:
     """Test that SARIF output has the correct structure."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_sarif_has_correct_structure(
         self,
         tmp_path: Path,
@@ -161,6 +173,8 @@ checks:
             assert "region" in loc
             assert "startLine" in loc["region"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_sarif_rule_definitions_present(
         self,
         tmp_path: Path,

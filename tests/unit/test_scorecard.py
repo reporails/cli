@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
 
@@ -27,6 +29,8 @@ class _Result:
 class TestComputeSurfaceScores:
     """Surface classification under absolute vs relative paths."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_root_main_file_with_absolute_path_classifies_as_main(self, tmp_path: Path) -> None:
         """A single root-level CLAUDE.md with an absolute mapper path tags `main`, not `nested`.
 
@@ -44,6 +48,8 @@ class TestComputeSurfaceScores:
         assert names.get("Main") == 1
         assert "Nested" not in names, "root CLAUDE.md must not appear as a Nested surface"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_subdirectory_main_file_classifies_as_nested(self, tmp_path: Path) -> None:
         """A `packages/web/CLAUDE.md` does belong in the Nested surface."""
         nested_path = (tmp_path / "packages" / "web" / "CLAUDE.md").as_posix()

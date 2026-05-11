@@ -52,6 +52,8 @@ Modular design with clear boundaries.
 class TestSymlinkIntegration:
     """Integration tests for symlinked instruction file handling."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
     def test_symlink_detection_populates_resolved_symlinks(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md should appear in resolved_symlinks."""
         project, _external = symlink_project
@@ -62,6 +64,8 @@ class TestSymlinkIntegration:
         assert features.has_claude_md is True
         assert len(features.resolved_symlinks) == 1
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
     def test_rule_validation_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md with violations should have them detected."""
         project, external = symlink_project

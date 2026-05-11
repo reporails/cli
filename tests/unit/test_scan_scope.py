@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.core.agents import (
     clear_agent_cache,
     detect_agents,
@@ -89,6 +91,8 @@ class TestDetectAgentsScope:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_child_does_not_see_parent_files(self, tmp_path: Path) -> None:
         """Running from child does NOT surface parent files — cwd is project root.
 
@@ -109,6 +113,8 @@ class TestDetectAgentsScope:
         for f in local_files:
             assert str(f).startswith(str(child)), f"File outside child scope: {f}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_parent_sees_hierarchical_files(self, tmp_path: Path) -> None:
         """Running from project root: root CLAUDE.md is main, descendant is nested."""
         _make_nested_project(tmp_path)
@@ -130,6 +136,8 @@ class TestInstructionFilesScope:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_child_scope_bounded_by_target(self, tmp_path: Path) -> None:
         """From child, files outside cwd's subtree are NOT in scope."""
         child = _make_nested_project(tmp_path)
@@ -140,6 +148,8 @@ class TestInstructionFilesScope:
         for f in local_files:
             assert str(f).startswith(str(child)), f"File outside child subtree: {f}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_child_finds_own_files_only(self, tmp_path: Path) -> None:
         """From child, only child's own files surface — parent files are out of scope."""
         child = _make_nested_project(tmp_path)
@@ -160,6 +170,8 @@ class TestScannableFilesScope:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_child_scope_bounded_by_project_root(self, tmp_path: Path) -> None:
         child = _make_nested_project(tmp_path)
         files = get_all_scannable_files(child)
@@ -169,6 +181,8 @@ class TestScannableFilesScope:
         for f in local_files:
             assert str(f).startswith(str(tmp_path)), f"File outside project root: {f}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_child_does_not_include_parent_rules(self, tmp_path: Path) -> None:
         """parent.md lives in tmp_path/.claude/rules/ — path_scoped descendant from child, not in scope."""
         child = _make_nested_project(tmp_path)
@@ -184,6 +198,8 @@ class TestProjectRootVsScanRoot:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_project_root_above_scan_root(self, tmp_path: Path) -> None:
         """Backbone project root above child: ancestor walk reaches it, files outside it are excluded."""
         child = _make_backbone_project(tmp_path)
@@ -200,6 +216,8 @@ class TestProjectRootVsScanRoot:
         names = {f.name for f in files}
         assert "CLAUDE.md" in names
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_project_root_equals_scan_root_when_no_parent(self, tmp_path: Path) -> None:
         """Standalone project: project_root == scan_root."""
         (tmp_path / ".git").mkdir()
@@ -219,6 +237,8 @@ class TestPreDetectedAgentsBypass:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_parent_agents_passed_to_child_scannable(self, tmp_path: Path) -> None:
         """Even if parent-scoped agents are passed, scannable files are from those agents."""
         child = _make_nested_project(tmp_path)
@@ -236,6 +256,8 @@ class TestPreDetectedAgentsBypass:
         parent_files = [f for f in files if not str(f).startswith(str(child))]
         assert len(parent_files) > 0, "Confirms parent agents leak (by design of agents param)"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_engine_uses_scan_root_agents(self, tmp_path: Path) -> None:
         """The engine detects agents at scan_root; ancestor walk surfaces parent files within project root."""
         child = _make_backbone_project(tmp_path)
@@ -267,6 +289,8 @@ class TestAncestorWalkAndClassification:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_target_files_only_no_ancestor_walk(self, tmp_path: Path) -> None:
         """Cwd is project root: parent CLAUDE.md files are NOT surfaced."""
         (tmp_path / ".git").mkdir()
@@ -283,6 +307,8 @@ class TestAncestorWalkAndClassification:
         assert (tmp_path / "CLAUDE.md").as_posix() not in names
         assert (a / "CLAUDE.md").as_posix() not in names
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_files_above_target_are_out_of_scope(self, tmp_path: Path) -> None:
         """A file above the target is excluded even if a `.git` lives between them."""
         (tmp_path / "CLAUDE.md").write_text("# outside")
@@ -301,6 +327,8 @@ class TestAncestorWalkAndClassification:
         assert (repo / "CLAUDE.md").as_posix() not in names
         assert (tmp_path / "CLAUDE.md").as_posix() not in names
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_nested_classified_not_as_main(self, tmp_path: Path) -> None:
         """A descendant CLAUDE.md must classify as child_instruction, not main.
 
@@ -319,6 +347,8 @@ class TestAncestorWalkAndClassification:
         assert types[(tmp_path / "CLAUDE.md").as_posix()] == "main"
         assert types[(sub / "CLAUDE.md").as_posix()] == "child_instruction"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_sibling_tree_excluded_from_subdir_run(self, tmp_path: Path) -> None:
         """Running from a subdirectory: parent + sibling files are all out of scope."""
         (tmp_path / ".git").mkdir()
@@ -339,6 +369,8 @@ class TestAncestorWalkAndClassification:
         assert (a / "CLAUDE.md").as_posix() not in names, "Parent CLAUDE.md must NOT surface — cwd is project root"
         assert (sibling / "CLAUDE.md").as_posix() not in names
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_local_override_at_target(self, tmp_path: Path) -> None:
         """CLAUDE.local.md surfaces at cwd; ancestors are out of scope."""
         (tmp_path / ".git").mkdir()
@@ -355,6 +387,8 @@ class TestAncestorWalkAndClassification:
         assert (a / "CLAUDE.local.md").as_posix() in names
         assert (tmp_path / "CLAUDE.local.md").as_posix() not in names
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_activepieces_shape(self, tmp_path: Path) -> None:
         """Monorepo regression: root AGENTS.md is main; per-package files are nested.
 
@@ -399,6 +433,8 @@ class TestAncestorWalkAndClassification:
         for p in nested_claude_paths:
             assert claude_types.get(p.as_posix()) == "child_instruction", f"{p} must NOT be classified as main"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_copilot_root_only_pattern(self, tmp_path: Path) -> None:
         """`.github/copilot-instructions.md` is project-root-only — resolved from cwd."""
         (tmp_path / ".git").mkdir()
@@ -423,6 +459,8 @@ class TestProjectConfigSurfaceAdjustments:
     def setup_method(self) -> None:
         clear_agent_cache()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_codex_fallback_filenames_surface(self, tmp_path: Path) -> None:
         """`agents.codex.fallback_filenames` adds candidate main files for codex.
 
@@ -450,6 +488,8 @@ class TestProjectConfigSurfaceAdjustments:
         assert types.get("AGENTS.md") == "main"
         assert types.get("TEAM_GUIDE.md") == "main", "fallback filename must classify as main"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_surface_exclude_drops_files(self, tmp_path: Path) -> None:
         """`surfaces.<agent>.<ft>.exclude` filters out matching files."""
         (tmp_path / ".git").mkdir()
@@ -468,6 +508,8 @@ class TestProjectConfigSurfaceAdjustments:
         assert (tmp_path / "CLAUDE.md").as_posix() in names
         assert (legacy / "CLAUDE.md").as_posix() not in names, "exclude pattern must drop matching files"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_config_local_layered_overrides_committed(self, tmp_path: Path) -> None:
         """`.ails/config.local.yml` layers on top of `.ails/config.yml`."""
         (tmp_path / ".git").mkdir()
@@ -491,6 +533,8 @@ class TestProjectConfigSurfaceAdjustments:
         assert (keep / "CLAUDE.md").as_posix() in names
         assert (drop / "CLAUDE.md").as_posix() not in names
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_exclude_unions_across_overlapping_surfaces(self, tmp_path: Path) -> None:
         """An exclude on one surface drops matches from sibling surfaces too.
 

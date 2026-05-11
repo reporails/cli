@@ -52,6 +52,8 @@ def _create_venv(base: Path, name: str = "venv") -> Path:
 class TestSelfUpdateIntegration:
     """End-to-end: build wheel, install in venv, verify detect + command construction."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_detect_method_in_pip_venv(self, tmp_path: Path, wheel: Path) -> None:
         """Install via pip in a venv, verify detect_install_method returns PIP."""
         python = _create_venv(tmp_path)
@@ -76,6 +78,8 @@ class TestSelfUpdateIntegration:
         method = result.stdout.strip()
         assert method == "pip", f"Expected 'pip', got '{method}'"
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_build_command_in_venv(self, tmp_path: Path, wheel: Path) -> None:
         """Install in venv and verify _build_upgrade_command produces runnable commands."""
         python = _create_venv(tmp_path)
@@ -103,6 +107,8 @@ class TestSelfUpdateIntegration:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "OK" in result.stdout
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_upgrade_cli_dev_install_refused(self, tmp_path: Path) -> None:
         """Editable install should refuse upgrade without running subprocess."""
         python = _create_venv(tmp_path)
@@ -147,6 +153,8 @@ class TestSelfUpdateIntegration:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "OK" in result.stdout
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_cli_ux
     def test_version_command_shows_install_method(self, tmp_path: Path, wheel: Path) -> None:
         """Verify `ails version` output includes install method."""
         python = _create_venv(tmp_path)

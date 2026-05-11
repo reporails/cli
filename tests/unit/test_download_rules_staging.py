@@ -74,6 +74,8 @@ class TestDownloadRulesVersionStaging:
         mock_client.__exit__ = MagicMock(return_value=False)
         return mock_client
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_incompatible_rules_preserve_existing(self, tmp_path: Path):
         """When schema check fails, existing rules must remain untouched."""
         rules_path = tmp_path / "home" / ".reporails" / "rules"
@@ -101,6 +103,8 @@ class TestDownloadRulesVersionStaging:
 
         assert version_file.read_text() == "0.2.0"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_compatible_rules_replace_existing(self, tmp_path: Path):
         """When schema check passes, existing rules are replaced."""
         reporails_home = tmp_path / "home" / ".reporails"
@@ -126,6 +130,8 @@ class TestDownloadRulesVersionStaging:
         assert (result_path / "core" / "test-rule.yml").exists()
         assert count > 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_no_manifest_passes_compatibility(self, tmp_path: Path):
         """Pre-contract rules (no manifest.yml) should be accepted."""
         reporails_home = tmp_path / "home" / ".reporails"
@@ -146,6 +152,8 @@ class TestDownloadRulesVersionStaging:
         assert result_path.exists()
         assert count > 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_fresh_install_incompatible_leaves_no_rules(self, tmp_path: Path):
         """On fresh install (no existing rules), incompatible download leaves rules_path absent."""
         reporails_home = tmp_path / "home" / ".reporails"
@@ -169,6 +177,8 @@ class TestDownloadRulesVersionStaging:
 class TestUpdateRulesIncompatibleSchema:
     """Verify update_rules returns clean error on incompatible schemas."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_returns_not_updated_with_message(self, tmp_path: Path):
         """update_rules should catch IncompatibleSchemaError and return clean result."""
         reporails_home = tmp_path / "home" / ".reporails"

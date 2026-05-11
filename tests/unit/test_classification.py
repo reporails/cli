@@ -21,6 +21,8 @@ from reporails_cli.core.models import ClassifiedFile, FileMatch, FileTypeDeclara
 class TestDetectContentFormat:
     """Tests for detect_content_format() region detection."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     @pytest.mark.parametrize(
         "text, expected_format",
         [
@@ -34,11 +36,15 @@ class TestDetectContentFormat:
         result = detect_content_format(text)
         assert expected_format in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_heading_requires_space_after_hash(self):
         """#hashtag is not a heading."""
         result = detect_content_format("#hashtag not a heading\n")
         assert "heading" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     @pytest.mark.parametrize(
         "text, expected_format",
         [
@@ -52,6 +58,8 @@ class TestDetectContentFormat:
         result = detect_content_format(text)
         assert expected_format in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     @pytest.mark.parametrize(
         "text, expected_format",
         [
@@ -70,17 +78,23 @@ class TestDetectContentFormat:
         assert expected_format in result
         assert "code_block" not in result  # data_block, not code_block
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_table_detection(self):
         text = "| Col A | Col B |\n| --- | --- |\n| 1 | 2 |\n"
         result = detect_content_format(text)
         assert "table" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_table_needs_separator_row(self):
         """A single pipe line without separator is not a table."""
         text = "| not a table |\nsome other line\n"
         result = detect_content_format(text)
         assert "table" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     @pytest.mark.parametrize(
         "text",
         [
@@ -95,22 +109,30 @@ class TestDetectContentFormat:
         result = detect_content_format(text)
         assert "list" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_ordered_list_detection(self):
         text = "1. First step\n2. Second step\n"
         result = detect_content_format(text)
         assert "list" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_prose_detection(self):
         text = "This is a paragraph of natural language that is long enough.\n"
         result = detect_content_format(text)
         assert "prose" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_prose_requires_nontrivial_length(self):
         """Lines <= 10 chars don't count as prose."""
         text = "short\n"
         result = detect_content_format(text)
         assert "prose" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_prose_ignores_special_line_starts(self):
         """Lines starting with #, |, -, etc. are not prose."""
         text = "# heading\n- list\n| table |\n"
@@ -119,12 +141,16 @@ class TestDetectContentFormat:
 
     # ── Frontmatter stripping ─────────────────────────────────────────
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_frontmatter_stripped_before_analysis(self):
         """Frontmatter YAML should not count as any content format."""
         text = "---\ntitle: Test\ndescription: A long description field here\n---\n"
         result = detect_content_format(text)
         assert result == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_frontmatter_stripped_content_after(self):
         text = "---\nid: test\n---\n\n# Real Content\n\nA paragraph of real text here.\n"
         result = detect_content_format(text)
@@ -133,14 +159,20 @@ class TestDetectContentFormat:
 
     # ── Empty / edge cases ────────────────────────────────────────────
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_empty_string(self):
         assert detect_content_format("") == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_whitespace_only(self):
         assert detect_content_format("   \n\n  \n") == []
 
     # ── Mixed content ─────────────────────────────────────────────────
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_mixed_content_detects_all_formats(self):
         text = (
             "# Architecture\n\n"
@@ -153,6 +185,8 @@ class TestDetectContentFormat:
         result = detect_content_format(text)
         assert set(result) == {"heading", "prose", "code_block", "data_block", "table", "list"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_result_is_sorted(self):
         text = "# Heading\n\nProse text that is long enough.\n- list item\n"
         result = detect_content_format(text)
@@ -160,6 +194,8 @@ class TestDetectContentFormat:
 
     # ── Code-block-aware detection ────────────────────────────────────
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_table_inside_code_block_not_detected(self):
         """Tables inside fenced code blocks are examples, not real tables."""
         text = (
@@ -169,6 +205,8 @@ class TestDetectContentFormat:
         assert "table" not in result
         assert "code_block" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_list_inside_code_block_not_detected(self):
         """Lists inside fenced code blocks are examples, not real lists."""
         text = "Here is how to format a list:\n\n```markdown\n- item one\n- item two\n```\n"
@@ -176,6 +214,8 @@ class TestDetectContentFormat:
         assert "list" not in result
         assert "code_block" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_prose_inside_code_block_not_detected(self):
         """Long lines inside code blocks are code, not prose."""
         text = "```python\ndef this_is_a_very_long_function_name_not_prose():\n    pass\n```\n"
@@ -183,6 +223,8 @@ class TestDetectContentFormat:
         assert "prose" not in result
         assert "code_block" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_content_outside_code_block_still_detected(self):
         """Content before/after code blocks should still be detected."""
         text = "# Title\n\nReal prose outside the code block.\n\n```python\ndef main(): pass\n```\n\n- real list item\n"
@@ -194,41 +236,57 @@ class TestDetectContentFormat:
 
     # ── New inline/block modes ────────────────────────────────────────
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_blockquote_detection(self):
         text = "> This is a blockquote\n> with multiple lines\n"
         result = detect_content_format(text)
         assert "blockquote" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_bold_detection(self):
         text = "This has **bold text** in it for emphasis.\n"
         result = detect_content_format(text)
         assert "bold" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_bold_inside_code_block_not_detected(self):
         text = "```\n**not bold** because inside code\n```\n"
         result = detect_content_format(text)
         assert "bold" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_inline_code_detection(self):
         text = "Use `some_function()` to call it properly.\n"
         result = detect_content_format(text)
         assert "inline_code" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_inline_code_inside_code_block_not_detected(self):
         text = "```python\nx = `not inline code`\n```\n"
         result = detect_content_format(text)
         assert "inline_code" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_link_detection(self):
         text = "See [the docs](https://example.com) for details.\n"
         result = detect_content_format(text)
         assert "link" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_link_ref_detection(self):
         text = "See [the docs][1] for more information here.\n"
         result = detect_content_format(text)
         assert "link" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_link_inside_code_block_not_detected(self):
         text = "```\n[not a link](https://example.com)\n```\n"
         result = detect_content_format(text)
@@ -257,6 +315,8 @@ class TestClassifyFilesContentFormat:
             properties={"format": "schema"},
         )
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_freeform_gets_content_format(self, tmp_path: Path):
         md = tmp_path / "CLAUDE.md"
         md.write_text("# Title\n\nSome real paragraph content here.\n")
@@ -267,6 +327,8 @@ class TestClassifyFilesContentFormat:
         assert "heading" in cf
         assert "prose" in cf
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_schema_format_skips_content_format(self, tmp_path: Path):
         f = tmp_path / "settings.json"
         f.write_text('{"key": "value"}\n')
@@ -274,6 +336,8 @@ class TestClassifyFilesContentFormat:
         assert len(result) == 1
         assert "content_format" not in result[0].properties
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_freeform_empty_file_no_content_format(self, tmp_path: Path):
         md = tmp_path / "CLAUDE.md"
         md.write_text("")
@@ -281,6 +345,8 @@ class TestClassifyFilesContentFormat:
         assert len(result) == 1
         assert "content_format" not in result[0].properties
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_explicit_content_format_not_overwritten(self, tmp_path: Path):
         """If content_format is already set in properties, don't overwrite."""
         ft = FileTypeDeclaration(
@@ -293,6 +359,8 @@ class TestClassifyFilesContentFormat:
         result = classify_files(tmp_path, [md], [ft])
         assert result[0].properties["content_format"] == ["prose"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_freeform_list_format(self, tmp_path: Path):
         """format: [freeform, ...] should also trigger detection."""
         ft = FileTypeDeclaration(
@@ -321,24 +389,32 @@ class TestMatchFilesContentFormat:
             properties={"format": "freeform", "content_format": content_format},
         )
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_content_format_wildcard(self):
         """content_format=None matches everything."""
         files = [self._cf(["prose", "heading"])]
         result = match_files(files, FileMatch(type="main"))
         assert len(result) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_content_format_match_overlap(self):
         """Rule targets code_block, file has code_block among others."""
         files = [self._cf(["code_block", "heading", "prose"])]
         result = match_files(files, FileMatch(type="main", content_format=["code_block"]))
         assert len(result) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_content_format_no_overlap(self):
         """Rule targets data_block, file only has prose + heading."""
         files = [self._cf(["heading", "prose"])]
         result = match_files(files, FileMatch(type="main", content_format=["data_block"]))
         assert len(result) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_content_format_multi_match(self):
         """Rule targets multiple formats, file has one of them."""
         files = [self._cf(["prose", "list"])]
@@ -348,6 +424,8 @@ class TestMatchFilesContentFormat:
         )
         assert len(result) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
     def test_file_without_content_format_no_match(self):
         """File with no content_format property doesn't match explicit criteria."""
         files = [

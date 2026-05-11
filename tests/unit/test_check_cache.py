@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import pytest
+
 from reporails_cli.core.check_cache import CheckCache
 from reporails_cli.core.mechanical.checks import CheckResult
 
 
 class TestCheckCache:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_miss_returns_none(self) -> None:
         cache = CheckCache()
         key = cache.key("mechanical", "file_exists", {"path": "x.md"}, "CLAUDE.md:0")
         assert cache.get(key) is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_hit_returns_result(self) -> None:
         cache = CheckCache()
         result = CheckResult(passed=True, message="found")
@@ -19,24 +25,32 @@ class TestCheckCache:
         cache.set(key, result)
         assert cache.get(key) is result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_different_args_different_keys(self) -> None:
         cache = CheckCache()
         k1 = cache.key("mechanical", "file_exists", {"path": "a.md"}, ".:0")
         k2 = cache.key("mechanical", "file_exists", {"path": "b.md"}, ".:0")
         assert k1 != k2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_different_targets_different_keys(self) -> None:
         cache = CheckCache()
         k1 = cache.key("mechanical", "file_exists", None, "a.md:0")
         k2 = cache.key("mechanical", "file_exists", None, "b.md:0")
         assert k1 != k2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_none_args(self) -> None:
         cache = CheckCache()
         k1 = cache.key("mechanical", "git_tracked", None, ".:0")
         k2 = cache.key("mechanical", "git_tracked", None, ".:0")
         assert k1 == k2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_len(self) -> None:
         cache = CheckCache()
         assert len(cache) == 0
@@ -45,6 +59,8 @@ class TestCheckCache:
         cache.set(cache.key("mechanical", "b", None, ".:0"), result)
         assert len(cache) == 2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_result_with_annotations(self) -> None:
         cache = CheckCache()
         result = CheckResult(passed=True, message="ok", annotations={"imports": ["x"]})
@@ -54,6 +70,8 @@ class TestCheckCache:
         assert cached is not None
         assert cached.annotations == {"imports": ["x"]}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_arg_key_order_does_not_affect_cache_key(self) -> None:
         """sort_keys=True in json.dumps should make key order irrelevant."""
         cache = CheckCache()
@@ -61,6 +79,8 @@ class TestCheckCache:
         k2 = cache.key("mechanical", "check", {"b": 2, "a": 1}, ".:0")
         assert k1 == k2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_overwrite_existing_entry(self) -> None:
         """Setting a key twice should overwrite the previous result."""
         cache = CheckCache()

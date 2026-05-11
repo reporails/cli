@@ -26,7 +26,7 @@ LANE_MARKERS = {"unit", "integration", "e2e", "smoke", "architecture", "contract
 SUBSYS_PREFIX = "subsys_"
 
 # Audit mode: when False, the script reports without failing.
-FAIL_ON_MISSING = False
+FAIL_ON_MISSING = True
 
 
 def _load_subsys_markers() -> set[str]:
@@ -145,7 +145,7 @@ def main() -> int:
 
     if FAIL_ON_MISSING:
         return 1
-    print("\n(report-only mode; not failing — flip FAIL_ON_MISSING in this file to enforce)")
+    print("\n(report-only mode; flip FAIL_ON_MISSING in this file to enforce)")
     return 0
 
 

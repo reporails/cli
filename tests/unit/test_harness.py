@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -84,6 +86,8 @@ def _make_checks_yml(rule_dir: Path, yml_content: str) -> None:
 class TestDiscoverRules:
     """Tests for discover_rules()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_discovers_rule_in_core(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import discover_rules
 
@@ -99,6 +103,8 @@ class TestDiscoverRules:
         assert rules[0].rule_id == "CORE:S:0001"
         assert rules[0].slug == "test-rule"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_filter_by_rule_id(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import discover_rules
 
@@ -119,6 +125,8 @@ class TestDiscoverRules:
         assert len(rules) == 1
         assert rules[0].rule_id == "CORE:S:0002"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_excludes(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import discover_rules
 
@@ -132,6 +140,8 @@ class TestDiscoverRules:
         rules = discover_rules(tmp_path, excludes=["CLAUDE:*"])
         assert len(rules) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_discovers_agent_rules(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import discover_rules
 
@@ -157,6 +167,8 @@ class TestDiscoverRules:
 class TestLoadAgentConfig:
     """Tests for load_agent_config()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_loads_file_types_and_excludes(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import load_agent_config
 
@@ -178,6 +190,8 @@ class TestLoadAgentConfig:
         assert "main" in type_names
         assert excludes == ["CORE:S:0010"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_missing_config_returns_empty(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import load_agent_config
 
@@ -192,6 +206,8 @@ class TestLoadAgentConfig:
 class TestMechanicalChecks:
     """Tests for mechanical check execution in harness context."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_file_exists_pass(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, run_rule
 
@@ -224,6 +240,8 @@ class TestMechanicalChecks:
         result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_not_implemented(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 
@@ -248,6 +266,8 @@ class TestMechanicalChecks:
         result = run_rule(info, [])
         assert result.status == HarnessStatus.NOT_IMPLEMENTED
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_fixtures(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 
@@ -281,6 +301,8 @@ class TestMechanicalChecks:
 class TestDeterministicChecks:
     """Tests for deterministic (regex) check execution in harness context."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_pass_fixture_no_violation(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 
@@ -332,6 +354,8 @@ class TestDeterministicChecks:
         result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_expect_present_deterministic(self, tmp_path: Path) -> None:
         """expect=present deterministic: finding = pass, no finding = violation."""
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
@@ -392,6 +416,8 @@ class TestDeterministicChecks:
 class TestSemanticChecks:
     """Tests for semantic check handling (always skip)."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_semantic_always_passes(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 
@@ -430,6 +456,8 @@ class TestSemanticChecks:
 class TestRunHarness:
     """Tests for run_harness() batch runner."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_runs_all_discovered_rules(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import run_harness
 
@@ -454,6 +482,8 @@ class TestRunHarness:
 class TestGitMarker:
     """Tests for .git_marker workaround in git_tracked probe."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_git_marker_detected(self, tmp_path: Path) -> None:
         from reporails_cli.core.mechanical.checks import git_tracked
 
@@ -461,6 +491,8 @@ class TestGitMarker:
         result = git_tracked(tmp_path, {}, [])
         assert result.passed
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_git_dir_detected(self, tmp_path: Path) -> None:
         from reporails_cli.core.mechanical.checks import git_tracked
 
@@ -468,6 +500,8 @@ class TestGitMarker:
         result = git_tracked(tmp_path, {}, [])
         assert result.passed
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_git_fails(self, tmp_path: Path) -> None:
         from reporails_cli.core.mechanical.checks import git_tracked
 
@@ -481,6 +515,8 @@ class TestGitMarker:
 class TestFixtureDiscovery:
     """Tests for non-.md fixture file discovery (P1)."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_json_fixture_discovered_in_deterministic_check(self, tmp_path: Path) -> None:
         """D check should scan non-.md files (e.g. settings.json) in fixtures."""
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
@@ -534,6 +570,8 @@ class TestFixtureDiscovery:
 class TestCheckNameFallback:
     """Tests for mechanical check name fallback (P4a)."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_falls_back_to_name_field(self, tmp_path: Path) -> None:
         """When 'check' key is absent, use 'name' for dispatch."""
         from reporails_cli.core.harness import _run_mechanical_check
@@ -547,6 +585,8 @@ class TestCheckNameFallback:
         )
         assert result.passed
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_check_key_takes_precedence(self, tmp_path: Path) -> None:
         """When both 'check' and 'name' are present, 'check' wins."""
         from reporails_cli.core.harness import _run_mechanical_check
@@ -567,16 +607,22 @@ class TestCheckNameFallback:
 class TestCheckAliases:
     """Tests for mechanical check aliases."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_file_tracked_alias(self, tmp_path: Path) -> None:
         from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["file_tracked"] is MECHANICAL_CHECKS["git_tracked"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_memory_dir_exists_alias(self) -> None:
         from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["memory_dir_exists"] is MECHANICAL_CHECKS["directory_exists"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_total_size_check_alias(self) -> None:
         from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS
 
@@ -604,6 +650,8 @@ def _make_multi_agent_config(tmp_path: Path, agent: str, prefix: str, instructio
 class TestPrefixToAgentMap:
     """Tests for _build_prefix_to_agent_map()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_builds_map_from_configs(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _build_prefix_to_agent_map
 
@@ -613,6 +661,8 @@ class TestPrefixToAgentMap:
         mapping = _build_prefix_to_agent_map(tmp_path)
         assert mapping == {"CLAUDE": "claude", "CODEX": "codex"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_skips_agent_without_prefix(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _build_prefix_to_agent_map
 
@@ -623,6 +673,8 @@ class TestPrefixToAgentMap:
         mapping = _build_prefix_to_agent_map(tmp_path)
         assert mapping == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_when_no_agents_dir(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _build_prefix_to_agent_map
 
@@ -632,6 +684,8 @@ class TestPrefixToAgentMap:
 class TestGetRuleAgent:
     """Tests for _get_rule_agent()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_matches_prefix(self) -> None:
         from reporails_cli.core.harness import _get_rule_agent
 
@@ -639,12 +693,16 @@ class TestGetRuleAgent:
         assert _get_rule_agent("CLAUDE:S:0004", prefix_map) == "claude"
         assert _get_rule_agent("CODEX:S:0001", prefix_map) == "codex"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_core_returns_none(self) -> None:
         from reporails_cli.core.harness import _get_rule_agent
 
         prefix_map = {"CLAUDE": "claude"}
         assert _get_rule_agent("CORE:S:0001", prefix_map) is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_rrails_returns_none(self) -> None:
         from reporails_cli.core.harness import _get_rule_agent
 
@@ -654,6 +712,8 @@ class TestGetRuleAgent:
 class TestMultiAgentHarness:
     """Tests for multi-agent run_harness()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_discovers_rules_from_multiple_agents(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import run_harness
 
@@ -695,16 +755,22 @@ class TestMultiAgentHarness:
 class TestGlobToConcrete:
     """Tests for _glob_to_concrete()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_double_star_md(self) -> None:
         from reporails_cli.core.harness import _glob_to_concrete
 
         assert _glob_to_concrete("**/*.md") == "scaffold.md"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_nested_glob(self) -> None:
         from reporails_cli.core.harness import _glob_to_concrete
 
         assert _glob_to_concrete(".claude/rules/**/*.md") == ".claude/rules/scaffold.md"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_plain_path_preserved(self) -> None:
         from reporails_cli.core.harness import _glob_to_concrete
 
@@ -714,6 +780,8 @@ class TestGlobToConcrete:
 class TestScaffoldFixture:
     """Tests for _scaffold_fixture()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_scaffolds_file_for_file_exists(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fixture
 
@@ -733,6 +801,8 @@ class TestScaffoldFixture:
 
         shutil.rmtree(result)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_scaffolds_git_marker(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fixture
 
@@ -748,6 +818,8 @@ class TestScaffoldFixture:
 
         shutil.rmtree(result)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_scaffolds_directory(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fixture
 
@@ -763,6 +835,8 @@ class TestScaffoldFixture:
 
         shutil.rmtree(result)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_scaffold_for_deterministic_only(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fixture
 
@@ -773,6 +847,8 @@ class TestScaffoldFixture:
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_scaffold_for_semantic_only(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fixture
 
@@ -783,6 +859,8 @@ class TestScaffoldFixture:
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_scaffolds_file_removal_for_file_absent(self, tmp_path: Path) -> None:
         """Pass scaffold removes the forbidden file for file_absent checks."""
         from reporails_cli.core.harness import _scaffold_fixture
@@ -807,6 +885,8 @@ class TestScaffoldFixture:
 class TestScaffoldFailFixture:
     """Tests for _scaffold_fail_fixture()."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_filename_mismatch_renames_file(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fail_fixture
 
@@ -830,6 +910,8 @@ class TestScaffoldFailFixture:
 
         shutil.rmtree(result)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_glob_count_deficit_reduces_files(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fail_fixture
 
@@ -848,6 +930,8 @@ class TestScaffoldFailFixture:
 
         shutil.rmtree(result)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_file_present_creates_forbidden_file(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fail_fixture
 
@@ -863,6 +947,8 @@ class TestScaffoldFailFixture:
 
         shutil.rmtree(result)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_scaffold_for_unsupported_checks(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import _scaffold_fail_fixture
 
@@ -877,6 +963,8 @@ class TestScaffoldFailFixture:
 class TestFailScaffoldIntegration:
     """End-to-end: rules with structural M checks pass via scaffolding."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_filename_matches_pattern_with_scaffold(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 
@@ -920,6 +1008,8 @@ class TestFailScaffoldIntegration:
         result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_file_absent_with_scaffold(self, tmp_path: Path) -> None:
         from reporails_cli.core.harness import HarnessStatus, RuleInfo, run_rule
 

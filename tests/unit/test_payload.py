@@ -88,6 +88,8 @@ def _ruleset(n_atoms: int = 10, n_files: int = 1, n_clusters: int = 3) -> Rulese
 
 
 class TestProjectionShape:
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_text_fields_dropped(self) -> None:
         rm = _ruleset(n_atoms=2)
         proj = project_payload(rm)
@@ -97,6 +99,8 @@ class TestProjectionShape:
             assert "heading_context" not in atom
             assert "hc" not in atom
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_inline_tokens_become_counts(self) -> None:
         rm = _ruleset(n_atoms=3)
         proj = project_payload(rm)
@@ -107,6 +111,8 @@ class TestProjectionShape:
             assert isinstance(atom.get("bb"), int)
             assert isinstance(atom.get("ub"), int)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_inline_counts_match_source(self) -> None:
         rm = _ruleset(n_atoms=4)
         proj = project_payload(rm)
@@ -116,6 +122,8 @@ class TestProjectionShape:
             assert atom["bb"] == len(src.bold_tokens)
             assert atom["ub"] == len(src.unformatted_code)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_cluster_centroids_dropped(self) -> None:
         rm = _ruleset(n_clusters=5)
         proj = project_payload(rm)
@@ -124,6 +132,8 @@ class TestProjectionShape:
             assert "centroid_b64" not in cluster
             assert "ce" not in cluster
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_embedding_packed_as_bytes(self) -> None:
         rm = _ruleset(n_atoms=1)
         proj = project_payload(rm)
@@ -131,6 +141,8 @@ class TestProjectionShape:
         assert isinstance(atom["e"], bytes)
         assert len(atom["e"]) == 384
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_schema_version_is_3(self) -> None:
         rm = _ruleset()
         proj = project_payload(rm)
@@ -138,11 +150,15 @@ class TestProjectionShape:
 
 
 class TestEncoding:
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_leading_version_byte(self) -> None:
         rm = _ruleset(n_atoms=1)
         encoded = encode_msgpack(project_payload(rm))
         assert encoded[0] == WIRE_SCHEMA_VERSION_V3 == 3
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     def test_round_trip_decode(self) -> None:
         rm = _ruleset(n_atoms=2, n_files=1, n_clusters=1)
         proj = project_payload(rm)
@@ -155,6 +171,8 @@ class TestEncoding:
 
 
 class TestShrinkage:
+    @pytest.mark.unit
+    @pytest.mark.subsys_server
     @pytest.mark.parametrize(
         "n_atoms,n_files,n_clusters,min_shrink",
         [

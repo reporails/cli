@@ -32,6 +32,8 @@ def client_findings() -> list[LocalFinding]:
 
 
 class TestMergeResults:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_offline_returns_all_local(
         self, m_findings: list[LocalFinding], client_findings: list[LocalFinding]
     ) -> None:
@@ -43,18 +45,24 @@ class TestMergeResults:
         assert result.stats.client_check_count == 1
         assert result.stats.server_diagnostic_count == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_inputs(self) -> None:
         result = merge_results([], [], None)
         assert result.offline is True
         assert len(result.findings) == 0
         assert result.stats.total_findings == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_sorting_by_file_severity_line(self, m_findings: list[LocalFinding]) -> None:
         result = merge_results(m_findings, [], None)
         # error should come before warning (both in same file)
         assert result.findings[0].severity == "error"
         assert result.findings[1].severity == "warning"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_stats_counted_correctly(self, m_findings: list[LocalFinding], client_findings: list[LocalFinding]) -> None:
         result = merge_results(m_findings, client_findings, None)
         assert result.stats.errors == 1
@@ -62,6 +70,8 @@ class TestMergeResults:
         assert result.stats.infos == 0
         assert result.stats.total_findings == 3
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_server_deduplicates_matching_local(self) -> None:
         local = [LocalFinding("CLAUDE.md", 10, "warning", "ordering", "local msg", source="client_check")]
         server = RulesetReport(
@@ -80,11 +90,15 @@ class TestMergeResults:
         assert result.findings[0].source == "server"
         assert result.findings[0].message == "server msg"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.parametrize("server_report", [None, RulesetReport()])
     def test_offline_flag(self, server_report: RulesetReport | None) -> None:
         result = merge_results([], [], server_report)
         assert result.offline == (server_report is None)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_hints_pass_through(self) -> None:
         hints = (
             Hint(
@@ -102,6 +116,8 @@ class TestMergeResults:
         assert result.hints[0].count == 3
         assert result.hints[1].diagnostic_type == "CORE:C:0047"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_cross_file_coordinates_pass_through(self) -> None:
         coords = (
             CrossFileCoordinate(file_1="a.md", file_2="b.md", finding_type="conflict", count=2),
@@ -112,6 +128,8 @@ class TestMergeResults:
         assert result.cross_file_coordinates[0].finding_type == "conflict"
         assert result.cross_file_coordinates[1].count == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_coordinates_and_hints_by_default(self) -> None:
         result = merge_results([], [], None)
         assert result.hints == ()

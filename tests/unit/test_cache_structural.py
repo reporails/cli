@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.core.cache import ProjectCache, structural_hash
 
 # ---------------------------------------------------------------------------
@@ -18,6 +20,8 @@ from reporails_cli.core.cache import ProjectCache, structural_hash
 
 
 class TestStructuralHash:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_deterministic(self, tmp_path: Path) -> None:
         """Same content produces same structural hash."""
         f = tmp_path / "test.md"
@@ -28,6 +32,8 @@ class TestStructuralHash:
         assert h1.startswith("struct:")
         assert len(h1) == len("struct:") + 16
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_heading_change_differs(self, tmp_path: Path) -> None:
         """Changing a heading produces a different structural hash."""
         f = tmp_path / "test.md"
@@ -37,6 +43,8 @@ class TestStructuralHash:
         h2 = structural_hash(f)
         assert h1 != h2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_constraint_change_differs(self, tmp_path: Path) -> None:
         """Changing a constraint keyword line changes the hash."""
         f = tmp_path / "test.md"
@@ -46,6 +54,8 @@ class TestStructuralHash:
         h2 = structural_hash(f)
         assert h1 != h2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_list_item_change_differs(self, tmp_path: Path) -> None:
         """Changing a list item changes the hash."""
         f = tmp_path / "test.md"
@@ -55,6 +65,8 @@ class TestStructuralHash:
         h2 = structural_hash(f)
         assert h1 != h2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_whitespace_only_change_same(self, tmp_path: Path) -> None:
         """Adding blank lines between structural elements keeps the same hash."""
         f = tmp_path / "test.md"
@@ -64,6 +76,8 @@ class TestStructuralHash:
         h2 = structural_hash(f)
         assert h1 == h2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_body_prose_change_same(self, tmp_path: Path) -> None:
         """Changing non-structural prose (no headings/keywords/lists) keeps the same hash."""
         f = tmp_path / "test.md"
@@ -73,6 +87,8 @@ class TestStructuralHash:
         h2 = structural_hash(f)
         assert h1 == h2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_empty_file(self, tmp_path: Path) -> None:
         """Empty file produces a valid hash."""
         f = tmp_path / "empty.md"
@@ -87,6 +103,8 @@ class TestStructuralHash:
 
 
 class TestThreeTierLookup:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_fresh_hit(self, tmp_path: Path) -> None:
         """Tier 1: content_hash matches → returns results."""
         cache = ProjectCache(tmp_path)
@@ -100,6 +118,8 @@ class TestThreeTierLookup:
         assert result is not None
         assert result["C6"]["verdict"] == "pass"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_stale_hit(self, tmp_path: Path) -> None:
         """Tier 2: content_hash differs, structural_hash matches → stale but usable."""
         cache = ProjectCache(tmp_path)
@@ -118,6 +138,8 @@ class TestThreeTierLookup:
         assert result is not None
         assert result["C6"]["verdict"] == "pass"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_invalidated(self, tmp_path: Path) -> None:
         """Tier 3: both hashes differ → cache invalidated."""
         cache = ProjectCache(tmp_path)
@@ -134,6 +156,8 @@ class TestThreeTierLookup:
         )
         assert result is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_no_structural_hash_in_query(self, tmp_path: Path) -> None:
         """Without structural_hash in query, falls back to content-only matching."""
         cache = ProjectCache(tmp_path)
@@ -158,6 +182,8 @@ class TestThreeTierLookup:
 
 
 class TestV1Migration:
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_v1_cache_content_match_still_works(self, tmp_path: Path) -> None:
         """V1 cache entry (no structural_hash) still works with content_hash match."""
         cache = ProjectCache(tmp_path)
@@ -170,6 +196,8 @@ class TestV1Migration:
         result = cache.get_cached_judgment("CLAUDE.md", "sha256:v1hash", structural_hash="struct:anything")
         assert result is not None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_v1_cache_content_mismatch_invalidated(self, tmp_path: Path) -> None:
         """V1 cache entry with content mismatch → no structural_hash to fall back on → invalidated."""
         cache = ProjectCache(tmp_path)

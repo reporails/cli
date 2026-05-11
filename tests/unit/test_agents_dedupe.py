@@ -29,6 +29,8 @@ class TestDedupeWithAliases:
     """Verify `_dedupe_with_aliases` collapses symlinks but leaves
     same-dir content-identical files in place."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.skipif(sys.platform == "win32", reason="symlinks require admin on Windows")
     def test_symlinked_paths_collapse_to_one_canonical(self, tmp_path: Path) -> None:
         """A real file plus a symlink to it → one canonical + one alias."""
@@ -46,6 +48,8 @@ class TestDedupeWithAliases:
         assert canonical == [skill]
         assert aliases == {skill: [claude_dir / "skills" / "x" / "SKILL.md"]}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_duplicate_identical_paths_collapse_without_self_alias(self, tmp_path: Path) -> None:
         """Same path discovered by multiple agents must not appear as its own alias."""
         f = tmp_path / "AGENTS.md"
@@ -56,6 +60,8 @@ class TestDedupeWithAliases:
         assert canonical == [f]
         assert aliases == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_same_dir_identical_content_not_deduped_at_discovery(self, tmp_path: Path) -> None:
         """AGENTS.md and CLAUDE.md with matching content stay separate at discovery —
         each must remain classifiable under its own agent's `main` file_type.
@@ -73,6 +79,8 @@ class TestDedupeWithAliases:
 class TestComputeSameDirContentAliases:
     """Verify display-time content-hash grouping is restricted to same parent dir."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_identical_content_same_dir_grouped(self, tmp_path: Path) -> None:
         body = "# X\nHello.\n"
         (tmp_path / "AGENTS.md").write_text(body)
@@ -82,6 +90,8 @@ class TestComputeSameDirContentAliases:
 
         assert result == {tmp_path / "AGENTS.md": [tmp_path / "CLAUDE.md"]}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_identical_content_different_dirs_not_grouped(self, tmp_path: Path) -> None:
         """Same content in two different directories must not collapse —
         the files are independent surfaces that can diverge later."""
@@ -95,6 +105,8 @@ class TestComputeSameDirContentAliases:
 
         assert result == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_differing_content_same_dir_not_grouped(self, tmp_path: Path) -> None:
         (tmp_path / "AGENTS.md").write_text("# A\n")
         (tmp_path / "CLAUDE.md").write_text("# B (different)\n")
@@ -107,6 +119,8 @@ class TestComputeSameDirContentAliases:
 class TestGetAllInstructionFilesIntegration:
     """End-to-end: discovery + dedup + alias cache for `get_all_instruction_files`."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.skipif(sys.platform == "win32", reason="symlinks require admin on Windows")
     def test_symlinked_skill_discovered_once_aliases_populated(self, tmp_path: Path) -> None:
         """A skill symlinked across two agent surfaces collapses, alias cache populated."""

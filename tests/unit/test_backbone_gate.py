@@ -8,12 +8,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reporails_cli.core.applicability import detect_features_filesystem
 
 
 class TestFeatureDetection:
     """Verify filesystem feature detection for display purposes."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    @pytest.mark.subsys_cli_ux
     def test_no_backbone_yields_false(self, tmp_path: Path) -> None:
         """Project without .ails/backbone.yml → has_backbone is False."""
         project = tmp_path / "project"
@@ -24,6 +29,9 @@ class TestFeatureDetection:
 
         assert features.has_backbone is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    @pytest.mark.subsys_cli_ux
     def test_real_backbone_detected(self, tmp_path: Path) -> None:
         """Project with a real backbone.yml → has_backbone is True."""
         project = tmp_path / "project"
@@ -38,6 +46,9 @@ class TestFeatureDetection:
 
         assert features.has_backbone is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    @pytest.mark.subsys_cli_ux
     def test_abstracted_structure_detected(self, tmp_path: Path) -> None:
         """Project with .claude/rules/ → is_abstracted is True."""
         project = tmp_path / "project"
@@ -51,6 +62,9 @@ class TestFeatureDetection:
 
         assert features.is_abstracted is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    @pytest.mark.subsys_cli_ux
     def test_shared_files_detected(self, tmp_path: Path) -> None:
         """Project with shared/ directory → has_shared_files is True."""
         project = tmp_path / "project"
@@ -62,6 +76,9 @@ class TestFeatureDetection:
 
         assert features.has_shared_files is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    @pytest.mark.subsys_cli_ux
     def test_placeholder_backbone_not_detected_before_creation(self, tmp_path: Path) -> None:
         """Feature detection runs before backbone auto-creation."""
         project = tmp_path / "project"

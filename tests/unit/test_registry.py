@@ -22,6 +22,8 @@ MINIMAL_FRONTMATTER = {
 class TestBuildRuleBackedBy:
     """Test backed_by parsing in build_rule (now plain string list)."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_backed_by_parsed(self) -> None:
         fm = {
             **MINIMAL_FRONTMATTER,
@@ -32,10 +34,14 @@ class TestBuildRuleBackedBy:
         assert rule.backed_by[0] == "anthropic-docs"
         assert rule.backed_by[1] == "community-practice"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_backed_by_empty_when_absent(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.backed_by == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_backed_by_skips_non_string_entries(self) -> None:
         fm = {
             **MINIMAL_FRONTMATTER,
@@ -53,6 +59,8 @@ class TestBuildRuleBackedBy:
 class TestBuildRuleSources:
     """Test that sources accepts string lists."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_sources_as_strings(self) -> None:
         fm = {
             **MINIMAL_FRONTMATTER,
@@ -61,6 +69,8 @@ class TestBuildRuleSources:
         rule = build_rule(fm, Path("test.md"), None)
         assert rule.sources == ["https://example.com/doc1", "https://example.com/doc2"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_sources_default_empty(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.sources == []
@@ -69,6 +79,8 @@ class TestBuildRuleSources:
 class TestBuildRuleBasic:
     """Test basic build_rule construction."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_minimal_rule(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.id == "CORE:S:0001"
@@ -79,6 +91,8 @@ class TestBuildRuleBasic:
         assert rule.match is not None
         assert rule.match.type == "main"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_checks_parsed_new_format(self) -> None:
         fm = {
             **MINIMAL_FRONTMATTER,
@@ -97,6 +111,8 @@ class TestBuildRuleBasic:
         assert rule.checks[1].type == "deterministic"
         assert rule.checks[1].check is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_mechanical_check_with_args(self) -> None:
         fm = {
             **MINIMAL_FRONTMATTER,
@@ -114,6 +130,8 @@ class TestBuildRuleBasic:
         rule = build_rule(fm, Path("test.md"), None)
         assert rule.checks[0].args == {"max": 300}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_supersedes_parsed(self) -> None:
         fm = {
             **MINIMAL_FRONTMATTER,
@@ -126,16 +144,22 @@ class TestBuildRuleBasic:
 class TestBuildRulePatternConfidence:
     """Test pattern_confidence parsing in build_rule."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.parametrize("level", ["very_high", "high", "medium", "low", "very_low"])
     def test_confidence_level_parsed(self, level: str) -> None:
         fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": level}
         rule = build_rule(fm, Path("test.md"), None)
         assert rule.pattern_confidence == PatternConfidence(level)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_none_when_absent(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.pattern_confidence is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_invalid_value_raises(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": "bogus"}
         with pytest.raises(ValueError):
@@ -145,20 +169,28 @@ class TestBuildRulePatternConfidence:
 class TestBuildRuleNewFields:
     """Test inherited and depends_on parsing."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_inherited_parsed(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "inherited": "CORE:S:0038"}
         rule = build_rule(fm, Path("test.md"), None)
         assert rule.inherited == "CORE:S:0038"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_inherited_none_when_absent(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.inherited is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_depends_on_parsed(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "depends_on": ["CORE:S:0001", "CORE:S:0002"]}
         rule = build_rule(fm, Path("test.md"), None)
         assert rule.depends_on == ["CORE:S:0001", "CORE:S:0002"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_depends_on_empty_when_absent(self) -> None:
         rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
         assert rule.depends_on == []
@@ -167,6 +199,8 @@ class TestBuildRuleNewFields:
 class TestApplyInheritance:
     """Test _apply_inheritance merges checks without removing parent."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_inheritance_merges_checks(self) -> None:
         from reporails_cli.core.models import Check
         from reporails_cli.core.registry import _apply_inheritance
@@ -203,6 +237,8 @@ class TestApplyInheritance:
         assert child.checks[0].id == "CORE.S.0038.has_frontmatter"
         assert child.checks[1].id == "CLAUDE.S.0015.has_paths_key"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_inheritance_missing_parent_is_noop(self) -> None:
         from reporails_cli.core.registry import _apply_inheritance
 
@@ -224,6 +260,8 @@ class TestApplyInheritance:
 class TestValidateDependsOn:
     """Test _validate_depends_on cycle detection."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_cycle_passes_silently(self) -> None:
         from reporails_cli.core.registry import _validate_depends_on
 
@@ -235,6 +273,8 @@ class TestValidateDependsOn:
         }
         _validate_depends_on(rules)  # Should not raise
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_cycle_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         from reporails_cli.core.registry import _validate_depends_on
 
@@ -254,6 +294,8 @@ class TestValidateDependsOn:
 class TestInferAgentFromRuleId:
     """Test infer_agent_from_rule_id prefix logic."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.parametrize(
         ("rule_id", "expected"),
         [
