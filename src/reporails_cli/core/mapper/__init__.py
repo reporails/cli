@@ -4,13 +4,13 @@ Classifies instruction files into atoms, embeds them, clusters by topic,
 and produces a compact RulesetMap wire format.
 """
 
-from reporails_cli.core.mapper.mapper import (
+from reporails_cli.core.mapper.models import Models, get_models
+from reporails_cli.core.mapper.parse import tokenize
+from reporails_cli.core.mapper.pipeline import (
     content_hash,
     map_file,
     map_ruleset,
 )
-from reporails_cli.core.mapper.models import Models, get_models
-from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
 from reporails_cli.core.platform.dto.ruleset import (
     Atom,

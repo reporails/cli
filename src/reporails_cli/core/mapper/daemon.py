@@ -353,7 +353,7 @@ def _dispatch(
 
 def _handle_map_ruleset(request: dict[str, Any], models: Any) -> dict[str, Any]:
     """Handle map_ruleset request — build RulesetMap from paths."""
-    from reporails_cli.core.mapper.mapper import map_ruleset
+    from reporails_cli.core.mapper import map_ruleset
     from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
     paths_str = request.get("paths", [])
