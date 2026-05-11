@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.platform.dto.models import Rule
-from reporails_cli.core.regex.runner import (
+from reporails_cli.core.lint.regex.runner import (
     checks_per_file,
     run_checks,
     run_validation,
 )
+from reporails_cli.core.platform.dto.models import Rule
 
 
 def get_checks_paths(rules: dict[str, Rule]) -> list[Path]:

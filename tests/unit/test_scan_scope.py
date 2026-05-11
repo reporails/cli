@@ -15,13 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.agents import (
+from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.agents import (
     clear_agent_cache,
     detect_agents,
     get_all_instruction_files,
     get_all_scannable_files,
 )
-from reporails_cli.core.classification import classify_files, load_file_types
 from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
 
 
@@ -544,7 +544,7 @@ class TestProjectConfigSurfaceAdjustments:
         agent-wide union closes the gap: any exclude declared anywhere for the
         agent applies to every surface of that agent.
         """
-        from reporails_cli.core.agent_discovery import discover_from_config
+        from reporails_cli.core.discovery.agent_discovery import discover_from_config
         from reporails_cli.core.platform.config.config import get_project_config
 
         (tmp_path / ".git").mkdir()

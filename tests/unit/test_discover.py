@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from reporails_cli.core.discover import (
+from reporails_cli.core.discovery.discover import (
     _detect_classification,
     _detect_commands,
     _detect_meta,
@@ -371,7 +371,7 @@ class TestGenerateBackboneV3:
     @pytest.mark.subsys_lint
     def test_version_3(self, tmp_path: Path) -> None:
         """Generated backbone has version 3."""
-        from reporails_cli.core.agents import DetectedAgent, get_known_agents
+        from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
 
         agent = DetectedAgent(
             agent_type=get_known_agents()["claude"],
@@ -390,7 +390,7 @@ class TestGenerateBackboneV3:
         (tmp_path / "src").mkdir()
         (tmp_path / "tests").mkdir()
 
-        from reporails_cli.core.agents import DetectedAgent, get_known_agents
+        from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
 
         agent = DetectedAgent(
             agent_type=get_known_agents()["claude"],
@@ -430,7 +430,7 @@ class TestGenerateBackboneV3:
         """Agents section populated from detected agents."""
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
 
-        from reporails_cli.core.agents import DetectedAgent, get_known_agents
+        from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
 
         agent = DetectedAgent(
             agent_type=get_known_agents()["claude"],

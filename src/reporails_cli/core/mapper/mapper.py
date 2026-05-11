@@ -2833,7 +2833,7 @@ def _find_best_registry_match(
     """
     import fnmatch
 
-    from reporails_cli.core.agents import _extract_patterns, _extract_properties
+    from reporails_cli.core.discovery.agents import _extract_patterns, _extract_properties
 
     best: tuple[int, str, dict[str, Any]] | None = None  # (specificity, agent, props)
 

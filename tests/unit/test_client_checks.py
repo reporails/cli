@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.client_checks import run_client_checks
+from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
 
 

@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.agent_discovery import categorize_file_type as _categorize_file_type
-from reporails_cli.core.agent_discovery import discover_from_config as _discover_from_config
+from reporails_cli.core.discovery.agent_discovery import categorize_file_type as _categorize_file_type
+from reporails_cli.core.discovery.agent_discovery import discover_from_config as _discover_from_config
 
 logger = logging.getLogger(__name__)
 

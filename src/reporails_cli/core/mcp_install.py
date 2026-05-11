@@ -6,7 +6,7 @@ import json
 import shutil
 from pathlib import Path
 
-from reporails_cli.core.agents import detect_agents
+from reporails_cli.core.discovery.agents import detect_agents
 
 # Agent ID → project-level MCP config file path
 MCP_PROJECT_CONFIGS: dict[str, str] = {

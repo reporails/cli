@@ -21,11 +21,11 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.classification import classify_files, load_file_types
-from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
+from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, CheckResult
+from reporails_cli.core.lint.regex import run_validation as run_regex_validation
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import parse_frontmatter
-from reporails_cli.core.regex import run_validation as run_regex_validation
 
 logger = logging.getLogger(__name__)
 

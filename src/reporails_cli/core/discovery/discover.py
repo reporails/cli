@@ -16,7 +16,7 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.agents import DetectedAgent
+from reporails_cli.core.discovery.agents import DetectedAgent
 
 
 def _load_project_types() -> dict[str, Any]:
@@ -121,14 +121,14 @@ def _get_manifest_spec(filename: str) -> dict[str, Any] | None:
 
 def _detect_classification(target: Path) -> dict[str, Any]:
     """Detect project type, language, framework, and runtime. Delegates to discover_classify."""
-    from reporails_cli.core.discover_classify import detect_classification
+    from reporails_cli.core.discovery.discover_classify import detect_classification
 
     return detect_classification(target)
 
 
 def _detect_commands(target: Path) -> dict[str, str | None]:
     """Detect build/test/lint/format commands. Delegates to discover_commands."""
-    from reporails_cli.core.discover_commands import detect_commands
+    from reporails_cli.core.discovery.discover_commands import detect_commands
 
     return detect_commands(target)
 

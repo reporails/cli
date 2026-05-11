@@ -403,7 +403,7 @@ def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[st
     one row. Both alias sources are returned as project-relative posix strings
     so `_print_file_card` can do a plain dict lookup.
     """
-    from reporails_cli.core.agents import compute_same_dir_content_aliases, get_file_aliases
+    from reporails_cli.core.discovery.agents import compute_same_dir_content_aliases, get_file_aliases
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     out: dict[str, list[str]] = {}

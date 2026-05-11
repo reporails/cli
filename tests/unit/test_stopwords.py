@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from reporails_cli.core.stopwords import (
+from reporails_cli.core.classify.stopwords import (
     PatternParts,
     _split_alternation,
     _strip_flags,
@@ -16,7 +16,7 @@ from reporails_cli.core.stopwords import (
     is_guard,
     recompose,
 )
-from reporails_cli.core.stopwords_sync import check_staleness, sync_vocab
+from reporails_cli.core.classify.stopwords_sync import check_staleness, sync_vocab
 
 # ── decompose / recompose ────────────────────────────────────────────
 

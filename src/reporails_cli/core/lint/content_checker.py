@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from reporails_cli.core.content_queries import QUERY_REGISTRY
+from reporails_cli.core.lint.content_queries import QUERY_REGISTRY
 from reporails_cli.core.mapper.mapper import RulesetMap
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, LocalFinding, Rule
 
@@ -31,7 +31,7 @@ def _matching_files(
     if match is None:
         return sorted(rm_paths)
 
-    from reporails_cli.core.classification import file_matches
+    from reporails_cli.core.classify import file_matches
 
     matched = [str(cf.path) for cf in classified if file_matches(cf, match) and str(cf.path) in rm_paths]
     # Don't fall back to all files when a specific match type is set —

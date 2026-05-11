@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
+from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ def run_mechanical_checks(
     Returns:
         List of Violation objects for failed checks
     """
-    from reporails_cli.core.classification import match_files
+    from reporails_cli.core.classify import match_files
 
     violations: list[Violation] = []
 

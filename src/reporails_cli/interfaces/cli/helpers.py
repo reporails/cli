@@ -104,7 +104,7 @@ VALID_FORMATS = {"text", "json", "compact", "brief", "github", "agent"}
 
 def _validate_agent(agent: str, con: Console) -> str:
     """Normalize and validate --agent value. Returns normalized agent or exits."""
-    from reporails_cli.core.agents import get_known_agents as _get_known
+    from reporails_cli.core.discovery.agents import get_known_agents as _get_known
 
     agent = agent.lower().strip()
     known = _get_known()
@@ -170,7 +170,7 @@ def _resolve_agent_filters(
     exclude_dirs: list[str] | None,
 ) -> tuple[str, bool, bool, list[Any]]:
     """Resolve agent selection and filter detected agents. Returns (agent, assumed, mixed, filtered)."""
-    from reporails_cli.core.agents import (
+    from reporails_cli.core.discovery.agents import (
         detect_single_agent,
         filter_agents_by_exclude_dirs,
         filter_agents_by_id,
@@ -195,7 +195,7 @@ def _handle_no_instruction_files(effective_agent: str, output_format: str, con: 
     if output_format in ("json", "github"):
         print(json.dumps({"violations": [], "score": 0, "level": "L0"}))
     else:
-        from reporails_cli.core.agents import get_known_agents
+        from reporails_cli.core.discovery.agents import get_known_agents
 
         at = get_known_agents().get(effective_agent)
         hint = at.instruction_patterns[0] if at else "AGENTS.md"
@@ -230,7 +230,7 @@ def _print_section(title: str, data: Mapping[str, object]) -> None:
 
 def _print_map_text(target: Path, agents: list[Any], elapsed_ms: float) -> None:
     """Print human-readable map output."""
-    from reporails_cli.core.discover import (
+    from reporails_cli.core.discovery.discover import (
         _detect_classification,
         _detect_commands,
         _detect_meta,

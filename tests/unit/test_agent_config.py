@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from reporails_cli.core.agents import (
+from reporails_cli.core.discovery.agents import (
     DetectedAgent,
     _codex_global_heuristic,
     _disambiguate_codex_generic,
@@ -584,7 +584,7 @@ class TestCodexGenericDisambiguation:
             _make_detected("codex", ["AGENTS.md"]),
             _make_detected("generic", ["AGENTS.md"]),
         ]
-        with patch("reporails_cli.core.agents.Path.home", return_value=tmp_path / "fakehome"):
+        with patch("reporails_cli.core.discovery.agents.Path.home", return_value=tmp_path / "fakehome"):
             # No global config → should NOT pick codex
             result = _disambiguate_codex_generic(detected, tmp_path)
             assert {a.agent_type.id for a in result} == {"generic"}
@@ -604,7 +604,7 @@ class TestCodexGenericDisambiguation:
             _make_detected("codex", ["AGENTS.md"]),
             _make_detected("generic", ["AGENTS.md"]),
         ]
-        with patch("reporails_cli.core.agents.Path.home", return_value=tmp_path / "fakehome"):
+        with patch("reporails_cli.core.discovery.agents.Path.home", return_value=tmp_path / "fakehome"):
             (tmp_path / "fakehome" / ".codex").mkdir(parents=True)
             (tmp_path / "fakehome" / ".codex" / "config.toml").write_text("")
             result = _disambiguate_codex_generic(detected, tmp_path)
@@ -663,6 +663,6 @@ class TestCodexGenericDisambiguation:
     def test_tier3_gitignore_without_global_config(self, tmp_path: Path) -> None:
         """Gitignore mentions .codex but no global config → generic wins."""
         (tmp_path / ".gitignore").write_text(".codex/\n")
-        with patch("reporails_cli.core.agents.Path.home", return_value=tmp_path / "emptyhome"):
+        with patch("reporails_cli.core.discovery.agents.Path.home", return_value=tmp_path / "emptyhome"):
             (tmp_path / "emptyhome").mkdir()
             assert not _codex_global_heuristic(tmp_path)

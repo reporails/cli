@@ -26,7 +26,7 @@ class TestRegexEngineResults:
         tmp_path: Path,
     ) -> None:
         """No matches should return valid SARIF with empty results."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -55,7 +55,7 @@ checks:
         tmp_path: Path,
     ) -> None:
         """Matching patterns should return SARIF results."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -83,7 +83,7 @@ checks:
         tmp_path: Path,
     ) -> None:
         """Invalid/incomplete rules should not crash, just be skipped."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         bad_yaml = """\
 checks:
@@ -105,7 +105,7 @@ checks:
         tmp_path: Path,
     ) -> None:
         """'No files matched' should not be treated as an error."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -137,7 +137,7 @@ class TestSARIFOutputFormat:
         tmp_path: Path,
     ) -> None:
         """SARIF output must have runs[].tool.driver.rules[] and runs[].results[]."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -180,7 +180,7 @@ checks:
         tmp_path: Path,
     ) -> None:
         """SARIF tool.driver.rules[] must have matching definitions for results."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:

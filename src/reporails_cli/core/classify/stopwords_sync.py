@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.stopwords import decompose, is_guard, recompose
+from reporails_cli.core.classify.stopwords import decompose, is_guard, recompose
 
 
 def _find_check_by_suffix(

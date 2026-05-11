@@ -8,8 +8,8 @@ from pathlib import Path
 
 import typer
 
-from reporails_cli.core.agents import detect_agents
-from reporails_cli.core.discover import generate_backbone_yaml, save_backbone
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.discovery.discover import generate_backbone_yaml, save_backbone
 from reporails_cli.interfaces.cli.helpers import app, console
 
 

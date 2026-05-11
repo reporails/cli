@@ -148,7 +148,7 @@ def _group_rules_by_target_files(
     classified_files: list[ClassifiedFile],
 ) -> dict[frozenset[Path], dict[str, Rule]]:
     """Group rules by resolved file targets for batched regex calls."""
-    from reporails_cli.core.classification import match_files
+    from reporails_cli.core.classify import match_files
 
     groups: dict[frozenset[Path], dict[str, Rule]] = {}
     for rule_id, rule in rules.items():

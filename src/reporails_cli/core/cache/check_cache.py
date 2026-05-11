@@ -11,7 +11,7 @@ import hashlib
 import json
 from typing import Any
 
-from reporails_cli.core.mechanical.checks import CheckResult
+from reporails_cli.core.lint.mechanical.checks import CheckResult
 
 
 class CheckCache:

@@ -14,6 +14,7 @@
 - Internals: relocated `core/{api_client,payload,registry,rule_builder}.py` to `core/platform/adapters/` and `core/{engine_helpers,merger}.py` to `core/platform/runtime/`; substrate now covers all eight layers
 - Internals: `tests/unit/architecture/test_core_purity.py` and `test_adapter_boundary.py` now run in fail mode; two documented allowlist entries track pending cleanups (impure filesystem-detection helpers and `RulesetMap` location), and any new forbidden cross-layer import blocks the build
 - Internals: consolidated caching subsystem into `core/cache/` subpackage (`cache.py` → `cache/__init__.py`, `check_cache.py` → `cache/check_cache.py`, `mapper/map_cache.py` → `cache/map_cache.py`); resolves the long-standing co-location warning where cache files spanned two parent directories
+- Internals: consolidated five subsystems into named subpackages — `core/funnel/`, `core/classify/`, `core/heal/`, `core/discovery/`, `core/lint/` — each matching its design-spec boundary; specs/sys/cli/DISCOVERY.md added for the newly-named discovery subsystem
 - Funnel: Rate-limit CTA now surfaces a "Try again in ~N min." hint when the server returns an accurate `reset_in`, between the limit blurb and the upgrade prompt
 - Display: file rows now annotate duplicates with `(+alias)` labels — symlinked surfaces show the differing path component (e.g. `mintlify (+.claude)`), same-directory content-identical pairs show the alternate filename (e.g. `AGENTS.md (+CLAUDE.md)`)
 

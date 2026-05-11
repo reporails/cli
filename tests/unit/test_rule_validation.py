@@ -20,7 +20,7 @@ class TestPatternOperators:
     @pytest.mark.subsys_lint
     def test_pattern_regex_matches(self, tmp_path: Path) -> None:
         """Simple pattern-regex should match content."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -45,7 +45,7 @@ checks:
     @pytest.mark.subsys_lint
     def test_pattern_either_matches_any(self, tmp_path: Path) -> None:
         """pattern-either should match if any sub-pattern matches."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -73,7 +73,7 @@ checks:
     @pytest.mark.subsys_lint
     def test_patterns_block_with_not_regex(self, tmp_path: Path) -> None:
         """patterns block with pattern-not-regex (AND + negation)."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -102,7 +102,7 @@ checks:
     @pytest.mark.subsys_lint
     def test_patterns_block_negation_suppresses(self, tmp_path: Path) -> None:
         """patterns block with pattern-not-regex should NOT match when negation hits."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -131,7 +131,7 @@ checks:
     @pytest.mark.subsys_lint
     def test_no_pattern_operator_skipped(self, tmp_path: Path) -> None:
         """Rule with no recognized pattern operator should be skipped."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -156,7 +156,7 @@ class TestPathFiltering:
     @pytest.mark.subsys_lint
     def test_path_filter_includes_matching(self, tmp_path: Path) -> None:
         """Files matching path include patterns should be scanned."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -185,7 +185,7 @@ checks:
     @pytest.mark.subsys_lint
     def test_no_path_filter_scans_all_md(self, tmp_path: Path) -> None:
         """Rules without path filters should scan all markdown files."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:
@@ -211,7 +211,7 @@ class TestLineNumbers:
     @pytest.mark.subsys_lint
     def test_line_number_accuracy(self, tmp_path: Path) -> None:
         """Line numbers in SARIF results should be accurate."""
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         rule_yaml = """\
 checks:

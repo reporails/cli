@@ -137,8 +137,8 @@ def _parse_file_types(data: dict[str, object]) -> list[FileTypeDeclaration]:
     Supports both v0.3.0 (patterns + properties nested) and v0.5.0
     (scopes with patterns, properties flattened) schema versions.
     """
-    from reporails_cli.core.agents import _extract_patterns
-    from reporails_cli.core.agents import _extract_properties as _agent_props
+    from reporails_cli.core.discovery.agents import _extract_patterns
+    from reporails_cli.core.discovery.agents import _extract_properties as _agent_props
 
     declarations: list[FileTypeDeclaration] = []
     for name, spec in data.items():
@@ -301,7 +301,7 @@ def _compute_ancestor_chain(scan_root: Path) -> set[Path]:
     (in cwd's ancestor chain) from files loaded on-demand (in descendant
     subdirectories). Mirrors the agent's actual loading model.
     """
-    from reporails_cli.core.agent_discovery import resolve_project_root
+    from reporails_cli.core.discovery.agent_discovery import resolve_project_root
 
     root = resolve_project_root(scan_root)
     chain: set[Path] = set()
