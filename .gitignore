@@ -16,6 +16,10 @@ specs/
 /.mcp.json
 /CLAUDE.md
 
+# Local project backbone (developer-private; documents internal modules,
+# specs paths, and toolchain that should not ship in a public repo)
+/.ails/backbone.yml
+
 # Pre-existing local rule-harness scaffolds with the wrong filename for CORE
 # rules (should be AGENTS.md — agent-agnostic). 0.5.6 will rename these and
 # track them properly. Until then they live local-only.
