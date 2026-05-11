@@ -262,14 +262,18 @@ def _validate_file_globs(
             return None
         paths = fm.get("globs") or fm.get("paths") or fm.get("applyTo") or []
         if isinstance(paths, str):
-            paths = [paths]
+            paths = [s.strip() for s in paths.split(",") if s.strip()]
         for p in paths:
             if not isinstance(p, str):
                 return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
             if p.count("[") != p.count("]"):
                 return CheckResult(passed=False, message=f"{f.name}: unbalanced brackets: {p}")
-            if require_matches and not any(True for _ in root.glob(p)):
-                unresolved.append(f"{f.name}: {p}")
+            if require_matches:
+                try:
+                    if not any(True for _ in root.glob(p)):
+                        unresolved.append(f"{f.name}: {p}")
+                except ValueError as exc:
+                    return CheckResult(passed=False, message=f"{f.name}: invalid glob '{p}': {exc}")
     except (OSError, yaml.YAMLError):
         pass
     return None

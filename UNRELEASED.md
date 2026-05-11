@@ -8,4 +8,6 @@
 
 ### Fixed
 
+- Check: `frontmatter_valid_glob` no longer crashes on comma-separated `paths:` values; each entry is now split and validated individually, and invalid glob syntax surfaces as a structured check failure instead of an unhandled exception
+
 ### Removed
