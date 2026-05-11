@@ -366,7 +366,7 @@ def _handle_map_ruleset(request: dict[str, Any], models: Any) -> dict[str, Any]:
         # Serialize to JSON-compatible dict
         import tempfile
 
-        from reporails_cli.core.mapper.mapper import save_ruleset_map
+        from reporails_cli.core.mapper.serialize import save_ruleset_map
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             save_ruleset_map(ruleset_map, Path(f.name))
