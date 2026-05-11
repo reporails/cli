@@ -42,7 +42,7 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
     return (get_rules_path() / "core").exists()
 

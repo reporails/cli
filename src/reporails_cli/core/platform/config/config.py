@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from reporails_cli.core.utils import load_yaml_file
+from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 if TYPE_CHECKING:
     from reporails_cli.core.models import AgentConfig, GlobalConfig, ProjectConfig
@@ -29,8 +29,8 @@ def get_agent_config(agent: str) -> AgentConfig:
     Returns:
         AgentConfig with excludes and overrides, or defaults if missing/malformed
     """
-    from reporails_cli.core.bootstrap import get_agent_config_path
     from reporails_cli.core.models import AgentConfig
+    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
 
     config_path = get_agent_config_path(agent)
     if not config_path.exists():
@@ -59,8 +59,8 @@ def get_global_config() -> GlobalConfig:
 
     Returns default config if file doesn't exist.
     """
-    from reporails_cli.core.bootstrap import get_global_config_path
     from reporails_cli.core.models import GlobalConfig
+    from reporails_cli.core.platform.config.bootstrap import get_global_config_path
 
     config_path = get_global_config_path()
     if not config_path.exists():

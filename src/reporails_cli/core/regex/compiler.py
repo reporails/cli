@@ -10,7 +10,7 @@ from typing import Any
 import regex as re
 import yaml
 
-from reporails_cli.core.utils import load_yaml_file
+from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 logger = logging.getLogger(__name__)
 

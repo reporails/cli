@@ -36,7 +36,7 @@ _MAX_REQUEST_BYTES = 10_000_000  # 10MB
 
 
 def _daemon_dir() -> Path:
-    from reporails_cli.core.bootstrap import get_daemon_dir
+    from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
 
     return get_daemon_dir()
 
@@ -353,8 +353,8 @@ def _dispatch(
 
 def _handle_map_ruleset(request: dict[str, Any], models: Any) -> dict[str, Any]:
     """Handle map_ruleset request — build RulesetMap from paths."""
-    from reporails_cli.core.bootstrap import get_global_cache_dir
     from reporails_cli.core.mapper.mapper import map_ruleset
+    from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
     paths_str = request.get("paths", [])
     paths = [Path(p) for p in paths_str]

@@ -49,7 +49,10 @@ class TestGetProjectId:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_with_git_remote(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.analytics.get_git_remote", return_value="git@github.com:org/repo.git"):
+        with patch(
+            "reporails_cli.core.platform.observability.analytics.get_git_remote",
+            return_value="git@github.com:org/repo.git",
+        ):
             pid = get_project_id(tmp_path)
         assert len(pid) == 12
         assert pid.isalnum()
@@ -57,7 +60,7 @@ class TestGetProjectId:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_without_git_remote(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.analytics.get_git_remote", return_value=None):
+        with patch("reporails_cli.core.platform.observability.analytics.get_git_remote", return_value=None):
             pid = get_project_id(tmp_path)
         assert len(pid) == 12
         assert pid.isalnum()
@@ -65,9 +68,15 @@ class TestGetProjectId:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_different_remotes_different_ids(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.analytics.get_git_remote", return_value="git@github.com:org/a.git"):
+        with patch(
+            "reporails_cli.core.platform.observability.analytics.get_git_remote",
+            return_value="git@github.com:org/a.git",
+        ):
             id_a = get_project_id(tmp_path)
-        with patch("reporails_cli.core.analytics.get_git_remote", return_value="git@github.com:org/b.git"):
+        with patch(
+            "reporails_cli.core.platform.observability.analytics.get_git_remote",
+            return_value="git@github.com:org/b.git",
+        ):
             id_b = get_project_id(tmp_path)
         assert id_a != id_b
 
@@ -170,7 +179,7 @@ class TestProjectAnalytics:
             history=[],
         )
 
-        with patch("reporails_cli.core.analytics.get_analytics_dir", return_value=tmp_path):
+        with patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=tmp_path):
             save_project_analytics(analytics)
             loaded = load_project_analytics("abc123def456")
 
@@ -182,14 +191,14 @@ class TestProjectAnalytics:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_load_returns_none_on_missing(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.analytics.get_analytics_dir", return_value=tmp_path):
+        with patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=tmp_path):
             assert load_project_analytics("nonexistent") is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_load_returns_none_on_corrupt(self, tmp_path: Path) -> None:
         (tmp_path / "bad.json").write_text("not json")
-        with patch("reporails_cli.core.analytics.get_analytics_dir", return_value=tmp_path):
+        with patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=tmp_path):
             assert load_project_analytics("bad") is None
 
 
@@ -201,8 +210,8 @@ class TestProjectAnalytics:
 class TestRecordScan:
     def _record(self, target: Path, analytics_dir: Path, score: float = 7.5) -> None:
         with (
-            patch("reporails_cli.core.analytics.get_git_remote", return_value=None),
-            patch("reporails_cli.core.analytics.get_analytics_dir", return_value=analytics_dir),
+            patch("reporails_cli.core.platform.observability.analytics.get_git_remote", return_value=None),
+            patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=analytics_dir),
         ):
             record_scan(
                 target=target,

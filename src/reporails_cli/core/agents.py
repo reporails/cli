@@ -135,8 +135,8 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
 
 def _build_agent_registry() -> dict[str, AgentType]:
     """Build agent registry from bundled framework/rules/*/config.yml files."""
-    from reporails_cli.core.bootstrap import get_rules_path
-    from reporails_cli.core.utils import load_yaml_file
+    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.utils.utils import load_yaml_file
 
     registry: dict[str, AgentType] = {}
     rules_path = get_rules_path()
@@ -243,7 +243,7 @@ def _load_project_exclude_dirs(target: Path) -> frozenset[str]:
     if not config_path.exists():
         return _DEFAULT_EXCLUDE_DIRS
     try:
-        from reporails_cli.core.utils import load_yaml_file
+        from reporails_cli.core.platform.utils.utils import load_yaml_file
 
         data = load_yaml_file(config_path)
         if not data:
@@ -316,7 +316,7 @@ def detect_agents(  # pylint: disable=too-many-locals
     # Load project config for per-surface include/exclude + fallback filenames
     project_config = None
     try:
-        from reporails_cli.core.config import get_project_config
+        from reporails_cli.core.platform.config.config import get_project_config
 
         project_config = get_project_config(target)
     except Exception:

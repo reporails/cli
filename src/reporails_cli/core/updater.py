@@ -9,11 +9,6 @@ from tempfile import TemporaryDirectory
 
 import httpx
 
-from reporails_cli.core.bootstrap import (
-    get_installed_recommended_version,
-    get_installed_version,
-    get_reporails_home,
-)
 from reporails_cli.core.download import (
     RECOMMENDED_API_URL,
     RULES_API_URL,
@@ -23,6 +18,11 @@ from reporails_cli.core.download import (
     copy_bundled_yml_files,
     download_recommended,
     write_version_file,
+)
+from reporails_cli.core.platform.config.bootstrap import (
+    get_installed_recommended_version,
+    get_installed_version,
+    get_reporails_home,
 )
 
 # Schema versions this CLI can consume (match on major.minor, ignore patch).

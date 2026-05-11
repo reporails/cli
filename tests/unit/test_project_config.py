@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from reporails_cli.core.bootstrap import get_package_paths, get_project_config
+from reporails_cli.core.platform.config.bootstrap import get_package_paths, get_project_config
 
 
 class TestGetProjectConfig:
@@ -60,7 +60,7 @@ class TestGetProjectConfig:
 
         make_config_file(": : :\n  bad yaml [[[")
         with patch(
-            "reporails_cli.core.config.get_global_config",
+            "reporails_cli.core.platform.config.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude", recommended=False),
         ):
             config = get_project_config(tmp_path)
@@ -86,7 +86,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("packages:\n  - custom\n")
         with patch(
-            "reporails_cli.core.config.get_global_config",
+            "reporails_cli.core.platform.config.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude"),
         ):
             config = get_project_config(tmp_path)
@@ -100,7 +100,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("default_agent: cursor\n")
         with patch(
-            "reporails_cli.core.config.get_global_config",
+            "reporails_cli.core.platform.config.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude"),
         ):
             config = get_project_config(tmp_path)
@@ -114,7 +114,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("packages:\n  - custom\n")
         with patch(
-            "reporails_cli.core.config.get_global_config",
+            "reporails_cli.core.platform.config.config.get_global_config",
             return_value=GlobalConfig(recommended=False),
         ):
             config = get_project_config(tmp_path)
@@ -128,7 +128,7 @@ class TestGlobalDefaultsMerged:
 
         make_config_file("recommended: false\n")
         with patch(
-            "reporails_cli.core.config.get_global_config",
+            "reporails_cli.core.platform.config.config.get_global_config",
             return_value=GlobalConfig(recommended=True),
         ):
             config = get_project_config(tmp_path)
@@ -141,7 +141,7 @@ class TestGlobalDefaultsMerged:
         from reporails_cli.core.models import GlobalConfig
 
         with patch(
-            "reporails_cli.core.config.get_global_config",
+            "reporails_cli.core.platform.config.config.get_global_config",
             return_value=GlobalConfig(default_agent="claude", recommended=False),
         ):
             config = get_project_config(tmp_path)
@@ -193,7 +193,7 @@ class TestGetPackagePaths:
         project.mkdir()
 
         with patch(
-            "reporails_cli.core.bootstrap.get_global_packages_path",
+            "reporails_cli.core.platform.config.bootstrap.get_global_packages_path",
             return_value=tmp_path / "global_home" / "packages",
         ):
             paths = get_package_paths(project, ["recommended"])
@@ -211,7 +211,7 @@ class TestGetPackagePaths:
         local_pkg.mkdir(parents=True)
 
         with patch(
-            "reporails_cli.core.bootstrap.get_global_packages_path",
+            "reporails_cli.core.platform.config.bootstrap.get_global_packages_path",
             return_value=tmp_path / "global_home" / "packages",
         ):
             paths = get_package_paths(project, ["recommended"])
@@ -229,7 +229,7 @@ class TestGetPackagePaths:
         local_pkg.mkdir(parents=True)
 
         with patch(
-            "reporails_cli.core.bootstrap.get_global_packages_path",
+            "reporails_cli.core.platform.config.bootstrap.get_global_packages_path",
             return_value=tmp_path / "global_home" / "packages",
         ):
             paths = get_package_paths(project, ["custom", "recommended"])

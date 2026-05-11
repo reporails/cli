@@ -24,8 +24,8 @@ import yaml
 from reporails_cli.core.classification import classify_files, load_file_types
 from reporails_cli.core.mechanical.checks import MECHANICAL_CHECKS, CheckResult
 from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.utils.utils import parse_frontmatter
 from reporails_cli.core.regex import run_validation as run_regex_validation
-from reporails_cli.core.utils import parse_frontmatter
 
 logger = logging.getLogger(__name__)
 

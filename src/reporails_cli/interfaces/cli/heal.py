@@ -116,7 +116,7 @@ def _discover_heal_targets(
 ) -> tuple[str, list[Path]] | None:
     """Discover instruction files for healing. Returns (agent, files) or None."""
     from reporails_cli.core import agents as _agents
-    from reporails_cli.core.config import get_project_config
+    from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.interfaces.cli import helpers as _helpers
 
     config = get_project_config(target)

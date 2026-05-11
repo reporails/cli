@@ -16,7 +16,6 @@ from reporails_cli.core.agents import (
     auto_detect_agent,
     get_known_agents,
 )
-from reporails_cli.core.bootstrap import get_agent_config
 from reporails_cli.core.models import (
     AgentConfig,
     Category,
@@ -25,6 +24,7 @@ from reporails_cli.core.models import (
     RuleType,
     Severity,
 )
+from reporails_cli.core.platform.config.bootstrap import get_agent_config
 from reporails_cli.core.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 
 # =============================================================================
@@ -48,7 +48,7 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.agent == "claude"
@@ -60,7 +60,7 @@ class TestGetAgentConfig:
     @pytest.mark.subsys_lint
     def test_missing_config_returns_defaults(self) -> None:
         with patch(
-            "reporails_cli.core.bootstrap.get_agent_config_path",
+            "reporails_cli.core.platform.config.bootstrap.get_agent_config_path",
             return_value=Path("/nonexistent/config.yml"),
         ):
             result = get_agent_config("claude")
@@ -74,7 +74,7 @@ class TestGetAgentConfig:
     def test_malformed_yaml_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file(": : : invalid yaml [[[", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
@@ -84,7 +84,7 @@ class TestGetAgentConfig:
     def test_empty_file_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file("", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
@@ -95,7 +95,7 @@ class TestGetAgentConfig:
         config_data = {"agent": "claude", "vars": {"instruction_files": "CLAUDE.md"}}
         config_path = make_config_file(yaml.dump(config_data), subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.agent == "claude"
@@ -114,7 +114,7 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.prefix == "CLAUDE"
@@ -129,7 +129,7 @@ class TestGetAgentConfig:
         config_data = {"agent": "claude"}
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.prefix == ""
@@ -143,7 +143,7 @@ class TestGetAgentConfig:
         config_data = {"agent": "generic", "prefix": "CORE", "core": True}
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/generic")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("generic")
 
         assert result.core is True

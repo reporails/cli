@@ -2800,7 +2800,7 @@ def _parse_frontmatter_globs(path: Path) -> tuple[str, ...]:
 def _load_registry() -> dict[str, dict[str, Any]]:
     """Load all agent registry configs. Returns {agent: config_dict}."""
     try:
-        from reporails_cli.core.bootstrap import get_rules_path
+        from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
         registry_dir = get_rules_path()
     except ImportError:

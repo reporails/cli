@@ -56,7 +56,7 @@ def agent_file_types() -> list:
 
     Skips when framework is not installed (CI without ~/.reporails/rules/).
     """
-    from reporails_cli.core.bootstrap import get_agent_file_types
+    from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
 
     result = get_agent_file_types("claude")
     if not result:

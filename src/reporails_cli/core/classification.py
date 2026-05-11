@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from reporails_cli.core.models import ClassifiedFile, FileMatch, FileTypeDeclaration
-from reporails_cli.core.utils import load_yaml_file
+from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def load_file_types(
     Returns:
         List of FileTypeDeclaration, empty if no config found
     """
-    from reporails_cli.core.bootstrap import get_agent_config_path
+    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
 
     candidates: list[Path] = []
     if rules_paths:
@@ -79,7 +79,7 @@ def _apply_project_overrides(
     match user-configured fallback instruction files.
     """
     try:
-        from reporails_cli.core.config import get_project_config
+        from reporails_cli.core.platform.config.config import get_project_config
     except ImportError:
         return declarations
 

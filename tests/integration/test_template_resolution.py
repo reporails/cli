@@ -16,7 +16,7 @@ class TestFileClassificationLoading:
     @pytest.mark.subsys_lint
     def test_load_claude_file_types(self) -> None:
         """Claude agent config should have file_types declarations."""
-        from reporails_cli.core.bootstrap import get_agent_file_types
+        from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
 
         file_types = get_agent_file_types("claude")
         if not file_types:
@@ -28,7 +28,7 @@ class TestFileClassificationLoading:
     @pytest.mark.subsys_lint
     def test_load_unknown_agent_returns_empty(self) -> None:
         """Unknown agent should return empty list."""
-        from reporails_cli.core.bootstrap import get_agent_file_types
+        from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
 
         result = get_agent_file_types("nonexistent_agent_xyz")
         assert result == []
@@ -37,7 +37,7 @@ class TestFileClassificationLoading:
     @pytest.mark.subsys_lint
     def test_file_types_have_patterns(self) -> None:
         """Each file type must have at least one pattern."""
-        from reporails_cli.core.bootstrap import get_agent_file_types
+        from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
 
         file_types = get_agent_file_types("claude")
         if not file_types:
@@ -49,7 +49,7 @@ class TestFileClassificationLoading:
     @pytest.mark.subsys_lint
     def test_main_type_is_required(self) -> None:
         """The 'main' file type should be marked as required."""
-        from reporails_cli.core.bootstrap import get_agent_file_types
+        from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
 
         file_types = get_agent_file_types("claude")
         if not file_types:
@@ -62,7 +62,7 @@ class TestFileClassificationLoading:
     @pytest.mark.subsys_lint
     def test_empty_string_agent_returns_empty(self) -> None:
         """Empty string agent should return empty list."""
-        from reporails_cli.core.bootstrap import get_agent_file_types
+        from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
 
         result = get_agent_file_types("")
         assert result == []
