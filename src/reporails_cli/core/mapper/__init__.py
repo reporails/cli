@@ -5,15 +5,14 @@ and produces a compact RulesetMap wire format.
 """
 
 from reporails_cli.core.mapper.mapper import (
-    Models,
     content_hash,
-    get_models,
     load_ruleset_map,
     map_file,
     map_ruleset,
     save_ruleset_map,
     tokenize,
 )
+from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.platform.dto.ruleset import (
     Atom,
     ClusterRecord,

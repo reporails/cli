@@ -214,7 +214,7 @@ def _init_daemon_process() -> None:
 
 def _start_model_warmup() -> tuple[Any, threading.Event]:
     """Start model warmup in a background thread. Returns (models, warmup_done)."""
-    from reporails_cli.core.mapper.mapper import get_models
+    from reporails_cli.core.mapper.models import get_models
 
     models = get_models()
     warmup_done = threading.Event()
