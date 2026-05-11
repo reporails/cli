@@ -26,6 +26,7 @@ from reporails_cli.core.mapper.classify import (
     _strip_md_for_classify,
 )
 from reporails_cli.core.mapper.cluster import cluster_topics
+from reporails_cli.core.mapper.embed import _embed_atoms_deduped, _embed_file_descriptions
 from reporails_cli.core.mapper.imports import expand_imports
 from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.parse import tokenize
@@ -46,35 +47,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _embed_text(atom: Atom) -> str:
-    """Build embedding text for an atom.
-
-    Uses plain_text (AST-stripped) for cleaner embeddings — formatting markers
-    (**bold**, *italic*, `backtick`) add noise without semantic content.
-    Heading context is NOT prepended — headings are their own atoms.
-    Prepending created double-counting and artificial clustering by
-    heading rather than by semantic content.
-    """
-    return atom.plain_text or atom.text
-
-
 # ──────────────────────────────────────────────────────────────────
 # RULESET MAP CONSTRUCTION
 # ──────────────────────────────────────────────────────────────────
-
-
-def _quantize_int8(vec: Any) -> tuple[int, ...]:
-    """Quantize a float32 embedding vector to int8 (-128..127).
-
-    Preserves cosine similarity with < 1% error for all-MiniLM-L6-v2 vectors.
-    """
-    import numpy as np
-
-    arr = np.asarray(vec, dtype=np.float32)
-    # Scale to [-127, 127] range based on max absolute value
-    scale = max(float(np.abs(arr).max()), 1e-10)
-    quantized = np.clip(np.round(arr * 127.0 / scale), -128, 127).astype(np.int8)
-    return tuple(int(v) for v in quantized)
 
 
 def content_hash(text: str) -> str:
@@ -244,24 +219,6 @@ def _detect_file_loading(
     return loading, scope, globs, agent_id
 
 
-def _embed_atoms_deduped(atoms: list[Atom], encoder: Any) -> None:
-    """Embed atoms with deduplication. Atoms with identical text share embeddings."""
-    texts = [_embed_text(a) for a in atoms]
-    unique_texts: list[str] = []
-    text_index: dict[str, int] = {}
-    atom_to_unique: list[int] = []
-    for t in texts:
-        idx = text_index.get(t)
-        if idx is None:
-            idx = len(unique_texts)
-            text_index[t] = idx
-            unique_texts.append(t)
-        atom_to_unique.append(idx)
-    unique_embeddings = encoder.encode(unique_texts)
-    for atom, u_idx in zip(atoms, atom_to_unique, strict=True):
-        atom.embedding_int8 = _quantize_int8(unique_embeddings[u_idx])
-
-
 def _classify_file(
     path: Path,
     map_cache: Any,
@@ -314,19 +271,6 @@ def _update_cache_after_embedding(
         file_atoms = by_file.get(frec.path, [])
         if any(id(a) in embed_set for a in file_atoms):
             map_cache.put(frec.content_hash, CachedFileEntry(frec.content_hash, atoms_to_dicts(file_atoms)))
-
-
-def _embed_file_descriptions(file_records: list[FileRecord], encoder: Any) -> None:
-    """Embed frontmatter descriptions for on_invocation files."""
-    desc_texts = [fr.description for fr in file_records if fr.description]
-    if not desc_texts:
-        return
-    desc_embeddings = encoder.encode(desc_texts)
-    desc_idx = 0
-    for fr in file_records:
-        if fr.description:
-            fr.description_embedding = _quantize_int8(desc_embeddings[desc_idx])
-            desc_idx += 1
 
 
 def _build_ruleset_map(
