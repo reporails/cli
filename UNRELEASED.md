@@ -23,7 +23,7 @@
 
 ### Fixed
 
-- API client: outgoing diagnostic requests now carry a `User-Agent: reporails-cli/<version>` header, replacing the `python-httpx/*` default that tripped Cloudflare's bot-fight rules and caused anonymous-tier requests to return HTTP 403 with a "Just a moment..." challenge page
+- API client: outgoing diagnostic requests now carry a `User-Agent: reporails-cli/<version>` header instead of the generic httpx default that some upstream filters were rejecting, causing anonymous-tier requests to intermittently return HTTP 403
 - Tests: added `TestOutgoingHeaders` regression coverage asserting `User-Agent` starts with `reporails-cli/` on both anonymous and authenticated requests — verified to fail when the UA header is removed, preventing future silent regressions of the same shape
 
 - Check: `frontmatter_valid_glob` no longer crashes on comma-separated `paths:` values; each entry is now split and validated individually, and invalid glob syntax surfaces as a structured check failure instead of an unhandled exception
