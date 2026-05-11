@@ -302,7 +302,7 @@ def _collect_files_and_scope(
 
     scope = ScopeInfo()
     try:
-        from reporails_cli.core.mapper.mapper import RulesetMap
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
         if isinstance(ruleset_map, RulesetMap):
             all_files.update(normalize_finding_path(fr.path, project_root) for fr in ruleset_map.files)
@@ -330,7 +330,7 @@ def _count_atoms(atoms: Any) -> ScopeInfo:
 def _detect_agent_name(ruleset_map: Any) -> str:
     """Detect primary agent name from ruleset_map file records."""
     try:
-        from reporails_cli.core.mapper.mapper import RulesetMap
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
         if isinstance(ruleset_map, RulesetMap):
             agent_counts = Counter(fr.agent for fr in ruleset_map.files if fr.agent != "generic")

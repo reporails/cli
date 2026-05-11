@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from reporails_cli.core.mapper.mapper import Atom, RulesetMap
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 
 
 @dataclass(frozen=True)

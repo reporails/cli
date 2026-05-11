@@ -19,7 +19,7 @@ from reporails_cli.core.platform.adapters.api_client import (
 )
 
 if TYPE_CHECKING:
-    from reporails_cli.core.mapper.mapper import RulesetMap
+    from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 WIRE_SCHEMA_VERSION_V3 = 3
 
