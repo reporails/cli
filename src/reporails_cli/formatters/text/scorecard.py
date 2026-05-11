@@ -113,7 +113,7 @@ def compute_surface_scores(
     """
     from pathlib import Path
 
-    from reporails_cli.core.merger import normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     root = Path(project_root) if project_root is not None else Path.cwd()
 

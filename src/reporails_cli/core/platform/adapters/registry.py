@@ -7,6 +7,24 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.adapters.rule_builder import (
+    CORE_WEIGHT_THRESHOLD as CORE_WEIGHT_THRESHOLD,
+)
+from reporails_cli.core.platform.adapters.rule_builder import (
+    build_rule as build_rule,
+)
+from reporails_cli.core.platform.adapters.rule_builder import (
+    derive_tier as derive_tier,
+)
+from reporails_cli.core.platform.adapters.rule_builder import (
+    get_checks_paths as get_checks_paths,
+)
+from reporails_cli.core.platform.adapters.rule_builder import (
+    get_rules_by_category as get_rules_by_category,
+)
+from reporails_cli.core.platform.adapters.rule_builder import (
+    get_rules_by_type as get_rules_by_type,
+)
 from reporails_cli.core.platform.config.bootstrap import (
     get_agent_config,
     get_project_config,
@@ -19,24 +37,6 @@ from reporails_cli.core.platform.dto.models import (
     Severity,
 )
 from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file, parse_frontmatter
-from reporails_cli.core.rule_builder import (
-    CORE_WEIGHT_THRESHOLD as CORE_WEIGHT_THRESHOLD,
-)
-from reporails_cli.core.rule_builder import (
-    build_rule as build_rule,
-)
-from reporails_cli.core.rule_builder import (
-    derive_tier as derive_tier,
-)
-from reporails_cli.core.rule_builder import (
-    get_checks_paths as get_checks_paths,
-)
-from reporails_cli.core.rule_builder import (
-    get_rules_by_category as get_rules_by_category,
-)
-from reporails_cli.core.rule_builder import (
-    get_rules_by_type as get_rules_by_type,
-)
 
 logger = logging.getLogger(__name__)
 

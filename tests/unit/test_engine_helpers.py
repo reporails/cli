@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.cache import ProjectCache, content_hash
-from reporails_cli.core.engine_helpers import _filter_cached_judgments
 from reporails_cli.core.platform.dto.models import JudgmentRequest, Severity, Violation
+from reporails_cli.core.platform.runtime.engine_helpers import _filter_cached_judgments
 
 
 def _make_request(

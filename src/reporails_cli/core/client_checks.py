@@ -60,7 +60,7 @@ def run_client_checks(ruleset_map: RulesetMap) -> list[LocalFinding]:
 
 def _relative_display_path(file_path: str) -> str:
     """Normalize file path for display. Uses merger's normalize_finding_path."""
-    from reporails_cli.core.merger import normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     return normalize_finding_path(file_path)
 

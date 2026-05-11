@@ -215,7 +215,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
     """
     from dataclasses import asdict
 
-    from reporails_cli.core.merger import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return {"error": "Invalid result type"}

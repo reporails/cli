@@ -229,7 +229,7 @@ class AilsClient:
             logger.debug("httpx not installed — cannot use remote diagnostics")
             return LintResponse()
 
-        from reporails_cli.core.payload import encode_msgpack, project_payload
+        from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_payload
 
         payload = project_payload(ruleset_map)
         if not payload.get("files"):

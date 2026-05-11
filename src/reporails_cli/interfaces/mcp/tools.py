@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.core.platform.config.bootstrap import is_initialized
 from reporails_cli.core.platform.dto.models import FileMatch
-from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.formatters import mcp as mcp_formatter
 
 logger = logging.getLogger(__name__)
@@ -59,8 +59,8 @@ def _merge_with_server(
     target: Path,
 ) -> Any:
     """Merge local findings with server diagnostics, returning CombinedResult."""
-    from reporails_cli.core.api_client import AilsClient
-    from reporails_cli.core.merger import merge_results
+    from reporails_cli.core.platform.adapters.api_client import AilsClient
+    from reporails_cli.core.platform.runtime.merger import merge_results
 
     response = AilsClient().lint(ruleset_map) if ruleset_map else None
     lint_result = response.result if response else None
@@ -168,8 +168,8 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | dict[str, Any]:
     """Get detailed info about a specific rule."""
     if rules_paths is None:
+        from reporails_cli.core.platform.adapters.registry import get_rules_dir
         from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
-        from reporails_cli.core.registry import get_rules_dir
 
         rec_path = get_recommended_package_path()
         if rec_path.is_dir():

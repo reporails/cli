@@ -4,14 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.api_client import (
-    AilsClient,
-    LintResult,
-    _deserialize_cross_file_coordinates,
-    _deserialize_hints,
-    _deserialize_lint_result,
-    _strip_and_serialize,
-)
 from reporails_cli.core.funnel import (
     UNIVERSAL_ATOM_CAP,
     WIRE_MAX_CLUSTERS,
@@ -20,6 +12,14 @@ from reporails_cli.core.funnel import (
     preflight_oversized,
 )
 from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
+from reporails_cli.core.platform.adapters.api_client import (
+    AilsClient,
+    LintResult,
+    _deserialize_cross_file_coordinates,
+    _deserialize_hints,
+    _deserialize_lint_result,
+    _strip_and_serialize,
+)
 
 
 def _make_map() -> RulesetMap:
@@ -267,7 +267,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
         }
         with (
-            patch("reporails_cli.core.payload.project_payload", return_value=oversized),
+            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=oversized),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -303,7 +303,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
         }
         with (
-            patch("reporails_cli.core.api_client._strip_and_serialize", return_value=empty_payload),
+            patch("reporails_cli.core.platform.adapters.api_client._strip_and_serialize", return_value=empty_payload),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")

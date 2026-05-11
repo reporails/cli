@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import msgpack
 
-from reporails_cli.core.api_client import (
+from reporails_cli.core.platform.adapters.api_client import (
     _CHARGE_ENC,
     _FORMAT_ENC,
     _KIND_ENC,

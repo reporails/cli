@@ -26,8 +26,8 @@ import typer  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules  # noqa: E402
 from reporails_cli.core.platform.dto.models import FileMatch, LocalFinding  # noqa: E402
-from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules  # noqa: E402
 from reporails_cli.formatters import text as text_formatter  # noqa: E402
 from reporails_cli.formatters.text.display import print_text_result  # noqa: E402
 from reporails_cli.interfaces.cli.helpers import (  # noqa: E402
@@ -60,8 +60,8 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
     """Resolve rules paths for explain command, auto-including recommended."""
     if rules:
         return [Path(r).resolve() for r in rules]
+    from reporails_cli.core.platform.adapters.registry import get_rules_dir
     from reporails_cli.core.platform.config.bootstrap import get_recommended_package_path
-    from reporails_cli.core.registry import get_rules_dir
 
     rec_path = get_recommended_package_path()
     return [get_rules_dir(), rec_path] if rec_path.is_dir() else None
@@ -81,10 +81,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     from contextlib import nullcontext
 
     from reporails_cli.core.agents import detect_agents, get_all_instruction_files
-    from reporails_cli.core.api_client import AilsClient
     from reporails_cli.core.client_checks import run_client_checks
-    from reporails_cli.core.merger import merge_results
+    from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.config.config import get_project_config
+    from reporails_cli.core.platform.runtime.merger import merge_results
     from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.formatters import json as json_formatter
 

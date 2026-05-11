@@ -294,7 +294,7 @@ def _collect_files_and_scope(
 
     Returns (all_files, scope_info).
     """
-    from reporails_cli.core.merger import normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     all_files: set[str] = set()
     if result.findings:
@@ -385,7 +385,7 @@ def _build_hints_by_file(hints: Any, project_root: Path) -> dict[str, list[Any]]
     """Build a file-keyed index of hints for inline display."""
     result: dict[str, list[Any]] = {}
     if hints:
-        from reporails_cli.core.merger import normalize_finding_path
+        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
         for h in hints:
             norm = normalize_finding_path(h.file, project_root)
@@ -404,7 +404,7 @@ def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[st
     so `_print_file_card` can do a plain dict lookup.
     """
     from reporails_cli.core.agents import compute_same_dir_content_aliases, get_file_aliases
-    from reporails_cli.core.merger import normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     out: dict[str, list[str]] = {}
     for canonical, alias_paths in get_file_aliases(project_root).items():
@@ -449,7 +449,7 @@ def print_text_result(
     local preflight rejected the payload — surfaces the upgrade CTA below the
     scorecard so users see why server diagnostics are missing.
     """
-    from reporails_cli.core.merger import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return

@@ -315,7 +315,7 @@ def cache_violation_dismissal(target: Path, violation: Any) -> None:
 
 def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disable=too-many-locals
     """Cache semantic judgment verdicts for a project."""
-    from reporails_cli.core.engine_helpers import _find_project_root
+    from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
 
     project_root = _find_project_root(target)
     cache = ProjectCache(project_root)

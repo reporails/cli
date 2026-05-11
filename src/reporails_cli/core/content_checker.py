@@ -111,6 +111,6 @@ def run_content_checks(
 
 def _relative_path(file_path: str) -> str:
     """Normalize file path for display. Uses merger's normalize_finding_path."""
-    from reporails_cli.core.merger import normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     return normalize_finding_path(file_path)

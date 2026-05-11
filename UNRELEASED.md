@@ -11,6 +11,7 @@
 
 - Internals: relocated `core/{analytics,bootstrap,config,utils}.py` into the hexagonal platform substrate (`core/platform/{observability,config,utils}/`); no user-facing behavior change
 - Internals: relocated `core/{models,results}.py` to `core/platform/dto/` and `core/{applicability,levels}.py` to `core/platform/policy/`; pure-layer files now populated and architecture tests catch any forbidden cross-layer import
+- Internals: relocated `core/{api_client,payload,registry,rule_builder}.py` to `core/platform/adapters/` and `core/{engine_helpers,merger}.py` to `core/platform/runtime/`; substrate now covers all eight layers
 - Funnel: Rate-limit CTA now surfaces a "Try again in ~N min." hint when the server returns an accurate `reset_in`, between the limit blurb and the upgrade prompt
 - Display: file rows now annotate duplicates with `(+alias)` labels — symlinked surfaces show the differing path component (e.g. `mintlify (+.claude)`), same-directory content-identical pairs show the alternate filename (e.g. `AGENTS.md (+CLAUDE.md)`)
 
