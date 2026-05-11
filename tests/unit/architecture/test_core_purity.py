@@ -51,14 +51,7 @@ _FAIL_ON_VIOLATION = True
 
 # Known temporary exceptions. Each entry: (importer_path_relative_to_root, imported_module).
 # Removed as the corresponding migration phase completes.
-_KNOWN_EXCEPTIONS: set[tuple[str, str]] = {
-    # Pending applicability split — `detect_features_filesystem` and friends
-    # are impure filesystem-detection helpers that should live in
-    # `core/discovery/` not `policy/applicability.py`. The pure
-    # `get_applicable_rules` will stay in policy once the split lands.
-    ("src/reporails_cli/core/platform/policy/applicability.py", "reporails_cli.core.platform.utils.utils"),
-    ("src/reporails_cli/core/platform/policy/applicability.py", "reporails_cli.core.discovery.agents"),
-}
+_KNOWN_EXCEPTIONS: set[tuple[str, str]] = set()
 
 
 def _iter_imports(file_path: Path) -> list[str]:

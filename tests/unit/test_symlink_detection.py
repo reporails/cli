@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.policy.applicability import (
+from reporails_cli.core.discovery.features import (
     detect_features_filesystem,
     resolve_symlinked_files,
 )

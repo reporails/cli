@@ -43,7 +43,7 @@ class TestDetectFeaturesFilesystem:
     @pytest.mark.subsys_lint
     def test_empty_directory_no_features(self, tmp_path: Path) -> None:
         """Empty directory should detect no features."""
-        from reporails_cli.core.platform.policy.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         features = detect_features_filesystem(tmp_path)
 
@@ -58,7 +58,7 @@ class TestDetectFeaturesFilesystem:
     @pytest.mark.subsys_lint
     def test_claude_md_only(self, tmp_path: Path) -> None:
         """CLAUDE.md at root should be detected."""
-        from reporails_cli.core.platform.policy.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         (tmp_path / "CLAUDE.md").write_text("# My Project\n", encoding="utf-8")
 
@@ -72,7 +72,7 @@ class TestDetectFeaturesFilesystem:
     @pytest.mark.subsys_lint
     def test_claude_rules_dir_is_abstracted(self, tmp_path: Path) -> None:
         """Presence of .claude/rules/ with content should set is_abstracted."""
-        from reporails_cli.core.platform.policy.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         rules_dir = tmp_path / ".claude" / "rules"
         rules_dir.mkdir(parents=True)
