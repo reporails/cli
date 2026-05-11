@@ -3,8 +3,8 @@
 
 Three deterministic phases (regex Phase 1 + Phase 2, spaCy/lexicon Phase 3 with
 sub-phases 3a-3g) classify each atom's charge into CONSTRAINT (-1), DIRECTIVE
-(+1), IMPERATIVE (+1), or NEUTRAL (0). The output drives sum membership in the
-equation (instruction sum vs neutral mass) and conflict detection.
+(+1), IMPERATIVE (+1), or NEUTRAL (0). The output is consumed by downstream
+scoring and conflict detection.
 
 Public entry point: `classify_charge(md_text, plain_text=..., inline_tokens=...)`.
 
