@@ -17,6 +17,7 @@
 - Internals: consolidated five subsystems into named subpackages — `core/funnel/`, `core/classify/`, `core/heal/`, `core/discovery/`, `core/lint/` — each matching its design-spec boundary; specs/sys/cli/DISCOVERY.md added for the newly-named discovery subsystem
 - Internals: extracted `RulesetMap` and supporting dataclasses (`Atom`, `FileRecord`, `ClusterRecord`, `RulesetSummary`, `InlineToken`, `TopicCluster`) from `mapper/mapper.py` to `core/platform/dto/ruleset.py`; adapters now import wire-format types from the pure DTO layer and the adapter-boundary architecture test no longer needs an allowlist entry
 - Funnel: Rate-limit CTA now surfaces a "Try again in ~N min." hint when the server returns an accurate `reset_in`, between the limit blurb and the upgrade prompt
+- Funnel: CTA and bug-report URLs render as OSC 8 terminal hyperlinks with a short clickable label (`github.com/reporails/cli/issues/new`) instead of dumping the full percent-encoded prefilled URL; falls back to the short label on terminals without hyperlink support
 - Display: file rows now annotate duplicates with `(+alias)` labels — symlinked surfaces show the differing path component (e.g. `mintlify (+.claude)`), same-directory content-identical pairs show the alternate filename (e.g. `AGENTS.md (+CLAUDE.md)`)
 
 ### Fixed
