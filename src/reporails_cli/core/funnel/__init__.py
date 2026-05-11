@@ -239,8 +239,22 @@ def format_cta(err: FunnelError) -> str:
     return _with_url(template.format(err=err), url)
 
 
+def _short_url_label(url: str) -> str:
+    """Return `netloc + path` from a URL, dropping query string and fragment.
+
+    Used as the clickable label in OSC 8 hyperlinks so the user sees
+    `github.com/reporails/cli/issues/new` instead of an 800-character
+    percent-encoded prefilled form URL.
+    """
+    parts = urlsplit(url)
+    return f"{parts.netloc}{parts.path}" if parts.netloc else url
+
+
 def _with_url(text: str, url: str) -> str:
-    return f"{text} → [bold]{url}[/bold]" if url else text
+    if not url:
+        return text
+    label = _short_url_label(url)
+    return f"{text} → [link={url}][bold]{label}[/bold][/link]"
 
 
 _CTA_TEMPLATES: dict[tuple[str, str], str] = {
