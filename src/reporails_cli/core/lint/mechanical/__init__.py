@@ -3,7 +3,7 @@
 Public API: run_mechanical_checks(), dispatch_single_check()
 """
 
-from reporails_cli.core.mechanical.runner import (
+from reporails_cli.core.lint.mechanical.runner import (
     dispatch_single_check,
     resolve_location,
     run_mechanical_checks,

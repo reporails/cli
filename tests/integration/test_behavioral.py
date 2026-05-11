@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.agents import clear_agent_cache, get_known_agents
+from reporails_cli.core.discovery.agents import clear_agent_cache, get_known_agents
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()

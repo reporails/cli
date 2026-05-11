@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from reporails_cli.core.platform.dto.models import ScanDelta
 
 if TYPE_CHECKING:
-    from reporails_cli.core.agents import DetectedAgent
+    from reporails_cli.core.discovery.agents import DetectedAgent
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.templates import render
 

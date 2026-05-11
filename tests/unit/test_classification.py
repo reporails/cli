@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classification import (
+from reporails_cli.core.classify import (
     classify_files,
     detect_content_format,
     match_files,

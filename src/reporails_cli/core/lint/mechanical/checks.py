@@ -246,7 +246,7 @@ def byte_size(
 
 
 # Import advanced checks for re-export and registry registration
-from reporails_cli.core.mechanical.checks_advanced import (  # noqa: E402
+from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
     aggregate_byte_size,
     check_import_targets_exist,
     content_absent,

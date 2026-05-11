@@ -80,12 +80,12 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     """Validate AI instruction files against reporails rules."""
     from contextlib import nullcontext
 
-    from reporails_cli.core.agents import detect_agents, get_all_instruction_files
-    from reporails_cli.core.client_checks import run_client_checks
+    from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
+    from reporails_cli.core.lint.client_checks import run_client_checks
+    from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.runtime.merger import merge_results
-    from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.formatters import json as json_formatter
 
     target = Path(path).resolve()
@@ -186,7 +186,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     # 5b. Memory index validation (client-side, reads local filesystem)
     memory_findings: list[LocalFinding] = []
     if ruleset_map is not None:
-        from reporails_cli.core.memory_checks import validate_memory_files
+        from reporails_cli.core.lint.memory_checks import validate_memory_files
 
         memory_file_paths = [f.path for f in ruleset_map.files]
         memory_findings = validate_memory_files(memory_file_paths)

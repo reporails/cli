@@ -9,12 +9,12 @@ from typing import Any
 
 import regex as re
 
-from reporails_cli.core.platform.dto.models import LocalFinding
-from reporails_cli.core.regex.compiler import (
+from reporails_cli.core.lint.regex.compiler import (
     CombinedPattern,
     CompiledCheck,
     compile_rules,
 )
+from reporails_cli.core.platform.dto.models import LocalFinding
 
 logger = logging.getLogger(__name__)
 

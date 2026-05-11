@@ -52,10 +52,12 @@ _FAIL_ON_VIOLATION = True
 # Known temporary exceptions. Each entry: (importer_path_relative_to_root, imported_module).
 # Removed as the corresponding migration phase completes.
 _KNOWN_EXCEPTIONS: set[tuple[str, str]] = {
-    # Phase 6 (discovery subsystem) — impure filesystem-detection helpers in
-    # applicability.py leave for `core/discovery/`; the residual pure
-    # `get_applicable_rules` then no longer needs `load_yaml_file`.
+    # Pending applicability split — `detect_features_filesystem` and friends
+    # are impure filesystem-detection helpers that should live in
+    # `core/discovery/` not `policy/applicability.py`. The pure
+    # `get_applicable_rules` will stay in policy once the split lands.
     ("src/reporails_cli/core/platform/policy/applicability.py", "reporails_cli.core.platform.utils.utils"),
+    ("src/reporails_cli/core/platform/policy/applicability.py", "reporails_cli.core.discovery.agents"),
 }
 
 

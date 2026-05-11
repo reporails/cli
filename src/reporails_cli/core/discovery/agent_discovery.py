@@ -401,7 +401,7 @@ def discover_from_config(
     Returns (instruction_files, rule_files, config_files) or None if
     no config.yml is available for this agent.
     """
-    from reporails_cli.core.agents import _extract_patterns, _extract_properties
+    from reporails_cli.core.discovery.agents import _extract_patterns, _extract_properties
 
     file_types = load_config_file_types(agent_id, rules_paths)
     if file_types is None:

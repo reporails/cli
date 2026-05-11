@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.cache.check_cache import CheckCache
-from reporails_cli.core.mechanical.checks import CheckResult
+from reporails_cli.core.lint.mechanical.checks import CheckResult
 
 
 class TestCheckCache:

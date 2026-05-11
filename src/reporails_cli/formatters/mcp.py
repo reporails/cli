@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from reporails_cli.core.platform.dto.models import ScanDelta, ValidationResult
 
 if TYPE_CHECKING:
-    from reporails_cli.core.fixers import FixResult
+    from reporails_cli.core.heal.fixers import FixResult
     from reporails_cli.core.platform.dto.models import JudgmentRequest, Violation
 
 

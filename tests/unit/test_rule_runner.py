@@ -14,8 +14,8 @@ class TestRunMProbes:
     @pytest.mark.subsys_lint
     def test_returns_list(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """run_m_probes should return a list of LocalFinding."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -27,9 +27,9 @@ class TestRunMProbes:
     @pytest.mark.subsys_lint
     def test_findings_are_local_finding(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Each finding should be a LocalFinding instance."""
-        from reporails_cli.core.agents import get_all_instruction_files
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
         from reporails_cli.core.platform.dto.models import LocalFinding
-        from reporails_cli.core.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -43,8 +43,8 @@ class TestRunMProbes:
     @pytest.mark.subsys_lint
     def test_findings_sorted_by_severity(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Findings should be sorted by severity (error < warning < info)."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -58,8 +58,8 @@ class TestRunMProbes:
     @pytest.mark.subsys_lint
     def test_agent_specific_rules_load(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """When agent='claude' is passed, CLAUDE-namespaced rules are loaded and checked."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:

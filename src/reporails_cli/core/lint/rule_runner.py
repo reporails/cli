@@ -28,7 +28,7 @@ def _collect_mechanical_findings(
     classified: list[Any],
 ) -> list[LocalFinding]:
     """Run mechanical checks and convert Violations to LocalFinding."""
-    from reporails_cli.core.mechanical.runner import run_mechanical_checks
+    from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
     from reporails_cli.core.platform.dto.models import Execution
 
     mechanical_rules = {
@@ -72,8 +72,8 @@ def _collect_deterministic_findings(
     scopes, formats, or other properties get the correct file set.
     Rules of any type are included if they contain deterministic checks.
     """
-    from reporails_cli.core.classification import match_files
-    from reporails_cli.core.regex import run_checks
+    from reporails_cli.core.classify import match_files
+    from reporails_cli.core.lint.regex import run_checks
 
     findings: list[LocalFinding] = []
     for rule in rules.values():
@@ -102,7 +102,7 @@ def run_m_probes(
     agent: str = "",
 ) -> list[LocalFinding]:
     """Run M-probe checks (mechanical + deterministic) against instruction files."""
-    from reporails_cli.core.classification import classify_files, load_file_types
+    from reporails_cli.core.classify import classify_files, load_file_types
     from reporails_cli.core.platform.adapters.registry import load_rules
 
     rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
@@ -128,8 +128,8 @@ def run_content_quality_checks(
     Atom queries are dispatched against files matching each rule's `match`
     field, using classified file properties from the agent config.
     """
-    from reporails_cli.core.classification import classify_files, load_file_types
-    from reporails_cli.core.content_checker import run_content_checks
+    from reporails_cli.core.classify import classify_files, load_file_types
+    from reporails_cli.core.lint.content_checker import run_content_checks
     from reporails_cli.core.mapper.mapper import RulesetMap as _RulesetMap
     from reporails_cli.core.platform.adapters.registry import load_rules
 

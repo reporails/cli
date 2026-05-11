@@ -206,7 +206,7 @@ checks:
         external.parent.mkdir()
         external.write_text("SHARED_CONTENT is here\n")
 
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         sarif = run_validation(
             [yml_file],
@@ -238,7 +238,7 @@ checks:
         project.mkdir()
         (project / "test.md").write_text("Hello World\n")
 
-        from reporails_cli.core.regex import run_validation
+        from reporails_cli.core.lint.regex import run_validation
 
         sarif = run_validation([yml_file], project)
 

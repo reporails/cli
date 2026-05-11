@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mechanical.checks import (
+from reporails_cli.core.lint.mechanical.checks import (
     MECHANICAL_CHECKS,
     _safe_float,
     byte_size,
@@ -16,7 +16,7 @@ from reporails_cli.core.mechanical.checks import (
     git_tracked,
     line_count,
 )
-from reporails_cli.core.mechanical.checks_advanced import (
+from reporails_cli.core.lint.mechanical.checks_advanced import (
     _scope_dir_from_glob,
     check_import_targets_exist,
     count_at_least,
@@ -24,7 +24,7 @@ from reporails_cli.core.mechanical.checks_advanced import (
     file_absent,
     filename_matches_pattern,
 )
-from reporails_cli.core.mechanical.runner import (
+from reporails_cli.core.lint.mechanical.runner import (
     resolve_location,
     run_mechanical_checks,
 )

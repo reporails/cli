@@ -121,7 +121,7 @@ def get_agent_file_types(
     Returns:
         List of FileTypeDeclaration from the agent's config.yml file_types section
     """
-    from reporails_cli.core.classification import load_file_types
+    from reporails_cli.core.classify import load_file_types
 
     return load_file_types(agent, rules_paths)
 

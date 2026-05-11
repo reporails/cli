@@ -13,12 +13,12 @@ from typing import Any
 import pytest
 import yaml
 
-from reporails_cli.core.regex.compiler import (
+from reporails_cli.core.lint.regex.compiler import (
     CompiledCheck,
     _compile_pattern,
     compile_rules,
 )
-from reporails_cli.core.regex.runner import (
+from reporails_cli.core.lint.regex.runner import (
     _file_matches_path_filter,
     _match_check,
     run_validation,

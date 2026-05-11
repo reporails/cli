@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.mechanical.checks import (
+from reporails_cli.core.lint.mechanical.checks import (
     CheckResult,
     _get_counted_files,
     _get_target_files,

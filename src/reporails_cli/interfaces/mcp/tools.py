@@ -28,7 +28,7 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
 
 def _discover_files(target: Path) -> tuple[list[Any], str, list[Any]] | None:
     """Detect agents and discover instruction files. Returns (detected, agent, files) or None."""
-    from reporails_cli.core.agents import detect_agents, get_all_instruction_files, resolve_agent
+    from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files, resolve_agent
     from reporails_cli.core.platform.config.config import get_project_config
 
     config = get_project_config(target)
@@ -76,8 +76,8 @@ def _merge_with_server(
 
 def _run_pipeline(target: Path) -> dict[str, Any]:
     """Run the full check pipeline and return CombinedResult as dict."""
-    from reporails_cli.core.client_checks import run_client_checks
-    from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
+    from reporails_cli.core.lint.client_checks import run_client_checks
+    from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.formatters import json as json_formatter
 
     discovery = _discover_files(target)
@@ -155,7 +155,7 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 
         fixes: list[dict[str, str]] = []
         if ruleset_map is not None:
-            from reporails_cli.core.mechanical_fixers import apply_mechanical_fixes
+            from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
 
             mech = apply_mechanical_fixes(ruleset_map, target, dry_run=dry_run)
             fixes.extend({"rule_id": m.fix_type, "file_path": m.file_path, "description": m.description} for m in mech)

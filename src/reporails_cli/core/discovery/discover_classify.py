@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.discover import (
+from reporails_cli.core.discovery.discover import (
     _find_manifests,
     _get_manifest_spec,
     _get_project_types,

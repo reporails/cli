@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.agents import (
+from reporails_cli.core.discovery.agents import (
     _dedupe_with_aliases,
     compute_same_dir_content_aliases,
     get_all_instruction_files,

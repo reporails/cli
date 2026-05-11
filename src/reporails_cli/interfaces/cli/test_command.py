@@ -100,7 +100,7 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
         _run_score_mode(root, path, rule, package_roots, agent, format)
         return
 
-    from reporails_cli.core.harness import HarnessStatus, run_harness
+    from reporails_cli.core.lint.harness import HarnessStatus, run_harness
 
     results = run_harness(
         root,
@@ -136,7 +136,7 @@ def _run_lint(
     agent: str,
 ) -> None:
     """Run structural integrity checks on rule files."""
-    from reporails_cli.core.harness import discover_rules, lint_rules, load_agent_config
+    from reporails_cli.core.lint.harness import discover_rules, lint_rules, load_agent_config
 
     _, excludes = load_agent_config(root, agent)
     rules = discover_rules(
@@ -173,7 +173,7 @@ def _run_export_baseline(
     output_path: str,
 ) -> None:
     """Export expected-rules baseline to JSON."""
-    from reporails_cli.core.harness import export_baseline
+    from reporails_cli.core.lint.harness import export_baseline
 
     entries = export_baseline(root, package_roots=package_roots, agent=agent)
     data = [{"rule_id": e.rule_id, "slug": e.slug, "has_fixtures": e.has_fixtures} for e in entries]
@@ -189,7 +189,7 @@ def _run_coverage_check(
     baseline_path: str,
 ) -> None:
     """Check rules against expected-rules baseline."""
-    from reporails_cli.core.harness import check_coverage
+    from reporails_cli.core.lint.harness import check_coverage
 
     bp = Path(baseline_path)
     if not bp.exists():
@@ -219,7 +219,7 @@ def _run_score_mode(
     format: str,
 ) -> None:
     """Run effectiveness scoring mode."""
-    from reporails_cli.core.harness import score_rules
+    from reporails_cli.core.lint.harness import score_rules
 
     deltas = score_rules(
         root,
@@ -275,7 +275,7 @@ def _print_score_json(deltas: list[Any]) -> None:
 
 def _print_text(results: list[Any], verbose: bool) -> None:
     """Print human-readable test results."""
-    from reporails_cli.core.harness import HarnessStatus
+    from reporails_cli.core.lint.harness import HarnessStatus
 
     passed = [r for r in results if r.status == HarnessStatus.PASSED]
     failed = [r for r in results if r.status == HarnessStatus.FAILED]
@@ -342,7 +342,7 @@ def _print_text(results: list[Any], verbose: bool) -> None:
 
 def _print_json(results: list[Any]) -> None:
     """Print JSON test results."""
-    from reporails_cli.core.harness import HarnessStatus
+    from reporails_cli.core.lint.harness import HarnessStatus
 
     data = {
         "rules": [
