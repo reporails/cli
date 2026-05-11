@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -151,51 +150,3 @@ def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | 
             con.print(f"[red]Error:[/red] Rules directory not found: {rp}")
             raise typer.Exit(2)
     return resolved
-
-
-def _print_section(title: str, data: Mapping[str, object]) -> None:
-    """Print a labeled section, skipping null values."""
-    non_null = {k: v for k, v in data.items() if v is not None}
-    if not non_null:
-        return
-    console.print(f"[bold]{title}:[/bold]")
-    for key, value in non_null.items():
-        if isinstance(value, list):
-            console.print(f"  {key}: {', '.join(str(v) for v in value)}")
-        else:
-            console.print(f"  {key}: {value}")
-    console.print()
-
-
-def _print_map_text(target: Path, agents: list[Any], elapsed_ms: float) -> None:
-    """Print human-readable map output."""
-    from reporails_cli.core.discovery.discover import (
-        _detect_classification,
-        _detect_commands,
-        _detect_meta,
-        _detect_paths,
-    )
-
-    console.print(f"[bold]Project Map[/bold] - {target.name}")
-    console.print("=" * 50)
-    console.print()
-
-    for agent in agents:
-        root_files = [f for f in agent.instruction_files if f.parent == target]
-        main_file = root_files[0].relative_to(target).as_posix() if root_files else "?"
-        console.print(f"[bold]{agent.agent_type.name}[/bold]")
-        console.print(f"  main: {main_file}")
-        for label, dir_path in agent.detected_directories.items():
-            console.print(f"  {label}: {dir_path}")
-        if agent.config_files:
-            cf = agent.config_files[0]
-            if cf.is_relative_to(target):
-                console.print(f"  config: {cf.relative_to(target)}")
-        console.print()
-
-    _print_section("Classification", _detect_classification(target))
-    _print_section("Paths", _detect_paths(target))
-    _print_section("Commands", _detect_commands(target))
-    _print_section("Meta", _detect_meta(target))
-
-    console.print(f"[dim]Completed in {elapsed_ms:.0f}ms[/dim]")

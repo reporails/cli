@@ -1195,88 +1195,8 @@ class TestHealCommand:
         assert result.exit_code in (0, 1, None)
 
 
-# ===========================================================================
-# Map Command
-#
-# `ails map` detects agents and project layout. Supports text, yaml,
-# json output formats and --save to write backbone.yml.
-# ===========================================================================
-
-
-@pytest.mark.e2e
-class TestMapCommand:
-    """ails map detects agents and project structure."""
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_text_output(self, claude_only: Path) -> None:
-        result = runner.invoke(app, ["map", str(claude_only)])
-        assert result.exit_code == 0, f"map failed:\n{result.output}"
-        output_lower = result.output.lower()
-        assert "claude" in output_lower
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_json_output_valid(self, claude_only: Path) -> None:
-        result = runner.invoke(app, ["map", str(claude_only), "-o", "json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert data["version"] == 3
-        assert "agents" in data
-        assert "auto_heal" in data
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_yaml_output_valid(self, claude_only: Path) -> None:
-        import yaml as yaml_lib
-
-        result = runner.invoke(app, ["map", str(claude_only), "-o", "yaml"])
-        assert result.exit_code == 0
-        data = yaml_lib.safe_load(result.output)
-        assert data["version"] == 3
-        assert "agents" in data
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_save_creates_backbone(self, tmp_path: Path) -> None:
-        import yaml as yaml_lib
-
-        project = tmp_path / "project"
-        project.mkdir()
-        (project / "CLAUDE.md").write_text("# My Project\n")
-
-        result = runner.invoke(app, ["map", str(project), "--save"])
-        assert result.exit_code == 0
-        backbone = project / ".ails" / "backbone.yml"
-        assert backbone.exists(), "backbone.yml not created"
-        data = yaml_lib.safe_load(backbone.read_text())
-        assert data["version"] == 3
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_multi_agent_detected(self, multi_agent: Path) -> None:
-        result = runner.invoke(app, ["map", str(multi_agent), "-o", "json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        agents = data.get("agents", {})
-        assert len(agents) >= 2, f"Expected multiple agents, got: {list(agents.keys())}"
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_missing_path_errors(self) -> None:
-        result = runner.invoke(app, ["map", "/tmp/no-such-path-xyz-abc-987"])
-        assert result.exit_code == 1
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_empty_dir_no_crash(self, tmp_path: Path) -> None:
-        project = tmp_path / "empty"
-        project.mkdir()
-        result = runner.invoke(app, ["map", str(project)])
-        assert result.exit_code == 0
-
-
 # Dismiss and Judge commands removed in 0.5.2 — tests removed.
+# `ails map` command removed in 0.5.9 — tests removed.
 
 
 # ===========================================================================
