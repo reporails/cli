@@ -183,8 +183,8 @@ def heal(
     """Auto-fix instruction file issues.
 
     Applies formatting fixes (backticks, bold->italic, constraint wrapping,
-    charge ordering) and structural fixes (missing sections). Use --dry-run
-    to preview changes without writing.
+    instruction reordering) and structural fixes (missing sections). Use
+    --dry-run to preview changes without writing.
     """
     target, console = _heal_validate_path(path)
     fmt = _resolve_heal_format(format)

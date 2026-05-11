@@ -118,7 +118,7 @@ async def list_tools() -> list[Tool]:
             name="heal",
             description=(
                 "Auto-fix instruction file issues. Applies formatting, bold→italic,"
-                " constraint wrapping, and charge ordering fixes."
+                " constraint wrapping, and instruction reordering fixes."
                 " Use --dry-run to preview."
             ),
             inputSchema={

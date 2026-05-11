@@ -13,7 +13,7 @@ Two responsibilities:
    of deterministic invariants over a finished atom set: schema (legal
    charge/modality values), charge consistency (negation→constraint), and
    distribution sanity (charge ratios outside calibrated bands). Findings
-   are returned as a list; the orchestration spine in `mapper.py` decides
+   are returned as a list; the orchestration spine in `pipeline.py` decides
    which severities to log or raise on.
 """
 
