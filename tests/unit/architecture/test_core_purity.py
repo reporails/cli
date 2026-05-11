@@ -47,7 +47,16 @@ _FORBIDDEN_SUBSYSTEM_PREFIXES = (
     "reporails_cli.core.mapper.",
 )
 
-_FAIL_ON_VIOLATION = False
+_FAIL_ON_VIOLATION = True
+
+# Known temporary exceptions. Each entry: (importer_path_relative_to_root, imported_module).
+# Removed as the corresponding migration phase completes.
+_KNOWN_EXCEPTIONS: set[tuple[str, str]] = {
+    # Phase 6 (discovery subsystem) — impure filesystem-detection helpers in
+    # applicability.py leave for `core/discovery/`; the residual pure
+    # `get_applicable_rules` then no longer needs `load_yaml_file`.
+    ("src/reporails_cli/core/platform/policy/applicability.py", "reporails_cli.core.platform.utils.utils"),
+}
 
 
 def _iter_imports(file_path: Path) -> list[str]:
@@ -74,6 +83,7 @@ def _forbidden_imports_in(layer_dir: Path) -> list[tuple[Path, str]]:
         if "__pycache__" not in py.parts
         for imp in _iter_imports(py)
         if any(imp.startswith(prefix) for prefix in forbidden)
+        and (str(py.relative_to(ROOT)), imp) not in _KNOWN_EXCEPTIONS
     ]
 
 

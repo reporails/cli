@@ -35,7 +35,18 @@ _FORBIDDEN_SUBSYSTEM_PREFIXES = (
     "reporails_cli.core.mapper.",
 )
 
-_FAIL_ON_VIOLATION = False
+_FAIL_ON_VIOLATION = True
+
+# Known temporary exceptions. Each entry: (importer_path_relative_to_root, imported_module).
+# Removed as the corresponding migration phase completes.
+_KNOWN_EXCEPTIONS: set[tuple[str, str]] = {
+    # Phase 7 (`mapper/` cleanup) — `RulesetMap` and its supporting dataclasses
+    # (`Atom`, `FileRecord`, `ClusterRecord`, `RulesetSummary`) move from
+    # `mapper/mapper.py` into `core/platform/dto/`. After that move these
+    # imports retarget to `dto/` and the exceptions go away.
+    ("src/reporails_cli/core/platform/adapters/api_client.py", "reporails_cli.core.mapper.mapper"),
+    ("src/reporails_cli/core/platform/adapters/payload.py", "reporails_cli.core.mapper.mapper"),
+}
 
 
 def _iter_imports(file_path: Path) -> list[str]:
@@ -64,6 +75,7 @@ def test_adapters_do_not_import_subsystems_or_outer_layers() -> None:
         if "__pycache__" not in py.parts
         for imp in _iter_imports(py)
         if any(imp.startswith(prefix) for prefix in forbidden)
+        and (str(py.relative_to(ROOT)), imp) not in _KNOWN_EXCEPTIONS
     ]
     if not violations:
         return
