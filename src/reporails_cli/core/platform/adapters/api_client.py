@@ -25,6 +25,21 @@ from reporails_cli.core.platform.dto.ruleset import RulesetMap
 logger = logging.getLogger(__name__)
 
 
+def _user_agent() -> str:
+    """Return `reporails-cli/<version>` for outgoing diagnostic requests.
+
+    Sending a distinct UA lets the server (and any CDN/WAF in front of it)
+    identify legitimate CLI traffic. The default `python-httpx/*` UA is a
+    common bot-fight trigger.
+    """
+    try:
+        from importlib.metadata import version
+
+        return f"reporails-cli/{version('reporails-cli')}"
+    except Exception:  # importlib.metadata.PackageNotFoundError + defensive
+        return "reporails-cli/unknown"
+
+
 # ──────────────────────────────────────────────────────────────────
 # RESPONSE DATACLASSES
 # ──────────────────────────────────────────────────────────────────
@@ -251,12 +266,17 @@ class AilsClient:
     def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
         dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
+        ua = _user_agent()
         if dev_mode:
             url = f"{self.base_url.rstrip('/')}/diagnose"
-            headers: dict[str, str] = {"X-Tier": self.tier, "Content-Type": "application/msgpack"}
+            headers: dict[str, str] = {
+                "X-Tier": self.tier,
+                "Content-Type": "application/msgpack",
+                "User-Agent": ua,
+            }
         else:
             url = f"{self.base_url.rstrip('/')}/v1/diagnose"
-            headers = {"Content-Type": "application/msgpack"}
+            headers = {"Content-Type": "application/msgpack", "User-Agent": ua}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 

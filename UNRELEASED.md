@@ -23,6 +23,8 @@
 
 ### Fixed
 
+- API client: outgoing diagnostic requests now carry a `User-Agent: reporails-cli/<version>` header, replacing the `python-httpx/*` default that tripped Cloudflare's bot-fight rules and caused anonymous-tier requests to return HTTP 403 with a "Just a moment..." challenge page
+
 - Check: `frontmatter_valid_glob` no longer crashes on comma-separated `paths:` values; each entry is now split and validated individually, and invalid glob syntax surfaces as a structured check failure instead of an unhandled exception
 - Discovery: skill and rule files that appear under multiple agent surfaces via symlinks (e.g. `.claude/skills/` → `.agents/skills/`) are now collapsed to one canonical entry, eliminating duplicate findings and inflated scoring
 
