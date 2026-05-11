@@ -197,7 +197,7 @@ def start_daemon() -> int:
 
 def _init_daemon_process() -> None:
     """Initialize daemon process: torch blocker, PID file, ML noise suppression."""
-    from reporails_cli.core import _torch_blocker
+    from reporails_cli.core.platform.runtime import _torch_blocker
 
     _torch_blocker.install()
     _pid_path().write_text(str(os.getpid()))

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mcp_install import detect_mcp_targets, write_mcp_config
+from reporails_cli.core.install.mcp_install import detect_mcp_targets, write_mcp_config
 
 # ---------------------------------------------------------------------------
 # detect_mcp_targets

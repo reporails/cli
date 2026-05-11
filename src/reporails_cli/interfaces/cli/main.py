@@ -9,7 +9,7 @@ from __future__ import annotations
 # version: spaCy's thinc backend does `try: import torch` as a side
 # effect that costs ~20s on cold start. We don't use torch anywhere on
 # the CLI critical path; ONNX Runtime + tokenizers handle everything.
-from reporails_cli.core import _torch_blocker
+from reporails_cli.core.platform.runtime import _torch_blocker
 
 _torch_blocker.install()
 # ─────────────────────────────────────────────────────────────────────

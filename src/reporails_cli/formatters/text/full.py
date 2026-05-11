@@ -24,7 +24,7 @@ def _format_semantic_cta(
 
 def _format_install_cta() -> str:
     """CTA for ephemeral (npx/uvx) users to install permanently."""
-    from reporails_cli.core.self_update import is_ephemeral_install
+    from reporails_cli.core.install.self_update import is_ephemeral_install
 
     if not is_ephemeral_install():
         return ""

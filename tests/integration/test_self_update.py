@@ -68,7 +68,7 @@ class TestSelfUpdateIntegration:
             [
                 str(python),
                 "-c",
-                "from reporails_cli.core.self_update import detect_install_method;"
+                "from reporails_cli.core.install.self_update import detect_install_method;"
                 " print(detect_install_method().value)",
             ],
             capture_output=True,
@@ -95,7 +95,7 @@ class TestSelfUpdateIntegration:
                 str(python),
                 "-c",
                 (
-                    "from reporails_cli.core.self_update import _build_upgrade_command, InstallMethod; "
+                    "from reporails_cli.core.install.self_update import _build_upgrade_command, InstallMethod; "
                     "cmd = _build_upgrade_command(InstallMethod.PIP, '99.0.0'); "
                     "assert 'reporails-cli==99.0.0' in cmd, cmd; "
                     "print('OK')"
@@ -140,7 +140,7 @@ class TestSelfUpdateIntegration:
                 str(python),
                 "-c",
                 (
-                    "from reporails_cli.core.self_update import upgrade_cli; "
+                    "from reporails_cli.core.install.self_update import upgrade_cli; "
                     "r = upgrade_cli('99.0.0'); "
                     "assert not r.updated; "
                     "assert r.method.value == 'dev'; "

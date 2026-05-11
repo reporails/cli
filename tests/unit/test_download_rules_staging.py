@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from reporails_cli.core.init import (
+from reporails_cli.core.install.updater import (
     IncompatibleSchemaError,
     download_rules_version,
     update_rules,
@@ -91,9 +91,11 @@ class TestDownloadRulesVersionStaging:
         mock_client = self._mock_http_response(tarball)
 
         with (
-            patch("reporails_cli.core.updater.get_reporails_home", return_value=tmp_path / "home" / ".reporails"),
-            patch("reporails_cli.core.updater.httpx.Client", return_value=mock_client),
-            patch("reporails_cli.core.updater.copy_bundled_yml_files", return_value=0),
+            patch(
+                "reporails_cli.core.install.updater.get_reporails_home", return_value=tmp_path / "home" / ".reporails"
+            ),
+            patch("reporails_cli.core.install.updater.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.updater.copy_bundled_yml_files", return_value=0),
             pytest.raises(IncompatibleSchemaError),
         ):
             download_rules_version("0.4.0")
@@ -118,10 +120,10 @@ class TestDownloadRulesVersionStaging:
         mock_client = self._mock_http_response(tarball)
 
         with (
-            patch("reporails_cli.core.updater.get_reporails_home", return_value=reporails_home),
-            patch("reporails_cli.core.updater.httpx.Client", return_value=mock_client),
-            patch("reporails_cli.core.updater.copy_bundled_yml_files", return_value=0),
-            patch("reporails_cli.core.updater.write_version_file"),
+            patch("reporails_cli.core.install.updater.get_reporails_home", return_value=reporails_home),
+            patch("reporails_cli.core.install.updater.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.updater.copy_bundled_yml_files", return_value=0),
+            patch("reporails_cli.core.install.updater.write_version_file"),
         ):
             result_path, count = download_rules_version("0.3.0")
 
@@ -142,10 +144,10 @@ class TestDownloadRulesVersionStaging:
         mock_client = self._mock_http_response(tarball)
 
         with (
-            patch("reporails_cli.core.updater.get_reporails_home", return_value=reporails_home),
-            patch("reporails_cli.core.updater.httpx.Client", return_value=mock_client),
-            patch("reporails_cli.core.updater.copy_bundled_yml_files", return_value=0),
-            patch("reporails_cli.core.updater.write_version_file"),
+            patch("reporails_cli.core.install.updater.get_reporails_home", return_value=reporails_home),
+            patch("reporails_cli.core.install.updater.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.updater.copy_bundled_yml_files", return_value=0),
+            patch("reporails_cli.core.install.updater.write_version_file"),
         ):
             result_path, count = download_rules_version("0.1.0")
 
@@ -164,9 +166,9 @@ class TestDownloadRulesVersionStaging:
         mock_client = self._mock_http_response(tarball)
 
         with (
-            patch("reporails_cli.core.updater.get_reporails_home", return_value=reporails_home),
-            patch("reporails_cli.core.updater.httpx.Client", return_value=mock_client),
-            patch("reporails_cli.core.updater.copy_bundled_yml_files", return_value=0),
+            patch("reporails_cli.core.install.updater.get_reporails_home", return_value=reporails_home),
+            patch("reporails_cli.core.install.updater.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.updater.copy_bundled_yml_files", return_value=0),
             pytest.raises(IncompatibleSchemaError),
         ):
             download_rules_version("0.4.0")
@@ -199,11 +201,11 @@ class TestUpdateRulesIncompatibleSchema:
         mock_client.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("reporails_cli.core.updater.get_reporails_home", return_value=reporails_home),
-            patch("reporails_cli.core.updater.get_installed_version", return_value="0.2.0"),
-            patch("reporails_cli.core.updater.get_latest_version", return_value="0.4.0"),
-            patch("reporails_cli.core.updater.httpx.Client", return_value=mock_client),
-            patch("reporails_cli.core.updater.copy_bundled_yml_files", return_value=0),
+            patch("reporails_cli.core.install.updater.get_reporails_home", return_value=reporails_home),
+            patch("reporails_cli.core.install.updater.get_installed_version", return_value="0.2.0"),
+            patch("reporails_cli.core.install.updater.get_latest_version", return_value="0.4.0"),
+            patch("reporails_cli.core.install.updater.httpx.Client", return_value=mock_client),
+            patch("reporails_cli.core.install.updater.copy_bundled_yml_files", return_value=0),
         ):
             result = update_rules(force=True)
 

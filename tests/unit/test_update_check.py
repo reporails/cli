@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from reporails_cli.core.update_check import (
+from reporails_cli.core.install.update_check import (
     UpdateNotification,
     _is_newer,
     check_for_updates,
@@ -197,7 +197,7 @@ class TestCacheReadWrite:
     @pytest.mark.subsys_cli_ux
     def test_fresh_cache_is_used(self, tmp_path: pytest.TempPathFactory) -> None:
         """A cache written < 24h ago should be read back without fetching."""
-        from reporails_cli.core import update_check
+        from reporails_cli.core.install import update_check
 
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
@@ -214,7 +214,7 @@ class TestCacheReadWrite:
         )
 
         with patch.object(update_check, "_get_cache_path", return_value=cache_file):
-            from reporails_cli.core.update_check import _read_cache
+            from reporails_cli.core.install.update_check import _read_cache
 
             cached = _read_cache()
 
@@ -225,7 +225,7 @@ class TestCacheReadWrite:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_expired_cache_returns_none(self, tmp_path: pytest.TempPathFactory) -> None:
-        from reporails_cli.core import update_check
+        from reporails_cli.core.install import update_check
 
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
@@ -243,7 +243,7 @@ class TestCacheReadWrite:
         )
 
         with patch.object(update_check, "_get_cache_path", return_value=cache_file):
-            from reporails_cli.core.update_check import _read_cache
+            from reporails_cli.core.install.update_check import _read_cache
 
             cached = _read_cache()
 
@@ -252,12 +252,12 @@ class TestCacheReadWrite:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_missing_cache_returns_none(self, tmp_path: pytest.TempPathFactory) -> None:
-        from reporails_cli.core import update_check
+        from reporails_cli.core.install import update_check
 
         cache_file = tmp_path / "cache" / "update-check.json"
 
         with patch.object(update_check, "_get_cache_path", return_value=cache_file):
-            from reporails_cli.core.update_check import _read_cache
+            from reporails_cli.core.install.update_check import _read_cache
 
             cached = _read_cache()
 
@@ -266,7 +266,7 @@ class TestCacheReadWrite:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_corrupt_cache_returns_none(self, tmp_path: pytest.TempPathFactory) -> None:
-        from reporails_cli.core import update_check
+        from reporails_cli.core.install import update_check
 
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
@@ -274,7 +274,7 @@ class TestCacheReadWrite:
         cache_file.write_text("not json at all")
 
         with patch.object(update_check, "_get_cache_path", return_value=cache_file):
-            from reporails_cli.core.update_check import _read_cache
+            from reporails_cli.core.install.update_check import _read_cache
 
             cached = _read_cache()
 
@@ -284,7 +284,7 @@ class TestCacheReadWrite:
     @pytest.mark.subsys_cli_ux
     def test_cache_without_recommended_still_works(self, tmp_path: pytest.TempPathFactory) -> None:
         """Old cache format without recommended field should still parse."""
-        from reporails_cli.core import update_check
+        from reporails_cli.core.install import update_check
 
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
@@ -300,7 +300,7 @@ class TestCacheReadWrite:
         )
 
         with patch.object(update_check, "_get_cache_path", return_value=cache_file):
-            from reporails_cli.core.update_check import _read_cache
+            from reporails_cli.core.install.update_check import _read_cache
 
             cached = _read_cache()
 
@@ -317,7 +317,7 @@ class TestFetchLatestCliVersion:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_success(self) -> None:
-        from reporails_cli.core.update_check import _fetch_latest_cli_version
+        from reporails_cli.core.install.update_check import _fetch_latest_cli_version
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"info": {"version": "1.2.3"}}
@@ -328,7 +328,7 @@ class TestFetchLatestCliVersion:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.get.return_value = mock_resp
 
-        with patch("reporails_cli.core.update_check.httpx.Client", return_value=mock_client):
+        with patch("reporails_cli.core.install.update_check.httpx.Client", return_value=mock_client):
             result = _fetch_latest_cli_version()
 
         assert result == "1.2.3"
@@ -338,14 +338,14 @@ class TestFetchLatestCliVersion:
     def test_network_error_returns_none(self) -> None:
         import httpx
 
-        from reporails_cli.core.update_check import _fetch_latest_cli_version
+        from reporails_cli.core.install.update_check import _fetch_latest_cli_version
 
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.get.side_effect = httpx.ConnectError("connection refused")
 
-        with patch("reporails_cli.core.update_check.httpx.Client", return_value=mock_client):
+        with patch("reporails_cli.core.install.update_check.httpx.Client", return_value=mock_client):
             result = _fetch_latest_cli_version()
 
         assert result is None
@@ -362,7 +362,7 @@ class TestCheckForUpdates:
     def test_returns_notification_when_cli_outdated(self) -> None:
         with (
             patch(
-                "reporails_cli.core.update_check._read_cache",
+                "reporails_cli.core.install.update_check._read_cache",
                 return_value={
                     "latest_cli_version": "99.0.0",
                     "latest_rules_version": "0.0.1",
@@ -390,7 +390,7 @@ class TestCheckForUpdates:
     def test_returns_notification_when_rules_outdated(self) -> None:
         with (
             patch(
-                "reporails_cli.core.update_check._read_cache",
+                "reporails_cli.core.install.update_check._read_cache",
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "99.0.0",
@@ -418,7 +418,7 @@ class TestCheckForUpdates:
     def test_returns_notification_when_recommended_outdated(self) -> None:
         with (
             patch(
-                "reporails_cli.core.update_check._read_cache",
+                "reporails_cli.core.install.update_check._read_cache",
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "0.0.1",
@@ -446,7 +446,7 @@ class TestCheckForUpdates:
     def test_returns_none_when_current(self) -> None:
         with (
             patch(
-                "reporails_cli.core.update_check._read_cache",
+                "reporails_cli.core.install.update_check._read_cache",
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "0.0.1",
@@ -471,20 +471,20 @@ class TestCheckForUpdates:
     @pytest.mark.subsys_cli_ux
     def test_fetches_when_cache_expired(self) -> None:
         with (
-            patch("reporails_cli.core.update_check._read_cache", return_value=None),
+            patch("reporails_cli.core.install.update_check._read_cache", return_value=None),
             patch(
-                "reporails_cli.core.update_check._fetch_latest_cli_version",
+                "reporails_cli.core.install.update_check._fetch_latest_cli_version",
                 return_value="99.0.0",
             ),
             patch(
-                "reporails_cli.core.init.get_latest_version",
+                "reporails_cli.core.install.updater.get_latest_version",
                 return_value="99.0.0",
             ),
             patch(
-                "reporails_cli.core.init.get_latest_recommended_version",
+                "reporails_cli.core.install.updater.get_latest_recommended_version",
                 return_value="99.0.0",
             ),
-            patch("reporails_cli.core.update_check._write_cache"),
+            patch("reporails_cli.core.install.update_check._write_cache"),
             patch("reporails_cli.__version__", "0.1.0"),
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_installed_version",
@@ -505,7 +505,7 @@ class TestCheckForUpdates:
     @pytest.mark.subsys_cli_ux
     def test_returns_none_on_exception(self) -> None:
         with patch(
-            "reporails_cli.core.update_check._read_cache",
+            "reporails_cli.core.install.update_check._read_cache",
             side_effect=OSError("boom"),
         ):
             result = check_for_updates()
@@ -518,7 +518,7 @@ class TestCheckForUpdates:
         """If rules aren't installed yet, no rules update should be reported."""
         with (
             patch(
-                "reporails_cli.core.update_check._read_cache",
+                "reporails_cli.core.install.update_check._read_cache",
                 return_value={
                     "latest_cli_version": "0.1.0",
                     "latest_rules_version": "99.0.0",
@@ -558,7 +558,7 @@ class TestPromptForUpdates:
     def test_skip_on_config(self) -> None:
         mock_console = MagicMock()
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=False),
@@ -573,12 +573,12 @@ class TestPromptForUpdates:
     def test_skip_on_no_updates(self) -> None:
         mock_console = MagicMock()
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
-            patch("reporails_cli.core.update_check.check_for_updates", return_value=None),
+            patch("reporails_cli.core.install.update_check.check_for_updates", return_value=None),
         ):
             mock_stdout.isatty.return_value = True
             result = prompt_for_updates(mock_console)
@@ -589,7 +589,7 @@ class TestPromptForUpdates:
     def test_skip_on_non_tty(self) -> None:
         mock_console = MagicMock()
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
@@ -613,13 +613,13 @@ class TestPromptForUpdates:
         mock_update_result = MagicMock(updated=True, previous_version="0.0.1", new_version="0.0.2")
 
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
-            patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
-            patch("reporails_cli.core.init.update_rules", return_value=mock_update_result),
+            patch("reporails_cli.core.install.update_check.check_for_updates", return_value=notification),
+            patch("reporails_cli.core.install.updater.update_rules", return_value=mock_update_result),
         ):
             mock_stdout.isatty.return_value = True
             result = prompt_for_updates(mock_console)
@@ -638,12 +638,12 @@ class TestPromptForUpdates:
         )
 
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
-            patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
+            patch("reporails_cli.core.install.update_check.check_for_updates", return_value=notification),
         ):
             mock_stdout.isatty.return_value = True
             result = prompt_for_updates(mock_console)
@@ -662,12 +662,12 @@ class TestPromptForUpdates:
         )
 
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
-            patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
+            patch("reporails_cli.core.install.update_check.check_for_updates", return_value=notification),
         ):
             mock_stdout.isatty.return_value = True
             result = prompt_for_updates(mock_console)
@@ -686,12 +686,12 @@ class TestPromptForUpdates:
         )
 
         with (
-            patch("reporails_cli.core.update_check.sys.stdout") as mock_stdout,
+            patch("reporails_cli.core.install.update_check.sys.stdout") as mock_stdout,
             patch(
                 "reporails_cli.core.platform.config.bootstrap.get_global_config",
                 return_value=MagicMock(auto_update_check=True),
             ),
-            patch("reporails_cli.core.update_check.check_for_updates", return_value=notification),
+            patch("reporails_cli.core.install.update_check.check_for_updates", return_value=notification),
         ):
             mock_stdout.isatty.return_value = True
             result = prompt_for_updates(mock_console)

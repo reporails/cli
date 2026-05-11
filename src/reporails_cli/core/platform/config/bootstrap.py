@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.bundled import get_bundled_package_root, get_bundled_rules_path
+from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
 
 logger = logging.getLogger(__name__)
 

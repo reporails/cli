@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from reporails_cli.core.self_update import (
+from reporails_cli.core.install.self_update import (
     InstallMethod,
     _build_upgrade_command,
     _verify_installed_version,
@@ -39,7 +39,7 @@ class TestDetectInstallMethod:
         mock_dist.read_text.side_effect = lambda name: (
             json.dumps({"dir_info": {"editable": True}}) if name == "direct_url.json" else None
         )
-        with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
+        with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.DEV
 
     @pytest.mark.unit
@@ -52,7 +52,7 @@ class TestDetectInstallMethod:
             "INSTALLER": "uv\n",
         }.get(name)
         mock_dist.files = []
-        with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
+        with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.UV
 
     @pytest.mark.unit
@@ -65,7 +65,7 @@ class TestDetectInstallMethod:
             "INSTALLER": "pip\n",
         }.get(name)
         mock_dist.files = []
-        with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
+        with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIP
 
     @pytest.mark.unit
@@ -83,14 +83,14 @@ class TestDetectInstallMethod:
         mock_dist._path = (
             "/home/user/.local/pipx/venvs/reporails-cli/lib/python3.12/site-packages/reporails_cli-0.1.3.dist-info"
         )
-        with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
+        with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIPX
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_distribution_not_found(self) -> None:
         """Missing package should return UNKNOWN."""
-        with patch("reporails_cli.core.self_update.distribution", side_effect=Exception("not found")):
+        with patch("reporails_cli.core.install.self_update.distribution", side_effect=Exception("not found")):
             assert detect_install_method() == InstallMethod.UNKNOWN
 
     @pytest.mark.unit
@@ -100,7 +100,7 @@ class TestDetectInstallMethod:
         mock_dist = MagicMock()
         mock_dist.read_text.return_value = None
         mock_dist.files = []
-        with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
+        with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIP
 
     @pytest.mark.unit
@@ -113,7 +113,7 @@ class TestDetectInstallMethod:
             "INSTALLER": "uv\n",
         }.get(name)
         mock_dist.files = []
-        with patch("reporails_cli.core.self_update.distribution", return_value=mock_dist):
+        with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.UV
 
 
@@ -176,7 +176,7 @@ class TestVerifyInstalledVersion:
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "1.2.3\n"
-        with patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_result):
+        with patch("reporails_cli.core.install.self_update.subprocess.run", return_value=mock_result):
             assert _verify_installed_version() == "1.2.3"
 
     @pytest.mark.unit
@@ -184,13 +184,13 @@ class TestVerifyInstalledVersion:
     def test_failure_returns_none(self) -> None:
         mock_result = MagicMock()
         mock_result.returncode = 1
-        with patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_result):
+        with patch("reporails_cli.core.install.self_update.subprocess.run", return_value=mock_result):
             assert _verify_installed_version() is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_exception_returns_none(self) -> None:
-        with patch("reporails_cli.core.self_update.subprocess.run", side_effect=OSError("boom")):
+        with patch("reporails_cli.core.install.self_update.subprocess.run", side_effect=OSError("boom")):
             assert _verify_installed_version() is None
 
 
@@ -205,7 +205,7 @@ class TestUpgradeCli:
     def test_dev_install_refuses(self) -> None:
         """Dev installs should return without running subprocess."""
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.DEV),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.DEV),
             patch("reporails_cli.__version__", "0.1.0"),
         ):
             result = upgrade_cli()
@@ -217,7 +217,7 @@ class TestUpgradeCli:
     @pytest.mark.subsys_cli_ux
     def test_unknown_method_refuses(self) -> None:
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.UNKNOWN),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.UNKNOWN),
             patch("reporails_cli.__version__", "0.1.0"),
         ):
             result = upgrade_cli()
@@ -229,10 +229,10 @@ class TestUpgradeCli:
     @pytest.mark.subsys_cli_ux
     def test_already_at_latest(self) -> None:
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.PIP),
             patch("reporails_cli.__version__", "1.0.0"),
-            patch("reporails_cli.core.update_check._fetch_latest_cli_version", return_value="1.0.0"),
-            patch("reporails_cli.core.update_check._is_newer", return_value=False),
+            patch("reporails_cli.core.install.update_check._fetch_latest_cli_version", return_value="1.0.0"),
+            patch("reporails_cli.core.install.update_check._is_newer", return_value=False),
         ):
             result = upgrade_cli()
         assert result.updated is False
@@ -242,9 +242,9 @@ class TestUpgradeCli:
     @pytest.mark.subsys_cli_ux
     def test_pypi_unreachable(self) -> None:
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.PIP),
             patch("reporails_cli.__version__", "0.1.0"),
-            patch("reporails_cli.core.update_check._fetch_latest_cli_version", return_value=None),
+            patch("reporails_cli.core.install.update_check._fetch_latest_cli_version", return_value=None),
         ):
             result = upgrade_cli()
         assert result.updated is False
@@ -259,12 +259,12 @@ class TestUpgradeCli:
         mock_run.stderr = ""
 
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.UV),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.UV),
             patch("reporails_cli.__version__", "0.1.0"),
-            patch("reporails_cli.core.update_check._fetch_latest_cli_version", return_value="0.2.0"),
-            patch("reporails_cli.core.update_check._is_newer", return_value=True),
-            patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_run),
-            patch("reporails_cli.core.self_update._verify_installed_version", return_value="0.2.0"),
+            patch("reporails_cli.core.install.update_check._fetch_latest_cli_version", return_value="0.2.0"),
+            patch("reporails_cli.core.install.update_check._is_newer", return_value=True),
+            patch("reporails_cli.core.install.self_update.subprocess.run", return_value=mock_run),
+            patch("reporails_cli.core.install.self_update._verify_installed_version", return_value="0.2.0"),
         ):
             result = upgrade_cli()
         assert result.updated is True
@@ -279,11 +279,11 @@ class TestUpgradeCli:
         mock_run.stderr = "Permission denied"
 
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.PIP),
             patch("reporails_cli.__version__", "0.1.0"),
-            patch("reporails_cli.core.update_check._fetch_latest_cli_version", return_value="0.2.0"),
-            patch("reporails_cli.core.update_check._is_newer", return_value=True),
-            patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_run),
+            patch("reporails_cli.core.install.update_check._fetch_latest_cli_version", return_value="0.2.0"),
+            patch("reporails_cli.core.install.update_check._is_newer", return_value=True),
+            patch("reporails_cli.core.install.self_update.subprocess.run", return_value=mock_run),
         ):
             result = upgrade_cli()
         assert result.updated is False
@@ -293,12 +293,12 @@ class TestUpgradeCli:
     @pytest.mark.subsys_cli_ux
     def test_subprocess_timeout(self) -> None:
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.PIP),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.PIP),
             patch("reporails_cli.__version__", "0.1.0"),
-            patch("reporails_cli.core.update_check._fetch_latest_cli_version", return_value="0.2.0"),
-            patch("reporails_cli.core.update_check._is_newer", return_value=True),
+            patch("reporails_cli.core.install.update_check._fetch_latest_cli_version", return_value="0.2.0"),
+            patch("reporails_cli.core.install.update_check._is_newer", return_value=True),
             patch(
-                "reporails_cli.core.self_update.subprocess.run",
+                "reporails_cli.core.install.self_update.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd=[], timeout=120),
             ),
         ):
@@ -315,11 +315,11 @@ class TestUpgradeCli:
         mock_run.stderr = ""
 
         with (
-            patch("reporails_cli.core.self_update.detect_install_method", return_value=InstallMethod.UV),
+            patch("reporails_cli.core.install.self_update.detect_install_method", return_value=InstallMethod.UV),
             patch("reporails_cli.__version__", "0.1.0"),
-            patch("reporails_cli.core.update_check._is_newer", return_value=True),
-            patch("reporails_cli.core.self_update.subprocess.run", return_value=mock_run),
-            patch("reporails_cli.core.self_update._verify_installed_version", return_value="0.3.0"),
+            patch("reporails_cli.core.install.update_check._is_newer", return_value=True),
+            patch("reporails_cli.core.install.self_update.subprocess.run", return_value=mock_run),
+            patch("reporails_cli.core.install.self_update._verify_installed_version", return_value="0.3.0"),
         ):
             result = upgrade_cli(target_version="0.3.0")
         assert result.updated is True
@@ -337,7 +337,7 @@ class TestFormatUpdateMessageCliFlag:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_cli_update_shows_cli_flag(self) -> None:
-        from reporails_cli.core.update_check import UpdateNotification, format_update_message
+        from reporails_cli.core.install.update_check import UpdateNotification, format_update_message
 
         n = UpdateNotification(cli_current="0.1.0", cli_latest="0.2.0")
         msg = format_update_message(n)
@@ -346,7 +346,7 @@ class TestFormatUpdateMessageCliFlag:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_rules_update_shows_plain_update(self) -> None:
-        from reporails_cli.core.update_check import UpdateNotification, format_update_message
+        from reporails_cli.core.install.update_check import UpdateNotification, format_update_message
 
         n = UpdateNotification(rules_current="0.0.1", rules_latest="0.0.2")
         msg = format_update_message(n)
@@ -356,7 +356,7 @@ class TestFormatUpdateMessageCliFlag:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_both_updates_shows_both_commands(self) -> None:
-        from reporails_cli.core.update_check import UpdateNotification, format_update_message
+        from reporails_cli.core.install.update_check import UpdateNotification, format_update_message
 
         n = UpdateNotification(
             cli_current="0.1.0",

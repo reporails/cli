@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 import httpx
 
-from reporails_cli.core.download import (
+from reporails_cli.core.install.download import (
     RECOMMENDED_API_URL,
     RULES_API_URL,
     RULES_TARBALL_URL,
