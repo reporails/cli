@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.bootstrap import is_initialized
-from reporails_cli.core.models import FileMatch
-from reporails_cli.core.registry import infer_agent_from_rule_id, load_rules
+from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules
+from reporails_cli.core.platform.config.bootstrap import is_initialized
+from reporails_cli.core.platform.dto.models import FileMatch
 from reporails_cli.formatters import mcp as mcp_formatter
 
 logger = logging.getLogger(__name__)
@@ -28,8 +28,8 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
 
 def _discover_files(target: Path) -> tuple[list[Any], str, list[Any]] | None:
     """Detect agents and discover instruction files. Returns (detected, agent, files) or None."""
-    from reporails_cli.core.agents import detect_agents, get_all_instruction_files, resolve_agent
-    from reporails_cli.core.config import get_project_config
+    from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files, resolve_agent
+    from reporails_cli.core.platform.config.config import get_project_config
 
     config = get_project_config(target)
     detected = detect_agents(target)
@@ -43,8 +43,8 @@ def _discover_files(target: Path) -> tuple[list[Any], str, list[Any]] | None:
 def _build_map(target: Path, instruction_files: list[Any]) -> Any:  # noqa: ARG001
     """Build ruleset map, returning None on failure."""
     try:
-        from reporails_cli.core.bootstrap import get_global_cache_dir
         from reporails_cli.core.mapper import map_ruleset
+        from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
         return map_ruleset(list(instruction_files), cache_dir=get_global_cache_dir())
     except (ImportError, RuntimeError) as exc:
@@ -59,8 +59,8 @@ def _merge_with_server(
     target: Path,
 ) -> Any:
     """Merge local findings with server diagnostics, returning CombinedResult."""
-    from reporails_cli.core.api_client import AilsClient
-    from reporails_cli.core.merger import merge_results
+    from reporails_cli.core.platform.adapters.api_client import AilsClient
+    from reporails_cli.core.platform.runtime.merger import merge_results
 
     response = AilsClient().lint(ruleset_map) if ruleset_map else None
     lint_result = response.result if response else None
@@ -76,8 +76,8 @@ def _merge_with_server(
 
 def _run_pipeline(target: Path) -> dict[str, Any]:
     """Run the full check pipeline and return CombinedResult as dict."""
-    from reporails_cli.core.client_checks import run_client_checks
-    from reporails_cli.core.rule_runner import run_content_quality_checks, run_m_probes
+    from reporails_cli.core.lint.client_checks import run_client_checks
+    from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.formatters import json as json_formatter
 
     discovery = _discover_files(target)
@@ -155,7 +155,7 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 
         fixes: list[dict[str, str]] = []
         if ruleset_map is not None:
-            from reporails_cli.core.mechanical_fixers import apply_mechanical_fixes
+            from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
 
             mech = apply_mechanical_fixes(ruleset_map, target, dry_run=dry_run)
             fixes.extend({"rule_id": m.fix_type, "file_path": m.file_path, "description": m.description} for m in mech)
@@ -167,14 +167,6 @@ def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
 
 def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | dict[str, Any]:
     """Get detailed info about a specific rule."""
-    if rules_paths is None:
-        from reporails_cli.core.bootstrap import get_recommended_package_path
-        from reporails_cli.core.registry import get_rules_dir
-
-        rec_path = get_recommended_package_path()
-        if rec_path.is_dir():
-            rules_paths = [get_rules_dir(), rec_path]
-
     rule_id_upper = rule_id.upper()
     agent = infer_agent_from_rule_id(rule_id_upper)
     rules = load_rules(rules_paths, agent=agent)

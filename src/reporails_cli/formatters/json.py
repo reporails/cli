@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.levels import LEVEL_LABELS
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.dto.models import (
     CategoryStats,
     PendingSemantic,
     RuleResult,
     ScanDelta,
     ValidationResult,
 )
+from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
 
 
 def _format_pending_semantic(pending: PendingSemantic | None) -> dict[str, Any] | None:
@@ -215,7 +215,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
     """
     from dataclasses import asdict
 
-    from reporails_cli.core.merger import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return {"error": "Invalid result type"}

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from reporails_cli.core.levels import get_level_labels
-from reporails_cli.core.models import Level, ScanDelta, ValidationResult
+from reporails_cli.core.platform.dto.models import Level, ScanDelta, ValidationResult
+from reporails_cli.core.platform.policy.levels import get_level_labels
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.chars import get_chars
 from reporails_cli.formatters.text.components import (

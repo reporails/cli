@@ -36,7 +36,7 @@ _MAX_REQUEST_BYTES = 10_000_000  # 10MB
 
 
 def _daemon_dir() -> Path:
-    from reporails_cli.core.bootstrap import get_daemon_dir
+    from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
 
     return get_daemon_dir()
 
@@ -197,7 +197,7 @@ def start_daemon() -> int:
 
 def _init_daemon_process() -> None:
     """Initialize daemon process: torch blocker, PID file, ML noise suppression."""
-    from reporails_cli.core import _torch_blocker
+    from reporails_cli.core.platform.runtime import _torch_blocker
 
     _torch_blocker.install()
     _pid_path().write_text(str(os.getpid()))
@@ -214,7 +214,7 @@ def _init_daemon_process() -> None:
 
 def _start_model_warmup() -> tuple[Any, threading.Event]:
     """Start model warmup in a background thread. Returns (models, warmup_done)."""
-    from reporails_cli.core.mapper.mapper import get_models
+    from reporails_cli.core.mapper.models import get_models
 
     models = get_models()
     warmup_done = threading.Event()
@@ -353,8 +353,8 @@ def _dispatch(
 
 def _handle_map_ruleset(request: dict[str, Any], models: Any) -> dict[str, Any]:
     """Handle map_ruleset request — build RulesetMap from paths."""
-    from reporails_cli.core.bootstrap import get_global_cache_dir
-    from reporails_cli.core.mapper.mapper import map_ruleset
+    from reporails_cli.core.mapper import map_ruleset
+    from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
     paths_str = request.get("paths", [])
     paths = [Path(p) for p in paths_str]
@@ -366,7 +366,7 @@ def _handle_map_ruleset(request: dict[str, Any], models: Any) -> dict[str, Any]:
         # Serialize to JSON-compatible dict
         import tempfile
 
-        from reporails_cli.core.mapper.mapper import save_ruleset_map
+        from reporails_cli.core.mapper.serialize import save_ruleset_map
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             save_ruleset_map(ruleset_map, Path(f.name))

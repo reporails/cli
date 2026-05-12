@@ -6,8 +6,8 @@ Provides rich, detailed output for interactive terminal use.
 
 from __future__ import annotations
 
-from reporails_cli.core.levels import get_level_labels
-from reporails_cli.core.models import Level, ScanDelta, ValidationResult
+from reporails_cli.core.platform.dto.models import Level, ScanDelta, ValidationResult
+from reporails_cli.core.platform.policy.levels import get_level_labels
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.box import format_assessment_box
 from reporails_cli.formatters.text.violations import format_violations_section
@@ -24,7 +24,7 @@ def _format_semantic_cta(
 
 def _format_install_cta() -> str:
     """CTA for ephemeral (npx/uvx) users to install permanently."""
-    from reporails_cli.core.self_update import is_ephemeral_install
+    from reporails_cli.core.install.self_update import is_ephemeral_install
 
     if not is_ephemeral_install():
         return ""

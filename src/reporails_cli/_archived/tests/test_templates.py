@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.dto.models import (
     FrictionEstimate,
     JudgmentRequest,
     Level,

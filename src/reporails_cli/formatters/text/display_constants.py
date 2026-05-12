@@ -268,7 +268,7 @@ def per_file_stats(filepath: str, ruleset_map: Any) -> str:
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
-        from reporails_cli.core.merger import normalize_finding_path
+        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
         project_root = Path.cwd()
         norm_target = normalize_finding_path(filepath, project_root)
@@ -308,7 +308,7 @@ def get_group_atoms(
     if ruleset_map is None:
         return []
     try:
-        from reporails_cli.core.merger import normalize_finding_path
+        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
         project_root = Path.cwd()
         norm_fps = {normalize_finding_path(fp, project_root) for fp, _ in group_files}

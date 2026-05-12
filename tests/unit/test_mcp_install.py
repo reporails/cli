@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reporails_cli.core.mcp_install import detect_mcp_targets, write_mcp_config
+import pytest
+
+from reporails_cli.core.install.mcp_install import detect_mcp_targets, write_mcp_config
 
 # ---------------------------------------------------------------------------
 # detect_mcp_targets
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_detect_claude_target(tmp_path: Path) -> None:
     """Claude agent → .mcp.json target."""
     (tmp_path / "CLAUDE.md").write_text("# Instructions\n")
@@ -22,6 +26,8 @@ def test_detect_claude_target(tmp_path: Path) -> None:
     assert config_path == tmp_path / ".mcp.json"
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_detect_copilot_target(tmp_path: Path) -> None:
     """Copilot agent → .vscode/mcp.json target."""
     (tmp_path / ".github").mkdir()
@@ -33,6 +39,8 @@ def test_detect_copilot_target(tmp_path: Path) -> None:
     assert config_path == tmp_path / ".vscode" / "mcp.json"
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_detect_multiple_agents(tmp_path: Path) -> None:
     """Multiple agents detected → multiple targets."""
     (tmp_path / "CLAUDE.md").write_text("# Instructions\n")
@@ -44,6 +52,8 @@ def test_detect_multiple_agents(tmp_path: Path) -> None:
     assert "copilot" in agent_ids
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_skips_unsupported_agents(tmp_path: Path) -> None:
     """Generic agent has no MCP config → skipped."""
     (tmp_path / "AGENTS.md").write_text("# Agents\n")
@@ -52,6 +62,8 @@ def test_skips_unsupported_agents(tmp_path: Path) -> None:
     assert "generic" not in agent_ids
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_no_agents_detected(tmp_path: Path) -> None:
     """Empty project → empty list."""
     targets = detect_mcp_targets(tmp_path)
@@ -63,6 +75,8 @@ def test_no_agents_detected(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_creates_new_config(tmp_path: Path) -> None:
     """Creates fresh config when file does not exist."""
     config_path = tmp_path / ".mcp.json"
@@ -77,6 +91,8 @@ def test_creates_new_config(tmp_path: Path) -> None:
     assert "reporails-mcp" in entry["command"] or "reporails-mcp" in entry.get("args", [])
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_creates_parent_dirs(tmp_path: Path) -> None:
     """Creates parent directories when needed."""
     config_path = tmp_path / ".vscode" / "mcp.json"
@@ -88,6 +104,8 @@ def test_creates_parent_dirs(tmp_path: Path) -> None:
     assert "reporails" in data["mcpServers"]
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_merges_into_existing(tmp_path: Path) -> None:
     """Preserves existing mcpServers entries when merging."""
     config_path = tmp_path / ".mcp.json"
@@ -105,6 +123,8 @@ def test_merges_into_existing(tmp_path: Path) -> None:
     assert "reporails" in data["mcpServers"]
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_updates_existing_entry(tmp_path: Path) -> None:
     """Overwrites existing reporails entry (e.g., migrating from ails-mcp)."""
     config_path = tmp_path / ".mcp.json"
@@ -127,6 +147,8 @@ def test_updates_existing_entry(tmp_path: Path) -> None:
     assert not any(part == "ails-mcp" or part.endswith("/ails-mcp") for part in all_parts)
 
 
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_handles_malformed_json(tmp_path: Path) -> None:
     """Recovers from malformed JSON by creating fresh config."""
     config_path = tmp_path / ".mcp.json"

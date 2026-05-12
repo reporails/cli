@@ -10,14 +10,15 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
-from reporails_cli.core.regex.compiler import (
+from reporails_cli.core.lint.regex.compiler import (
     CompiledCheck,
     _compile_pattern,
     compile_rules,
 )
-from reporails_cli.core.regex.runner import (
+from reporails_cli.core.lint.regex.runner import (
     _file_matches_path_filter,
     _match_check,
     run_validation,
@@ -63,6 +64,8 @@ def _sarif_rule_ids(sarif: dict[str, Any]) -> list[str]:
 class TestCompilerEdgeCases:
     """Test compiler resilience against malformed and degenerate inputs."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_yaml_file(self, tmp_path: Path) -> None:
         """Empty YAML file should produce no checks, no errors."""
         p = tmp_path / "empty.yml"
@@ -71,18 +74,24 @@ class TestCompilerEdgeCases:
         assert result.checks == []
         assert result.skipped == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_yaml_with_no_rules_key(self, tmp_path: Path) -> None:
         """YAML without 'rules' key should be silently skipped."""
         p = _write_rule(tmp_path, {"metadata": {"version": "1.0"}})
         result = compile_rules([p])
         assert result.checks == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_yaml_with_empty_rules_list(self, tmp_path: Path) -> None:
         """YAML with empty rules list should produce no checks."""
         p = _write_rule(tmp_path, {"checks": []})
         result = compile_rules([p])
         assert result.checks == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_rule_with_no_operator(self, tmp_path: Path) -> None:
         """Rule with no recognized operator should be skipped."""
         p = _write_rule(tmp_path, {"checks": [{"id": "TEST-001", "message": "bad"}]})
@@ -90,6 +99,8 @@ class TestCompilerEdgeCases:
         assert result.checks == []
         assert "TEST-001" in result.skipped
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_rule_with_unknown_operator(self, tmp_path: Path) -> None:
         """Rule with unsupported operator should be skipped gracefully."""
         p = _write_rule(
@@ -99,6 +110,8 @@ class TestCompilerEdgeCases:
         result = compile_rules([p])
         assert "TEST-002" in result.skipped
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_invalid_regex_pattern(self, tmp_path: Path) -> None:
         """Invalid regex should be caught and rule skipped."""
         p = _write_rule(
@@ -109,6 +122,8 @@ class TestCompilerEdgeCases:
         assert result.checks == []
         assert "BAD-REGEX" in result.skipped
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_invalid_regex_in_pattern_either(self, tmp_path: Path) -> None:
         """Invalid regex inside pattern-either should skip the entire rule."""
         p = _write_rule(
@@ -126,11 +141,15 @@ class TestCompilerEdgeCases:
         result = compile_rules([p])
         assert "BAD-EITHER" in result.skipped
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_nonexistent_yml_path(self, tmp_path: Path) -> None:
         """Non-existent path should be silently skipped."""
         result = compile_rules([tmp_path / "does-not-exist.yml"])
         assert result.checks == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_binary_yml_file(self, tmp_path: Path) -> None:
         """Binary file disguised as .yml should be handled gracefully."""
         p = tmp_path / "binary.yml"
@@ -138,6 +157,8 @@ class TestCompilerEdgeCases:
         result = compile_rules([p])
         assert result.checks == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_yaml_bomb(self, tmp_path: Path) -> None:
         """YAML with deeply nested anchors/aliases (billion laughs variant).
 
@@ -149,6 +170,8 @@ class TestCompilerEdgeCases:
         result = compile_rules([p])
         assert result.checks == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_pattern_either_empty_list(self, tmp_path: Path) -> None:
         """pattern-either with empty list should produce None."""
         p = _write_rule(
@@ -159,6 +182,8 @@ class TestCompilerEdgeCases:
         assert result.checks == []
         assert "EMPTY-EITHER" in result.skipped
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_patterns_only_negative(self, tmp_path: Path) -> None:
         """patterns block with ONLY pattern-not-regex (no positive patterns).
 
@@ -184,6 +209,8 @@ class TestCompilerEdgeCases:
         assert check.patterns == ()
         assert len(check.negative_patterns) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_missing_id_and_message(self, tmp_path: Path) -> None:
         """Rule without id or message should use defaults."""
         p = _write_rule(
@@ -195,6 +222,8 @@ class TestCompilerEdgeCases:
         assert result.checks[0].id == "unknown"
         assert result.checks[0].message == ""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_severity_normalization(self, tmp_path: Path) -> None:
         """Various severity values should normalize correctly."""
         rules: list[dict[str, Any]] = [
@@ -214,6 +243,8 @@ class TestCompilerEdgeCases:
         assert severities["SEV-7"] == "warning"  # LOW
         assert severities["SEV-8"] == "warning"  # empty
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_yml_files(self, tmp_path: Path) -> None:
         """Multiple YAML files should merge checks."""
         p1 = _write_rule(
@@ -255,49 +286,69 @@ class TestMatchCheck:
             path_includes=(),
         )
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_single_pattern_match(self) -> None:
         check = self._make_check(patterns=["hello"])
         assert _match_check(check, "hello world") != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_single_pattern_no_match(self) -> None:
         check = self._make_check(patterns=["hello"])
         assert _match_check(check, "goodbye world") == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_and_all_match(self) -> None:
         """All patterns must match (AND logic)."""
         check = self._make_check(patterns=["hello", "world"])
         assert _match_check(check, "hello world") != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_and_partial_match(self) -> None:
         """If only some AND patterns match, result should be empty."""
         check = self._make_check(patterns=["hello", "missing"])
         assert _match_check(check, "hello world") == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_negative_blocks_match(self) -> None:
         """Negative pattern should block a positive match."""
         check = self._make_check(patterns=["hello"], negative=["world"])
         assert _match_check(check, "hello world") == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_negative_allows_when_absent(self) -> None:
         """No negative match → positive match goes through."""
         check = self._make_check(patterns=["hello"], negative=["missing"])
         assert _match_check(check, "hello world") != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_either_any_match(self) -> None:
         """Any pattern in either list should match (OR logic)."""
         check = self._make_check(either=["hello", "goodbye"])
         assert _match_check(check, "goodbye world") != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_either_none_match(self) -> None:
         check = self._make_check(either=["missing", "absent"])
         assert _match_check(check, "hello world") == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_either_returns_all_matching(self) -> None:
         """either returns all matching patterns (not just first)."""
         check = self._make_check(either=["hello", "world"])
         matches = _match_check(check, "hello world")
         assert len(matches) == 2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_either_returns_only_matching(self) -> None:
         """either should only return patterns that actually match."""
         check = self._make_check(either=["hello", "missing"])
@@ -305,16 +356,22 @@ class TestMatchCheck:
         assert len(matches) == 1
         assert matches[0].group(0) == "hello"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_content(self) -> None:
         """Empty string should not match any pattern."""
         check = self._make_check(patterns=["something"])
         assert _match_check(check, "") == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_pattern_matches_everything(self) -> None:
         """Empty regex matches everything (this is valid Python re behavior)."""
         check = self._make_check(patterns=[""])
         assert _match_check(check, "anything") != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_negative_only_no_positive(self) -> None:
         """patterns=() with negatives only: positive loop returns [],
         so overall returns [] regardless of negative.
@@ -329,23 +386,31 @@ class TestMatchCheck:
         # The loop iterates over 0 patterns → matches stays []
         assert matches == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiline_dotall_behavior(self) -> None:
         """Patterns should match across lines (DOTALL flag)."""
         check = self._make_check(patterns=["hello.*world"])
         content = "hello\nworld"
         assert _match_check(check, content) != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiline_caret_anchor(self) -> None:
         """^ should match at start of each line (MULTILINE flag)."""
         check = self._make_check(patterns=["^## Section"])
         content = "intro\n## Section\ndetail"
         assert _match_check(check, content) != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_unicode_content(self) -> None:
         """Unicode content should be handled correctly."""
         check = self._make_check(patterns=["(?i)résumé"])
         assert _match_check(check, "My Résumé") != []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_unicode_dash_character_class(self) -> None:
         """Character class with Unicode dashes (em-dash, en-dash) should work.
 
@@ -366,6 +431,8 @@ class TestMatchCheck:
 class TestRunValidation:
     """Test run_validation SARIF output shape and correctness."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_basic_match_sarif_shape(self, tmp_path: Path) -> None:
         """Verify SARIF output has all required fields."""
         rule_yml = _write_rule(
@@ -399,6 +466,8 @@ class TestRunValidation:
         assert loc["region"]["startLine"] == 2
         assert "snippet" in loc["region"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_line_number_first_line(self, tmp_path: Path) -> None:
         """Match on first line should report line 1."""
         rule_yml = _write_rule(
@@ -410,6 +479,8 @@ class TestRunValidation:
         results = _sarif_results(run_validation([rule_yml], tmp_path))
         assert results[0]["locations"][0]["physicalLocation"]["region"]["startLine"] == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_line_number_last_line(self, tmp_path: Path) -> None:
         """Match on last line should report correct line number."""
         rule_yml = _write_rule(
@@ -422,6 +493,8 @@ class TestRunValidation:
         results = _sarif_results(run_validation([rule_yml], tmp_path))
         assert results[0]["locations"][0]["physicalLocation"]["region"]["startLine"] == 4
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_match_empty_results(self, tmp_path: Path) -> None:
         """No matches should produce SARIF with empty results."""
         rule_yml = _write_rule(
@@ -433,6 +506,8 @@ class TestRunValidation:
         sarif = run_validation([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_matches_same_file(self, tmp_path: Path) -> None:
         """Multiple matches in one file should produce multiple results."""
         rule_yml = _write_rule(
@@ -449,6 +524,8 @@ class TestRunValidation:
         results = _sarif_results(run_validation([rule_yml], tmp_path))
         assert len(results) == 1  # search returns first match only
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_rules_match_same_file(self, tmp_path: Path) -> None:
         """Multiple rules matching the same file should each produce results."""
         rule_yml = _write_rule(
@@ -466,6 +543,8 @@ class TestRunValidation:
         assert "R-A" in rule_ids
         assert "R-B" in rule_ids
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_target_directory(self, tmp_path: Path) -> None:
         """Directory with no .md files should produce empty results."""
         rules_dir = tmp_path / "rules"
@@ -481,6 +560,8 @@ class TestRunValidation:
         sarif = run_validation([rule_yml], target)
         assert _sarif_results(sarif) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_binary_target_file_skipped(self, tmp_path: Path) -> None:
         """Binary files should be skipped silently."""
         rule_yml = _write_rule(
@@ -493,6 +574,8 @@ class TestRunValidation:
         sarif = run_validation([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_utf8_encoding_error(self, tmp_path: Path) -> None:
         """File with invalid UTF-8 should be skipped."""
         rule_yml = _write_rule(
@@ -505,6 +588,8 @@ class TestRunValidation:
         sarif = run_validation([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_snippet_truncation(self, tmp_path: Path) -> None:
         """Very long matches should be truncated in snippet."""
         rule_yml = _write_rule(
@@ -527,6 +612,8 @@ class TestRunValidation:
 class TestPathFiltering:
     """Test path include filter edge cases."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_glob_star_star_slash_star_md(self) -> None:
         """**/*.md should match any .md file."""
         assert _file_matches_path_filter("docs/README.md", ("**/*.md",))
@@ -534,23 +621,33 @@ class TestPathFiltering:
         assert _file_matches_path_filter("deep/nested/file.md", ("**/*.md",))
         assert not _file_matches_path_filter("file.txt", ("**/*.md",))
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_exact_filename(self) -> None:
         """Exact filename match."""
         assert _file_matches_path_filter("CLAUDE.md", ("CLAUDE.md",))
         assert not _file_matches_path_filter("OTHER.md", ("CLAUDE.md",))
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_path_includes(self) -> None:
         """Empty path_includes should match everything."""
         assert _file_matches_path_filter("anything.txt", ())
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_template_placeholder_skipped(self) -> None:
         """Patterns containing {{ should be skipped."""
         assert not _file_matches_path_filter("CLAUDE.md", ("{{instruction_files}}",))
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_dotslash_prefix_stripped(self) -> None:
         """./prefix should be stripped from file paths."""
         assert _file_matches_path_filter("./CLAUDE.md", ("CLAUDE.md",))
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_path_includes_with_rule(self, tmp_path: Path) -> None:
         """Rules with path filters should only match specified files."""
         rule_yml = _write_rule(
@@ -585,6 +682,8 @@ class TestPathFiltering:
 class TestNegativePatterns:
     """Test the pattern-not-regex operator — zero framework rules use this."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_positive_with_negative_match_blocks(self, tmp_path: Path) -> None:
         """When negative pattern matches, the rule should NOT fire."""
         rule_yml = _write_rule(
@@ -605,6 +704,8 @@ class TestNegativePatterns:
         _write_target(tmp_path, "password is hashed with bcrypt\n")
         assert _sarif_results(run_validation([rule_yml], tmp_path)) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_positive_without_negative_fires(self, tmp_path: Path) -> None:
         """When negative pattern doesn't match, positive should fire."""
         rule_yml = _write_rule(
@@ -627,6 +728,8 @@ class TestNegativePatterns:
         assert len(results) == 1
         assert results[0]["ruleId"] == "NEG-2"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_negatives_all_must_not_match(self, tmp_path: Path) -> None:
         """All negative patterns block the match (AND-NOT logic)."""
         rule_yml = _write_rule(
@@ -658,6 +761,8 @@ class TestNegativePatterns:
         results = _sarif_results(run_validation([rule_yml], tmp_path))
         assert len(results) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_negative_only_never_fires(self, tmp_path: Path) -> None:
         """patterns block with ONLY negative patterns never produces matches.
 
@@ -690,6 +795,8 @@ class TestNegativePatterns:
 class TestPerformance:
     """Test performance and catastrophic backtracking resistance."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_catastrophic_backtracking_protection(self, tmp_path: Path) -> None:
         """Pattern with nested quantifiers on adversarial input.
 
@@ -712,6 +819,8 @@ class TestPerformance:
         # within the timeout (pattern times out, returns no match)
         assert elapsed < 2.0, f"Regex took {elapsed:.1f}s — timeout guard may not be working"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_greedy_dot_star_large_file(self, tmp_path: Path) -> None:
         """Greedy .* between two patterns on a large file.
 
@@ -731,6 +840,8 @@ class TestPerformance:
 
         assert elapsed < 2.0, f"Greedy .* took {elapsed:.1f}s"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_many_files_performance(self, tmp_path: Path) -> None:
         """Scanning 100 files should complete quickly."""
         rule_yml = _write_rule(
@@ -747,6 +858,8 @@ class TestPerformance:
         assert len(_sarif_results(sarif)) == 100
         assert elapsed < 5.0, f"100 files took {elapsed:.1f}s"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_validation_completes_on_simple_pattern(self, tmp_path: Path) -> None:
         """run_validation produces correct results — sanity check the regex library wiring."""
         rule_yml = _write_rule(
@@ -766,6 +879,8 @@ class TestPerformance:
 class TestIntegration:
     """Full pipeline integration tests with edge cases."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_expect_present_interaction_with_regex(self, tmp_path: Path) -> None:
         """Test that regex results can be consumed by expect=present deterministic checks.
 
@@ -784,6 +899,8 @@ class TestIntegration:
         # Should produce a match (expect logic happens downstream in pipeline)
         assert len(results) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_exclude_dirs(self, tmp_path: Path) -> None:
         """--exclude-dir should prevent scanning those directories."""
         rule_yml = _write_rule(
@@ -802,6 +919,8 @@ class TestIntegration:
         assert any("CLAUDE.md" in u for u in uris)
         assert not any("vendor" in u for u in uris)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_symlink_extra_targets(self, tmp_path: Path) -> None:
         """Extra targets (from symlinks) should be scanned."""
         rule_yml = _write_rule(
@@ -823,6 +942,8 @@ class TestIntegration:
         results = _sarif_results(sarif)
         assert len(results) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_instruction_files_explicit(self, tmp_path: Path) -> None:
         """When instruction_files is provided, only those files should be scanned."""
         rule_yml = _write_rule(
@@ -838,6 +959,8 @@ class TestIntegration:
         assert any("a.md" in u for u in uris)
         assert not any("b.md" in u for u in uris)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_zero_byte_file(self, tmp_path: Path) -> None:
         """Zero-byte file should not crash."""
         rule_yml = _write_rule(
@@ -849,6 +972,8 @@ class TestIntegration:
         sarif = run_validation([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_file_with_only_newlines(self, tmp_path: Path) -> None:
         """File with only newlines should not crash."""
         rule_yml = _write_rule(
@@ -860,6 +985,8 @@ class TestIntegration:
         sarif = run_validation([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_very_long_line(self, tmp_path: Path) -> None:
         """File with a single very long line should not crash."""
         rule_yml = _write_rule(
@@ -878,6 +1005,8 @@ class TestIntegration:
         assert len(results) == 1
         assert elapsed < 5.0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_pattern_either_all_sub_unsupported(self, tmp_path: Path) -> None:
         """pattern-either where no sub-entry has pattern-regex should skip."""
         rule_yml = _write_rule(

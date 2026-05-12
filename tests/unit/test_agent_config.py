@@ -9,15 +9,16 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from reporails_cli.core.agents import (
+from reporails_cli.core.discovery.agents import (
     DetectedAgent,
     _codex_global_heuristic,
     _disambiguate_codex_generic,
     auto_detect_agent,
     get_known_agents,
 )
-from reporails_cli.core.bootstrap import get_agent_config
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.adapters.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
+from reporails_cli.core.platform.config.bootstrap import get_agent_config
+from reporails_cli.core.platform.dto.models import (
     AgentConfig,
     Category,
     Check,
@@ -25,7 +26,6 @@ from reporails_cli.core.models import (
     RuleType,
     Severity,
 )
-from reporails_cli.core.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
 
 # =============================================================================
 # get_agent_config tests
@@ -35,6 +35,8 @@ from reporails_cli.core.registry import _apply_agent_overrides, _is_other_agent_
 class TestGetAgentConfig:
     """Test loading agent config from framework."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_loads_excludes_and_overrides(self, tmp_path: Path, make_config_file) -> None:
         config_data = {
             "agent": "claude",
@@ -46,7 +48,7 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.agent == "claude"
@@ -54,9 +56,11 @@ class TestGetAgentConfig:
         assert result.overrides["E2-no-ritual-section"] == {"severity": "medium"}
         assert result.overrides["E5-no-grep-guidance"] == {"severity": "low", "disabled": True}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_missing_config_returns_defaults(self) -> None:
         with patch(
-            "reporails_cli.core.bootstrap.get_agent_config_path",
+            "reporails_cli.core.platform.config.bootstrap.get_agent_config_path",
             return_value=Path("/nonexistent/config.yml"),
         ):
             result = get_agent_config("claude")
@@ -65,33 +69,41 @@ class TestGetAgentConfig:
         assert result.excludes == []
         assert result.overrides == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_malformed_yaml_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file(": : : invalid yaml [[[", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_file_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file("", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_config_without_excludes_or_overrides(self, tmp_path: Path, make_config_file) -> None:
         config_data = {"agent": "claude", "vars": {"instruction_files": "CLAUDE.md"}}
         config_path = make_config_file(yaml.dump(config_data), subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.agent == "claude"
         assert result.excludes == []
         assert result.overrides == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_loads_prefix_name_core(self, tmp_path: Path, make_config_file) -> None:
         config_data = {
             "agent": "claude",
@@ -102,7 +114,7 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.prefix == "CLAUDE"
@@ -110,24 +122,28 @@ class TestGetAgentConfig:
         assert result.core is False
         assert result.excludes == ["CODEX:*"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_missing_new_fields_default(self, tmp_path: Path, make_config_file) -> None:
         """Config without prefix/name/core gets empty defaults."""
         config_data = {"agent": "claude"}
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.prefix == ""
         assert result.name == ""
         assert result.core is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_core_agent_config(self, tmp_path: Path, make_config_file) -> None:
         """Core agent (generic) sets core=True."""
         config_data = {"agent": "generic", "prefix": "CORE", "core": True}
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/generic")
 
-        with patch("reporails_cli.core.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
             result = get_agent_config("generic")
 
         assert result.core is True
@@ -154,6 +170,8 @@ def _make_rule(rule_id: str, checks: list[Check], severity: Severity = Severity.
 class TestApplyAgentOverrides:
     """Test agent check-level overrides."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_severity_changed(self) -> None:
         checks = [Check(id="E2-check")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
@@ -164,6 +182,8 @@ class TestApplyAgentOverrides:
         # Severity override now lifted to rule level
         assert result["E2"].severity == Severity.LOW
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_check_disabled(self) -> None:
         checks = [
             Check(id="E2-check-a"),
@@ -177,6 +197,8 @@ class TestApplyAgentOverrides:
         assert len(result["E2"].checks) == 1
         assert result["E2"].checks[0].id == "E2-check-b"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_nonexistent_check_is_noop(self) -> None:
         checks = [Check(id="E2-check")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
@@ -186,6 +208,8 @@ class TestApplyAgentOverrides:
 
         assert result["E2"].severity == Severity.HIGH  # unchanged
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_all_checks_disabled_leaves_empty_list(self) -> None:
         checks = [Check(id="E2-check")]
         rules = {"E2": _make_rule("E2", checks)}
@@ -195,6 +219,8 @@ class TestApplyAgentOverrides:
 
         assert result["E2"].checks == []
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_invalid_severity_skipped(self) -> None:
         checks = [Check(id="E2-check")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
@@ -204,6 +230,8 @@ class TestApplyAgentOverrides:
         # Invalid severity is skipped — original rule severity unchanged
         assert result["E2"].severity == Severity.HIGH
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_rules_overridden(self) -> None:
         rules = {
             "E2": _make_rule("E2", [Check(id="E2-c1")], severity=Severity.HIGH),
@@ -228,6 +256,8 @@ class TestApplyAgentOverrides:
 class TestLoadRulesExcludes:
     """Test that agent excludes remove rules from the loaded set."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_excludes_removes_rules(self, tmp_path: Path) -> None:
         """Excluded rule IDs are filtered out."""
         # Create a minimal rules dir with two rules (new format: rule.md in slug dirs)
@@ -241,12 +271,14 @@ class TestLoadRulesExcludes:
             )
 
         agent_config = AgentConfig(agent="test", excludes=["CORE:S:0001"])
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules
         assert "CORE:S:0002" in rules
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_excludes_nonexistent_rule_is_noop(self, tmp_path: Path) -> None:
         """Excluding a rule ID that doesn't exist is harmless."""
         rule_dir = tmp_path / "core" / "structure" / "rule-a"
@@ -258,11 +290,13 @@ class TestLoadRulesExcludes:
         )
 
         agent_config = AgentConfig(agent="test", excludes=["NONEXISTENT"])
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" in rules
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_agent_skips_processing(self, tmp_path: Path) -> None:
         """Empty agent string skips agent config loading entirely."""
         rule_dir = tmp_path / "core" / "structure" / "rule-a"
@@ -277,6 +311,8 @@ class TestLoadRulesExcludes:
 
         assert "CORE:S:0001" in rules
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_glob_excludes_match_namespaced_rules(self, tmp_path: Path) -> None:
         """Glob pattern CLAUDE:* excludes all CLAUDE-namespaced rules."""
         rule_fm = (
@@ -299,7 +335,7 @@ class TestLoadRulesExcludes:
             prefix="COPILOT",
             excludes=["CLAUDE:*", "CODEX:*"],
         )
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="copilot")
 
         assert "CORE:S:0001" in rules
@@ -307,6 +343,8 @@ class TestLoadRulesExcludes:
         assert "CLAUDE:C:0002" not in rules
         assert "CODEX:S:0001" not in rules
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_exact_and_glob_excludes_coexist(self, tmp_path: Path) -> None:
         """Exact IDs and glob patterns work together in excludes."""
         rule_fm = (
@@ -327,7 +365,7 @@ class TestLoadRulesExcludes:
             agent="test",
             excludes=["CORE:S:0001", "CLAUDE:*"],
         )
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules  # exact exclude
@@ -343,6 +381,8 @@ class TestLoadRulesExcludes:
 class TestPrefixNamespaceFiltering:
     """Test that agent_config.prefix is used for namespace filtering."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.parametrize(
         ("rule_id", "agent_prefix", "expected"),
         [
@@ -357,6 +397,8 @@ class TestPrefixNamespaceFiltering:
     def test_is_other_agent_rule(self, rule_id: str, agent_prefix: str, expected: bool) -> None:
         assert _is_other_agent_rule(rule_id, agent_prefix) == expected
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_prefix_from_config_used(self, tmp_path: Path) -> None:
         """When agent_config.prefix is set, it's used instead of agent.upper()."""
         rule_fm = (
@@ -375,13 +417,15 @@ class TestPrefixNamespaceFiltering:
 
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
         agent_config = AgentConfig(agent="myagent", prefix="MYPREFIX")
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="myagent")
 
         assert "CORE:S:0001" in rules
         assert "MYPREFIX:S:0001" in rules
         assert "OTHER:S:0001" not in rules
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_fallback_to_agent_upper_without_prefix(self, tmp_path: Path) -> None:
         """Without prefix in config, falls back to agent.upper()."""
         rule_fm = (
@@ -400,7 +444,7 @@ class TestPrefixNamespaceFiltering:
 
         # No prefix — agent.upper() = "CLAUDE" used for filtering
         agent_config = AgentConfig(agent="claude")
-        with patch("reporails_cli.core.registry.get_agent_config", return_value=agent_config):
+        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
             rules = load_rules([tmp_path], agent="claude")
 
         assert "CORE:S:0001" in rules
@@ -416,6 +460,8 @@ class TestPrefixNamespaceFiltering:
 class TestGlobExcludePatterns:
     """Verify fnmatch patterns match rule IDs correctly."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.parametrize(
         ("rule_id", "pattern", "should_match"),
         [
@@ -448,6 +494,8 @@ def _detected(agent_id: str, files: list[str] | None = None) -> DetectedAgent:
 class TestAutoDetectAgent:
     """Test auto_detect_agent picks agent only when unambiguous."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     @pytest.mark.parametrize(
         ("agents", "expected"),
         [
@@ -501,6 +549,8 @@ def _make_detected(agent_id: str, instruction_files: list[str], config_files: li
 class TestCodexGenericDisambiguation:
     """Three-tier codex/generic disambiguation on AGENTS.md projects."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_tier1_override_file_picks_codex(self, tmp_path: Path) -> None:
         """AGENTS.override.md present → codex (definitive)."""
         detected = [
@@ -512,6 +562,8 @@ class TestCodexGenericDisambiguation:
         assert "codex" in ids
         assert "generic" not in ids
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_tier2_config_toml_picks_codex(self, tmp_path: Path) -> None:
         """.codex/config.toml present → codex (definitive)."""
         detected = [
@@ -523,6 +575,8 @@ class TestCodexGenericDisambiguation:
         assert "codex" in ids
         assert "generic" not in ids
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_tier3_global_config_plus_gitignore(self, tmp_path: Path) -> None:
         """~/.codex/config.toml + .codex in .gitignore → codex (assumed)."""
         (tmp_path / ".gitignore").write_text(".codex/\n")
@@ -530,7 +584,7 @@ class TestCodexGenericDisambiguation:
             _make_detected("codex", ["AGENTS.md"]),
             _make_detected("generic", ["AGENTS.md"]),
         ]
-        with patch("reporails_cli.core.agents.Path.home", return_value=tmp_path / "fakehome"):
+        with patch("reporails_cli.core.discovery.agents.Path.home", return_value=tmp_path / "fakehome"):
             # No global config → should NOT pick codex
             result = _disambiguate_codex_generic(detected, tmp_path)
             assert {a.agent_type.id for a in result} == {"generic"}
@@ -541,6 +595,8 @@ class TestCodexGenericDisambiguation:
             result = _disambiguate_codex_generic(detected, tmp_path)
             assert {a.agent_type.id for a in result} == {"codex"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_tier3_override_in_gitignore(self, tmp_path: Path) -> None:
         """~/.codex/config.toml + AGENTS.override in .gitignore → codex."""
         (tmp_path / ".gitignore").write_text("AGENTS.override.md\n")
@@ -548,12 +604,14 @@ class TestCodexGenericDisambiguation:
             _make_detected("codex", ["AGENTS.md"]),
             _make_detected("generic", ["AGENTS.md"]),
         ]
-        with patch("reporails_cli.core.agents.Path.home", return_value=tmp_path / "fakehome"):
+        with patch("reporails_cli.core.discovery.agents.Path.home", return_value=tmp_path / "fakehome"):
             (tmp_path / "fakehome" / ".codex").mkdir(parents=True)
             (tmp_path / "fakehome" / ".codex" / "config.toml").write_text("")
             result = _disambiguate_codex_generic(detected, tmp_path)
             assert {a.agent_type.id for a in result} == {"codex"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_signals_picks_generic(self, tmp_path: Path) -> None:
         """No codex markers → generic wins, codex dropped."""
         detected = [
@@ -565,6 +623,8 @@ class TestCodexGenericDisambiguation:
         assert "generic" in ids
         assert "codex" not in ids
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_generic_returns_unchanged(self, tmp_path: Path) -> None:
         """Without generic in the list, disambiguation is a no-op."""
         detected = [_make_detected("codex", ["AGENTS.md"])]
@@ -572,6 +632,8 @@ class TestCodexGenericDisambiguation:
         assert len(result) == 1
         assert result[0].agent_type.id == "codex"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_codex_returns_unchanged(self, tmp_path: Path) -> None:
         """Without codex in the list, disambiguation is a no-op."""
         detected = [_make_detected("generic", ["AGENTS.md"])]
@@ -579,6 +641,8 @@ class TestCodexGenericDisambiguation:
         assert len(result) == 1
         assert result[0].agent_type.id == "generic"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_other_agents_preserved(self, tmp_path: Path) -> None:
         """Claude and copilot are untouched by disambiguation."""
         detected = [
@@ -594,9 +658,11 @@ class TestCodexGenericDisambiguation:
         assert "generic" in ids
         assert "codex" not in ids
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_tier3_gitignore_without_global_config(self, tmp_path: Path) -> None:
         """Gitignore mentions .codex but no global config → generic wins."""
         (tmp_path / ".gitignore").write_text(".codex/\n")
-        with patch("reporails_cli.core.agents.Path.home", return_value=tmp_path / "emptyhome"):
+        with patch("reporails_cli.core.discovery.agents.Path.home", return_value=tmp_path / "emptyhome"):
             (tmp_path / "emptyhome").mkdir()
             assert not _codex_global_heuristic(tmp_path)

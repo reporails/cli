@@ -129,6 +129,31 @@ def _render_quality_compact(
         console.print(f"  [dim]{border}     {truncate(agg_line, tw - 8)}[/dim]")
 
 
+def _format_alias_suffix(canonical: str, aliases: list[str]) -> str:
+    """Build the ` (+alias1, +alias2)` label for a file with duplicates.
+
+    Picks the shortest distinguishing fragment per alias — the differing leading
+    path component when the alias lives under a different parent (e.g.
+    `.claude/skills/foo` vs canonical `.agents/skills/foo` → render `+.claude`),
+    or the filename when only the leaf differs (e.g. `AGENTS.md` vs `CLAUDE.md`
+    in the same dir → render `+CLAUDE.md`).
+    """
+    if not aliases:
+        return ""
+    canonical_parts = Path(canonical).parts
+    labels: list[str] = []
+    for alias in aliases:
+        alias_p = Path(alias)
+        alias_parts = alias_p.parts
+        label = alias_p.name
+        for i, (c, a) in enumerate(zip(canonical_parts, alias_parts, strict=False)):
+            if c != a:
+                label = a if i < len(alias_parts) - 1 else alias_p.name
+                break
+        labels.append(label)
+    return f" (+{', +'.join(labels)})"
+
+
 def _print_file_card(
     filepath: str,
     findings: list[Any],
@@ -136,6 +161,7 @@ def _print_file_card(
     verbose: bool,
     ruleset_map: Any = None,
     file_hints: list[Any] | None = None,
+    aliases_by_file: dict[str, list[str]] | None = None,
 ) -> None:
     """Print one file's card: name, stats, structural findings, then quality aggregate."""
     quality_counts: Counter[str] = Counter()
@@ -147,6 +173,8 @@ def _print_file_card(
             structural.append(f)
 
     name = friendly_name(filepath, classify_file(filepath))
+    alias_list = (aliases_by_file or {}).get(filepath, [])
+    name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
     stats = per_file_stats(filepath, ruleset_map)
     b = "\u2502"
     msg_width = get_term_width() - 35
@@ -199,6 +227,7 @@ def _render_one_group(
     verbose: bool,
     ruleset_map: Any,
     hints_by_file: dict[str, list[Any]],
+    aliases_by_file: dict[str, list[str]] | None = None,
 ) -> None:
     """Render a single file group: header, file cards, footer."""
     _render_group_header(gkey, group_files, ruleset_map)
@@ -217,6 +246,7 @@ def _render_one_group(
             verbose,
             ruleset_map=ruleset_map,
             file_hints=hints_by_file.get(filepath),
+            aliases_by_file=aliases_by_file,
         )
 
     console.print(f"  [dim]\u2514\u2500 {sum(len(fs) for _, fs in group_files)} findings[/dim]\n")
@@ -228,12 +258,13 @@ def _render_file_groups(
     verbose: bool,
     ruleset_map: Any,
     hints_by_file: dict[str, list[Any]],
+    aliases_by_file: dict[str, list[str]] | None = None,
 ) -> None:
     """Render all file groups with cards."""
     for gkey in _GROUP_ORDER:
         group_files = groups.get(gkey, [])
         if group_files:
-            _render_one_group(gkey, group_files, sev_icons, verbose, ruleset_map, hints_by_file)
+            _render_one_group(gkey, group_files, sev_icons, verbose, ruleset_map, hints_by_file, aliases_by_file)
 
 
 def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str]) -> None:
@@ -263,7 +294,7 @@ def _collect_files_and_scope(
 
     Returns (all_files, scope_info).
     """
-    from reporails_cli.core.merger import normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     all_files: set[str] = set()
     if result.findings:
@@ -271,7 +302,7 @@ def _collect_files_and_scope(
 
     scope = ScopeInfo()
     try:
-        from reporails_cli.core.mapper.mapper import RulesetMap
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
         if isinstance(ruleset_map, RulesetMap):
             all_files.update(normalize_finding_path(fr.path, project_root) for fr in ruleset_map.files)
@@ -299,7 +330,7 @@ def _count_atoms(atoms: Any) -> ScopeInfo:
 def _detect_agent_name(ruleset_map: Any) -> str:
     """Detect primary agent name from ruleset_map file records."""
     try:
-        from reporails_cli.core.mapper.mapper import RulesetMap
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
         if isinstance(ruleset_map, RulesetMap):
             agent_counts = Counter(fr.agent for fr in ruleset_map.files if fr.agent != "generic")
@@ -354,12 +385,45 @@ def _build_hints_by_file(hints: Any, project_root: Path) -> dict[str, list[Any]]
     """Build a file-keyed index of hints for inline display."""
     result: dict[str, list[Any]] = {}
     if hints:
-        from reporails_cli.core.merger import normalize_finding_path
+        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
         for h in hints:
             norm = normalize_finding_path(h.file, project_root)
             result.setdefault(norm, []).append(h)
     return result
+
+
+def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str]]:
+    """Combine discovery-time symlink aliases with display-time same-dir content aliases.
+
+    `get_file_aliases` returns paths the discovery layer already collapsed
+    (symlinks to one inode). `compute_same_dir_content_aliases` runs against
+    the union of files referenced by findings — catches manual AGENTS.md /
+    CLAUDE.md pairs that classify under different agents but should render as
+    one row. Both alias sources are returned as project-relative posix strings
+    so `_print_file_card` can do a plain dict lookup.
+    """
+    from reporails_cli.core.discovery.agents import compute_same_dir_content_aliases, get_file_aliases
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    out: dict[str, list[str]] = {}
+    for canonical, alias_paths in get_file_aliases(project_root).items():
+        key = normalize_finding_path(str(canonical), project_root)
+        values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
+        if values:
+            out[key] = values
+
+    finding_paths: set[Path] = set()
+    if result.findings:
+        for f in result.findings:
+            p = Path(f.file)
+            finding_paths.add(p if p.is_absolute() else (project_root / p))
+    for canonical, alias_paths in compute_same_dir_content_aliases(finding_paths).items():
+        key = normalize_finding_path(str(canonical), project_root)
+        values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
+        if values:
+            out.setdefault(key, []).extend(values)
+    return out
 
 
 # ── Master display function ───────────────────────────────────────────
@@ -385,7 +449,7 @@ def print_text_result(
     local preflight rejected the payload — surfaces the upgrade CTA below the
     scorecard so users see why server diagnostics are missing.
     """
-    from reporails_cli.core.merger import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return
@@ -421,7 +485,8 @@ def _render_findings_and_scorecard(
 
     sev_icons = get_sev_icons(ascii_mode)
     hints_idx = _build_hints_by_file(result.hints, Path.cwd())
-    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx)
+    aliases_idx = _build_aliases_by_file(Path.cwd(), result)
+    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx, aliases_idx)
     _render_cross_file_coordinates(result, sev_icons)
 
     print_scorecard(
@@ -438,7 +503,7 @@ def _render_findings_and_scorecard(
 
 def _render_funnel_cta(funnel_error: object) -> None:
     """Render the conversion CTA + bug-report link when a FunnelError is present."""
-    from reporails_cli.core.funnel import FunnelError, format_bug_report_url, format_cta
+    from reporails_cli.core.funnel import FunnelError, _short_url_label, format_bug_report_url, format_cta
 
     if not isinstance(funnel_error, FunnelError):
         return
@@ -446,8 +511,9 @@ def _render_funnel_cta(funnel_error: object) -> None:
     if not cta:
         return
     bug_url = format_bug_report_url(funnel_error)
+    bug_label = _short_url_label(bug_url)
     console.print()
     console.print("  [yellow]⚠[/yellow]  Server diagnostics unavailable.")
     console.print(f"  {cta}")
-    console.print(f"  [dim]Did you see an error? Let us know: [bold]{bug_url}[/bold][/dim]")
+    console.print(f"  [dim]Did you see an error? Let us know: [link={bug_url}][bold]{bug_label}[/bold][/link][/dim]")
     console.print()

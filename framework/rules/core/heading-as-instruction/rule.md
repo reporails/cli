@@ -42,4 +42,4 @@ Use the heading as a section label and put the instruction in the first line of 
 
 ## Limitations
 
-Detects charged heading atoms (headings classified as directive, imperative, or constraint by the charge classifier). Short headings with common verbs may be false positives — "## Process" is a label, not an instruction, but contains a verb.
+Detects headings classified as directive, imperative, or constraint. Short headings with common verbs may be false positives — "## Process" is a label, not an instruction, but contains a verb.

@@ -10,10 +10,12 @@ import pytest
 class TestRunMProbes:
     """Verify run_m_probes dispatches mechanical and deterministic checks."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_returns_list(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """run_m_probes should return a list of LocalFinding."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -21,11 +23,13 @@ class TestRunMProbes:
         findings = run_m_probes(level2_project, files)
         assert isinstance(findings, list)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_findings_are_local_finding(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Each finding should be a LocalFinding instance."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.models import LocalFinding
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
+        from reporails_cli.core.platform.dto.models import LocalFinding
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -35,10 +39,12 @@ class TestRunMProbes:
             assert isinstance(f, LocalFinding)
             assert f.source == "m_probe"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_findings_sorted_by_severity(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Findings should be sorted by severity (error < warning < info)."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -48,10 +54,12 @@ class TestRunMProbes:
         for i in range(len(findings) - 1):
             assert severity_order.get(findings[i].severity, 9) <= severity_order.get(findings[i + 1].severity, 9)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_agent_specific_rules_load(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """When agent='claude' is passed, CLAUDE-namespaced rules are loaded and checked."""
-        from reporails_cli.core.agents import get_all_instruction_files
-        from reporails_cli.core.rule_runner import run_m_probes
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
 
         files = get_all_instruction_files(level2_project)
         if not files:
@@ -62,9 +70,11 @@ class TestRunMProbes:
         # At minimum, CORE rules still fire.
         assert any(r.startswith("CORE:") for r in rules_hit)
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_agent_loads_only_core(self, dev_rules_dir: Path, level2_project: Path) -> None:
         """Without agent param, only CORE rules load — no agent-specific rules."""
-        from reporails_cli.core.registry import load_rules
+        from reporails_cli.core.platform.adapters.registry import load_rules
 
         rules = load_rules(project_root=level2_project, scan_root=level2_project)
         assert all(not k.startswith("CLAUDE:") for k in rules)

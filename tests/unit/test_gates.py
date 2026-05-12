@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.levels import _property_depth, _type_exists, determine_project_level
-from reporails_cli.core.models import ClassifiedFile, FileTypeDeclaration, Level
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration, Level
+from reporails_cli.core.platform.policy.levels import _property_depth, _type_exists, determine_project_level
 
 
 def _ft(
@@ -39,6 +39,8 @@ def _cf(
 class TestPropertyDepth:
     """Test _property_depth — count divergences from baseline."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_all_baseline_returns_zero(self) -> None:
         props = {
             "format": "freeform",
@@ -49,16 +51,24 @@ class TestPropertyDepth:
         }
         assert _property_depth(props) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_empty_properties_returns_zero(self) -> None:
         assert _property_depth({}) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_one_divergence(self) -> None:
         assert _property_depth({"format": "frontmatter"}) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_two_divergences(self) -> None:
         props = {"format": "frontmatter", "scope": "path_scoped"}
         assert _property_depth(props) == 2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_all_divergent(self) -> None:
         props = {
             "format": "frontmatter",
@@ -69,6 +79,8 @@ class TestPropertyDepth:
         }
         assert _property_depth(props) == 5
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_extra_properties_ignored(self) -> None:
         """Properties not in baseline don't count."""
         props = {"custom_axis": "whatever", "unknown": "value"}
@@ -78,27 +90,39 @@ class TestPropertyDepth:
 class TestTypeExists:
     """Test _type_exists — filesystem pattern matching."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_exact_file_exists(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
         assert _type_exists(tmp_path, ("CLAUDE.md",)) is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_exact_file_missing(self, tmp_path: Path) -> None:
         assert _type_exists(tmp_path, ("CLAUDE.md",)) is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_glob_pattern_matches(self, tmp_path: Path) -> None:
         rules_dir = tmp_path / ".claude" / "rules"
         rules_dir.mkdir(parents=True)
         (rules_dir / "style.md").write_text("# Style\n")
         assert _type_exists(tmp_path, (".claude/rules/**/*.md",)) is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_glob_pattern_no_match(self, tmp_path: Path) -> None:
         (tmp_path / ".claude").mkdir()
         assert _type_exists(tmp_path, (".claude/rules/**/*.md",)) is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_strips_dotslash_prefix(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
         assert _type_exists(tmp_path, ("./CLAUDE.md",)) is True
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_multiple_patterns_any_match(self, tmp_path: Path) -> None:
         (tmp_path / "AGENTS.md").write_text("# Agents\n")
         assert _type_exists(tmp_path, ("CLAUDE.md", "AGENTS.md")) is True
@@ -107,11 +131,15 @@ class TestTypeExists:
 class TestDetermineProjectLevel:
     """Test determine_project_level — level from property divergence."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_no_files_returns_l0(self, tmp_path: Path) -> None:
         level, present = determine_project_level(tmp_path, [], [])
         assert level == Level.L0
         assert present == set()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_main_only_returns_l1(self, tmp_path: Path) -> None:
         """Main file with all-baseline properties → depth 0 → L1."""
         classified = [
@@ -128,6 +156,8 @@ class TestDetermineProjectLevel:
         assert level == Level.L1
         assert present == {"main"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_one_divergence_returns_l2(self, tmp_path: Path) -> None:
         """One property diverges → depth 1 → L2."""
         classified = [_cf("scoped_rule", format="frontmatter")]
@@ -135,6 +165,8 @@ class TestDetermineProjectLevel:
         assert level == Level.L2
         assert present == {"scoped_rule"}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_max_depth_across_types(self, tmp_path: Path) -> None:
         """Level is max depth across all present types + 1."""
         classified = [
@@ -144,6 +176,8 @@ class TestDetermineProjectLevel:
         level, _ = determine_project_level(tmp_path, [], classified)
         assert level == Level.L4  # max(0, 3) + 1 = 4
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_capped_at_l6(self, tmp_path: Path) -> None:
         """Level caps at L6 even with 5+ divergences."""
         classified = [
@@ -159,6 +193,8 @@ class TestDetermineProjectLevel:
         level, _ = determine_project_level(tmp_path, [], classified)
         assert level == Level.L6  # min(5+1, 6) = 6
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_filesystem_fallback(self, tmp_path: Path) -> None:
         """Types not in classified_files but present on disk are included."""
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
@@ -177,6 +213,8 @@ class TestDetermineProjectLevel:
         assert level == Level.L1
         assert "main" in present
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     def test_filesystem_not_double_counted(self, tmp_path: Path) -> None:
         """A type already in classified_files is not re-checked on disk."""
         (tmp_path / "CLAUDE.md").write_text("# Test\n")
@@ -187,6 +225,8 @@ class TestDetermineProjectLevel:
         level, _ = determine_project_level(tmp_path, file_types, classified)
         assert level == Level.L1  # depth 0 from classified, not 1 from file_types
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_gates
     @pytest.mark.parametrize(
         "depth, expected_level",
         [

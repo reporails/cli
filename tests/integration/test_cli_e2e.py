@@ -34,7 +34,7 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 
 def _rules_installed() -> bool:
     """Check if rules framework is installed."""
-    from reporails_cli.core.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -52,6 +52,8 @@ requires_rules = pytest.mark.skipif(
 
 
 class TestCheckCommand:
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     def test_json_output_parseable(self, level2_project: Path) -> None:
         """JSON output should be valid JSON with expected keys."""
         result = runner.invoke(
@@ -70,6 +72,8 @@ class TestCheckCommand:
     # text_output_has_score, compact_output, missing_path, no_instruction_files
     # covered by smoke and behavioral tests
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_strict_mode_exits_1_on_violations(self, level2_project: Path) -> None:
         """--strict should exit 1 when violations exist."""
@@ -92,6 +96,8 @@ class TestCheckCommand:
         else:
             assert result.exit_code == 0
 
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
     @requires_model
     def test_pre_run_prompt_skipped_in_json_format(self, level2_project: Path) -> None:
         """JSON format should produce clean JSON output with no prompt text."""
