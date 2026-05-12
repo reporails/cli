@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -23,6 +24,8 @@ def _write_global_config(global_home: Path, content: str) -> Path:
 class TestGlobalSet:
     """Test config set --global."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_writes_to_home_config(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
         with patch(
@@ -35,22 +38,15 @@ class TestGlobalSet:
         data = yaml.safe_load((global_home / "config.yml").read_text())
         assert data["default_agent"] == "claude"
 
-    def test_writes_recommended_bool(self, tmp_path: Path) -> None:
-        global_home = tmp_path / ".reporails"
-        with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
-            return_value=global_home / "config.yml",
-        ):
-            result = runner.invoke(config_app, ["set", "--global", "recommended", "false"])
-        assert result.exit_code == 0
-        data = yaml.safe_load((global_home / "config.yml").read_text())
-        assert data["recommended"] is False
-
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_rejects_non_global_key(self) -> None:
         result = runner.invoke(config_app, ["set", "--global", "exclude_dirs", "vendor"])
         assert result.exit_code == 2
         assert "not supported in global config" in result.output
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_rejects_unknown_key(self) -> None:
         result = runner.invoke(config_app, ["set", "--global", "bogus", "val"])
         assert result.exit_code == 2
@@ -60,6 +56,8 @@ class TestGlobalSet:
 class TestGlobalGet:
     """Test config get --global."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_reads_from_home_config(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
         _write_global_config(global_home, "default_agent: cursor\n")
@@ -71,6 +69,8 @@ class TestGlobalGet:
         assert result.exit_code == 0
         assert "cursor" in result.output
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_not_set(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
         global_home.mkdir(parents=True)
@@ -86,9 +86,11 @@ class TestGlobalGet:
 class TestGlobalList:
     """Test config list --global."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_shows_global_only(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
-        _write_global_config(global_home, "default_agent: claude\nrecommended: true\n")
+        _write_global_config(global_home, "default_agent: claude\ntier: pro\n")
         with patch(
             "reporails_cli.interfaces.cli.config_command._global_config_path",
             return_value=global_home / "config.yml",
@@ -96,8 +98,10 @@ class TestGlobalList:
             result = runner.invoke(config_app, ["list", "--global"])
         assert result.exit_code == 0
         assert "default_agent: claude" in result.output
-        assert "recommended: True" in result.output
+        assert "tier: pro" in result.output
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_empty_global(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
         global_home.mkdir(parents=True)
@@ -113,6 +117,8 @@ class TestGlobalList:
 class TestListMerge:
     """Test config list shows global fallbacks annotated."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_shows_global_fallback_annotated(self, tmp_path: Path) -> None:
         # Project has exclude_dirs but no default_agent
         project = tmp_path / "project"
@@ -132,6 +138,8 @@ class TestListMerge:
         assert "default_agent: claude (global)" in result.output
         assert "exclude_dirs:" in result.output
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_project_value_not_annotated(self, tmp_path: Path) -> None:
         project = tmp_path / "project"
         cfg_dir = project / ".ails"
@@ -154,6 +162,8 @@ class TestListMerge:
 class TestConfigEdgeCases:
     """Edge cases for config commands."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_set_overwrites_existing_value(self, tmp_path: Path) -> None:
         """Setting a key twice should persist the second value, not the first."""
         global_home = tmp_path / ".reporails"
@@ -168,6 +178,8 @@ class TestConfigEdgeCases:
         data = yaml.safe_load((global_home / "config.yml").read_text())
         assert data["default_agent"] == "cursor", f"Second set should overwrite first, got {data['default_agent']}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_malformed_global_config_handled(self, tmp_path: Path) -> None:
         """Malformed YAML in global config should not crash config list."""
         global_home = tmp_path / ".reporails"

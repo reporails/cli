@@ -52,16 +52,20 @@ Modular design with clear boundaries.
 class TestSymlinkIntegration:
     """Integration tests for symlinked instruction file handling."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
     def test_symlink_detection_populates_resolved_symlinks(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md should appear in resolved_symlinks."""
         project, _external = symlink_project
 
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         features = detect_features_filesystem(project)
         assert features.has_claude_md is True
         assert len(features.resolved_symlinks) == 1
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
     def test_rule_validation_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
         """Symlinked CLAUDE.md with violations should have them detected."""
         project, external = symlink_project
@@ -69,7 +73,7 @@ class TestSymlinkIntegration:
         # Rewrite external file to be too long (trigger S1 if available)
         external.write_text("# Project\n\n" + "Line of content.\n" * 300)
 
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         features = detect_features_filesystem(project)
         assert features.has_claude_md is True

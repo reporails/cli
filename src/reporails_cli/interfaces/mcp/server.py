@@ -5,7 +5,7 @@
 # transitively reach thinc/spacy. The MCP server is long-lived and
 # serves many tool calls; skipping the ~20s torch import makes first
 # validate/score calls fast. See `_torch_blocker` docstring for details.
-from reporails_cli.core import _torch_blocker
+from reporails_cli.core.platform.runtime import _torch_blocker
 
 _torch_blocker.install()
 # ─────────────────────────────────────────────────────────────────────
@@ -20,8 +20,8 @@ from mcp.server import Server  # noqa: E402
 from mcp.server.stdio import stdio_server  # noqa: E402
 from mcp.types import TextContent, Tool  # noqa: E402
 
-from reporails_cli.core.agents import get_all_instruction_files  # noqa: E402
-from reporails_cli.core.bootstrap import is_initialized  # noqa: E402
+from reporails_cli.core.discovery.agents import get_all_instruction_files  # noqa: E402
+from reporails_cli.core.platform.config.bootstrap import is_initialized  # noqa: E402
 from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
     explain_tool,
     score_tool,
@@ -118,7 +118,7 @@ async def list_tools() -> list[Tool]:
             name="heal",
             description=(
                 "Auto-fix instruction file issues. Applies formatting, bold→italic,"
-                " constraint wrapping, and charge ordering fixes."
+                " constraint wrapping, and instruction reordering fixes."
                 " Use --dry-run to preview."
             ),
             inputSchema={

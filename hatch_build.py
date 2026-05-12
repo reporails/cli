@@ -15,10 +15,12 @@ FRAMEWORK_INCLUDES = {
     "framework/sources.yml": "reporails_cli/sources.yml",
 }
 
-# Bundled model (gitignored, but must be in wheel).
+# Bundled ML assets (gitignored, but must be in wheel).
 # Populated by scripts/fetch_bundled_model.py before build.
 BUNDLED_MODEL = "src/reporails_cli/bundled/models"
 BUNDLED_MODEL_DEST = "reporails_cli/bundled/models"
+BUNDLED_SPACY = "src/reporails_cli/bundled/spacy"
+BUNDLED_SPACY_DEST = "reporails_cli/bundled/spacy"
 
 # Directory names to skip when bundling (rule test fixtures are dev-only)
 SKIP_DIRS = {"tests"}
@@ -49,6 +51,15 @@ class CustomBuildHook(BuildHookInterface):
                     continue
                 # Skip HF download cache metadata
                 if ".cache" in path.parts:
+                    continue
+                rel = path.relative_to(root / "src")
+                force_include[str(path)] = str(rel)
+
+        # Bundle spaCy en_core_web_sm model (gitignored but required at runtime)
+        spacy_dir = root / BUNDLED_SPACY
+        if spacy_dir.is_dir():
+            for path in spacy_dir.rglob("*"):
+                if not path.is_file():
                     continue
                 rel = path.relative_to(root / "src")
                 force_include[str(path)] = str(rel)

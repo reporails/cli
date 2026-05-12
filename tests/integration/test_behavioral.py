@@ -14,14 +14,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.agents import clear_agent_cache, get_known_agents
+from reporails_cli.core.discovery.agents import clear_agent_cache, get_known_agents
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -137,6 +137,9 @@ def multi_file_project(tmp_path: Path) -> Path:
 class TestCheckJsonSchema:
     """JSON output must have a stable, documented schema."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_required_keys_present(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
@@ -146,6 +149,9 @@ class TestCheckJsonSchema:
         required = {"offline", "files", "stats"}
         assert required.issubset(data.keys()), f"Missing keys: {required - data.keys()}"
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_files_is_dict_with_findings(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
@@ -154,6 +160,9 @@ class TestCheckJsonSchema:
         for file_data in data["files"].values():
             assert isinstance(file_data["findings"], list)
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_finding_has_required_fields(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
@@ -165,6 +174,9 @@ class TestCheckJsonSchema:
                 assert "rule" in f
                 assert "message" in f
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     def test_no_files_json_output(self, empty_project: Path) -> None:
         result = runner.invoke(app, ["check", str(empty_project), "-f", "json"])
         assert result.exit_code == 0
@@ -181,6 +193,9 @@ class TestCheckJsonSchema:
 class TestCheckScanScope:
     """Files outside the target directory must never appear in results."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_nested_child_only_scans_child(self, nested_project: Path) -> None:
         result = runner.invoke(app, ["check", str(nested_project), "-f", "json"])
@@ -191,6 +206,9 @@ class TestCheckScanScope:
             for f in file_data["findings"]:
                 assert "Parent" not in f.get("message", ""), "Parent content leaked into child scan"
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_nested_child_violation_count_reasonable(self, nested_project: Path) -> None:
         """A single-file project should have a bounded number of violations."""
@@ -210,18 +228,27 @@ class TestCheckScanScope:
 class TestCheckTextOutput:
     """Text output must contain key information."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_score_displayed(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "text"])
         assert result.exit_code == 0
         assert "SCORE:" in result.output or "/ 10" in result.output or "Score:" in result.output
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_violations_grouped_by_file(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "--agent", "claude", "-f", "text"])
         assert result.exit_code == 0
         assert "CLAUDE.md" in result.output
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     def test_no_files_shows_l0_message(self, empty_project: Path) -> None:
         result = runner.invoke(app, ["check", str(empty_project), "-f", "text"])
         assert "No instruction files found" in result.output
@@ -236,6 +263,9 @@ class TestCheckTextOutput:
 class TestCheckMultiFile:
     """Projects with multiple instruction files should report all of them."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_multiple_agents_detected(self, multi_file_project: Path) -> None:
         result = runner.invoke(app, ["check", str(multi_file_project), "-f", "json"])
@@ -253,6 +283,9 @@ class TestCheckMultiFile:
 class TestCheckScoreConsistency:
     """Score must be deterministic — same project, same score."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_deterministic_stats(self, structured_project: Path) -> None:
         stats_list = []
@@ -275,11 +308,17 @@ class TestCheckAgentFlag:
     # Hint message tests (no agent, claude, codex, copilot) covered by
     # smoke TestHintMessages. Keep agent-specific behavior tests below.
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     def test_no_files_hint_copilot(self, empty_project: Path) -> None:
         """--agent copilot should hint its instruction file."""
         result = runner.invoke(app, ["check", str(empty_project), "--agent", "copilot", "-f", "text"])
         assert "Create a .github/copilot-instructions.md to get started" in result.output
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     def test_unknown_agent_errors(self, empty_project: Path) -> None:
         """Unknown agent must error with exit code 2 and list known agents."""
         result = runner.invoke(app, ["check", str(empty_project), "--agent", "somefuture"])
@@ -287,6 +326,9 @@ class TestCheckAgentFlag:
         assert "Unknown agent" in result.output
         assert "claude" in result.output
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     def test_wrong_agent_no_false_positive(self, tmp_path: Path) -> None:
         """--agent claude on a project with only AGENTS.md must NOT scan it."""
         p = tmp_path / "proj"
@@ -295,6 +337,9 @@ class TestCheckAgentFlag:
         result = runner.invoke(app, ["check", str(p), "--agent", "claude", "-f", "text"])
         assert "No instruction files found" in result.output
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_codex_agent_scans_agents_md(self, tmp_path: Path) -> None:
         """--agent codex should find and validate AGENTS.md."""
@@ -307,6 +352,9 @@ class TestCheckAgentFlag:
         assert "files" in data
         assert "AGENTS.md" in data["files"], "AGENTS.md should be detected"
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_no_agent_core_rules_fire(self, tmp_path: Path) -> None:
         """No --agent must still apply core rules (not just file presence)."""
@@ -327,6 +375,9 @@ class TestCheckAgentFlag:
 class TestAgentCrossValidation:
     """Agent registry must be built from framework config.yml files."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_registry_populated_from_configs(self) -> None:
         """Registry should contain at least the big 5 agents."""
@@ -351,6 +402,9 @@ class TestAgentMatrix:
     Parametrized from get_known_agents() so new config.yml agents get coverage automatically.
     """
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     @pytest.mark.parametrize("agent_id", sorted(get_known_agents()))
     def test_agent_check_finds_files(self, agent_id: str, tmp_path: Path) -> None:
@@ -372,6 +426,9 @@ class TestAgentMatrix:
         data = json.loads(result.output)
         assert data["files"], f"--agent {agent_id} should detect {filename}, got empty files"
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     @pytest.mark.parametrize("agent_id", sorted(get_known_agents()))
     def test_agent_check_no_crash(self, agent_id: str, tmp_path: Path) -> None:
@@ -390,6 +447,9 @@ class TestAgentMatrix:
 class TestCheckFileTarget:
     """ails check FILE should validate just that file."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_single_file_target(self, minimal_project: Path) -> None:
         """Pointing at a specific file should work."""
@@ -409,6 +469,9 @@ class TestCheckFileTarget:
 class TestContentChecks:
     """Content checks must produce findings when mapper is available."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     @requires_model
     def test_content_checks_produce_findings(self, minimal_project: Path) -> None:
@@ -429,6 +492,9 @@ class TestContentChecks:
 class TestCheckConfig:
     """Project config must affect validation behavior."""
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_rules
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
         """Rules listed in .ails/config.yml disabled_rules should not fire."""
@@ -470,6 +536,9 @@ class TestHealCommand:
 
     # test_heal_missing_path covered by smoke tests
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_model
     @requires_rules
     def test_heal_auto_fixes_applied(self, tmp_path: Path) -> None:
@@ -487,6 +556,9 @@ class TestHealCommand:
         if content != original:
             assert len(content) > len(original)
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_model
     @requires_rules
     def test_heal_nothing_to_heal(self, tmp_path: Path) -> None:
@@ -502,6 +574,9 @@ class TestHealCommand:
         # Should produce some output (fixes applied, violations listed, or nothing to heal)
         assert len(result.output.strip()) > 0
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_model
     @requires_rules
     def test_heal_json_output(self, tmp_path: Path) -> None:
@@ -518,6 +593,9 @@ class TestHealCommand:
         assert "summary" in data
         assert "auto_fixed_count" in data["summary"]
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_model
     def test_heal_works_without_tty(self, tmp_path: Path) -> None:
         """CliRunner is non-TTY — heal should still work (no TTY requirement)."""
@@ -528,6 +606,9 @@ class TestHealCommand:
         result = runner.invoke(app, ["heal", str(p)])
         assert result.exit_code in (0, None)
 
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
     @requires_model
     @requires_rules
     def test_heal_shows_remaining_violations(self, tmp_path: Path) -> None:

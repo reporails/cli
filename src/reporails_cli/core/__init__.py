@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.models import (
+from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
     JudgmentRequest,

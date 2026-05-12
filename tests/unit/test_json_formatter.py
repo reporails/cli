@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.api_client import CrossFileCoordinate, Hint
-from reporails_cli.core.merger import CombinedResult, CombinedStats
+import pytest
+
+from reporails_cli.core.platform.adapters.api_client import CrossFileCoordinate, Hint
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
 from reporails_cli.formatters.json import format_combined_result
 
 
@@ -23,6 +25,8 @@ def _result(**overrides: object) -> CombinedResult:
 
 
 class TestProSection:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_pro_section_present_with_hints(self) -> None:
         hints = (
             Hint(
@@ -38,12 +42,16 @@ class TestProSection:
         assert data["pro"]["errors"] == 2
         assert data["pro"]["warnings"] == 6
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_no_pro_section_without_hints(self) -> None:
         data = format_combined_result(_result())
         assert "pro" not in data
 
 
 class TestCrossFileCoordinatesSection:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_coordinates_serialized(self) -> None:
         coords = (
             CrossFileCoordinate(file_1="a.md", file_2="b.md", finding_type="conflict", count=2),
@@ -55,6 +63,8 @@ class TestCrossFileCoordinatesSection:
         assert data["cross_file_coordinates"][0]["type"] == "conflict"
         assert data["cross_file_coordinates"][0]["count"] == 2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_no_coordinates_section_when_empty(self) -> None:
         data = format_combined_result(_result())
         assert "cross_file_coordinates" not in data

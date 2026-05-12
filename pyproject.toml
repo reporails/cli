@@ -1,10 +1,10 @@
 [project]
 name = "reporails-cli"
-version = "0.5.8"
+version = "0.5.9"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 authors = [{ name = "Reporails Team" }]
 keywords = ["ai-instructions", "claude", "codex", "copilot", "cursor", "gemini", "diagnostics", "validation", "mcp"]
 classifiers = [
@@ -34,9 +34,11 @@ dependencies = [
     "onnxruntime>=1.18,<2",
     "tokenizers>=0.19,<1",
     "numpy>=1.26,<3",
-    # spaCy drives Phase 3 imperative classification in the mapper. It's a
-    # hard requirement — the fallback verb lexicon drops charge accuracy
-    # from 96% to ~78%. With the torch blocker active, spaCy loads in ~1s.
+    # spaCy provides the dependency-parser branch of the classifier. With
+    # the torch blocker active, spaCy loads in ~1s. The en_core_web_sm
+    # pipeline files ship inside the wheel under bundled/spacy/ rather
+    # than as a separate runtime dep — spaCy does not publish its language
+    # models on PyPI, so a direct-URL pin would block PyPI publication.
     "spacy>=3.8.11,<4",
     # sklearn for topic clustering in mapper
     "scikit-learn>=1.4.0",
@@ -91,8 +93,6 @@ Issues = "https://github.com/reporails/cli/issues"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.metadata]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/reporails_cli"]
 artifacts = [
@@ -110,10 +110,16 @@ type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v"
 test_smoke = "pytest tests/smoke/ -v -m e2e"
-qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit"]
+qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_markers", "test_unit"]
 qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration", "test_smoke"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
 fetch_bundled_model = "python scripts/fetch_bundled_model.py"
+specs_check = "python scripts/specs_check.py"
+spec_drift = "python scripts/check_spec_drift.py"
+test_markers = "python scripts/check_test_markers.py"
+test_fast = "pytest -m 'unit and not slow and not requires_model'"
+test_arch = "pytest -m architecture"
+test_contracts = "pytest -m contract"
 
 [tool.ruff]
 target-version = "py312"
@@ -171,7 +177,29 @@ max-module-lines = 600
 testpaths = ["tests"]
 addopts = "--strict-markers"
 markers = [
-    "unit: Fast, isolated unit tests",
-    "integration: Cross-component tests",
-    "e2e: End-to-end tests",
+    # Lane — mutually exclusive within a test
+    "unit: Fast, isolated, no I/O outside repo, no ML models",
+    "integration: Cross-component, may load ML models",
+    "e2e: End-to-end CLI on fixture project",
+    "smoke: Alias for e2e (preferred for new tests)",
+    "architecture: AST/structural assertions across the codebase",
+    "contract: Pure validator function in isolation",
+    # Cost — orthogonal, additive
+    "slow: Takes more than 1 second",
+    "requires_model: Needs the bundled ML runtime",
+    "requires_network: Hits real external service",
+    "real_deps: Needs API key or live backend",
+    # Subsystem tags — one or more per test
+    "subsys_caching",
+    "subsys_map",
+    "subsys_classify",
+    "subsys_runtime",
+    "subsys_heal",
+    "subsys_funnel",
+    "subsys_lint",
+    "subsys_diagnostic",
+    "subsys_server",
+    "subsys_api",
+    "subsys_gates",
+    "subsys_cli_ux",
 ]

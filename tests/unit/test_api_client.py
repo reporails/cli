@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.api_client import (
-    AilsClient,
-    LintResult,
-    _deserialize_cross_file_coordinates,
-    _deserialize_hints,
-    _deserialize_lint_result,
-    _strip_and_serialize,
-)
+import pytest
+
 from reporails_cli.core.funnel import (
     UNIVERSAL_ATOM_CAP,
     WIRE_MAX_CLUSTERS,
@@ -17,7 +11,15 @@ from reporails_cli.core.funnel import (
     LintResponse,
     preflight_oversized,
 )
-from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
+from reporails_cli.core.platform.adapters.api_client import (
+    AilsClient,
+    LintResult,
+    _deserialize_cross_file_coordinates,
+    _deserialize_hints,
+    _deserialize_lint_result,
+    _strip_and_serialize,
+)
+from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
 
 def _make_map() -> RulesetMap:
@@ -32,6 +34,8 @@ def _make_map() -> RulesetMap:
 
 
 class TestAilsClient:
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_lint_empty_response_without_server(self) -> None:
         """No local fallback — lint requires the API."""
         client = AilsClient(base_url="")
@@ -40,12 +44,16 @@ class TestAilsClient:
         assert response.result is None
         assert response.funnel_error is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_lint_empty_response_on_unreachable_server(self) -> None:
         client = AilsClient(base_url="https://localhost:1")
         response = client.lint(_make_map())
         assert isinstance(response, LintResponse)
         assert response.result is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_custom_base_url(self) -> None:
         client = AilsClient(base_url="https://custom.example.com")
         assert client.base_url == "https://custom.example.com"
@@ -80,10 +88,14 @@ class TestV2WireFormat:
             summary=RulesetSummary(n_atoms=len(atoms), n_charged=0, n_neutral=len(atoms)),
         )
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_schema_version_bumped(self) -> None:
         rm = self._make_rm((), ())
         assert _strip_and_serialize(rm)["schema_version"] == "2"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_semantic_keys_absent(self) -> None:
         """No semantic field names in serialized atoms."""
         fr = FileRecord(path="test.md", content_hash="a")
@@ -109,6 +121,8 @@ class TestV2WireFormat:
         }
         assert not semantic & set(a.keys()), f"Semantic keys leaked: {semantic & set(a.keys())}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_short_keys_present(self) -> None:
         """All required short keys emitted."""
         fr = FileRecord(path="test.md", content_hash="a")
@@ -117,6 +131,8 @@ class TestV2WireFormat:
         required = {"line", "t", "c", "cv", "m", "s", "sc", "f", "pi", "tc", "fi", "k"}
         assert required <= set(a.keys()), f"Missing keys: {required - set(a.keys())}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_enum_fields_are_integers(self) -> None:
         """Enum fields serialized as integers, not strings."""
         fr = FileRecord(path="test.md", content_hash="a")
@@ -125,6 +141,8 @@ class TestV2WireFormat:
         for key in ("t", "c", "m", "s", "f"):
             assert isinstance(a[key], int), f"{key} should be int, got {type(a[key])}"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_file_index_reference(self) -> None:
         f1 = FileRecord(path="CLAUDE.md", content_hash="a")
         f2 = FileRecord(path=".claude/rules/test.md", content_hash="b")
@@ -134,6 +152,8 @@ class TestV2WireFormat:
         assert payload["atoms"][0]["fi"] == 0
         assert payload["atoms"][1]["fi"] == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_inline_style_integer_codes(self) -> None:
         atom = self._make_atom(
             named_tokens=["ruff"],
@@ -150,6 +170,8 @@ class TestV2WireFormat:
         terms = [span["term"] for span in a["il"]]
         assert terms == ["ruff", "always", "NEVER"]
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_text_fields_stripped(self) -> None:
         atom = self._make_atom(
             text="sensitive content",
@@ -163,6 +185,8 @@ class TestV2WireFormat:
         for key in ("text", "plain_text", "rule", "role", "topics"):
             assert key not in a, f"Sensitive field '{key}' leaked into wire format"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_optional_fields_omitted_when_empty(self) -> None:
         atom = self._make_atom()
         fr = FileRecord(path="test.md", content_hash="a")
@@ -175,9 +199,13 @@ class TestV2WireFormat:
 class TestPayloadCaps:
     """Preflight rejects oversized payloads before the HTTP round-trip."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_within_caps_returns_none(self) -> None:
         assert preflight_oversized({"files": [], "atoms": [], "clusters": []}, has_api_key=True) is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_files_over_cap(self) -> None:
         payload = {"files": [{}] * (WIRE_MAX_FILES + 1), "atoms": [], "clusters": []}
         err = preflight_oversized(payload, has_api_key=True)
@@ -185,6 +213,8 @@ class TestPayloadCaps:
         assert err.error == "payload_too_large"
         assert err.limit == WIRE_MAX_FILES
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_atoms_over_cap(self) -> None:
         payload = {"files": [], "atoms": [{}] * (UNIVERSAL_ATOM_CAP + 1), "clusters": []}
         err = preflight_oversized(payload, has_api_key=True)
@@ -192,6 +222,8 @@ class TestPayloadCaps:
         assert err.error == "atom_cap_exceeded"
         assert err.limit == UNIVERSAL_ATOM_CAP
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_clusters_over_cap(self) -> None:
         payload = {"files": [], "atoms": [], "clusters": [{}] * (WIRE_MAX_CLUSTERS + 1)}
         err = preflight_oversized(payload, has_api_key=True)
@@ -199,6 +231,8 @@ class TestPayloadCaps:
         assert err.error == "payload_too_large"
         assert err.limit == WIRE_MAX_CLUSTERS
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_at_cap_boundary_passes(self) -> None:
         payload = {
             "files": [{}] * WIRE_MAX_FILES,
@@ -207,11 +241,13 @@ class TestPayloadCaps:
         }
         assert preflight_oversized(payload, has_api_key=True) is None
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_lint_skips_http_when_over_cap(self) -> None:
         """Oversized payload short-circuits before any network call."""
         from unittest.mock import patch
 
-        from reporails_cli.core.mapper.mapper import RulesetMap, RulesetSummary
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
 
         rm = RulesetMap(
             schema_version="1.0.0",
@@ -231,7 +267,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
         }
         with (
-            patch("reporails_cli.core.payload.project_payload", return_value=oversized),
+            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=oversized),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -241,11 +277,13 @@ class TestPayloadCaps:
         assert response.funnel_error.error == "payload_too_large"
         mock_post.assert_not_called()
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_lint_skips_http_when_no_files(self) -> None:
         """Empty-files payload short-circuits — Worker would 400 missing_content_hash."""
         from unittest.mock import patch
 
-        from reporails_cli.core.mapper.mapper import RulesetMap, RulesetSummary
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
 
         rm = RulesetMap(
             schema_version="1.0.0",
@@ -265,7 +303,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0, "n_topics": 0, "n_topics_charged": 0},
         }
         with (
-            patch("reporails_cli.core.api_client._strip_and_serialize", return_value=empty_payload),
+            patch("reporails_cli.core.platform.adapters.api_client._strip_and_serialize", return_value=empty_payload),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -275,7 +313,113 @@ class TestPayloadCaps:
         mock_post.assert_not_called()
 
 
+class TestOutgoingHeaders:
+    """Asserts on the outgoing HTTP request shape.
+
+    The default `httpx` User-Agent (`python-httpx/*`) trips Cloudflare's
+    bot-fight rules on anonymous-tier requests, producing a 403 with a
+    "Just a moment..." HTML challenge. Cost-free unit assertion that
+    every outgoing diagnostic request carries a custom UA prevents the
+    next regression of the same shape.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_anonymous_post_carries_custom_user_agent(self) -> None:
+        from unittest.mock import patch
+
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
+
+        rm = RulesetMap(
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=(FileRecord(path="CLAUDE.md", content_hash="sha256:abc", agent="claude"),),
+            atoms=(),
+            summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+        )
+
+        captured: dict[str, dict[str, str]] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {
+                    "schema_version": "1.0.0",
+                    "score": 0.0,
+                    "level": "L1",
+                    "violations": [],
+                    "stats": {},
+                    "tier": "anonymous",
+                }
+
+        def _fake_post(url: str, **kwargs: object) -> _FakeResponse:
+            captured["headers"] = dict(kwargs.get("headers") or {})
+            return _FakeResponse()
+
+        with patch("httpx.post", side_effect=_fake_post):
+            client = AilsClient(base_url="https://example.test", tier="anonymous", api_key=None)
+            client.lint(rm)
+
+        ua = captured["headers"].get("User-Agent", "")
+        assert ua.startswith("reporails-cli/"), (
+            f"outgoing request UA must start with 'reporails-cli/' to avoid Cloudflare bot-fight 403; got {ua!r}"
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_authenticated_post_carries_custom_user_agent_and_bearer(self) -> None:
+        from unittest.mock import patch
+
+        from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
+
+        rm = RulesetMap(
+            schema_version="1.0.0",
+            embedding_model="test",
+            generated_at="2026-01-01T00:00:00Z",
+            files=(FileRecord(path="CLAUDE.md", content_hash="sha256:abc", agent="claude"),),
+            atoms=(),
+            summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+        )
+
+        captured: dict[str, dict[str, str]] = {}
+
+        class _FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {
+                    "schema_version": "1.0.0",
+                    "score": 0.0,
+                    "level": "L1",
+                    "violations": [],
+                    "stats": {},
+                    "tier": "pro",
+                }
+
+        def _fake_post(url: str, **kwargs: object) -> _FakeResponse:
+            captured["headers"] = dict(kwargs.get("headers") or {})
+            return _FakeResponse()
+
+        with patch("httpx.post", side_effect=_fake_post):
+            client = AilsClient(base_url="https://example.test", tier="pro", api_key="test-key")
+            client.lint(rm)
+
+        headers = captured["headers"]
+        assert headers.get("User-Agent", "").startswith("reporails-cli/")
+        assert headers.get("Authorization") == "Bearer test-key"
+
+
 class TestDeserializeHints:
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_valid_hints(self) -> None:
         data = {
             "hints": [
@@ -296,16 +440,22 @@ class TestDeserializeHints:
         assert hints[0].error_count == 2
         assert hints[0].severity == "error"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_missing_fields_skipped(self) -> None:
         hints = _deserialize_hints({"hints": [{"file": "x.md"}]})
         assert len(hints) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_empty(self) -> None:
         assert _deserialize_hints({}) == ()
         assert _deserialize_hints({"hints": []}) == ()
 
 
 class TestDeserializeCrossFileCoordinates:
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_valid_coordinates(self) -> None:
         data = {
             "cross_file_coordinates": [
@@ -318,15 +468,21 @@ class TestDeserializeCrossFileCoordinates:
         assert coords[0].finding_type == "conflict"
         assert coords[0].count == 2
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_missing_fields_skipped(self) -> None:
         coords = _deserialize_cross_file_coordinates({"cross_file_coordinates": [{"file_1": "a.md"}]})
         assert len(coords) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_empty(self) -> None:
         assert _deserialize_cross_file_coordinates({}) == ()
 
 
 class TestDeserializeLintResult:
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_full_response_with_coordinates(self) -> None:
         data = {
             "report": {"per_file": [], "cross_file": [], "quality": {"compliance_band": "HIGH"}, "stats": {}},
@@ -342,6 +498,8 @@ class TestDeserializeLintResult:
         assert len(result.hints) == 1
         assert len(result.cross_file_coordinates) == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_pro_tier_no_hints_or_coordinates(self) -> None:
         data = {"report": {"per_file": [], "cross_file": [], "quality": {}, "stats": {}}, "tier": "pro"}
         result = _deserialize_lint_result(data)

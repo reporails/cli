@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from reporails_cli.core.models import ScanDelta, Severity, ValidationResult
+from reporails_cli.core.platform.dto.models import ScanDelta, Severity, ValidationResult
 from reporails_cli.formatters import json as json_formatter
 
 
@@ -100,7 +100,7 @@ def format_result(
 
 def format_combined_annotations(result: Any) -> str:
     """Emit GitHub workflow commands from CombinedResult findings."""
-    from reporails_cli.core.merger import CombinedResult
+    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return ""

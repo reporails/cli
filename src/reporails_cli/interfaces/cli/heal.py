@@ -63,7 +63,7 @@ def _apply_mechanical_fixes(
         return []
     if show_progress:
         console.print("[bold]Applying mechanical fixes...[/bold]")
-    from reporails_cli.core.mechanical_fixers import apply_mechanical_fixes
+    from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
 
     mech_fixes = apply_mechanical_fixes(ruleset_map, target, dry_run=dry_run)
     return [
@@ -81,9 +81,9 @@ def _apply_additive_fixes(
     console: Any,
 ) -> list[dict[str, Any]]:
     """Run M probes and apply additive fixes (missing sections)."""
-    from reporails_cli.core.fixers import apply_auto_fixes as _apply_auto_fixes
-    from reporails_cli.core.models import Severity, Violation
-    from reporails_cli.core.rule_runner import run_m_probes
+    from reporails_cli.core.heal.fixers import apply_auto_fixes as _apply_auto_fixes
+    from reporails_cli.core.lint.rule_runner import run_m_probes
+    from reporails_cli.core.platform.dto.models import Severity, Violation
 
     if show_progress:
         console.print("[bold]Running structural checks...[/bold]")
@@ -115,8 +115,8 @@ def _discover_heal_targets(
     console: Any,
 ) -> tuple[str, list[Path]] | None:
     """Discover instruction files for healing. Returns (agent, files) or None."""
-    from reporails_cli.core import agents as _agents
-    from reporails_cli.core.config import get_project_config
+    from reporails_cli.core.discovery import agents as _agents
+    from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.interfaces.cli import helpers as _helpers
 
     config = get_project_config(target)
@@ -183,8 +183,8 @@ def heal(
     """Auto-fix instruction file issues.
 
     Applies formatting fixes (backticks, bold->italic, constraint wrapping,
-    charge ordering) and structural fixes (missing sections). Use --dry-run
-    to preview changes without writing.
+    instruction reordering) and structural fixes (missing sections). Use
+    --dry-run to preview changes without writing.
     """
     target, console = _heal_validate_path(path)
     fmt = _resolve_heal_format(format)

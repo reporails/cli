@@ -61,12 +61,24 @@ ok "PyPI-compatible dependencies"
 
 # 5. Verify wheel install
 step "Verify wheel install"
+# pyproject `requires-python` constrains the install (currently >=3.12,<3.14
+# to dodge the Python 3.14 pydantic.v1 introspection break in spaCy). Pick
+# an in-range Python explicitly so this test doesn't break on dev machines
+# whose default `python3` lies outside the pin (e.g. Homebrew Python 3.14).
+PYTHON_FOR_TEST=""
+for cand in python3.12 python3.13; do
+  if command -v "$cand" >/dev/null 2>&1; then
+    PYTHON_FOR_TEST="$cand"
+    break
+  fi
+done
+[ -n "$PYTHON_FOR_TEST" ] || fail "No supported Python (3.12 or 3.13) on PATH (pyproject requires-python = '>=3.12,<3.14')"
 VENV=$(mktemp -d)/venv
-python3 -m venv "$VENV"
+"$PYTHON_FOR_TEST" -m venv "$VENV"
 "$VENV/bin/pip" install dist/*.whl --quiet || fail "Wheel install failed"
 "$VENV/bin/ails" version || fail "ails command not found"
 "$VENV/bin/ails" check --help > /dev/null || fail "ails check --help failed"
-ok "Wheel installs and runs"
+ok "Wheel installs and runs (under $PYTHON_FOR_TEST)"
 
 # 5b. Verify all expected entry points exist
 step "Verify entry points"

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.models import Category, FileMatch, Rule, RuleType
+import pytest
+
+from reporails_cli.core.platform.dto.models import Category, FileMatch, Rule, RuleType
 
 
 def _make_rule(
@@ -37,9 +39,11 @@ def _make_rule(
 class TestDetectFeaturesFilesystem:
     """Test detect_features_filesystem with real temp directories."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_directory_no_features(self, tmp_path: Path) -> None:
         """Empty directory should detect no features."""
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         features = detect_features_filesystem(tmp_path)
 
@@ -50,9 +54,11 @@ class TestDetectFeaturesFilesystem:
         assert features.has_backbone is False
         assert features.has_multiple_instruction_files is False
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_claude_md_only(self, tmp_path: Path) -> None:
         """CLAUDE.md at root should be detected."""
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         (tmp_path / "CLAUDE.md").write_text("# My Project\n", encoding="utf-8")
 
@@ -62,9 +68,11 @@ class TestDetectFeaturesFilesystem:
         assert features.has_instruction_file is True
         assert features.instruction_file_count == 1
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_claude_rules_dir_is_abstracted(self, tmp_path: Path) -> None:
         """Presence of .claude/rules/ with content should set is_abstracted."""
-        from reporails_cli.core.applicability import detect_features_filesystem
+        from reporails_cli.core.discovery.features import detect_features_filesystem
 
         rules_dir = tmp_path / ".claude" / "rules"
         rules_dir.mkdir(parents=True)
@@ -80,9 +88,11 @@ class TestDetectFeaturesFilesystem:
 class TestGetApplicableRules:
     """Test target-existence rule filtering and supersession."""
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_rule_included_when_target_present(self) -> None:
         """A rule targeting 'main' is included when 'main' is present."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {"S1": _make_rule(rule_id="S1", match=FileMatch(type="main"))}
 
@@ -90,9 +100,11 @@ class TestGetApplicableRules:
 
         assert "S1" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_rule_excluded_when_target_absent(self) -> None:
         """A rule targeting 'main' is excluded when 'main' is not present."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {"S1": _make_rule(rule_id="S1", match=FileMatch(type="main"))}
 
@@ -100,9 +112,11 @@ class TestGetApplicableRules:
 
         assert "S1" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_wildcard_match_none_fires_when_any_present(self) -> None:
         """Rules with match=None fire if any type is present."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {"S1": _make_rule(rule_id="S1", match=None)}
 
@@ -110,9 +124,11 @@ class TestGetApplicableRules:
 
         assert "S1" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_wildcard_type_none_fires_when_any_present(self) -> None:
         """Rules with match.type=None fire if any type is present."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {"S1": _make_rule(rule_id="S1", match=FileMatch(type=None))}
 
@@ -120,9 +136,11 @@ class TestGetApplicableRules:
 
         assert "S1" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_present_types_returns_empty(self) -> None:
         """No present types → no rules fire."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {"S1": _make_rule(rule_id="S1")}
 
@@ -130,9 +148,11 @@ class TestGetApplicableRules:
 
         assert result == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_supersession_drops_superseded_rule(self) -> None:
         """When rule A supersedes rule B and both are applicable, B is dropped."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {
             "S1": _make_rule(rule_id="S1"),
@@ -144,9 +164,11 @@ class TestGetApplicableRules:
         assert "S2" in result
         assert "S1" not in result, "Superseded rule S1 should be dropped"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_supersession_keeps_both_when_superseder_target_absent(self) -> None:
         """When superseding rule targets absent type, both remain (only applicable supersede)."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {
             "S1": _make_rule(rule_id="S1", match=FileMatch(type="main")),
@@ -159,9 +181,11 @@ class TestGetApplicableRules:
         assert "S1" in result
         assert "S2" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_types_filter_correctly(self) -> None:
         """Rules targeting different types are filtered by presence."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {
             "R1": _make_rule(rule_id="R1", match=FileMatch(type="main")),
@@ -175,17 +199,21 @@ class TestGetApplicableRules:
         assert "R2" in result
         assert "R3" not in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_empty_rules_returns_empty(self) -> None:
         """Empty rules dict returns empty result."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         result = get_applicable_rules({}, {"main"})
 
         assert result == {}
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_supersedes_nonexistent_rule_ignored(self) -> None:
         """A rule that supersedes a rule ID not in the dict should not crash."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {
             "S1": _make_rule(rule_id="S1", supersedes="DOES_NOT_EXIST"),
@@ -195,9 +223,11 @@ class TestGetApplicableRules:
 
         assert "S1" in result
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_multiple_target_types_fire_when_present(self) -> None:
         """Rules targeting different types all fire when their types are present."""
-        from reporails_cli.core.applicability import get_applicable_rules
+        from reporails_cli.core.platform.policy.applicability import get_applicable_rules
 
         rules = {
             "R1": _make_rule(rule_id="R1", match=FileMatch(type="main")),

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.9
+
+### Added
+
+- Tooling: `uv run poe specs_check` validates internal subsystem coverage (declared subsystems exist, each spec is within line-budget, modules colocate under one subpackage); `uv run poe spec_drift` flags potentially stale design docs whose source has been edited more recently
+- Tooling: expanded `pytest` marker taxonomy in `pyproject.toml` for granular test selection (lane, cost, subsystem) with new poe tasks `test_fast`, `test_arch`, `test_contracts`, `test_markers`
+- Tooling: every `tests/*` test function now carries pytest lane (`unit`/`integration`/`e2e`) + subsystem (`subsys_*`) markers; `check_test_markers.py` enforces tagging on every `qa_fast` run, enabling `pytest -m subsys_caching` and similar slicing
+- Tooling: hexagonal platform substrate skeleton bootstrapped at `core/platform/{contract,dto,policy,adapters,runtime,config,observability,utils}` with report-only architecture tests guarding pure-layer purity and adapter boundary (`tests/unit/architecture/`)
+
+### Changed
+
+- Build: bundle the `en_core_web_sm` spaCy pipeline (~15 MB) inside the wheel under `bundled/spacy/`, alongside the existing bundled ONNX embedder. `core/mapper/models.py` loads the pipeline by local filesystem path. End users no longer need a separate model download — `pip install reporails-cli` (or `uv pip install`, or `npx @reporails/cli`) delivers the full model bundle.
+- Build: tightened `requires-python` to `>=3.12,<3.14`; Python 3.14 ships a `pydantic.v1` introspection regression that breaks `import spacy`. The CLI's verb-lexicon fallback covered the failure silently but with reduced precision. The pin restores spaCy classification under `uv sync`.
+- API client: outgoing diagnostic requests now carry a `User-Agent: reporails-cli/<version>` header for accurate attribution in server-side logs; previously the generic `python-httpx/<version>` default was sent.
+- Funnel: rate-limit CTA surfaces a "Try again in ~N min." hint when the server returns `reset_in`, between the limit blurb and the upgrade prompt.
+- Funnel: CTA and bug-report URLs render as OSC 8 terminal hyperlinks with a short clickable label (`github.com/reporails/cli/issues/new`) instead of dumping the full percent-encoded prefilled URL; falls back to the short label on terminals without hyperlink support.
+- Funnel: demoted the "Could not parse N response body" and "Server returned N for tier=" stderr warnings to debug logging so they no longer print above the diagnostic report; reworded the `unknown_error` CTA to `Diagnostics server returned HTTP <code>`.
+- Display: file rows annotate duplicates with `(+alias)` labels — symlinked surfaces show the differing path component (e.g. `mintlify (+.claude)`), same-directory content-identical pairs show the alternate filename (e.g. `AGENTS.md (+CLAUDE.md)`).
+- Internals: hexagonal platform substrate consolidated under `core/platform/{contract,dto,policy,adapters,runtime,config,observability,utils}`. Every top-level `core/*.py` moved into its appropriate layer (DTOs, adapters, runtime, etc.), with a new `core/install/` subsystem for installer-related modules. Architecture tests at `tests/unit/architecture/` run in fail mode — any forbidden cross-layer import blocks the build.
+- Internals: five subsystems consolidated into named subpackages — `core/cache/`, `core/funnel/`, `core/classify/`, `core/heal/`, `core/discovery/`, `core/lint/` — each matching its design boundary.
+- Internals: the mapper subsystem went the furthest. `core/mapper/mapper.py` was split into one module per pipeline stage (`imports.py`, `parse.py`, `classify.py`, `annotate.py`, `embed.py`, `cluster.py`, `assemble.py`) plus shared `models.py`, `serialize.py`, `inspect.py`. The orchestration spine retains the name `core/mapper/pipeline.py`. Public import surface (`map_ruleset`, `content_hash`, `map_file`) is unchanged; callers now import via the `core.mapper` package facade.
+- Internals: removed the legacy "recommended" rules-overlay machinery from `ails config set/get/list`, `GlobalConfig`/`ProjectConfig`, and `core/install/`. User-installed rule packages remain supported through the generic `packages: [...]` mechanism in `.ails/config.yml` (clone any rule pack into `.ails/packages/<name>/` or `~/.reporails/packages/<name>/`).
+
+### Fixed
+
+- Check: `frontmatter_valid_glob` no longer crashes on comma-separated `paths:` values; each entry is now split and validated individually, and invalid glob syntax surfaces as a structured check failure instead of an unhandled exception
+- Discovery: skill and rule files that appear under multiple agent surfaces via symlinks (e.g. `.claude/skills/` → `.agents/skills/`) are now collapsed to one canonical entry, eliminating duplicate findings and inflated scoring
+
+### Removed
+
+- CLI: removed `ails map`.
+
 ## 0.5.8
 
 ### Added

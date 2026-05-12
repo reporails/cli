@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.client_checks import run_client_checks
-from reporails_cli.core.mapper.mapper import Atom, FileRecord, RulesetMap, RulesetSummary
+import pytest
+
+from reporails_cli.core.lint.client_checks import run_client_checks
+from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
 
 def _make_map(atoms: list[Atom]) -> RulesetMap:
@@ -37,6 +39,8 @@ def _atom(line: int, charge_value: int, cluster_id: int = 0, position_index: int
 
 
 class TestChargeOrdering:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_inverted_ordering_detected(self) -> None:
         atoms = [
             _atom(10, -1, cluster_id=1, position_index=0),  # constraint first
@@ -47,6 +51,8 @@ class TestChargeOrdering:
         assert len(ordering) == 1
         assert "before directive" in ordering[0].message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_correct_ordering_no_finding(self) -> None:
         atoms = [
             _atom(10, +1, cluster_id=1, position_index=0),  # directive first
@@ -58,6 +64,8 @@ class TestChargeOrdering:
 
 
 class TestOrphanAtoms:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_directive_only_cluster_not_orphan(self) -> None:
         """Directive-only is valid — no orphan finding.
 
@@ -69,6 +77,8 @@ class TestOrphanAtoms:
         orphans = [f for f in findings if f.rule == "orphan"]
         assert len(orphans) == 0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_constraint_only_cluster(self) -> None:
         atoms = [_atom(10, -1, cluster_id=1, position_index=0)]
         findings = run_client_checks(_make_map(atoms))
@@ -76,6 +86,8 @@ class TestOrphanAtoms:
         assert len(orphans) == 1
         assert "prohibition" in orphans[0].message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_balanced_cluster_no_orphan(self) -> None:
         atoms = [
             _atom(10, +1, cluster_id=1, position_index=0),
@@ -87,6 +99,8 @@ class TestOrphanAtoms:
 
 
 class TestUnformattedCode:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_unformatted_tokens_detected(self) -> None:
         atoms = [_atom(10, +1, unformatted_code=["pytest"])]
         findings = run_client_checks(_make_map(atoms))
@@ -94,6 +108,8 @@ class TestUnformattedCode:
         assert len(fmt) == 1
         assert "pytest" in fmt[0].message
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_no_unformatted_no_finding(self) -> None:
         atoms = [_atom(10, +1, unformatted_code=[])]
         findings = run_client_checks(_make_map(atoms))
