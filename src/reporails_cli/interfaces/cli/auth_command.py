@@ -27,10 +27,26 @@ auth_app = typer.Typer(
 # GitHub OAuth App Client ID — public, embedded in CLI.
 # This is NOT a secret. GitHub Device Flow requires the client ID
 # to be available client-side.
-GITHUB_CLIENT_ID = ""  # Set when GitHub OAuth App is created
+GITHUB_CLIENT_ID = ""  # Always sourced from the platform — see _resolve_client_id() below.
 
 # Reporails platform URL — configurable for local dev
 DEFAULT_PLATFORM_URL = "https://reporails.com"
+
+
+class PlatformUnavailableError(Exception):
+    """The Reporails platform's auth surface couldn't be reached or returned an unexpected response."""
+
+
+def _user_agent() -> str:
+    """User-Agent string for outbound auth requests to the platform.
+
+    Stable, identifiable UA lets edge allow/Skip rules target CLI traffic by
+    User-Agent — important when bot mitigation is tightened and clients
+    classified as "definitely automated" otherwise hit a JS challenge.
+    """
+    from reporails_cli import __version__
+
+    return f"reporails-cli/{__version__} (auth)"
 
 
 def _credentials_path() -> Path:
@@ -83,18 +99,42 @@ def _get_platform_url() -> str:
 
 
 def _resolve_client_id(base_url: str) -> str:
-    """Resolve the GitHub OAuth client ID, trying embedded constant then platform."""
+    """Resolve the GitHub OAuth client ID, trying embedded constant then platform.
+
+    Raises PlatformUnavailableError when the platform endpoint is reachable but
+    returns a non-JSON body (typical of an edge challenge page) — the original
+    code silently swallowed this into an empty client_id and surfaced it as a
+    misleading "OAuth not configured" message.
+    """
     import httpx
 
-    client_id = GITHUB_CLIENT_ID
-    if not client_id:
-        try:
-            resp = httpx.get(f"{base_url}/api/auth/client-id", timeout=5.0)
-            resp.raise_for_status()
-            client_id = resp.json().get("client_id", "")
-        except (httpx.HTTPError, OSError, ValueError):
-            pass
-    return client_id
+    if GITHUB_CLIENT_ID:
+        return GITHUB_CLIENT_ID
+
+    headers = {"User-Agent": _user_agent(), "Accept": "application/json"}
+    try:
+        resp = httpx.get(f"{base_url}/api/auth/client-id", timeout=5.0, headers=headers)
+    except (httpx.HTTPError, OSError) as exc:
+        logger.warning("Platform unreachable for client-id resolution: %s", exc)
+        raise PlatformUnavailableError(
+            f"Cannot reach Reporails platform at {base_url}: {exc}",
+        ) from exc
+
+    if resp.status_code != 200:
+        logger.warning("Platform returned HTTP %s for client-id", resp.status_code)
+        raise PlatformUnavailableError(
+            f"Reporails platform returned HTTP {resp.status_code} for client-id endpoint.",
+        )
+
+    try:
+        return str(resp.json().get("client_id", ""))
+    except ValueError as exc:
+        logger.warning("Platform returned non-JSON for client-id: %s", resp.text[:200])
+        raise PlatformUnavailableError(
+            "Reporails platform returned a non-JSON body for the client-id endpoint — "
+            "likely a Cloudflare challenge or proxy error page. Check your network or "
+            "contact support@reporails.com.",
+        ) from exc
 
 
 def _poll_github_token(client_id: str, device_code: str, interval: int) -> str | None:
@@ -112,7 +152,7 @@ def _poll_github_token(client_id: str, device_code: str, interval: int) -> str |
                     "device_code": device_code,
                     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 },
-                headers={"Accept": "application/json"},
+                headers={"Accept": "application/json", "User-Agent": _user_agent()},
                 timeout=10.0,
             )
             result = poll.json()
@@ -179,11 +219,16 @@ def login(
     import httpx
 
     base_url = platform_url or _get_platform_url()
-    client_id = _resolve_client_id(base_url)
+    try:
+        client_id = _resolve_client_id(base_url)
+    except PlatformUnavailableError as exc:
+        console.print(f"  [red]Reporails platform unavailable:[/] {exc}")
+        raise typer.Exit(1) from exc
 
     if not client_id:
         console.print(
-            "  [red]GitHub OAuth not configured.[/] Set GITHUB_CLIENT_ID in the CLI or configure the platform.",
+            "  [red]GitHub OAuth not configured on the platform.[/] "
+            "The /api/auth/client-id endpoint returned an empty client_id.",
         )
         raise typer.Exit(1)
 
@@ -202,7 +247,7 @@ def login(
         resp = httpx.post(
             "https://github.com/login/device/code",
             data={"client_id": client_id, "scope": "read:user user:email"},
-            headers={"Accept": "application/json"},
+            headers={"Accept": "application/json", "User-Agent": _user_agent()},
             timeout=10.0,
         )
         resp.raise_for_status()
@@ -230,11 +275,22 @@ def login(
         exchange = httpx.post(
             f"{base_url}/api/auth/cli-exchange",
             json={"github_token": github_token},
+            headers={"Accept": "application/json", "User-Agent": _user_agent()},
             timeout=10.0,
         )
         exchange.raise_for_status()
         payload = exchange.json()
-    except (httpx.HTTPError, OSError, ValueError) as exc:
+    except ValueError as exc:
+        logger.warning(
+            "Platform returned non-JSON for cli-exchange: %s",
+            exchange.text[:200],
+        )
+        console.print(
+            "  [red]Platform returned a non-JSON response[/] (likely a Cloudflare "
+            "challenge page). Contact support@reporails.com.",
+        )
+        raise typer.Exit(1) from exc
+    except (httpx.HTTPError, OSError) as exc:
         console.print(f"  [red]Failed to exchange token:[/] {exc}")
         raise typer.Exit(1) from exc
 
