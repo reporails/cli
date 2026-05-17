@@ -128,6 +128,15 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     # Per-surface include/exclude pattern adjustments. Keys are `<agent_id>.<file_type>`.
     # Each entry may have `include: [glob...]` and `exclude: [glob...]`.
     surfaces: dict[str, dict[str, object]] = field(default_factory=dict)
+    # Per-rule threshold overrides keyed by full rule id (e.g. `CORE:S:0013`).
+    # Each entry is a `{arg: value}` map applied over the rule's default check args.
+    # Generic mechanism; not tied to any single rule.
+    rule_thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
+    # When True, the classifier extends past pattern-classified files via Markdown
+    # link-reachability and assigns `file_type: "generic"` to reached `.md`
+    # files in the project tree. Default off — anonymous tryout sees zero
+    # generic findings. See REQ-025 Phase C.
+    generic_scanning: bool = False
 
 
 # =============================================================================

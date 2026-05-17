@@ -376,6 +376,7 @@ def classify_files(
     scan_root: Path,
     files: list[Path],
     file_types: list[FileTypeDeclaration],
+    generic_scanning: bool = False,
 ) -> list[ClassifiedFile]:
     """Classify files against type declarations. First pattern match wins.
 
@@ -386,11 +387,18 @@ def classify_files(
 
     For freeform files, content_format is detected from file content.
 
+    When `generic_scanning` is True, after pattern-based classification
+    the classifier walks Markdown links from each classified file and
+    assigns `file_type: "generic"` to any in-tree `.md` files reachable
+    via those links that aren't already classified. See `link_walker.py`
+    and REQ-025 Phase C for the rationale.
+
     Args:
         scan_root: Project root / cwd-equivalent for relative paths and
             ancestor-chain anchoring.
         files: Files to classify
         file_types: Type declarations from agent config
+        generic_scanning: When True, extend with link-reachability pass
 
     Returns:
         List of ClassifiedFile for matched files
@@ -430,7 +438,28 @@ def classify_files(
                 )
             )
             break  # First valid match wins
+
+    if generic_scanning:
+        classified.extend(_classify_generic_via_links(scan_root, classified))
+
     return classified
+
+
+def _classify_generic_via_links(
+    scan_root: Path,
+    classified: list[ClassifiedFile],
+) -> list[ClassifiedFile]:
+    """BFS Markdown links from classified files; classify reachable `.md` as `generic`.
+
+    Lazy-imported to avoid pulling the walker module when generic scanning
+    is off (the default).
+    """
+    from reporails_cli.core.classify.generic_type import make_generic_classified
+    from reporails_cli.core.classify.link_walker import walk_markdown_links
+
+    start_paths = {cf.path for cf in classified}
+    reached = walk_markdown_links(start_paths, scan_root, start_paths)
+    return [make_generic_classified(p) for p in sorted(reached)]
 
 
 def match_files(
