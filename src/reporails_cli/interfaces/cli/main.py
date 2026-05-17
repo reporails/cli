@@ -65,7 +65,10 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
 
 @app.command(rich_help_panel="Commands")
 def check(  # noqa: C901  # pylint: disable=too-many-locals
-    path: str = typer.Argument(".", help="File or directory to validate"),
+    arg1: str = typer.Argument(
+        ".", help="File/directory to validate, OR a capability keyword (skill, rule, agents, main, ...)"
+    ),
+    arg2: str = typer.Argument(None, help="Capability target name when arg1 is a capability keyword"),
     format: str = typer.Option(None, "--format", "-f", help="Output format: text, json, github"),
     agent: str = typer.Option("", "--agent", help="Agent type (e.g., claude, copilot)"),
     exclude_dirs: list[str] = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
@@ -73,19 +76,58 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     strict: bool = typer.Option(False, "--strict", help="Exit code 1 if violations found"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
 ) -> None:
-    """Validate AI instruction files against reporails rules."""
+    """Validate AI instruction files against reporails rules.
+
+    Per-capability targeting: `ails check skill <name>` focuses output on a
+    single skill; `ails check skill` (no name) lists skills with per-target
+    scores. Capability vocabulary comes from the detected agent's
+    `framework/rules/<agent>/config.yml` `file_types:` keys.
+    """
     from contextlib import nullcontext
 
+    from reporails_cli.core.classify.capability_paths import canonicalize_capability
     from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.runtime.merger import merge_results
-    from reporails_cli.formatters import json as json_formatter
+    from reporails_cli.formatters.text.focus import filter_result_to_focus
 
-    target = Path(path).resolve()
-    if not target.exists():
+    # Capability-vs-path sniffing: if arg1 matches a capability keyword for
+    # the detected agent, route to focus / listing mode. Otherwise treat
+    # arg1 as a path (existing behavior).
+    project_root = Path.cwd().resolve()
+    capability_mode = False
+    capability = ""
+    capability_name = ""
+    if arg1 and arg1 not in (".", "./"):
+        # The agent for sniffing is whichever the user passed or the project default;
+        # full agent resolution happens after we know we're in path mode.
+        config_probe = None
+        try:
+            config_probe = get_project_config(project_root)
+        except (OSError, ValueError):
+            config_probe = None
+        sniff_agent = agent or (config_probe.default_agent if config_probe else "")
+        if not sniff_agent:
+            from reporails_cli.core.discovery.agents import detect_agents as _detect
+
+            for det in _detect(project_root):
+                sniff_agent = det.agent_type.id
+                break
+        canonical = canonicalize_capability(arg1, sniff_agent, project_root) if sniff_agent else None
+        if canonical is not None:
+            capability_mode = True
+            capability = canonical
+            capability_name = arg2 or ""
+            target = project_root
+        else:
+            target = Path(arg1).resolve()
+    else:
+        target = Path(arg1 or ".").resolve()
+
+    if not capability_mode and not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
         raise typer.Exit(2)
 
@@ -199,22 +241,159 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-    # 7. Format and display
-    if output_format == "json":
-        data = json_formatter.format_combined_result(result, ruleset_map=ruleset_map)
-        data["elapsed_ms"] = round(elapsed_ms, 1)
-        print(json.dumps(data, indent=2))
-    elif output_format == "github":
-        from reporails_cli.formatters import github as github_formatter
+    # 7. Compute focus paths for per-capability mode
+    focus_paths, listing_candidates = _resolve_focus_targets(
+        capability_mode, capability, capability_name, effective_agent, project_root
+    )
 
-        print(github_formatter.format_combined_annotations(result))
-    else:
-        print_text_result(result, elapsed_ms, ascii, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error)
+    # 8. Display dispatch
+    display_result = filter_result_to_focus(result, focus_paths, project_root) if focus_paths else result
+    _dispatch_output(
+        output_format,
+        display_result,
+        result,
+        ruleset_map,
+        elapsed_ms,
+        capability_mode,
+        capability,
+        capability_name,
+        effective_agent,
+        focus_paths,
+        listing_candidates,
+        project_root,
+        ascii,
+        verbose,
+        funnel_error,
+    )
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
-    if strict and result.findings:
+    if _should_exit_strict(strict, capability_mode, focus_paths, project_root, result):
         raise typer.Exit(1)
+
+
+def _resolve_focus_targets(
+    capability_mode: bool,
+    capability: str,
+    capability_name: str,
+    effective_agent: str,
+    project_root: Path,
+) -> tuple[set[Path], list[Path]]:
+    """Compute focus_paths (single-target) or listing_candidates (no name) for capability mode."""
+    from reporails_cli.core.classify.capability_paths import (
+        available_capabilities,
+        list_capability_targets,
+        resolve_capability,
+    )
+    from reporails_cli.core.classify.focus_expansion import expand_focus
+
+    if not capability_mode:
+        return set(), []
+    if capability not in available_capabilities(effective_agent, project_root):
+        console.print(
+            f"[red]Error:[/red] capability [bold]{capability}[/bold] is not declared "
+            f"for agent [bold]{effective_agent}[/bold]. "
+            f"Available: {', '.join(available_capabilities(effective_agent, project_root)) or '(none)'}"
+        )
+        raise typer.Exit(2)
+    if not capability_name:
+        return set(), list_capability_targets(effective_agent, capability, project_root)
+    resolved = resolve_capability(effective_agent, capability, capability_name, project_root)
+    if resolved is None:
+        available = list_capability_targets(effective_agent, capability, project_root)
+        console.print(
+            f"[red]Error:[/red] no {capability} named [bold]{capability_name}[/bold] "
+            f"for agent [bold]{effective_agent}[/bold] under {project_root}."
+        )
+        if available:
+            console.print(f"[dim]Found {len(available)} {capability}(s) — run `ails check {capability}` to list.[/dim]")
+        raise typer.Exit(2)
+    focus_paths = {resolved}
+    if capability == "agents":
+        focus_paths = expand_focus(focus_paths, effective_agent, project_root)
+    return focus_paths, []
+
+
+def _focus_paths_to_strings(focus_paths: set[Path], project_root: Path) -> set[str]:
+    return {str(p.relative_to(project_root)) if p.is_relative_to(project_root) else str(p) for p in focus_paths}
+
+
+def _dispatch_output(
+    output_format: str,
+    display_result: Any,
+    full_result: Any,
+    ruleset_map: Any,
+    elapsed_ms: float,
+    capability_mode: bool,
+    capability: str,
+    capability_name: str,
+    effective_agent: str,
+    focus_paths: set[Path],
+    listing_candidates: list[Path],
+    project_root: Path,
+    ascii_mode: bool,
+    verbose: bool,
+    funnel_error: Any,
+) -> None:
+    """Route formatted output to JSON / GitHub / focus / listing / default text."""
+    from reporails_cli.formatters import json as json_formatter
+    from reporails_cli.formatters.text.focus import print_focus_result, print_listing_result
+
+    if output_format == "json":
+        data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map)
+        data["elapsed_ms"] = round(elapsed_ms, 1)
+        if capability_mode:
+            data["focus"] = {
+                "capability": capability,
+                "name": capability_name,
+                "agent": effective_agent,
+                "paths": sorted(_focus_paths_to_strings(focus_paths, project_root)),
+            }
+        print(json.dumps(data, indent=2))
+        return
+    if output_format == "github":
+        from reporails_cli.formatters import github as github_formatter
+
+        print(github_formatter.format_combined_annotations(display_result))
+        return
+    if capability_mode and capability_name:
+        print_focus_result(
+            display_result,
+            capability=capability,
+            name=capability_name,
+            agent=effective_agent,
+            focus_paths=focus_paths,
+            project_root=project_root,
+            elapsed_ms=elapsed_ms,
+            ruleset_map=ruleset_map,
+        )
+        return
+    if capability_mode:
+        print_listing_result(
+            full_result,
+            capability=capability,
+            agent=effective_agent,
+            candidate_paths=listing_candidates,
+            project_root=project_root,
+            ruleset_map=ruleset_map,
+        )
+        return
+    print_text_result(full_result, elapsed_ms, ascii_mode, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error)
+
+
+def _should_exit_strict(
+    strict: bool,
+    capability_mode: bool,
+    focus_paths: set[Path],
+    project_root: Path,
+    result: Any,
+) -> bool:
+    if not strict:
+        return False
+    if capability_mode and focus_paths:
+        rel_keys = _focus_paths_to_strings(focus_paths, project_root)
+        return any(f.file in rel_keys for f in result.findings)
+    return bool(result.findings)
 
 
 def _suppress_ml_noise() -> None:
