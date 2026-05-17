@@ -14,5 +14,6 @@
 - check: `[PATH]` positional argument is now `[ARG1] [ARG2]` — `ARG1` is sniffed as a capability keyword first, falling through to existing path semantics. No behaviour change for `ails check`, `ails check .`, or `ails check <path>`.
 
 ### Fixed
+- check: Deterministic message text for the broad-scope client check — `client_checks._check_broad_scope` now sorts the matched broad terms before formatting the message, so output is reproducible across runs regardless of `PYTHONHASHSEED`. The set-iteration order previously caused `"Broad terms (any, integrations)"` vs `"Broad terms (integrations, any)"` drift on identical inputs.
 
 ### Removed
