@@ -330,6 +330,56 @@ def _render_cross_file_counts(result: Any) -> None:
         console.print(f"  {' \u00b7 '.join(cf_parts)}")
 
 
+_RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
+_RULE_SEVERITY_LABEL = {"error": "[red]err [/red]", "warning": "[yellow]warn[/yellow]", "info": "info"}
+
+
+def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, str, str]]:
+    """Return up to `limit` rules ranked by finding count.
+
+    Each entry: (rule_id, count, severity, sample_message). Severity is the
+    worst severity (error > warning > info) recorded for that rule across
+    the findings list; sample_message is the first finding's message,
+    truncated for the scorecard column.
+    """
+    buckets: dict[str, dict[str, Any]] = {}
+    for f in findings:
+        bucket = buckets.setdefault(
+            f.rule,
+            {"count": 0, "severity": f.severity, "message": f.message},
+        )
+        bucket["count"] += 1
+        if _RULE_SEVERITY_RANK.get(f.severity, 3) < _RULE_SEVERITY_RANK.get(bucket["severity"], 3):
+            bucket["severity"] = f.severity
+    rows = [(rule, b["count"], b["severity"], b["message"]) for rule, b in buckets.items()]
+    rows.sort(key=lambda r: (-r[1], r[0]))
+    return rows[:limit]
+
+
+def _render_top_rules(result: Any) -> None:
+    """Render the Top-rules block in the whole-repo scorecard."""
+    if not result.findings:
+        return
+    rows = _aggregate_top_rules(result.findings)
+    if not rows:
+        return
+    tw = get_term_width()
+    console.print()
+    console.print("  Top rules (by finding count):")
+    rule_w = max((len(r[0]) for r in rows), default=12)
+    max_count = max(r[1] for r in rows)
+    count_w = len(str(max_count)) + 1  # for the x prefix
+    # 4 (indent) + rule_w + 1 + count_w + 1 + 6 (severity label cell) + 2 (gap)
+    fixed = 4 + rule_w + 1 + count_w + 1 + 6 + 2
+    snippet_w = max(20, tw - fixed - 2)
+    for rule, count, severity, message in rows:
+        label = _RULE_SEVERITY_LABEL.get(severity, severity)
+        snippet = message.split(".")[0].split("—")[0].strip()
+        if len(snippet) > snippet_w:
+            snippet = snippet[: snippet_w - 1] + "…"
+        console.print(f"    {rule:<{rule_w}} x{count:<{count_w}} {label}  {snippet}")
+
+
 def _render_results_summary(
     result: Any,
     has_quality: bool,  # noqa: ARG001 — kept for API stability
@@ -391,6 +441,8 @@ def print_scorecard(
 
     if surface_health:
         _render_surface_health(surface_health)
+
+    _render_top_rules(result)
 
     visible_findings, pro_total = _render_results_summary(result, has_quality, hint_errors, hint_warnings)
 
