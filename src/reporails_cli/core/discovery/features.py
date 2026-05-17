@@ -111,10 +111,18 @@ def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None 
     if features.has_backbone:
         features.component_count = _count_components(backbone_path)
 
-    # Count instruction files (all agents, not just CLAUDE.md)
+    # Count instruction files (all agents, not just CLAUDE.md).
+    # Scope the count to files under `target` — user-level memories like
+    # `~/.claude/CLAUDE.md` get pulled in by claude's user-scope patterns,
+    # but they are not part of the project's instruction-file inventory and
+    # would inflate L-level capability gating (`has_multiple_instruction_files`
+    # drives the `multiple_files` / `external_references` capability flags
+    # in `policy/levels.py`).
     all_instruction_files = get_all_instruction_files(target, agents=agents)
-    features.instruction_file_count = len(all_instruction_files)
-    features.has_multiple_instruction_files = len(all_instruction_files) > 1
+    target_resolved = target.resolve()
+    project_instruction_files = [f for f in all_instruction_files if _is_under(f, target_resolved)]
+    features.instruction_file_count = len(project_instruction_files)
+    features.has_multiple_instruction_files = len(project_instruction_files) > 1
 
     if features.instruction_file_count > 0:
         features.has_instruction_file = True
@@ -146,6 +154,14 @@ def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None 
     features.resolved_symlinks = resolve_symlinked_files(target, agents=agents)
 
     return features
+
+
+def _is_under(path: Path, root_resolved: Path) -> bool:
+    """True when `path` resolves to a location under `root_resolved`."""
+    try:
+        return path.resolve().is_relative_to(root_resolved)
+    except (OSError, ValueError):
+        return False
 
 
 def _find_root_instruction(target: Path, instruction_files: list[Path]) -> Path | None:

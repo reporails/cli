@@ -15,5 +15,6 @@
 
 ### Fixed
 - check: Deterministic message text for the broad-scope client check — `client_checks._check_broad_scope` now sorts the matched broad terms before formatting the message, so output is reproducible across runs regardless of `PYTHONHASHSEED`. The set-iteration order previously caused `"Broad terms (any, integrations)"` vs `"Broad terms (integrations, any)"` drift on identical inputs.
+- discovery: `DetectedFeatures.instruction_file_count` and `has_multiple_instruction_files` no longer include user-scope files like `~/.claude/CLAUDE.md`. The claude `main` file_type declares both project and user scope patterns; counting the user-scope file inflated capability gates in `policy/levels.py` (`multiple_files`, `external_references`) and L-level scoring in `policy/capability.py` for any user with a home-directory `CLAUDE.md`. Counts are now scoped to files under `target`; `_find_root_instruction` was already correctly scoped.
 
 ### Removed
