@@ -74,6 +74,18 @@ def _collect_deterministic_findings(
     """
     from reporails_cli.core.classify import match_files
     from reporails_cli.core.lint.regex import run_checks
+    from reporails_cli.core.platform.config.config import get_project_config
+
+    try:
+        project_config = get_project_config(project_dir)
+        thresholds = project_config.rule_thresholds
+    except (OSError, ValueError):
+        thresholds = {}
+    min_lines_overrides: dict[str, int] = {}
+    for rule_id, args in thresholds.items():
+        ml = args.get("min_lines")
+        if isinstance(ml, int):
+            min_lines_overrides[rule_id] = ml
 
     findings: list[LocalFinding] = []
     for rule in rules.values():
@@ -92,7 +104,14 @@ def _collect_deterministic_findings(
         if not target_files:
             continue
 
-        findings.extend(run_checks([rule.yml_path], project_dir, instruction_files=target_files))
+        findings.extend(
+            run_checks(
+                [rule.yml_path],
+                project_dir,
+                instruction_files=target_files,
+                min_lines_overrides=min_lines_overrides,
+            )
+        )
     return findings
 
 
@@ -104,14 +123,28 @@ def run_m_probes(
     """Run M-probe checks (mechanical + deterministic) against instruction files."""
     from reporails_cli.core.classify import classify_files, load_file_types
     from reporails_cli.core.platform.adapters.registry import load_rules
+    from reporails_cli.core.platform.config.config import get_project_config
 
     rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
     file_types = load_file_types(agent or "generic")
-    classified = classify_files(project_dir, instruction_files, file_types)
+    try:
+        generic_scanning = get_project_config(project_dir).generic_scanning
+    except (OSError, ValueError):
+        generic_scanning = False
+    classified = classify_files(project_dir, instruction_files, file_types, generic_scanning=generic_scanning)
+    # Extend instruction_files with link-walked generic-class files so
+    # downstream rules without explicit `match` still see them.
+    effective_files = list(instruction_files)
+    if generic_scanning:
+        known = set(effective_files)
+        for cf in classified:
+            if cf.path not in known and cf.file_type == "generic":
+                effective_files.append(cf.path)
+                known.add(cf.path)
 
     findings: list[LocalFinding] = []
     findings.extend(_collect_mechanical_findings(rules, project_dir, classified))
-    findings.extend(_collect_deterministic_findings(rules, project_dir, instruction_files, classified))
+    findings.extend(_collect_deterministic_findings(rules, project_dir, effective_files, classified))
 
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 9), f.line))
     return findings
@@ -131,6 +164,7 @@ def run_content_quality_checks(
     from reporails_cli.core.classify import classify_files, load_file_types
     from reporails_cli.core.lint.content_checker import run_content_checks
     from reporails_cli.core.platform.adapters.registry import load_rules
+    from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.dto.ruleset import RulesetMap as _RulesetMap
 
     if not isinstance(ruleset_map, _RulesetMap):
@@ -142,6 +176,10 @@ def run_content_quality_checks(
     classified = []
     if instruction_files:
         file_types = load_file_types(agent or "generic")
-        classified = classify_files(project_dir, instruction_files, file_types)
+        try:
+            generic_scanning = get_project_config(project_dir).generic_scanning
+        except (OSError, ValueError):
+            generic_scanning = False
+        classified = classify_files(project_dir, instruction_files, file_types, generic_scanning=generic_scanning)
 
     return run_content_checks(ruleset_map, rules, classified)

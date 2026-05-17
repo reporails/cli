@@ -159,6 +159,16 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     ovr = data.get("overrides", {})
     ovr_dict: dict[str, dict[str, str]] = ovr if isinstance(ovr, dict) else {}
 
+    rt = data.get("rule_thresholds", {})
+    rt_dict: dict[str, dict[str, int]] = {}
+    if isinstance(rt, dict):
+        for rule_id, args in rt.items():
+            if isinstance(args, dict):
+                rt_dict[str(rule_id)] = {str(k): int(v) for k, v in args.items() if isinstance(v, (int, float))}
+
+    generic_scanning_raw = data.get("generic_scanning", False)
+    generic_scanning = bool(generic_scanning_raw) if isinstance(generic_scanning_raw, bool) else False
+
     config = ProjectConfig(
         framework_version=fw_str,
         packages=_str_list("packages"),
@@ -168,6 +178,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         default_agent=da_str,
         agents=_str_dict("agents"),
         surfaces=_str_dict("surfaces"),
+        rule_thresholds=rt_dict,
+        generic_scanning=generic_scanning,
     )
     # Apply global defaults where project doesn't override
     global_cfg = get_global_config()

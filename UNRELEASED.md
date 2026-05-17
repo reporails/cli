@@ -6,6 +6,8 @@
 - check: Focus-mode output layout for capability runs — single-file score, findings grouped by rule with line refs, "Next" action pointer toward the highest-frequency rule. Subagent targets expand to include skills declared in their `skills:` frontmatter.
 - check: `Top rules (by finding count)` block in the whole-repo scorecard, ranked across all findings.
 - check: `top_rules` array in `-f json` output; `focus` envelope in capability-mode JSON describes the targeted capability, name, agent, and paths.
+- check: Size-aware `CORE:S:0013 scope-fields-in-frontmatter` — rule no longer fires on rules below 30 lines (default). Override per-project via `.ails/config.yml: rule_thresholds.CORE:S:0013.min_lines`. Generic mechanism in deterministic check runner — `min_lines:` arg on any deterministic check + per-rule override.
+- check: `generic` file class via Markdown link-reachability — opt-in via `.ails/config.yml: generic_scanning: true`. When on, the classifier BFS-walks outgoing links from each instruction file and assigns `file_type: "generic"` (with `loading: on_demand`) to reached in-tree `.md` files. Cycle-safe, depth-bounded (3 hops), tree-bound, agent-agnostic. Rule routing uses existing `FileMatch.type` — no rule-schema change. Default off everywhere.
 
 ### Changed
 - auth: Set explicit `User-Agent: reporails-cli/<version> (auth)` header on platform and GitHub requests so identifiable CLI traffic can be allow-listed at the edge.
