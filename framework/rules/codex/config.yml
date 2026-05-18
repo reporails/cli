@@ -278,4 +278,5 @@ file_types:
 excludes:
   - CLAUDE:*
   - COPILOT:*
+  - CORE:S:0024  # import-targets-resolve — Codex AGENTS.md does not honor @<path> import syntax (single-file format per developers.openai.com/codex/guides/agents-md)
   - CORE:S:0033  # import-depth-within-limit — Codex AGENTS.md does not support chained @import
