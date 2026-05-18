@@ -190,4 +190,5 @@ file_types:
 excludes:
   - CLAUDE:*
   - CODEX:*
+  - CORE:S:0024  # import-targets-resolve — Copilot instruction files have no documented @<path> import syntax (per docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions)
   - CORE:S:0033  # import-depth-within-limit — Copilot instructions files do not support chained @import
