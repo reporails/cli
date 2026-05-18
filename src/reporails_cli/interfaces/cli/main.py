@@ -99,9 +99,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 ) -> None:
     """Validate AI instruction files against reporails rules.
 
-    Per-capability targeting: `ails check skill <name>` focuses output on a
-    single skill; `ails check skill` (no name) lists skills with per-target
-    scores. Capability vocabulary comes from the detected agent's
+    Capability args narrow which files the standard display shows.
+    `ails check <capability>` covers every declared target for that
+    capability; `ails check <capability> <name>` covers the single named
+    target. Capability vocabulary comes from the detected agent's
     `framework/rules/<agent>/config.yml` `file_types:` keys.
     """
     from contextlib import nullcontext
@@ -113,11 +114,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.runtime.merger import merge_results
-    from reporails_cli.formatters.text.focus import filter_result_to_focus
 
     # Capability-vs-path sniffing: if arg1 matches a capability keyword for
-    # the detected agent, route to focus / listing mode. Otherwise treat
-    # arg1 as a path (existing behavior).
+    # the detected agent, capture it as a path filter for the display.
+    # Otherwise treat arg1 as a path (existing behavior).
     project_root = Path.cwd().resolve()
     capability_mode = False
     capability = ""
@@ -262,32 +262,41 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-    # 7. Compute focus paths for per-capability mode (single-target OR full capability listing)
-    focus_paths = _resolve_focus_paths(
+    # 7. Resolve capability args (if any) to a path filter for the display.
+    capability_paths = _resolve_capability_paths(
         capability_mode, capability, capability_name, effective_agent, project_root, excl
     )
 
-    # 8. Display dispatch — filter result + ruleset_map to focus_paths so the
-    # standard whole-repo renderer shows the same shape with fewer rows.
-    from reporails_cli.formatters.text.focus import filter_ruleset_map_to_paths
+    # 8. Filter result + ruleset_map to capability_paths so every rendered
+    # block (file cards, surface-health, scorecard) sees the same set.
+    from reporails_cli.formatters.text.display import filter_result_to_paths, filter_ruleset_map_to_paths
 
-    if focus_paths:
-        display_result = filter_result_to_focus(result, focus_paths, project_root)
-        display_map = filter_ruleset_map_to_paths(ruleset_map, focus_paths, project_root)
+    if capability_paths:
+        display_result = filter_result_to_paths(result, capability_paths, project_root)
+        display_map = filter_ruleset_map_to_paths(ruleset_map, capability_paths, project_root)
     else:
         display_result = result
         display_map = ruleset_map
+
     _dispatch_output(
-        output_format, display_result, display_map, elapsed_ms, focus_paths, project_root, ascii, verbose, funnel_error
+        output_format,
+        display_result,
+        display_map,
+        elapsed_ms,
+        capability_paths,
+        project_root,
+        ascii,
+        verbose,
+        funnel_error,
     )
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
-    if _should_exit_strict(strict, capability_mode, focus_paths, project_root, result):
+    if _should_exit_strict(strict, capability_paths, project_root, result):
         raise typer.Exit(1)
 
 
-def _resolve_focus_paths(
+def _resolve_capability_paths(
     capability_mode: bool,
     capability: str,
     capability_name: str,
@@ -295,12 +304,12 @@ def _resolve_focus_paths(
     project_root: Path,
     exclude_dirs: list[str] | tuple[str, ...] | None = None,
 ) -> set[Path]:
-    """Return the set of files to display.
+    """Resolve capability args to the set of files the display should cover.
 
-    Whole-repo run (no capability arg): empty set. Capability listing
-    (`ails check skill`): every declared target for that capability.
-    Capability focus (`ails check skill backlog`): the single resolved
-    target (plus skill expansion for agents).
+    No capability arg → empty set (whole project). `ails check <capability>`
+    → every declared target for that capability. `ails check <capability>
+    <name>` → the single resolved target (plus subagent skill expansion
+    for `agents`).
     """
     from reporails_cli.core.classify.capability_paths import (
         available_capabilities,
@@ -330,10 +339,10 @@ def _resolve_focus_paths(
         if available:
             console.print(f"[dim]Found {len(available)} {capability}(s) — run `ails check {capability}` to list.[/dim]")
         raise typer.Exit(2)
-    focus_paths = {resolved}
+    paths = {resolved}
     if capability == "agents":
-        focus_paths = expand_focus(focus_paths, effective_agent, project_root)
-    return focus_paths
+        paths = expand_focus(paths, effective_agent, project_root)
+    return paths
 
 
 def _capability_declared(capability: str, effective_agent: str, project_root: Path) -> bool:
@@ -350,8 +359,8 @@ def _capability_declared(capability: str, effective_agent: str, project_root: Pa
     return bool(fold and any(f in decls for f in fold))
 
 
-def _focus_paths_to_strings(focus_paths: set[Path], project_root: Path) -> set[str]:
-    return {str(p.relative_to(project_root)) if p.is_relative_to(project_root) else str(p) for p in focus_paths}
+def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:
+    return {str(p.relative_to(project_root)) if p.is_relative_to(project_root) else str(p) for p in paths}
 
 
 def _dispatch_output(
@@ -359,20 +368,20 @@ def _dispatch_output(
     display_result: Any,
     ruleset_map: Any,
     elapsed_ms: float,
-    focus_paths: set[Path],
+    capability_paths: set[Path],
     project_root: Path,
     ascii_mode: bool,
     verbose: bool,
     funnel_error: Any,
 ) -> None:
-    """Route formatted output to JSON / GitHub / text. Capability mode uses the same text shape."""
+    """Route formatted output to JSON / GitHub / text."""
     from reporails_cli.formatters import json as json_formatter
 
     if output_format == "json":
         data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map)
         data["elapsed_ms"] = round(elapsed_ms, 1)
-        if focus_paths:
-            data["focus_paths"] = sorted(_focus_paths_to_strings(focus_paths, project_root))
+        if capability_paths:
+            data["capability_paths"] = sorted(_relativize_paths(capability_paths, project_root))
         print(json.dumps(data, indent=2))
         return
     if output_format == "github":
@@ -387,15 +396,14 @@ def _dispatch_output(
 
 def _should_exit_strict(
     strict: bool,
-    capability_mode: bool,
-    focus_paths: set[Path],
+    capability_paths: set[Path],
     project_root: Path,
     result: Any,
 ) -> bool:
     if not strict:
         return False
-    if capability_mode and focus_paths:
-        rel_keys = _focus_paths_to_strings(focus_paths, project_root)
+    if capability_paths:
+        rel_keys = _relativize_paths(capability_paths, project_root)
         return any(f.file in rel_keys for f in result.findings)
     return bool(result.findings)
 
