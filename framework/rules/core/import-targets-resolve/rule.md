@@ -6,7 +6,7 @@ category: structure
 type: mechanical
 severity: medium
 backed_by: [developer-context-cursor-study]
-match: {format: freeform}
+match: {format: [freeform, frontmatter]}
 ---
 
 # Import Targets Resolve
