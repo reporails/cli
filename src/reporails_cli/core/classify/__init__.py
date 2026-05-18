@@ -449,17 +449,29 @@ def _classify_generic_via_links(
     scan_root: Path,
     classified: list[ClassifiedFile],
 ) -> list[ClassifiedFile]:
-    """BFS Markdown links from classified files; classify reachable `.md` as `generic`.
+    """BFS Markdown links + `@<path>` imports from classified files.
+
+    Reachable `.md` files are classified as `file_type: generic` with
+    edge-attribution properties — `link_source_type`, `link_source_path`,
+    `link_depth`, `loading_verb` — set from the incoming `LinkEdge` set.
 
     Lazy-imported to avoid pulling the walker module when generic scanning
     is off (the default).
     """
     from reporails_cli.core.classify.generic_type import make_generic_classified
-    from reporails_cli.core.classify.link_walker import walk_markdown_links
+    from reporails_cli.core.classify.link_walker import LinkEdge, walk_markdown_links
 
-    start_paths = {cf.path for cf in classified}
-    reached = walk_markdown_links(start_paths, scan_root, start_paths)
-    return [make_generic_classified(p) for p in sorted(reached)]
+    seed_map: dict[Path, str] = {cf.path: cf.file_type for cf in classified}
+    classified_paths = set(seed_map.keys())
+    edges = walk_markdown_links(seed_map, scan_root, classified_paths)
+
+    by_target: dict[Path, list[LinkEdge]] = {}
+    for edge in edges:
+        by_target.setdefault(edge.target, []).append(edge)
+
+    return [
+        make_generic_classified(target, target_edges, scan_root) for target, target_edges in sorted(by_target.items())
+    ]
 
 
 def match_files(
@@ -541,6 +553,8 @@ def file_matches(cf: ClassifiedFile, match: FileMatch) -> bool:
         "vcs",
         "loading",
         "precedence",
+        "loading_verb",
+        "link_source_type",
     ):
         if not _prop_matches(getattr(match, prop), cf.properties.get(prop)):
             return False

@@ -1,24 +1,10 @@
-"""Markdown link-reachability walker for the `generic` file class.
-
-REQ-025 Phase C: when `generic_scanning: true` is set in `.ails/config.yml`,
-the classifier extends its file-type assignment by BFS-walking outgoing
-Markdown links from each classified instruction file. Files reached
-transitively that live in the project tree but aren't already classified
-get `file_type: "generic"`. This catches carryovers, ADRs, sys/ docs,
-knowledge docs, learning entries, and per-agent memory entries that an
-agent reads as instruction input but that don't have their own canonical
-capability path.
-
-The walker is agent-agnostic by construction — it doesn't read agent
-configs or hardcode per-agent paths. Anything an existing classified file
-points at via a relative `[text](path.md)` or reference-style link is in
-scope; anything outside the project tree is skipped.
-"""
+"""Markdown link-reachability walker for the `generic` file class."""
 
 from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -30,78 +16,125 @@ _INLINE_LINK_RE = re.compile(r"\[(?:[^\]]+)\]\(([^)]+)\)")
 # Reference-definition `[ref]: path` — used to back reference-style links.
 _REF_DEFINITION_RE = re.compile(r"^\s*\[(?:[^\]]+)\]:\s*(\S+)", re.MULTILINE)
 
+# `@<path>` inline include — mirrors the pattern in
+# `core/lint/mechanical/checks_advanced.py:extract_imports`/`import_depth`.
+# Capture the path without the leading `@`.
+_IMPORT_RE = re.compile(r"@([\w./-]+)")
+
+
+@dataclass(frozen=True)
+class LinkEdge:
+    """One `(source, target)` link emitted by `walk_markdown_links`."""
+
+    target: Path
+    source: Path
+    source_type: str
+    depth: int
+    verb: str
+
 
 def walk_markdown_links(
-    start_paths: set[Path],
+    start_paths: dict[Path, str],
     project_root: Path,
     classified_paths: set[Path],
     max_depth: int = 3,
-) -> set[Path]:
-    """BFS outgoing Markdown links from `start_paths`; return newly reached `.md` paths.
-
-    Files reachable from `start_paths` that:
-      - live inside `project_root`,
-      - have a `.md` suffix,
-      - are not already in `classified_paths`,
-      - haven't been visited yet,
-    are returned. The walk is bounded by `max_depth` link hops.
-
-    Cycle-safe via `visited` set; out-of-tree links are silently skipped.
-    """
-    visited: set[Path] = {p.resolve() for p in start_paths if p.exists()}
+) -> list[LinkEdge]:
+    """BFS outgoing Markdown links + `@<path>` imports from `start_paths`; emit one edge per `(source, target)`."""
     classified_resolved = {p.resolve() for p in classified_paths}
     project_root_resolved = project_root.resolve()
 
-    frontier: list[tuple[Path, int]] = [(p, 0) for p in start_paths if p.exists()]
-    found: set[Path] = set()
+    seed_resolved: dict[Path, str] = {p.resolve(): ft for p, ft in start_paths.items() if p.exists()}
+    visited: set[Path] = set(seed_resolved.keys())
+
+    # Frontier: (resolved_path, depth_already_taken, source_type)
+    # `depth_already_taken` is the depth at which this node was reached;
+    # outgoing edges from this node land at depth+1.
+    frontier: list[tuple[Path, int, str]] = [(resolved, 0, ft) for resolved, ft in seed_resolved.items()]
+
+    # Per-target edges: keyed by (source, target, verb) so each distinct
+    # (linking file, target, loading verb) tuple contributes one edge —
+    # a file both linked AND imported by the same source yields two edges.
+    edges: dict[tuple[Path, Path, str], LinkEdge] = {}
 
     while frontier:
-        current, depth = frontier.pop(0)
+        current, depth, source_type = frontier.pop(0)
         if depth >= max_depth:
             continue
-        for linked in _outgoing_md_links(current):
+        next_depth = depth + 1
+        for linked, verb in _outgoing_links(current):
             resolved = linked.resolve()
-            if resolved in visited:
-                continue
-            visited.add(resolved)
-            if resolved in classified_resolved:
-                continue
             if not _is_in_tree(resolved, project_root_resolved):
                 continue
             if not resolved.is_file():
                 continue
-            found.add(resolved)
-            frontier.append((resolved, depth + 1))
+            if resolved in classified_resolved:
+                continue
+            key = (current, resolved, verb)
+            if key not in edges:
+                edges[key] = LinkEdge(
+                    target=resolved,
+                    source=current,
+                    source_type=source_type,
+                    depth=next_depth,
+                    verb=verb,
+                )
+            if resolved in visited:
+                continue
+            visited.add(resolved)
+            # The reached file becomes a new frontier node; it carries
+            # `file_type: "generic"` as the source_type for any links it
+            # emits onward — once outside the seeded surface set, every
+            # downstream reach is from a generic file.
+            frontier.append((resolved, next_depth, "generic"))
 
-    return found
+    return list(edges.values())
 
 
-def _outgoing_md_links(file_path: Path) -> list[Path]:
-    """Extract relative `.md` link targets from `file_path`.
-
-    Returns absolute paths (file_path's directory joined with the link
-    target). Filters HTTP(s) URLs, anchor-only refs, and non-`.md` links.
-    """
+def _outgoing_links(file_path: Path) -> list[tuple[Path, str]]:
+    """Extract `(target_path, verb)` pairs for `.md` links and `@<path>` imports in `file_path`."""
     try:
         text = file_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         logger.debug("link_walker: cannot read %s: %s", file_path, exc)
         return []
 
-    targets: list[str] = [m.group(1).strip() for m in _INLINE_LINK_RE.finditer(text)]
-    targets.extend(m.group(1).strip() for m in _REF_DEFINITION_RE.finditer(text))
-
-    out: list[Path] = []
     base_dir = file_path.parent
-    for target in targets:
-        cleaned = _strip_anchor(target)
-        if not cleaned or _looks_like_url(cleaned):
-            continue
-        if not cleaned.endswith(".md"):
-            continue
-        resolved = (base_dir / cleaned).resolve()
-        out.append(resolved)
+    out: list[tuple[Path, str]] = []
+
+    for match in _INLINE_LINK_RE.finditer(text):
+        target = match.group(1).strip()
+        resolved = _resolve_md_target(base_dir, target)
+        if resolved is not None:
+            out.append((resolved, "read"))
+
+    for match in _REF_DEFINITION_RE.finditer(text):
+        target = match.group(1).strip()
+        resolved = _resolve_md_target(base_dir, target)
+        if resolved is not None:
+            out.append((resolved, "read"))
+
+    for match in _IMPORT_RE.finditer(text):
+        target = match.group(1).strip()
+        resolved = _resolve_md_target(base_dir, target)
+        if resolved is not None:
+            out.append((resolved, "imported"))
+
     return out
+
+
+def _outgoing_md_links(file_path: Path) -> list[Path]:
+    """Return just the `.md` target paths from `_outgoing_links` (back-compat shim)."""
+    return [target for target, _verb in _outgoing_links(file_path)]
+
+
+def _resolve_md_target(base_dir: Path, target: str) -> Path | None:
+    """Resolve a raw link target to a `.md` Path, or None if not eligible."""
+    cleaned = _strip_anchor(target)
+    if not cleaned or _looks_like_url(cleaned):
+        return None
+    if not cleaned.endswith(".md"):
+        return None
+    return (base_dir / cleaned).resolve()
 
 
 def _strip_anchor(target: str) -> str:

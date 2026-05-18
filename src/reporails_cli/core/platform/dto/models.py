@@ -140,6 +140,8 @@ class FileMatch(BaseModel):
     vcs: list[str] | str | None = None
     loading: list[str] | str | None = None
     precedence: list[str] | str | None = None
+    loading_verb: list[str] | str | None = None
+    link_source_type: list[str] | str | None = None
 
 
 class Check(BaseModel):
