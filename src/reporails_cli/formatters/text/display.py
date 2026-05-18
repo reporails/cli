@@ -522,8 +522,10 @@ def _render_funnel_cta(funnel_error: object) -> None:
 def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) -> Any:
     """Return a CombinedResult containing only rows for `paths`.
 
-    Filters findings, cross-file pairs, and per-file analysis so the
-    surface-health / file-card / scorecard blocks all see the same set.
+    Filters findings, cross-file pairs, per-file analysis, AND the
+    aggregate `quality.compliance_band` — without filtering the band,
+    the top score uses whole-project base while surface-health uses the
+    filtered base and the two scores disagree.
     """
     from dataclasses import replace as _replace
 
@@ -545,7 +547,28 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
         client_check_count=result.stats.client_check_count,
         server_diagnostic_count=result.stats.server_diagnostic_count,
     )
-    return _replace(result, findings=findings, cross_file=cross, stats=stats, per_file_analysis=per_file)
+    quality = _filter_quality(result.quality, per_file)
+    return _replace(
+        result,
+        findings=findings,
+        cross_file=cross,
+        stats=stats,
+        per_file_analysis=per_file,
+        quality=quality,
+    )
+
+
+def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
+    """Rewrite the aggregate `compliance_band` from the filtered per-file bands."""
+    if quality is None:
+        return None
+    from dataclasses import replace as _replace
+
+    bands = [fa.compliance_band for fa in per_file if fa.compliance_band]
+    if not bands:
+        return None
+    majority = Counter(bands).most_common(1)[0][0]
+    return _replace(quality, compliance_band=majority)
 
 
 def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root: Path) -> Any:

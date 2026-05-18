@@ -207,8 +207,13 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
-    """Render compact 2-column per-surface health bars."""
-    if not surfaces:
+    """Render compact 2-column per-surface health bars.
+
+    Single-surface case is suppressed: the top `Score:` already
+    represents that surface, so a second bar would just restate the
+    same number.
+    """
+    if len(surfaces) <= 1:
         return
     console.print()
     for i in range(0, len(surfaces), 2):
@@ -436,10 +441,11 @@ def print_scorecard(
     agent_name = agent.title() if agent else "auto"
     console.print(f"  Agent: {agent_name}")
 
+    multi_surface = bool(surface_health) and len(surface_health) > 1
     if scope is not None:
-        _render_scope(scope, has_surface_health=bool(surface_health))
+        _render_scope(scope, has_surface_health=multi_surface)
 
-    if surface_health:
+    if multi_surface:
         _render_surface_health(surface_health)
 
     _render_top_rules(result)
