@@ -247,7 +247,10 @@ checks:
 
 
 class TestWalkGlobFollowsSymlinkedDirs:
-    """Regression: `walk_glob` must descend into symlinked directories so files inside them are visible to whole-repo discovery."""
+    """Regression: `walk_glob` descends into symlinked directories.
+
+    Files inside symlinked dirs must be visible to whole-repo discovery.
+    """
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
