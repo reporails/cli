@@ -193,6 +193,87 @@ def compute_surface_scores(
     return surfaces
 
 
+def compute_item_scores(
+    result: Any,
+    ruleset_map: Any,
+    project_root: Any = None,
+) -> list[SurfaceHealth]:
+    """Per-file health scores — name + bar per scanned file.
+
+    Used by capability-listing mode (`ails check <capability>`) so the
+    operator sees which item is the worst at a glance. Score uses the
+    same formula as `compute_surface_scores` but at file granularity:
+    per-file compliance band, per-file errors/warnings/infos, per-file
+    atom count from `per_file_analysis`.
+    """
+    from pathlib import Path
+
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    if ruleset_map is None:
+        return []
+    root = Path(project_root) if project_root is not None else Path.cwd()
+
+    findings_by_file: dict[str, list[Any]] = {}
+    for f in result.findings:
+        findings_by_file.setdefault(f.file, []).append(f)
+    analysis_by_file: dict[str, Any] = {fa.file: fa for fa in result.per_file_analysis}
+
+    items: list[SurfaceHealth] = []
+    try:
+        files = list(ruleset_map.files)
+    except (AttributeError, TypeError):
+        return []
+    for fr in files:
+        rel = normalize_finding_path(str(fr.path), root)
+        findings = findings_by_file.get(rel, [])
+        analysis = analysis_by_file.get(rel)
+        n_errors = sum(1 for f in findings if f.severity == "error")
+        n_warnings = sum(1 for f in findings if f.severity == "warning")
+        n_infos = sum(1 for f in findings if f.severity == "info")
+        n_atoms = (analysis.stats.get("atoms", 0) if analysis else 0) or 0
+        band = analysis.compliance_band if analysis else ""
+
+        if n_errors + n_warnings + n_infos == 0:
+            score = 10.0
+        else:
+            base = 6.0
+            if band:
+                base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
+            denom = max(n_atoms, n_errors + n_warnings + n_infos, 1)
+            penalty = min(4.0, (n_errors / denom) * 30) + min(2.0, (n_warnings / denom) * 2)
+            score = round(max(0.0, min(10.0, base - penalty)), 1)
+
+        items.append(
+            SurfaceHealth(
+                name=_display_name_for_path(rel),
+                score=score,
+                file_count=1,
+                finding_count=len(findings),
+                errors=n_errors,
+                warnings=n_warnings,
+                infos=n_infos,
+            )
+        )
+    items.sort(key=lambda it: (it.score, it.name))  # worst first, alphabetical tiebreak
+    return items
+
+
+def _display_name_for_path(rel: str) -> str:
+    """Return the per-item display label for a path.
+
+    Skills (`.claude/skills/<name>/SKILL.md`) → `<name>` (parent dir).
+    Everything else → file stem so `git.md` → `git`,
+    `agent-config-staleness.md` → `agent-config-staleness`.
+    """
+    from pathlib import Path
+
+    p = Path(rel)
+    if p.name == "SKILL.md":
+        return p.parent.name
+    return p.stem
+
+
 def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
     """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓▓▓▓▓▓░░░░  7.2'.
 
@@ -221,6 +302,43 @@ def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
         right = _surface_cell(surfaces[i + 1]) if i + 1 < len(surfaces) else ""
         sep = "    " if right else ""
         console.print(f"  {left}{sep}{right}")
+
+
+def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
+    """Format one item as a Rich-markup cell: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2'."""
+    label = f"{s.name}:"
+    filled = round(bar_width * s.score / 10)
+    bar = "▓" * filled + "░" * (bar_width - filled)
+    color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
+    return f"{label:<{label_w}} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+
+
+def _render_item_health(items: list[SurfaceHealth]) -> None:
+    """Render per-item health bars in 1- or 2-column layout (capability-listing mode).
+
+    Cell width is `label + bar + score ≈ label_w + bar_width + 8`. Two
+    cells plus a 4-space separator must fit the terminal; otherwise
+    fall back to one column so the bar and score never wrap onto a new
+    line behind the label.
+    """
+    if not items:
+        return
+    label_w = max(len(s.name) for s in items) + 2  # name + ": "
+    bar_width = 15
+    cell_w = label_w + bar_width + 8
+    tw = get_term_width()
+    use_two_columns = (cell_w * 2 + 4) <= tw
+
+    console.print()
+    if use_two_columns:
+        for i in range(0, len(items), 2):
+            left = _item_cell(items[i], label_w, bar_width)
+            right = _item_cell(items[i + 1], label_w, bar_width) if i + 1 < len(items) else ""
+            sep = "    " if right else ""
+            console.print(f"  {left}{sep}{right}")
+    else:
+        for s in items:
+            console.print(f"  {_item_cell(s, label_w, bar_width)}")
 
 
 # ── Category bars ─────────────────────────────────────────────────────
@@ -430,8 +548,14 @@ def print_scorecard(
     agent: str = "",
     scope: ScopeInfo | None = None,
     surface_health: list[SurfaceHealth] | None = None,
+    item_health: list[SurfaceHealth] | None = None,
 ) -> None:
-    """Print the bottom scorecard — the payoff users scroll to."""
+    """Print the bottom scorecard — the payoff users scroll to.
+
+    Exactly one of {surface_health (multi-surface), item_health
+    (capability listing)} renders below the scope block. Single-surface
+    single-file runs render neither — the top `Score:` covers it.
+    """
     hint_errors, hint_warnings = _hint_totals(result)
 
     console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
@@ -442,11 +566,14 @@ def print_scorecard(
     console.print(f"  Agent: {agent_name}")
 
     multi_surface = bool(surface_health) and len(surface_health) > 1
+    has_items = bool(item_health) and len(item_health) > 1
     if scope is not None:
-        _render_scope(scope, has_surface_health=multi_surface)
+        _render_scope(scope, has_surface_health=multi_surface or has_items)
 
     if multi_surface:
         _render_surface_health(surface_health)
+    elif has_items:
+        _render_item_health(item_health)
 
     _render_top_rules(result)
 
