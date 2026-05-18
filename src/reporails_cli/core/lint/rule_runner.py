@@ -22,6 +22,22 @@ logger = logging.getLogger(__name__)
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
+def _to_display_severity(raw: str) -> str:
+    """Normalize a Severity enum value to the display vocabulary.
+
+    `Rule.severity` and `Check.severity` carry the SARIF-adjacent
+    `critical`/`high`/`medium`/`low`/`info` vocabulary; the merger and
+    text formatters only count `error`/`warning`/`info`. Mirrors the
+    translation already applied to deterministic regex findings in
+    `core/lint/regex/compiler.py`.
+    """
+    if raw in ("error", "critical", "high"):
+        return "error"
+    if raw == "info":
+        return "info"
+    return "warning"
+
+
 def _collect_mechanical_findings(
     rules: dict[str, Rule],
     project_dir: Path,
@@ -45,7 +61,7 @@ def _collect_mechanical_findings(
             LocalFinding(
                 file=file_path,
                 line=line,
-                severity=v.severity.value,
+                severity=_to_display_severity(v.severity.value),
                 rule=v.rule_id,
                 message=v.message,
                 source="m_probe",

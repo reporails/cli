@@ -4,7 +4,7 @@ slug: broken-markdown-link
 title: Markdown Link Targets Resolve
 category: structure
 type: mechanical
-severity: medium
+severity: high
 backed_by: []
 match: {format: [freeform, frontmatter]}
 ---

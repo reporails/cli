@@ -4,7 +4,7 @@ slug: import-depth-within-limit
 title: Import Depth Within Limit
 category: structure
 type: mechanical
-severity: medium
+severity: high
 match: {type: main}
 source: https://code.claude.com/docs/en/memory#import-additional-files
 ---
