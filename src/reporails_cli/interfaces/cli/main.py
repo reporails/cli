@@ -264,7 +264,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     # 7. Compute focus paths for per-capability mode
     focus_paths, listing_candidates = _resolve_focus_targets(
-        capability_mode, capability, capability_name, effective_agent, project_root
+        capability_mode, capability, capability_name, effective_agent, project_root, excl
     )
 
     # 8. Display dispatch
@@ -299,6 +299,7 @@ def _resolve_focus_targets(
     capability_name: str,
     effective_agent: str,
     project_root: Path,
+    exclude_dirs: list[str] | tuple[str, ...] | None = None,
 ) -> tuple[set[Path], list[Path]]:
     """Compute focus_paths (single-target) or listing_candidates (no name) for capability mode."""
     from reporails_cli.core.classify.capability_paths import (
@@ -310,7 +311,7 @@ def _resolve_focus_targets(
 
     if not capability_mode:
         return set(), []
-    if capability not in available_capabilities(effective_agent, project_root):
+    if not _capability_declared(capability, effective_agent, project_root):
         console.print(
             f"[red]Error:[/red] capability [bold]{capability}[/bold] is not declared "
             f"for agent [bold]{effective_agent}[/bold]. "
@@ -318,10 +319,10 @@ def _resolve_focus_targets(
         )
         raise typer.Exit(2)
     if not capability_name:
-        return set(), list_capability_targets(effective_agent, capability, project_root)
+        return set(), list_capability_targets(effective_agent, capability, project_root, exclude_dirs)
     resolved = resolve_capability(effective_agent, capability, capability_name, project_root)
     if resolved is None:
-        available = list_capability_targets(effective_agent, capability, project_root)
+        available = list_capability_targets(effective_agent, capability, project_root, exclude_dirs)
         console.print(
             f"[red]Error:[/red] no {capability} named [bold]{capability_name}[/bold] "
             f"for agent [bold]{effective_agent}[/bold] under {project_root}."
@@ -333,6 +334,20 @@ def _resolve_focus_targets(
     if capability == "agents":
         focus_paths = expand_focus(focus_paths, effective_agent, project_root)
     return focus_paths, []
+
+
+def _capability_declared(capability: str, effective_agent: str, project_root: Path) -> bool:
+    """True when `capability` (or any fold-source it resolves to) is declared for the agent."""
+    from reporails_cli.core.classify.capability_paths import (
+        _CAPABILITY_FOLD,
+        available_capabilities,
+    )
+
+    decls = available_capabilities(effective_agent, project_root)
+    if capability in decls:
+        return True
+    fold = _CAPABILITY_FOLD.get(capability)
+    return bool(fold and any(f in decls for f in fold))
 
 
 def _focus_paths_to_strings(focus_paths: set[Path], project_root: Path) -> set[str]:
