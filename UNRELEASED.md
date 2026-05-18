@@ -18,6 +18,7 @@
 - auth: Set explicit `User-Agent: reporails-cli/<version> (auth)` header on platform and GitHub requests so identifiable CLI traffic can be allow-listed at the edge.
 - check: `[PATH]` positional argument is now `[ARG1] [ARG2]` — `ARG1` is sniffed as a capability keyword first, falling through to existing path semantics. No behaviour change for `ails check`, `ails check .`, or `ails check <path>`.
 - agents: Added `CORE:S:0024 import-targets-resolve` to `codex` and `copilot` agent `excludes:` lists — neither agent's instruction files support `@<path>` import syntax per their official documentation, so the rule has no antipattern to detect in those agents.
+- rules: `CORE:S:0024 import-targets-resolve`, `CORE:S:0033 import-depth-within-limit`, and `CORE:S:0056 broken-markdown-link` severity raised from `medium` to `high` — broken includes, links, and over-depth chains are functional context gaps (referenced content silently fails to load), not stylistic warnings. `CLAUDE:S:0010` and `CURSOR:S:0002` per-agent supersedes updated to match.
 
 ### Fixed
 - gemini: `memory` block replaced the retired `## Gemini Added Memories` in-section locator with the current upstream model — private project memory at `~/.gemini/tmp/*/memory/` (`MEMORY.md` + sibling `*.md` notes), mirroring Claude's directory-glob shape. The legacy section header has 0 occurrences in `google-gemini/gemini-cli` source; the locator was targeting a surface that no longer exists. `memory_locator` enumerates entries through the same directory-glob dispatch Claude uses.

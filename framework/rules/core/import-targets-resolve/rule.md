@@ -4,7 +4,7 @@ slug: import-targets-resolve
 title: Import Targets Resolve
 category: structure
 type: mechanical
-severity: medium
+severity: high
 backed_by: [developer-context-cursor-study]
 match: {format: [freeform, frontmatter]}
 ---

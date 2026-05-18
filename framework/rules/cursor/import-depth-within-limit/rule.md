@@ -4,7 +4,7 @@ slug: import-depth-within-limit
 title: Import Depth Within Limit
 category: structure
 type: mechanical
-severity: medium
+severity: high
 match: {type: main}
 supersedes: CORE:S:0033
 source: https://cursor.com/docs/rules
