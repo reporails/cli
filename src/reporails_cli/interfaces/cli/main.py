@@ -262,29 +262,23 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-    # 7. Compute focus paths for per-capability mode
-    focus_paths, listing_candidates = _resolve_focus_targets(
+    # 7. Compute focus paths for per-capability mode (single-target OR full capability listing)
+    focus_paths = _resolve_focus_paths(
         capability_mode, capability, capability_name, effective_agent, project_root, excl
     )
 
-    # 8. Display dispatch
-    display_result = filter_result_to_focus(result, focus_paths, project_root) if focus_paths else result
+    # 8. Display dispatch — filter result + ruleset_map to focus_paths so the
+    # standard whole-repo renderer shows the same shape with fewer rows.
+    from reporails_cli.formatters.text.focus import filter_ruleset_map_to_paths
+
+    if focus_paths:
+        display_result = filter_result_to_focus(result, focus_paths, project_root)
+        display_map = filter_ruleset_map_to_paths(ruleset_map, focus_paths, project_root)
+    else:
+        display_result = result
+        display_map = ruleset_map
     _dispatch_output(
-        output_format,
-        display_result,
-        result,
-        ruleset_map,
-        elapsed_ms,
-        capability_mode,
-        capability,
-        capability_name,
-        effective_agent,
-        focus_paths,
-        listing_candidates,
-        project_root,
-        ascii,
-        verbose,
-        funnel_error,
+        output_format, display_result, display_map, elapsed_ms, focus_paths, project_root, ascii, verbose, funnel_error
     )
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
@@ -293,15 +287,21 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         raise typer.Exit(1)
 
 
-def _resolve_focus_targets(
+def _resolve_focus_paths(
     capability_mode: bool,
     capability: str,
     capability_name: str,
     effective_agent: str,
     project_root: Path,
     exclude_dirs: list[str] | tuple[str, ...] | None = None,
-) -> tuple[set[Path], list[Path]]:
-    """Compute focus_paths (single-target) or listing_candidates (no name) for capability mode."""
+) -> set[Path]:
+    """Return the set of files to display.
+
+    Whole-repo run (no capability arg): empty set. Capability listing
+    (`ails check skill`): every declared target for that capability.
+    Capability focus (`ails check skill backlog`): the single resolved
+    target (plus skill expansion for agents).
+    """
     from reporails_cli.core.classify.capability_paths import (
         available_capabilities,
         list_capability_targets,
@@ -310,7 +310,7 @@ def _resolve_focus_targets(
     from reporails_cli.core.classify.focus_expansion import expand_focus
 
     if not capability_mode:
-        return set(), []
+        return set()
     if not _capability_declared(capability, effective_agent, project_root):
         console.print(
             f"[red]Error:[/red] capability [bold]{capability}[/bold] is not declared "
@@ -319,7 +319,7 @@ def _resolve_focus_targets(
         )
         raise typer.Exit(2)
     if not capability_name:
-        return set(), list_capability_targets(effective_agent, capability, project_root, exclude_dirs)
+        return set(list_capability_targets(effective_agent, capability, project_root, exclude_dirs))
     resolved = resolve_capability(effective_agent, capability, capability_name, project_root)
     if resolved is None:
         available = list_capability_targets(effective_agent, capability, project_root, exclude_dirs)
@@ -333,7 +333,7 @@ def _resolve_focus_targets(
     focus_paths = {resolved}
     if capability == "agents":
         focus_paths = expand_focus(focus_paths, effective_agent, project_root)
-    return focus_paths, []
+    return focus_paths
 
 
 def _capability_declared(capability: str, effective_agent: str, project_root: Path) -> bool:
@@ -357,34 +357,22 @@ def _focus_paths_to_strings(focus_paths: set[Path], project_root: Path) -> set[s
 def _dispatch_output(
     output_format: str,
     display_result: Any,
-    full_result: Any,
     ruleset_map: Any,
     elapsed_ms: float,
-    capability_mode: bool,
-    capability: str,
-    capability_name: str,
-    effective_agent: str,
     focus_paths: set[Path],
-    listing_candidates: list[Path],
     project_root: Path,
     ascii_mode: bool,
     verbose: bool,
     funnel_error: Any,
 ) -> None:
-    """Route formatted output to JSON / GitHub / focus / listing / default text."""
+    """Route formatted output to JSON / GitHub / text. Capability mode uses the same text shape."""
     from reporails_cli.formatters import json as json_formatter
-    from reporails_cli.formatters.text.focus import print_focus_result, print_listing_result
 
     if output_format == "json":
         data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map)
         data["elapsed_ms"] = round(elapsed_ms, 1)
-        if capability_mode:
-            data["focus"] = {
-                "capability": capability,
-                "name": capability_name,
-                "agent": effective_agent,
-                "paths": sorted(_focus_paths_to_strings(focus_paths, project_root)),
-            }
+        if focus_paths:
+            data["focus_paths"] = sorted(_focus_paths_to_strings(focus_paths, project_root))
         print(json.dumps(data, indent=2))
         return
     if output_format == "github":
@@ -392,29 +380,9 @@ def _dispatch_output(
 
         print(github_formatter.format_combined_annotations(display_result))
         return
-    if capability_mode and capability_name:
-        print_focus_result(
-            display_result,
-            capability=capability,
-            name=capability_name,
-            agent=effective_agent,
-            focus_paths=focus_paths,
-            project_root=project_root,
-            elapsed_ms=elapsed_ms,
-            ruleset_map=ruleset_map,
-        )
-        return
-    if capability_mode:
-        print_listing_result(
-            full_result,
-            capability=capability,
-            agent=effective_agent,
-            candidate_paths=listing_candidates,
-            project_root=project_root,
-            ruleset_map=ruleset_map,
-        )
-        return
-    print_text_result(full_result, elapsed_ms, ascii_mode, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error)
+    print_text_result(
+        display_result, elapsed_ms, ascii_mode, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error
+    )
 
 
 def _should_exit_strict(
