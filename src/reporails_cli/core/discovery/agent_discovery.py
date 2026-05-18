@@ -43,12 +43,12 @@ def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str
     Uses file_type properties from config.yml:
     - format: schema_validated -> config
     - scope: path_scoped -> rule (scoped rule files)
-    - directory-only or system paths -> skip
+    - absolute system paths only -> skip
+    - directory-only patterns -> instruction (memory / subagent_memory:
+      `glob_file_type_patterns` enumerates `*.md` files inside the matched
+      directories so `match: {type: memory}` rules can target them)
     - everything else -> instruction
     """
-    # Skip directory-only patterns (e.g., ".claude/memory/")
-    if all(p.endswith("/") for p in patterns):
-        return "skip"
     # Skip absolute system paths (managed configs)
     if all(p.startswith(("/", "C:")) for p in patterns):
         return "skip"
@@ -58,7 +58,7 @@ def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str
     # Path-scoped markdown -> rule files bucket
     if properties.get("scope") == "path_scoped":
         return "rule"
-    # Everything else (main, skill, override) -> instruction bucket
+    # Everything else (main, skill, override, memory/subagent_memory) -> instruction
     return "instruction"
 
 
@@ -242,6 +242,9 @@ def glob_file_type_patterns(
     found: list[Path] = []
     for pattern in patterns:
         if pattern.endswith("/"):
+            # Directory glob (`.claude/agent-memory/*/`, `~/.claude/projects/*/memory/`)
+            # -> enumerate `*.md` files inside the matched directories.
+            _glob_directory_entries(pattern, target, found, exclude_dirs)
             continue
         if _is_external_pattern(pattern):
             _glob_external(pattern, target, found)
@@ -281,6 +284,57 @@ def _glob_external(pattern: str, target: Path, found: list[Path]) -> None:
         found.extend(Path(p) for p in _glob.glob(expanded_str) if Path(p).is_file())
     elif expanded.is_file():
         found.append(expanded)
+
+
+def _glob_directory_entries(
+    pattern: str,
+    target: Path,
+    found: list[Path],
+    exclude_dirs: frozenset[str],
+) -> None:
+    """Enumerate `*.md` files inside directories matching a trailing-slash pattern.
+
+    Trailing-slash patterns in agent configs (e.g. `.claude/agent-memory/*/`,
+    `~/.claude/projects/*/memory/`) describe a directory glob; the files
+    inside those directories are the file_type's instances. This helper
+    resolves the directory glob then walks `*.md` files inside each match.
+
+    Used by `memory` and `subagent_memory` capabilities — the only file_types
+    declared with directory-only patterns. Older releases bucketed these as
+    `"skip"`, which left the files unclassified and the `link_walker` then
+    mis-tagged them `generic`.
+    """
+    dir_pattern = pattern.rstrip("/")
+    if _is_external_pattern(dir_pattern):
+        expanded_str = str(Path(dir_pattern).expanduser())
+        if "/projects/*/" in expanded_str:
+            project_key = str(target.resolve()).replace("/", "-")
+            expanded_str = expanded_str.replace("/projects/*/", f"/projects/{project_key}/")
+        import glob as _glob
+
+        for d in _glob.glob(expanded_str):
+            base = Path(d)
+            if base.is_dir():
+                found.extend(p for p in base.rglob("*.md") if p.is_file())
+        return
+
+    # In-tree pattern: resolve glob relative to target, enumerate .md inside each dir
+    for base in _resolve_in_tree_dirs(dir_pattern, target, exclude_dirs):
+        found.extend(
+            entry for entry in base.rglob("*.md") if entry.is_file() and not is_excluded(entry, target, exclude_dirs)
+        )
+
+
+def _resolve_in_tree_dirs(
+    dir_pattern: str,
+    target: Path,
+    exclude_dirs: frozenset[str],
+) -> list[Path]:
+    """Resolve an in-tree directory glob (no trailing slash) to existing directories."""
+    import glob as _glob
+
+    candidates = [Path(p) for p in _glob.glob(str(target / dir_pattern))]
+    return [p for p in candidates if p.is_dir() and not is_excluded(p, target, exclude_dirs)]
 
 
 def load_config_file_types(

@@ -251,6 +251,25 @@ file_types:
         vcs: committed
         maintainer: human
 
+  memory:
+    # Gemini's persistent memory is a SECTION inside ~/.gemini/GEMINI.md,
+    # not a directory of files. The agent appends saved memories to
+    # `## Gemini Added Memories`. Per-agent memory_locator (REQ-056 Phase
+    # 3a) reads this `locator:` block to enumerate memory entries as
+    # virtual records, distinct from claude's file_set shape. No `scopes:`
+    # block — discovery skips it gracefully (no patterns to glob); the
+    # memory_locator module is the sole consumer.
+    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md
+    format: freeform
+    scope: global
+    cardinality: collection
+    lifecycle: mutable
+    loading: session_start
+    locator:
+      type: file_section
+      file: ~/.gemini/GEMINI.md
+      section: "## Gemini Added Memories"
+
 excludes:
   - CLAUDE:*
   - CODEX:*
