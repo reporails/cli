@@ -49,7 +49,18 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
     result: dict[str, object] = {}
     if match.type is not None:
         result["type"] = match.type
-    for prop in ("format", "scope", "cardinality", "lifecycle", "maintainer", "vcs", "loading", "precedence"):
+    for prop in (
+        "format",
+        "scope",
+        "cardinality",
+        "lifecycle",
+        "maintainer",
+        "vcs",
+        "loading",
+        "precedence",
+        "loading_verb",
+        "link_source_type",
+    ):
         val = getattr(match, prop)
         if val is not None:
             result[prop] = val
@@ -66,9 +77,19 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
 @app.command(rich_help_panel="Commands")
 def check(  # noqa: C901  # pylint: disable=too-many-locals
     arg1: str = typer.Argument(
-        ".", help="File/directory to validate, OR a capability keyword (skill, rule, agents, main, ...)"
+        ".",
+        help=(
+            "Capability keyword (memory, skill, rule, agent, main, nested_context, ...) — "
+            "vocabulary comes from the detected agent's config.yml `file_types:`. "
+            "Falls back to file/directory path for legacy invocations. Defaults to whole-project scan."
+        ),
     ),
-    arg2: str = typer.Argument(None, help="Capability target name when arg1 is a capability keyword"),
+    arg2: str = typer.Argument(
+        None,
+        help=(
+            "Target name when arg1 is a capability — e.g. `ails check skill backlog`, `ails check agent docs-auditor`."
+        ),
+    ),
     format: str = typer.Option(None, "--format", "-f", help="Output format: text, json, github"),
     agent: str = typer.Option("", "--agent", help="Agent type (e.g., claude, copilot)"),
     exclude_dirs: list[str] = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
