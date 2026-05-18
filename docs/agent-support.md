@@ -1,8 +1,8 @@
 ---
 title: "Agent Support"
 description: "Which agents are recognized and what's covered"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.10"
+last_updated: 2026-05-18
 ---
 
 # Agent Support
@@ -17,7 +17,7 @@ Reporails recognizes the instruction-file conventions of five coding agents and 
 | Codex             | `AGENTS.md` (+ optional `AGENTS.override.md`)         | `.codex/rules/*.rules`                                               | `.agents/skills/**/SKILL.md`                            | `.codex/agents/*.toml`                                             | hooks, `.codex/config.toml`, skill metadata (`agents/openai.yaml`)     |
 | Copilot (VS Code) | `.github/copilot-instructions.md` or `**/AGENTS.md`   | `.github/instructions/**/*.instructions.md`, `.claude/rules/**/*.md` | `.github/skills/`, `.claude/skills/`, `.agents/skills/` | `.github/agents/*.agent.md`                                        | hooks, prompts, MCP                                                    |
 | Cursor            | `**/AGENTS.md` (`.cursorrules` recognized but legacy) | `.cursor/rules/**/*.mdc`, `.cursor/rules/**/*.md`                    | `.cursor/skills/`, `.claude/skills/`, `.codex/skills/`  | `.cursor/agents/*.md`, `.claude/agents/*.md`, `.codex/agents/*.md` | hooks, MCP, managed policy, bugbot rules                               |
-| Gemini            | `GEMINI.md` or `**/AGENTS.md`                         | (no dedicated rules surface)                                         | `.gemini/skills/**/SKILL.md`                            | `.gemini/agents/*.md`                                              | commands, extensions, settings, hooks                                  |
+| Gemini            | `GEMINI.md` or `**/AGENTS.md`                         | (no dedicated rules surface)                                         | `.gemini/skills/**/SKILL.md`                            | `.gemini/agents/*.md`                                              | commands, extensions, settings, hooks, memory (section inside `~/.gemini/GEMINI.md`), MCP, system_prompt, geminiignore |
 
 Many agents intentionally read each other's directories — Cursor's skills column, for example, includes `.claude/skills/` and `.codex/skills/` because Cursor invokes skills regardless of which agent first authored them. The cells above show the most common project-level patterns; user-level and system-level patterns are also recognized — see [What gets scanned](#what-gets-scanned).
 
