@@ -21,6 +21,7 @@ def dispatch_single_check(
     root: Path,
     classified_files: list[ClassifiedFile],
     location: str,
+    extra_args: dict[str, Any] | None = None,
 ) -> tuple[Violation | None, CheckResult | None]:
     """Dispatch a single mechanical check and return (violation, raw_result).
 
@@ -30,6 +31,10 @@ def dispatch_single_check(
         root: Project root directory.
         classified_files: Classified files for file targeting.
         location: Pre-resolved location string for violation reporting.
+        extra_args: Annotations accumulated from prior mechanical checks in
+            the same rule's chain (`discovered_imports`, `discovered_markdown_links`,
+            etc.). Merged into `args` below the check's own declared args, so a
+            check.yml `args:` entry always wins over an upstream annotation.
 
     Returns:
         Tuple of (Violation if check failed else None, raw CheckResult or None on error).
@@ -42,7 +47,10 @@ def dispatch_single_check(
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
 
-    args: dict[str, Any] = dict(check.args or {})
+    args: dict[str, Any] = {}
+    if extra_args:
+        args.update(extra_args)
+    args.update(check.args or {})
 
     # Inject rule match type so checks can scope to the rule's file targets.
     if rule.match is not None and rule.match.type and "_targets" not in args:
@@ -105,12 +113,21 @@ def run_mechanical_checks(
             matched = classified_files
 
         location = resolve_location(rule, matched, target)
+        # Annotations accumulated across mechanical checks in this rule's chain.
+        # `extract_imports` writes `discovered_imports` into its CheckResult;
+        # `check_import_targets_exist` later in the same rule reads it via
+        # the extra_args injection in `dispatch_single_check`.
+        accumulated_args: dict[str, Any] = {}
         for check in rule.checks:
             if check.type != "mechanical":
                 continue
-            violation, _result = dispatch_single_check(check, rule, target, matched, location)
+            violation, result = dispatch_single_check(
+                check, rule, target, matched, location, extra_args=accumulated_args
+            )
             if violation:
                 violations.append(violation)
+            if result is not None and result.annotations:
+                accumulated_args.update(result.annotations)
 
     return violations
 

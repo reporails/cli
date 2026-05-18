@@ -289,10 +289,21 @@ def _run_mechanical_check(
     check: dict[str, Any],
     fixture_root: Path,
     classified_files: list[ClassifiedFile],
+    extra_args: dict[str, Any] | None = None,
 ) -> CheckResult:
-    """Run a single mechanical check against a fixture directory."""
+    """Run a single mechanical check against a fixture directory.
+
+    `extra_args` carries annotations from prior mechanical checks in the
+    same rule chain (e.g. `discovered_markdown_links` flowing from
+    `extract_markdown_links` into `check_markdown_link_targets_exist`).
+    Merged below the check's own declared args so checks.yml entries
+    always win over upstream annotations.
+    """
     check_name = check.get("check", "") or check.get("name", "")
-    args = check.get("args", {}) or {}
+    args: dict[str, Any] = {}
+    if extra_args:
+        args.update(extra_args)
+    args.update(check.get("args", {}) or {})
 
     fn = MECHANICAL_CHECKS.get(check_name)
     if fn is None:
@@ -302,7 +313,7 @@ def _run_mechanical_check(
     result = fn(fixture_root, args, classified_files)
 
     if check.get("expect", "present") == "absent":
-        result = CheckResult(passed=not result.passed, message=result.message)
+        result = CheckResult(passed=not result.passed, message=result.message, annotations=result.annotations)
 
     return result  # type: ignore[no-any-return]
 
@@ -742,29 +753,7 @@ def run_rule(
     scaffolded_pass, scaffolded_fail, effective_pass_dir, effective_fail_dir = _prepare_scaffolds(rule, file_types)
 
     try:
-        for check in rule.checks:
-            check_id = check.get("id", "unknown")
-            check_type = check.get("type", "unknown")
-            expect = check.get("expect", "present")
-
-            # === Pass fixture: ALL checks must pass ===
-            if rule.has_pass_fixture:
-                passed, run = _check_fixture(
-                    check, check_id, check_type, expect, effective_pass_dir, rule, file_types, "pass"
-                )
-                result.check_runs.append(run)
-                if not passed:
-                    result.status = HarnessStatus.FAILED
-
-            # === Fail fixture: at least ONE check must detect a violation ===
-            if rule.has_fail_fixture:
-                violation, run = _check_fixture_for_violation(
-                    check, check_id, check_type, expect, effective_fail_dir, rule, file_types
-                )
-                result.check_runs.append(run)
-                if violation:
-                    fail_violation_found = True
-
+        fail_violation_found = _run_rule_checks(rule, file_types, effective_pass_dir, effective_fail_dir, result)
         if rule.has_fail_fixture and not fail_violation_found:
             result.status = HarnessStatus.FAILED
             result.messages.append("Fail fixture: no check detected a violation")
@@ -777,6 +766,67 @@ def run_rule(
     return result
 
 
+def _run_rule_checks(
+    rule: RuleInfo,
+    file_types: list[FileTypeDeclaration],
+    effective_pass_dir: Path,
+    effective_fail_dir: Path,
+    result: HarnessResult,
+) -> bool:
+    """Iterate the rule's checks against pass + fail fixtures.
+
+    Threads per-fixture annotation accumulators so chained checks like
+    `extract_markdown_links` -> `check_markdown_link_targets_exist` see
+    each other's `discovered_*` annotations. Pass + fail accumulators are
+    independent so a pass annotation never bleeds into the fail chain.
+    Returns whether the fail fixture saw at least one violation.
+    """
+    fail_violation_found = False
+    pass_extra: dict[str, Any] = {}
+    fail_extra: dict[str, Any] = {}
+    for check in rule.checks:
+        check_id = check.get("id", "unknown")
+        check_type = check.get("type", "unknown")
+        expect = check.get("expect", "present")
+
+        if rule.has_pass_fixture:
+            passed, run, raw = _check_fixture(
+                check,
+                check_id,
+                check_type,
+                expect,
+                effective_pass_dir,
+                rule,
+                file_types,
+                "pass",
+                extra_args=pass_extra,
+            )
+            result.check_runs.append(run)
+            if not passed:
+                result.status = HarnessStatus.FAILED
+            if raw is not None and raw.annotations:
+                pass_extra.update(raw.annotations)
+
+        if rule.has_fail_fixture:
+            violation, run, raw = _check_fixture_for_violation(
+                check,
+                check_id,
+                check_type,
+                expect,
+                effective_fail_dir,
+                rule,
+                file_types,
+                extra_args=fail_extra,
+            )
+            result.check_runs.append(run)
+            if violation:
+                fail_violation_found = True
+            if raw is not None and raw.annotations:
+                fail_extra.update(raw.annotations)
+
+    return fail_violation_found
+
+
 def _check_fixture(
     check: dict[str, Any],
     check_id: str,
@@ -786,22 +836,32 @@ def _check_fixture(
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
     fixture_name: str,
-) -> tuple[bool, CheckRun]:
-    """Run a check against a pass fixture. Returns (passed, CheckRun)."""
+    extra_args: dict[str, Any] | None = None,
+) -> tuple[bool, CheckRun, CheckResult | None]:
+    """Run a check against a pass fixture. Returns (passed, CheckRun, raw_result).
+
+    `raw_result` is the mechanical-check `CheckResult` (with annotations),
+    or None for non-mechanical paths; the caller threads annotations into
+    subsequent checks via the `extra_args` parameter.
+    """
     if check_type == "mechanical":
         classified = _classify_fixture(fixture_root, file_types)
-        cr = _run_mechanical_check(check, fixture_root, classified)
-        return cr.passed, CheckRun(check_id, check_type, fixture_name, cr.passed, cr.message)
+        cr = _run_mechanical_check(check, fixture_root, classified, extra_args=extra_args)
+        return cr.passed, CheckRun(check_id, check_type, fixture_name, cr.passed, cr.message), cr
 
     if check_type == "deterministic":
         ok, count, msg = _run_deterministic_check(rule.checks_yml, check, fixture_root)
         passed = (ok and count > 0) if expect == "present" else (ok and count == 0)
-        return passed, CheckRun(check_id, check_type, fixture_name, passed, msg)
+        return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
     if check_type == "content_query":
-        return True, CheckRun(check_id, check_type, fixture_name, True, "content_query — skipped (requires mapper)")
+        return (
+            True,
+            CheckRun(check_id, check_type, fixture_name, True, "content_query — skipped (requires mapper)"),
+            None,
+        )
 
-    return False, CheckRun(check_id, check_type, fixture_name, False, f"unknown check type: {check_type}")
+    return False, CheckRun(check_id, check_type, fixture_name, False, f"unknown check type: {check_type}"), None
 
 
 def _check_fixture_for_violation(
@@ -812,23 +872,28 @@ def _check_fixture_for_violation(
     fixture_root: Path,
     rule: RuleInfo,
     file_types: list[FileTypeDeclaration],
-) -> tuple[bool, CheckRun]:
-    """Run a check against a fail fixture. Returns (violation_found, CheckRun)."""
+    extra_args: dict[str, Any] | None = None,
+) -> tuple[bool, CheckRun, CheckResult | None]:
+    """Run a check against a fail fixture. Returns (violation_found, CheckRun, raw_result).
+
+    Same annotation-threading contract as `_check_fixture`: the raw
+    `CheckResult` propagates so accumulator state survives chained checks.
+    """
     if check_type == "mechanical":
         classified = _classify_fixture(fixture_root, file_types)
-        cr = _run_mechanical_check(check, fixture_root, classified)
+        cr = _run_mechanical_check(check, fixture_root, classified, extra_args=extra_args)
         violation = not cr.passed
-        return violation, CheckRun(check_id, check_type, "fail", True, cr.message)
+        return violation, CheckRun(check_id, check_type, "fail", True, cr.message), cr
 
     if check_type == "deterministic":
         ok, count, msg = _run_deterministic_check(rule.checks_yml, check, fixture_root)
         violation = (ok and count == 0) if expect == "present" else (ok and count > 0)
-        return violation, CheckRun(check_id, check_type, "fail", True, msg)
+        return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
     if check_type == "content_query":
-        return False, CheckRun(check_id, check_type, "fail", True, "content_query — skipped (requires mapper)")
+        return False, CheckRun(check_id, check_type, "fail", True, "content_query — skipped (requires mapper)"), None
 
-    return False, CheckRun(check_id, check_type, "fail", False, f"unknown check type: {check_type}")
+    return False, CheckRun(check_id, check_type, "fail", False, f"unknown check type: {check_type}"), None
 
 
 # ── Batch runner ────────────────────────────────────────────────────
