@@ -271,6 +271,9 @@ file_types:
         maintainer: system
 
   memory:
+    # Memory directory holds MEMORY.md (index, eager) + sibling *.md topic
+    # files (read on-demand). Directory glob matches both with shared
+    # `loading: session_start`; per-entry loading split is a future move.
     source: https://code.claude.com/docs/en/memory#auto-memory
     format: freeform
     scope: global
@@ -288,6 +291,7 @@ file_types:
     # Per-subagent persistent memory. Scope chosen via `memory:` frontmatter field
     # on the agent definition (user|project|local) — mutually exclusive per subagent.
     # MEMORY.md (first 200 lines / 25KB) injected into subagent system prompt at startup.
+    # Same MEMORY.md-vs-sibling loading-granularity caveat as `memory` above.
     source: https://code.claude.com/docs/en/sub-agents#enable-persistent-memory
     format: freeform
     scope: task_scoped
