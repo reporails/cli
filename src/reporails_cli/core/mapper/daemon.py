@@ -54,19 +54,24 @@ def _lock_path() -> Path:
 
 
 def is_daemon_running() -> bool:
-    """Check if the global daemon process is alive."""
+    """Return True only when the recorded PID is alive AND the socket file exists."""
     pid_file = _pid_path()
+    sock_file = _socket_path()
     if not pid_file.exists():
         return False
     try:
         pid = int(pid_file.read_text().strip())
         os.kill(pid, 0)  # signal 0 = existence check
-        return True
     except (ValueError, ProcessLookupError, PermissionError, OSError):
-        # Stale PID file — clean up
         pid_file.unlink(missing_ok=True)
-        _socket_path().unlink(missing_ok=True)
+        sock_file.unlink(missing_ok=True)
         return False
+    if not sock_file.exists():
+        # PID alive but accept loop has shut down (or never bound).
+        # Reap so the next start_daemon forks a fresh one.
+        pid_file.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def stop_daemon() -> bool:
@@ -109,18 +114,22 @@ def _become_daemon() -> None:
     try:
         os.setsid()
 
-        # Close inherited FDs above stderr before redirecting.
-        # Without this, the daemon child holds references to the parent's
-        # pipes (e.g., npx's stdio: "inherit"), preventing EOF and causing
-        # the parent to hang indefinitely waiting for pipe closure.
+        # Close inherited PIPE FDs above stderr (e.g. npx stdio: "inherit")
+        # so the parent doesn't hang waiting for pipe closure. Limited to
+        # pipes so pre-fork-imported C-extension FDs survive.
         import resource
+        import stat as _stat
 
         max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
         import contextlib
 
         for fd in range(3, min(max_fd, 1024)):
-            with contextlib.suppress(OSError):
-                os.close(fd)
+            try:
+                if _stat.S_ISFIFO(os.fstat(fd).st_mode):
+                    with contextlib.suppress(OSError):
+                        os.close(fd)
+            except OSError:
+                continue
 
         # Redirect std streams to /dev/null
         devnull = os.open(os.devnull, os.O_RDWR)
@@ -259,6 +268,10 @@ def _daemon_main() -> None:
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
+    # SIGPIPE on a half-closed client connection must not kill the daemon —
+    # Python's socket layer raises BrokenPipeError, caught by the per-request
+    # `except Exception` in the accept loop. Default SIGPIPE handler terminates.
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
     sock_path = _socket_path()
     sock_path.unlink(missing_ok=True)
