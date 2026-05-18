@@ -1,8 +1,8 @@
 ---
 title: "Getting Started"
 description: "Install, first run, what the output means"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.10"
+last_updated: 2026-05-18
 ---
 
 # Getting Started
@@ -104,6 +104,22 @@ ails check --agent claude   # only run rules scoped to one agent
 ```
 
 The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats` and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
+
+## Focus on one file or capability
+
+When the whole-repo view is too noisy, name the capability and (optionally) the target:
+
+```bash
+ails check skill backlog    # focus on .claude/skills/backlog/SKILL.md
+ails check rule git         # focus on .claude/rules/git.md
+ails check agent rule-writer
+                            # subagent + any skills its frontmatter preloads
+ails check skill            # listing mode — table of all skills with scores
+```
+
+The full pipeline still runs (so cross-file rules see the whole project), but only the focused file or capability appears in the output, with findings grouped by rule and a `Next:` action pointer. Listing mode (`ails check <capability>` with no name) prints a per-target score table for that capability under the detected agent. Capability names come from the agent's declared `file_types:` — both singular and plural are accepted.
+
+The whole-repo summary also shows a `Top rules (by finding count)` block — a fast triage view of which rule classes contribute the most findings across your project.
 
 ## Next steps
 
