@@ -480,14 +480,25 @@ def _render_findings_and_scorecard(
     tier: str,
     elapsed_ms: float,
 ) -> None:
-    """Render file groups, cross-file coordinates, and the bottom scorecard."""
-    from reporails_cli.formatters.text.scorecard import compute_surface_scores
+    """Render file groups, cross-file coordinates, and the bottom scorecard.
+
+    Scorecard health-bars: multi-surface runs show per-surface; a
+    single-surface run with multiple files shows per-item bars (so
+    `ails check skills` lists each skill with its own score);
+    single-file runs show neither — the top `Score:` covers it.
+    """
+    from reporails_cli.formatters.text.scorecard import compute_item_scores, compute_surface_scores
 
     sev_icons = get_sev_icons(ascii_mode)
     hints_idx = _build_hints_by_file(result.hints, Path.cwd())
     aliases_idx = _build_aliases_by_file(Path.cwd(), result)
     _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx, aliases_idx)
     _render_cross_file_coordinates(result, sev_icons)
+
+    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd())
+    item_health = None
+    if len(surfaces) == 1 and surfaces[0].file_count > 1:
+        item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd())
 
     print_scorecard(
         result,
@@ -497,7 +508,8 @@ def _render_findings_and_scorecard(
         elapsed_ms=elapsed_ms,
         agent=_detect_agent_name(ruleset_map),
         scope=scope,
-        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd()),
+        surface_health=surfaces,
+        item_health=item_health,
     )
 
 
