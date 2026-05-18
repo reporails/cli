@@ -6,6 +6,7 @@ All functions here are internal to the agent subsystem.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from pathlib import Path
@@ -80,6 +81,9 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
     subtrees during traversal instead of filtering afterwards.
     Uses os.scandir for efficient directory traversal.
 
+    Follows symlinked directories; canonical inode paths in `visited_real`
+    break cycles so each physical directory is entered at most once.
+
     Match is case-SENSITIVE per agent implementations. The OpenAI Codex
     source (`codex-rs/core/src/agents_md.rs`) declares:
 
@@ -97,6 +101,9 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
     skip = exclude_dirs | _ALWAYS_SKIP
     results: list[Path] = []
     stack = [str(root)]
+    visited_real: set[str] = set()
+    with contextlib.suppress(OSError):
+        visited_real.add(os.path.realpath(root))
     while stack:
         current = stack.pop()
         try:
@@ -105,19 +112,48 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
             continue
         with scanner:
             for entry in scanner:
-                name = entry.name
-                if name == filename:
-                    try:
-                        is_match = entry.is_file(follow_symlinks=True)
-                    except OSError:
-                        # Broken/circular symlink — include it so downstream
-                        # code can report the error properly
-                        is_match = entry.is_symlink()
-                    if is_match:
+                if entry.name == filename:
+                    if _walk_entry_is_file(entry):
                         results.append(Path(entry.path))
-                elif entry.is_dir(follow_symlinks=False) and name not in skip:
+                elif _walk_should_descend(entry, skip, visited_real):
                     stack.append(entry.path)
     return results
+
+
+def _walk_entry_is_file(entry: os.DirEntry[str]) -> bool:
+    """Whether a scandir entry resolves to a regular file (follows symlinks).
+
+    Broken/circular symlinks raise `OSError`; surface them anyway so
+    downstream code can report the error properly.
+    """
+    try:
+        return entry.is_file(follow_symlinks=True)
+    except OSError:
+        return entry.is_symlink()
+
+
+def _walk_should_descend(entry: os.DirEntry[str], skip: frozenset[str], visited_real: set[str]) -> bool:
+    """Whether a scandir entry is a directory worth descending into.
+
+    Follows directory symlinks (so hub-adopted skills/rules surface) and
+    tracks canonical inode paths in `visited_real` to break cycles —
+    each physical directory is entered at most once across the walk.
+    """
+    if entry.name in skip:
+        return False
+    try:
+        if not entry.is_dir(follow_symlinks=True):
+            return False
+    except OSError:
+        return False
+    try:
+        real = os.path.realpath(entry.path)
+    except OSError:
+        return False
+    if real in visited_real:
+        return False
+    visited_real.add(real)
+    return True
 
 
 def walk_ancestors(start: Path, filename: str, stop: Path) -> list[Path]:

@@ -6,7 +6,7 @@ category: structure
 type: mechanical
 severity: medium
 backed_by: []
-match: {format: freeform}
+match: {format: [freeform, frontmatter]}
 ---
 
 # Markdown Link Targets Resolve
