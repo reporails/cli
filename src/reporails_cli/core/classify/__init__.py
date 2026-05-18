@@ -563,14 +563,31 @@ def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | N
     Used by classify_files so downstream location-mode checks can inspect
     the specific matched pattern (loose leaf vs path-prefixed) for its
     location-disambiguation decision.
+
+    Trailing-slash patterns (`.claude/agent-memory/*/`) name a directory
+    glob whose contents are the file_type's instances; they expand to
+    `<dir>**/*.md` for match purposes so memory entry files inside the
+    directory tag with the capability's file_type.
     """
     p = PurePosixPath(rel_path)
     for pattern in patterns:
         clean = pattern.removeprefix("./")
-        for variant in _expand_doublestar(clean):
+        for variant in _expand_doublestar_with_trailing(clean):
             if p.match(variant):
                 return pattern
     return None
+
+
+def _expand_doublestar_with_trailing(pattern: str) -> list[str]:
+    """Run `_expand_doublestar` after expanding trailing-slash directory globs.
+
+    `.claude/agent-memory/*/` becomes `.claude/agent-memory/*/**/*.md` (and
+    its doublestar variants) so files inside the matched directory tag
+    with the file_type whose patterns include that directory glob.
+    """
+    if pattern.endswith("/"):
+        pattern = pattern + "**/*.md"
+    return _expand_doublestar(pattern)
 
 
 def _expand_doublestar(pattern: str) -> list[str]:
