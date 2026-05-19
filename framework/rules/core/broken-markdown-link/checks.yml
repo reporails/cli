@@ -1,0 +1,14 @@
+checks:
+- id: CORE.S.0056.file-in-scope
+  type: mechanical
+  check: file_exists
+  args:
+    path: "**/*.md"
+- id: CORE.S.0056.extract-links
+  type: mechanical
+  check: extract_markdown_links
+  args:
+    path: "**/*.md"
+- id: CORE.S.0056.targets-exist
+  type: mechanical
+  check: check_markdown_link_targets_exist

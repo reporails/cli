@@ -395,12 +395,15 @@ def run_validation(
     return _scan_all_targets(scan_targets, scan_root, universal, by_pattern, exclude_dirs)
 
 
-def _load_check_expectations(yml_paths: list[Path]) -> tuple[dict[str, str], dict[str, str]]:
-    """Load expect and message values from check definitions."""
+def _load_check_expectations(
+    yml_paths: list[Path],
+) -> tuple[dict[str, str], dict[str, str], dict[str, int]]:
+    """Load expect, message, and min_lines values from check definitions."""
     import yaml
 
     expect_map: dict[str, str] = {}
     message_map: dict[str, str] = {}
+    min_lines_map: dict[str, int] = {}
     for yml_path in yml_paths:
         if not yml_path.exists():
             continue
@@ -414,9 +417,12 @@ def _load_check_expectations(yml_paths: list[Path]) -> tuple[dict[str, str], dic
                 cid = check_def.get("id", "")
                 expect_map[cid] = check_def.get("expect", "present")
                 message_map[cid] = check_def.get("message", "")
+                ml = check_def.get("min_lines")
+                if isinstance(ml, (int, float)) and ml > 0:
+                    min_lines_map[cid] = int(ml)
         except Exception:  # yaml.YAMLError or OSError; skip unreadable files
             continue
-    return expect_map, message_map
+    return expect_map, message_map, min_lines_map
 
 
 def _collect_sarif_matches(
@@ -463,9 +469,18 @@ def _emit_expect_findings(
     matched_pairs: set[tuple[str, str]],
     match_details: dict[tuple[str, str], tuple[int, str]],
     scanned_files: list[str],
+    min_lines_map: dict[str, int] | None = None,
+    scan_root: Path | None = None,
 ) -> list[LocalFinding]:
-    """Convert expect/match results to LocalFinding list."""
+    """Convert expect/match results to LocalFinding list.
+
+    When a check declares `min_lines`, files below that line count are
+    skipped — neither marked as failing nor as passing. Used by rules
+    like `CORE:S:0013 scope-fields-in-frontmatter` where the scope
+    declaration is boilerplate for tiny files.
+    """
     findings: list[LocalFinding] = []
+    min_lines_map = min_lines_map or {}
     for check_id, expect in expect_map.items():
         parts = check_id.split(".")
         rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}" if len(parts) >= 3 else check_id
@@ -475,6 +490,7 @@ def _emit_expect_findings(
             else ""
         )
         msg = message_map.get(check_id, "")
+        min_lines = min_lines_map.get(check_id, 0)
         if expect == "absent":
             for file_path in scanned_files:
                 if (check_id, file_path) in matched_pairs:
@@ -503,8 +519,24 @@ def _emit_expect_findings(
                 )
                 for file_path in scanned_files
                 if (check_id, file_path) not in matched_pairs
+                and not _file_below_min_lines(file_path, min_lines, scan_root)
             )
     return findings
+
+
+def _file_below_min_lines(rel_path: str, min_lines: int, scan_root: Path | None) -> bool:
+    """Return True when `rel_path` exists under `scan_root` with fewer than `min_lines` lines.
+
+    Files we cannot read are treated as not-below (the deterministic check
+    still fires, matching pre-`min_lines` behaviour).
+    """
+    if min_lines <= 0 or scan_root is None:
+        return False
+    full = scan_root / rel_path
+    try:
+        return len(full.read_text(encoding="utf-8", errors="replace").splitlines()) < min_lines
+    except OSError:
+        return False
 
 
 def run_checks(
@@ -513,9 +545,18 @@ def run_checks(
     instruction_files: list[Path] | None = None,
     exclude_dirs: list[str] | None = None,
     body_only_paths: set[Path] | None = None,
+    min_lines_overrides: dict[str, int] | None = None,
 ) -> list[LocalFinding]:
-    """Execute regex validation and return LocalFinding list."""
-    expect_map, message_map = _load_check_expectations(yml_paths)
+    """Execute regex validation and return LocalFinding list.
+
+    `min_lines_overrides` maps full rule IDs (e.g. `CORE:S:0013`) to
+    integer minimum line counts; values override defaults declared in the
+    rule's `checks.yml`. Populated by callers from `.ails/config.yml`
+    `rule_thresholds`.
+    """
+    expect_map, message_map, min_lines_map = _load_check_expectations(yml_paths)
+    if min_lines_overrides:
+        min_lines_map = _apply_min_lines_overrides(min_lines_map, expect_map, min_lines_overrides)
     sarif = run_validation(
         yml_paths,
         target,
@@ -525,7 +566,39 @@ def run_checks(
     )
     matched_pairs, match_details = _collect_sarif_matches(sarif)
     scanned_files = _resolve_scanned_files(target, instruction_files, exclude_dirs)
-    return _emit_expect_findings(expect_map, message_map, matched_pairs, match_details, scanned_files)
+    scan_root = target if target.is_dir() else target.parent
+    return _emit_expect_findings(
+        expect_map,
+        message_map,
+        matched_pairs,
+        match_details,
+        scanned_files,
+        min_lines_map=min_lines_map,
+        scan_root=scan_root,
+    )
+
+
+def _apply_min_lines_overrides(
+    min_lines_map: dict[str, int],
+    expect_map: dict[str, str],
+    overrides: dict[str, int],
+) -> dict[str, int]:
+    """Merge `rule_thresholds[rule_id].min_lines` over per-check defaults.
+
+    The override key is the rule id (e.g. `CORE:S:0013`); the check
+    id (e.g. `CORE.S.0013.pattern_check`) extends it. Walk `expect_map`
+    to find which check ids belong to a rule id and overwrite their
+    min_lines entry.
+    """
+    out = dict(min_lines_map)
+    for check_id in expect_map:
+        parts = check_id.split(".")
+        if len(parts) < 3:
+            continue
+        rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}"
+        if rule_id in overrides:
+            out[check_id] = int(overrides[rule_id])
+    return out
 
 
 def checks_per_file(

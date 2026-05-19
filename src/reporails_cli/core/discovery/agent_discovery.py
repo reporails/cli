@@ -6,6 +6,7 @@ All functions here are internal to the agent subsystem.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from pathlib import Path
@@ -43,12 +44,12 @@ def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str
     Uses file_type properties from config.yml:
     - format: schema_validated -> config
     - scope: path_scoped -> rule (scoped rule files)
-    - directory-only or system paths -> skip
+    - absolute system paths only -> skip
+    - directory-only patterns -> instruction (memory / subagent_memory:
+      `glob_file_type_patterns` enumerates `*.md` files inside the matched
+      directories so `match: {type: memory}` rules can target them)
     - everything else -> instruction
     """
-    # Skip directory-only patterns (e.g., ".claude/memory/")
-    if all(p.endswith("/") for p in patterns):
-        return "skip"
     # Skip absolute system paths (managed configs)
     if all(p.startswith(("/", "C:")) for p in patterns):
         return "skip"
@@ -58,7 +59,7 @@ def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str
     # Path-scoped markdown -> rule files bucket
     if properties.get("scope") == "path_scoped":
         return "rule"
-    # Everything else (main, skill, override) -> instruction bucket
+    # Everything else (main, skill, override, memory/subagent_memory) -> instruction
     return "instruction"
 
 
@@ -80,6 +81,9 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
     subtrees during traversal instead of filtering afterwards.
     Uses os.scandir for efficient directory traversal.
 
+    Follows symlinked directories; canonical inode paths in `visited_real`
+    break cycles so each physical directory is entered at most once.
+
     Match is case-SENSITIVE per agent implementations. The OpenAI Codex
     source (`codex-rs/core/src/agents_md.rs`) declares:
 
@@ -97,6 +101,9 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
     skip = exclude_dirs | _ALWAYS_SKIP
     results: list[Path] = []
     stack = [str(root)]
+    visited_real: set[str] = set()
+    with contextlib.suppress(OSError):
+        visited_real.add(os.path.realpath(root))
     while stack:
         current = stack.pop()
         try:
@@ -105,19 +112,48 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
             continue
         with scanner:
             for entry in scanner:
-                name = entry.name
-                if name == filename:
-                    try:
-                        is_match = entry.is_file(follow_symlinks=True)
-                    except OSError:
-                        # Broken/circular symlink — include it so downstream
-                        # code can report the error properly
-                        is_match = entry.is_symlink()
-                    if is_match:
+                if entry.name == filename:
+                    if _walk_entry_is_file(entry):
                         results.append(Path(entry.path))
-                elif entry.is_dir(follow_symlinks=False) and name not in skip:
+                elif _walk_should_descend(entry, skip, visited_real):
                     stack.append(entry.path)
     return results
+
+
+def _walk_entry_is_file(entry: os.DirEntry[str]) -> bool:
+    """Whether a scandir entry resolves to a regular file (follows symlinks).
+
+    Broken/circular symlinks raise `OSError`; surface them anyway so
+    downstream code can report the error properly.
+    """
+    try:
+        return entry.is_file(follow_symlinks=True)
+    except OSError:
+        return entry.is_symlink()
+
+
+def _walk_should_descend(entry: os.DirEntry[str], skip: frozenset[str], visited_real: set[str]) -> bool:
+    """Whether a scandir entry is a directory worth descending into.
+
+    Follows directory symlinks (so hub-adopted skills/rules surface) and
+    tracks canonical inode paths in `visited_real` to break cycles —
+    each physical directory is entered at most once across the walk.
+    """
+    if entry.name in skip:
+        return False
+    try:
+        if not entry.is_dir(follow_symlinks=True):
+            return False
+    except OSError:
+        return False
+    try:
+        real = os.path.realpath(entry.path)
+    except OSError:
+        return False
+    if real in visited_real:
+        return False
+    visited_real.add(real)
+    return True
 
 
 def walk_ancestors(start: Path, filename: str, stop: Path) -> list[Path]:
@@ -242,6 +278,9 @@ def glob_file_type_patterns(
     found: list[Path] = []
     for pattern in patterns:
         if pattern.endswith("/"):
+            # Directory glob (`.claude/agent-memory/*/`, `~/.claude/projects/*/memory/`)
+            # -> enumerate `*.md` files inside the matched directories.
+            _glob_directory_entries(pattern, target, found, exclude_dirs)
             continue
         if _is_external_pattern(pattern):
             _glob_external(pattern, target, found)
@@ -281,6 +320,57 @@ def _glob_external(pattern: str, target: Path, found: list[Path]) -> None:
         found.extend(Path(p) for p in _glob.glob(expanded_str) if Path(p).is_file())
     elif expanded.is_file():
         found.append(expanded)
+
+
+def _glob_directory_entries(
+    pattern: str,
+    target: Path,
+    found: list[Path],
+    exclude_dirs: frozenset[str],
+) -> None:
+    """Enumerate `*.md` files inside directories matching a trailing-slash pattern.
+
+    Trailing-slash patterns in agent configs (e.g. `.claude/agent-memory/*/`,
+    `~/.claude/projects/*/memory/`) describe a directory glob; the files
+    inside those directories are the file_type's instances. This helper
+    resolves the directory glob then walks `*.md` files inside each match.
+
+    Used by `memory` and `subagent_memory` capabilities — the only file_types
+    declared with directory-only patterns. Older releases bucketed these as
+    `"skip"`, which left the files unclassified and the `link_walker` then
+    mis-tagged them `generic`.
+    """
+    dir_pattern = pattern.rstrip("/")
+    if _is_external_pattern(dir_pattern):
+        expanded_str = str(Path(dir_pattern).expanduser())
+        if "/projects/*/" in expanded_str:
+            project_key = str(target.resolve()).replace("/", "-")
+            expanded_str = expanded_str.replace("/projects/*/", f"/projects/{project_key}/")
+        import glob as _glob
+
+        for d in _glob.glob(expanded_str):
+            base = Path(d)
+            if base.is_dir():
+                found.extend(p for p in base.rglob("*.md") if p.is_file())
+        return
+
+    # In-tree pattern: resolve glob relative to target, enumerate .md inside each dir
+    for base in _resolve_in_tree_dirs(dir_pattern, target, exclude_dirs):
+        found.extend(
+            entry for entry in base.rglob("*.md") if entry.is_file() and not is_excluded(entry, target, exclude_dirs)
+        )
+
+
+def _resolve_in_tree_dirs(
+    dir_pattern: str,
+    target: Path,
+    exclude_dirs: frozenset[str],
+) -> list[Path]:
+    """Resolve an in-tree directory glob (no trailing slash) to existing directories."""
+    import glob as _glob
+
+    candidates = [Path(p) for p in _glob.glob(str(target / dir_pattern))]
+    return [p for p in candidates if p.is_dir() and not is_excluded(p, target, exclude_dirs)]
 
 
 def load_config_file_types(

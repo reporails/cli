@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 # Pre-commit hook: require UNRELEASED.md when staging src/ or tests/ changes.
+# Skipped during rebase or amend operations — those rewrite existing history
+# rather than introducing new user-facing changes, so a new UNRELEASED entry
+# is not warranted (any user-facing entry was added by the original commit
+# being rewritten).
+
+# Skip during interactive or non-interactive rebase
+if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+    exit 0
+fi
+
+# Skip during amend (reflog action set by git when amending)
+case "$GIT_REFLOG_ACTION" in
+    *amend*) exit 0 ;;
+esac
 
 staged=$(git diff --cached --name-only)
 

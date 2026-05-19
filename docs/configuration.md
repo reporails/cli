@@ -1,8 +1,8 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.5.7"
-last_updated: 2026-05-06
+version: "0.5.10"
+last_updated: 2026-05-18
 ---
 
 # Configuration
@@ -153,6 +153,33 @@ When `ails config set …` writes `.ails/config.yml`, it also writes `.ails/.git
 .gitignore
 config.local.yml
 ```
+
+## Per-rule thresholds
+
+Some rules ship with a built-in `min_lines` gate so small files do not get flagged for issues that only matter at scale. For example, `CORE:S:0013 scope-fields-in-frontmatter` ships with `min_lines: 30` — a 5-line rule file won't fail it. You can raise or lower the threshold per project under `overrides.rule_thresholds`:
+
+```yaml
+# .ails/config.yml
+overrides:
+  rule_thresholds:
+    CORE:S:0013:
+      min_lines: 50          # require 50+ lines before this rule fires
+    CORE:C:0034:
+      min_lines: 0           # always fire, even on tiny files
+```
+
+Any deterministic check that declares a `min_lines:` entry in its `checks.yml` can be tuned this way — see `ails explain <rule_id>` for which rules expose the gate.
+
+## Generic-class scanning (opt-in)
+
+By default, `ails check` only validates files that match one of the agent's declared instruction-file patterns. Set `generic_scanning: true` to extend coverage to any reachable Markdown file:
+
+```yaml
+# .ails/config.yml
+generic_scanning: true
+```
+
+When on, the discovery walker follows inline and reference Markdown links out of classified files (bounded depth, cycle-safe, tree-bound), and any reached `.md` file inside your repo gets a `generic` classification. Structural and formatting rules (charge ordering, direction imbalance, formatting hygiene) still fire on these files; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
 
 ## Severity overrides
 

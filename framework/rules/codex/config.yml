@@ -230,6 +230,33 @@ file_types:
         vcs: external
         maintainer: human
 
+  memory:
+    # Codex memory (`~/.codex/memories/`) is generated state, not a
+    # user-authored markdown surface. Per the official docs: "Codex stores
+    # memories under your Codex home directory" and "treats these files as
+    # generated state" — they're populated in the background and shaped by
+    # the model, not by the user.
+    #
+    # Control plane (not directly inspectable on disk):
+    #   - `/memories` slash command in the TUI/app — per-thread enable for
+    #     reading existing memories and feeding new ones.
+    #   - `config.toml` keys: `memories.generate_memories`,
+    #     `memories.use_memories`, `memories.disable_on_external_context`,
+    #     `memories.min_rate_limit_remaining_percent`, `memories.extract_model`,
+    #     `memories.consolidation_model`.
+    #
+    # Declared as a tombstone — no `scopes:` block, no patterns to glob.
+    # This keeps the surface visible in the agent registry (so audits know
+    # it exists) while inviting no instruction-quality rule pressure.
+    # `maintainer: agent` and `lifecycle: mutable` mark it as agent-owned
+    # cache, not human-authored content.
+    source: https://developers.openai.com/codex/memories
+    format: opaque
+    scope: global
+    cardinality: collection
+    lifecycle: mutable
+    loading: session_start
+
   enterprise:
     # Admin-enforced requirements.toml. Constrains approval policy, sandbox,
     # MCP allowlists, hooks, command rules, filesystem permissions.
@@ -251,4 +278,5 @@ file_types:
 excludes:
   - CLAUDE:*
   - COPILOT:*
+  - CORE:S:0024  # import-targets-resolve — Codex AGENTS.md does not honor @<path> import syntax (single-file format per developers.openai.com/codex/guides/agents-md)
   - CORE:S:0033  # import-depth-within-limit — Codex AGENTS.md does not support chained @import

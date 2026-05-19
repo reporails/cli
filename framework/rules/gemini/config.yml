@@ -19,7 +19,7 @@ file_types:
     # All discovered files concatenated. Subdirectory GEMINI.md is "Just-In-Time"
     # loaded on-demand (`nested_context`). User-scope file at ~/.gemini/GEMINI.md
     # also doubles as the memory surface (agent appends to ## Gemini Added Memories).
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md
+    source: https://geminicli.com/docs/cli/gemini-md/
     required: true
     format: freeform
     scope: global
@@ -43,7 +43,7 @@ file_types:
     # Subdirectory GEMINI.md files — Just-In-Time loaded when Gemini accesses
     # files in those directories. scope: nested captures the location-based
     # subtree applicability without overloading other scope values.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md
+    source: https://geminicli.com/docs/cli/gemini-md/
     format: freeform
     scope: nested
     cardinality: hierarchical
@@ -58,7 +58,7 @@ file_types:
 
   cross_read:
     # Cross-agent files (AGENTS.md, CONTEXT.md) when context.fileName is configured.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+    source: https://geminicli.com/docs/reference/configuration/
     format: freeform
     scope: global
     cardinality: chain
@@ -73,7 +73,7 @@ file_types:
 
   skills:
     # `.agents/skills/` is the cross-agent alias supported by Gemini.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md
+    source: https://geminicli.com/docs/cli/skills/
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -94,7 +94,7 @@ file_types:
   agents:
     # Subagents — built-ins: codebase_investigator, cli_help, generalist_agent,
     # browser_agent (experimental). Custom agents invoked via @name syntax.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md
+    source: https://geminicli.com/docs/core/subagents/
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: collection
@@ -114,7 +114,7 @@ file_types:
 
   commands:
     # TOML format with prompt + description, supports {{args}}, !{shell}, @{file}
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/custom-commands.md
+    source: https://geminicli.com/docs/cli/custom-commands/
     format: schema_validated
     scope: task_scoped
     cardinality: collection
@@ -134,7 +134,7 @@ file_types:
 
   hooks:
     # 11 events configured under hooks key in settings.json.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/index.md
+    source: https://geminicli.com/docs/hooks/
     format: schema_validated
     scope: global
     cardinality: collection
@@ -154,7 +154,7 @@ file_types:
 
   config:
     # Gemini supports both JSON and TOML settings files.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+    source: https://geminicli.com/docs/reference/configuration/
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -189,7 +189,7 @@ file_types:
 
   mcp:
     # MCP servers under mcpServers key in settings.json/settings.toml.
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+    source: https://geminicli.com/docs/reference/configuration/
     format: schema_validated
     scope: global
     cardinality: collection
@@ -209,7 +209,7 @@ file_types:
 
   extensions:
     # Plugin system: bundles MCP servers, commands, skills, hooks, themes
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/writing-extensions.md
+    source: https://geminicli.com/docs/extensions/writing-extensions/
     format: schema_validated
     scope: global
     cardinality: collection
@@ -223,7 +223,7 @@ file_types:
         maintainer: human
 
   geminiignore:
-    source: https://github.com/google-gemini/gemini-cli
+    source: https://geminicli.com/docs/cli/gemini-ignore/
     format: freeform
     scope: global
     cardinality: singleton
@@ -238,7 +238,7 @@ file_types:
 
   system_prompt:
     # Replace default system prompt entirely
-    source: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/system-prompt.md
+    source: https://geminicli.com/docs/cli/system-prompt/
     format: freeform
     scope: global
     cardinality: singleton
@@ -250,6 +250,41 @@ file_types:
         precedence: project
         vcs: committed
         maintainer: human
+
+  memory:
+    # Gemini's memory model is a four-tier hierarchy (see snippets.ts
+    # `renderOperationalGuidelines` in google-gemini/gemini-cli):
+    #
+    #   1. Project Instructions  — ./GEMINI.md            (this config: `main`, scopes.project)
+    #   2. Subdir Instructions   — ./**/GEMINI.md         (this config: `nested_context`)
+    #   3. Private Project Memory — ~/.gemini/tmp/<hash>/memory/MEMORY.md
+    #                              + sibling *.md notes   (THIS block)
+    #   4. Global Personal Memory — ~/.gemini/GEMINI.md   (this config: `main`, scopes.user)
+    #
+    # Only tier 3 — the private project memory directory — lives under
+    # `memory`. The other tiers are GEMINI.md context files modeled by
+    # `main` and `nested_context`. The legacy "Gemini Added Memories"
+    # section model inside ~/.gemini/GEMINI.md has been retired upstream
+    # (0 hits in the gemini-cli source for that string) and is no longer
+    # the memory write target.
+    #
+    # The directory glob mirrors Claude's shape — MEMORY.md is the index
+    # and sibling *.md files are entries. `memory_locator` enumerates them
+    # via the standard directory-glob dispatch.
+    # See also https://geminicli.com/docs/reference/memport/ for the @-import
+    # syntax used to compose GEMINI.md files.
+    source: https://geminicli.com/docs/cli/tutorials/memory-management/
+    format: freeform
+    scope: global
+    cardinality: collection
+    lifecycle: mutable
+    loading: session_start
+    scopes:
+      user_project:
+        patterns: ["~/.gemini/tmp/*/memory/"]
+        precedence: user
+        vcs: external
+        maintainer: hybrid
 
 excludes:
   - CLAUDE:*

@@ -6,4 +6,11 @@ checks:
   type: deterministic
   pattern-regex: '(?i)\b(scope|globs|applies.?to)\s*:'
   expect: present
+  # Size gate: skip files below this many lines. Scope declarations are
+  # boilerplate for tiny rules; the noise reduction is the value here.
+  # Override per-project via `.ails/config.yml`:
+  #   rule_thresholds:
+  #     CORE:S:0013:
+  #       min_lines: <N>
+  min_lines: 30
   message: "Missing scope fields in frontmatter — declare scope, globs, or path targeting"

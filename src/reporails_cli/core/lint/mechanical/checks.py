@@ -29,18 +29,47 @@ class CheckResult:
 
 
 _glob_cache: dict[tuple[str, str], list[Path]] = {}
+_exclude_cache: dict[str, frozenset[str]] = {}
 
 
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
-    """Resolve a glob pattern relative to root (cached per session)."""
+    """Resolve a glob pattern relative to root, filtered by project exclude_dirs."""
     key = (pattern, str(root))
     cached = _glob_cache.get(key)
     if cached is not None:
         return cached
     resolved = str(root / pattern)
-    result = [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    matches = [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    excl = _load_project_excludes(root)
+    result = [p for p in matches if not _is_under_excluded_dir(p, root, excl)]
     _glob_cache[key] = result
     return result
+
+
+def _load_project_excludes(root: Path) -> frozenset[str]:
+    """Load exclude_dirs from project config, cached per root."""
+    cached = _exclude_cache.get(str(root))
+    if cached is not None:
+        return cached
+    try:
+        from reporails_cli.core.platform.config.config import get_project_config
+
+        excl = frozenset(get_project_config(root).exclude_dirs or ())
+    except (OSError, ValueError, AttributeError):
+        excl = frozenset()
+    _exclude_cache[str(root)] = excl
+    return excl
+
+
+def _is_under_excluded_dir(path: Path, root: Path, excl: frozenset[str]) -> bool:
+    """True when any ancestor dir name (relative to root) is in `excl`."""
+    if not excl:
+        return False
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return False
+    return any(part in excl for part in rel.parts[:-1])
 
 
 def _get_target_files(
@@ -249,11 +278,13 @@ def byte_size(
 from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
     aggregate_byte_size,
     check_import_targets_exist,
+    check_markdown_link_targets_exist,
     content_absent,
     count_at_least,
     count_at_most,
     directory_file_types,
     extract_imports,
+    extract_markdown_links,
     file_absent,
     filename_matches_pattern,
     frontmatter_extra_keys,
@@ -288,6 +319,8 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "count_at_most": count_at_most,
     "count_at_least": count_at_least,
     "check_import_targets_exist": check_import_targets_exist,
+    "extract_markdown_links": extract_markdown_links,
+    "check_markdown_link_targets_exist": check_markdown_link_targets_exist,
     "file_absent": file_absent,
     "filename_matches_pattern": filename_matches_pattern,
     "frontmatter_extra_keys": frontmatter_extra_keys,

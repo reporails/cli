@@ -480,7 +480,14 @@ def _render_findings_and_scorecard(
     tier: str,
     elapsed_ms: float,
 ) -> None:
-    """Render file groups, cross-file coordinates, and the bottom scorecard."""
+    """Render file groups, cross-file coordinates, and the bottom scorecard.
+
+    Scorecard health-bars: multi-surface runs show per-surface; a
+    single-surface run with multiple files shows per-item bars (so
+    `ails check skills` lists each skill with its own score);
+    single-file runs show neither — the top `Score:` covers it.
+    """
+    from reporails_cli.formatters.text.item_scorecard import compute_item_scores
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
     sev_icons = get_sev_icons(ascii_mode)
@@ -488,6 +495,11 @@ def _render_findings_and_scorecard(
     aliases_idx = _build_aliases_by_file(Path.cwd(), result)
     _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx, aliases_idx)
     _render_cross_file_coordinates(result, sev_icons)
+
+    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd())
+    item_health = None
+    if len(surfaces) == 1 and surfaces[0].file_count > 1:
+        item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd())
 
     print_scorecard(
         result,
@@ -497,7 +509,8 @@ def _render_findings_and_scorecard(
         elapsed_ms=elapsed_ms,
         agent=_detect_agent_name(ruleset_map),
         scope=scope,
-        surface_health=compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd()),
+        surface_health=surfaces,
+        item_health=item_health,
     )
 
 
@@ -517,3 +530,84 @@ def _render_funnel_cta(funnel_error: object) -> None:
     console.print(f"  {cta}")
     console.print(f"  [dim]Did you see an error? Let us know: [link={bug_url}][bold]{bug_label}[/bold][/link][/dim]")
     console.print()
+
+
+def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) -> Any:
+    """Return a CombinedResult containing only rows for `paths`.
+
+    Filters findings, cross-file pairs, per-file analysis, AND the
+    aggregate `quality.compliance_band` — without filtering the band,
+    the top score uses whole-project base while surface-health uses the
+    filtered base and the two scores disagree.
+    """
+    from dataclasses import replace as _replace
+
+    from reporails_cli.core.platform.runtime.merger import CombinedStats
+
+    rel_keys = {str(_relativize(p, project_root)) for p in paths}
+    findings = tuple(f for f in result.findings if f.file in rel_keys)
+    cross = tuple(cf for cf in result.cross_file if cf.file_1 in rel_keys or cf.file_2 in rel_keys)
+    per_file = tuple(fa for fa in result.per_file_analysis if fa.file in rel_keys)
+    sev = Counter(f.severity for f in findings)
+    stats = CombinedStats(
+        total_findings=len(findings),
+        errors=sev.get("error", 0),
+        warnings=sev.get("warning", 0),
+        infos=sev.get("info", 0),
+        cross_file_conflicts=sum(1 for c in cross if c.finding_type == "conflict"),
+        cross_file_repetitions=sum(1 for c in cross if c.finding_type == "repetition"),
+        m_probe_count=result.stats.m_probe_count,
+        client_check_count=result.stats.client_check_count,
+        server_diagnostic_count=result.stats.server_diagnostic_count,
+    )
+    quality = _filter_quality(result.quality, per_file)
+    return _replace(
+        result,
+        findings=findings,
+        cross_file=cross,
+        stats=stats,
+        per_file_analysis=per_file,
+        quality=quality,
+    )
+
+
+def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
+    """Rewrite the aggregate `compliance_band` from the filtered per-file bands."""
+    if quality is None:
+        return None
+    from dataclasses import replace as _replace
+
+    bands = [fa.compliance_band for fa in per_file if fa.compliance_band]
+    if not bands:
+        return None
+    majority = Counter(bands).most_common(1)[0][0]
+    return _replace(quality, compliance_band=majority)
+
+
+def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root: Path) -> Any:
+    """Return a RulesetMap restricted to `paths` (matching files + their atoms)."""
+    from dataclasses import replace as _replace
+
+    if ruleset_map is None or not paths:
+        return ruleset_map
+    keep = {str(_relativize(p, project_root)) for p in paths} | {str(p) for p in paths}
+    files = tuple(fr for fr in ruleset_map.files if str(fr.path) in keep)
+    atoms = tuple(a for a in ruleset_map.atoms if a.file_path in keep)
+    return _replace(ruleset_map, files=files, atoms=atoms)
+
+
+def _relativize(path: Path, project_root: Path) -> Path:
+    """Return `path` relative to `project_root` without resolving symlinks.
+
+    Symlinks may point outside the project (e.g. hub-symlinked skills);
+    resolving would push the path outside `project_root` and force the
+    fallback. Use textual prefix stripping instead.
+    """
+    try:
+        return path.relative_to(project_root)
+    except ValueError:
+        pass
+    try:
+        return Path(path).resolve().relative_to(project_root.resolve())
+    except ValueError:
+        return path

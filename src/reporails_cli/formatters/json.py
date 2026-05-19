@@ -279,4 +279,28 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
             {"name": s.name, "score": s.score, "file_count": s.file_count, "finding_count": s.finding_count}
             for s in surfaces
         ]
+    data["top_rules"] = _aggregate_top_rules(result.findings)
     return data
+
+
+def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]:
+    """Group findings by rule and return the top `limit` by count.
+
+    Each entry: `{"rule": "<id>", "count": <int>, "severity": "<worst>"}`.
+    Severity is the worst (error > warning > info) seen for that rule.
+    Used by both the JSON envelope and the text scorecard so the
+    aggregation has one source of truth.
+    """
+    severity_rank = {"error": 0, "warning": 1, "info": 2}
+    buckets: dict[str, dict[str, Any]] = {}
+    for f in findings:
+        rule = f.rule
+        bucket = buckets.setdefault(rule, {"count": 0, "severity": f.severity})
+        bucket["count"] += 1
+        if severity_rank.get(f.severity, 3) < severity_rank.get(bucket["severity"], 3):
+            bucket["severity"] = f.severity
+    ordered = sorted(
+        ({"rule": rule, "count": b["count"], "severity": b["severity"]} for rule, b in buckets.items()),
+        key=lambda r: (-r["count"], r["rule"]),
+    )
+    return ordered[:limit]
