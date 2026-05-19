@@ -304,42 +304,22 @@ def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
         console.print(f"  {left}{sep}{right}")
 
 
-def _item_cell(s: SurfaceHealth, label_w: int, breakdown_w: int, bar_width: int = 15) -> str:
-    """Format one item: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  (N: Xe/Yw/Zi)'.
-
-    `breakdown_w` is the visible-width budget for the trailing
-    severity breakdown so 2-column layouts align across rows even when
-    individual items have different counts.
-    """
+def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
+    """Format one item row: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  (N: Xe/Yw/Zi)'."""
     label = f"{s.name}:"
     filled = round(bar_width * s.score / 10)
     bar = "▓" * filled + "░" * (bar_width - filled)
     color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
-    raw_breakdown = _severity_breakdown_plain(s)
-    rendered_breakdown = _severity_breakdown_markup(s)
-    pad = " " * max(0, breakdown_w - len(raw_breakdown))
+    breakdown = _severity_breakdown_markup(s)
+    suffix = f"  {breakdown}" if breakdown else ""
     return (
         f"{label:<{label_w}} [{color}]{bar}[/{color}]  "
-        f"[{color} bold]{s.score:>4.1f}[/{color} bold]  {rendered_breakdown}{pad}"
+        f"[{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
     )
 
 
-def _severity_breakdown_plain(s: SurfaceHealth) -> str:
-    """Visible-width representation: '(N: Xe/Yw/Zi)' — skips zero severities."""
-    if s.finding_count == 0:
-        return ""
-    parts = []
-    if s.errors:
-        parts.append(f"{s.errors}e")
-    if s.warnings:
-        parts.append(f"{s.warnings}w")
-    if s.infos:
-        parts.append(f"{s.infos}i")
-    return f"({s.finding_count}: {'/'.join(parts)})" if parts else f"({s.finding_count})"
-
-
 def _severity_breakdown_markup(s: SurfaceHealth) -> str:
-    """Rich-markup version of the breakdown — same characters, severity colors."""
+    """Severity-colored breakdown `(N: Xe/Yw/Zi)`; zero severities are omitted."""
     if s.finding_count == 0:
         return ""
     parts = []
@@ -354,32 +334,13 @@ def _severity_breakdown_markup(s: SurfaceHealth) -> str:
 
 
 def _render_item_health(items: list[SurfaceHealth]) -> None:
-    """Render per-item health bars in 1- or 2-column layout (capability-listing mode).
-
-    Each cell carries `label + bar + score + (N: Xe/Yw/Zi)` so the operator
-    sees both severity (the bar / score) and effort (finding count + mix).
-    2-column layout collapses to 1-column when names + breakdown widths
-    exceed the terminal width.
-    """
+    """Render per-item health bars one per line (capability-listing mode)."""
     if not items:
         return
     label_w = max(len(s.name) for s in items) + 2  # name + ": "
-    breakdown_w = max(len(_severity_breakdown_plain(s)) for s in items)
-    bar_width = 15
-    cell_w = label_w + 1 + bar_width + 2 + 4 + 2 + breakdown_w
-    tw = get_term_width()
-    use_two_columns = (cell_w * 2 + 4) <= tw
-
     console.print()
-    if use_two_columns:
-        for i in range(0, len(items), 2):
-            left = _item_cell(items[i], label_w, breakdown_w, bar_width)
-            right = _item_cell(items[i + 1], label_w, breakdown_w, bar_width) if i + 1 < len(items) else ""
-            sep = "    " if right else ""
-            console.print(f"  {left}{sep}{right}")
-    else:
-        for s in items:
-            console.print(f"  {_item_cell(s, label_w, breakdown_w, bar_width)}")
+    for s in items:
+        console.print(f"  {_item_cell(s, label_w)}")
 
 
 # ── Category bars ─────────────────────────────────────────────────────
