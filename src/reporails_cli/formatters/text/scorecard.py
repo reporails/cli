@@ -281,10 +281,22 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     """
     label = f"{s.name} ({s.file_count}):"
-    filled = round(bar_width * s.score / 10)
-    bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
-    return f"{label:13s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+    bar = _score_bar(s.score, bar_width, color)
+    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+
+
+def _score_bar(score: float, bar_width: int, color: str) -> str:
+    """Render a score bar with colored fill + dim gray empty.
+
+    Splitting the markup at the fill boundary gives every bar a
+    consistent gray baseline so the colored fill is the only visual
+    variable that changes across rows.
+    """
+    filled = round(bar_width * score / 10)
+    fill = "\u2593" * filled
+    empty = "\u2591" * (bar_width - filled)
+    return f"[{color}]{fill}[/{color}][dim]{empty}[/dim]"
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
@@ -307,13 +319,12 @@ def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
 def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
     """Format one item row: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  (N: Xe/Yw/Zi)'."""
     label = f"{s.name}:"
-    filled = round(bar_width * s.score / 10)
-    bar = "▓" * filled + "░" * (bar_width - filled)
     color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
+    bar = _score_bar(s.score, bar_width, color)
     breakdown = _severity_breakdown_markup(s)
     suffix = f"  {breakdown}" if breakdown else ""
     return (
-        f"{label:<{label_w}} [{color}]{bar}[/{color}]  "
+        f"{label:<{label_w}} {bar}  "
         f"[{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
     )
 
@@ -389,15 +400,14 @@ def _render_score_bar(
     n_atoms: int,
     elapsed_ms: float,
 ) -> None:
-    """Render score line with progress bar."""
+    """Render score line with progress bar (colored fill + dim empty)."""
     tw = get_term_width()
     score = compute_score(result, has_quality, n_atoms)
     bar_width = min(30, tw - 40)
-    filled = round(bar_width * score / 10)
-    bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
+    bar = _score_bar(score, bar_width, color)
     elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
-    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  [dim]{bar}[/dim]{elapsed_s}")
+    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  {bar}{elapsed_s}")
 
 
 @dataclass
