@@ -132,3 +132,54 @@ def test_list_capability_targets_unknown_capability_returns_empty(tmp_path: Path
 @pytest.mark.subsys_classify
 def test_canonicalize_handles_empty_string() -> None:
     assert canonicalize_capability("", "claude") is None
+
+
+# ── Virtual capability: `referenced` ──────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_canonicalize_referenced_singular_and_plural() -> None:
+    """`referenced` and `references` both canonicalize to `referenced`, agent-agnostic."""
+    for keyword in ("referenced", "references"):
+        for agent in ("claude", "gemini", "codex"):
+            assert canonicalize_capability(keyword, agent) == "referenced"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_is_capability_keyword_recognizes_referenced() -> None:
+    """`referenced` and `references` are accepted as capability keywords by every agent."""
+    for keyword in ("referenced", "references"):
+        for agent in ("claude", "gemini"):
+            assert is_capability_keyword(keyword, agent) is True
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_list_referenced_enumerates_link_reached_files(tmp_path: Path) -> None:
+    """`ails check referenced` returns files reached only via `[text](path)` markdown links."""
+    # Project root with a CLAUDE.md linking to arch.md
+    (tmp_path / "CLAUDE.md").write_text("# Project\n\nSee [arch](arch.md) for design.\n", encoding="utf-8")
+    (tmp_path / "arch.md").write_text("# Arch\n", encoding="utf-8")
+    # Opt-in to generic scanning so the link-walker runs
+    (tmp_path / ".ails").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
+
+    targets = list_capability_targets("claude", "referenced", tmp_path)
+    names = {p.name for p in targets}
+    # arch.md was reached via markdown link → classified `referenced` → listed
+    assert "arch.md" in names
+    # CLAUDE.md is the source (file_type: main) — not referenced
+    assert "CLAUDE.md" not in names
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_list_referenced_empty_when_no_links(tmp_path: Path) -> None:
+    """No markdown links → no referenced targets, even with generic_scanning on."""
+    (tmp_path / "CLAUDE.md").write_text("# Project\n\nNo links here.\n", encoding="utf-8")
+    (tmp_path / ".ails").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
+
+    assert list_capability_targets("claude", "referenced", tmp_path) == []
