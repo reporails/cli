@@ -351,6 +351,120 @@ def check_import_targets_exist(
     return CheckResult(passed=True, message=f"All {len(import_paths)} import(s) resolve")
 
 
+# Markdown link extraction — mirrors `link_walker._INLINE_LINK_RE` /
+# `_REF_DEFINITION_RE` so the broken-target rule and the generic-class
+# classifier agree on what counts as a Markdown link.
+_INLINE_LINK_RE = re.compile(r"\[(?:[^\]]+)\]\(([^)]+)\)")
+_REF_DEFINITION_RE = re.compile(r"^\s*\[(?:[^\]]+)\]:\s*(\S+)", re.MULTILINE)
+# Code-span stripping — `[text](path)` inside backticks is documentation,
+# not a real link. Mirror this with `link_walker._strip_code_spans`.
+_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def _strip_code_spans(text: str) -> str:
+    """Remove fenced code blocks and inline code spans before link extraction."""
+    text = _CODE_FENCE_RE.sub("", text)
+    return _INLINE_CODE_RE.sub("", text)
+
+
+def _is_external_link(target: str) -> bool:
+    """Skip URLs (http://, mailto:, etc.) and pure anchor refs."""
+    if "://" in target or target.startswith("mailto:"):
+        return True
+    return target.startswith("#")
+
+
+def _strip_anchor(target: str) -> str:
+    if "#" in target:
+        target = target.split("#", 1)[0]
+    return target.strip()
+
+
+def extract_markdown_links(
+    root: Path,
+    args: dict[str, Any],
+    classified_files: list[ClassifiedFile],
+) -> CheckResult:
+    """Discover `[text](path)` + `[ref]: path` link targets in target files.
+
+    Annotates `discovered_markdown_links` as a list of `"<file-rel>::<target>"`
+    entries; the validate step splits on `::` to resolve each target against
+    the source file's parent directory.
+
+    Filters URLs (`://`, `mailto:`), bare anchor refs (`#frag`), and absolute
+    paths (`/foo`). Anchors trailing on otherwise-valid links are stripped.
+    Mirrors the regex constants in `core/classify/link_walker.py` so the
+    broken-target rule and the generic-class classifier disagree on no link.
+    """
+    annotations: list[str] = []
+    for match in _get_target_files(args, classified_files, root):
+        if not match.is_file():
+            continue
+        try:
+            text = match.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        text = _strip_code_spans(text)
+        rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else str(match)
+        targets: list[str] = []
+        targets.extend(m.group(1).strip() for m in _INLINE_LINK_RE.finditer(text))
+        targets.extend(m.group(1).strip() for m in _REF_DEFINITION_RE.finditer(text))
+        for raw in targets:
+            cleaned = _strip_anchor(raw)
+            if not cleaned or _is_external_link(cleaned):
+                continue
+            # Absolute paths (`/foo/bar.md`) are user-system paths, not
+            # project-relative; treat as out-of-scope.
+            if cleaned.startswith("/"):
+                continue
+            annotations.append(f"{rel}::{cleaned}")
+    if annotations:
+        return CheckResult(
+            passed=True,
+            message=f"Found {len(annotations)} markdown link(s)",
+            annotations={"discovered_markdown_links": annotations},
+        )
+    return CheckResult(passed=True, message="No markdown links found")
+
+
+def check_markdown_link_targets_exist(
+    root: Path,
+    args: dict[str, Any],
+    _classified_files: list[ClassifiedFile],
+) -> CheckResult:
+    """Verify each discovered markdown link resolves to an existing path.
+
+    Reads `discovered_markdown_links` from args (D-check annotations,
+    `"<file-rel>::<target>"` entries). Each target is resolved relative to
+    the source file's parent directory. Returns missing targets; passes
+    when all resolve.
+    """
+    entries: list[str] = []
+    for value in args.values():
+        if isinstance(value, list):
+            entries = value
+            break
+    if not entries:
+        return CheckResult(passed=True, message="No markdown links to check")
+    missing: list[str] = []
+    for raw in entries:
+        if "::" not in raw:
+            continue
+        src_rel, target = raw.split("::", 1)
+        src_path = root / src_rel
+        base_dir = src_path.parent if src_path.exists() else root
+        candidate = (base_dir / target).resolve()
+        if not candidate.exists():
+            missing.append(f"{src_rel} -> {target}")
+    if missing:
+        return CheckResult(
+            passed=False,
+            message=f"Broken markdown link(s): {'; '.join(missing[:5])}",
+        )
+    return CheckResult(passed=True, message=f"All {len(entries)} markdown link(s) resolve")
+
+
 def filename_matches_pattern(
     root: Path,
     args: dict[str, Any],

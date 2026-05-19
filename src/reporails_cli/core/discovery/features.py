@@ -111,10 +111,18 @@ def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None 
     if features.has_backbone:
         features.component_count = _count_components(backbone_path)
 
-    # Count instruction files (all agents, not just CLAUDE.md)
+    # Count instruction files (all agents, not just CLAUDE.md).
+    # Scope the count to files under `target` — user-level memories like
+    # `~/.claude/CLAUDE.md` get pulled in by claude's user-scope patterns,
+    # but they are not part of the project's instruction-file inventory and
+    # would inflate L-level capability gating (`has_multiple_instruction_files`
+    # drives the `multiple_files` / `external_references` capability flags
+    # in `policy/levels.py`).
     all_instruction_files = get_all_instruction_files(target, agents=agents)
-    features.instruction_file_count = len(all_instruction_files)
-    features.has_multiple_instruction_files = len(all_instruction_files) > 1
+    target_resolved = target.resolve()
+    project_instruction_files = [f for f in all_instruction_files if _is_under(f, target_resolved)]
+    features.instruction_file_count = len(project_instruction_files)
+    features.has_multiple_instruction_files = len(project_instruction_files) > 1
 
     if features.instruction_file_count > 0:
         features.has_instruction_file = True
@@ -134,18 +142,67 @@ def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None 
     if root_file is not None:
         _detect_content_features(root_file, features)
 
-    # L4 capabilities — path-scoped rules
+    # L3 capabilities — path-scoped rules
     features.has_path_scoped_rules = features.is_abstracted
 
-    # L6 capabilities — skills, MCP, memory
+    # L4 capabilities — skills
     features.has_skills_dir = _dir_has_content(target, [".claude/skills", ".cursor/skills", ".agents/skills"])
+
+    # L5 capabilities — sub-agents
+    features.has_subagents = _dir_has_content(target, [".claude/agents", ".cursor/agents", ".agents/agents"])
+
+    # L6 capabilities — governance (hooks, MCP, managed policies)
     features.has_mcp_config = (target / ".mcp.json").exists() or (target / ".claude" / "mcp.json").exists()
+    features.has_hooks = (
+        _dir_has_content(target, [".claude/hooks", ".githooks"])
+        or _has_hooks_setting(target / ".claude" / "settings.json")
+        or _has_hooks_setting(target / ".claude" / "settings.local.json")
+    )
+
+    # L7 capabilities — adaptive: project-level memory dir + user-scope auto-memory
     features.has_memory_dir = _dir_has_content(target, [".claude/memory", ".claude/projects"])
+    features.has_auto_memory = _detect_auto_memory(target)
 
     # Resolve symlinked instruction files (for regex engine extra targets)
     features.resolved_symlinks = resolve_symlinked_files(target, agents=agents)
 
     return features
+
+
+def _has_hooks_setting(settings_path: Path) -> bool:
+    """True when `settings.json` declares a `hooks` block."""
+    if not settings_path.exists():
+        return False
+    try:
+        import json
+
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and bool(data.get("hooks"))
+
+
+def _detect_auto_memory(target: Path) -> bool:
+    """True when the user-scope auto-memory dir for this project exists."""
+    try:
+        slug = "-" + str(target.resolve()).lstrip("/").replace("/", "-")
+    except OSError:
+        return False
+    auto_memory_root = Path.home() / ".claude" / "projects" / slug / "memory"
+    if not auto_memory_root.exists():
+        return False
+    try:
+        return any(auto_memory_root.iterdir())
+    except OSError:
+        return False
+
+
+def _is_under(path: Path, root_resolved: Path) -> bool:
+    """True when `path` resolves to a location under `root_resolved`."""
+    try:
+        return path.resolve().is_relative_to(root_resolved)
+    except (OSError, ValueError):
+        return False
 
 
 def _find_root_instruction(target: Path, instruction_files: list[Path]) -> Path | None:

@@ -43,6 +43,20 @@ title: Python Style
 Use `ruff` for formatting Python files.
 ~~~~
 
+## Threshold
+
+The check is gated by file size: rules below 30 lines do not fire. Tiny rules consumed in one narrow context get little benefit from explicit scope fields, and the noise drowns out genuine missing-scope cases on load-bearing rules.
+
+Override the threshold per project in `.ails/config.yml`:
+
+```yaml
+rule_thresholds:
+  CORE:S:0013:
+    min_lines: 50
+```
+
+Setting `min_lines: 0` removes the gate and restores fire-on-every-rule behavior.
+
 ## Limitations
 
 Checks for scope-related frontmatter fields (`scope`, `globs`, `applies_to`). Does not validate whether the declared scope is correct.

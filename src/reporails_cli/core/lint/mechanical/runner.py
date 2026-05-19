@@ -21,6 +21,7 @@ def dispatch_single_check(
     root: Path,
     classified_files: list[ClassifiedFile],
     location: str,
+    extra_args: dict[str, Any] | None = None,
 ) -> tuple[Violation | None, CheckResult | None]:
     """Dispatch a single mechanical check and return (violation, raw_result).
 
@@ -30,6 +31,10 @@ def dispatch_single_check(
         root: Project root directory.
         classified_files: Classified files for file targeting.
         location: Pre-resolved location string for violation reporting.
+        extra_args: Annotations accumulated from prior mechanical checks in
+            the same rule's chain (`discovered_imports`, `discovered_markdown_links`,
+            etc.). Merged into `args` below the check's own declared args, so a
+            check.yml `args:` entry always wins over an upstream annotation.
 
     Returns:
         Tuple of (Violation if check failed else None, raw CheckResult or None on error).
@@ -42,7 +47,10 @@ def dispatch_single_check(
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
 
-    args: dict[str, Any] = dict(check.args or {})
+    args: dict[str, Any] = {}
+    if extra_args:
+        args.update(extra_args)
+    args.update(check.args or {})
 
     # Inject rule match type so checks can scope to the rule's file targets.
     if rule.match is not None and rule.match.type and "_targets" not in args:
@@ -105,18 +113,27 @@ def run_mechanical_checks(
             matched = classified_files
 
         location = resolve_location(rule, matched, target)
+        # Annotations accumulated across mechanical checks in this rule's chain.
+        # `extract_imports` writes `discovered_imports` into its CheckResult;
+        # `check_import_targets_exist` later in the same rule reads it via
+        # the extra_args injection in `dispatch_single_check`.
+        accumulated_args: dict[str, Any] = {}
         for check in rule.checks:
             if check.type != "mechanical":
                 continue
-            violation, _result = dispatch_single_check(check, rule, target, matched, location)
+            violation, result = dispatch_single_check(
+                check, rule, target, matched, location, extra_args=accumulated_args
+            )
             if violation:
                 violations.append(violation)
+            if result is not None and result.annotations:
+                accumulated_args.update(result.annotations)
 
     return violations
 
 
 def _relativize(path: Path, root: Path | None) -> str:
-    """Return path relative to root, or just the name as fallback."""
+    """Return path relative to root, or its basename if outside root."""
     if root is not None:
         try:
             return path.relative_to(root).as_posix()
@@ -125,17 +142,55 @@ def _relativize(path: Path, root: Path | None) -> str:
     return path.name
 
 
+def _classified_display(cf: ClassifiedFile, root: Path | None) -> str:
+    """Render a classified file's path for display.
+
+    Project-scope files render relative to `root`. Files the classifier
+    marked `precedence: user` (per the matching pattern in
+    `framework/rules/<agent>/config.yml`) render with a `~/` prefix when
+    rooted under the user's home. Everything else falls back to basename.
+    """
+    if root is not None:
+        try:
+            return cf.path.relative_to(root).as_posix()
+        except ValueError:
+            pass
+    if cf.properties.get("precedence") == "user" and cf.path.is_absolute():
+        try:
+            return "~/" + cf.path.relative_to(Path.home()).as_posix()
+        except ValueError:
+            pass
+    return cf.path.name
+
+
 def _first_classified_path(
     classified_files: list[ClassifiedFile],
     root: Path | None,
     *type_names: str,
 ) -> str | None:
-    """Return first relative path from classified files matching any type name."""
+    """Return first relative path from classified files matching any type name.
+
+    Only return project-scope files (under `root`). User-scope and
+    managed-scope files are not viable attribution points for project-wide
+    findings — attributing `Total instruction size exceeds limit` to
+    `~/.claude/CLAUDE.md` is misleading when the project itself has no
+    project-scope main file.
+    """
     for type_name in type_names:
         for cf in classified_files:
-            if cf.file_type == type_name:
-                return _relativize(cf.path, root)
+            if cf.file_type != type_name:
+                continue
+            if root is None or _is_under_root(cf.path, root):
+                return _classified_display(cf, root)
     return None
+
+
+def _is_under_root(path: Path, root: Path) -> bool:
+    """True when `path` resolves to a location under `root`."""
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def resolve_location(
@@ -178,12 +233,19 @@ def _resolve_location_path(
         type_names = rule.match.type if isinstance(rule.match.type, list) else [rule.match.type]
         return _first_classified_path(classified_files, root, *type_names)
 
-    # Wildcard match (type is None) — prefer main file, then any file
+    # Wildcard match (type is None) — prefer main file, then any project-scope file
     path = _first_classified_path(classified_files, root, "main")
     if path:
         return path
 
-    if classified_files:
-        return _relativize(classified_files[0].path, root)
+    # Fallback: first project-scope file (under root). Skip user-scope and
+    # managed-scope so project-wide rules don't misattribute findings to
+    # `~/.claude/CLAUDE.md` when the project has no project-scope main.
+    if classified_files and root is not None:
+        for cf in classified_files:
+            if _is_under_root(cf.path, root):
+                return _classified_display(cf, root)
+    elif classified_files:
+        return _classified_display(classified_files[0], root)
 
     return None

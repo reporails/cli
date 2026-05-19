@@ -49,10 +49,16 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
     # L4 capabilities
     has_path_scoped_rules: bool = False  # rules with path scope frontmatter
 
-    # L6 capabilities
+    # L4 capabilities (Delegated)
     has_skills_dir: bool = False  # .claude/skills/ etc. with content
+    # L5 capabilities (Abstracted)
+    has_subagents: bool = False  # .claude/agents/ or sub-agent definitions
+    # L6 capabilities (Governed)
     has_mcp_config: bool = False  # .mcp.json or similar
+    has_hooks: bool = False  # .claude/hooks/, .githooks/, or settings.json hooks
+    # L7 capabilities (Adaptive)
     has_memory_dir: bool = False  # memory/state persistence directory
+    has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
 
     # Symlink resolution (for regex engine extra targets)
     resolved_symlinks: list[Path] = field(default_factory=list)
@@ -128,6 +134,15 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     # Per-surface include/exclude pattern adjustments. Keys are `<agent_id>.<file_type>`.
     # Each entry may have `include: [glob...]` and `exclude: [glob...]`.
     surfaces: dict[str, dict[str, object]] = field(default_factory=dict)
+    # Per-rule threshold overrides keyed by full rule id (e.g. `CORE:S:0013`).
+    # Each entry is a `{arg: value}` map applied over the rule's default check args.
+    # Generic mechanism; not tied to any single rule.
+    rule_thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
+    # When True, the classifier extends past pattern-classified files via Markdown
+    # link-reachability and assigns `file_type: "generic"` to reached `.md`
+    # files in the project tree. Default off — anonymous tryout sees zero
+    # generic findings. See REQ-025 Phase C.
+    generic_scanning: bool = False
 
 
 # =============================================================================

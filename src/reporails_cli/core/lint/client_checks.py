@@ -166,7 +166,7 @@ def _check_broad_scope(charged: list[Atom], filepath: str) -> list[LocalFinding]
         if not m:
             continue
         scope_text = m.group(1).lower()
-        broad_matches = [w for w in _BROAD_SCOPE_WORDS if w in scope_text]
+        broad_matches = sorted(w for w in _BROAD_SCOPE_WORDS if w in scope_text)
         if broad_matches:
             findings.append(
                 LocalFinding(

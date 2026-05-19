@@ -71,10 +71,12 @@ def _evaluate_check(
         message = f"Content check failed: {check.query} (expect={check.expect})"
 
     display_path = _relative_path(target_files[0] if target_files else primary_file)
+    from reporails_cli.core.lint.rule_runner import _to_display_severity
+
     return LocalFinding(
         file=display_path,
         line=1,
-        severity=rule.severity.value,
+        severity=_to_display_severity(rule.severity.value),
         rule=rule.id,
         message=message,
         source="content_query",

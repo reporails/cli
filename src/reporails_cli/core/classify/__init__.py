@@ -376,6 +376,7 @@ def classify_files(
     scan_root: Path,
     files: list[Path],
     file_types: list[FileTypeDeclaration],
+    generic_scanning: bool = False,
 ) -> list[ClassifiedFile]:
     """Classify files against type declarations. First pattern match wins.
 
@@ -386,11 +387,18 @@ def classify_files(
 
     For freeform files, content_format is detected from file content.
 
+    When `generic_scanning` is True, after pattern-based classification
+    the classifier walks Markdown links from each classified file and
+    assigns `file_type: "generic"` to any in-tree `.md` files reachable
+    via those links that aren't already classified. See `link_walker.py`
+    and REQ-025 Phase C for the rationale.
+
     Args:
         scan_root: Project root / cwd-equivalent for relative paths and
             ancestor-chain anchoring.
         files: Files to classify
         file_types: Type declarations from agent config
+        generic_scanning: When True, extend with link-reachability pass
 
     Returns:
         List of ClassifiedFile for matched files
@@ -430,7 +438,40 @@ def classify_files(
                 )
             )
             break  # First valid match wins
+
+    if generic_scanning:
+        classified.extend(_classify_generic_via_links(scan_root, classified))
+
     return classified
+
+
+def _classify_generic_via_links(
+    scan_root: Path,
+    classified: list[ClassifiedFile],
+) -> list[ClassifiedFile]:
+    """BFS Markdown links + `@<path>` imports from classified files.
+
+    Reachable `.md` files are classified as `file_type: generic` with
+    edge-attribution properties — `link_source_type`, `link_source_path`,
+    `link_depth`, `loading_verb` — set from the incoming `LinkEdge` set.
+
+    Lazy-imported to avoid pulling the walker module when generic scanning
+    is off (the default).
+    """
+    from reporails_cli.core.classify.generic_type import make_generic_classified
+    from reporails_cli.core.classify.link_walker import LinkEdge, walk_markdown_links
+
+    seed_map: dict[Path, str] = {cf.path: cf.file_type for cf in classified}
+    classified_paths = set(seed_map.keys())
+    edges = walk_markdown_links(seed_map, scan_root, classified_paths)
+
+    by_target: dict[Path, list[LinkEdge]] = {}
+    for edge in edges:
+        by_target.setdefault(edge.target, []).append(edge)
+
+    return [
+        make_generic_classified(target, target_edges, scan_root) for target, target_edges in sorted(by_target.items())
+    ]
 
 
 def match_files(
@@ -512,6 +553,8 @@ def file_matches(cf: ClassifiedFile, match: FileMatch) -> bool:
         "vcs",
         "loading",
         "precedence",
+        "loading_verb",
+        "link_source_type",
     ):
         if not _prop_matches(getattr(match, prop), cf.properties.get(prop)):
             return False
@@ -534,14 +577,31 @@ def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | N
     Used by classify_files so downstream location-mode checks can inspect
     the specific matched pattern (loose leaf vs path-prefixed) for its
     location-disambiguation decision.
+
+    Trailing-slash patterns (`.claude/agent-memory/*/`) name a directory
+    glob whose contents are the file_type's instances; they expand to
+    `<dir>**/*.md` for match purposes so memory entry files inside the
+    directory tag with the capability's file_type.
     """
     p = PurePosixPath(rel_path)
     for pattern in patterns:
         clean = pattern.removeprefix("./")
-        for variant in _expand_doublestar(clean):
+        for variant in _expand_doublestar_with_trailing(clean):
             if p.match(variant):
                 return pattern
     return None
+
+
+def _expand_doublestar_with_trailing(pattern: str) -> list[str]:
+    """Run `_expand_doublestar` after expanding trailing-slash directory globs.
+
+    `.claude/agent-memory/*/` becomes `.claude/agent-memory/*/**/*.md` (and
+    its doublestar variants) so files inside the matched directory tag
+    with the file_type whose patterns include that directory glob.
+    """
+    if pattern.endswith("/"):
+        pattern = pattern + "**/*.md"
+    return _expand_doublestar(pattern)
 
 
 def _expand_doublestar(pattern: str) -> list[str]:

@@ -49,7 +49,18 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
     result: dict[str, object] = {}
     if match.type is not None:
         result["type"] = match.type
-    for prop in ("format", "scope", "cardinality", "lifecycle", "maintainer", "vcs", "loading", "precedence"):
+    for prop in (
+        "format",
+        "scope",
+        "cardinality",
+        "lifecycle",
+        "maintainer",
+        "vcs",
+        "loading",
+        "precedence",
+        "loading_verb",
+        "link_source_type",
+    ):
         val = getattr(match, prop)
         if val is not None:
             result[prop] = val
@@ -65,7 +76,20 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
 
 @app.command(rich_help_panel="Commands")
 def check(  # noqa: C901  # pylint: disable=too-many-locals
-    path: str = typer.Argument(".", help="File or directory to validate"),
+    arg1: str = typer.Argument(
+        ".",
+        help=(
+            "Capability keyword (memory, skill, rule, agent, main, nested_context, ...) — "
+            "vocabulary comes from the detected agent's config.yml `file_types:`. "
+            "Falls back to file/directory path for legacy invocations. Defaults to whole-project scan."
+        ),
+    ),
+    arg2: str = typer.Argument(
+        None,
+        help=(
+            "Target name when arg1 is a capability — e.g. `ails check skill backlog`, `ails check agent docs-auditor`."
+        ),
+    ),
     format: str = typer.Option(None, "--format", "-f", help="Output format: text, json, github"),
     agent: str = typer.Option("", "--agent", help="Agent type (e.g., claude, copilot)"),
     exclude_dirs: list[str] = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
@@ -73,19 +97,58 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     strict: bool = typer.Option(False, "--strict", help="Exit code 1 if violations found"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
 ) -> None:
-    """Validate AI instruction files against reporails rules."""
+    """Validate AI instruction files against reporails rules.
+
+    Capability args narrow which files the standard display shows.
+    `ails check <capability>` covers every declared target for that
+    capability; `ails check <capability> <name>` covers the single named
+    target. Capability vocabulary comes from the detected agent's
+    `framework/rules/<agent>/config.yml` `file_types:` keys.
+    """
     from contextlib import nullcontext
 
+    from reporails_cli.core.classify.capability_paths import canonicalize_capability
     from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.runtime.merger import merge_results
-    from reporails_cli.formatters import json as json_formatter
 
-    target = Path(path).resolve()
-    if not target.exists():
+    # Capability-vs-path sniffing: if arg1 matches a capability keyword for
+    # the detected agent, capture it as a path filter for the display.
+    # Otherwise treat arg1 as a path (existing behavior).
+    project_root = Path.cwd().resolve()
+    capability_mode = False
+    capability = ""
+    capability_name = ""
+    if arg1 and arg1 not in (".", "./"):
+        # The agent for sniffing is whichever the user passed or the project default;
+        # full agent resolution happens after we know we're in path mode.
+        config_probe = None
+        try:
+            config_probe = get_project_config(project_root)
+        except (OSError, ValueError):
+            config_probe = None
+        sniff_agent = agent or (config_probe.default_agent if config_probe else "")
+        if not sniff_agent:
+            from reporails_cli.core.discovery.agents import detect_agents as _detect
+
+            for det in _detect(project_root):
+                sniff_agent = det.agent_type.id
+                break
+        canonical = canonicalize_capability(arg1, sniff_agent, project_root) if sniff_agent else None
+        if canonical is not None:
+            capability_mode = True
+            capability = canonical
+            capability_name = arg2 or ""
+            target = project_root
+        else:
+            target = Path(arg1).resolve()
+    else:
+        target = Path(arg1 or ".").resolve()
+
+    if not capability_mode and not target.exists():
         console.print(f"[red]Error:[/red] Path not found: {target}")
         raise typer.Exit(2)
 
@@ -187,7 +250,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         memory_file_paths = [f.path for f in ruleset_map.files]
         memory_findings = validate_memory_files(memory_file_paths)
 
-    # 6. Merge results (content_findings + client_findings + memory_findings go together)
+    # 6. Compute project capability level (per docs/capability-levels.md ladder)
+    from reporails_cli.core.discovery.features import detect_features_filesystem
+    from reporails_cli.core.platform.policy.levels import determine_level_from_gates
+
+    project_features = detect_features_filesystem(target, agents=filtered)
+    project_level = determine_level_from_gates(project_features)
+
+    # 7. Merge results (content_findings + client_findings + memory_findings go together)
     all_client_findings = content_findings + client_findings + memory_findings
     result = merge_results(
         m_findings,
@@ -196,25 +266,154 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         hints=hints,
         cross_file_coordinates=cross_file_coordinates,
         project_root=target,
+        level=project_level,
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-    # 7. Format and display
-    if output_format == "json":
-        data = json_formatter.format_combined_result(result, ruleset_map=ruleset_map)
-        data["elapsed_ms"] = round(elapsed_ms, 1)
-        print(json.dumps(data, indent=2))
-    elif output_format == "github":
-        from reporails_cli.formatters import github as github_formatter
+    # 7. Resolve capability args (if any) to a path filter for the display.
+    capability_paths = _resolve_capability_paths(
+        capability_mode, capability, capability_name, effective_agent, project_root, excl
+    )
 
-        print(github_formatter.format_combined_annotations(result))
+    # 8. Filter result + ruleset_map to capability_paths so every rendered
+    # block (file cards, surface-health, scorecard) sees the same set.
+    from reporails_cli.formatters.text.display import filter_result_to_paths, filter_ruleset_map_to_paths
+
+    if capability_paths:
+        display_result = filter_result_to_paths(result, capability_paths, project_root)
+        display_map = filter_ruleset_map_to_paths(ruleset_map, capability_paths, project_root)
     else:
-        print_text_result(result, elapsed_ms, ascii, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error)
+        display_result = result
+        display_map = ruleset_map
+
+    _dispatch_output(
+        output_format,
+        display_result,
+        display_map,
+        elapsed_ms,
+        capability_paths,
+        project_root,
+        ascii,
+        verbose,
+        funnel_error,
+    )
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
-    if strict and result.findings:
+    if _should_exit_strict(strict, capability_paths, project_root, result):
         raise typer.Exit(1)
+
+
+def _resolve_capability_paths(
+    capability_mode: bool,
+    capability: str,
+    capability_name: str,
+    effective_agent: str,
+    project_root: Path,
+    exclude_dirs: list[str] | tuple[str, ...] | None = None,
+) -> set[Path]:
+    """Resolve capability args to the set of files the display should cover.
+
+    No capability arg → empty set (whole project). `ails check <capability>`
+    → every declared target for that capability. `ails check <capability>
+    <name>` → the single resolved target (plus subagent skill expansion
+    for `agents`).
+    """
+    from reporails_cli.core.classify.capability_paths import (
+        available_capabilities,
+        list_capability_targets,
+        resolve_capability,
+    )
+    from reporails_cli.core.classify.focus_expansion import expand_focus
+
+    if not capability_mode:
+        return set()
+    if not _capability_declared(capability, effective_agent, project_root):
+        console.print(
+            f"[red]Error:[/red] capability [bold]{capability}[/bold] is not declared "
+            f"for agent [bold]{effective_agent}[/bold]. "
+            f"Available: {', '.join(available_capabilities(effective_agent, project_root)) or '(none)'}"
+        )
+        raise typer.Exit(2)
+    if not capability_name:
+        return set(list_capability_targets(effective_agent, capability, project_root, exclude_dirs))
+    resolved = resolve_capability(effective_agent, capability, capability_name, project_root)
+    if resolved is None:
+        available = list_capability_targets(effective_agent, capability, project_root, exclude_dirs)
+        console.print(
+            f"[red]Error:[/red] no {capability} named [bold]{capability_name}[/bold] "
+            f"for agent [bold]{effective_agent}[/bold] under {project_root}."
+        )
+        if available:
+            console.print(f"[dim]Found {len(available)} {capability}(s) — run `ails check {capability}` to list.[/dim]")
+        raise typer.Exit(2)
+    paths = {resolved}
+    if capability == "agents":
+        paths = expand_focus(paths, effective_agent, project_root)
+    return paths
+
+
+def _capability_declared(capability: str, effective_agent: str, project_root: Path) -> bool:
+    """True when `capability` (or any fold-source it resolves to) is declared for the agent."""
+    from reporails_cli.core.classify.capability_paths import (
+        _CAPABILITY_FOLD,
+        available_capabilities,
+    )
+
+    decls = available_capabilities(effective_agent, project_root)
+    if capability in decls:
+        return True
+    fold = _CAPABILITY_FOLD.get(capability)
+    return bool(fold and any(f in decls for f in fold))
+
+
+def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:
+    return {str(p.relative_to(project_root)) if p.is_relative_to(project_root) else str(p) for p in paths}
+
+
+def _dispatch_output(
+    output_format: str,
+    display_result: Any,
+    ruleset_map: Any,
+    elapsed_ms: float,
+    capability_paths: set[Path],
+    project_root: Path,
+    ascii_mode: bool,
+    verbose: bool,
+    funnel_error: Any,
+) -> None:
+    """Route formatted output to JSON / GitHub / text."""
+    from reporails_cli.formatters import json as json_formatter
+
+    if output_format == "json":
+        data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map)
+        data["elapsed_ms"] = round(elapsed_ms, 1)
+        if capability_paths:
+            data["capability_paths"] = sorted(_relativize_paths(capability_paths, project_root))
+        print(json.dumps(data, indent=2))
+        return
+    if output_format == "github":
+        from reporails_cli.formatters import github as github_formatter
+
+        print(github_formatter.format_combined_annotations(display_result))
+        return
+    print_text_result(
+        display_result, elapsed_ms, ascii_mode, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error
+    )
+
+
+def _should_exit_strict(
+    strict: bool,
+    capability_paths: set[Path],
+    project_root: Path,
+    result: Any,
+) -> bool:
+    if not strict:
+        return False
+    if capability_paths:
+        rel_keys = _relativize_paths(capability_paths, project_root)
+        return any(f.file in rel_keys for f in result.findings)
+    return bool(result.findings)
 
 
 def _suppress_ml_noise() -> None:

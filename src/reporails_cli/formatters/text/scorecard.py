@@ -200,15 +200,32 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     """
     label = f"{s.name} ({s.file_count}):"
-    filled = round(bar_width * s.score / 10)
-    bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
-    return f"{label:13s} [{color}]{bar}[/{color}]  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+    bar = _score_bar(s.score, bar_width, color)
+    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+
+
+def _score_bar(score: float, bar_width: int, color: str) -> str:
+    """Render a score bar with colored fill + dim gray empty.
+
+    Splitting the markup at the fill boundary gives every bar a
+    consistent gray baseline so the colored fill is the only visual
+    variable that changes across rows.
+    """
+    filled = round(bar_width * score / 10)
+    fill = "\u2593" * filled
+    empty = "\u2591" * (bar_width - filled)
+    return f"[{color}]{fill}[/{color}][dim]{empty}[/dim]"
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
-    """Render compact 2-column per-surface health bars."""
-    if not surfaces:
+    """Render compact 2-column per-surface health bars.
+
+    Single-surface case is suppressed: the top `Score:` already
+    represents that surface, so a second bar would just restate the
+    same number.
+    """
+    if len(surfaces) <= 1:
         return
     console.print()
     for i in range(0, len(surfaces), 2):
@@ -264,15 +281,14 @@ def _render_score_bar(
     n_atoms: int,
     elapsed_ms: float,
 ) -> None:
-    """Render score line with progress bar."""
+    """Render score line with progress bar (colored fill + dim empty)."""
     tw = get_term_width()
     score = compute_score(result, has_quality, n_atoms)
     bar_width = min(30, tw - 40)
-    filled = round(bar_width * score / 10)
-    bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
     color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
+    bar = _score_bar(score, bar_width, color)
     elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
-    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  [dim]{bar}[/dim]{elapsed_s}")
+    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  {bar}{elapsed_s}")
 
 
 @dataclass
@@ -330,6 +346,56 @@ def _render_cross_file_counts(result: Any) -> None:
         console.print(f"  {' \u00b7 '.join(cf_parts)}")
 
 
+_RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
+_RULE_SEVERITY_LABEL = {"error": "[red]err [/red]", "warning": "[yellow]warn[/yellow]", "info": "info"}
+
+
+def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, str, str]]:
+    """Return up to `limit` rules ranked by finding count.
+
+    Each entry: (rule_id, count, severity, sample_message). Severity is the
+    worst severity (error > warning > info) recorded for that rule across
+    the findings list; sample_message is the first finding's message,
+    truncated for the scorecard column.
+    """
+    buckets: dict[str, dict[str, Any]] = {}
+    for f in findings:
+        bucket = buckets.setdefault(
+            f.rule,
+            {"count": 0, "severity": f.severity, "message": f.message},
+        )
+        bucket["count"] += 1
+        if _RULE_SEVERITY_RANK.get(f.severity, 3) < _RULE_SEVERITY_RANK.get(bucket["severity"], 3):
+            bucket["severity"] = f.severity
+    rows = [(rule, b["count"], b["severity"], b["message"]) for rule, b in buckets.items()]
+    rows.sort(key=lambda r: (-r[1], r[0]))
+    return rows[:limit]
+
+
+def _render_top_rules(result: Any) -> None:
+    """Render the Top-rules block in the whole-repo scorecard."""
+    if not result.findings:
+        return
+    rows = _aggregate_top_rules(result.findings)
+    if not rows:
+        return
+    tw = get_term_width()
+    console.print()
+    console.print("  Top rules (by finding count):")
+    rule_w = max((len(r[0]) for r in rows), default=12)
+    max_count = max(r[1] for r in rows)
+    count_w = len(str(max_count)) + 1  # for the x prefix
+    # 4 (indent) + rule_w + 1 + count_w + 1 + 6 (severity label cell) + 2 (gap)
+    fixed = 4 + rule_w + 1 + count_w + 1 + 6 + 2
+    snippet_w = max(20, tw - fixed - 2)
+    for rule, count, severity, message in rows:
+        label = _RULE_SEVERITY_LABEL.get(severity, severity)
+        snippet = message.split(".")[0].split("—")[0].strip()
+        if len(snippet) > snippet_w:
+            snippet = snippet[: snippet_w - 1] + "…"
+        console.print(f"    {rule:<{rule_w}} x{count:<{count_w}} {label}  {snippet}")
+
+
 def _render_results_summary(
     result: Any,
     has_quality: bool,  # noqa: ARG001 — kept for API stability
@@ -375,8 +441,17 @@ def print_scorecard(
     agent: str = "",
     scope: ScopeInfo | None = None,
     surface_health: list[SurfaceHealth] | None = None,
+    item_health: list[SurfaceHealth] | None = None,
 ) -> None:
-    """Print the bottom scorecard — the payoff users scroll to."""
+    """Print the bottom scorecard — the payoff users scroll to.
+
+    Exactly one of {surface_health (multi-surface), item_health
+    (capability listing)} renders below the scope block. Single-surface
+    single-file runs render neither — the top `Score:` covers it.
+    """
+    from reporails_cli.core.platform.dto.models import Level
+    from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+
     hint_errors, hint_warnings = _hint_totals(result)
 
     console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
@@ -386,11 +461,23 @@ def print_scorecard(
     agent_name = agent.title() if agent else "auto"
     console.print(f"  Agent: {agent_name}")
 
-    if scope is not None:
-        _render_scope(scope, has_surface_health=bool(surface_health))
+    level = getattr(result, "level", Level.L0)
+    label = LEVEL_LABELS.get(level, "Unknown")
+    console.print(f"  Level: {level.value} [bold]{label}[/bold]")
 
-    if surface_health:
+    multi_surface = surface_health is not None and len(surface_health) > 1
+    has_items = item_health is not None and len(item_health) > 1
+    if scope is not None:
+        _render_scope(scope, has_surface_health=multi_surface or has_items)
+
+    if surface_health is not None and len(surface_health) > 1:
         _render_surface_health(surface_health)
+    elif item_health is not None and len(item_health) > 1:
+        from reporails_cli.formatters.text.item_scorecard import render_item_health
+
+        render_item_health(item_health)
+
+    _render_top_rules(result)
 
     visible_findings, pro_total = _render_results_summary(result, has_quality, hint_errors, hint_warnings)
 
