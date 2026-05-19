@@ -106,13 +106,15 @@ def test_classify_files_with_generic_scanning_on_walks_and_classifies(tmp_path: 
     )
     types = {cf.path.name: cf.file_type for cf in classified}
     assert types.get("CLAUDE.md") == "main"
-    assert types.get("arch.md") == "generic"
+    # Markdown link `[arch](arch.md)` classifies the target as `referenced`
+    # (discoverable, not auto-loaded by the harness).
+    assert types.get("arch.md") == "referenced"
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
-def test_classify_files_generic_loading_is_session_start_when_main_links(tmp_path: Path) -> None:
-    """A generic file reached from `main` inherits `loading: session_start` (derived from `link_source_type`)."""
+def test_classify_files_referenced_loading_is_discoverable_when_link_from_main(tmp_path: Path) -> None:
+    """A file reached only via `[text](path)` link is `loading: discoverable` regardless of source eagerness."""
     (tmp_path / "CLAUDE.md").write_text("Read [arch](arch.md).\n", encoding="utf-8")
     (tmp_path / "arch.md").write_text("# arch\n", encoding="utf-8")
     file_types = load_file_types("claude")
@@ -124,4 +126,8 @@ def test_classify_files_generic_loading_is_session_start_when_main_links(tmp_pat
     )
     arch = next((cf for cf in classified if cf.path.name == "arch.md"), None)
     assert arch is not None
-    assert arch.properties.get("loading") == "session_start"
+    # Harness doesn't auto-load `[text](path)` targets; they're discoverable
+    # only. Eager-source dominance (main/memory/subagent_memory) no longer
+    # applies to link-only reach — only `@<path>` imports get session_start.
+    assert arch.properties.get("loading") == "discoverable"
+    assert arch.file_type == "referenced"
