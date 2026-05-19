@@ -84,13 +84,14 @@ class PatternConfidence(str, Enum):
 class Level(str, Enum):
     """Project levels from framework."""
 
-    L0 = "L0"  # Absent
-    L1 = "L1"  # Present
-    L2 = "L2"  # Structured
-    L3 = "L3"  # Substantive
-    L4 = "L4"  # Actionable
-    L5 = "L5"  # Refined
-    L6 = "L6"  # Adaptive
+    L0 = "L0"  # System
+    L1 = "L1"  # Primer
+    L2 = "L2"  # Composite
+    L3 = "L3"  # Scoped
+    L4 = "L4"  # Delegated
+    L5 = "L5"  # Abstracted
+    L6 = "L6"  # Governed
+    L7 = "L7"  # Adaptive
 
 
 # ---------------------------------------------------------------------------

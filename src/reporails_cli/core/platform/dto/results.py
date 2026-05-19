@@ -49,10 +49,16 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
     # L4 capabilities
     has_path_scoped_rules: bool = False  # rules with path scope frontmatter
 
-    # L6 capabilities
+    # L4 capabilities (Delegated)
     has_skills_dir: bool = False  # .claude/skills/ etc. with content
+    # L5 capabilities (Abstracted)
+    has_subagents: bool = False  # .claude/agents/ or sub-agent definitions
+    # L6 capabilities (Governed)
     has_mcp_config: bool = False  # .mcp.json or similar
+    has_hooks: bool = False  # .claude/hooks/, .githooks/, or settings.json hooks
+    # L7 capabilities (Adaptive)
     has_memory_dir: bool = False  # memory/state persistence directory
+    has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
 
     # Symlink resolution (for regex engine extra targets)
     resolved_symlinks: list[Path] = field(default_factory=list)

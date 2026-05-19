@@ -17,7 +17,7 @@ from reporails_cli.core.platform.adapters.api_client import (
     QualityResult,
     RulesetReport,
 )
-from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.models import Level, LocalFinding
 
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
@@ -100,6 +100,7 @@ class CombinedResult:
     offline: bool = True
     hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
     cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
+    level: Level = Level.L0
 
 
 def _collect_server_diagnostics(
@@ -180,6 +181,7 @@ def merge_results(
     hints: tuple[Any, ...] = (),
     cross_file_coordinates: tuple[Any, ...] = (),
     project_root: Path | None = None,
+    level: Level = Level.L0,
 ) -> CombinedResult:
     """Merge M-probe findings, client checks, and server diagnostics.
 
@@ -214,4 +216,5 @@ def merge_results(
         offline=server_report is None,
         hints=hints,
         cross_file_coordinates=cross_file_coordinates,
+        level=level,
     )

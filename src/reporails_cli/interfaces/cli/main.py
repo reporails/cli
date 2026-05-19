@@ -250,7 +250,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         memory_file_paths = [f.path for f in ruleset_map.files]
         memory_findings = validate_memory_files(memory_file_paths)
 
-    # 6. Merge results (content_findings + client_findings + memory_findings go together)
+    # 6. Compute project capability level (per docs/capability-levels.md ladder)
+    from reporails_cli.core.discovery.features import detect_features_filesystem
+    from reporails_cli.core.platform.policy.levels import determine_level_from_gates
+
+    project_features = detect_features_filesystem(target, agents=filtered)
+    project_level = determine_level_from_gates(project_features)
+
+    # 7. Merge results (content_findings + client_findings + memory_findings go together)
     all_client_findings = content_findings + client_findings + memory_findings
     result = merge_results(
         m_findings,
@@ -259,6 +266,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         hints=hints,
         cross_file_coordinates=cross_file_coordinates,
         project_root=target,
+        level=project_level,
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 

@@ -76,4 +76,4 @@ Score moves should be small commit-to-commit. A sudden drop usually means you re
 
 ---
 
-[← Configuration](configuration.md) · Score Guide · [FAQ →](faq.md)
+[← Configuration](configuration.md) · Score Guide · [Capability Levels →](capability-levels.md)
