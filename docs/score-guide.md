@@ -74,6 +74,18 @@ By default `ails check` always exits 0. To make CI fail, see [Configuration → 
 
 Score moves should be small commit-to-commit. A sudden drop usually means you removed reinforcement, introduced a contradiction, or pushed a file that exceeds size limits. The CLI tracks score deltas automatically — JSON output (`ails check -f json`) includes `score_delta`, `level_previous`, and `violations_delta` fields when there's a previous run cached, so a CI step can flag the regression without needing to re-run against the previous commit.
 
+## Prevent findings before they happen
+
+`ails check` is the post-hoc loop — file already exists, findings reported. The score is a lagging indicator. The leading indicator is `ails rules`, which gives you the rule set to follow **while** writing, not after. Before authoring a new skill / agent / rule, run:
+
+```bash
+ails rules for skill                         # preflight rules for a SKILL.md
+ails rules for agent                         # for an agent definition
+ails rules for rule -f md                    # markdown output to paste into an authoring prompt
+```
+
+See [Rules CLI](rules-cli.md) for full command reference.
+
 ---
 
-[← Configuration](configuration.md) · Score Guide · [Capability Levels →](capability-levels.md)
+[← Configuration](configuration.md) · Score Guide · [Rules CLI →](rules-cli.md)

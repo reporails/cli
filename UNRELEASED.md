@@ -2,7 +2,8 @@
 
 ### Added
 
-- check: `ails check referenced` — new capability listing surface for `[text](path)`-reached markdown files (`file_type: referenced`). Virtual-capability path: agent-agnostic (markdown links are universal), enumerates classifier output rather than agent-config globs. Requires `.ails/config.yml: generic_scanning: true` to populate; otherwise empty. Per `cli/specs/plans/0.5.11-referenced-capability-carve-out.md` § Phase 4.
+- rules: `ails rules` — new subcommand exposing the framework rule registry as a queryable surface. `ails rules list` enumerates every rule with filters for capability, agent, and severity. `ails rules for skill | agent | rule | main` returns the workflow-ordered preflight checklist for authoring a file of that capability (sorted by category: structure → direction → coherence → efficiency → maintenance → governance; severity as tiebreaker). `ails rules explain <id>` returns the rule body plus Pass / Fail examples. Three output formats: `text` (compact), `md` (rich, Pass / Fail blocks by default; `--no-examples` opt-out for shorter context payload), `json` (structured). The markdown form is designed to pipe directly into an AI authoring agent's prompt so it writes rule-compliant content from the start rather than patching findings after `ails check`.
+- check: `ails check referenced` — new capability listing surface for `[text](path)`-reached markdown files (`file_type: referenced`). Virtual-capability path: agent-agnostic (markdown links are universal), enumerates classifier output rather than agent-config globs. Requires `.ails/config.yml: generic_scanning: true` to populate; otherwise empty.
 
 ### Changed
 
