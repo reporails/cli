@@ -323,10 +323,7 @@ def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
     bar = _score_bar(s.score, bar_width, color)
     breakdown = _severity_breakdown_markup(s)
     suffix = f"  {breakdown}" if breakdown else ""
-    return (
-        f"{label:<{label_w}} {bar}  "
-        f"[{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
-    )
+    return f"{label:<{label_w}} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
 
 
 def _severity_breakdown_markup(s: SurfaceHealth) -> str:
@@ -578,6 +575,9 @@ def print_scorecard(
     (capability listing)} renders below the scope block. Single-surface
     single-file runs render neither — the top `Score:` covers it.
     """
+    from reporails_cli.core.platform.dto.models import Level
+    from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+
     hint_errors, hint_warnings = _hint_totals(result)
 
     console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
@@ -587,14 +587,18 @@ def print_scorecard(
     agent_name = agent.title() if agent else "auto"
     console.print(f"  Agent: {agent_name}")
 
-    multi_surface = bool(surface_health) and len(surface_health) > 1
-    has_items = bool(item_health) and len(item_health) > 1
+    level = getattr(result, "level", Level.L0)
+    label = LEVEL_LABELS.get(level, "Unknown")
+    console.print(f"  Level: {level.value} [bold]{label}[/bold]")
+
+    multi_surface = surface_health is not None and len(surface_health) > 1
+    has_items = item_health is not None and len(item_health) > 1
     if scope is not None:
         _render_scope(scope, has_surface_health=multi_surface or has_items)
 
-    if multi_surface:
+    if surface_health is not None and len(surface_health) > 1:
         _render_surface_health(surface_health)
-    elif has_items:
+    elif item_health is not None and len(item_health) > 1:
         _render_item_health(item_health)
 
     _render_top_rules(result)

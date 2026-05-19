@@ -1,6 +1,7 @@
 # Unreleased
 
 ### Added
+- check: Re-introduced project capability level as a `Level: L# <Label>` line in the text scorecard between `Agent:` and `Scope:`. Engine re-aligned to the canonical ladder in `docs/capability-levels.md` (System / Primer / Composite / Scoped / Delegated / Abstracted / Governed / Adaptive, L0–L7). Detection is cumulative — the displayed level is the highest where all prior levels also pass. Three new `DetectedFeatures` flags drive the new levels (`has_subagents` for L5, `has_hooks` for L6 governance, `has_auto_memory` for L7). Read-out only, not a gate; rule applicability is unchanged.
 - auth: Typed `PlatformUnavailableError` raised when `/api/auth/client-id` returns a non-JSON body, replacing the silent fall-through that surfaced as a misleading "OAuth not configured" message.
 - check: Per-capability targeting — `ails check <capability> <name>` resolves to a focused report on one capability target (skill, rule, agents, main, etc.), and `ails check <capability>` lists available targets with per-target scores. Capability vocabulary is read from the detected agent's `framework/rules/<agent>/config.yml` `file_types:`; supports singular and plural forms (skill/skills, rule/rules, agent/agents).
 - check: Focus-mode output layout for capability runs — single-file score, findings grouped by rule with line refs, "Next" action pointer toward the highest-frequency rule. Subagent targets expand to include skills declared in their `skills:` frontmatter.
@@ -46,3 +47,4 @@
 - discovery: `ails check memory` (and `memories`) now enumerates `~/.claude/projects/<hash>/memory/` entries via `memory_locator.memory_entries_for_agent` instead of returning 0 — the glob path silently dropped user-scope patterns starting with `~/`.
 
 ### Removed
+- framework: Dropped `framework/registry/levels.yml` and `framework/schemas/levels.schema.yml`. The level engine has hardcoded `LEVEL_CAPS` in `core/platform/policy/levels.py` since v4 of the levels schema; the YAML file was bundled into wheels but never read at runtime. The `framework/registry/` directory is removed entirely. `hatch_build.py` no longer force-includes the path.

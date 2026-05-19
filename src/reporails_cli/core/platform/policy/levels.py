@@ -24,19 +24,20 @@ if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
     from reporails_cli.core.platform.dto.results import DetectedFeatures
 
-# Level labels — canonical mapping (must match framework registry/levels.yml)
+# Level labels — canonical mapping per `docs/capability-levels.md` ladder.
 LEVEL_LABELS: dict[Level, str] = {
-    Level.L0: "Absent",
-    Level.L1: "Present",
-    Level.L2: "Structured",
-    Level.L3: "Substantive",
-    Level.L4: "Actionable",
-    Level.L5: "Refined",
-    Level.L6: "Adaptive",
+    Level.L0: "System",
+    Level.L1: "Primer",
+    Level.L2: "Composite",
+    Level.L3: "Scoped",
+    Level.L4: "Delegated",
+    Level.L5: "Abstracted",
+    Level.L6: "Governed",
+    Level.L7: "Adaptive",
 }
 
-# Ordered levels for walking (L1 → L6)
-_LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6]
+# Ordered levels for walking (L1 → L7)
+_LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6, Level.L7]
 
 
 def get_level_labels() -> dict[Level, str]:
@@ -135,38 +136,38 @@ def _type_exists(scan_root: Path, patterns: tuple[str, ...]) -> bool:
 # Mechanism 2: Capability gates (for displayed project level)
 # ===========================================================================
 
-# Level → capability mapping. Hardcoded — v4 levels.yml no longer has
-# capability keys, so we don't load from YAML.
+# Level → capability mapping per `docs/capability-levels.md` detection table.
+# L1=Primer, L2=Composite, L3=Scoped, L4=Delegated, L5=Abstracted,
+# L6=Governed, L7=Adaptive. Each level adds one architectural capability;
+# the displayed level is the highest where all prior levels also pass.
 LEVEL_CAPS: dict[str, list[str]] = {
     "L0": [],
     "L1": ["instruction_file"],
-    "L2": ["explicit_constraints", "size_controlled"],
-    "L3": ["external_references", "multiple_files"],
-    "L4": ["path_scoping"],
-    "L5": ["org_policy", "navigation"],
-    "L6": ["dynamic_context", "extensibility", "state_persistence"],
+    "L2": ["multiple_files"],
+    "L3": ["path_scoping"],
+    "L4": ["skills"],
+    "L5": ["subagents"],
+    "L6": ["governance"],
+    "L7": ["adaptive_memory"],
 }
 
 # Capability → detection mapping (CLI-owned).
 # Each lambda takes a DetectedFeatures and returns bool.
 FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
-    # L1
+    # L1 — Primer: one main file present
     "instruction_file": lambda f: f.has_instruction_file,
-    # L2
-    "explicit_constraints": lambda f: f.has_explicit_constraints,
-    "size_controlled": lambda f: f.is_size_controlled,
-    # L3
-    "external_references": lambda f: f.has_imports or f.has_multiple_instruction_files,
+    # L2 — Composite: multiple main files (project + user-scope defaults)
     "multiple_files": lambda f: f.has_multiple_instruction_files,
-    # L4
-    "path_scoping": lambda f: f.has_path_scoped_rules or f.is_abstracted,
-    # L5
-    "org_policy": lambda f: f.has_shared_files,
-    "navigation": lambda f: f.has_backbone or f.component_count >= 3,
-    # L6
-    "dynamic_context": lambda f: f.has_skills_dir,
-    "extensibility": lambda f: f.has_mcp_config,
-    "state_persistence": lambda f: f.has_memory_dir,
+    # L3 — Scoped: path-conditional rule loading
+    "path_scoping": lambda f: f.has_path_scoped_rules,
+    # L4 — Delegated: skills directory with definitions
+    "skills": lambda f: f.has_skills_dir,
+    # L5 — Abstracted: sub-agent definitions
+    "subagents": lambda f: f.has_subagents,
+    # L6 — Governed: hooks, MCP, or managed policies
+    "governance": lambda f: f.has_hooks or f.has_mcp_config,
+    # L7 — Adaptive: auto-memory or self-modifying instruction sources
+    "adaptive_memory": lambda f: f.has_auto_memory or f.has_memory_dir,
 }
 
 

@@ -11,7 +11,6 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 # Source paths are relative to repo root; destinations are inside the wheel.
 FRAMEWORK_INCLUDES = {
     "framework/rules": "reporails_cli/rules",
-    "framework/registry/levels.yml": "reporails_cli/registry/levels.yml",
     "framework/sources.yml": "reporails_cli/sources.yml",
 }
 

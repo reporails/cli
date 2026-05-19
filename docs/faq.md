@@ -78,4 +78,4 @@ Open an issue at [github.com/reporails/cli/issues](https://github.com/reporails/
 
 ---
 
-[← Score Guide](score-guide.md) · FAQ
+[← Capability Levels](capability-levels.md) · FAQ
