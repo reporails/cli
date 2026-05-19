@@ -513,6 +513,7 @@ def main() -> None:
     app()
 
 
+import reporails_cli.interfaces.cli.checks_command  # noqa: E402  # Register `ails list checks`
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
