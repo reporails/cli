@@ -21,6 +21,17 @@ _REF_DEFINITION_RE = re.compile(r"^\s*\[(?:[^\]]+)\]:\s*(\S+)", re.MULTILINE)
 # Capture the path without the leading `@`.
 _IMPORT_RE = re.compile(r"@([\w./-]+)")
 
+# Code-span stripping — `[text](path)` inside backticks is documentation,
+# not a real link. Mirror this with `checks_advanced._strip_code_spans`.
+_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def _strip_code_spans(text: str) -> str:
+    """Remove fenced code blocks and inline code spans before link extraction."""
+    text = _CODE_FENCE_RE.sub("", text)
+    return _INLINE_CODE_RE.sub("", text)
+
 
 @dataclass(frozen=True)
 class LinkEdge:
@@ -98,16 +109,22 @@ def _outgoing_links(file_path: Path) -> list[tuple[Path, str]]:
         logger.debug("link_walker: cannot read %s: %s", file_path, exc)
         return []
 
+    # Strip code spans so `[text](path)` examples inside backticks don't
+    # surface as walkable links. `@<path>` imports keep working because the
+    # import regex runs on the full text (imports inside code spans are
+    # still imports per Claude's `@import` semantics).
+    link_text = _strip_code_spans(text)
+
     base_dir = file_path.parent
     out: list[tuple[Path, str]] = []
 
-    for match in _INLINE_LINK_RE.finditer(text):
+    for match in _INLINE_LINK_RE.finditer(link_text):
         target = match.group(1).strip()
         resolved = _resolve_md_target(base_dir, target)
         if resolved is not None:
             out.append((resolved, "read"))
 
-    for match in _REF_DEFINITION_RE.finditer(text):
+    for match in _REF_DEFINITION_RE.finditer(link_text):
         target = match.group(1).strip()
         resolved = _resolve_md_target(base_dir, target)
         if resolved is not None:
