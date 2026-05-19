@@ -354,12 +354,19 @@ def _resolve_capability_paths(
 
 
 def _capability_declared(capability: str, effective_agent: str, project_root: Path) -> bool:
-    """True when `capability` (or any fold-source it resolves to) is declared for the agent."""
+    """True when `capability` is declared (config) or virtual (synthesized) for the agent.
+
+    Virtual capabilities — `referenced` — are agent-agnostic; they're
+    synthesized by the classifier rather than declared in any agent config.
+    """
     from reporails_cli.core.classify.capability_paths import (
         _CAPABILITY_FOLD,
+        _VIRTUAL_CAPABILITIES,
         available_capabilities,
     )
 
+    if capability in _VIRTUAL_CAPABILITIES:
+        return True
     decls = available_capabilities(effective_agent, project_root)
     if capability in decls:
         return True

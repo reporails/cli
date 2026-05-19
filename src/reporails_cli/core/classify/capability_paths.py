@@ -27,6 +27,7 @@ _CAPABILITY_SINGULAR_TO_PLURAL: dict[str, str] = {
     "memory": "memories",
     "subagent_memory": "subagent_memories",
     "nested_context": "nested_contexts",
+    "referenced": "references",
 }
 
 # Capabilities that fold into a primary bucket for the redesigned display.
@@ -39,6 +40,14 @@ _CAPABILITY_FOLD: dict[str, tuple[str, ...]] = {
     "memories": ("memory", "subagent_memory"),
     "memory": ("memory", "subagent_memory"),
 }
+
+# Capabilities not declared in any agent's `config.yml` — they're synthesized
+# by the classifier at scan time. `referenced` enumerates `[text](path)`-reached
+# files (`file_type: referenced` per the carve-out in
+# `cli/specs/plans/0.5.11-referenced-capability-carve-out.md`) and works across
+# all agents since markdown links are universal. Requires `generic_scanning:
+# true` in `.ails/config.yml` for results to be non-empty.
+_VIRTUAL_CAPABILITIES: frozenset[str] = frozenset({"referenced", "references"})
 
 
 def available_capabilities(agent: str, project_root: Path | None = None) -> list[str]:
@@ -53,9 +62,15 @@ def canonicalize_capability(arg: str, agent: str, project_root: Path | None = No
     when any member of the fold tuple is declared by the agent — the
     listing path walks the fold tuple. For non-fold aliases, returns the
     singular config key declared by the agent.
+
+    Virtual capabilities (`referenced` / `references`) are synthesized by
+    the classifier and don't appear in any agent config; they canonicalize
+    to the singular `referenced` regardless of agent.
     """
     if not arg:
         return None
+    if arg in _VIRTUAL_CAPABILITIES:
+        return "referenced"
     decls = available_capabilities(agent, project_root)
     if arg in decls:
         return arg
@@ -100,6 +115,9 @@ def list_capability_targets(
     `memory_locator.memory_entries_for_agent` so user-scope entries
     surface in the listing.
     """
+    if capability == "referenced":
+        return _list_referenced_targets(agent, project_root)
+
     out: list[Path] = []
     seen: set[Path] = set()
     for ft_name in _resolve_fold(agent, capability, project_root):
@@ -117,6 +135,32 @@ def list_capability_targets(
             seen.add(resolved)
             out.append(path)
     return out
+
+
+def _list_referenced_targets(agent: str, project_root: Path) -> list[Path]:
+    """Enumerate `[text](path)`-reached files via classifier output.
+
+    Runs link-walker discovery (`generic_scanning: true`) against the
+    detected agent's surfaces and returns paths whose synthesized
+    `file_type == "referenced"`. Requires `generic_scanning` to be enabled
+    in the project — if disabled, returns an empty list (classifier won't
+    walk).
+    """
+    from reporails_cli.core.classify import classify_files, load_file_types
+    from reporails_cli.core.discovery.agent_discovery import discover_from_config
+
+    discovered = discover_from_config(project_root, agent)
+    if discovered is None:
+        return []
+    instruction_files, _rule_files, _config_files = discovered
+    file_types = load_file_types(agent, project_root=project_root)
+    classified = classify_files(
+        project_root,
+        instruction_files,
+        file_types,
+        generic_scanning=True,
+    )
+    return [cf.path for cf in classified if cf.file_type == "referenced"]
 
 
 def _resolve_fold(agent: str, capability: str, project_root: Path) -> tuple[str, ...]:
