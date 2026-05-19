@@ -345,13 +345,23 @@ def _severity_breakdown_markup(s: SurfaceHealth) -> str:
 
 
 def _render_item_health(items: list[SurfaceHealth]) -> None:
-    """Render per-item health bars one per line (capability-listing mode)."""
+    """Render per-item health bars one per line with breathing room.
+
+    Adds a blank line between severity bands (red → yellow → green) so
+    the eye naturally chunks the list into "needs attention", "moderate",
+    "healthy" clusters.
+    """
     if not items:
         return
     label_w = max(len(s.name) for s in items) + 2  # name + ": "
     console.print()
+    prev_band: str | None = None
     for s in items:
+        band = "red" if s.score < 4.0 else "yellow" if s.score < 7.0 else "green"
+        if prev_band is not None and band != prev_band:
+            console.print()
         console.print(f"  {_item_cell(s, label_w)}")
+        prev_band = band
 
 
 # ── Category bars ─────────────────────────────────────────────────────
