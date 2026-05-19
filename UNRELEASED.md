@@ -17,6 +17,8 @@
 - check: Capability-name aliases for `memory|memories`, `subagent_memory|subagent_memories`, `nested_context|nested_contexts`. `ails check memory` (singular) and `ails check memories` (plural) both resolve. The memories alias folds `memory` and `subagent_memory` file_types into one listing; the main alias folds `main` and `nested_context`. Data-driven sing/plural map remains a follow-up.
 
 ### Changed
+- Internals: Extracted per-item scorecard rendering (`compute_item_scores`, `render_item_health`, `_item_cell`, `_severity_breakdown_markup`, `_display_name_for_path`) from `formatters/text/scorecard.py` to `formatters/text/item_scorecard.py` so the parent module stays under the 600-line module cap per `.claude/rules/python-structure.md`. No user-visible change.
+- tests: Added unit coverage for the 0.5.10 lint-pipeline scope fixes — `_strip_code_spans` (both extractors), `_resolve_glob_targets` exclude_dirs filtering, `_relativize` home-prefix fallback, `_first_classified_path` project-scope preference. 15 new tests in `tests/unit/test_lint_pipeline_scope.py`.
 - auth: Set explicit `User-Agent: reporails-cli/<version> (auth)` header on platform and GitHub requests so identifiable CLI traffic can be allow-listed at the edge.
 - check: `[PATH]` positional argument is now `[ARG1] [ARG2]` — `ARG1` is sniffed as a capability keyword first, falling through to existing path semantics. No behaviour change for `ails check`, `ails check .`, or `ails check <path>`.
 - agents: Added `CORE:S:0024 import-targets-resolve` to `codex` and `copilot` agent `excludes:` lists — neither agent's instruction files support `@<path>` import syntax per their official documentation, so the rule has no antipattern to detect in those agents.

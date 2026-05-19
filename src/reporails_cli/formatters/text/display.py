@@ -487,7 +487,8 @@ def _render_findings_and_scorecard(
     `ails check skills` lists each skill with its own score);
     single-file runs show neither — the top `Score:` covers it.
     """
-    from reporails_cli.formatters.text.scorecard import compute_item_scores, compute_surface_scores
+    from reporails_cli.formatters.text.item_scorecard import compute_item_scores
+    from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
     sev_icons = get_sev_icons(ascii_mode)
     hints_idx = _build_hints_by_file(result.hints, Path.cwd())
