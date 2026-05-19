@@ -6,9 +6,12 @@ Covers:
   must not surface as a real link.
 - `_resolve_glob_targets` in `core/lint/mechanical/checks.py` — `args.path`
   globs must honor `.ails/config.yml: exclude_dirs`.
-- `_relativize` in `core/lint/mechanical/runner.py` — paths outside the
-  project root must serialize as `~/<rel>` when under home, not just
-  `path.name`.
+- `_relativize` in `core/lint/mechanical/runner.py` — paths under root
+  serialize as project-relative; anything else falls back to basename.
+- `_classified_display` in `core/lint/mechanical/runner.py` — files the
+  classifier marked `precedence: user` serialize with a `~/<rel>` prefix
+  when rooted under the user's home; classifier output is the source of
+  truth, not path-prefix heuristics.
 - `_first_classified_path` in `core/lint/mechanical/runner.py` — must skip
   user-scope and managed-scope files so project-wide findings don't
   misattribute to `~/.claude/CLAUDE.md`.
@@ -35,6 +38,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (
     extract_markdown_links,
 )
 from reporails_cli.core.lint.mechanical.runner import (
+    _classified_display,
     _first_classified_path,
     _relativize,
 )
@@ -80,10 +84,7 @@ class TestStripCodeSpans:
     def test_extract_markdown_links_skips_code_spans(self, tmp_path: Path) -> None:
         # End-to-end: extractor must not annotate links found inside code spans.
         f = tmp_path / "README.md"
-        f.write_text(
-            "Describes link syntax: `[text](path)` is documentation.\n\n"
-            "Real link: [target](exists.md)\n"
-        )
+        f.write_text("Describes link syntax: `[text](path)` is documentation.\n\nReal link: [target](exists.md)\n")
         (tmp_path / "exists.md").write_text("# placeholder\n")
         cf = ClassifiedFile(path=f, file_type="main", properties={})
         result = extract_markdown_links(tmp_path, {"path": "**/*.md"}, [cf])
@@ -143,7 +144,7 @@ class TestResolveGlobExcludeDirs:
 
 
 class TestRelativize:
-    """Paths under root → root-relative; under home → ~/...; else basename."""
+    """Pure path/root helper: under root → root-relative; else basename."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -153,31 +154,54 @@ class TestRelativize:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_under_home_outside_root_returns_tilde(self, tmp_path: Path) -> None:
-        # Construct a path that is under HOME but not under tmp_path.
-        home = Path.home()
-        path = home / ".claude" / "CLAUDE.md"
-        # Don't actually create the file — _relativize is path-string-only.
-        result = _relativize(path, tmp_path)
-        assert result == "~/.claude/CLAUDE.md"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_no_root_under_home_returns_tilde(self) -> None:
+    def test_outside_root_returns_basename(self, tmp_path: Path) -> None:
         path = Path.home() / ".claude" / "CLAUDE.md"
-        result = _relativize(path, None)
-        assert result == "~/.claude/CLAUDE.md"
+        # No classifier context here — _relativize does not consult home.
+        assert _relativize(path, tmp_path) == "CLAUDE.md"
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_outside_root_and_home_falls_back_to_name(self, tmp_path: Path) -> None:
-        # An absolute path under neither root nor home: `/etc/something.md`
-        # (use a path that exists on POSIX so `is_absolute()` is unambiguous).
-        path = Path("/etc/hostname")
-        # Result is either project-relative (won't be) or `~/...` (won't be) or name.
-        result = _relativize(path, tmp_path)
-        # Either name-fallback or `~/...` depending on whether /etc is under home.
-        assert result in {"hostname", "~/" + str(path).lstrip("/")}
+    def test_no_root_returns_basename(self) -> None:
+        path = Path.home() / ".claude" / "CLAUDE.md"
+        assert _relativize(path, None) == "CLAUDE.md"
+
+
+# ── _classified_display ───────────────────────────────────────────────
+
+
+class TestClassifiedDisplay:
+    """User-scope rendering is gated on classifier `precedence`, not path-prefix."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_project_scope_under_root_relative(self, tmp_path: Path) -> None:
+        path = tmp_path / "CLAUDE.md"
+        cf = ClassifiedFile(
+            path=path,
+            file_type="main",
+            properties={"precedence": "project"},
+        )
+        assert _classified_display(cf, tmp_path) == "CLAUDE.md"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_user_precedence_outside_root_uses_tilde(self, tmp_path: Path) -> None:
+        path = Path.home() / ".claude" / "CLAUDE.md"
+        cf = ClassifiedFile(
+            path=path,
+            file_type="main",
+            properties={"precedence": "user"},
+        )
+        assert _classified_display(cf, tmp_path) == "~/.claude/CLAUDE.md"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_unknown_precedence_outside_root_falls_back_to_basename(self, tmp_path: Path) -> None:
+        # Path lives under HOME but classifier didn't mark it user-scope —
+        # don't synthesize a `~/` prefix; fall back to basename.
+        path = Path.home() / "some-other-file.md"
+        cf = ClassifiedFile(path=path, file_type="main", properties={})
+        assert _classified_display(cf, tmp_path) == "some-other-file.md"
 
 
 # ── _first_classified_path ────────────────────────────────────────────
