@@ -356,6 +356,16 @@ def check_import_targets_exist(
 # classifier agree on what counts as a Markdown link.
 _INLINE_LINK_RE = re.compile(r"\[(?:[^\]]+)\]\(([^)]+)\)")
 _REF_DEFINITION_RE = re.compile(r"^\s*\[(?:[^\]]+)\]:\s*(\S+)", re.MULTILINE)
+# Code-span stripping — `[text](path)` inside backticks is documentation,
+# not a real link. Mirror this with `link_walker._strip_code_spans`.
+_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def _strip_code_spans(text: str) -> str:
+    """Remove fenced code blocks and inline code spans before link extraction."""
+    text = _CODE_FENCE_RE.sub("", text)
+    return _INLINE_CODE_RE.sub("", text)
 
 
 def _is_external_link(target: str) -> bool:
@@ -395,6 +405,7 @@ def extract_markdown_links(
             text = match.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        text = _strip_code_spans(text)
         rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else str(match)
         targets: list[str] = []
         targets.extend(m.group(1).strip() for m in _INLINE_LINK_RE.finditer(text))

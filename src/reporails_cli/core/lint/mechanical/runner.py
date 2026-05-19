@@ -133,10 +133,15 @@ def run_mechanical_checks(
 
 
 def _relativize(path: Path, root: Path | None) -> str:
-    """Return path relative to root, or just the name as fallback."""
+    """Return path relative to root, or `~/...` for user-scope paths."""
     if root is not None:
         try:
             return path.relative_to(root).as_posix()
+        except ValueError:
+            pass
+    if path.is_absolute():
+        try:
+            return "~/" + path.relative_to(Path.home()).as_posix()
         except ValueError:
             pass
     return path.name
@@ -147,12 +152,29 @@ def _first_classified_path(
     root: Path | None,
     *type_names: str,
 ) -> str | None:
-    """Return first relative path from classified files matching any type name."""
+    """Return first relative path from classified files matching any type name.
+
+    Only return project-scope files (under `root`). User-scope and
+    managed-scope files are not viable attribution points for project-wide
+    findings — attributing `Total instruction size exceeds limit` to
+    `~/.claude/CLAUDE.md` is misleading when the project itself has no
+    project-scope main file.
+    """
     for type_name in type_names:
         for cf in classified_files:
-            if cf.file_type == type_name:
+            if cf.file_type != type_name:
+                continue
+            if root is None or _is_under_root(cf.path, root):
                 return _relativize(cf.path, root)
     return None
+
+
+def _is_under_root(path: Path, root: Path) -> bool:
+    """True when `path` resolves to a location under `root`."""
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def resolve_location(
@@ -195,12 +217,19 @@ def _resolve_location_path(
         type_names = rule.match.type if isinstance(rule.match.type, list) else [rule.match.type]
         return _first_classified_path(classified_files, root, *type_names)
 
-    # Wildcard match (type is None) — prefer main file, then any file
+    # Wildcard match (type is None) — prefer main file, then any project-scope file
     path = _first_classified_path(classified_files, root, "main")
     if path:
         return path
 
-    if classified_files:
+    # Fallback: first project-scope file (under root). Skip user-scope and
+    # managed-scope so project-wide rules don't misattribute findings to
+    # `~/.claude/CLAUDE.md` when the project has no project-scope main.
+    if classified_files and root is not None:
+        for cf in classified_files:
+            if _is_under_root(cf.path, root):
+                return _relativize(cf.path, root)
+    elif classified_files:
         return _relativize(classified_files[0].path, root)
 
     return None
