@@ -13,6 +13,10 @@ The score reflects severity-weighted findings, not finding *count*. One critical
 
 If you disagree with a specific finding, [open an issue](https://github.com/reporails/cli/issues) so we can review the rule, and / or disable the rule locally — see [How do I disable a rule I disagree with?](#how-do-i-disable-a-rule-i-disagree-with) below.
 
+## How do I make an agent write rule-compliant skills on the first try?
+
+Use `ails rules for skill` to fetch the workflow-ordered rule set, then paste it into the agent's authoring prompt. The agent reads the constraints first and writes a compliant SKILL.md instead of patching findings after `ails check`. Same flow for `for agent`, `for rule`, `for main`. Output in markdown with `-f md` for piping into a prompt; `--no-examples` for a shorter context payload. See [Rules CLI](rules-cli.md).
+
 ## How do I disable a rule I disagree with?
 
 Add it to `.ails/config.yml`:

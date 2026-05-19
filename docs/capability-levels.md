@@ -65,4 +65,4 @@ Climbing without a symptom adds structure the model has to navigate without solv
 
 ---
 
-[← Score Guide](score-guide.md) · Capability Levels · [FAQ →](faq.md)
+[← Rules CLI](rules-cli.md) · Capability Levels · [FAQ →](faq.md)
