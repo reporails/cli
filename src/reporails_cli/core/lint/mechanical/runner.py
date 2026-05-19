@@ -133,18 +133,34 @@ def run_mechanical_checks(
 
 
 def _relativize(path: Path, root: Path | None) -> str:
-    """Return path relative to root, or `~/...` for user-scope paths."""
+    """Return path relative to root, or its basename if outside root."""
     if root is not None:
         try:
             return path.relative_to(root).as_posix()
         except ValueError:
             pass
-    if path.is_absolute():
+    return path.name
+
+
+def _classified_display(cf: ClassifiedFile, root: Path | None) -> str:
+    """Render a classified file's path for display.
+
+    Project-scope files render relative to `root`. Files the classifier
+    marked `precedence: user` (per the matching pattern in
+    `framework/rules/<agent>/config.yml`) render with a `~/` prefix when
+    rooted under the user's home. Everything else falls back to basename.
+    """
+    if root is not None:
         try:
-            return "~/" + path.relative_to(Path.home()).as_posix()
+            return cf.path.relative_to(root).as_posix()
         except ValueError:
             pass
-    return path.name
+    if cf.properties.get("precedence") == "user" and cf.path.is_absolute():
+        try:
+            return "~/" + cf.path.relative_to(Path.home()).as_posix()
+        except ValueError:
+            pass
+    return cf.path.name
 
 
 def _first_classified_path(
@@ -165,7 +181,7 @@ def _first_classified_path(
             if cf.file_type != type_name:
                 continue
             if root is None or _is_under_root(cf.path, root):
-                return _relativize(cf.path, root)
+                return _classified_display(cf, root)
     return None
 
 
@@ -228,8 +244,8 @@ def _resolve_location_path(
     if classified_files and root is not None:
         for cf in classified_files:
             if _is_under_root(cf.path, root):
-                return _relativize(cf.path, root)
+                return _classified_display(cf, root)
     elif classified_files:
-        return _relativize(classified_files[0].path, root)
+        return _classified_display(classified_files[0], root)
 
     return None
