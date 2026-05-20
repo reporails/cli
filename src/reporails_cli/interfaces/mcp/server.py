@@ -21,10 +21,9 @@ from mcp.server.stdio import stdio_server  # noqa: E402
 from mcp.types import TextContent, Tool  # noqa: E402
 
 from reporails_cli.core.discovery.agents import get_all_instruction_files  # noqa: E402
-from reporails_cli.core.platform.config.bootstrap import is_initialized  # noqa: E402
 from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
     explain_tool,
-    score_tool,
+    preflight_tool,
     validate_tool,
 )
 
@@ -60,13 +59,20 @@ def _compute_mtime_hash(target: Path) -> str:
 
 @server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def list_tools() -> list[Tool]:
-    """List available tools."""
+    """List available tools.
+
+    Surface trimmed in 0.5.11 to match the plugin's model-as-helper UX:
+    `validate` for the Check loop, `preflight` for authoring-first, `explain`
+    for drill-down. `score` and `heal` are derivable from validate output or
+    run via the CLI's batch heal.
+    """
     return [
         Tool(
             name="validate",
             description=(
-                "Validate AI instruction files. Returns JSON with findings,"
-                " compliance band, and cross-file analysis."
+                "Validate AI instruction files at `path` (directory or single file)."
+                " Returns JSON with findings, per-finding fix text, compliance band,"
+                " tier, per-surface category breakdown, and cross-file analysis."
                 " Use when user asks to check, validate, or improve instruction files."
             ),
             inputSchema={
@@ -74,26 +80,36 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Directory to validate (default: current directory)",
+                        "description": "Directory or file path to validate (default: current directory)",
                         "default": ".",
                     },
                 },
             },
         ),
         Tool(
-            name="score",
+            name="preflight",
             description=(
-                "Quick score check without violation details. Returns JSON with compliance band and violation count."
+                "Return the workflow-ordered rules that govern authoring a file of the given"
+                " `capability` (e.g. `skill`, `agent`, `rule`, `main`). Use BEFORE drafting"
+                " a new SKILL.md / agent / rule so the draft follows the rules from the"
+                " start instead of patching findings after `validate`."
+                " Returns JSON with rules sorted by category in workflow order plus"
+                " Pass / Fail examples."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "path": {
+                    "capability": {
                         "type": "string",
-                        "description": "Directory to score (default: current directory)",
-                        "default": ".",
-                    }
+                        "description": "Capability keyword (skill, agent, rule, main, memory, ...)",
+                    },
+                    "agent": {
+                        "type": "string",
+                        "description": "Optional agent filter (claude, codex, gemini, ...); empty = all agents",
+                        "default": "",
+                    },
                 },
+                "required": ["capability"],
             },
         ),
         Tool(
@@ -114,29 +130,6 @@ async def list_tools() -> list[Tool]:
                 "required": ["rule_id"],
             },
         ),
-        Tool(
-            name="heal",
-            description=(
-                "Auto-fix instruction file issues. Applies formatting, bold→italic,"
-                " constraint wrapping, and instruction reordering fixes."
-                " Use --dry-run to preview."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Directory to heal (default: current directory)",
-                        "default": ".",
-                    },
-                    "dry_run": {
-                        "type": "boolean",
-                        "description": "Preview fixes without applying",
-                        "default": False,
-                    },
-                },
-            },
-        ),
     ]
 
 
@@ -146,7 +139,17 @@ def _json_response(data: dict[str, Any]) -> list[TextContent]:
 
 
 async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle the 'validate' tool call."""
+    """Handle the 'validate' tool call.
+
+    Two layers of safety:
+      1. Path-existence + emptiness checks emit structured errors the slash
+         command body can branch on (no bare strings).
+      2. The circuit breaker (`_MAX_CALLS` total, `_MAX_UNCHANGED` consecutive
+         no-op validates per path) catches the failure mode of a model that
+         re-validates without applying any fixes. The mtime-tracker resets on
+         any file edit, so the fix-walk sub-agent's normal Edit-validate
+         cycle never trips it.
+    """
     path = arguments.get("path", ".")
     target = Path(path).resolve()
 
@@ -177,26 +180,16 @@ async def _handle_validate(arguments: dict[str, Any]) -> list[TextContent]:
             }
         )
 
-    if not is_initialized():
-        return _json_response({"error": "not_initialized", "message": "Run 'ails check' to auto-initialize."})
     if not target.exists():
         return _json_response({"error": "path_not_found", "message": f"Path not found: {target}"})
-    if not target.is_dir():
-        return _json_response({"error": "not_a_directory", "message": f"Not a directory: {target}"})
 
+    # File and directory targets both supported (per 0.5.11 bug-1 fix).
     return _json_response(validate_tool(path))
 
 
-async def _handle_score(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle 'score'."""
-    return _json_response(score_tool(arguments.get("path", ".")))
-
-
-async def _handle_heal(arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle 'heal'."""
-    from reporails_cli.interfaces.mcp.tools import heal_tool
-
-    return _json_response(heal_tool(arguments.get("path", "."), arguments.get("dry_run", False)))
+async def _handle_preflight(arguments: dict[str, Any]) -> list[TextContent]:
+    """Handle 'preflight' — return workflow-ordered rules for authoring."""
+    return _json_response(preflight_tool(arguments.get("capability", ""), arguments.get("agent", "")))
 
 
 async def _handle_explain(arguments: dict[str, Any]) -> list[TextContent]:
@@ -210,9 +203,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     handlers = {
         "validate": _handle_validate,
+        "preflight": _handle_preflight,
         "explain": _handle_explain,
-        "score": _handle_score,
-        "heal": _handle_heal,
     }
     handler = handlers.get(name)
     if handler is None:
