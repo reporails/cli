@@ -1,8 +1,8 @@
 ---
 title: "Score Guide"
 description: "How the score is built and what it tells you"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.11"
+last_updated: 2026-05-20
 ---
 
 # Score Guide
@@ -79,9 +79,9 @@ Score moves should be small commit-to-commit. A sudden drop usually means you re
 `ails check` is the post-hoc loop — file already exists, findings reported. The score is a lagging indicator. The leading indicator is `ails rules`, which gives you the rule set to follow **while** writing, not after. Before authoring a new skill / agent / rule, run:
 
 ```bash
-ails rules for skill                         # preflight rules for a SKILL.md
-ails rules for agent                         # for an agent definition
-ails rules for rule -f md                    # markdown output to paste into an authoring prompt
+ails rules list --capability=skill                  # preflight rules for a SKILL.md
+ails rules list --capability=agent                  # for an agent definition
+ails rules list --capability=rule -f md             # markdown output to paste into an authoring prompt
 ```
 
 See [Rules CLI](rules-cli.md) for full command reference.

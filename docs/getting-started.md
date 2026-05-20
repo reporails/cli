@@ -1,8 +1,8 @@
 ---
 title: "Getting Started"
 description: "Install, first run, what the output means"
-version: "0.5.10"
-last_updated: 2026-05-18
+version: "0.5.11"
+last_updated: 2026-05-20
 ---
 
 # Getting Started
@@ -107,14 +107,16 @@ The JSON output groups findings under `files{path: {findings: [...], count: N}}`
 
 ## Focus on one file or capability
 
-When the whole-repo view is too noisy, name the capability and (optionally) the target:
+When the whole-repo view is too noisy, name the target. Each positional is `capability:name`, `@capability` (all of capability), or a path:
 
 ```bash
-ails check skill backlog    # focus on .claude/skills/backlog/SKILL.md
-ails check rule git         # focus on .claude/rules/git.md
-ails check agent rule-writer
-                            # subagent + any skills its frontmatter preloads
-ails check skill            # listing mode — table of all skills with scores
+ails check skills:backlog    # focus on .claude/skills/backlog/SKILL.md
+ails check rules:git         # focus on .claude/rules/git.md
+ails check agents:rule-writer
+                             # subagent + any skills its frontmatter preloads
+ails check @skills           # listing mode — table of all skills with scores
+ails check ./CLAUDE.md       # focus on a path
+ails check skills:backlog @agents  # mix: one skill + all agents
 ```
 
 The full pipeline still runs (so cross-file rules see the whole project), but only the focused file or capability appears in the output, with findings grouped by rule and a `Next:` action pointer. Listing mode (`ails check <capability>` with no name) prints a per-target score table for that capability under the detected agent. Capability names come from the agent's declared `file_types:` — both singular and plural are accepted.

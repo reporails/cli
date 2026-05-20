@@ -86,7 +86,7 @@ Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` 
 - [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md) - anonymous vs signed in, what each mode includes
 - [Configuration](https://github.com/reporails/cli/blob/main/docs/configuration.md) - disabling rules, project / global config, exclude paths
 - [Score Guide](https://github.com/reporails/cli/blob/main/docs/score-guide.md) - how the score is built and what it tells you
-- [Rules CLI](https://github.com/reporails/cli/blob/main/docs/rules-cli.md) - `ails rules for skill` and friends — preflight rules before authoring
+- [Rules CLI](https://github.com/reporails/cli/blob/main/docs/rules-cli.md) - `ails rules list --capability=skill` and friends — preflight rules before authoring
 - [FAQ](https://github.com/reporails/cli/blob/main/docs/faq.md) - common questions
 
 ## Built and validated for
