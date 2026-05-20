@@ -65,9 +65,12 @@ def load_all_rules(agents: list[str] | None = None, rules_dir: Path | None = Non
     return sorted(by_id.values(), key=lambda r: r.id)
 
 
-def filter_rules_by_capability(rules: list[Rule], capability: str) -> list[Rule]:
-    """Keep rules whose `match.type` includes `capability` (or are universal)."""
-    targets = set(_CAPABILITY_FOLD.get(capability, (capability,)))
+def filter_rules_by_capability(rules: list[Rule], capability: str | list[str]) -> list[Rule]:
+    """Keep rules whose `match.type` includes any of the capabilities (or are universal)."""
+    caps = [capability] if isinstance(capability, str) else list(capability)
+    targets: set[str] = set()
+    for cap in caps:
+        targets.update(_CAPABILITY_FOLD.get(cap, (cap,)))
     out: list[Rule] = []
     for rule in rules:
         if rule.match is None or rule.match.type is None:

@@ -666,6 +666,7 @@ def main() -> None:
 import reporails_cli.interfaces.cli.checks_command  # noqa: E402, F401  # list_checks helper backing rules_command
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
+import reporails_cli.interfaces.cli.rules_command  # noqa: E402  # Register `ails rules`
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
 from reporails_cli.interfaces.cli.auth_command import auth_app  # noqa: E402
 from reporails_cli.interfaces.cli.config_command import config_app  # noqa: E402
