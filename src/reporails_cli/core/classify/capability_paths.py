@@ -43,10 +43,9 @@ _CAPABILITY_FOLD: dict[str, tuple[str, ...]] = {
 
 # Capabilities not declared in any agent's `config.yml` — they're synthesized
 # by the classifier at scan time. `referenced` enumerates `[text](path)`-reached
-# files (`file_type: referenced` per the carve-out in
-# `cli/specs/plans/0.5.11-referenced-capability-carve-out.md`) and works across
-# all agents since markdown links are universal. Requires `generic_scanning:
-# true` in `.ails/config.yml` for results to be non-empty.
+# files (`file_type: referenced`) and works across all agents since markdown
+# links are universal. Requires `generic_scanning: true` in `.ails/config.yml`
+# for results to be non-empty.
 _VIRTUAL_CAPABILITIES: frozenset[str] = frozenset({"referenced", "references"})
 
 
