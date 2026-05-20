@@ -109,13 +109,29 @@ class AgentConfig:
 
 
 @dataclass
-class GlobalConfig:
-    """Global user configuration (~/.reporails/config.yml)."""
+class GlobalConfig:  # pylint: disable=too-many-instance-attributes
+    """Global user configuration (~/.reporails/config.yml).
+
+    Shape parity with `ProjectConfig` lets `get_project_config` merge global
+    defaults under per-project values. Project values win on per-field
+    conflict; list fields extend with global entries the project didn't
+    already declare; dict fields deep-merge under the project layer.
+    """
 
     framework_path: Path | None = None  # Local override (dev)
     auto_update_check: bool = True
     default_agent: str = ""
     tier: str = ""  # "free" | "pro" — overridden by AILS_TIER env var
+    # Project-parity defaults: merged under `ProjectConfig` when project config
+    # leaves the field empty / unset (lists extend; dicts deep-merge under).
+    disabled_rules: list[str] = field(default_factory=list)
+    exclude_dirs: list[str] = field(default_factory=list)
+    overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    rule_thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
+    generic_scanning: bool | None = None
+    packages: list[str] = field(default_factory=list)
+    agents: dict[str, dict[str, object]] = field(default_factory=dict)
+    surfaces: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 @dataclass
