@@ -1,8 +1,8 @@
-"""`ails list checks` — browse + preflight the framework check registry.
+"""Rule-registry queries backing `ails rules list` and the `rules` MCP tool.
 
-`ails list checks --for=skill` returns the workflow-ordered checks to
-follow when authoring a SKILL.md. Default format `text` (compact); `md`
-adds Pass / Fail examples; `json` is structured.
+`list_checks(capabilities=...)` returns workflow-ordered checks. Default
+format `text` (compact); `md` adds Pass / Fail examples; `json` is
+structured.
 """
 
 from __future__ import annotations
@@ -22,58 +22,57 @@ from reporails_cli.core.platform.adapters.rules_query import (
     sort_rules_for_authoring,
 )
 from reporails_cli.core.platform.dto.models import Rule, Severity
-from reporails_cli.interfaces.cli.helpers import app, console
+from reporails_cli.interfaces.cli.helpers import console
 
-list_app = typer.Typer(
-    help="List things from the reporails registry (checks, ...).",
-    no_args_is_help=True,
-)
-app.add_typer(list_app, name="list", rich_help_panel="Commands")
-
-
-@list_app.command(name="checks")
 def list_checks(
-    capability: str = typer.Option(
-        None,
-        "--for",
-        "-c",
-        help="Capability to preflight (`skill`, `agent`, `rule`, `main`, ...).",
-    ),
-    agent: str = typer.Option(None, "--agent", "-a", help="Restrict to this agent's namespace plus CORE."),
-    severity: str = typer.Option(None, "--severity", "-s", help="Minimum severity (`critical|high|medium|low`)."),
-    output_format: str = typer.Option("text", "--format", "-f", help="Output format: text | md | json."),
-    no_examples: bool = typer.Option(False, "--no-examples", help="Strip Pass / Fail blocks from md output."),
+    capabilities: list[str] | None = None,
+    agent: str | None = None,
+    severity: str | None = None,
+    output_format: str = "text",
+    no_examples: bool = False,
 ) -> None:
-    """List framework checks, optionally filtered to a capability / agent / severity."""
+    """List framework checks, optionally filtered to capabilities / agent / severity."""
     agents = [agent] if agent else None
     rules = load_all_rules(agents=agents)
-    if capability:
-        rules = filter_rules_by_capability(rules, capability)
+    if capabilities:
+        rules = filter_rules_by_capability(rules, capabilities)
     if severity:
         rules = filter_rules_by_severity(rules, _parse_severity(severity))
     rules = sort_rules_for_authoring(rules)
-    _emit(rules, output_format, capability=capability, agent=agent, no_examples=no_examples)
+    _emit(rules, output_format, capabilities=capabilities, agent=agent, no_examples=no_examples)
 
 
 def _emit(
-    rules: list[Rule], output_format: str, *, capability: str | None, agent: str | None, no_examples: bool
+    rules: list[Rule],
+    output_format: str,
+    *,
+    capabilities: list[str] | None,
+    agent: str | None,
+    no_examples: bool,
 ) -> None:
     if output_format == "json":
-        sys.stdout.write(_json.dumps(_payload(rules, capability=capability, agent=agent), indent=2) + "\n")
+        sys.stdout.write(_json.dumps(_payload(rules, capabilities=capabilities, agent=agent), indent=2) + "\n")
         return
     if output_format == "md":
-        _print_md(rules, capability=capability, agent=agent, with_examples=not no_examples)
+        _print_md(rules, capabilities=capabilities, agent=agent, with_examples=not no_examples)
         return
-    _print_text(rules, capability=capability, agent=agent)
+    _print_text(rules, capabilities=capabilities, agent=agent)
 
 
-def _print_text(rules: list[Rule], *, capability: str | None, agent: str | None) -> None:
+def _scope_label(capabilities: list[str] | None) -> str:
+    if not capabilities:
+        return "registry"
+    if len(capabilities) == 1:
+        return f"authoring a {capabilities[0]}"
+    return f"authoring {' / '.join(capabilities)}"
+
+
+def _print_text(rules: list[Rule], *, capabilities: list[str] | None, agent: str | None) -> None:
     if not rules:
-        console.print(f"[yellow]No checks match.[/yellow] capability={capability} agent={agent}")
+        console.print(f"[yellow]No checks match.[/yellow] capabilities={capabilities} agent={agent}")
         return
-    scope = f"authoring a {capability}" if capability else "registry"
     agent_tag = f" ({agent})" if agent else f" ({', '.join(list_known_agents())})"
-    console.print(f"[bold]Checks for {scope}{agent_tag} — {len(rules)} applicable[/bold]")
+    console.print(f"[bold]Checks for {_scope_label(capabilities)}{agent_tag} — {len(rules)} applicable[/bold]")
     console.print()
     by_cat: dict[str, list[Rule]] = {}
     for r in rules:
@@ -86,8 +85,8 @@ def _print_text(rules: list[Rule], *, capability: str | None, agent: str | None)
         console.print()
 
 
-def _print_md(rules: list[Rule], *, capability: str | None, agent: str | None, with_examples: bool) -> None:
-    title = f"Checks for authoring a {capability}" if capability else "Framework checks"
+def _print_md(rules: list[Rule], *, capabilities: list[str] | None, agent: str | None, with_examples: bool) -> None:
+    title = f"Checks for {_scope_label(capabilities)}" if capabilities else "Framework checks"
     if agent:
         title += f" ({agent})"
     print(f"# {title}")
@@ -129,9 +128,12 @@ def _print_md_section(rule: Rule, *, with_examples: bool) -> None:
         print(examples["fail"])
 
 
-def _payload(rules: list[Rule], *, capability: str | None, agent: str | None) -> dict[str, object]:
+def _payload(rules: list[Rule], *, capabilities: list[str] | None, agent: str | None) -> dict[str, object]:
+    # `capability` (singular) preserved for one-cap callers; `capabilities` (plural) is the canonical key.
+    capability_singular = capabilities[0] if capabilities and len(capabilities) == 1 else None
     return {
-        "capability": capability,
+        "capability": capability_singular,
+        "capabilities": list(capabilities) if capabilities else None,
         "agent": agent,
         "agents_loaded": list_known_agents(),
         "count": len(rules),
