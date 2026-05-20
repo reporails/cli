@@ -45,7 +45,7 @@ AI instruction validator for coding agents.
 ## Commands
 
 - `uv run ails check .` — validate instruction files
-- `uv run ails heal` — interactive auto-fix
+- `uv run ails check --heal` — interactive auto-fix
 ~~~~
 
 ## Limitations
