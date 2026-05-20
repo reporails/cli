@@ -23,30 +23,20 @@ For an AI coding agent about to author a SKILL.md, the preflight output becomes 
 
 ### `ails rules list`
 
-Every rule in the registry, filterable.
+Every rule in the registry, filterable. Filters compose.
 
 ```bash
 ails rules list                              # all rules across all agents
 ails rules list --capability=skill           # rules whose match.type includes skill
+ails rules list --capability=skill --capability=agent  # multiple capabilities (repeatable)
 ails rules list --agent=claude               # CORE + CLAUDE rules only
 ails rules list --severity=high              # critical + high severity rules
 ails rules list --format=json                # structured output for tooling
 ```
 
-Filters compose. `--severity` accepts `critical`, `high`, `medium`, `low` — the value is interpreted as **at or above** (so `--severity=high` returns `critical` + `high`).
+`--severity` accepts `critical`, `high`, `medium`, `low` — interpreted as **at or above** (so `--severity=high` returns `critical` + `high`).
 
-### `ails rules for <capability>`
-
-Workflow-ordered preflight: the rules applicable when authoring a file of the given capability, sorted in writing order.
-
-```bash
-ails rules for skill                         # rules to follow when writing a SKILL.md
-ails rules for agent                         # rules for agent definitions
-ails rules for rule                          # rules for .claude/rules/*.md files
-ails rules for main                          # rules for CLAUDE.md / AGENTS.md
-```
-
-Output is grouped by category in the order that matches the authoring workflow:
+Workflow-ordered preflight: pass `--capability` and use `--format=md` to pipe rules straight into an authoring agent's prompt. The output groups by category in writing order:
 
 1. **structure** — get the shape right first (frontmatter, file location, links resolve)
 2. **direction** — directive instructions are clear, no ambiguity
@@ -55,16 +45,34 @@ Output is grouped by category in the order that matches the authoring workflow:
 5. **maintenance** — keep fresh, no stale refs
 6. **governance** — policy alignment
 
-Within each category, rules are sorted by severity (critical → high → medium → low). This means the operator (or agent) reads top-down and addresses concerns in the right order.
+Within each category, rules are sorted by severity (critical → high → medium → low). The operator (or agent) reads top-down and addresses concerns in the right order.
 
-### `ails rules explain <id>`
+### `ails rules agents`
 
-Single-rule detail: title, category, severity, type, body, and pass/fail examples from the rule's documentation.
+Enumerate known agents (`claude`, `codex`, `copilot`, `cursor`, `gemini`, ...).
 
 ```bash
-ails rules explain CORE:S:0024               # text — for terminal browsing
-ails rules explain CORE:S:0024 -f md         # markdown — for piping into agent context
-ails rules explain CORE:S:0024 -f json       # structured
+ails rules agents
+ails rules agents -f json
+```
+
+### `ails rules capabilities`
+
+Enumerate the capability vocabulary an agent declares (`skills`, `agents`, `main`, `hooks`, ...). Detects current project's agent by default; override with `--agent`.
+
+```bash
+ails rules capabilities                      # auto-detect agent from cwd
+ails rules capabilities --agent=claude       # explicit
+ails rules capabilities --agent=claude -f json
+```
+
+### `ails explain <id-or-slug>`
+
+Single-rule detail: title, category, severity, type, body, and pass/fail examples. Accepts a rule ID or a slug (run `ails --install-completion` once for tab completion).
+
+```bash
+ails explain CORE:S:0024                     # by ID
+ails explain section-headers-present         # by slug
 ```
 
 ## Output formats
@@ -78,7 +86,7 @@ Compact terminal output. Rule IDs, severity, titles only. Useful for quick scans
 Rich output suitable for piping into an agent's context. Default behavior includes Pass / Fail example blocks pulled from each rule's `rule.md` body. `--no-examples` strips them for a shorter context payload.
 
 ```bash
-ails rules for skill --agent=claude -f md > skill-preflight.md
+ails rules list --capability=skill --agent=claude -f md > skill-preflight.md
 # Paste skill-preflight.md into your authoring agent's prompt before writing.
 ```
 
@@ -91,10 +99,10 @@ Stable structured payload for tooling. Top-level keys: `capability`, `agent`, `a
 ### Pipe into an authoring agent
 
 ```bash
-ails rules for skill --agent=claude -f md | claude code "Write a skill called 'analyze-test-coverage' following these rules"
+ails rules list --capability=skill --agent=claude -f md | claude code "Write a skill called 'analyze-test-coverage' following these rules"
 ```
 
-The agent receives the rule set as context before writing. Output should pass `ails check skill analyze-test-coverage` on the first run.
+The agent receives the rule set as context before writing. Output should pass `ails check skills:analyze-test-coverage` on the first run.
 
 ### Custom Claude Code agent
 
@@ -105,16 +113,16 @@ Add a slash command that wraps `ails rules`:
 description: Fetch reporails rules for authoring a {{capability}}
 ---
 
-Run `ails rules for {{capability}} -f md` and follow the rules when writing the requested file.
+Run `ails rules list --capability={{capability}} -f md` and follow the rules when writing the requested file.
 ```
 
 ### CI gate
 
 ```yaml
 # Before opening a PR that adds a new skill, run preflight:
-- run: ails rules for skill -f md > preflight.md
+- run: ails rules list --capability=skill -f md > preflight.md
 - run: # ... your authoring step
-- run: ails check skill <new-skill-name> --strict
+- run: ails check skills:<new-skill-name> --strict
 ```
 
 ## Related
