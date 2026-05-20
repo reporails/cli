@@ -3,7 +3,7 @@
 Trimmed surface (post-0.5.11): `validate`, `preflight`, `explain`. `score` and
 `heal` removed — the slash command derives score from `validate.stats` /
 `surface_health` and runs the heal-via-Edit fix-walk in its own SKILL.md body.
-CLI `ails heal` continues to serve batch deterministic use.
+CLI `ails check --heal` continues to serve batch deterministic use.
 """
 
 import logging
@@ -134,7 +134,7 @@ def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
     """Return workflow-ordered rules for authoring a file of `capability`.
 
     Backs `/reporails:ails preflight <capability>` in the plugin. Returns the
-    same data the CLI's `ails rules for <capability> -f json` emits — rules
+    same data the CLI's `ails rules list --capability=<capability> -f json` emits — rules
     sorted by category in workflow order (structure → direction → coherence
     → efficiency → maintenance → governance), severity tiebreaker, with
     Pass / Fail example blocks attached.

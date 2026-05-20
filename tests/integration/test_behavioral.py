@@ -532,7 +532,7 @@ class TestCheckConfig:
 
 
 class TestHealCommand:
-    """ails heal must auto-fix and report remaining violations."""
+    """ails check --heal must auto-fix and report remaining violations."""
 
     # test_heal_missing_path covered by smoke tests
 
@@ -547,7 +547,7 @@ class TestHealCommand:
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 
@@ -569,7 +569,7 @@ class TestHealCommand:
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
         # First pass — applies fixes
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
         assert result.exit_code in (0, None)
         # Should produce some output (fixes applied, violations listed, or nothing to heal)
         assert len(result.output.strip()) > 0
@@ -585,7 +585,7 @@ class TestHealCommand:
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p), "-f", "json"])
+        result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
         data = json.loads(result.output)
@@ -603,7 +603,7 @@ class TestHealCommand:
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
         assert result.exit_code in (0, None)
 
     @pytest.mark.integration
@@ -618,7 +618,7 @@ class TestHealCommand:
         # Minimal content that will have non-fixable violations
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
 
         assert result.exit_code in (0, None)
         # Should show either fixes applied or remaining violations

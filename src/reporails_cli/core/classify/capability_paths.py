@@ -1,6 +1,6 @@
 """Capability path resolver — reverse lookup from (agent, capability, name) to path.
 
-Per-capability targeting (`ails check skill backlog`) needs the inverse of
+Per-capability targeting (`ails check skills:backlog`) needs the inverse of
 file classification: given a capability keyword from the agent's
 ``file_types:`` config and an optional name, resolve to the canonical file
 path(s) under the project.

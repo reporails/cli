@@ -42,6 +42,27 @@ from reporails_cli.interfaces.cli.helpers import (  # noqa: E402
 )
 
 
+def _autocomplete_target_token(incomplete: str) -> list[str]:
+    """Typer autocompletion shim for `ails check <TARGET>`."""
+    from reporails_cli.interfaces.cli.completion import complete_target_token
+
+    return complete_target_token(incomplete)
+
+
+def _autocomplete_agent(incomplete: str) -> list[str]:
+    """Typer autocompletion shim for `--agent`."""
+    from reporails_cli.interfaces.cli.completion import complete_agent
+
+    return complete_agent(incomplete)
+
+
+def _autocomplete_rule_token(incomplete: str) -> list[str]:
+    """Typer autocompletion shim for `ails explain <ID-or-slug>`."""
+    from reporails_cli.interfaces.cli.completion import complete_rule_token
+
+    return complete_rule_token(incomplete)
+
+
 def _serialize_match(match: FileMatch | None) -> dict[str, object]:
     """Serialize FileMatch to dict, including all non-None properties."""
     if match is None:
@@ -74,40 +95,51 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
     return None
 
 
+def _resolve_rule_token(token: str) -> str:
+    """Map either a rule ID or a rule slug to a canonical ID."""
+    if ":" in token:
+        return token.upper()
+    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+
+    for rule in load_all_rules():
+        if rule.slug == token:
+            return rule.id
+    return token
+
+
 @app.command(rich_help_panel="Commands")
 def check(  # noqa: C901  # pylint: disable=too-many-locals
-    arg1: str = typer.Argument(
-        ".",
-        help=(
-            "Capability keyword (memory, skill, rule, agent, main, nested_context, ...) — "
-            "vocabulary comes from the detected agent's config.yml `file_types:`. "
-            "Falls back to file/directory path for legacy invocations. Defaults to whole-project scan."
-        ),
-    ),
-    arg2: str = typer.Argument(
+    targets: list[str] = typer.Argument(  # noqa: B008
         None,
         help=(
-            "Target name when arg1 is a capability — e.g. `ails check skill backlog`, `ails check agent docs-auditor`."
+            "Targets to check. Each token is `capability:name` (`skill:backlog`), "
+            "`@capability` (`@skill` for all skills), or a path (`./CLAUDE.md`). "
+            "Repeatable and mixable. No targets = whole-project scan."
         ),
+        autocompletion=_autocomplete_target_token,
     ),
     format: str = typer.Option(None, "--format", "-f", help="Output format: text, json, github"),
-    agent: str = typer.Option("", "--agent", help="Agent type (e.g., claude, copilot)"),
+    agent: str = typer.Option(
+        "",
+        "--agent",
+        help="Agent type (e.g., claude, copilot)",
+        autocompletion=_autocomplete_agent,
+    ),
     exclude_dirs: list[str] = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
     ascii: bool = typer.Option(False, "--ascii", "-a", help="ASCII characters only"),
     strict: bool = typer.Option(False, "--strict", help="Exit code 1 if violations found"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
+    heal: bool = typer.Option(False, "--heal", help="Apply auto-fixes after validation."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing."),
 ) -> None:
     """Validate AI instruction files against reporails rules.
 
-    Capability args narrow which files the standard display shows.
-    `ails check <capability>` covers every declared target for that
-    capability; `ails check <capability> <name>` covers the single named
-    target. Capability vocabulary comes from the detected agent's
+    Each positional target is a `capability:name`, `@capability`, or path.
+    Capability vocabulary comes from the detected agent's
     `framework/rules/<agent>/config.yml` `file_types:` keys.
     """
     from contextlib import nullcontext
 
-    from reporails_cli.core.classify.capability_paths import canonicalize_capability
     from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
@@ -115,42 +147,31 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.runtime.merger import merge_results
 
-    # Capability-vs-path sniffing: if arg1 matches a capability keyword for
-    # the detected agent, capture it as a path filter for the display.
-    # Otherwise treat arg1 as a path (existing behavior).
     project_root = Path.cwd().resolve()
-    capability_mode = False
-    capability = ""
-    capability_name = ""
-    if arg1 and arg1 not in (".", "./"):
-        # The agent for sniffing is whichever the user passed or the project default;
-        # full agent resolution happens after we know we're in path mode.
-        config_probe = None
-        try:
-            config_probe = get_project_config(project_root)
-        except (OSError, ValueError):
-            config_probe = None
-        sniff_agent = agent or (config_probe.default_agent if config_probe else "")
-        if not sniff_agent:
-            from reporails_cli.core.discovery.agents import detect_agents as _detect
 
-            for det in _detect(project_root):
-                sniff_agent = det.agent_type.id
-                break
-        canonical = canonicalize_capability(arg1, sniff_agent, project_root) if sniff_agent else None
-        if canonical is not None:
-            capability_mode = True
-            capability = canonical
-            capability_name = arg2 or ""
-            target = project_root
-        else:
-            target = Path(arg1).resolve()
+    capability_specs: list[tuple[str, str]] = []
+    path_targets: set[Path] = set()
+    if targets:
+        sniff_agent = _sniff_agent(agent, project_root)
+        for token in targets:
+            kind, payload = _classify_target_token(token, sniff_agent, project_root)
+            if kind == "capability":
+                capability_specs.append(payload)  # type: ignore[arg-type]
+            else:
+                resolved_path = payload  # type: ignore[assignment]
+                if not resolved_path.exists():
+                    console.print(f"[red]Error:[/red] Path not found: {resolved_path}")
+                    raise typer.Exit(2)
+                path_targets.add(resolved_path)
+
+    # Single-path-only mode: scope discovery to that path (matches the
+    # pre-variadic single-target behavior for empty-dir and single-file
+    # cases). Mixed or multi-target invocations stay rooted at cwd so all
+    # tokens see the full discovery set.
+    if path_targets and not capability_specs and len(path_targets) == 1:
+        target = next(iter(path_targets))
     else:
-        target = Path(arg1 or ".").resolve()
-
-    if not capability_mode and not target.exists():
-        console.print(f"[red]Error:[/red] Path not found: {target}")
-        raise typer.Exit(2)
+        target = project_root
 
     output_format = format or _default_format()
 
@@ -168,9 +189,37 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         excl,
     )
     instruction_files = get_all_instruction_files(target, agents=filtered)
+    # When `target` is a specific path (not project_root), drop user-scope
+    # and other paths outside the target subtree — `get_all_instruction_files`
+    # collects per-agent patterns including `~/.claude/CLAUDE.md` regardless of
+    # target, which would otherwise mask "no project files for this agent".
+    if target != project_root:
+        instruction_files = [
+            f for f in instruction_files
+            if f == target or (target.is_dir() and f.resolve().is_relative_to(target.resolve()))
+        ]
     if not instruction_files:
         _handle_no_instruction_files(effective_agent, output_format, console)
         return
+
+    # Single-path mode already narrowed discovery via `target`; nothing
+    # more to do. Otherwise build the upfront path filter from capability
+    # specs and (multi-)path tokens and narrow `instruction_files`.
+    single_path_mode = bool(path_targets and not capability_specs and len(path_targets) == 1)
+    upfront_paths: set[Path] = set()
+    if not single_path_mode:
+        if capability_specs:
+            upfront_paths |= _resolve_capability_paths(capability_specs, effective_agent, project_root, excl)
+        if path_targets:
+            upfront_paths |= set(_narrow_to_path_targets(instruction_files, path_targets))
+        if (capability_specs or path_targets) and not upfront_paths:
+            _handle_no_instruction_files(effective_agent, output_format, console)
+            return
+        if upfront_paths:
+            instruction_files = [f for f in instruction_files if f in upfront_paths]
+            if not instruction_files:
+                _handle_no_instruction_files(effective_agent, output_format, console)
+                return
 
     # 1a. EAGERLY start the global mapper daemon BEFORE any other expensive work.
     _suppress_ml_noise()
@@ -271,17 +320,12 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-    # 7. Resolve capability args (if any) to a path filter for the display.
-    capability_paths = _resolve_capability_paths(
-        capability_mode, capability, capability_name, effective_agent, project_root, excl
-    )
-
-    # 7a. Single-file target: narrow display to the operator's named file so
-    # the headline `Score:` and per-file counts reflect what was asked about.
-    # Without this, discovery's user-scope enumeration (`~/.claude/CLAUDE.md`)
-    # surfaces in panels next to the project file and inflates / pollutes the
-    # totals.
-    if not capability_paths and not capability_mode and target.is_file():
+    # 7. Path filter for the display: reuse the upfront-narrow set so
+    # display, heal pass, and strict-exit all see the same path set. For
+    # single-path mode with a file target, narrow display to that file
+    # (matches the pre-variadic single-file behavior).
+    capability_paths = upfront_paths
+    if single_path_mode and target.is_file():
         capability_paths = {target.resolve()}
 
     # 8. Filter result + ruleset_map to capability_paths so every rendered
@@ -295,39 +339,39 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         display_result = result
         display_map = ruleset_map
 
-    _dispatch_output(
-        output_format,
-        display_result,
-        display_map,
-        elapsed_ms,
-        capability_paths,
-        project_root,
-        ascii,
-        verbose,
-        funnel_error,
-    )
+    if not (heal and output_format == "json"):
+        _dispatch_output(
+            output_format,
+            display_result,
+            display_map,
+            elapsed_ms,
+            capability_paths,
+            project_root,
+            ascii,
+            verbose,
+            funnel_error,
+        )
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
+
+    if heal:
+        heal_files = (
+            [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
+        )
+        _run_heal_pass(target, heal_files, ruleset_map, effective_agent, dry_run, output_format)
 
     if _should_exit_strict(strict, capability_paths, project_root, result):
         raise typer.Exit(1)
 
 
-def _resolve_capability_paths(
-    capability_mode: bool,
+def _resolve_capability_paths_one(
     capability: str,
     capability_name: str,
     effective_agent: str,
     project_root: Path,
     exclude_dirs: list[str] | tuple[str, ...] | None = None,
 ) -> set[Path]:
-    """Resolve capability args to the set of files the display should cover.
-
-    No capability arg → empty set (whole project). `ails check <capability>`
-    → every declared target for that capability. `ails check <capability>
-    <name>` → the single resolved target (plus subagent skill expansion
-    for `agents`).
-    """
+    """Resolve one (capability, name) spec to its file set."""
     from reporails_cli.core.classify.capability_paths import (
         available_capabilities,
         list_capability_targets,
@@ -335,8 +379,6 @@ def _resolve_capability_paths(
     )
     from reporails_cli.core.classify.focus_expansion import expand_focus
 
-    if not capability_mode:
-        return set()
     if not _capability_declared(capability, effective_agent, project_root):
         console.print(
             f"[red]Error:[/red] capability [bold]{capability}[/bold] is not declared "
@@ -354,12 +396,87 @@ def _resolve_capability_paths(
             f"for agent [bold]{effective_agent}[/bold] under {project_root}."
         )
         if available:
-            console.print(f"[dim]Found {len(available)} {capability}(s) — run `ails check {capability}` to list.[/dim]")
+            console.print(
+                f"[dim]Found {len(available)} {capability}(s) — run `ails check @{capability}` to list.[/dim]"
+            )
         raise typer.Exit(2)
     paths = {resolved}
     if capability == "agents":
         paths = expand_focus(paths, effective_agent, project_root)
     return paths
+
+
+def _resolve_capability_paths(
+    specs: list[tuple[str, str]],
+    effective_agent: str,
+    project_root: Path,
+    exclude_dirs: list[str] | tuple[str, ...] | None = None,
+) -> set[Path]:
+    """Union of every (capability, name) spec resolved against the agent's vocabulary."""
+    paths: set[Path] = set()
+    for capability, capability_name in specs:
+        paths |= _resolve_capability_paths_one(
+            capability, capability_name, effective_agent, project_root, exclude_dirs
+        )
+    return paths
+
+
+def _classify_target_token(
+    token: str, sniff_agent: str, project_root: Path
+) -> tuple[str, tuple[str, str] | Path]:
+    """Classify one CLI token as 'capability', 'all-capability', or 'path'.
+
+    Returns ("capability", (cap, name)), ("capability", (cap, "")), or ("path", Path).
+    Capability tokens are canonicalized through the agent vocabulary.
+    """
+    from reporails_cli.core.classify.capability_paths import canonicalize_capability
+
+    if token.startswith("@"):
+        cap = token[1:]
+        canonical = canonicalize_capability(cap, sniff_agent, project_root) if sniff_agent else None
+        if canonical is not None:
+            return ("capability", (canonical, ""))
+        return ("capability", (cap, ""))
+    if ":" in token:
+        cap, name = token.split(":", 1)
+        canonical = canonicalize_capability(cap, sniff_agent, project_root) if sniff_agent else None
+        if canonical is not None:
+            return ("capability", (canonical, name))
+        return ("capability", (cap, name))
+    return ("path", Path(token).resolve())
+
+
+def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Path]) -> list[Path]:
+    """Keep only instruction files that are equal to or beneath one of `path_targets`."""
+    narrowed: list[Path] = []
+    for f in instruction_files:
+        f_res = f.resolve()
+        for tgt in path_targets:
+            if tgt.is_file() and f_res == tgt:
+                narrowed.append(f)
+                break
+            if tgt.is_dir() and (f_res == tgt or f_res.is_relative_to(tgt)):
+                narrowed.append(f)
+                break
+    return narrowed
+
+
+def _sniff_agent(agent: str, project_root: Path) -> str:
+    """Detect the agent to use for capability-vocabulary lookups during token classification."""
+    from reporails_cli.core.discovery.agents import detect_agents
+    from reporails_cli.core.platform.config.config import get_project_config
+
+    if agent:
+        return agent
+    try:
+        cfg = get_project_config(project_root)
+        if cfg.default_agent:
+            return cfg.default_agent
+    except (OSError, ValueError):
+        pass
+    for det in detect_agents(project_root):
+        return det.agent_type.id
+    return ""
 
 
 def _capability_declared(capability: str, effective_agent: str, project_root: Path) -> bool:
@@ -418,6 +535,29 @@ def _dispatch_output(
     )
 
 
+def _run_heal_pass(
+    target: Path,
+    instruction_files: list[Path],
+    ruleset_map: Any,
+    effective_agent: str,
+    dry_run: bool,
+    output_format: str,
+) -> None:
+    """Apply mechanical + additive fixers using the already-built map."""
+    from reporails_cli.interfaces.cli.heal import (
+        _apply_additive_fixes,
+        _apply_mechanical_fixes,
+        _output_heal_results,
+    )
+
+    show = sys.stdout.isatty() and output_format != "json"
+    heal_start = time.perf_counter()
+    mech = _apply_mechanical_fixes(ruleset_map, target, dry_run, show, console)
+    additive = _apply_additive_fixes(target, instruction_files, effective_agent, dry_run, show, console)
+    heal_ms = round((time.perf_counter() - heal_start) * 1000, 1)
+    _output_heal_results(mech + additive, mech, additive, dry_run, heal_ms, output_format, console)
+
+
 def _should_exit_strict(
     strict: bool,
     capability_paths: set[Path],
@@ -473,7 +613,11 @@ def _map_in_process(instruction_files: list[Path]) -> Any:
 
 @app.command(rich_help_panel="Commands")
 def explain(
-    rule_id: str = typer.Argument(..., help="Rule ID (e.g., S1, C2)"),
+    rule_id: str = typer.Argument(
+        ...,
+        help="Rule ID (e.g., CORE:S:0024) or slug (e.g., italic-constraints).",
+        autocompletion=_autocomplete_rule_token,
+    ),
     rules: list[str] = typer.Option(  # noqa: B008
         None,
         "--rules",
@@ -481,9 +625,9 @@ def explain(
         help="Directory containing rules (repeatable). Same semantics as check --rules.",
     ),
 ) -> None:
-    """Show rule details."""
+    """Show rule details — accepts either a rule ID or a rule slug."""
     rules_paths = _explain_rules_paths(rules)
-    rule_id_upper = rule_id.upper()
+    rule_id_upper = _resolve_rule_token(rule_id)
     agent = infer_agent_from_rule_id(rule_id_upper)  # auto-load agent-namespaced rules
     loaded_rules = load_rules(rules_paths, agent=agent)
 
@@ -514,15 +658,12 @@ def explain(
     console.print(output)
 
 
-import reporails_cli.interfaces.cli.heal  # noqa: E402  # Register heal command
-
-
 def main() -> None:
     """Entry point for CLI."""
     app()
 
 
-import reporails_cli.interfaces.cli.checks_command  # noqa: E402  # Register `ails list checks`
+import reporails_cli.interfaces.cli.checks_command  # noqa: E402, F401  # list_checks helper backing rules_command
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command

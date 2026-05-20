@@ -1114,19 +1114,19 @@ class TestExplainCommand:
 # ===========================================================================
 # Heal Command
 #
-# `ails heal` auto-fixes deterministic violations. Must work on projects
+# `ails check --heal` auto-fixes deterministic violations. Must work on projects
 # with instruction files, error on missing paths, and support JSON output.
 # ===========================================================================
 
 
 @pytest.mark.e2e
 class TestHealCommand:
-    """ails heal applies auto-fixes and reports results."""
+    """ails check --heal applies auto-fixes and reports results."""
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     def test_missing_path_errors(self) -> None:
-        result = runner.invoke(app, ["heal", "/tmp/no-such-path-xyz-abc-987"])
+        result = runner.invoke(app, ["check", "/tmp/no-such-path-xyz-abc-987", "--heal"])
         assert result.exit_code != 0
 
     @pytest.mark.e2e
@@ -1138,7 +1138,7 @@ class TestHealCommand:
         project.mkdir()
         (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(project)])
+        result = runner.invoke(app, ["check", str(project), "--heal"])
         assert result.exit_code in (0, None), f"heal failed:\n{result.output}"
 
     @pytest.mark.e2e
@@ -1151,7 +1151,7 @@ class TestHealCommand:
         original = "# My Project\n\nA project.\n"
         (project / "CLAUDE.md").write_text(original)
 
-        runner.invoke(app, ["heal", str(project)])
+        runner.invoke(app, ["check", str(project), "--heal"])
         content = (project / "CLAUDE.md").read_text()
         # Heal should add missing sections (e.g., ## Commands, ## Testing)
         assert len(content) >= len(original), "heal should not shrink files"
@@ -1165,7 +1165,7 @@ class TestHealCommand:
         project.mkdir()
         (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(project), "-f", "json"])
+        result = runner.invoke(app, ["check", str(project), "--heal", "-f", "json"])
         assert result.exit_code in (0, None), f"heal json failed:\n{result.output}"
         data = json.loads(result.output)
         assert "auto_fixed" in data
@@ -1180,7 +1180,7 @@ class TestHealCommand:
         project.mkdir()
         (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(project), "--agent", "claude"])
+        result = runner.invoke(app, ["check", str(project), "--heal", "--agent", "claude"])
         assert result.exit_code in (0, None), f"heal --agent failed:\n{result.output}"
 
     @pytest.mark.e2e
@@ -1190,7 +1190,7 @@ class TestHealCommand:
         project = tmp_path / "empty"
         project.mkdir()
 
-        result = runner.invoke(app, ["heal", str(project)])
+        result = runner.invoke(app, ["check", str(project), "--heal"])
         # Should exit 0 or 1 with message — not crash
         assert result.exit_code in (0, 1, None)
 

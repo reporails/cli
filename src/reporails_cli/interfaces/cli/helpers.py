@@ -18,6 +18,7 @@ app = typer.Typer(
     name="ails",
     help="Validate and score AI instruction files - what ails your repo?",
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console(emoji=False, highlight=False)
 
