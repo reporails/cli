@@ -160,7 +160,15 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             else:
                 resolved_path = payload  # type: ignore[assignment]
                 if not resolved_path.exists():
-                    console.print(f"[red]Error:[/red] Path not found: {resolved_path}")
+                    from reporails_cli.core.classify.capability_paths import canonicalize_capability
+
+                    suggestion = ""
+                    if sniff_agent and canonicalize_capability(token, sniff_agent, project_root) is not None:
+                        suggestion = (
+                            f"\n[dim]'{token}' is a known capability — "
+                            f"did you mean `ails check @{token}`?[/dim]"
+                        )
+                    console.print(f"[red]Error:[/red] Path not found: {resolved_path}{suggestion}")
                     raise typer.Exit(2)
                 path_targets.add(resolved_path)
 
