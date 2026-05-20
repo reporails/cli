@@ -14,5 +14,6 @@
 
 - [Lint]: Gate user-scope `~/...` rendering in mechanical-check attribution on the classifier's `precedence: user` property (read from agent config patterns) instead of path-prefix heuristics, so Windows tmp paths under the user profile no longer render with a `~/` prefix.
 - check: `ails check main` no longer folds subdirectory CLAUDE.md / `nested_context` / `child_instruction` files into the `main` umbrella. The capability now lists only root-level family (`main` + `override`); use `ails check nested_context` or `ails check child_instruction` to enumerate subdir CLAUDE.md. Capability-listing now reuses the classifier's `scope`/`loading` semantics so `**/CLAUDE.md` partitions correctly between root and nested.
+- check: `ails check <file>` narrows the display to the named file so the headline `Score:`, surface-health bars, and per-file panels reflect only what the operator asked about. Previously, discovery enumerated user-scope `~/.claude/CLAUDE.md` alongside the project file, inflating finding totals with entries from a path the operator hadn't named.
 
 ### Removed
