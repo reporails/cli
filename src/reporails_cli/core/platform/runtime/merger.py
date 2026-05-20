@@ -101,6 +101,7 @@ class CombinedResult:
     hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
     cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
     level: Level = Level.L0
+    tier: str = ""  # Tier label propagated from LintResult ("free", "pro", "anonymous"); empty when offline
 
 
 def _collect_server_diagnostics(
@@ -182,12 +183,17 @@ def merge_results(
     cross_file_coordinates: tuple[Any, ...] = (),
     project_root: Path | None = None,
     level: Level = Level.L0,
+    tier: str = "",
 ) -> CombinedResult:
     """Merge M-probe findings, client checks, and server diagnostics.
 
     When server_report is None, returns local findings only with offline=True.
     When present, deduplicates: server diagnostic at same (file, line, rule)
     replaces the local finding. All paths normalized to project-relative.
+
+    `tier` carries the upstream `LintResult.tier` label through the pipeline so
+    JSON / MCP consumers can render tier-aware presentation without re-reading
+    `AILS_TIER`. Empty string when offline / no server call.
     """
 
     def _norm(fp: str) -> str:
@@ -217,4 +223,5 @@ def merge_results(
         hints=hints,
         cross_file_coordinates=cross_file_coordinates,
         level=level,
+        tier=tier,
     )

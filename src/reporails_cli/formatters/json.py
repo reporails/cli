@@ -203,6 +203,23 @@ def format_heal_result(
     return result
 
 
+def _category_for_rule(rule_id: str) -> str:
+    """Derive the category label for a rule ID via `CATEGORY_CODES`.
+
+    Returns the lowercase Category value (`"structure"`, `"direction"`, etc.)
+    when the rule ID's second segment matches a known code, or an empty
+    string when the shape is unrecognized. The MCP / JSON consumer reads
+    this to group findings by category for prioritization.
+    """
+    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
+
+    parts = rule_id.split(":")
+    if len(parts) < 2:
+        return ""
+    category = CATEGORY_CODES.get(parts[1])
+    return category.value if category else ""
+
+
 def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, Any]:
     """Format CombinedResult as JSON dict.
 
@@ -211,7 +228,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
         ruleset_map: Optional RulesetMap for accurate file counts
 
     Returns:
-        Dict with findings, stats, compliance
+        Dict with findings, stats, compliance, tier, category info.
     """
     from dataclasses import asdict
 
@@ -227,6 +244,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
             "line": f.line,
             "severity": f.severity,
             "rule": f.rule,
+            "category": _category_for_rule(f.rule),
             "message": f.message,
         }
         if f.fix:
@@ -235,6 +253,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
 
     data: dict[str, Any] = {
         "offline": result.offline,
+        "tier": result.tier,
         "files": {
             fp: {"findings": findings, "count": len(findings)}
             for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))
@@ -276,7 +295,13 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
     surfaces = compute_surface_scores(result, ruleset_map=ruleset_map)
     if surfaces:
         data["surface_health"] = [
-            {"name": s.name, "score": s.score, "file_count": s.file_count, "finding_count": s.finding_count}
+            {
+                "name": s.name,
+                "score": s.score,
+                "file_count": s.file_count,
+                "finding_count": s.finding_count,
+                "category_breakdown": dict(s.category_breakdown),
+            }
             for s in surfaces
         ]
     data["top_rules"] = _aggregate_top_rules(result.findings)

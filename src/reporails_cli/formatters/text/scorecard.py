@@ -6,7 +6,7 @@ Renders the bottom summary section: score bar, scope, findings, compliance, CTA.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from rich.console import Console
@@ -93,6 +93,12 @@ class SurfaceHealth:
     errors: int = 0
     warnings: int = 0
     infos: int = 0
+    # Findings grouped by Category enum value (`structure`, `direction`,
+    # `coherence`, `efficiency`, `maintenance`, `governance`). Empty when no
+    # findings have a recognizable category code. Sum of values equals
+    # `finding_count` for findings whose rule-id second segment maps via
+    # `CATEGORY_CODES`; rules with non-standard IDs are excluded.
+    category_breakdown: dict[str, int] = field(default_factory=dict)
 
 
 def compute_surface_scores(
@@ -188,9 +194,32 @@ def compute_surface_scores(
                 errors=n_errors,
                 warnings=n_warnings,
                 infos=n_infos,
+                category_breakdown=_count_categories(findings),
             )
         )
     return surfaces
+
+
+def _count_categories(findings: list[Any]) -> dict[str, int]:
+    """Group findings by rule-id-derived Category value.
+
+    Reads each finding's rule id (e.g. `CORE:C:0042`), pulls the second
+    segment (`C`), and maps it via `CATEGORY_CODES` to a category label.
+    Rules whose id shape doesn't yield a known code are skipped — the
+    counts only cover categorized findings.
+    """
+    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
+
+    counts: Counter[str] = Counter()
+    for f in findings:
+        parts = (f.rule or "").split(":")
+        if len(parts) < 2:
+            continue
+        category = CATEGORY_CODES.get(parts[1])
+        if category is None:
+            continue
+        counts[category.value] += 1
+    return dict(counts)
 
 
 def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
