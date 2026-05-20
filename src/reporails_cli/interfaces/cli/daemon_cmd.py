@@ -6,7 +6,11 @@ import typer
 
 from reporails_cli.interfaces.cli.helpers import console
 
-daemon_app = typer.Typer(name="daemon", help="Manage the global mapper daemon.")
+daemon_app = typer.Typer(
+    name="daemon",
+    help="Manage the global mapper daemon.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 
 @daemon_app.command()

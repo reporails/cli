@@ -17,6 +17,7 @@ config_app = typer.Typer(
     name="config",
     help="Get and set project configuration (.ails/config.yml).",
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 # Keys that map to ProjectConfig fields

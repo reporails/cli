@@ -51,12 +51,12 @@ A subagent follows this document to validate the `/ails` skill end-to-end agains
 **Expected agent behavior**:
 - The `mcp__reporails__heal` tool was removed at 0.5.11; the skill must route through one of the two surviving paths:
   - **Fix-walk path** — drive an `Edit`-per-finding loop using each finding's `fix` text from the validate response (the path the skill body should drive by default).
-  - **CLI batch path** — invoke `ails heal .` for deterministic single-file rewrites with no per-finding gate.
+  - **CLI batch path** — invoke `ails check . --heal` for deterministic single-file rewrites with no per-finding gate.
 - Reports what was fixed at the end.
 
 **Pass criteria**:
 - [ ] Skill does NOT invoke `mcp__reporails__heal` (the tool was removed at 0.5.11).
-- [ ] Either per-finding edits were applied (fix-walk path) OR `ails heal` was invoked (CLI batch path).
+- [ ] Either per-finding edits were applied (fix-walk path) OR `ails check --heal` was invoked (CLI batch path).
 - [ ] User is told what was fixed at the end (file count or finding count).
 - [ ] If no fixes available, surfaces that explicitly instead of erroring.
 
@@ -65,7 +65,7 @@ A subagent follows this document to validate the `/ails` skill end-to-end agains
 **Task**: `/ails preflight skill`
 
 **Expected agent behavior**:
-- Routes through `ails list checks --for=skill --agent=claude -f md` (or MCP equivalent).
+- Routes through `ails rules list --capability=skill --agent=claude -f md` (or MCP equivalent).
 - Returns a workflow-ordered rule set grouped by category (structure → direction → coherence → efficiency → maintenance → governance).
 - Each rule: ID, severity, title, optional Pass/Fail example.
 
