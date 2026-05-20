@@ -71,6 +71,7 @@ def _merge_with_server(
         hints=lint_result.hints if lint_result else (),
         cross_file_coordinates=lint_result.cross_file_coordinates if lint_result else (),
         project_root=target,
+        tier=lint_result.tier if lint_result else "",
     )
 
 

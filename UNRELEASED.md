@@ -8,6 +8,7 @@
 ### Changed
 
 - Internals: New `core/platform/adapters/rules_query.py` adapter (load + filter + sort + fence-aware Pass/Fail extraction) backs `ails list checks`. CLI surface lives at `interfaces/cli/checks_command.py` as a Typer sub-app under the `list` verb. 18 unit tests + 9 integration tests cover loader / filter / sort / command / examples.
+- mcp/json: validate response now carries `tier` at top-level, `category` per finding (derived from rule id via the existing `Category` enum), and `category_breakdown` per surface in `surface_health`. Consumers can render tier-aware presentation, group findings by category, and triage by prioritizing surfaces with the heaviest category buckets.
 - classify: Link-reached files split into two file types — `[text](path)` markdown-link reach classifies the target as `file_type: referenced` with `loading: discoverable`; `@<path>` import reach keeps `file_type: generic` with `loading: session_start`/`on_demand` per source eagerness. Mixed reach (both `@` and link from any source) routes to `generic` — the import path's auto-load guarantee dominates the link-only path's discoverability. Matches the actual harness loading model: only `@`-imported content enters context budget without an explicit `Read`. Per `cli/specs/plans/0.5.11-referenced-capability-carve-out.md`.
 
 ### Fixed

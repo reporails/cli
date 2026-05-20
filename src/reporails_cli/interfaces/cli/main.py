@@ -267,6 +267,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         cross_file_coordinates=cross_file_coordinates,
         project_root=target,
         level=project_level,
+        tier=lint_result.tier if lint_result else "",
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
