@@ -8,6 +8,11 @@ severity: high
 backed_by: [claude-md-guide, developer-context-cursor-study, dometrain-claude-md-guide,
   fowler-context-engineering-agents, instruction-limits-principles, openai-community-agents-md-optimization]
 match: {format: freeform}
+fix: |
+  Replace placeholder phrases ("TODO", "Lorem ipsum", "<your-content-here>",
+  "Replace this section") with the actual content the section is meant to
+  carry. Auto-generated boilerplate teaches the agent nothing — write real
+  directives that name specific constructs the agent will encounter.
 ---
 
 # No Auto Generated Boilerplate

@@ -79,6 +79,7 @@ def _evaluate_check(
         severity=_to_display_severity(rule.severity.value),
         rule=rule.id,
         message=message,
+        fix=rule.fix,
         source="content_query",
         check_id=check.id,
     )

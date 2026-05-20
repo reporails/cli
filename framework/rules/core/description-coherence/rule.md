@@ -7,6 +7,13 @@ type: mechanical
 execution: server
 severity: medium
 match: {loading: on_invocation}
+fix: |
+  Rewrite the `description:` frontmatter field so it names the same
+  concepts the body covers. If the body covers three formats, the
+  description should mention all three (or use a covering term like
+  "structured output formats"). The description's job is dispatch —
+  the agent reads it to decide whether the file applies, before paying
+  the cost of loading the body.
 ---
 
 # Description Coherence

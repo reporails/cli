@@ -74,6 +74,7 @@ def dispatch_single_check(
             message=msg,
             severity=sev,
             check_id=check.id,
+            fix=rule.fix,
         )
         return violation, result
 

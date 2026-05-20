@@ -64,6 +64,7 @@ def _collect_mechanical_findings(
                 severity=_to_display_severity(v.severity.value),
                 rule=v.rule_id,
                 message=v.message,
+                fix=v.fix,
                 source="m_probe",
                 check_id=v.check_id or "",
             )
@@ -126,6 +127,7 @@ def _collect_deterministic_findings(
                 project_dir,
                 instruction_files=target_files,
                 min_lines_overrides=min_lines_overrides,
+                fix_by_rule={rule.id: rule.fix} if rule.fix else None,
             )
         )
     return findings

@@ -8,6 +8,12 @@ severity: medium
 backed_by: []
 match: {type: scoped_rule}
 source: https://agents.md/
+fix: |
+  Add a list of canonical filenames the agent recognizes to the rule
+  body. Each filename gets a brief role description — `\`AGENTS.md\` —
+  project-wide agent instructions`, `\`AGENTS.override.md\` — local
+  override that wins over committed AGENTS.md`. Without the filename
+  list, the rule can't enforce what the agent's docs declare.
 ---
 
 # Agent Documents Filenames

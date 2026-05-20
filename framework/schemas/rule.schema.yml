@@ -77,6 +77,16 @@ fields:
     default: local
     description: "Where the rule executes. local = checks.yml on client. server = diagnostic from API, no local checks."
 
+  fix:
+    required: false
+    type: string
+    max_length: 1000
+    description: >
+      Canonical operator-facing fix text for this rule (max 1000 chars).
+      Read into LocalFinding.fix at emission time. Mirrors the
+      skill-description ceiling. Empty when the rule has no actionable
+      fix text yet (the plugin helper UX falls back to asking the user).
+
   severity:
     required: true
     type: enum

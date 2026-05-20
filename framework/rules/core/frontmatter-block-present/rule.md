@@ -7,6 +7,11 @@ type: deterministic
 severity: high
 backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, rules-directory-mechanics]
 match: {type: scoped_rule}
+fix: |
+  Add a YAML frontmatter block at the top of the file —
+  `---\n<key>: <value>\n---\n` lines. The block declares the file's
+  identity (`name`, `description`) and scope (`paths`, `loading`,
+  `maintainer`) so the loader can target it correctly.
 ---
 
 # Frontmatter Block Present

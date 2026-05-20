@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: critical
 match: {}
+fix: |
+  Split this file into separate files, one topic per file. Each topic
+  is a distinct concern with embedding distance ≥ 0.5 from the others.
+  Fragmenting many topics into one file forces the model to compete
+  for attention across them; one file per topic gives each its own
+  focus surface.
 ---
 
 # Topic Scatter

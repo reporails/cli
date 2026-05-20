@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: critical
 match: {}
+fix: |
+  Replace vague verbs with named constructs in `backticks`. "Run the tests"
+  → "Run \`pytest tests/ -v\`". "Follow the style" → "Use \`ruff format\`,
+  4-space indent". "Update the module" → "Update \`auth/login.py\`". Each
+  charged instruction should name at least one specific tool, file, or
+  command the model can pattern-match against.
 ---
 
 # Specificity Gap

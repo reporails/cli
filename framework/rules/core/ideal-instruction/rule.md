@@ -7,6 +7,13 @@ type: mechanical
 execution: server
 severity: medium
 match: {}
+fix: |
+  Strengthen the weak instructions. For each weak finding, apply the
+  named-construct pattern (`backtick`-wrap a specific tool / file /
+  command), the imperative-modality pattern (replace "consider" /
+  "try" / "should" with direct verbs), and the elaboration pattern
+  (target 15-50 distinct tokens per instruction). See `ails explain
+  CORE:C:0053` for the full ideal-instruction shape.
 ---
 
 # The Ideal Instruction

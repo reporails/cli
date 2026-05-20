@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: medium
 match: {}
+fix: |
+  Add a directive (+1) before the constraint (-1) on the same topic.
+  Pattern: directive → reasoning → constraint. "Run \`pytest\` before
+  each commit. Tests catch regressions early. *Do not skip tests when
+  the CI is red.*" The model follows the last-seen instruction on a
+  topic; constraint-first means the directive never lands.
 ---
 
 # Direction Imbalance

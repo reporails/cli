@@ -10,6 +10,11 @@ backed_by:
 - flowbench-workflow-format-benchmark
 - fowler-pushing-ai-autonomy
 match: {format: freeform}
+fix: |
+  Add a `mermaid` flowchart block alongside the prose description of the
+  procedure. Use `flowchart TD` for top-down branching procedures. The
+  diagram gives the agent a structured map to walk; prose alone leaves
+  the procedure shape implicit.
 ---
 
 # Flowcharts for Procedures

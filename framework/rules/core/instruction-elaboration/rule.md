@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: high
 match: {}
+fix: |
+  Expand the instruction to 15-50 distinct tokens. Add the conditions
+  under which it applies, the specific tool / file / command involved,
+  and one concrete example. "Test the code" → "Run \`pytest tests/\`
+  with the \`-v\` flag before each \`git commit\` so failures surface
+  inline." Too-short instructions lack tokens the model can activate on.
 ---
 
 # Instruction Elaboration

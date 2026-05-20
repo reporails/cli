@@ -7,6 +7,11 @@ type: deterministic
 severity: high
 backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions]
 match: {type: scoped_rule}
+fix: |
+  Add the missing identity fields to the file's YAML frontmatter —
+  `name:` (kebab-case identifier), `description:` (one-line summary the
+  loader reads to dispatch). Both are required for the loader to surface
+  the file as a registered skill / agent / rule.
 ---
 
 # Identity Fields In Frontmatter

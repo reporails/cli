@@ -7,6 +7,11 @@ type: mechanical
 severity: medium
 backed_by: [enterprise-claude-usage, fowler-context-engineering-agents]
 match: {type: skill}
+fix: |
+  Add a `SKILL.md` file at the skill directory's root with YAML
+  frontmatter (`name:`, `description:`) and a body describing what the
+  skill does. The skill loader discovers skills via this entry-point
+  filename; directories without `SKILL.md` are invisible.
 ---
 # Skill Entry Point Present
 

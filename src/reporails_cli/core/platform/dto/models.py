@@ -185,6 +185,8 @@ class Rule(BaseModel):
     # Identity
     slug: str = ""  # e.g., "instruction-file-exists"
     execution: Execution = Execution.LOCAL  # Where checks run
+    # Operator-facing fix text from rule.md frontmatter.
+    fix: str = Field(default="", max_length=1000)
     match: FileMatch | None = None  # Property-based file targeting
     supersedes: str | None = None  # Coordinate of rule this replaces
     inherited: str | None = None  # Coordinate of parent rule to inherit checks from (both stay active)
@@ -235,6 +237,7 @@ class Violation:
     message: str  # From rule definition
     severity: Severity
     check_id: str | None = None  # e.g., "CORE:S:0005:check:0001"
+    fix: str = ""  # Canonical fix text propagated from Rule.fix
 
 
 @dataclass(frozen=True)

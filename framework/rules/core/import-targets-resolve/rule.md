@@ -7,6 +7,11 @@ type: mechanical
 severity: high
 backed_by: [developer-context-cursor-study]
 match: {format: [freeform, frontmatter]}
+fix: |
+  Update the `@<path>` import to point to an existing file. Either
+  correct the path or remove the import. Imports auto-load into the
+  agent's context — broken targets silently drop without warning, so a
+  typo means the referenced content never reaches the model.
 ---
 
 # Import Targets Resolve
