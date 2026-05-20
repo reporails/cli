@@ -1,4 +1,10 @@
-"""MCP tool implementations for reporails."""
+"""MCP tool implementations for reporails.
+
+Trimmed surface (post-0.5.11): `validate`, `preflight`, `explain`. `score` and
+`heal` removed — the slash command derives score from `validate.stats` /
+`surface_health` and runs the heal-via-Edit fix-walk in its own SKILL.md body.
+CLI `ails heal` continues to serve batch deterministic use.
+"""
 
 import logging
 from pathlib import Path
@@ -98,72 +104,85 @@ def _run_pipeline(target: Path) -> dict[str, Any]:
 
 
 def validate_tool(path: str = ".") -> dict[str, Any]:
-    """Validate AI instruction files at path."""
+    """Validate AI instruction files at `path` (directory OR single file).
+
+    The slash-command body consumes the response per its Check loop — opens
+    with one paragraph naming the worst surface + dominant category, then
+    spawns the fix-walk sub-agent. Returns a structured `needs_install`
+    response (not a bare error) when framework rules are absent, so the
+    slash-command body can surface an actionable next step.
+    """
     if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails install' first."}
+        return {
+            "needs_install": True,
+            "message": "Reporails framework not installed. Run `ails install` to download the rules pack.",
+            "command": "ails install",
+        }
     target = Path(path).resolve()
     if not target.exists():
         return {"error": f"Path not found: {target}"}
-    if not target.is_dir():
-        return {"error": f"Path is not a directory: {target}"}
+    # File paths are supported per the 0.5.11 bug-1 fix (commit cc58ebd): when
+    # arg1 is an existing file, the pipeline narrows discovery to the file's
+    # project root and the display filter to the single file.
     try:
         return _run_pipeline(target)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         return {"error": str(e)}
 
 
-def score_tool(path: str = ".") -> dict[str, Any]:
-    """Quick score check for AI instruction files."""
+def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
+    """Return workflow-ordered rules for authoring a file of `capability`.
+
+    Backs `/reporails:ails preflight <capability>` in the plugin. Returns the
+    same data the CLI's `ails rules for <capability> -f json` emits — rules
+    sorted by category in workflow order (structure → direction → coherence
+    → efficiency → maintenance → governance), severity tiebreaker, with
+    Pass / Fail example blocks attached.
+
+    The SKILL.md body presents the rule list and offers to draft; the
+    structured shape lets the model walk rules category-by-category without
+    parsing markdown.
+    """
+    from reporails_cli.core.platform.adapters.rules_query import rules_for_capability
+
     if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails install' first."}
-    target = Path(path).resolve()
-    if not target.exists():
-        return {"error": f"Path not found: {target}"}
-    if not target.is_dir():
-        return {"error": f"Path is not a directory: {target}"}
-    try:
-        result = _run_pipeline(target)
-        if "error" in result:
-            return result
-        stats = result.get("stats", {})
         return {
-            "compliance_band": result.get("compliance_band", "offline"),
-            "total_findings": stats.get("total_findings", 0),
-            "errors": stats.get("errors", 0),
-            "warnings": stats.get("warnings", 0),
-            "offline": result.get("offline", True),
+            "needs_install": True,
+            "message": "Reporails framework not installed. Run `ails install` to download the rules pack.",
+            "command": "ails install",
         }
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return {"error": str(e)}
+    if not capability:
+        return {"error": "capability argument is required (e.g. 'skill', 'agent', 'rule', 'main')"}
+
+    agents = [agent] if agent else None
+    rules = rules_for_capability(capability, agents=agents)
+
+    return {
+        "capability": capability,
+        "agent": agent,
+        "rules": [_serialize_preflight_rule(r) for r in rules],
+        "count": len(rules),
+    }
 
 
-def heal_tool(path: str = ".", dry_run: bool = False) -> dict[str, Any]:
-    """Auto-fix instruction file issues at path."""
-    if not is_initialized():
-        return {"error": "Reporails not initialized. Run 'ails install' first."}
-    target = Path(path).resolve()
-    if not target.exists():
-        return {"error": f"Path not found: {target}"}
-    if not target.is_dir():
-        return {"error": f"Path is not a directory: {target}"}
-    try:
-        discovery = _discover_files(target)
-        if discovery is None:
-            return {"auto_fixed": [], "summary": {"auto_fixed_count": 0}}
-        _detected, _agent, instruction_files = discovery
+def _serialize_preflight_rule(rule: Any) -> dict[str, Any]:
+    """Shape one rule for the preflight response payload."""
+    from reporails_cli.core.platform.adapters.rules_query import load_rule_examples
 
-        ruleset_map = _build_map(target, instruction_files)
-
-        fixes: list[dict[str, str]] = []
-        if ruleset_map is not None:
-            from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
-
-            mech = apply_mechanical_fixes(ruleset_map, target, dry_run=dry_run)
-            fixes.extend({"rule_id": m.fix_type, "file_path": m.file_path, "description": m.description} for m in mech)
-
-        return {"auto_fixed": fixes, "summary": {"auto_fixed_count": len(fixes), "dry_run": dry_run}}
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
-        return {"error": str(e)}
+    examples = load_rule_examples(rule)
+    payload: dict[str, Any] = {
+        "id": rule.id,
+        "title": rule.title,
+        "category": rule.category.value,
+        "severity": rule.severity.value,
+        "slug": rule.slug,
+        "match": _serialize_match(rule.match),
+    }
+    if examples.get("pass"):
+        payload["pass_example"] = examples["pass"]
+    if examples.get("fail"):
+        payload["fail_example"] = examples["fail"]
+    return payload
 
 
 def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | dict[str, Any]:

@@ -1,12 +1,11 @@
 """End-to-end MCP tool tests — exercise all tools through the server dispatch layer.
 
-Covers:
-  - Tool listing: all expected tools present with correct schemas
-  - validate: returns JSON with score, violations
-  - score: returns JSON with compliance band and finding counts
+Covers the trimmed 0.5.11 surface:
+  - Tool listing: validate / preflight / explain present (no score, no heal)
+  - validate: returns JSON with findings, tier, per-finding category, surface category_breakdown
+  - preflight: returns workflow-ordered rules + Pass / Fail blocks
   - explain: returns rule details or error for unknown rules
-  - heal: auto-fix instruction file issues
-  - Circuit breaker: content-aware mtime tracking
+  - Circuit breaker: content-aware mtime tracking (safety net for runaway loops)
   - Unknown tool: returns error
 """
 
@@ -77,12 +76,12 @@ class TestListTools:
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
-        """list_tools should return all four tools."""
+        """list_tools should return the trimmed 0.5.11 surface: validate, preflight, explain."""
         from reporails_cli.interfaces.mcp.server import list_tools
 
         tools = _run_async(list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "score", "explain", "heal"}
+        assert names == {"validate", "preflight", "explain"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -186,13 +185,19 @@ class TestValidateTool:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
-    def test_uninitialized_returns_error_json(self) -> None:
-        """When framework is not initialized, should return JSON error."""
-        with patch("reporails_cli.interfaces.mcp.server.is_initialized", return_value=False):
+    def test_uninitialized_returns_needs_install_payload(self) -> None:
+        """When framework is not installed, validate returns a structured `needs_install` payload.
+
+        The 0.5.11 trim replaced the bare `{"error": "not_initialized"}` shape
+        with a structured response carrying the actionable next step, so the
+        slash-command body can surface `ails install` to the user instead of
+        returning a generic error.
+        """
+        with patch("reporails_cli.interfaces.mcp.tools.is_initialized", return_value=False):
             text = _call_tool("validate", {"path": "."})
         data = json.loads(text)
-        assert "error" in data
-        assert data["error"] == "not_initialized"
+        assert data.get("needs_install") is True
+        assert "ails install" in data.get("command", "")
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -200,7 +205,7 @@ class TestValidateTool:
     def test_runtime_error_returns_error_json(self, level2_project: Path) -> None:
         """RuntimeError from _run_pipeline must return JSON error, not crash."""
         with (
-            patch("reporails_cli.interfaces.mcp.server.is_initialized", return_value=True),
+            patch("reporails_cli.interfaces.mcp.tools.is_initialized", return_value=True),
             patch(
                 "reporails_cli.interfaces.mcp.tools._run_pipeline",
                 side_effect=RuntimeError("Unsupported operating system"),
@@ -213,30 +218,54 @@ class TestValidateTool:
 
 
 # ---------------------------------------------------------------------------
-# score tool
+# preflight tool
 # ---------------------------------------------------------------------------
 
 
-class TestScoreTool:
+class TestPreflightTool:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     @requires_rules
-    def test_returns_json_with_stats(self, level2_project: Path) -> None:
-        """score should return JSON with findings summary."""
-        text = _call_tool("score", {"path": str(level2_project)})
+    def test_returns_workflow_ordered_rules(self) -> None:
+        """preflight returns rules sorted by category in workflow order."""
+        text = _call_tool("preflight", {"capability": "skill"})
         data = json.loads(text)
-        assert "total_findings" in data or "errors" in data
+        assert data.get("capability") == "skill"
+        assert "rules" in data
+        assert isinstance(data["rules"], list)
+        # Sanity: at least one rule, and each has the expected envelope shape
+        if data["rules"]:
+            first = data["rules"][0]
+            assert "id" in first
+            assert "title" in first
+            assert "category" in first
+            assert "severity" in first
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     @requires_rules
-    def test_offline_flag_present(self, level2_project: Path) -> None:
-        """Score result should indicate offline status."""
-        text = _call_tool("score", {"path": str(level2_project)})
+    def test_empty_capability_returns_error(self) -> None:
+        """Missing capability surfaces as a structured error, not a crash."""
+        text = _call_tool("preflight", {"capability": ""})
         data = json.loads(text)
-        assert "offline" in data
+        assert "error" in data
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.subsys_api
+    @requires_rules
+    def test_pass_fail_examples_attached(self) -> None:
+        """Rules with rule.md Pass / Fail sections surface their bodies inline."""
+        text = _call_tool("preflight", {"capability": "skill"})
+        data = json.loads(text)
+        any_with_pass = any("pass_example" in r for r in data.get("rules", []))
+        any_with_fail = any("fail_example" in r for r in data.get("rules", []))
+        # Whichever exists in the corpus surfaces — at least one direction
+        # should be populated when the framework is installed and rules carry
+        # Pass / Fail blocks (which is the corpus norm).
+        assert any_with_pass or any_with_fail
 
 
 # ---------------------------------------------------------------------------
@@ -429,27 +458,28 @@ class TestCircuitBreaker:
 # ---------------------------------------------------------------------------
 
 
-class TestScoreToolHelper:
-    """Test the score_tool helper function directly."""
+class TestPreflightToolHelper:
+    """Test the preflight_tool helper function directly."""
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     @requires_rules
-    def test_returns_score_dict(self, level2_project: Path) -> None:
-        from reporails_cli.interfaces.mcp.tools import score_tool
+    def test_returns_rules_for_capability(self) -> None:
+        from reporails_cli.interfaces.mcp.tools import preflight_tool
 
-        result = score_tool(str(level2_project))
-        assert "total_findings" in result or "offline" in result
+        result = preflight_tool("skill")
+        assert result.get("capability") == "skill"
+        assert "rules" in result
         assert "error" not in result
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
-    def test_missing_path_returns_error(self) -> None:
-        from reporails_cli.interfaces.mcp.tools import score_tool
+    def test_empty_capability_returns_error(self) -> None:
+        from reporails_cli.interfaces.mcp.tools import preflight_tool
 
-        result = score_tool("/tmp/no-such-path-xyz-mcp-test")
+        result = preflight_tool("")
         assert "error" in result
 
 
