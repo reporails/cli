@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: high
 match: {}
+fix: |
+  Consolidate uncharged content into the parent instruction, or separate
+  it into a distinct section. Sub-bullets and reference lists around
+  instructions dilute their attention share — the model splits focus
+  across descriptions and the directive itself. Move support material
+  to a dedicated `## References` or `## Notes` section.
 ---
 
 # Content Dilution

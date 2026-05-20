@@ -471,6 +471,7 @@ def _emit_expect_findings(
     scanned_files: list[str],
     min_lines_map: dict[str, int] | None = None,
     scan_root: Path | None = None,
+    fix_by_rule: dict[str, str] | None = None,
 ) -> list[LocalFinding]:
     """Convert expect/match results to LocalFinding list.
 
@@ -478,9 +479,15 @@ def _emit_expect_findings(
     skipped — neither marked as failing nor as passing. Used by rules
     like `CORE:S:0013 scope-fields-in-frontmatter` where the scope
     declaration is boilerplate for tiny files.
+
+    `fix_by_rule` maps full rule ids (e.g. `CORE:S:0013`) to the
+    canonical fix text declared in `rule.md` frontmatter. Propagates to
+    `LocalFinding.fix` so MCP / JSON consumers can render the suggested
+    edit. Empty when the rule has no declared fix.
     """
     findings: list[LocalFinding] = []
     min_lines_map = min_lines_map or {}
+    fix_by_rule = fix_by_rule or {}
     for check_id, expect in expect_map.items():
         parts = check_id.split(".")
         rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}" if len(parts) >= 3 else check_id
@@ -490,6 +497,7 @@ def _emit_expect_findings(
             else ""
         )
         msg = message_map.get(check_id, "")
+        fix_text = fix_by_rule.get(rule_id, "")
         min_lines = min_lines_map.get(check_id, 0)
         if expect == "absent":
             for file_path in scanned_files:
@@ -502,6 +510,7 @@ def _emit_expect_findings(
                             severity="warning",
                             rule=rule_id,
                             message=match_msg or msg,
+                            fix=fix_text,
                             source="m_probe",
                             check_id=check_suffix,
                         )
@@ -514,6 +523,7 @@ def _emit_expect_findings(
                     severity="warning",
                     rule=rule_id,
                     message=msg,
+                    fix=fix_text,
                     source="m_probe",
                     check_id=check_suffix,
                 )
@@ -546,6 +556,7 @@ def run_checks(
     exclude_dirs: list[str] | None = None,
     body_only_paths: set[Path] | None = None,
     min_lines_overrides: dict[str, int] | None = None,
+    fix_by_rule: dict[str, str] | None = None,
 ) -> list[LocalFinding]:
     """Execute regex validation and return LocalFinding list.
 
@@ -553,6 +564,11 @@ def run_checks(
     integer minimum line counts; values override defaults declared in the
     rule's `checks.yml`. Populated by callers from `.ails/config.yml`
     `rule_thresholds`.
+
+    `fix_by_rule` maps full rule IDs to the canonical fix text declared
+    in `rule.md` frontmatter. Populated by callers from the rule
+    registry; propagates to `LocalFinding.fix` so MCP / JSON consumers
+    can render the per-finding suggested edit.
     """
     expect_map, message_map, min_lines_map = _load_check_expectations(yml_paths)
     if min_lines_overrides:
@@ -575,6 +591,7 @@ def run_checks(
         scanned_files,
         min_lines_map=min_lines_map,
         scan_root=scan_root,
+        fix_by_rule=fix_by_rule,
     )
 
 

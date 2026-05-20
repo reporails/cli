@@ -6,6 +6,12 @@ category: coherence
 type: deterministic
 severity: medium
 match: {format: freeform}
+fix: |
+  Move stable content (architecture, conventions, file layout) to the
+  top of the file and put dynamic content (current sprint, in-progress
+  work, recent decisions) lower. The model sees the top of the file
+  more reliably across context-window changes; stable content there
+  stays load-bearing.
 ---
 
 # Stable Content First

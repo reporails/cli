@@ -9,6 +9,12 @@ backed_by: []
 match: {scope: path_scoped}
 supersedes: CORE:S:0038
 source: https://code.claude.com/docs/en/memory#organize-rules-with-clauderules
+fix: |
+  Add a `paths:` field to the rule's frontmatter listing glob patterns the
+  rule applies to. `paths: ["**/*.py"]` for Python files,
+  `paths: ["src/**/*.ts"]` for TypeScript files,
+  `paths: ["docs/**/*.md"]` for documentation. Without `paths`, the rule
+  auto-loads for every file in the project regardless of relevance.
 ---
 
 # Path Scope Declared

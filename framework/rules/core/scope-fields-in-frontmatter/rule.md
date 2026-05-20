@@ -7,6 +7,12 @@ type: deterministic
 severity: medium
 backed_by: [awesome-copilot-meta-instructions, rules-directory-mechanics]
 match: {type: scoped_rule}
+fix: |
+  Add the missing scope fields to the rule's YAML frontmatter — `scope:`,
+  `cardinality:`, `lifecycle:`, `loading:`, `maintainer:`, `vcs:`. Each
+  field declares one targeting axis the rule registry uses to decide
+  when the file applies. Without them the registry can't filter the rule
+  by surface or loading semantics.
 ---
 
 # Scope Fields In Frontmatter

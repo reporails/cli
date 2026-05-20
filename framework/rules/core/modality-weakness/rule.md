@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: high
 match: {}
+fix: |
+  Replace hedged language with imperative or absolute modality.
+  "consider using" → "use"; "you might want to" → drop; "perhaps run" →
+  "run". For prohibitions: "try not to" → "do not"; "avoid" → "never".
+  Hedged instructions are treated as optional — the model follows them
+  inconsistently. Be direct.
 ---
 
 # Modality Weakness

@@ -8,6 +8,11 @@ severity: medium
 backed_by: []
 match: {type: skill}
 source: https://agentskills.io/specification
+fix: |
+  Add a `name:` field to the `SKILL.md` frontmatter matching the containing
+  directory name in kebab-case. If the directory is `commit-helper/`, set
+  `name: commit-helper`. Lowercase letters, digits, and hyphens only — no
+  underscores, no CamelCase, no spaces.
 ---
 
 # Skill Name Matches Directory

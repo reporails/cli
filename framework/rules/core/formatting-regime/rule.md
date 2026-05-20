@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: low
 match: {}
+fix: |
+  Wrap code constructs in `backticks` — file paths, function names, CLI
+  commands, package names. \`pytest\`, \`auth.py\`, \`npm install\`.
+  For constraint emphasis use `*italic*` not `**bold**` — bold competes
+  for salience between instructions; italic strengthens the one it
+  appears in. Bold on structural labels like `**Step 1**:` is fine.
 ---
 
 # Formatting Effectiveness

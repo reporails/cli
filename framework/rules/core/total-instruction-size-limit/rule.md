@@ -9,6 +9,11 @@ backed_by: [advanced-context-engineering, agents-md-impact-efficiency, developer
   fowler-context-engineering-agents, lost-in-the-middle-long-contexts, osmani-ai-coding-workflow,
   spec-writing-for-agents]
 match: {format: freeform}
+fix: |
+  Split this file. Move at most one topic per file (target ≤100 KB).
+  Move depth into a separate topic file and link with a
+  "Knowledge: see" pointer. Keep the slim directive surface here. Files
+  above the limit dilute every instruction they contain.
 ---
 
 # Total Instruction Size Limit

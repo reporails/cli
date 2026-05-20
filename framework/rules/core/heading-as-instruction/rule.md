@@ -6,6 +6,11 @@ category: structure
 type: mechanical
 severity: medium
 match: {format: freeform}
+fix: |
+  Rewrite the heading as a topic label (the noun phrase the section is
+  about). Move the directive verb into the section body. `## Always Run
+  Tests` → `## Tests` with body `Run tests via \`pytest tests/\` before
+  each commit.` Headings are structural anchors, not instructions.
 ---
 
 # Heading As Instruction
