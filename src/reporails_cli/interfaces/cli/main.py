@@ -275,6 +275,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         capability_mode, capability, capability_name, effective_agent, project_root, excl
     )
 
+    # 7a. Single-file target: narrow display to the operator's named file so
+    # the headline `Score:` and per-file counts reflect what was asked about.
+    # Without this, discovery's user-scope enumeration (`~/.claude/CLAUDE.md`)
+    # surfaces in panels next to the project file and inflates / pollutes the
+    # totals.
+    if not capability_paths and not capability_mode and target.is_file():
+        capability_paths = {target.resolve()}
+
     # 8. Filter result + ruleset_map to capability_paths so every rendered
     # block (file cards, surface-health, scorecard) sees the same set.
     from reporails_cli.formatters.text.display import filter_result_to_paths, filter_ruleset_map_to_paths
