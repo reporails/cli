@@ -97,11 +97,14 @@ def test_filter_by_capability_specific_type() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_filter_by_capability_main_fold() -> None:
-    nested = _make_rule("CORE:S:9005", match=FileMatch(type="nested_context"))
-    child = _make_rule("CORE:S:9006", match=FileMatch(type="child_instruction"))
-    other = _make_rule("CORE:S:9007", match=FileMatch(type="skill"))
-    out = filter_rules_by_capability([nested, child, other], "main")
+def test_filter_by_capability_main_fold_strict() -> None:
+    """`main` folds in `override` only — nested CLAUDE.md / child_instruction are separate capabilities."""
+    main_rule = _make_rule("CORE:S:9005", match=FileMatch(type="main"))
+    override = _make_rule("CORE:S:9006", match=FileMatch(type="override"))
+    nested = _make_rule("CORE:S:9007", match=FileMatch(type="nested_context"))
+    child = _make_rule("CORE:S:9008", match=FileMatch(type="child_instruction"))
+    other = _make_rule("CORE:S:9009", match=FileMatch(type="skill"))
+    out = filter_rules_by_capability([main_rule, override, nested, child, other], "main")
     assert {r.id for r in out} == {"CORE:S:9005", "CORE:S:9006"}
 
 

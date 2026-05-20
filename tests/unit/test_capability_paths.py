@@ -183,3 +183,48 @@ def test_list_referenced_empty_when_no_links(tmp_path: Path) -> None:
     (tmp_path / ".ails" / "config.yml").write_text("generic_scanning: true\n", encoding="utf-8")
 
     assert list_capability_targets("claude", "referenced", tmp_path) == []
+
+
+# ── Strict-main fold: `main` does NOT enumerate nested CLAUDE.md ──────
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_main_fold_excludes_nested_child_instruction(tmp_path: Path) -> None:
+    """`ails check main` enumerates only root-level main (+ override), not nested CLAUDE.md."""
+    (tmp_path / "CLAUDE.md").write_text("# Root\n", encoding="utf-8")
+    nested = tmp_path / "subdir"
+    nested.mkdir()
+    (nested / "CLAUDE.md").write_text("# Nested\n", encoding="utf-8")
+
+    targets = list_capability_targets("claude", "main", tmp_path)
+    rels = sorted(str(p.relative_to(tmp_path)) for p in targets)
+    assert "CLAUDE.md" in rels
+    assert "subdir/CLAUDE.md" not in rels
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_child_instruction_capability_still_enumerates_nested(tmp_path: Path) -> None:
+    """`ails check child_instruction` continues to enumerate subdir CLAUDE.md."""
+    (tmp_path / "CLAUDE.md").write_text("# Root\n", encoding="utf-8")
+    nested = tmp_path / "subdir"
+    nested.mkdir()
+    (nested / "CLAUDE.md").write_text("# Nested\n", encoding="utf-8")
+
+    targets = list_capability_targets("claude", "child_instruction", tmp_path)
+    rels = sorted(str(p.relative_to(tmp_path)) for p in targets)
+    assert "subdir/CLAUDE.md" in rels
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_main_fold_includes_override_when_present(tmp_path: Path) -> None:
+    """`ails check main` folds in `override` (CLAUDE.local.md) alongside main."""
+    (tmp_path / "CLAUDE.md").write_text("# Root\n", encoding="utf-8")
+    (tmp_path / "CLAUDE.local.md").write_text("# Local override\n", encoding="utf-8")
+
+    targets = list_capability_targets("claude", "main", tmp_path)
+    rels = sorted(str(p.relative_to(tmp_path)) for p in targets)
+    assert "CLAUDE.md" in rels
+    assert "CLAUDE.local.md" in rels

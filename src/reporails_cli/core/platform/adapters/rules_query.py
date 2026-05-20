@@ -34,7 +34,7 @@ _SEVERITY_ORDER: dict[Severity, int] = {
 # Mirror of `core.classify.capability_paths._CAPABILITY_FOLD`. Duplicated
 # to respect the adapter-layer boundary; keep in sync.
 _CAPABILITY_FOLD: dict[str, tuple[str, ...]] = {
-    "main": ("main", "nested_context", "child_instruction"),
+    "main": ("main", "override"),
     "memories": ("memory", "subagent_memory"),
     "memory": ("memory", "subagent_memory"),
 }
