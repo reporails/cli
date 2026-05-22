@@ -29,6 +29,19 @@ def _is_ci() -> bool:
     return any(os.environ.get(var) for var in ci_vars)
 
 
+def _warn_unresolved_skills(unresolved: list[Any], project_root: Path) -> None:
+    """Print one stderr warning per declared-but-unresolved skill."""
+    for skill in unresolved:
+        try:
+            rel = skill.declared_in.relative_to(project_root)
+        except ValueError:
+            rel = skill.declared_in
+        print(
+            f"Warning: {rel} declares skill {skill.skill_name!r} — not found under .claude/skills/",
+            file=sys.stderr,
+        )
+
+
 def _default_format() -> str:
     """Return default format based on environment detection."""
     if _is_ci():

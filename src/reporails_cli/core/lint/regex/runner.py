@@ -9,6 +9,7 @@ from typing import Any
 
 import regex as re
 
+from reporails_cli.core.discovery.walk import walk_files, walk_markdown
 from reporails_cli.core.lint.regex.compiler import (
     CombinedPattern,
     CompiledCheck,
@@ -94,9 +95,9 @@ def _resolve_scan_targets(
         return targets
 
     scan_dir = target if target.is_dir() else target.parent
-    targets = list(scan_dir.rglob("*.md"))
+    targets = list(walk_markdown(scan_dir))
     if not targets:
-        targets = [f for f in scan_dir.rglob("*") if f.is_file() and _is_text_file(f)]
+        targets = list(walk_files(scan_dir, _is_text_file))
     seen = {t.resolve() for t in targets}
     _append_extra(seen, targets, extra_targets)
     return targets

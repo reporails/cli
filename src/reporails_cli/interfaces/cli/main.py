@@ -37,6 +37,7 @@ from reporails_cli.interfaces.cli.helpers import (  # noqa: E402
     _resolve_agent_filters,
     _show_agent_auto_detect_hint,
     _validate_agent,
+    _warn_unresolved_skills,
     app,
     console,
 )
@@ -217,7 +218,11 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     upfront_paths: set[Path] = set()
     if not single_path_mode:
         if capability_specs:
-            upfront_paths |= _resolve_capability_paths(capability_specs, effective_agent, project_root, excl)
+            cap_paths, unresolved_skills = _resolve_capability_paths(
+                capability_specs, effective_agent, project_root, excl
+            )
+            upfront_paths |= cap_paths
+            _warn_unresolved_skills(unresolved_skills, project_root)
         if path_targets:
             upfront_paths |= set(_narrow_to_path_targets(instruction_files, path_targets))
         if (capability_specs or path_targets) and not upfront_paths:
@@ -378,8 +383,8 @@ def _resolve_capability_paths_one(
     effective_agent: str,
     project_root: Path,
     exclude_dirs: list[str] | tuple[str, ...] | None = None,
-) -> set[Path]:
-    """Resolve one (capability, name) spec to its file set."""
+) -> tuple[set[Path], list[Any]]:
+    """Resolve one (capability, name) spec to its file set + unresolved-skill list."""
     from reporails_cli.core.classify.capability_paths import (
         available_capabilities,
         list_capability_targets,
@@ -395,7 +400,7 @@ def _resolve_capability_paths_one(
         )
         raise typer.Exit(2)
     if not capability_name:
-        return set(list_capability_targets(effective_agent, capability, project_root, exclude_dirs))
+        return set(list_capability_targets(effective_agent, capability, project_root, exclude_dirs)), []
     resolved = resolve_capability(effective_agent, capability, capability_name, project_root)
     if resolved is None:
         available = list_capability_targets(effective_agent, capability, project_root, exclude_dirs)
@@ -409,9 +414,10 @@ def _resolve_capability_paths_one(
             )
         raise typer.Exit(2)
     paths = {resolved}
+    unresolved: list[Any] = []
     if capability == "agents":
-        paths = expand_focus(paths, effective_agent, project_root)
-    return paths
+        paths, unresolved = expand_focus(paths, effective_agent, project_root)
+    return paths, unresolved
 
 
 def _resolve_capability_paths(
@@ -419,14 +425,17 @@ def _resolve_capability_paths(
     effective_agent: str,
     project_root: Path,
     exclude_dirs: list[str] | tuple[str, ...] | None = None,
-) -> set[Path]:
+) -> tuple[set[Path], list[Any]]:
     """Union of every (capability, name) spec resolved against the agent's vocabulary."""
     paths: set[Path] = set()
+    unresolved: list[Any] = []
     for capability, capability_name in specs:
-        paths |= _resolve_capability_paths_one(
+        one_paths, one_unresolved = _resolve_capability_paths_one(
             capability, capability_name, effective_agent, project_root, exclude_dirs
         )
-    return paths
+        paths |= one_paths
+        unresolved.extend(one_unresolved)
+    return paths, unresolved
 
 
 def _classify_target_token(

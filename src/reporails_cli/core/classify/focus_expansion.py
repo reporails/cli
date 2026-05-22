@@ -17,6 +17,7 @@ shared across those agents (per the 2026-05-10
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -28,11 +29,20 @@ logger = logging.getLogger(__name__)
 _SKILL_PRELOAD_FRONTMATTER_KEY = "skills"
 
 
+@dataclass(frozen=True)
+class UnresolvedSkill:
+    """A skill name declared by an agent that discovery could not resolve."""
+
+    declared_in: Path
+    skill_name: str
+    agent: str
+
+
 def expand_focus(
     focus_paths: set[Path],
     agent: str,
     project_root: Path,
-) -> set[Path]:
+) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Expand `focus_paths` to include preloaded skills for any subagent in the set.
 
     Reads each focus path's YAML frontmatter and looks for a `skills:`
@@ -41,21 +51,21 @@ def expand_focus(
     to the expanded set. Paths that aren't subagents (no `skills:`
     field, no frontmatter, or not a known agents file) pass through
     unchanged.
+
+    Returns the expanded path set plus a list of `UnresolvedSkill`
+    records for declared names that did not resolve — caller surfaces
+    them so silent drops do not mask missing-symlink misconfigurations.
     """
     expanded: set[Path] = set(focus_paths)
+    unresolved: list[UnresolvedSkill] = []
     for path in focus_paths:
         for skill_name in _read_preloaded_skills(path):
             resolved = resolve_capability(agent, "skills", skill_name, project_root)
             if resolved is not None:
                 expanded.add(resolved)
             else:
-                logger.debug(
-                    "expand_focus: skill %r declared in %s not resolved for agent %s",
-                    skill_name,
-                    path,
-                    agent,
-                )
-    return expanded
+                unresolved.append(UnresolvedSkill(declared_in=path, skill_name=skill_name, agent=agent))
+    return expanded, unresolved
 
 
 def _read_preloaded_skills(path: Path) -> list[str]:
