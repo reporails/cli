@@ -688,17 +688,37 @@ class TestMatchTypeScoping:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_explicit_path_overrides_targets(self, tmp_path: Path) -> None:
-        """Explicit args.path takes priority over classified files."""
-        (tmp_path / "CLAUDE.md").write_text("# Main")
+    def test_explicit_path_intersects_classified(self, tmp_path: Path) -> None:
+        """Explicit args.path narrows within classified files, never widens past them.
+
+        Pre-0.5.11 the path arg overrode classified, which let cross-file
+        findings (e.g. broken links in `CLAUDE.md`) leak into targeted
+        `ails check agent:<name>` reports. Intersection is the corrected
+        contract: the path glob is a filter applied within the rule-matched
+        / capability-narrowed set, not a way around it.
+        """
+        claude = tmp_path / "CLAUDE.md"
+        claude.write_text("# Main")
         (tmp_path / "docs").mkdir()
-        (tmp_path / "docs" / "notes.md").write_text("# Notes")
+        notes = tmp_path / "docs" / "notes.md"
+        notes.write_text("# Notes")
+
+        # Only CLAUDE.md is in scope (classified) → docs/notes.md must NOT
+        # surface even though the path glob matches it.
         classified = _cf(tmp_path, "CLAUDE.md")
-        # path points to docs/ — path arg wins over classified files
         args = {"pattern": r"^CLAUDE\.md$", "path": "docs/**/*.md"}
         result = filename_matches_pattern(tmp_path, args, classified)
-        assert not result.passed
-        assert "notes.md" in result.message
+        assert result.passed
+
+        # When notes.md is also classified, the path glob narrows to it.
+        classified_both = _cf_mixed(
+            tmp_path,
+            ("CLAUDE.md", "main"),
+            ("docs/notes.md", "generic"),
+        )
+        result_both = filename_matches_pattern(tmp_path, args, classified_both)
+        assert not result_both.passed
+        assert "notes.md" in result_both.message
 
 
 class TestScopeDirFromGlob:

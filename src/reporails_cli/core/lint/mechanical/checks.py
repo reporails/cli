@@ -33,13 +33,20 @@ _exclude_cache: dict[str, frozenset[str]] = {}
 
 
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
-    """Resolve a glob pattern relative to root, filtered by project exclude_dirs."""
+    """Resolve a glob pattern relative to root, filtered by project exclude_dirs.
+
+    Uses `include_hidden=True` (Python 3.11+) so `**/*.md` matches files under
+    dot-prefixed directories such as `.claude/`, `.github/`, `.cursor/`. The
+    intersection with `classified_files` in `_get_target_files` bounds the
+    result back to in-scope instruction files, so widening the glob can't
+    over-scan; `exclude_dirs` still gates anything declared off-limits.
+    """
     key = (pattern, str(root))
     cached = _glob_cache.get(key)
     if cached is not None:
         return cached
     resolved = str(root / pattern)
-    matches = [Path(p) for p in globmod.glob(resolved, recursive=True)]
+    matches = [Path(p) for p in globmod.glob(resolved, recursive=True, include_hidden=True)]
     excl = _load_project_excludes(root)
     result = [p for p in matches if not _is_under_excluded_dir(p, root, excl)]
     _glob_cache[key] = result
@@ -77,16 +84,38 @@ def _get_target_files(
     classified_files: list[ClassifiedFile],
     root: Path,
 ) -> list[Path]:
-    """Get target file paths: args.path > args._match_type > all classified files.
+    """Get target file paths: args.path ∩ classified > args._match_type > all classified files.
 
     Priority:
-    1. Explicit glob pattern in args["path"] — resolved against root
+    1. Explicit glob pattern in args["path"] — resolved against root, then
+       intersected with `classified_files` when that set is non-empty so
+       a targeted `ails check <capability>:<name>` actually narrows the
+       glob to in-scope files. Without the intersection, `path: "**/*.md"`
+       would bypass capability narrowing and surface cross-file findings
+       (e.g. broken links in `CLAUDE.md`) under unrelated focus targets.
     2. Match type from args["_match_type"] — filter classified files by type
     3. Fallback: all classified file paths
     """
     path_pattern = args.get("path", "")
     if path_pattern:
-        return _resolve_glob_targets(str(path_pattern), root)
+        glob_targets = _resolve_glob_targets(str(path_pattern), root)
+        if not classified_files:
+            return glob_targets
+        allowed: set[Path] = set()
+        for cf in classified_files:
+            try:
+                allowed.add(cf.path.resolve())
+            except OSError:
+                allowed.add(cf.path)
+        narrowed: list[Path] = []
+        for p in glob_targets:
+            try:
+                resolved = p.resolve()
+            except OSError:
+                resolved = p
+            if resolved in allowed:
+                narrowed.append(p)
+        return narrowed
 
     match_type = args.get("_match_type", "")
     if match_type and classified_files:
