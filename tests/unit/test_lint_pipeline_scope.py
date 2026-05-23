@@ -28,6 +28,7 @@ from reporails_cli.core.classify.link_walker import (
 )
 from reporails_cli.core.lint.mechanical.checks import (
     _exclude_cache,
+    _get_target_files,
     _glob_cache,
     _resolve_glob_targets,
 )
@@ -138,6 +139,87 @@ class TestResolveGlobExcludeDirs:
         results = _resolve_glob_targets("**/*.md", tmp_path)
         names = {p.name for p in results}
         assert {"CLAUDE.md", "nested.md"} <= names
+
+
+# ── _get_target_files intersection with classified_files ──────────────
+
+
+class TestGetTargetFilesNarrowing:
+    """`args.path` globs are intersected with `classified_files`.
+
+    Regression: targeted `ails check agent:lead` ran broken-link
+    extraction against every `.md` in the project because `path: "**/*.md"`
+    bypassed the narrowed classified set, then attributed the cross-file
+    finding to the agent's file.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_path_glob_intersects_classified_files(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# root\n")
+        other = tmp_path / "other.md"
+        other.write_text("# other\n")
+
+        _glob_cache.clear()
+        _exclude_cache.clear()
+
+        # Caller narrowed classified_files to other.md only — CLAUDE.md must
+        # drop out of the glob result even though the `**/*.md` pattern matches it.
+        cf = ClassifiedFile(path=other, file_type="generic", properties={})
+        result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        assert result == [other]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_narrowing_drops_cross_file_link_source(self, tmp_path: Path) -> None:
+        # Regression: a broken link in `CLAUDE.md` must not surface under
+        # `agent:<name>` focus. With classified narrowed to the agent file,
+        # the `**/*.md` glob path resolves to a list that excludes CLAUDE.md,
+        # so extract_markdown_links yields no annotations and the rule passes.
+        (tmp_path / "CLAUDE.md").write_text("[broken](missing/path.md)\n")
+        lead = tmp_path / "lead.md"
+        lead.write_text("# clean lead\n")
+
+        _glob_cache.clear()
+        _exclude_cache.clear()
+
+        cf = ClassifiedFile(path=lead, file_type="subagent", properties={})
+        result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        assert result == [lead]
+        assert tmp_path / "CLAUDE.md" not in result
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_path_glob_unaffected_when_classified_empty(self, tmp_path: Path) -> None:
+        # Fixture harness path: no classified context → glob result returned as-is.
+        (tmp_path / "CLAUDE.md").write_text("# root\n")
+        (tmp_path / "other.md").write_text("# other\n")
+
+        _glob_cache.clear()
+        _exclude_cache.clear()
+
+        result = _get_target_files({"path": "**/*.md"}, [], tmp_path)
+        names = {p.name for p in result}
+        assert {"CLAUDE.md", "other.md"} <= names
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_whole_project_classified_keeps_all_md_instruction_files(self, tmp_path: Path) -> None:
+        # Whole-project mode: classified covers every instruction file; the
+        # intersection should be a no-op for in-scope files and drop the rest.
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text("# root\n")
+        notes = tmp_path / "docs" / "notes.md"
+        notes.parent.mkdir()
+        notes.write_text("# notes\n")
+
+        _glob_cache.clear()
+        _exclude_cache.clear()
+
+        # Only CLAUDE.md is an instruction file; docs/notes.md isn't classified.
+        cf = ClassifiedFile(path=claude_md, file_type="main", properties={})
+        result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        assert result == [claude_md]
 
 
 # ── _relativize ───────────────────────────────────────────────────────
