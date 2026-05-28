@@ -74,10 +74,7 @@ def _complete_capability_target_name(capability: str, name_prefix: str) -> list[
     out: set[str] = set()
     for p in list_capability_targets(agent_id, capability, project_root, None):
         # Take the directory or filename stem as the "name" the user types.
-        if p.is_dir():
-            stem = p.name
-        else:
-            stem = p.stem
+        stem = p.name if p.is_dir() else p.stem
         if stem.startswith(name_prefix):
             out.add(stem)
     return sorted(out)

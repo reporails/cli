@@ -20,6 +20,7 @@ from reporails_cli.core.lint.mechanical.checks import (
     _resolve_glob_targets,
     _safe_float,
 )
+from reporails_cli.core.mapper.imports import FENCED_BLOCK_RE
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 
@@ -128,14 +129,20 @@ def extract_imports(
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check for @import references in instruction files."""
+    """Check for @import references in instruction files.
+
+    Skips `@`-references inside fenced code blocks — those are documentation
+    examples, not real imports. Matches the fenced-block treatment in
+    `core/mapper/imports.py:expand_imports`.
+    """
     imports_found: list[str] = []
     for match in _get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
             content = match.read_text(encoding="utf-8")
-            imports_found.extend(re.findall(r"@[\w./-]+", content))
+            stripped = FENCED_BLOCK_RE.sub("", content)
+            imports_found.extend(re.findall(r"@[\w./-]+", stripped))
         except OSError:
             continue
     if imports_found:
@@ -179,7 +186,8 @@ def import_depth(
             content = filepath.read_text(encoding="utf-8")
         except OSError:
             return depth
-        refs = re.findall(r"@([\w./-]+)", content)
+        stripped = FENCED_BLOCK_RE.sub("", content)
+        refs = re.findall(r"@([\w./-]+)", stripped)
         max_d = depth
         for ref in refs:
             target = filepath.parent / ref
@@ -214,6 +222,37 @@ def directory_file_types(
     if bad:
         return CheckResult(passed=False, message=f"Non-{extensions} files: {', '.join(bad[:5])}")
     return CheckResult(passed=True, message=f"All files in {path} match {extensions}")
+
+
+def skill_entrypoint_present(
+    root: Path,
+    args: dict[str, Any],
+    _classified_files: list[ClassifiedFile],
+) -> CheckResult:
+    """Flag skill directories that lack a SKILL.md entry point.
+
+    Skills-root directories are located by globbing for existing entry
+    files (agent-agnostic); every immediate subdirectory of a skills root
+    must then contain the entry file. Project-aggregate: enumerates whole
+    skills roots, so it is skipped under scoped runs (see `_PROJECT_SCOPE_CHECKS`).
+    """
+    entry = str(args.get("entry", "SKILL.md"))
+    roots = {f.parent.parent for f in _resolve_glob_targets(f"**/{entry}", root) if f.is_file()}
+    missing: list[str] = []
+    for skills_root in sorted(roots):
+        if not skills_root.is_dir():
+            continue
+        for sub in sorted(p for p in skills_root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+            if not (sub / entry).is_file():
+                rel = sub.relative_to(root).as_posix() if sub.is_relative_to(root) else sub.name
+                missing.append(rel)
+    if not missing:
+        return CheckResult(passed=True, message=f"All skill directories contain {entry}")
+    return CheckResult(
+        passed=False,
+        message=f"Skill directory missing {entry}: {', '.join(missing[:5])}",
+        location=f"{missing[0]}:0",
+    )
 
 
 def frontmatter_valid_glob(

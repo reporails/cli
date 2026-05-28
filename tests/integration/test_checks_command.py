@@ -4,8 +4,20 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
+
+from reporails_cli.core.platform.config.bootstrap import get_rules_path
+from reporails_cli.interfaces.cli.main import app
+
+_runner = CliRunner()
+
+requires_rules = pytest.mark.skipif(
+    not (get_rules_path() / "core").exists(),
+    reason="Rules framework not installed",
+)
 
 
 def _run(*args: str) -> tuple[int, str, str]:
@@ -59,9 +71,7 @@ def test_rules_list_capability_md_includes_examples() -> None:
 @pytest.mark.integration
 @pytest.mark.subsys_lint
 def test_rules_list_capability_md_no_examples() -> None:
-    code, out, _ = _run(
-        "rules", "list", "--capability=skill", "--agent=claude", "-f", "md", "--no-examples"
-    )
+    code, out, _ = _run("rules", "list", "--capability=skill", "--agent=claude", "-f", "md", "--no-examples")
     assert code == 0
     assert "**Pass**:" not in out
     assert "**Fail**:" not in out
@@ -71,9 +81,7 @@ def test_rules_list_capability_md_no_examples() -> None:
 @pytest.mark.subsys_lint
 def test_rules_list_repeatable_capability() -> None:
     """Multiple `--capability` flags union the filter."""
-    code, out, _ = _run(
-        "rules", "list", "--capability=skill", "--capability=agent", "--agent=claude", "-f", "json"
-    )
+    code, out, _ = _run("rules", "list", "--capability=skill", "--capability=agent", "--agent=claude", "-f", "json")
     assert code == 0
     payload = json.loads(out)
     assert set(payload["capabilities"]) == {"skill", "agent"}
@@ -119,6 +127,25 @@ def test_rules_capabilities_for_claude() -> None:
     assert payload["agent"] == "claude"
     assert "skills" in payload["capabilities"]
     assert "main" in payload["capabilities"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_lint
+@requires_rules
+def test_targeted_check_skips_project_shape_rule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A targeted (file-scoped) run must not fire CORE:S:0010; a whole-project scan still does."""
+    proj = tmp_path / "single"
+    proj.mkdir()
+    (proj / "AGENTS.md").write_text("# Solo\n\nThe only instruction file.\n")
+    monkeypatch.chdir(proj)
+
+    whole = _runner.invoke(app, ["check", "-f", "json"])
+    assert whole.exit_code == 0
+    assert "CORE:S:0010" in whole.output  # whole-project scan enforces the ≥2-file shape
+
+    targeted = _runner.invoke(app, ["check", "AGENTS.md", "-f", "json"])
+    assert targeted.exit_code == 0
+    assert "CORE:S:0010" not in targeted.output  # narrowed subset must not misfire
 
 
 @pytest.mark.integration

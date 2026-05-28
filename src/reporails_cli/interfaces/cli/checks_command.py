@@ -24,6 +24,7 @@ from reporails_cli.core.platform.adapters.rules_query import (
 from reporails_cli.core.platform.dto.models import Rule, Severity
 from reporails_cli.interfaces.cli.helpers import console
 
+
 def list_checks(
     capabilities: list[str] | None = None,
     agent: str | None = None,

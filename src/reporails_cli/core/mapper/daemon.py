@@ -188,9 +188,11 @@ def start_daemon() -> int:
 
         pid = os.fork()
         if pid > 0:
-            # Parent — wait briefly for daemon to be ready
+            # Parent — wait for child's accept loop to bind the socket.
+            # Cold model imports can take >2s; 4s headroom keeps the parent
+            # from giving up before the child has bound.
             sock_path = _socket_path()
-            for _ in range(20):
+            for _ in range(40):
                 time.sleep(0.1)
                 if sock_path.exists():
                     break

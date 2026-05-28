@@ -52,7 +52,7 @@ _NON_EXPANDABLE_EXT = frozenset(
 _MAX_IMPORT_DEPTH = 5
 
 # Fenced code block pattern for stripping before import detection
-_FENCED_BLOCK_RE = re.compile(r"^(`{3,}|~{3,}).*?^\1", re.MULTILINE | re.DOTALL)
+FENCED_BLOCK_RE = re.compile(r"^(`{3,}|~{3,}).*?^\1", re.MULTILINE | re.DOTALL)
 
 
 def _resolve_import_target(
@@ -104,7 +104,7 @@ def expand_imports(
     if visited is None:
         visited = {str(source_path.resolve())}
 
-    code_ranges = [(m.start(), m.end()) for m in _FENCED_BLOCK_RE.finditer(content)]
+    code_ranges = [(m.start(), m.end()) for m in FENCED_BLOCK_RE.finditer(content)]
 
     def _in_code_block(pos: int) -> bool:
         return any(start <= pos < end for start, end in code_ranges)
