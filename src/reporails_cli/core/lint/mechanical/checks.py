@@ -322,6 +322,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
     frontmatter_valid_yaml,
     import_depth,
     path_resolves,
+    skill_entrypoint_present,
     valid_markdown,
 )
 
@@ -353,6 +354,7 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "file_absent": file_absent,
     "filename_matches_pattern": filename_matches_pattern,
     "frontmatter_extra_keys": frontmatter_extra_keys,
+    "skill_entrypoint_present": skill_entrypoint_present,
     # Aliases for signal catalog naming
     "glob_match": file_exists,
     "max_line_count": line_count,
@@ -362,3 +364,6 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "memory_dir_exists": directory_exists,
     "total_size_check": aggregate_byte_size,
 }
+
+# Checks that aggregate across the whole project and are meaningless on a narrowed subset.
+_PROJECT_SCOPE_CHECKS = frozenset({"file_count", "aggregate_byte_size", "skill_entrypoint_present"})

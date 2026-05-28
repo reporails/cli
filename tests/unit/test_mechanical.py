@@ -23,6 +23,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (
     count_at_most,
     file_absent,
     filename_matches_pattern,
+    skill_entrypoint_present,
 )
 from reporails_cli.core.lint.mechanical.runner import (
     resolve_location,
@@ -304,6 +305,108 @@ class TestRunMechanicalChecks:
         violations = run_mechanical_checks(rules, tmp_path, classified)
         assert len(violations) == 1
         assert violations[0].location == ".claude/rules/big.md:0"
+
+
+class TestSkillEntrypointPresent:
+    """skill_entrypoint_present flags skill directories lacking a SKILL.md."""
+
+    def _make_skill(self, root: Path, name: str, entry: str = "SKILL.md") -> Path:
+        d = root / ".claude" / "skills" / name
+        d.mkdir(parents=True)
+        (d / entry).write_text("# skill\n")
+        return d / entry
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_all_dirs_have_entrypoint_passes(self, tmp_path: Path) -> None:
+        self._make_skill(tmp_path, "alpha")
+        self._make_skill(tmp_path, "beta")
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", ".claude/skills/beta/SKILL.md", file_type="skill")
+        result = skill_entrypoint_present(tmp_path, {}, classified)
+        assert result.passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_missing_entrypoint_in_sibling_dir_fails(self, tmp_path: Path) -> None:
+        self._make_skill(tmp_path, "alpha")  # real skill anchors the skills-root
+        broken = tmp_path / ".claude" / "skills" / "broken"
+        broken.mkdir(parents=True)
+        (broken / "notes.md").write_text("no entry point here\n")
+        # Only the real skill is discovered/classified; the broken sibling is found by enumeration.
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
+        result = skill_entrypoint_present(tmp_path, {}, classified)
+        assert not result.passed
+        assert ".claude/skills/broken" in result.message
+        assert result.location == ".claude/skills/broken:0"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_no_skill_files_passes_vacuously(self, tmp_path: Path) -> None:
+        result = skill_entrypoint_present(tmp_path, {}, [])
+        assert result.passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_skipped_when_scoped(self, tmp_path: Path) -> None:
+        """As a project-aggregate check it is skipped under a scoped run."""
+        self._make_skill(tmp_path, "alpha")
+        broken = tmp_path / ".claude" / "skills" / "broken"
+        broken.mkdir(parents=True)
+        (broken / "notes.md").write_text("x\n")
+        rule = Rule(
+            id="CORE:S:0015",
+            title="Skill Entry Point Present",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            severity=Severity.MEDIUM,
+            match=FileMatch(type="skill"),
+            checks=[Check(id="CORE.S.0015.entrypoint", type="mechanical", check="skill_entrypoint_present")],
+        )
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
+        rules = {"CORE:S:0015": rule}
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+
+
+class TestScopedProjectChecks:
+    """Project-aggregate checks are skipped under a targeted (scoped) run."""
+
+    def _rule(self, rule_id: str, check_name: str, args: dict) -> Rule:
+        return Rule(
+            id=rule_id,
+            title=f"Rule {rule_id}",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            severity=Severity.CRITICAL,
+            match=FileMatch(),
+            checks=[Check(id=f"{rule_id}:check:0001", type="mechanical", check=check_name, args=args)],
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_file_count_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2})}
+        classified = _cf(tmp_path, "CLAUDE.md")  # single file → count 1 < min 2
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("this content is well over five bytes")
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5})}
+        classified = _cf(tmp_path, "CLAUDE.md")
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_non_aggregate_check_runs_when_scoped(self, tmp_path: Path) -> None:
+        """A scoped run still evaluates per-file checks (only aggregates are skipped)."""
+        rules = {"CORE:S:0001": self._rule("CORE:S:0001", "file_exists", {})}
+        classified = _cf(tmp_path, "CLAUDE.md")  # file does not exist on disk
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 1
 
 
 class TestSafeFloat:

@@ -15,38 +15,38 @@ fix: |
 ---
 # Skill Entry Point Present
 
-Each skill file must reference or contain a `SKILL.md` entry point. The entry point is the standard discovery mechanism that agents use to find and invoke skills.
+Every directory under a skills root (e.g. `.claude/skills/<name>/`) must contain a `SKILL.md` file. `SKILL.md` is the entry point the agent's skill loader uses to discover and invoke a skill — a skill directory without it is invisible to the agent.
+
+Skills-root directories are found by locating existing `SKILL.md` files, then each immediate subdirectory of a skills root is checked for its own `SKILL.md`.
 
 ## Antipatterns
 
-- Naming the skill entry point `README.md` or `index.md` instead of `SKILL.md`. The check looks for the specific token `SKILL.md` in the file content.
-- Creating a skill directory with workflow files but no `SKILL.md` reference. Without the entry point token, the skill is not discoverable.
-- Referencing a different filename like `skill.md` (lowercase). The check matches the exact token `SKILL.md`.
+- Creating a skill directory with workflow or asset files but no `SKILL.md` at its root. Without the entry point, the loader never sees the skill.
+- Naming the entry point `README.md`, `index.md`, or `skill.md` (lowercase) instead of `SKILL.md`. The loader matches the exact filename `SKILL.md`.
+- Leaving a stray, non-skill directory directly under a skills root. Everything immediately under `skills/` is treated as a skill and is expected to carry a `SKILL.md`.
 
 ## Pass / Fail
 
 ### Pass
 
-~~~~markdown
-# Check Skill
-
-Entry point: SKILL.md
-
-## Process
-1. Run `uv run ails check .`
-2. Report results.
+~~~~text
+.claude/skills/
+  commit/
+    SKILL.md
+  review/
+    SKILL.md
 ~~~~
 
 ### Fail
 
-~~~~markdown
-# Check Skill
-
-## Process
-1. Run the linter.
-2. Report results.
+~~~~text
+.claude/skills/
+  commit/
+    SKILL.md
+  review/
+    notes.md        # no SKILL.md — skill is undiscoverable
 ~~~~
 
 ## Limitations
 
-Checks for a named token matching "SKILL.md" in the content. Does not verify the SKILL.md file actually exists at the referenced path.
+Checks immediate subdirectories of each skills root for a `SKILL.md` file. Skills roots are located by globbing for existing `SKILL.md` files, so a skills root where *every* subdirectory lacks `SKILL.md` (no discoverable entry point anywhere) is not detected. Aggregates across the whole skills tree, so it runs on whole-project scans only and is skipped under targeted scope.

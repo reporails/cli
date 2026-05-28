@@ -166,8 +166,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                     suggestion = ""
                     if sniff_agent and canonicalize_capability(token, sniff_agent, project_root) is not None:
                         suggestion = (
-                            f"\n[dim]'{token}' is a known capability — "
-                            f"did you mean `ails check @{token}`?[/dim]"
+                            f"\n[dim]'{token}' is a known capability — did you mean `ails check @{token}`?[/dim]"
                         )
                     console.print(f"[red]Error:[/red] Path not found: {resolved_path}{suggestion}")
                     raise typer.Exit(2)
@@ -204,7 +203,8 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     # target, which would otherwise mask "no project files for this agent".
     if target != project_root:
         instruction_files = [
-            f for f in instruction_files
+            f
+            for f in instruction_files
             if f == target or (target.is_dir() and f.resolve().is_relative_to(target.resolve()))
         ]
     if not instruction_files:
@@ -234,6 +234,11 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                 _handle_no_instruction_files(effective_agent, output_format, console)
                 return
 
+    # Targeted scope (specific path, capability spec, or multi-path token) narrows
+    # the pipeline to a subset, so project-aggregate rules must be skipped — they
+    # only hold against a whole-project scan.
+    is_targeted = target != project_root or bool(upfront_paths)
+
     # 1a. EAGERLY start the global mapper daemon BEFORE any other expensive work.
     _suppress_ml_noise()
 
@@ -247,13 +252,9 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     start_time = time.perf_counter()
 
     with spinner:
-        try:
-            from reporails_cli.core.mapper.daemon_client import ensure_daemon
+        from reporails_cli.interfaces.cli.check_mapper import build_ruleset_map, resolve_daemon_status
 
-            _progress("Starting mapper daemon...")
-            ensure_daemon()
-        except (ImportError, OSError):
-            pass
+        daemon_status = resolve_daemon_status(_progress)
 
         # 2. Build map (needed before M probes to enable content_query checks)
         ruleset_map = None
@@ -262,17 +263,15 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                 spinner.update("[bold]Mapping...[/bold]")  # type: ignore[union-attr]
             _progress("Mapping instruction files...")
 
-            from reporails_cli.core.mapper.daemon_client import map_ruleset_via_daemon
-
-            ruleset_map = map_ruleset_via_daemon(list(instruction_files), target)
-
-            if ruleset_map is None:
-                # Daemon unreachable (fork failed, Windows, etc.) — fall back
-                # to in-process mapping, which still benefits from MapCache.
-                _progress("Daemon unavailable, loading models in-process...")
-                if show_progress:
-                    spinner.update("[bold]Loading models...[/bold]")  # type: ignore[union-attr]
-                ruleset_map = _map_in_process(instruction_files)
+            ruleset_map = build_ruleset_map(
+                daemon_status,
+                instruction_files,
+                target,
+                spinner,
+                show_progress,
+                _progress,
+                _map_in_process,
+            )
         except (ImportError, RuntimeError) as exc:
             logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)
             if verbose:
@@ -282,7 +281,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         if show_progress:
             spinner.update("[bold]Running M probes...[/bold]")  # type: ignore[union-attr]
         _progress("Running M probes...")
-        m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
+        m_findings = run_m_probes(target, instruction_files, agent=effective_agent, scoped=is_targeted)
 
         # 4. Run content-quality checks + client checks on map
         content_findings: list[LocalFinding] = []
@@ -368,9 +367,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
     if heal:
-        heal_files = (
-            [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
-        )
+        heal_files = [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
         _run_heal_pass(target, heal_files, ruleset_map, effective_agent, dry_run, output_format)
 
     if _should_exit_strict(strict, capability_paths, project_root, result):
@@ -438,9 +435,7 @@ def _resolve_capability_paths(
     return paths, unresolved
 
 
-def _classify_target_token(
-    token: str, sniff_agent: str, project_root: Path
-) -> tuple[str, tuple[str, str] | Path]:
+def _classify_target_token(token: str, sniff_agent: str, project_root: Path) -> tuple[str, tuple[str, str] | Path]:
     """Classify one CLI token as 'capability', 'all-capability', or 'path'.
 
     Returns ("capability", (cap, name)), ("capability", (cap, "")), or ("path", Path).
@@ -680,7 +675,7 @@ def main() -> None:
     app()
 
 
-import reporails_cli.interfaces.cli.checks_command  # noqa: E402, F401  # list_checks helper backing rules_command
+import reporails_cli.interfaces.cli.checks_command  # noqa: E402  # list_checks helper backing rules_command
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
 import reporails_cli.interfaces.cli.rules_command  # noqa: E402  # Register `ails rules`
