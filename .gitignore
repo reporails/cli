@@ -11,6 +11,9 @@ __pycache__
 # Internal specs
 specs/
 
+# Internal coordination surface — private inner repo, never ships in the public CLI
+/hub/
+
 # Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/
 /.mcp.json
@@ -38,3 +41,4 @@ src/reporails_cli/bundled/spacy/
 # READMEs while sidestepping the npmjs.com per-version display bug that the
 # previous symlink approach hit.
 packages/npm/README.md
+/archive/
