@@ -109,22 +109,32 @@ def _outgoing_links(file_path: Path) -> list[tuple[Path, str]]:
         logger.debug("link_walker: cannot read %s: %s", file_path, exc)
         return []
 
-    # Strip code spans so `[text](path)` examples inside backticks don't
-    # surface as walkable links. `@<path>` imports keep working because the
-    # import regex runs on the full text (imports inside code spans are
-    # still imports per Claude's `@import` semantics).
-    link_text = _strip_code_spans(text)
+    # Strip fenced blocks only. Inline code is NOT stripped: a real link whose
+    # text is backtick-wrapped (`[`name`](path)`) must survive — a common form
+    # where the link text names a command, skill, or construct. Instead, skip a
+    # link only when the link itself sits INSIDE an inline-code span (a literal
+    # `[text](path)` example). `@<path>` imports run on the full text (imports
+    # inside code spans are still imports per Claude's `@import` semantics).
+    link_text = _CODE_FENCE_RE.sub("", text)
+    code_spans = [(m.start(), m.end()) for m in _INLINE_CODE_RE.finditer(link_text)]
+
+    def _in_code_span(pos: int) -> bool:
+        return any(start <= pos < end for start, end in code_spans)
 
     base_dir = file_path.parent
     out: list[tuple[Path, str]] = []
 
     for match in _INLINE_LINK_RE.finditer(link_text):
+        if _in_code_span(match.start()):
+            continue
         target = match.group(1).strip()
         resolved = _resolve_md_target(base_dir, target)
         if resolved is not None:
             out.append((resolved, "read"))
 
     for match in _REF_DEFINITION_RE.finditer(link_text):
+        if _in_code_span(match.start()):
+            continue
         target = match.group(1).strip()
         resolved = _resolve_md_target(base_dir, target)
         if resolved is not None:
