@@ -30,6 +30,35 @@ def test_walk_markdown_links_finds_inline_md_targets(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
+def test_walk_markdown_links_finds_backtick_wrapped_link_text(tmp_path: Path) -> None:
+    """Regression: a link whose text is backtick-wrapped (`[`name`](path)`) — a
+    common form where the link text names a command, skill, or construct — must
+    still be walked. Previously code-span stripping ran before link matching and deleted
+    the `` `name` `` text, leaving `[](path)` which the link regex could not
+    match, so every such link was silently dropped (0 edges on real corpora)."""
+    main = tmp_path / "main.md"
+    target = tmp_path / "linked.md"
+    main.write_text("See [`the notes`](linked.md).\n", encoding="utf-8")
+    target.write_text("# notes\n", encoding="utf-8")
+    edges = walk_markdown_links({main: "main"}, tmp_path, {main})
+    assert _reached_targets(edges) == {target.resolve()}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_walk_markdown_links_skips_link_shown_as_inline_code_example(tmp_path: Path) -> None:
+    """A whole link wrapped in inline code (`` `[text](path)` ``) is a literal
+    documentation example, not a real link — it must NOT be walked."""
+    main = tmp_path / "main.md"
+    example = tmp_path / "example.md"
+    main.write_text("Write a link like `[text](example.md)` in docs.\n", encoding="utf-8")
+    example.write_text("# example\n", encoding="utf-8")
+    edges = walk_markdown_links({main: "main"}, tmp_path, {main})
+    assert edges == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
 def test_walk_markdown_links_skips_urls_and_anchors(tmp_path: Path) -> None:
     main = tmp_path / "main.md"
     main.write_text(
