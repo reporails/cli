@@ -156,10 +156,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         sniff_agent = _sniff_agent(agent, project_root)
         for token in targets:
             kind, payload = _classify_target_token(token, sniff_agent, project_root)
-            if kind == "capability":
-                capability_specs.append(payload)  # type: ignore[arg-type]
-            else:
-                resolved_path = payload  # type: ignore[assignment]
+            if kind == "capability" and isinstance(payload, tuple):
+                capability_specs.append(payload)
+            elif isinstance(payload, Path):
+                resolved_path = payload
                 if not resolved_path.exists():
                     from reporails_cli.core.classify.capability_paths import canonicalize_capability
 
