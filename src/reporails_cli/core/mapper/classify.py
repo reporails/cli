@@ -721,6 +721,33 @@ def _check_postcolon_verb(doc: Any) -> tuple[str, int, str, str, bool] | None:
     return None
 
 
+_OBJECT_FRAME_LEAD_TAGS = frozenset({"NN", "NNP", "NNPS", "NNS", "VB", "VBP"})
+_OBJECT_FRAME_DET_TAGS = frozenset({"DT", "PRP$"})
+
+
+def _object_frame_result(
+    doc: Any,
+    root: Any,
+    has_subj: bool,
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """Lexicon-independent imperative rescue for the determiner-object frame.
+
+    A position-0 ROOT token (POS-ambiguous noun/verb) governing a determiner-led
+    object NP with no subject is an imperative ("Pin every dependency …",
+    "Lock the version …") even when the lead word is absent from the verb
+    lexicon. A noun-initial declarative fails it — its lead token is the
+    compound/subject of a finite main verb, so ROOT is not at position 0 and a
+    subject is present.
+    """
+    if root.i != 0 or has_subj or len(doc) < 2:
+        return None
+    if doc[0].tag_ not in _OBJECT_FRAME_LEAD_TAGS or doc[1].tag_ not in _OBJECT_FRAME_DET_TAGS:
+        return None
+    sc = _detect_scope_conditional(doc, has_cond_prefix)
+    return ("IMPERATIVE", 1, "imperative", "p3_spacy_obj_frame!amb", sc)
+
+
 def _classify_nn_tag(
     doc: Any,
     root: Any,
@@ -754,7 +781,9 @@ def _classify_nn_tag(
     cl = _check_colon_label(doc, root)
     if cl is not None:
         return cl
-    return ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
+    # Determiner-object frame: pos-0 lead token absent from the verb lexicon
+    frame = _object_frame_result(doc, root, has_subj, has_cond_prefix)
+    return frame if frame is not None else ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
 
 
 def _classify_vb_vbp_tag(
@@ -778,9 +807,10 @@ def _classify_vb_vbp_tag(
         pre_words = {t.text.lower() for t in doc[: root.i]}
         if not (pre_words <= _CONTEXT_WORDS):
             return None  # fall through to lexicon
-    # Lexicon cross-check: only charge confirmed verbs
+    # Lexicon cross-check: only charge confirmed verbs. A pos-0 lead token
+    # absent from the lexicon still charges via the determiner-object frame.
     if root.text.lower() not in _ALL_VERBS:
-        return None  # fall through to lexicon
+        return _object_frame_result(doc, root, has_subj, has_cond_prefix)
     sc = _detect_scope_conditional(doc, has_cond_prefix)
     if tag == "VBP":
         next_tok = doc[root.i + 1] if root.i + 1 < len(doc) else None
