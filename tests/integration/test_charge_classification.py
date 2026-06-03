@@ -76,9 +76,14 @@ def test_parenthetical_derail_charge(text: str, expected_cv: int) -> None:
         # determiner-led object NP, no subject → IMPERATIVE, even when the lead
         # word is absent from the verb lexicon ("pin"/"lock" are missing; the
         # frame, not a lexicon entry, charges them).
+        # The parenthetical carries an em-dash + "never" — a boundary the
+        # late-constraint guard would match as a compound top-level constraint
+        # if it did not first mask parenthetical spans. The negation here is a
+        # subordinate clarification of the lead directive, so the atom stays +1.
         (
             "Pin every dependency to an exact version (use == in "
-            "requirements.txt, never a floating range) before you open the PR.",
+            "requirements.txt, or the lockfile — never a caret range, and "
+            "never an unpinned import) before you open the PR.",
             1,
         ),
         (
