@@ -911,13 +911,20 @@ _LATE_CONSTRAINT_RE = re.compile(
 )
 
 
+_PARENS_SPAN_RE = re.compile(r"\([^()]*\)")
+
+
 def _has_late_constraint(text: str) -> bool:
     """True if text has constraint language after a sentence/clause boundary.
 
     Catches compound instructions like 'Prefer X. Do not introduce Y' and
     'Label — Avoid X' where the positive verb at the start masks a constraint.
+    Negations inside a parenthetical are subordinate clarifications of the lead
+    directive, not a compound top-level constraint, so parenthetical spans are
+    masked before the boundary check.
     """
-    return bool(_LATE_CONSTRAINT_RE.search(text))
+    masked = _PARENS_SPAN_RE.sub(" ", text)
+    return bool(_LATE_CONSTRAINT_RE.search(masked))
 
 
 def _spacy_pre_checks(
