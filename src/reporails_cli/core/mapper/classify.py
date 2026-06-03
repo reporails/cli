@@ -836,6 +836,43 @@ def _check_verb0_rescue(
     return None
 
 
+def _root_inside_parenthetical(doc: Any, root: Any) -> bool:
+    """True if ROOT sits inside an unclosed '(' … ')' span — the signature of a
+    parse derail where spaCy picked an interior word as ROOT and demoted the lead verb."""
+    depth = 0
+    for tok in doc[: root.i]:
+        if tok.text == "(":
+            depth += 1
+        elif tok.text == ")":
+            depth = max(0, depth - 1)
+    return depth > 0
+
+
+def _check_nsubj_verb0_rescue(
+    doc: Any,
+    root: Any,
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """Position-0 nsubj rescue: spaCy demoted a known lead verb to noun-subject.
+
+    Non-ambiguous lead verbs tagged nsubj are misparsed imperatives. Ambiguous
+    lead verbs rescue only when ROOT lands inside a parenthetical — the signature
+    of a parse derailed by a long inserted clause.
+    """
+    if root.i == 0 or len(doc) == 0:
+        return None
+    t0 = doc[0]
+    t0l = t0.text.lower()
+    if t0.dep_ not in ("nsubj", "nsubjpass") or t0l not in _ALL_VERBS:
+        return None
+    sc = _detect_scope_conditional(doc, has_cond_prefix)
+    if t0l not in _VERBS_AMBIGUOUS:
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue", sc)
+    if _root_inside_parenthetical(doc, root):
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue!amb", sc)
+    return None
+
+
 _PAST_TENSE_TAGS = frozenset({"VBZ", "VBD", "VBN", "VBG"})
 
 _LATE_CONSTRAINT_RE = re.compile(
@@ -920,19 +957,12 @@ def _classify_phase3_spacy(
         # Position-0 nsubj rescue: spaCy demoted a known verb to noun-subject.
         # "Extract display logic" → spaCy: Extract(nsubj) display(ROOT/VBP)
         # "Group related local variables" → Group(nsubj) related(ROOT/VBD)
-        # In instruction files, position-0 non-ambiguous verbs tagged as
-        # nsubj are always misparsed imperatives. The ambiguous-verb guard
-        # prevents false positives; the nsubj dep guard limits to cases
-        # where spaCy explicitly assigned subject role to position 0.
-        if has_subj and root.i > 0 and not shallow:
-            t0 = doc[0]
-            if (
-                t0.dep_ in ("nsubj", "nsubjpass")
-                and t0.text.lower() in _ALL_VERBS
-                and t0.text.lower() not in _VERBS_AMBIGUOUS
-            ):
-                sc = _detect_scope_conditional(doc, has_cond_prefix)
-                return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue", sc)
+        # Non-ambiguous lead verbs rescue unconditionally; ambiguous lead verbs
+        # rescue only when ROOT lands inside a parenthetical (parse derail).
+        if has_subj and not shallow:
+            nsubj_rescue = _check_nsubj_verb0_rescue(doc, root, has_cond_prefix)
+            if nsubj_rescue is not None:
+                return nsubj_rescue
 
         # POS classification by tag group
         if tag in {"NN", "NNS", "NNP", "NNPS"}:
