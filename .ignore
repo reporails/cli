@@ -3,3 +3,4 @@
 # .ignore files with .gitignore syntax.
 framework/rules/**/**/tests/**
 tests/fixtures/**
+/archive/
