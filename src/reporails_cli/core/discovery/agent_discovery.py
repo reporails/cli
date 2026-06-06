@@ -34,10 +34,11 @@ def ci_glob(target: Path, pattern: str) -> list[Path]:
     parts = Path(pattern).parts
     if len(parts) == 1 and "*" not in pattern:
         try:
-            return [p for p in target.iterdir() if p.name == pattern and not p.is_dir()]
+            # is_file() (not `not is_dir()`) so dangling symlinks are excluded.
+            return [p for p in target.iterdir() if p.name == pattern and p.is_file()]
         except OSError:
             return []
-    return list(target.glob(pattern))
+    return [p for p in target.glob(pattern) if p.is_file()]
 
 
 def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str:
