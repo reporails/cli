@@ -1,8 +1,8 @@
 ---
 title: "Agent Support"
 description: "Which agents are recognized and what's covered"
-version: "0.5.10"
-last_updated: 2026-05-18
+version: "0.5.11"
+last_updated: 2026-06-06
 ---
 
 # Agent Support

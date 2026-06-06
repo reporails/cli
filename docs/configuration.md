@@ -1,8 +1,8 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.5.10"
-last_updated: 2026-05-18
+version: "0.5.11"
+last_updated: 2026-06-06
 ---
 
 # Configuration
@@ -55,6 +55,8 @@ Applies to every project.
 default_agent: claude
 auto_update_check: true
 ```
+
+The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `overrides`, `rule_thresholds`, `generic_scanning`, and more) — project values win per-key where the two overlap.
 
 Set values from the command line:
 
@@ -212,7 +214,7 @@ The CLI does not have a built-in `--min-score` flag. To gate on a minimum score,
     min-score: "7.0"          # exit 1 if score < 7.0
 ```
 
-Outside the action, wrap `ails check -f json` in a script that parses the `score` field and exits accordingly.
+Outside the action, use `--strict` for a pass/fail gate; for score-based gating, the GitHub Action's `min-score` input is the supported path.
 
 ## Authentication
 
@@ -251,13 +253,14 @@ JSON output is one object per run, grouping findings under `files` keyed by path
           "line": 18,
           "severity": "warning",
           "rule": "CORE:C:0034",
+          "category": "coherence",
           "message": "Missing tech stack declaration"
         }
       ],
       "count": 5
     }
   },
-  "stats": { "total": 21, "errors": 0, "warnings": 16, "info": 5 }
+  "stats": { "total_findings": 21, "errors": 0, "warnings": 16, "infos": 5, "cross_file_conflicts": 0, "cross_file_repetitions": 0 }
 }
 ```
 
@@ -270,7 +273,7 @@ What differs by tier:
 | `cross_file_coordinates[]` (counts per file pair)  | included  | omitted                             |
 | `pro{}` (summary of hints)                         | omitted   | included when present               |
 
-Always present, regardless of tier: `offline`, `files{}`, `stats`. `surface_health[]` is added when surfaces are populated.
+Always present, regardless of tier: `offline`, `files{}`, `stats`, `tier`, `top_rules`. `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map.
 
 GitHub annotations format emits one workflow command per finding so warnings appear inline on the diff in pull requests:
 

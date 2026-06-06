@@ -92,7 +92,7 @@ ails rules list --capability=skill --agent=claude -f md > skill-preflight.md
 
 ### JSON (`-f json`)
 
-Stable structured payload for tooling. Top-level keys: `capability`, `agent`, `agents_loaded`, `count`, `rules`. Each rule entry has `id`, `title`, `slug`, `category`, `severity`, `type`, and `match`. `explain` additionally returns `body` and `examples: {pass, fail}`.
+Stable structured payload for tooling. Top-level keys: `capability`, `capabilities`, `agent`, `agents_loaded`, `count`, `checks`. Each entry in `checks` has `id`, `title`, `slug`, `category`, `severity`, `type`, and `match`. For rule bodies and Pass / Fail examples, use the markdown format (`-f md`) or the text view `ails explain <id>`.
 
 ## Integration patterns
 

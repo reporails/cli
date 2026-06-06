@@ -35,6 +35,7 @@ Reporails — Diagnostics
 
   Score: 7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (1.3s)
   Agent: Claude
+  Level: L4 Delegated
 
   Scope:
     instructions: 4 directive / 7 prose (50%)
@@ -101,6 +102,8 @@ ails check -f json          # machine-readable JSON
 ails check -f github        # GitHub Actions inline annotations
 ails check --strict         # exit code 1 if any finding fires
 ails check --agent claude   # only run rules scoped to one agent
+ails check --heal           # apply deterministic auto-fixes after validation
+ails check --heal --dry-run # preview fixes without writing
 ```
 
 The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats` and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.

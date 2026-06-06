@@ -76,6 +76,10 @@ No. Reporails ships **CORE rules** that are agent-neutral (file size, heading hi
 
 When you run `ails check --agent claude`, only CORE plus Claude-scoped rules fire. Without `--agent`, Reporails [auto-detects which agents are present](agent-support.md#how-agent-detection-works) by looking for each agent's base config file and runs the corresponding rule sets.
 
+## How do I auto-fix findings?
+
+Run `ails check --heal` — it applies the deterministic fixes (missing sections, formatting) after validation. Preview what would change first with `ails check --heal --dry-run`.
+
 ## What's the right way to file a bug?
 
 Open an issue at [github.com/reporails/cli/issues](https://github.com/reporails/cli/issues). Include the version (`ails version`), your OS / Python version, the command you ran, and the unexpected output. JSON output (`ails check -f json`) is the most useful format for bug reports.
