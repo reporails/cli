@@ -1,8 +1,8 @@
 checks:
-- id: CURSOR.S.0002.file_in_scope
+- id: CURSOR.S.0006.file_in_scope
   type: mechanical
   check: file_exists
-- id: CURSOR.S.0002.depth_check
+- id: CURSOR.S.0006.depth_check
   type: mechanical
   check: import_depth
   args:
