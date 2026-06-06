@@ -1,8 +1,8 @@
 ---
 title: "Tiers and Limits"
 description: "Anonymous vs signed in, what each mode includes"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.11"
+last_updated: 2026-06-06
 ---
 
 # Tiers and Limits

@@ -1,8 +1,8 @@
 ---
 title: "Capability Levels"
 description: "The ladder for where AI instructions live and how they act"
-version: "0.5.10"
-last_updated: 2026-05-19
+version: "0.5.11"
+last_updated: 2026-06-06
 ---
 
 # Capability Levels

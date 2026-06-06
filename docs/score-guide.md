@@ -72,7 +72,7 @@ By default `ails check` always exits 0. To make CI fail, see [Configuration → 
 
 ## Consistency over time
 
-Score moves should be small commit-to-commit. A sudden drop usually means you removed reinforcement, introduced a contradiction, or pushed a file that exceeds size limits. The CLI tracks score deltas automatically — JSON output (`ails check -f json`) includes `score_delta`, `level_previous`, and `violations_delta` fields when there's a previous run cached, so a CI step can flag the regression without needing to re-run against the previous commit.
+Score moves should be small commit-to-commit. A sudden drop usually means you removed reinforcement, introduced a contradiction, or pushed a file that exceeds size limits. To track score over time in CI, record the score from each run (the GitHub Action exposes a `score` output) and compare across commits.
 
 ## Prevent findings before they happen
 
