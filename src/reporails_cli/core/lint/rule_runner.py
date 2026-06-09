@@ -167,7 +167,8 @@ def run_m_probes(
     from reporails_cli.core.platform.adapters.registry import load_rules
     from reporails_cli.core.platform.config.config import get_project_config
 
-    rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
     file_types = load_file_types(agent or "generic")
     try:
         generic_scanning = get_project_config(project_dir).generic_scanning
@@ -204,7 +205,8 @@ def run_content_quality_checks(
     if not isinstance(ruleset_map, _RulesetMap):
         return []
 
-    rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
 
     # Classify files so content_checker can respect rule.match targeting
     classified = []
