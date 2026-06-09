@@ -38,8 +38,6 @@ class TestRuleIdUniqueness:
         assert ids, "no rule.md files found under framework/rules"
         counts = Counter(rule_id for rule_id, _ in ids)
         duplicates = {
-            rule_id: [str(p.parent.name) for i, p in ids if i == rule_id]
-            for rule_id, n in counts.items()
-            if n > 1
+            rule_id: [str(p.parent.name) for i, p in ids if i == rule_id] for rule_id, n in counts.items() if n > 1
         }
         assert not duplicates, f"duplicate rule IDs (silently dropped at load): {duplicates}"
