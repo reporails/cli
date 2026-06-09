@@ -29,9 +29,9 @@ def _root(
     """Root callback — handles --version/-V short form."""
 
 
-@app.command("version", rich_help_panel="Commands")
+@app.command("version", rich_help_panel="Maintenance")
 def show_version() -> None:
-    """Show CLI version and install method."""
+    """Show the version and install method."""
     from reporails_cli import __version__ as cli_version
     from reporails_cli.core.install.self_update import detect_install_method
 
@@ -39,7 +39,7 @@ def show_version() -> None:
     console.print(f"Install: {detect_install_method().value}")
 
 
-@app.command("update", rich_help_panel="Commands")
+@app.command("update", rich_help_panel="Maintenance")
 def update() -> None:
     """Update ails to the latest version."""
     import shutil

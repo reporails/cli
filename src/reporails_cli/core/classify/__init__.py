@@ -403,6 +403,12 @@ def classify_files(
     Returns:
         List of ClassifiedFile for matched files
     """
+    # A file target (e.g. `ails check ./CLAUDE.md`) arrives as scan_root;
+    # normalize to its parent dir so relative paths and the ancestor chain
+    # reproduce the whole-project result instead of yielding empty matches.
+    if not scan_root.is_dir():
+        scan_root = scan_root.parent
+
     ancestor_chain = _compute_ancestor_chain(scan_root)
 
     classified: list[ClassifiedFile] = []

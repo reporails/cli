@@ -374,6 +374,37 @@ class TestClassifyFilesContentFormat:
         assert "content_format" in result[0].properties
 
 
+class TestClassifyFilesFileScanRoot:
+    """Regression: a file passed as scan_root must classify like its parent dir.
+
+    `ails check ./CLAUDE.md` routes the file path down as scan_root. Before
+    the normalization fix, `file_path.relative_to(scan_root)` raised on the
+    file-equals-scan_root case, the absolute-path fallback never matched the
+    `**/CLAUDE.md` glob, and the file got no file_type — so a single-file
+    scan returned zero findings.
+    """
+
+    def _main_type(self) -> FileTypeDeclaration:
+        return FileTypeDeclaration(
+            name="main",
+            patterns=("**/CLAUDE.md",),
+            properties={"format": "freeform", "scope": "project"},
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_classify
+    def test_file_scan_root_classifies_same_as_dir(self, tmp_path: Path):
+        md = tmp_path / "CLAUDE.md"
+        md.write_text("# Title\n\nSome real paragraph content here.\n")
+        ft = self._main_type()
+
+        file_root = classify_files(md, [md], [ft])
+        dir_root = classify_files(tmp_path, [md], [ft])
+
+        assert [c.file_type for c in file_root] == ["main"]
+        assert [c.file_type for c in file_root] == [c.file_type for c in dir_root]
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # match_files — content_format property matching
 # ═══════════════════════════════════════════════════════════════════════

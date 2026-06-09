@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="ails",
-    help="Validate and score AI instruction files - what ails your repo?",
+    help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your Harness's instructions"),
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )

@@ -46,19 +46,18 @@ def complete_agent(incomplete: str) -> list[str]:
 
 
 def complete_target_token(incomplete: str) -> list[str]:
-    """Complete a target token for `ails check`: `capability:name`, `@capability`, or path prefix.
+    """Complete a target token for `ails check`: bare capability, `capability:name`, or path prefix.
 
-    Dispatch on shape: `@<prefix>` → at-capability candidates;
-    `<cap>:<prefix>` → name candidates for that capability;
-    else → capability or path candidates.
+    Dispatch on shape: `<cap>:<prefix>` → name candidates for that capability;
+    else → bare capability nouns (all-of-kind), `<cap>:` (one), and path candidates.
     """
-    if incomplete.startswith("@"):
-        return [f"@{c}" for c in complete_capability(incomplete[1:])]
     if ":" in incomplete:
         cap, name_prefix = incomplete.split(":", 1)
         return [f"{cap}:{n}" for n in _complete_capability_target_name(cap, name_prefix)]
-    # Bare prefix: offer capability tokens; paths fall through to shell's default.
-    return [f"{c}:" for c in complete_capability(incomplete)]
+    # Bare prefix: offer the bare noun (all-of-kind) and the `<cap>:` (one)
+    # forms; paths fall through to the shell's default completion.
+    caps = complete_capability(incomplete)
+    return [*caps, *[f"{c}:" for c in caps]]
 
 
 def _complete_capability_target_name(capability: str, name_prefix: str) -> list[str]:
