@@ -10,8 +10,10 @@ from reporails_cli.core.platform.runtime import _torch_blocker
 _torch_blocker.install()
 # ─────────────────────────────────────────────────────────────────────
 
+import asyncio  # noqa: E402
 import hashlib  # noqa: E402
 import json  # noqa: E402
+import time  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
@@ -33,6 +35,39 @@ server = Server("ails")
 # Circuit breaker: content-aware loop detection.
 _MAX_CALLS = 10
 _MAX_UNCHANGED = 2
+
+# Idle model release: the MCP server is long-lived and loads embedding + spaCy
+# models in-process on the first `validate`. Without a release path they stay
+# resident (~GBs) for the server's whole lifetime. After AILS_MCP_IDLE_S seconds
+# (default 30 min; 0 disables) with no tool call, drop them; the next call
+# lazy-reloads. Cross-platform (asyncio + monotonic clock, no POSIX APIs).
+_DEFAULT_MCP_IDLE_S = 1800
+_last_activity = time.monotonic()
+
+
+def _parse_mcp_idle_timeout() -> int | None:
+    from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
+
+    return parse_idle_timeout_env("AILS_MCP_IDLE_S", _DEFAULT_MCP_IDLE_S)
+
+
+async def _idle_watchdog() -> None:
+    """Unload resident models once after an idle window; re-arm on new activity."""
+    idle_s = _parse_mcp_idle_timeout()
+    if idle_s is None:
+        return
+    from reporails_cli.core.mapper.models import get_models
+
+    poll = min(60, idle_s)
+    unloaded = False
+    while True:
+        await asyncio.sleep(poll)
+        is_idle = time.monotonic() - _last_activity > idle_s
+        if is_idle and not unloaded:
+            get_models().unload()
+            unloaded = True
+        elif not is_idle:
+            unloaded = False
 
 
 @dataclass
@@ -201,6 +236,8 @@ async def _handle_explain(arguments: dict[str, Any]) -> list[TextContent]:
 @server.call_tool()  # type: ignore[untyped-decorator]
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
+    global _last_activity
+    _last_activity = time.monotonic()
     handlers = {
         "validate": _handle_validate,
         "preflight": _handle_preflight,
@@ -213,9 +250,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def run_server() -> None:
-    """Run the MCP server."""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    """Run the MCP server with a background idle-unload watchdog."""
+    watchdog = asyncio.create_task(_idle_watchdog())
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
+    finally:
+        watchdog.cancel()
 
 
 def main() -> None:
