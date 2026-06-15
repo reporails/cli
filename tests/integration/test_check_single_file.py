@@ -120,3 +120,32 @@ def test_single_file_scan_matches_whole_project(tmp_path: Path) -> None:
     assert whole.exit_code == 0, whole.output
 
     assert _claude_findings(json.loads(single.output)) == _claude_findings(json.loads(whole.output))
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monkeypatch) -> None:
+    """`ails check subagent_memory` reaches global `~/.claude/agent-memory/` files.
+
+    Regression guard for the cap_paths union: a whole-project scan excludes
+    cross-project subagent memory, so without the union the intersection drops
+    the global files and the run bails with "No instruction files found". The
+    explicit capability target must re-include them.
+    """
+    home = tmp_path / "home"
+    agent_mem = home / ".claude" / "agent-memory" / "lead"
+    agent_mem.mkdir(parents=True)
+    (agent_mem / "note.md").write_text("# Lead memory\n\nPin every dependency.\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text("# Project\n\nUse the API key.\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["check", "subagent_memory", "--agent", "claude", "-f", "json"])
+    assert result.exit_code == 0, result.output
+    assert "No instruction files found" not in result.output
+    data = json.loads(result.output)
+    paths = data.get("capability_paths", [])
+    assert any("agent-memory" in p for p in paths), f"global subagent_memory not reached: {paths}"
