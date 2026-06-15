@@ -263,14 +263,13 @@ def file_type_summary(filepaths: set[str]) -> str:
     return ", ".join(parts)
 
 
-def per_file_stats(filepath: str, ruleset_map: Any, project_root: Path | None = None) -> str:
+def per_file_stats(filepath: str, ruleset_map: Any, project_root: Path) -> str:
     """Compute per-file stats from RulesetMap atoms. Returns compact stat string."""
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-        project_root = project_root or Path.cwd()
         norm_target = normalize_finding_path(filepath, project_root)
         atoms = [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) == norm_target]
     except (AttributeError, TypeError):

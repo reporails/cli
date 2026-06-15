@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.classify import load_file_types
+from reporails_cli.core.discovery.agent_discovery import _is_external_pattern
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 
 _CAPABILITY_SINGULAR_TO_PLURAL: dict[str, str] = {
@@ -340,12 +341,6 @@ def _is_under_excluded_dir(path: Path, project_root: Path, excl: set[str]) -> bo
     except ValueError:
         return False
     return any(part in excl for part in rel.parts[:-1])
-
-
-def _is_external_pattern(pattern: str) -> bool:
-    if pattern.startswith(("~", "/")):
-        return True
-    return len(pattern) >= 2 and pattern[1] == ":"
 
 
 def _name_extractor_for(capability: str) -> Callable[[Path], str]:

@@ -238,7 +238,7 @@ def print_file_card(
     name = friendly_name(filepath, classify_file(filepath))
     alias_list = (aliases_by_file or {}).get(filepath, [])
     name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
-    stats = per_file_stats(filepath, ruleset_map, project_root)
+    stats = per_file_stats(filepath, ruleset_map, project_root or Path.cwd())
     border = "│"
     msg_width = get_term_width() - 35
 
