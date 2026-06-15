@@ -20,7 +20,7 @@ from reporails_cli.core.lint.mechanical.checks import (
     _resolve_glob_targets,
     _safe_float,
 )
-from reporails_cli.core.mapper.imports import FENCED_BLOCK_RE
+from reporails_cli.core.mapper.imports import FENCED_BLOCK_RE, IMPORT_REF_RE
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 
@@ -131,9 +131,9 @@ def extract_imports(
 ) -> CheckResult:
     """Check for @import references in instruction files.
 
-    Skips `@`-references inside fenced code blocks — those are documentation
-    examples, not real imports. Matches the fenced-block treatment in
-    `core/mapper/imports.py:expand_imports`.
+    Uses the canonical `IMPORT_REF_RE` and fenced-block treatment from
+    `core/mapper/imports.py` so detection matches `expand_imports` — inline
+    `@code`, emails, and non-path `@tokens` are excluded.
     """
     imports_found: list[str] = []
     for match in _get_target_files(args, classified_files, root):
@@ -142,7 +142,7 @@ def extract_imports(
         try:
             content = match.read_text(encoding="utf-8")
             stripped = FENCED_BLOCK_RE.sub("", content)
-            imports_found.extend(re.findall(r"@[\w./-]+", stripped))
+            imports_found.extend(m.group(1) for m in IMPORT_REF_RE.finditer(stripped))
         except OSError:
             continue
     if imports_found:
@@ -187,7 +187,7 @@ def import_depth(
         except OSError:
             return depth
         stripped = FENCED_BLOCK_RE.sub("", content)
-        refs = re.findall(r"@([\w./-]+)", stripped)
+        refs = [m.group(1) for m in IMPORT_REF_RE.finditer(stripped)]
         max_d = depth
         for ref in refs:
             target = filepath.parent / ref

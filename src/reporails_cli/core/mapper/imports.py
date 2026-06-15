@@ -16,7 +16,7 @@ from pathlib import Path
 # Claude Code: @README, @docs/guide.md, @~/path, @./relative
 # Gemini CLI: @./path.md, @../path.md, @/absolute/path.md
 # Must NOT match: email@addr, @mentions in code blocks, inline `@code`
-_IMPORT_REF_RE = re.compile(
+IMPORT_REF_RE = re.compile(
     r"(?<![`\w@])"  # not inside backtick or after word char/@ (email)
     r"@("
     r"~[\w./_-]+"  # ~/home/path
@@ -122,4 +122,4 @@ def expand_imports(
         visited.add(str(target))
         return expand_imports(imported, target, depth=depth + 1, visited=visited)
 
-    return _IMPORT_REF_RE.sub(_replace, content)
+    return IMPORT_REF_RE.sub(_replace, content)
