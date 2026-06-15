@@ -15,6 +15,7 @@ from typing import Any
 
 from rich.console import Console
 
+from reporails_cli.formatters.text.score import score_for
 from reporails_cli.formatters.text.scorecard import SurfaceHealth, _score_bar
 
 console = Console()
@@ -59,15 +60,7 @@ def compute_item_scores(
         n_atoms = (analysis.stats.get("atoms", 0) if analysis else 0) or 0
         band = analysis.compliance_band if analysis else ""
 
-        if n_errors + n_warnings + n_infos == 0:
-            score = 10.0
-        else:
-            base = 6.0
-            if band:
-                base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
-            denom = max(n_atoms, n_errors + n_warnings + n_infos, 1)
-            penalty = min(4.0, (n_errors / denom) * 30) + min(2.0, (n_warnings / denom) * 2)
-            score = round(max(0.0, min(10.0, base - penalty)), 1)
+        score = score_for(band, findings, n_atoms)
 
         items.append(
             SurfaceHealth(

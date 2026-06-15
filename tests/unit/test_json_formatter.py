@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from reporails_cli.core.platform.adapters.api_client import CrossFileCoordinate, Hint
@@ -68,6 +70,101 @@ class TestCrossFileCoordinatesSection:
     def test_no_coordinates_section_when_empty(self) -> None:
         data = format_combined_result(_result())
         assert "cross_file_coordinates" not in data
+
+
+class TestLeverageAndRegime:
+    """Additive `leverage` (per finding) + `regime` (per file) keys."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_per_finding_leverage_added_without_touching_severity(self) -> None:
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        findings = (
+            FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="scatter"),
+            FindingItem(file="a.md", line=2, severity="info", rule="bold", message="bold"),
+        )
+        data = format_combined_result(_result(findings=findings))
+        entries = data["files"]["a.md"]["findings"]
+        by_rule = {e["rule"]: e for e in entries}
+        assert by_rule["CORE:C:0044"]["leverage"] == "gate_mover"
+        assert by_rule["bold"]["leverage"] == "cosmetic"
+        # Raw severity is the unchanged machine baseline.
+        assert by_rule["CORE:C:0044"]["severity"] == "warning"
+        assert by_rule["bold"]["severity"] == "info"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_leverage_key_reflects_live_server_tier(self) -> None:
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        # CORE:C:0044 is gate_mover in the static table; the server tiered THIS
+        # finding conditional for its file — the JSON `leverage` key must show the
+        # live value, not the table value.
+        findings = (
+            FindingItem(
+                file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="x", impact_tier="conditional"
+            ),
+        )
+        data = format_combined_result(_result(findings=findings))
+        assert data["files"]["a.md"]["findings"][0]["leverage"] == "conditional"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_per_file_regime_added_when_analysis_present(self) -> None:
+        from reporails_cli.core.platform.adapters.api_client import FileAnalysis
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        findings = (FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
+        per_file = (
+            FileAnalysis(
+                file="a.md",
+                compliance_band="LOW",
+                stats={"within_capacity": False, "is_named": False, "weak_coupling": True, "confident": True},
+            ),
+        )
+        data = format_combined_result(_result(findings=findings, per_file_analysis=per_file))
+        regime = data["files"]["a.md"]["regime"]
+        assert regime == {"named": False, "within_capacity": False, "confidence": 1.0}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_regime_keyed_against_passed_project_root(self) -> None:
+        """Server `per_file` paths are absolute; the regime must relativize them
+        against the run's `project_root` (not cwd) so single-path scans attach
+        the regime to the matching finding key instead of dropping it."""
+        from reporails_cli.core.platform.adapters.api_client import FileAnalysis
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        root = Path("/tmp/proj")
+        findings = (
+            FindingItem(file=".claude/rules/x.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),
+        )
+        per_file = (
+            FileAnalysis(
+                file="/tmp/proj/.claude/rules/x.md",
+                compliance_band="HIGH",
+                stats={"within_capacity": True, "is_named": True, "weak_coupling": False, "confident": True},
+            ),
+        )
+        result = _result(findings=findings, per_file_analysis=per_file)
+        # With the correct root the absolute per_file path relativizes to the
+        # finding key, so the regime attaches.
+        data = format_combined_result(result, project_root=root)
+        assert "regime" in data["files"][".claude/rules/x.md"]
+        # With the wrong root (cwd) the absolute path falls outside it, the key
+        # diverges, and the regime drops — the bug single-file scans hit.
+        stray = format_combined_result(result)
+        assert "regime" not in stray["files"][".claude/rules/x.md"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_no_regime_key_when_offline(self) -> None:
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        findings = (FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
+        data = format_combined_result(_result(findings=findings))
+        assert "regime" not in data["files"]["a.md"]
 
 
 class TestTierExposure:

@@ -71,3 +71,31 @@ def test_windows_drive_letter_routes_to_path(tmp_path: Path):
     """A drive-letter token is not mis-split into `capability:name`."""
     kind, _payload = _classify_target_token("C:\\Users\\x\\CLAUDE.md", "claude", tmp_path)
     assert kind == "path"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    "token, expected_path",
+    [
+        ("file:../hub/CLAUDE.md", "../hub/CLAUDE.md"),
+        ("file:/home/x/CLAUDE.md", "/home/x/CLAUDE.md"),
+        ("file:./CLAUDE.md", "./CLAUDE.md"),
+    ],
+    ids=["relative", "absolute", "dot-relative"],
+)
+def test_file_scheme_forces_path(token: str, expected_path: str, tmp_path: Path):
+    """`file:<path>` resolves the remainder as a path instead of erroring as an
+    unknown capability (was: `capability file is not declared`)."""
+    kind, payload = _classify_target_token(token, "claude", tmp_path)
+    assert kind == "path"
+    assert payload == Path(expected_path).resolve()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_file_scheme_overrides_capability_name(tmp_path: Path):
+    """`file:` forces path even when the remainder collides with a capability noun."""
+    kind, payload = _classify_target_token("file:skills", "claude", tmp_path)
+    assert kind == "path"
+    assert payload == Path("skills").resolve()

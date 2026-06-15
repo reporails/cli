@@ -18,6 +18,7 @@ from reporails_cli.formatters.text.display_constants import (
     finding_category,
     get_term_width,
 )
+from reporails_cli.formatters.text.score import leverage_basis, score_for
 
 console = Console()
 
@@ -35,29 +36,14 @@ def _hint_totals(result: Any) -> tuple[int, int]:
 
 
 def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
-    """Compute a 0-10 display score from compliance band + finding severity.
+    """Compute the 0-10 whole-project display score.
 
-    Band sets the base range, severity rates adjust within it.
-    Rates are relative to instruction count so larger projects
-    aren't penalized for having more atoms to check.
+    Delegates to the shared `score_for`: the compliance band sets the base and
+    only gate-mover findings penalize, so a severity re-bucket can't shift the
+    headline. Reads `result.findings` to count score-movers.
     """
-    s = result.stats
-    hint_errors, hint_warnings = _hint_totals(result)
-    total_errors = s.errors + hint_errors
-    total_warnings = s.warnings + hint_warnings
-
-    if total_errors + total_warnings + s.infos == 0:
-        return 10.0
-
-    base = 6.0
-    if has_quality:
-        band = result.quality.compliance_band
-        base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
-
-    denom = max(n_atoms, total_errors + total_warnings + s.infos, 1)
-    penalty = min(4.0, (total_errors / denom) * 30) + min(2.0, (total_warnings / denom) * 2)
-
-    return float(round(max(0.0, min(10.0, base - penalty)), 1))
+    band = result.quality.compliance_band if has_quality else ""
+    return score_for(band, result.findings, n_atoms)
 
 
 def print_score_line(score: float, tw: int) -> None:
@@ -174,16 +160,8 @@ def compute_surface_scores(
         else:
             majority_band = ""
 
-        # Score: same formula as compute_score
-        if n_errors + n_warnings + n_infos == 0:
-            score = 10.0
-        else:
-            base = 6.0
-            if has_band:
-                base = 8.5 if majority_band == "HIGH" else 5.5 if majority_band == "MODERATE" else 3.0
-            denom = max(n_atoms, n_errors + n_warnings + n_infos, 1)
-            penalty = min(4.0, (n_errors / denom) * 30) + min(2.0, (n_warnings / denom) * 2)
-            score = round(max(0.0, min(10.0, base - penalty)), 1)
+        # Score: shared gate-distance formula (band base, gate-mover penalty)
+        score = score_for(majority_band if has_band else "", findings, n_atoms)
 
         surfaces.append(
             SurfaceHealth(
@@ -318,6 +296,19 @@ def _render_score_bar(
     bar = _score_bar(score, bar_width, color)
     elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
     console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  {bar}{elapsed_s}")
+    _render_score_basis(result.findings)
+
+
+def _render_score_basis(findings: Any) -> None:
+    """Render the dim leverage-basis caption under the score bar.
+
+    Names what the number is driven by: score-movers move it, conditional and
+    cosmetic findings do not. Omitted when there are no findings.
+    """
+    movers, conditional, cosmetic = leverage_basis(findings)
+    if movers + conditional + cosmetic == 0:
+        return
+    console.print(f"  [dim]{movers} score-movers · {conditional} conditional · {cosmetic} cosmetic[/dim]")
 
 
 @dataclass

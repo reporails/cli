@@ -56,6 +56,7 @@ class Diagnostic:
     message: str
     fix: str = ""
     line_2: int = 0  # secondary line (conflict pairs)
+    impact_tier: str = ""  # server-computed leverage tier; "" when offline/not computed
 
 
 @dataclass(frozen=True)
@@ -100,8 +101,8 @@ class CrossFileFinding:
     line_2: int
     charge_1: int
     charge_2: int
-    distance: float
     finding_type: str  # "conflict" | "repetition"
+    topicality: str = ""  # "near" | "moderate" | "far"; "" when offline/not computed
 
 
 @dataclass(frozen=True)
@@ -112,7 +113,7 @@ class TargetScore:
     file_path: str
     compliance_band: str  # "HIGH" | "MODERATE" | "LOW"
     impact_rank: int
-    n_eff: float
+    capacity: str = ""  # "low" | "moderate" | "high"; "" when offline/not computed
     diagnostics: tuple[Diagnostic, ...] = ()
 
 
@@ -464,6 +465,7 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
                     message=d_message,
                     fix=d.get("fix", ""),
                     line_2=d.get("line_2", 0),
+                    impact_tier=d.get("impact_tier", ""),
                 )
             )
         items.append(
@@ -480,7 +482,7 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
 def _deserialize_cross_file(report_data: dict[str, Any]) -> tuple[CrossFileFinding, ...]:
     """Deserialize the cross_file section of the API response."""
     items: list[CrossFileFinding] = []
-    _required_keys = ("file_1", "file_2", "line_1", "line_2", "charge_1", "charge_2", "distance", "finding_type")
+    _required_keys = ("file_1", "file_2", "line_1", "line_2", "charge_1", "charge_2", "finding_type")
     for cf in report_data.get("cross_file", []):
         vals = {k: cf.get(k) for k in _required_keys}
         if any(v is None for v in vals.values()):
@@ -494,8 +496,8 @@ def _deserialize_cross_file(report_data: dict[str, Any]) -> tuple[CrossFileFindi
                 line_2=vals["line_2"],
                 charge_1=vals["charge_1"],
                 charge_2=vals["charge_2"],
-                distance=vals["distance"],
                 finding_type=vals["finding_type"],
+                topicality=cf.get("topicality", ""),
             )
         )
     return tuple(items)
@@ -516,8 +518,7 @@ def _deserialize_quality(report_data: dict[str, Any]) -> QualityResult:
             ts_path = ts.get("file_path")
             ts_band = ts.get("compliance_band")
             ts_rank = ts.get("impact_rank")
-            ts_neff = ts.get("n_eff")
-            if any(v is None for v in (ts_line, ts_path, ts_band, ts_rank, ts_neff)):
+            if any(v is None for v in (ts_line, ts_path, ts_band, ts_rank)):
                 logger.warning(
                     "Skipping per_target entry with missing required field in context %s: %s",
                     ctx_name,
@@ -530,7 +531,7 @@ def _deserialize_quality(report_data: dict[str, Any]) -> QualityResult:
                     file_path=ts_path,
                     compliance_band=ts_band,
                     impact_rank=ts_rank,
-                    n_eff=ts_neff,
+                    capacity=ts.get("capacity", ""),
                 )
             )
         context_items.append(

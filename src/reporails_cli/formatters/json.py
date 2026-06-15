@@ -6,6 +6,7 @@ All other formatters consume this format internally.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.platform.dto.models import (
@@ -220,12 +221,53 @@ def _category_for_rule(rule_id: str) -> str:
     return category.value if category else ""
 
 
-def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, Any]:
+def _regime_by_file(result: Any, project_root: Path) -> dict[str, dict[str, Any]]:
+    """Build a file-keyed map of additive regime fields from server analysis stats.
+
+    Only `named` / `within_capacity` / `confidence` are exposed — a structural
+    read, no equation-derived numbers. Empty for offline runs.
+    """
+    from reporails_cli.core.platform.policy.leverage import classify_regime
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    out: dict[str, dict[str, Any]] = {}
+    for fa in getattr(result, "per_file_analysis", ()):  # absent on offline-only shapes
+        regime = classify_regime(fa.stats)
+        if regime is not None:
+            # Key by the same project-relative form the `files` dict uses
+            # (findings are already normalized; server `per_file` is absolute).
+            out[normalize_finding_path(fa.file, project_root)] = {
+                "named": regime.named,
+                "within_capacity": regime.within_capacity,
+                "confidence": round(regime.confidence, 2),
+            }
+    return out
+
+
+def _pro_summary(hints: Any) -> dict[str, int]:
+    """Aggregate pro-tier hint counts into the JSON `pro` block."""
+    return {
+        "count": sum(h.count for h in hints),
+        "errors": sum(getattr(h, "error_count", 0) for h in hints),
+        "warnings": sum(getattr(h, "warning_count", 0) for h in hints),
+    }
+
+
+def _file_entry(findings: list[dict[str, Any]], regime: dict[str, Any] | None) -> dict[str, Any]:
+    """Build one per-file JSON entry, attaching `regime` when available (additive)."""
+    entry: dict[str, Any] = {"findings": findings, "count": len(findings)}
+    if regime is not None:
+        entry["regime"] = regime
+    return entry
+
+
+def format_combined_result(result: Any, ruleset_map: Any = None, project_root: Path | None = None) -> dict[str, Any]:
     """Format CombinedResult as JSON dict.
 
     Args:
         result: CombinedResult from merger
         ruleset_map: Optional RulesetMap for accurate file counts
+        project_root: Root to relativize regime keys against (defaults to cwd)
 
     Returns:
         Dict with findings, stats, compliance, tier, category info.
@@ -237,7 +279,11 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
     if not isinstance(result, CombinedResult):
         return {"error": "Invalid result type"}
 
-    # Group findings by file for agent consumption — agents work file-by-file
+    from reporails_cli.core.platform.policy.leverage import resolve_leverage
+
+    # Group findings by file for agent consumption — agents work file-by-file.
+    # `leverage` is additive (raw `severity` is unchanged — the machine baseline).
+    # It reflects the server's live per-finding tier when present, else the table.
     by_file: dict[str, list[dict[str, Any]]] = {}
     for f in result.findings:
         entry: dict[str, Any] = {
@@ -245,17 +291,19 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
             "severity": f.severity,
             "rule": f.rule,
             "category": _category_for_rule(f.rule),
+            "leverage": resolve_leverage(f).value,
             "message": f.message,
         }
         if f.fix:
             entry["fix"] = f.fix
         by_file.setdefault(f.file, []).append(entry)
 
+    regime_by_file = _regime_by_file(result, project_root or Path.cwd())
     data: dict[str, Any] = {
         "offline": result.offline,
         "tier": result.tier,
         "files": {
-            fp: {"findings": findings, "count": len(findings)}
+            fp: _file_entry(findings, regime_by_file.get(fp))
             for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))
         },
         "stats": asdict(result.stats),
@@ -272,14 +320,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None) -> dict[str, An
             for cf in result.cross_file
         ]
     if result.hints:
-        pro_total = sum(h.count for h in result.hints)
-        pro_errors = sum(getattr(h, "error_count", 0) for h in result.hints)
-        pro_warnings = sum(getattr(h, "warning_count", 0) for h in result.hints)
-        data["pro"] = {
-            "count": pro_total,
-            "errors": pro_errors,
-            "warnings": pro_warnings,
-        }
+        data["pro"] = _pro_summary(result.hints)
     if result.cross_file_coordinates:
         data["cross_file_coordinates"] = [
             {
