@@ -9,11 +9,13 @@ command reports "No findings" despite real diagnostics.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem, normalize_finding_path
 from reporails_cli.formatters.text.display import filter_result_to_paths
+from reporails_cli.formatters.text.display_constants import get_group_atoms, per_file_stats
 
 
 @pytest.mark.unit
@@ -53,3 +55,38 @@ def test_in_tree_target_still_filters(tmp_path: Path) -> None:
 
     rules = {f.rule for f in filtered.findings}
     assert rules == {"R1"}, "only the targeted in-tree file's findings survive"
+
+
+def _atom(file_path: str, charge: int, ambiguous: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(file_path=file_path, charge_value=charge, ambiguous=ambiguous)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_per_file_stats_uses_passed_root_not_cwd(tmp_path: Path) -> None:
+    """Stats header resolves atoms against the scan root, not `Path.cwd()`.
+
+    Regression: a directory target (or `ails check <file>` from elsewhere) roots
+    the scan away from cwd; keying atom lookup on cwd matched nothing and the
+    per-file `N dir / N con` header rendered blank.
+    """
+    root = tmp_path / "proj"
+    abs_file = root / "CLAUDE.md"
+    rm = SimpleNamespace(atoms=[_atom(str(abs_file), 1), _atom(str(abs_file), -1), _atom(str(abs_file), 0, True)])
+
+    out = per_file_stats("CLAUDE.md", rm, root)
+
+    assert "1 dir" in out and "1 con" in out and "1 amb" in out, out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_get_group_atoms_uses_passed_root_not_cwd(tmp_path: Path) -> None:
+    """Group header atom rollup resolves against the scan root, not cwd."""
+    root = tmp_path / "proj"
+    abs_file = root / "CLAUDE.md"
+    rm = SimpleNamespace(atoms=[_atom(str(abs_file), 1), _atom(str(abs_file), -1)])
+
+    atoms = get_group_atoms("main", [("CLAUDE.md", [])], rm, root)
+
+    assert len(atoms) == 2, "atoms under the scan root must match the group's files"
