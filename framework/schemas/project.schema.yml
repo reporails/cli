@@ -142,12 +142,15 @@ fields:
     items: { type: string }
     description: |
       File path globs to skip during discovery, matched against each file's
-      path relative to the project root with `pathlib` glob semantics (each
-      `*`/`**` segment matches one path component, so a subtree needs a
-      trailing wildcard: `.claude/skills/**/*`). Examples: `.claude/agents/lead.md`,
-      `.claude/skills/**/*`, `**/lead.md`. Use to drop symlinked or externally
-      owned instruction files from scoring. An explicitly targeted file
-      (`ails check <path>`) bypasses exclusion.
+      path relative to the project root with `pathlib` glob semantics: each
+      `*`/`**` segment matches exactly ONE path component (not a recursive
+      globstar), so a pattern matches at a fixed depth — list one pattern per
+      depth to cover several. Examples: `.claude/agents/lead.md`,
+      `.claude/skills/*/SKILL.md`, `**/lead.md`. A bare `**`/`**/*` matches
+      every file and drops all instruction files, so always anchor to a path
+      prefix. Use to drop symlinked or externally owned instruction files from
+      scoring. An explicitly targeted file (`ails check <path>`) bypasses
+      exclusion.
 
 defaults:
   schema_version: "0.1.0"

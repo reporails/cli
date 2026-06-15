@@ -100,19 +100,21 @@ ails check --exclude-dirs examples --exclude-dirs third_party
 
 ## Excluding individual files
 
-`exclude_files` targets *specific files* rather than directory names. Each entry is a glob matched against the file path **relative to the project root**, so you can name an exact file, a whole subtree, or any file by basename:
+`exclude_files` targets *specific files* rather than directory names. Each entry is a glob matched against the file path **relative to the project root**, so you can name an exact file, files one level down, or any file by basename:
 
 ```yaml
 # PROJECT_ROOT/.ails/config.yml
 exclude_files:
   - .claude/agents/lead.md   # that exact file
-  - .claude/skills/**/*      # everything under the skills tree
+  - .claude/skills/*/SKILL.md # each skill's SKILL.md (one level down)
   - "**/lead.md"             # any lead.md, anywhere
 ```
 
 The common case is a project that symlinks coding-agent harness artifacts (skills, agents, rules) in from another repo. Those files are authored and linted where they live, so scoring them here just adds noise — list their paths under `exclude_files` to drop them. Selection is by path, not by "is a symlink", because symlinks are also used legitimately (e.g. `CLAUDE.md → AGENTS.md`).
 
-Patterns use [`pathlib` glob semantics](https://docs.python.org/3/library/pathlib.html#pathlib.PurePath.match): each `*` and `**` segment matches a single path component, so a whole subtree needs a trailing wildcard — `.claude/skills/**/*` (or `.claude/skills/**/SKILL.md`), not `.claude/skills/**`. This matches the convention the `surfaces` include / exclude patterns already use.
+Patterns use [`pathlib` glob semantics](https://docs.python.org/3/library/pathlib.html#pathlib.PurePath.match): each `*` and `**` segment matches **exactly one** path component — it is *not* a recursive `git`-style globstar. So a pattern matches at a fixed depth: `.claude/skills/*/SKILL.md` and `.claude/skills/**/*` both reach files exactly one directory below `skills/`, not files nested deeper. To cover several depths, list one pattern per depth. This matches the convention the `surfaces` include / exclude patterns already use.
+
+A bare `**` or `**/*` matches *every* file in the project — it drops all instruction files and the scan exits with `No instruction files found`. Always anchor the pattern to a path prefix (`.claude/skills/...`).
 
 For one-off runs, pass `--exclude-files`:
 
