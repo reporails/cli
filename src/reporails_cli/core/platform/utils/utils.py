@@ -140,6 +140,29 @@ def relative_to_safe(path: Path, base: Path) -> str:
         return str(path)
 
 
+def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
+    """Check whether path matches any glob pattern relative to target.
+
+    Pure function. Tries the target-relative path first, then the absolute
+    path, so patterns may include or omit the project-root prefix.
+    """
+    if not patterns:
+        return False
+    try:
+        rel = path.relative_to(target).as_posix()
+    except ValueError:
+        rel = str(path)
+    for pattern in patterns:
+        try:
+            if Path(rel).match(pattern):
+                return True
+            if path.match(pattern):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def normalize_rule_id(rule_id: str) -> str:
     """Normalize rule ID to uppercase.
 

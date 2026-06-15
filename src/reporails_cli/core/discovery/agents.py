@@ -16,6 +16,7 @@ from typing import Any
 
 from reporails_cli.core.discovery.agent_discovery import categorize_file_type as _categorize_file_type
 from reporails_cli.core.discovery.agent_discovery import discover_from_config as _discover_from_config
+from reporails_cli.core.platform.utils.utils import matches_any_glob
 
 logger = logging.getLogger(__name__)
 
@@ -526,6 +527,31 @@ def filter_agents_by_exclude_dirs(
     for agent in agents:
         inst = [f for f in agent.instruction_files if not (_path_parts(f, target) & exclude_set)]
         rules = [f for f in agent.rule_files if not (_path_parts(f, target) & exclude_set)]
+        if inst:  # Only keep agent if it still has instruction files
+            filtered.append(
+                DetectedAgent(
+                    agent_type=agent.agent_type,
+                    instruction_files=inst,
+                    config_files=agent.config_files,
+                    rule_files=rules,
+                    detected_directories=agent.detected_directories,
+                )
+            )
+    return filtered
+
+
+def filter_agents_by_exclude_files(
+    agents: list[DetectedAgent],
+    target: Path,
+    exclude_files: list[str] | None,
+) -> list[DetectedAgent]:
+    """Remove files matching an exclude glob (rel. to target). Drops agents with no remaining files."""
+    if not exclude_files:
+        return agents
+    filtered: list[DetectedAgent] = []
+    for agent in agents:
+        inst = [f for f in agent.instruction_files if not matches_any_glob(f, exclude_files, target)]
+        rules = [f for f in agent.rule_files if not matches_any_glob(f, exclude_files, target)]
         if inst:  # Only keep agent if it still has instruction files
             filtered.append(
                 DetectedAgent(

@@ -127,6 +127,28 @@ fields:
           items: { type: string }
           description: "Glob patterns whose matches are dropped from this surface."
 
+  exclude_dirs:
+    required: false
+    type: array
+    items: { type: string }
+    description: |
+      Directory names to skip during discovery (additional to the built-in
+      list). Any directory matching one of these names is excluded wherever it
+      appears in the tree.
+
+  exclude_files:
+    required: false
+    type: array
+    items: { type: string }
+    description: |
+      File path globs to skip during discovery, matched against each file's
+      path relative to the project root with `pathlib` glob semantics (each
+      `*`/`**` segment matches one path component, so a subtree needs a
+      trailing wildcard: `.claude/skills/**/*`). Examples: `.claude/agents/lead.md`,
+      `.claude/skills/**/*`, `**/lead.md`. Use to drop symlinked or externally
+      owned instruction files from scoring. An explicitly targeted file
+      (`ails check <path>`) bypasses exclusion.
+
 defaults:
   schema_version: "0.1.0"
   agent: "claude"

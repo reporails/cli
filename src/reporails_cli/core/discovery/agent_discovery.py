@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from reporails_cli.core.discovery.walk import walk_markdown
+from reporails_cli.core.platform.utils.utils import matches_any_glob as _matches_any_glob
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.results import ProjectConfig
@@ -459,27 +460,6 @@ def _surface_exclude_patterns(agent_id: str, file_type_name: str, project_config
     if not isinstance(exclude, list):
         return []
     return [str(p) for p in exclude]
-
-
-def _matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
-    """Check whether path matches any of the glob patterns relative to target."""
-    if not patterns:
-        return False
-    try:
-        rel = path.relative_to(target).as_posix()
-    except ValueError:
-        rel = str(path)
-    for pattern in patterns:
-        # PurePath.match supports glob-style; **/ wildcards may need normalization
-        try:
-            if Path(rel).match(pattern):
-                return True
-            # Also try absolute match for patterns that include the full prefix
-            if path.match(pattern):
-                return True
-        except ValueError:
-            continue
-    return False
 
 
 def discover_from_config(

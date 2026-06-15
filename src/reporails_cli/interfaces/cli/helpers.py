@@ -120,11 +120,13 @@ def _resolve_agent_filters(
     all_detected: list[Any],
     target: Path,
     exclude_dirs: list[str] | None,
+    exclude_files: list[str] | None = None,
 ) -> tuple[str, bool, bool, list[Any]]:
     """Resolve agent selection and filter detected agents. Returns (agent, assumed, mixed, filtered)."""
     from reporails_cli.core.discovery.agents import (
         detect_single_agent,
         filter_agents_by_exclude_dirs,
+        filter_agents_by_exclude_files,
         filter_agents_by_id,
         resolve_agent,
     )
@@ -139,7 +141,9 @@ def _resolve_agent_filters(
             single = detect_single_agent(target, agent)
             if single:
                 filtered = [single]
-    return effective, assumed, mixed, filter_agents_by_exclude_dirs(filtered, target, exclude_dirs)
+    filtered = filter_agents_by_exclude_dirs(filtered, target, exclude_dirs)
+    filtered = filter_agents_by_exclude_files(filtered, target, exclude_files)
+    return effective, assumed, mixed, filtered
 
 
 def _handle_no_instruction_files(effective_agent: str, output_format: str, con: Console) -> None:

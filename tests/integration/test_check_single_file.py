@@ -153,6 +153,38 @@ def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monk
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
+def test_exclude_files_explicit_target_overrides_exclusion(tmp_path: Path, monkeypatch) -> None:
+    """`exclude_files` drops a file from whole-project discovery, but an explicit target scans it.
+
+    Exclusion applies to discovery only — naming the excluded file directly
+    (single-file mode) bypasses the discovery filter, which is the intended
+    override for symlinked / externally-owned harness files.
+    """
+    project = tmp_path / "proj"
+    agents_dir = project / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (project / "CLAUDE.md").write_text(_VIOLATION_LADEN, encoding="utf-8")
+    (agents_dir / "lead.md").write_text(_VIOLATION_LADEN, encoding="utf-8")
+    ails = project / ".ails"
+    ails.mkdir()
+    (ails / "config.yml").write_text(
+        'schema_version: "0.1.0"\nexclude_files:\n  - ".claude/agents/lead.md"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(project)
+
+    whole = runner.invoke(app, ["check", "--agent", "claude", "-f", "json"])
+    assert whole.exit_code == 0, whole.output
+    whole_files = json.loads(whole.output).get("files", {})
+    assert not any(k.endswith("agents/lead.md") for k in whole_files), "excluded file must be dropped from discovery"
+
+    explicit = runner.invoke(app, ["check", "./.claude/agents/lead.md", "--agent", "claude", "-f", "json"])
+    assert explicit.exit_code == 0, explicit.output
+    paths = json.loads(explicit.output).get("capability_paths", [])
+    assert any(p.endswith("lead.md") for p in paths), "explicit target must override exclusion and scan"
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
 def test_mixed_agent_capability_target_errors_clearly(tmp_path: Path, monkeypatch) -> None:
     """A capability target on a multi-agent repo (no resolved agent) errors clearly.
 
