@@ -218,6 +218,11 @@ def _init_daemon_process() -> None:
     from reporails_cli.core.platform.runtime import _torch_blocker
 
     _torch_blocker.install()
+    # Drop any wall-clock backstop inherited from the forking `ails check` parent:
+    # fork() clears the interval timer but the SIGALRM disposition carries over.
+    if hasattr(signal, "SIGALRM"):
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
     _pid_path().write_text(str(os.getpid()))
 
     import logging as _logging

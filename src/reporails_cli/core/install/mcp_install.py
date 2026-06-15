@@ -21,9 +21,13 @@ def _mcp_server_entry() -> dict[str, str | list[str]]:
     mcp_bin = shutil.which("reporails-mcp")
     if mcp_bin:
         return {"command": mcp_bin, "args": []}
+    # `--refresh-package reporails-cli` (not blanket `--refresh`): re-checks only
+    # the reporails-cli package so the tool still updates on spawn, without
+    # re-resolving the whole dependency graph every time — which pegged a core
+    # under frequent MCP respawns.
     return {
         "command": "uvx",
-        "args": ["--refresh", "--from", "reporails-cli", "reporails-mcp"],
+        "args": ["--refresh-package", "reporails-cli", "--from", "reporails-cli", "reporails-mcp"],
     }
 
 
