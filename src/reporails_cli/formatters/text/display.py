@@ -427,7 +427,10 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
         # carry absolute paths, so normalize before the membership test.
         return normalize_finding_path(path, project_root) in rel_keys
 
-    rel_keys = {str(_relativize(p, project_root)) for p in paths}
+    # Normalize keys through the same function as findings so out-of-tree
+    # targets (e.g. `~/.claude/...` memory) match — `_relativize` falls back to
+    # the absolute path while `normalize_finding_path` yields the `~/` form.
+    rel_keys = {normalize_finding_path(str(p), project_root) for p in paths}
     findings = tuple(f for f in result.findings if _in_scope(f.file))
     cross = tuple(cf for cf in result.cross_file if _in_scope(cf.file_1) or _in_scope(cf.file_2))
     per_file = tuple(fa for fa in result.per_file_analysis if _in_scope(fa.file))

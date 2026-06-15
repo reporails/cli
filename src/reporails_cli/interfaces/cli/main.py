@@ -256,6 +256,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     # specs and (multi-)path tokens and narrow `instruction_files`.
     single_path_mode = single_path is not None
     upfront_paths: set[Path] = set()
+    cap_paths: set[Path] = set()
     if not single_path_mode:
         if capability_specs:
             cap_paths, unresolved_skills = _resolve_capability_paths(
@@ -270,6 +271,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             return
         if upfront_paths:
             instruction_files = [f for f in instruction_files if f in upfront_paths]
+            # Capability targets are authoritative — include resolved targets even
+            # when broad discovery excluded them (e.g. user-scope subagent_memory).
+            discovered = {f.resolve() for f in instruction_files}
+            instruction_files += [p for p in cap_paths if p.resolve() not in discovered]
             if not instruction_files:
                 _handle_no_instruction_files(effective_agent, output_format, console)
                 return

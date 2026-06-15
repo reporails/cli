@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 # Project-specific exclusions come from .ails/config.yml exclude_dirs.
 _ALWAYS_SKIP = frozenset({".git", "__pycache__", "node_modules"})
 
+# Capabilities whose user-scope (home / absolute) patterns are NOT auto-pulled
+# into a repo-scoped check — they enumerate cross-project surfaces reachable
+# only via an explicit capability target (e.g. `ails check subagent_memory`).
+# Filtered via `_is_external_pattern` (defined below).
+_USER_SCOPE_OPT_IN_CAPABILITIES = frozenset({"subagent_memory"})
+
 
 def ci_glob(target: Path, pattern: str) -> list[Path]:
     """Case-sensitive glob — agent specs treat filename casing as authoritative.
@@ -517,6 +523,11 @@ def discover_from_config(
             continue
         patterns = list(_extract_patterns(spec))
         properties = _extract_properties(spec)
+
+        # Drop cross-project user-scope patterns from repo-scoped discovery —
+        # reachable only via an explicit capability target.
+        if ft_name in _USER_SCOPE_OPT_IN_CAPABILITIES:
+            patterns = [p for p in patterns if not _is_external_pattern(p)]
 
         bucket = categorize_file_type(patterns, properties)
         if bucket == "skip":
