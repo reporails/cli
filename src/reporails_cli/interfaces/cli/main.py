@@ -258,6 +258,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     upfront_paths: set[Path] = set()
     cap_paths: set[Path] = set()
     if not single_path_mode:
+        if capability_specs and mixed and not agent:
+            names = sorted({d.agent_type.id for d in filtered})
+            console.print(
+                f"[red]Error:[/red] multiple agents detected ({', '.join(names)}); a capability "
+                f"target needs one agent. Re-run with [bold]--agent <name>[/bold] "
+                f"(e.g. `ails check {capability_specs[0][0]} --agent {names[0]}`)."
+            )
+            raise typer.Exit(2)
         if capability_specs:
             cap_paths, unresolved_skills = _resolve_capability_paths(
                 capability_specs, effective_agent, project_root, excl
