@@ -9,9 +9,7 @@ __pycache__
 .ruff_cache
 
 # Internal coordination surface — private inner repo, never ships in the public CLI
-/specs/
 /hub/
-/archive/
 
 # Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/
