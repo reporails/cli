@@ -3,6 +3,7 @@ exclude_dirs:
   - fixtures
   - .venv
   - docs
+  - hub
   - specs
   - framework
   - .mypy_cache
