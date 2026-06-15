@@ -6,7 +6,7 @@
 # (config.toml, rules/, agents/, hooks.json) or AGENTS.override.md.
 #
 # Synced from .claude/skills/audit-agent/assets/registry/codex/config.yml
-# Last verified: 2026-05-06
+# Last verified: 2026-06-15
 #
 # Items intentionally NOT included here (cannot be statically measured):
 #   - fallback_main: project_doc_fallback_filenames is user-configurable in

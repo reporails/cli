@@ -2,7 +2,7 @@
 # Schema: schemas/agent.schema.yml v0.5.0
 #
 # Synced from .claude/skills/audit-agent/assets/registry/gemini/config.yml
-# Last verified: 2026-05-06
+# Last verified: 2026-06-15
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - Cloud-managed enterprise policies (Google Cloud admin / Code Assist Enterprise)
