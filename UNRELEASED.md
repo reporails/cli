@@ -32,6 +32,7 @@
 
 ### Fixed
 
+- check: backtick-wrapped tokens like `` `@pytest.mark.parametrize` `` are no longer mis-detected as `@<path>` imports, eliminating spurious "Unresolved imports" findings. The import-targets and import-depth checks now share the mapper's canonical import-reference regex (`IMPORT_REF_RE`), which excludes inline code, emails, and non-path `@tokens` — so detection matches what the harness actually expands.
 - daemon/mcp: resident embedding + spaCy models are now released when idle, so a background `ails` process no longer pins gigabytes of memory indefinitely. The mapper daemon's idle shutdown is on by default (30 min; set `AILS_DAEMON_IDLE_S` seconds to tune, `0` to disable) and unloads models before exit. The long-lived MCP server now drops resident models after an idle window (`AILS_MCP_IDLE_S` seconds, default 30 min, `0` disables) and lazily reloads them on the next tool call. Both paths are cross-platform.
 - mcp: the generated `uvx` MCP-server invocation now uses `--refresh-package reporails-cli` instead of a blanket `--refresh` — the server still picks up CLI updates on spawn, but no longer re-resolves the entire dependency graph each time, which pegged a CPU core under frequent respawns.
 - check: a wall-clock backstop now aborts an `ails check` that runs past a ceiling (default 600 s; `AILS_CHECK_TIMEOUT_S` seconds, `0` disables) instead of hanging indefinitely. POSIX-only (`SIGALRM`); a no-op on Windows.

@@ -21,6 +21,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (
     check_import_targets_exist,
     count_at_least,
     count_at_most,
+    extract_imports,
     file_absent,
     filename_matches_pattern,
     skill_entrypoint_present,
@@ -617,6 +618,29 @@ class TestCountAtLeast:
     def test_default_threshold_one(self, tmp_path: Path) -> None:
         result = count_at_least(tmp_path, {"items": ["a"]}, [])
         assert result.passed
+
+
+class TestExtractImports:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_inline_code_decorator_not_an_import(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("Use `@pytest.mark.parametrize` when cases share the same shape.\n")
+        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        assert (result.annotations or {}).get("discovered_imports", []) == []
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_real_path_import_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("See @docs/guide.md and @README for setup.\n")
+        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        assert result.annotations["discovered_imports"] == ["docs/guide.md", "README"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_email_not_an_import(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("Contact me@example.com for access.\n")
+        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        assert (result.annotations or {}).get("discovered_imports", []) == []
 
 
 class TestCheckImportTargetsExist:
