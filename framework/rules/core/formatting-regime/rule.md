@@ -23,7 +23,7 @@ Bold on structural labels (`**G1 Schema**:`, `**Agent 1**:`) is allowed — thes
 
 ## Antipatterns
 
-- **Bold on prohibited terms** like "NEVER use **eval** in production code" — bold on `eval` amplifies the prohibited concept instead of suppressing it. Use `eval` (backtick) instead.
+- **Bold on prohibited terms** like "NEVER use **eval** in production code". Bold amplifies the prohibited concept instead of suppressing it. State the prohibition as an abstract category in plain *italic* text rather than naming the forbidden construct.
 - **Bold for emphasis on constraints** like "Do **not** modify the database" — bold on negation keywords competes with the instruction's intent. Use *italic* for the full constraint sentence.
 - **Bold inside NEVER/ALWAYS sentences** like "ALWAYS use **ruff** for formatting" — bold on the tool name creates salience competition. Use `ruff` (backtick) for code constructs.
 

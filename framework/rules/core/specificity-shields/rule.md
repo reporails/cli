@@ -11,12 +11,12 @@ match: {}
 
 # Specificity Shields Against Competition
 
-Instructions in prose-heavy files must name specific constructs to resist topic competition. Vague instructions surrounded by prose on the same topic degrade severely, while named instructions maintain compliance.
+Directives in prose-heavy files must name specific constructs to resist topic competition. A vague directive surrounded by prose on the same topic degrades severely, while a named directive holds compliance. The naming shield protects directives you want followed. It does not protect prohibitions: naming a forbidden construct anchors it instead of shielding it, so state prohibitions as abstract categories.
 
 ## Antipatterns
 
 - Writing a generic directive in a file with extensive explanatory prose. "Use the formatter" in a file with paragraphs about formatting conventions gets overwhelmed by the surrounding content.
-- Adding context paragraphs around a constraint without naming constructs in the constraint itself. The prose competes with the vague instruction and wins.
+- Adding context paragraphs around a vague directive without naming constructs in the directive itself. The prose competes with the vague instruction and wins.
 - Keeping instructions abstract in files that also contain documentation. Prose-heavy files demand more specific instructions, not less.
 
 ## Pass / Fail
@@ -25,7 +25,7 @@ Instructions in prose-heavy files must name specific constructs to resist topic 
 
 ~~~~markdown
 Code formatting uses `ruff format` with the config
-in `pyproject.toml`. NEVER run `black` or `autopep8`.
+in `pyproject.toml`. *Do not run a different formatter.*
 ~~~~
 
 ### Fail
