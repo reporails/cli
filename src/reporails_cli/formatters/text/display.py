@@ -60,9 +60,11 @@ _GROUP_LABELS = {
 }
 
 
-def _render_group_header(gkey: str, group_files: list[tuple[str, list[Any]]], ruleset_map: Any) -> None:
+def _render_group_header(
+    gkey: str, group_files: list[tuple[str, list[Any]]], ruleset_map: Any, project_root: Path
+) -> None:
     """Print group header with optional atom stats."""
-    group_atoms = get_group_atoms(gkey, group_files, ruleset_map)
+    group_atoms = get_group_atoms(gkey, group_files, ruleset_map, project_root)
     stats = f"  [dim]{group_stats_line(group_atoms)}[/dim]" if group_atoms else ""
     label = _GROUP_LABELS.get(gkey, gkey.title())
     console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({len(group_files)})[/dim]{stats}")
@@ -85,7 +87,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
     """Render a single file group: header, file cards, footer."""
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    _render_group_header(gkey, group_files, ctx.ruleset_map)
+    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root)
     max_cards = 3 if not ctx.verbose else 999
 
     for i, (filepath, findings) in enumerate(group_files):
@@ -102,6 +104,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             ruleset_map=ctx.ruleset_map,
             file_hints=ctx.hints_by_file.get(filepath),
             aliases_by_file=ctx.aliases_by_file,
+            project_root=ctx.project_root,
         )
 
     console.print(f"  [dim]\u2514\u2500 {sum(len(fs) for _, fs in group_files)} findings[/dim]\n")

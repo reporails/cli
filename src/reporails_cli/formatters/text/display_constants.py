@@ -263,14 +263,14 @@ def file_type_summary(filepaths: set[str]) -> str:
     return ", ".join(parts)
 
 
-def per_file_stats(filepath: str, ruleset_map: Any) -> str:
+def per_file_stats(filepath: str, ruleset_map: Any, project_root: Path | None = None) -> str:
     """Compute per-file stats from RulesetMap atoms. Returns compact stat string."""
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-        project_root = Path.cwd()
+        project_root = project_root or Path.cwd()
         norm_target = normalize_finding_path(filepath, project_root)
         atoms = [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) == norm_target]
     except (AttributeError, TypeError):
@@ -303,6 +303,7 @@ def get_group_atoms(
     group_key: str,  # noqa: ARG001
     group_files: list[tuple[str, list[Any]]],
     ruleset_map: Any,
+    project_root: Path,
 ) -> list[Any]:
     """Get all atoms belonging to files in this group."""
     if ruleset_map is None:
@@ -310,7 +311,6 @@ def get_group_atoms(
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-        project_root = Path.cwd()
         norm_fps = {normalize_finding_path(fp, project_root) for fp, _ in group_files}
         return [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) in norm_fps]
     except (AttributeError, TypeError):
