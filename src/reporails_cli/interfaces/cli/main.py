@@ -171,19 +171,17 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                     raise typer.Exit(2)
                 path_targets.add(resolved_path)
 
-    # Single-path-only mode: scope the scan to one path. A single FILE roots
-    # discovery + relativization at its PARENT dir so path math stays
-    # directory-based, then narrows the scan to that file below; a single DIR
-    # roots there directly. Mixed/multi-target invocations stay rooted at cwd
-    # so all tokens see the full discovery set.
+    # Single-path-only mode: scope the scan to one path. A single FILE keeps the
+    # real project root as `target` and narrows the scan to that file below — so
+    # finding paths keep their `.claude/rules/` prefix and classify into the
+    # right group (parent-rooting would collapse them to the bare basename). A
+    # single DIR roots there directly. Mixed/multi-target invocations stay rooted
+    # at cwd so all tokens see the full discovery set.
     single_path = (
         next(iter(path_targets)) if (path_targets and not capability_specs and len(path_targets) == 1) else None
     )
     single_file = single_path if (single_path is not None and single_path.is_file()) else None
-    if single_path is not None:
-        target = single_path.parent if single_file is not None else single_path
-    else:
-        target = project_root
+    target = single_path if (single_path is not None and single_file is None) else project_root
 
     output_format = format or _default_format()
 
@@ -456,9 +454,14 @@ def _classify_target_token(token: str, sniff_agent: str, project_root: Path) -> 
     A bare capability noun (`skills`) targets every instance; `capability:name`
     (`skill:backlog`) targets one. Tokens are canonicalized through the agent
     vocabulary. A leading drive letter (`C:\\...`) routes to path, not capability.
+    The explicit `file:<path>` scheme forces path interpretation — the inverse of
+    `capability:name` — so a path that shares a name with a capability still scans
+    as a file.
     """
     from reporails_cli.core.classify.capability_paths import canonicalize_capability, is_capability_keyword
 
+    if token.startswith("file:"):
+        return ("path", Path(token[len("file:") :]).resolve())
     if token.startswith("@"):
         cap = token[1:]
         canonical = canonicalize_capability(cap, sniff_agent, project_root) if sniff_agent else None
@@ -551,7 +554,7 @@ def _dispatch_output(
     from reporails_cli.formatters import json as json_formatter
 
     if output_format == "json":
-        data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map)
+        data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map, project_root=project_root)
         data["elapsed_ms"] = round(elapsed_ms, 1)
         if capability_paths:
             data["capability_paths"] = sorted(_relativize_paths(capability_paths, project_root))
@@ -563,7 +566,13 @@ def _dispatch_output(
         print(github_formatter.format_combined_annotations(display_result))
         return
     print_text_result(
-        display_result, elapsed_ms, ascii_mode, verbose, ruleset_map=ruleset_map, funnel_error=funnel_error
+        display_result,
+        elapsed_ms,
+        ascii_mode,
+        verbose,
+        ruleset_map=ruleset_map,
+        funnel_error=funnel_error,
+        project_root=project_root,
     )
 
 

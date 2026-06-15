@@ -17,6 +17,7 @@ from reporails_cli.core.platform.adapters.api_client import (
     _deserialize_cross_file_coordinates,
     _deserialize_hints,
     _deserialize_lint_result,
+    _deserialize_per_file,
     _strip_and_serialize,
 )
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
@@ -506,3 +507,38 @@ class TestDeserializeLintResult:
         assert result.tier == "pro"
         assert result.hints == ()
         assert result.cross_file_coordinates == ()
+
+
+class TestDeserializePerFileImpactTier:
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_impact_tier_parsed_when_present(self) -> None:
+        data = {
+            "per_file": [
+                {
+                    "file": "a.md",
+                    "diagnostics": [
+                        {
+                            "line": 1,
+                            "severity": "warning",
+                            "rule": "CORE:C:0042",
+                            "message": "x",
+                            "impact_tier": "gate_mover",
+                        },
+                    ],
+                }
+            ]
+        }
+        (fa,) = _deserialize_per_file(data)
+        assert fa.diagnostics[0].impact_tier == "gate_mover"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_impact_tier_defaults_empty_when_absent(self) -> None:
+        data = {
+            "per_file": [
+                {"file": "a.md", "diagnostics": [{"line": 1, "severity": "warning", "rule": "r", "message": "x"}]}
+            ]
+        }
+        (fa,) = _deserialize_per_file(data)
+        assert fa.diagnostics[0].impact_tier == ""

@@ -71,6 +71,7 @@ class FindingItem:
     fix: str = ""
     source: str = "local"  # "m_probe" | "client_check" | "server"
     line_2: int = 0  # secondary line for cross-file findings
+    impact_tier: str = ""  # server-computed leverage tier; "" for local findings → table fallback
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,7 @@ def _collect_server_diagnostics(
                     fix=diag.fix,
                     source="server",
                     line_2=diag.line_2,
+                    impact_tier=getattr(diag, "impact_tier", ""),
                 )
             )
     return items, server_keys
