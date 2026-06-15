@@ -149,3 +149,30 @@ def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monk
     data = json.loads(result.output)
     paths = data.get("capability_paths", [])
     assert any("agent-memory" in p for p in paths), f"global subagent_memory not reached: {paths}"
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+def test_mixed_agent_capability_target_errors_clearly(tmp_path: Path, monkeypatch) -> None:
+    """A capability target on a multi-agent repo (no resolved agent) errors clearly.
+
+    Regression: it used to degrade to `generic`, yielding "capability X is not
+    declared for agent generic" or "Create a AGENTS.md" — misleading when the
+    files exist. Now it names the detected agents and asks for `--agent`.
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text("# Claude\n\nUse the key.\n", encoding="utf-8")
+    gh = project / ".github"
+    gh.mkdir()
+    (gh / "copilot-instructions.md").write_text("# Copilot\n\nUse the key.\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["check", "skills"])
+    assert result.exit_code == 2, result.output
+    assert "multiple agents detected" in result.output
+    assert "--agent" in result.output
+
+    # Explicit --agent bypasses the mixed-agent guard (no false 'multiple agents').
+    forced = runner.invoke(app, ["check", "skills", "--agent", "claude"])
+    assert "multiple agents detected" not in forced.output
