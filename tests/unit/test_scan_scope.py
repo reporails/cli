@@ -17,10 +17,13 @@ import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.agents import (
+    DetectedAgent,
     clear_agent_cache,
     detect_agents,
+    filter_agents_by_exclude_files,
     get_all_instruction_files,
     get_all_scannable_files,
+    get_known_agents,
 )
 from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
 
@@ -580,6 +583,39 @@ class TestProjectConfigSurfaceAdjustments:
         names = {f.as_posix() for f in files}
         assert (tmp_path / "CLAUDE.md").as_posix() in names
         assert (legacy / "CLAUDE.md").as_posix() not in names, "exclude pattern must drop matching files"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_exclude_files_drops_matching_instruction_and_rule_files(self, tmp_path: Path) -> None:
+        """`exclude_files` globs drop matching instruction + rule files, keeping the rest."""
+        agent = DetectedAgent(
+            agent_type=get_known_agents()["claude"],
+            instruction_files=[tmp_path / "CLAUDE.md", tmp_path / ".claude" / "agents" / "lead.md"],
+            rule_files=[tmp_path / ".claude" / "rules" / "keep.md", tmp_path / ".claude" / "skills" / "drop.md"],
+        )
+
+        filtered = filter_agents_by_exclude_files([agent], tmp_path, [".claude/agents/lead.md", ".claude/skills/**"])
+
+        assert len(filtered) == 1
+        inst = {f.as_posix() for f in filtered[0].instruction_files}
+        rules = {f.as_posix() for f in filtered[0].rule_files}
+        assert (tmp_path / "CLAUDE.md").as_posix() in inst
+        assert (tmp_path / ".claude" / "agents" / "lead.md").as_posix() not in inst
+        assert (tmp_path / ".claude" / "rules" / "keep.md").as_posix() in rules
+        assert (tmp_path / ".claude" / "skills" / "drop.md").as_posix() not in rules
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_exclude_files_drops_agent_with_no_remaining_instructions(self, tmp_path: Path) -> None:
+        """An agent whose only instruction file is excluded is dropped entirely."""
+        agent = DetectedAgent(
+            agent_type=get_known_agents()["claude"],
+            instruction_files=[tmp_path / ".claude" / "agents" / "lead.md"],
+        )
+
+        filtered = filter_agents_by_exclude_files([agent], tmp_path, ["**/lead.md"])
+
+        assert filtered == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

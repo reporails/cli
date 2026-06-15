@@ -56,7 +56,7 @@ default_agent: claude
 auto_update_check: true
 ```
 
-The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `overrides`, `rule_thresholds`, `generic_scanning`, and more) — project values win per-key where the two overlap.
+The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `exclude_files`, `overrides`, `rule_thresholds`, `generic_scanning`, and more) — project values win per-key where the two overlap.
 
 Set values from the command line:
 
@@ -97,6 +97,30 @@ For one-off runs, pass `--exclude-dirs` on the command line:
 ```bash
 ails check --exclude-dirs examples --exclude-dirs third_party
 ```
+
+## Excluding individual files
+
+`exclude_files` targets *specific files* rather than directory names. Each entry is a glob matched against the file path **relative to the project root**, so you can name an exact file, a whole subtree, or any file by basename:
+
+```yaml
+# PROJECT_ROOT/.ails/config.yml
+exclude_files:
+  - .claude/agents/lead.md   # that exact file
+  - .claude/skills/**/*      # everything under the skills tree
+  - "**/lead.md"             # any lead.md, anywhere
+```
+
+The common case is a project that symlinks coding-agent harness artifacts (skills, agents, rules) in from another repo. Those files are authored and linted where they live, so scoring them here just adds noise — list their paths under `exclude_files` to drop them. Selection is by path, not by "is a symlink", because symlinks are also used legitimately (e.g. `CLAUDE.md → AGENTS.md`).
+
+Patterns use [`pathlib` glob semantics](https://docs.python.org/3/library/pathlib.html#pathlib.PurePath.match): each `*` and `**` segment matches a single path component, so a whole subtree needs a trailing wildcard — `.claude/skills/**/*` (or `.claude/skills/**/SKILL.md`), not `.claude/skills/**`. This matches the convention the `surfaces` include / exclude patterns already use.
+
+For one-off runs, pass `--exclude-files`:
+
+```bash
+ails check --exclude-files ".claude/skills/**/*" --exclude-files ".claude/agents/lead.md"
+```
+
+Explicitly targeting an excluded file still scans it — `ails check ./.claude/agents/lead.md` overrides the exclusion, since exclusion only applies to discovery.
 
 ## Per-surface include / exclude
 

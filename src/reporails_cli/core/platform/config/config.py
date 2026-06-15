@@ -109,6 +109,7 @@ def get_global_config() -> GlobalConfig:
             tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
             disabled_rules=_data_str_list(data, "disabled_rules"),
             exclude_dirs=_data_str_list(data, "exclude_dirs"),
+            exclude_files=_data_str_list(data, "exclude_files"),
             overrides=overrides,
             rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
             generic_scanning=generic_scanning,
@@ -206,6 +207,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         disabled_rules=_data_str_list(data, "disabled_rules"),
         overrides=ovr if isinstance(ovr, dict) else {},
         exclude_dirs=_data_str_list(data, "exclude_dirs"),
+        exclude_files=_data_str_list(data, "exclude_files"),
         default_agent=da if isinstance(da, str) else "",
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),
@@ -231,6 +233,7 @@ def _apply_globals(
         config.default_agent = global_cfg.default_agent
     config.disabled_rules = _extend_unique(config.disabled_rules, global_cfg.disabled_rules)
     config.exclude_dirs = _extend_unique(config.exclude_dirs, global_cfg.exclude_dirs)
+    config.exclude_files = _extend_unique(config.exclude_files, global_cfg.exclude_files)
     config.packages = _extend_unique(config.packages, global_cfg.packages)
     config.overrides = _merge_under(config.overrides, global_cfg.overrides)
     config.rule_thresholds = _merge_under(config.rule_thresholds, global_cfg.rule_thresholds)

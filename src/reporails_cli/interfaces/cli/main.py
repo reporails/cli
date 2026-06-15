@@ -162,6 +162,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         autocompletion=_autocomplete_agent,
     ),
     exclude_dirs: list[str] | None = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
+    exclude_files: list[str] | None = typer.Option(None, "--exclude-files", help="File globs to exclude"),  # noqa: B008
     ascii: bool = typer.Option(False, "--ascii", "-a", help="ASCII characters only"),
     strict: bool = typer.Option(False, "--strict", help="Exit code 1 if violations found"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
@@ -226,6 +227,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     config = get_project_config(target)
     agent_arg = agent or config.default_agent
     excl = exclude_dirs if exclude_dirs is not None else config.exclude_dirs
+    excl_files = exclude_files if exclude_files is not None else config.exclude_files
     if agent_arg:
         _validate_agent(agent_arg, console)
     effective_agent, assumed, mixed, filtered = _resolve_agent_filters(
@@ -233,6 +235,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         detected,
         target,
         excl,
+        excl_files,
     )
     instruction_files = get_all_instruction_files(target, agents=filtered)
     # Narrow discovery: a single explicit file scans only that file; a

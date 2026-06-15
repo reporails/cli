@@ -24,6 +24,7 @@ config_app = typer.Typer(
 KNOWN_KEYS = {
     "default_agent": str,
     "exclude_dirs": list,
+    "exclude_files": list,
     "disabled_rules": list,
     "framework_version": str,
     "tier": str,

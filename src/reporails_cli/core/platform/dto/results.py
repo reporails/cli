@@ -126,6 +126,7 @@ class GlobalConfig:  # pylint: disable=too-many-instance-attributes
     # leaves the field empty / unset (lists extend; dicts deep-merge under).
     disabled_rules: list[str] = field(default_factory=list)
     exclude_dirs: list[str] = field(default_factory=list)
+    exclude_files: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     rule_thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
     generic_scanning: bool | None = None
@@ -143,6 +144,7 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     disabled_rules: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
+    exclude_files: list[str] = field(default_factory=list)  # File path globs (rel. to root) to exclude
     default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
     # Per-agent overrides keyed by agent id. Currently supports `fallback_filenames`
     # (additional instruction filenames Codex / others may treat as candidates).
