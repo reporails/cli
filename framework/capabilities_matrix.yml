@@ -3,7 +3,7 @@
 # Connection rule: every capability listed here MUST have a corresponding
 # file_types entry in the agent's config.yml. The validation script
 # (scripts/validate_registry.py) enforces this.
-version: "1.0.0"
+version: "1.1.0"
 
 # Implemented scope — these agents have full config.yml and audited docs.
 # The rest are cataloged but not reconciled.
@@ -26,6 +26,7 @@ taxonomy:
   config:        "Config file"
   templates:     "Prompt templates"
   output:        "Output customization"
+  scheduled_tasks: "Scheduled tasks / automations"
 
 # Matrix: agent_id → list of capability IDs present
 # Absent capabilities are implicitly false.
@@ -38,16 +39,16 @@ agents:
   bito:       [root, enterprise, agents_md, cross_read, user_surfaces, config]
   blackbox:   [skills, user_surfaces, config]
   bolt:       [root, config, templates]
-  claude:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, user_surfaces, config, output]
+  claude:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, user_surfaces, config, output, scheduled_tasks]
   cline:      [root, scoped, skills, hooks, mcp, cross_read, user_surfaces, config]
   coderabbit: [scoped, memory, enterprise, agents_md, cross_read, config, templates]
-  codex:      [root, scoped, skills, hooks, mcp, subagents, enterprise, plugins, agents_md, cross_read, user_surfaces, config]
+  codex:      [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, scheduled_tasks]
   cody:       [root, mcp, enterprise, user_surfaces, config, templates]
   continue:   [root, scoped, mcp, enterprise, user_surfaces, config, templates]
   copilot:    [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
-  cursor:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output]
+  cursor:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output, scheduled_tasks]
   devin:      [root, scoped, mcp, memory, enterprise, agents_md, user_surfaces, config, templates]
-  gemini:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
+  gemini:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output]
   goose:      [root, scoped, mcp, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
   jetbrains:  [root, scoped, mcp, enterprise, user_surfaces, config]
   junie:      [root, agents_md, user_surfaces, config]

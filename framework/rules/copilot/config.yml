@@ -2,7 +2,7 @@
 # Schema: schemas/agent.schema.yml v0.5.0
 #
 # Synced from .claude/skills/audit-agent/assets/registry/copilot/config.yml
-# Last verified: 2026-05-06
+# Last verified: 2026-06-15
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - Copilot Memory: cloud-hosted (GitHub), no local file
