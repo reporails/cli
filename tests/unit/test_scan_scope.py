@@ -453,6 +453,79 @@ class TestAncestorWalkAndClassification:
         assert (sub_gh / "copilot-instructions.md").as_posix() not in names
 
 
+class TestUserScopeSubagentMemoryExclusion:
+    """Default repo discovery drops cross-project user-scope subagent_memory.
+
+    The global `~/.claude/agent-memory/*/` surface enumerates every subagent
+    role's memory regardless of project; a repo-scoped `ails check` must not
+    auto-pull it. Repo-local `.claude/agent-memory/*/` stays in scope.
+    """
+
+    def setup_method(self) -> None:
+        clear_agent_cache()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.parametrize(
+        "pattern, external",
+        [
+            ("~/.claude/agent-memory/*/", True),
+            ("/etc/agents/x.md", True),
+            ("C:\\Users\\x\\note.md", True),
+            (".claude/agent-memory/*/", False),
+            (".claude/agent-memory-local/*/", False),
+            ("**/CLAUDE.md", False),
+        ],
+        ids=["home", "absolute", "drive", "repo-local", "repo-local-2", "glob"],
+    )
+    def test_external_pattern_classifier(self, pattern: str, external: bool) -> None:
+        from reporails_cli.core.discovery.agent_discovery import _is_external_pattern
+
+        assert _is_external_pattern(pattern) is external
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_subagent_memory_is_opt_in(self) -> None:
+        from reporails_cli.core.discovery.agent_discovery import _USER_SCOPE_OPT_IN_CAPABILITIES
+
+        assert "subagent_memory" in _USER_SCOPE_OPT_IN_CAPABILITIES
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_repo_local_subagent_memory_surfaces(self, tmp_path: Path) -> None:
+        """Repo-local `.claude/agent-memory/<role>/` files are NOT dropped by the filter."""
+        from reporails_cli.core.discovery.agent_discovery import discover_from_config
+
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "CLAUDE.md").write_text("# root")
+        local_mem = tmp_path / ".claude" / "agent-memory" / "lead"
+        local_mem.mkdir(parents=True)
+        (local_mem / "note.md").write_text("# repo-local memory")
+
+        result = discover_from_config(tmp_path, "claude")
+        assert result is not None
+        instructions, _rules, _configs = result
+        names = {p.as_posix() for p in instructions}
+        assert (local_mem / "note.md").as_posix() in names, "repo-local agent-memory must stay in scope"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_no_out_of_tree_subagent_memory_surfaces(self, tmp_path: Path) -> None:
+        """External `~/.claude/agent-memory/*/` files never surface in repo-scoped discovery."""
+        from reporails_cli.core.discovery.agent_discovery import discover_from_config
+
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "CLAUDE.md").write_text("# root")
+
+        result = discover_from_config(tmp_path, "claude")
+        assert result is not None
+        instructions, _rules, _configs = result
+        leaked = [
+            p for p in instructions if "/agent-memory/" in p.as_posix() and not p.as_posix().startswith(str(tmp_path))
+        ]
+        assert not leaked, f"out-of-tree subagent_memory leaked into repo scope: {leaked}"
+
+
 class TestProjectConfigSurfaceAdjustments:
     """`.ails/config.yml` surface include/exclude + Codex fallback filenames."""
 
