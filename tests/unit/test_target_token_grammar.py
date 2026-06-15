@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.interfaces.cli.main import _classify_target_token, _looks_like_windows_path
+from reporails_cli.interfaces.cli.main import (
+    _check_timeout_ceiling,
+    _classify_target_token,
+    _looks_like_windows_path,
+)
 
 
 @pytest.mark.unit
@@ -99,3 +103,16 @@ def test_file_scheme_overrides_capability_name(tmp_path: Path):
     kind, payload = _classify_target_token("file:skills", "claude", tmp_path)
     assert kind == "path"
     assert payload == Path("skills").resolve()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_check_timeout_ceiling_default_and_overrides(monkeypatch):
+    monkeypatch.delenv("AILS_CHECK_TIMEOUT_S", raising=False)
+    assert _check_timeout_ceiling() == 600
+    monkeypatch.setenv("AILS_CHECK_TIMEOUT_S", "30")
+    assert _check_timeout_ceiling() == 30
+    monkeypatch.setenv("AILS_CHECK_TIMEOUT_S", "0")  # disabled
+    assert _check_timeout_ceiling() == 0
+    monkeypatch.setenv("AILS_CHECK_TIMEOUT_S", "not-a-number")  # falls back to default
+    assert _check_timeout_ceiling() == 600

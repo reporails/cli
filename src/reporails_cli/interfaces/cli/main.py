@@ -108,6 +108,40 @@ def _resolve_rule_token(token: str) -> str:
     return token
 
 
+def _check_timeout_ceiling() -> int:
+    """Wall-clock ceiling (seconds) for a single `ails check`; 0 disables. Default 600."""
+    import os
+
+    raw = os.environ.get("AILS_CHECK_TIMEOUT_S", "").strip()
+    if not raw:
+        return 600
+    try:
+        return int(raw)
+    except ValueError:
+        return 600
+
+
+def _arm_check_timeout() -> None:
+    """Backstop a runaway check with a SIGALRM wall-clock kill (POSIX-only; no-op on Windows)."""
+    import signal
+
+    if not hasattr(signal, "SIGALRM"):  # Windows has no SIGALRM/setitimer
+        return
+    ceiling = _check_timeout_ceiling()
+    if ceiling <= 0:
+        return
+
+    def _on_timeout(_signum: int, _frame: object) -> None:
+        console.print(
+            f"[red]Error:[/red] ails check exceeded its {ceiling}s wall-clock limit and was aborted "
+            "(set AILS_CHECK_TIMEOUT_S to adjust, 0 to disable)."
+        )
+        raise SystemExit(124)
+
+    signal.signal(signal.SIGALRM, _on_timeout)
+    signal.setitimer(signal.ITIMER_REAL, ceiling)
+
+
 @app.command(rich_help_panel="Get started")
 def check(  # noqa: C901  # pylint: disable=too-many-locals
     targets: list[str] = typer.Argument(  # noqa: B008
@@ -146,6 +180,8 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.runtime.merger import merge_results
+
+    _arm_check_timeout()  # wall-clock backstop against a runaway/hung check (POSIX)
 
     project_root = Path.cwd().resolve()
 
