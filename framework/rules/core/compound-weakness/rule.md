@@ -26,7 +26,7 @@ Multiple weaknesses in the same instruction compound — an instruction that is 
 ~~~~markdown
 Use `ruff` for all formatting in `src/` and `tests/`.
 Run `uv run pytest tests/ -v` before committing changes.
-NEVER use `black` or manual formatting.
+*Do not introduce a second formatter.*
 ~~~~
 
 ### Fail
@@ -39,7 +39,7 @@ Perhaps run tests sometimes.
 
 ## Fix
 
-Never stack weaknesses. A short instruction MUST name specific constructs and go near the end of the file. An abstract instruction MUST use direct language, include multiple relevant terms, and be positioned last. Fixing ANY ONE weakness dramatically improves the instruction — but leaving multiple weaknesses is catastrophic. Elaborating with distinct relevant terms (not repetition) is the easiest fix.
+Never stack weaknesses. A short directive MUST name specific constructs and sit near the end of the file. A short constraint is the inverse: state the prohibited thing as an abstract category, since naming a forbidden construct anchors it. An abstract directive MUST use direct language, include multiple relevant terms, and sit last. Fixing any one weakness improves the instruction; leaving several stacked is the failure case. Elaborating a directive with distinct relevant terms is the easiest fix.
 
 ## Limitations
 

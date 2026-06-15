@@ -33,6 +33,7 @@
 - check: instruction-length findings recalibrated toward an 8-10 word range (optimum 9) — "too brief" now flags instructions of 6 words or fewer (previously 8), and a new "too long" finding flags instructions over 11 words. Both surface under the existing instruction-elaboration rule.
 - rules: refreshed the bundled agent capability matrix and the five implemented agents' configs (claude, codex, copilot, cursor, gemini) against current official docs — added `memory` to codex, `output` to gemini, and `scheduled_tasks` to claude/codex/cursor; refreshed per-agent surface notes (hook-event counts, Cursor Memories, Codex memories). `ails check` discovery and capability-target resolution pick up the updated surfaces.
 - Internals: new `scripts/validate_registry.py` enforces the matrix connection rule — every capability in an implemented agent's matrix row must resolve to a config `file_types` entry/scope or a documented unmeasurable-surface exemption; runs in CI as a registry guard.
+- rules: corrected the guidance in four core rules (`instruction-elaboration`, `specificity-shields`, `formatting-regime`, `compound-weakness`) to be direction-aware. Positive directives should name the specific construct (tool, file, command); prohibitions should state the forbidden thing as an abstract category rather than naming or backticking it, because naming a prohibited construct can anchor the forbidden concept instead of suppressing it. Updated the Pass examples and fix text only — no rule IDs, categories, severities, or checks changed.
 
 ### Fixed
 
