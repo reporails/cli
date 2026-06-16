@@ -135,6 +135,9 @@ class QualityResult:
 
     contexts: tuple[ContextResult, ...] = ()
     compliance_band: str = ""  # aggregate
+    # Server-computed 0-10 whole-project quality score. The CLI renders it verbatim —
+    # it computes no score of its own.
+    display_score: float = 0.0
     weakest_context: str | None = None
     strongest_context: str | None = None
 
@@ -147,6 +150,9 @@ class FileAnalysis:
     diagnostics: tuple[Diagnostic, ...] = ()
     compliance_band: str = ""
     stats: dict[str, Any] = field(default_factory=dict)
+    # Server-computed 0-10 per-file quality score. Rendered verbatim; mean-aggregated
+    # for surface scores.
+    display_score: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -226,18 +232,29 @@ class AilsClient:
         self.tier = tier or os.environ.get("AILS_TIER") or _tier_from_config() or "free"
         self.timeout = timeout
 
-    def lint(self, ruleset_map: RulesetMap) -> LintResponse:
+    def lint(
+        self,
+        ruleset_map: RulesetMap,
+        local_findings: dict[str, int] | None = None,
+        structural_required: int = 0,
+    ) -> LintResponse:
         """Run diagnostics on a ruleset map via the API.
 
-        Returns LintResponse — `.result` on 2xx, `.funnel_error` on a tier-aware
-        4xx or local preflight rejection, both None on network failure.
+        `local_findings` is a `{path: structural-error count}` map for rules that
+        run client-side (structural/presence checks), and `structural_required` is
+        the count of structural rule classes the project is subject to. Both ride the
+        request so the server can fold the client-measured delivery factor into each
+        file's score. Returns LintResponse — `.result` on 2xx, `.funnel_error` on a
+        tier-aware 4xx or local preflight rejection, both None on network failure.
         """
         if not self.base_url:
             logger.debug("No server URL configured — diagnostics unavailable offline")
             return LintResponse()
-        return self._lint_remote(ruleset_map)
+        return self._lint_remote(ruleset_map, local_findings or {}, structural_required)
 
-    def _lint_remote(self, ruleset_map: RulesetMap) -> LintResponse:
+    def _lint_remote(
+        self, ruleset_map: RulesetMap, local_findings: dict[str, int], structural_required: int
+    ) -> LintResponse:
         """POST the projected RulesetMap to the diagnostic backend."""
         try:
             import httpx
@@ -248,6 +265,10 @@ class AilsClient:
         from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_payload
 
         payload = project_payload(ruleset_map)
+        if local_findings:
+            payload["local_findings"] = local_findings
+        if structural_required:
+            payload["structural_required"] = structural_required
         if not payload.get("files"):
             logger.warning("No instruction files in payload — skipping remote diagnostics")
             return LintResponse()
@@ -474,6 +495,7 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
                 diagnostics=tuple(diagnostics),
                 compliance_band=fa.get("compliance_band", ""),
                 stats=fa.get("stats", {}),
+                display_score=fa.get("display_score", 0.0),
             )
         )
     return tuple(items)
@@ -547,6 +569,7 @@ def _deserialize_quality(report_data: dict[str, Any]) -> QualityResult:
     return QualityResult(
         contexts=tuple(context_items),
         compliance_band=q_data.get("compliance_band", ""),
+        display_score=q_data.get("display_score", 0.0),
         weakest_context=q_data.get("weakest_context"),
         strongest_context=q_data.get("strongest_context"),
     )

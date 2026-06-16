@@ -66,9 +66,13 @@ def _merge_with_server(
 ) -> Any:
     """Merge local findings with server diagnostics, returning CombinedResult."""
     from reporails_cli.core.platform.adapters.api_client import AilsClient
+    from reporails_cli.core.platform.adapters.registry import structural_rule_ids
+    from reporails_cli.core.platform.policy.completeness import structural_gaps_by_path
     from reporails_cli.core.platform.runtime.merger import merge_results
 
-    response = AilsClient().lint(ruleset_map) if ruleset_map else None
+    structural_ids = structural_rule_ids()
+    local_findings = structural_gaps_by_path(list(m_findings) + list(client_findings), structural_ids)
+    response = AilsClient().lint(ruleset_map, local_findings, len(structural_ids)) if ruleset_map else None
     lint_result = response.result if response else None
     return merge_results(
         m_findings,
