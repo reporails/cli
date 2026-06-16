@@ -1,8 +1,9 @@
-"""Unit + acceptance tests for formatters/text/score.py — the shared scorer.
+"""Renderer-contract tests for the CLI score path.
 
-The load-bearing guarantee: the score is gate-distance, driven only by
-gate-mover findings, so a severity re-bucket of any non-mover leaves it
-unchanged.
+The score is the api's verdict. The CLI is a pure renderer: every displayed score
+(whole-project, per-surface, per-file) is an api scalar returned verbatim. These
+tests pin that contract — the CLI computes no score of its own, so a CLI-side
+severity re-bucket cannot move any displayed number.
 """
 
 from __future__ import annotations
@@ -14,86 +15,12 @@ import pytest
 from reporails_cli.core.platform.adapters.api_client import FileAnalysis, QualityResult
 from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
-from reporails_cli.formatters.text.score import leverage_basis, score_for
+from reporails_cli.formatters.text.score import leverage_basis, score_color
 from reporails_cli.formatters.text.scorecard import compute_score, compute_surface_scores
 
 
 def _finding(rule: str, severity: str = "warning", impact_tier: str = "") -> FindingItem:
-    return FindingItem(file="a.md", line=5, severity=severity, rule=rule, message="msg", impact_tier=impact_tier)
-
-
-class TestScoreFor:
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_empty_findings_is_perfect(self) -> None:
-        assert score_for("HIGH", [], 100) == 10.0
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_band_dominates_with_no_movers(self) -> None:
-        # Only cosmetic + conditional findings → band base stands, no penalty.
-        findings = [_finding("CORE:S:0010"), _finding("CORE:E:0003"), _finding("bold", "info")]
-        assert score_for("HIGH", findings, 100) == 8.5
-        assert score_for("MODERATE", findings, 100) == 5.5
-        assert score_for("LOW", findings, 100) == 3.0
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_gate_movers_penalize(self) -> None:
-        # Adding gate-movers pulls the score below the band base.
-        movers = [_finding("CORE:C:0042") for _ in range(10)]
-        scored = score_for("HIGH", movers, 100)
-        assert scored < 8.5
-        # More movers (same denom) → lower score.
-        more = [_finding("CORE:C:0042") for _ in range(20)]
-        assert score_for("HIGH", more, 100) < scored
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_offline_path_uses_neutral_base(self) -> None:
-        # No band (offline) → neutral base, no movers → base stands.
-        assert score_for("", [_finding("CORE:S:0010")], 50) == 6.0
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_live_tier_overrides_rule_table_for_penalty(self) -> None:
-        # A rule the table calls cosmetic, but the server tiered gate_mover, penalizes.
-        promoted = [_finding("bold", "info", impact_tier="gate_mover") for _ in range(10)]
-        assert score_for("HIGH", promoted, 100) < 8.5
-        # A table gate-mover the server demoted to cosmetic carries no penalty.
-        demoted = [_finding("CORE:C:0042", impact_tier="cosmetic") for _ in range(10)]
-        assert score_for("HIGH", demoted, 100) == 8.5
-
-
-class TestLeverageBasis:
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_counts_split_by_tier(self) -> None:
-        findings = [
-            _finding("CORE:C:0042"),  # gate-mover
-            _finding("CORE:E:0003"),  # conditional
-            _finding("CORE:S:0010"),  # cosmetic
-            _finding("bold", "info"),  # cosmetic
-        ]
-        assert leverage_basis(findings) == (1, 1, 2)
-
-
-_MOVERS = ("CORE:C:0042", "CORE:C:0044")
-# A mixed bag on one file: two gate-movers kept, the rest re-bucketable non-movers.
-_MIXED = (
-    _finding("CORE:C:0042", "warning"),  # gate-mover (kept)
-    _finding("CORE:C:0044", "error"),  # gate-mover (kept)
-    _finding("CORE:S:0010", "error"),  # cosmetic
-    _finding("CORE:E:0003", "warning"),  # conditional
-    _finding("bold", "warning"),  # cosmetic
-    _finding("orphan", "info"),  # cosmetic
-)
-
-
-def _rebucket_non_movers(findings: tuple[FindingItem, ...]) -> list[FindingItem]:
-    """Cycle every non-gate-mover finding's severity (error→warning→info→error)."""
-    cycle = {"error": "warning", "warning": "info", "info": "error"}
-    return [f if f.rule in _MOVERS else replace(f, severity=cycle[f.severity]) for f in findings]
+    return FindingItem(file="CLAUDE.md", line=5, severity=severity, rule=rule, message="msg", impact_tier=impact_tier)
 
 
 @dataclass
@@ -106,42 +33,129 @@ class _RulesetMap:
     files: tuple[_FileRecord, ...]
 
 
-class TestReBucketStability:
-    """Acceptance: relabelling every non-gate-mover finding's severity must not
-    move ANY of the three scores (whole-project, per-surface, per-file). If it
-    does, that surface still leaks the old error/warning binary.
+class TestScoreColor:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    @pytest.mark.parametrize(
+        ("score", "color"),
+        [(10.0, "green"), (7.0, "green"), (6.9, "yellow"), (4.0, "yellow"), (3.9, "red"), (0.0, "red")],
+    )
+    def test_thresholds(self, score: float, color: str) -> None:
+        assert score_color(score) == color
 
-    All findings sit on `CLAUDE.md` (the `main` surface) so a single re-bucket
-    exercises every scorer at once.
+
+class TestComputeScore:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_returns_api_display_score_verbatim(self) -> None:
+        result = CombinedResult(quality=QualityResult(compliance_band="HIGH", display_score=7.3))
+        assert compute_score(result, has_quality=True) == 7.3
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_offline_is_zero(self) -> None:
+        # No server quality → no api scalar to render.
+        assert compute_score(CombinedResult(quality=None), has_quality=False) == 0.0
+
+
+class TestSurfaceAndItemScores:
+    """Surface = mean of per-file display scores; item = the file's display score."""
+
+    def _result(self, *files: tuple[str, float]) -> CombinedResult:
+        per_file = tuple(FileAnalysis(file=fp, compliance_band="HIGH", display_score=ds) for fp, ds in files)
+        return CombinedResult(per_file_analysis=per_file, quality=QualityResult(compliance_band="HIGH"))
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_surface_score_is_mean_of_per_file_display_scores(self) -> None:
+        result = self._result(("CLAUDE.md", 8.0), ("AGENTS.md", 6.0))
+        surfaces = compute_surface_scores(result)
+        main = next(s for s in surfaces if s.name == "Main")
+        assert main.score == 7.0  # mean(8.0, 6.0)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_item_score_is_file_display_score_verbatim(self) -> None:
+        result = self._result(("CLAUDE.md", 8.4))
+        ruleset = _RulesetMap(files=(_FileRecord(path="CLAUDE.md"),))
+        items = compute_item_scores(result, ruleset_map=ruleset)
+        assert [it.score for it in items] == [8.4]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_absolute_server_path_still_lands_on_main_surface(self) -> None:
+        # Server per-file paths are absolute; the main surface keys on root-level
+        # depth, so without normalization an absolute CLAUDE.md falls out of `main`
+        # and the surface reads 0.0. Guard the normalization.
+        result = CombinedResult(
+            per_file_analysis=(FileAnalysis(file="/proj/CLAUDE.md", compliance_band="HIGH", display_score=9.0),),
+            quality=QualityResult(compliance_band="HIGH"),
+        )
+        surfaces = compute_surface_scores(result, project_root="/proj")
+        main = next(s for s in surfaces if s.name == "Main")
+        assert main.score == 9.0
+
+
+_MIXED = (
+    _finding("CORE:C:0042", "warning", impact_tier="gate_mover"),
+    _finding("CORE:C:0044", "error", impact_tier="gate_mover"),
+    _finding("CORE:S:0010", "error"),
+    _finding("CORE:E:0003", "warning", impact_tier="conditional"),
+    _finding("bold", "warning"),
+    _finding("orphan", "info"),
+)
+
+
+def _rebucket(findings: tuple[FindingItem, ...]) -> list[FindingItem]:
+    """Cycle every finding's severity (error→warning→info→error)."""
+    cycle = {"error": "warning", "warning": "info", "info": "error"}
+    return [replace(f, severity=cycle[f.severity]) for f in findings]
+
+
+class TestReBucketStability:
+    """A CLI-side severity re-bucket must not move ANY displayed score — they are
+    all api scalars, independent of how the CLI buckets a finding's severity.
     """
 
     def _result(self, findings: tuple[FindingItem, ...] | list[FindingItem]) -> CombinedResult:
-        per_file = (FileAnalysis(file="CLAUDE.md", compliance_band="MODERATE", stats={"atoms": 50}),)
+        per_file = (FileAnalysis(file="CLAUDE.md", compliance_band="HIGH", display_score=7.7),)
         return CombinedResult(
-            findings=tuple(replace(f, file="CLAUDE.md") for f in findings),
+            findings=tuple(findings),
             per_file_analysis=per_file,
-            quality=QualityResult(compliance_band="MODERATE"),
+            quality=QualityResult(compliance_band="HIGH", display_score=7.7),
         )
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_whole_project_score_stable_across_non_mover_rebucket(self) -> None:
-        before = compute_score(self._result(_MIXED), has_quality=True, n_atoms=50)
-        after = compute_score(self._result(_rebucket_non_movers(_MIXED)), has_quality=True, n_atoms=50)
-        assert before == after, "whole-project: non-mover re-bucket must not move the score"
+    def test_whole_project_score_stable(self) -> None:
+        before = compute_score(self._result(_MIXED), has_quality=True)
+        after = compute_score(self._result(_rebucket(_MIXED)), has_quality=True)
+        assert before == after == 7.7
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_surface_score_stable_across_non_mover_rebucket(self) -> None:
+    def test_surface_score_stable(self) -> None:
         before = compute_surface_scores(self._result(_MIXED))
-        after = compute_surface_scores(self._result(_rebucket_non_movers(_MIXED)))
+        after = compute_surface_scores(self._result(_rebucket(_MIXED)))
         assert [s.score for s in before] == [s.score for s in after]
-        assert before and before[0].score < 5.5, "expected the gate-movers to penalize the surface base"
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_item_score_stable_across_non_mover_rebucket(self) -> None:
+    def test_item_score_stable(self) -> None:
         ruleset = _RulesetMap(files=(_FileRecord(path="CLAUDE.md"),))
         before = compute_item_scores(self._result(_MIXED), ruleset_map=ruleset)
-        after = compute_item_scores(self._result(_rebucket_non_movers(_MIXED)), ruleset_map=ruleset)
+        after = compute_item_scores(self._result(_rebucket(_MIXED)), ruleset_map=ruleset)
         assert [it.score for it in before] == [it.score for it in after]
+
+
+class TestLeverageBasis:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_counts_split_by_tier(self) -> None:
+        findings = [
+            _finding("CORE:C:0042", impact_tier="gate_mover"),
+            _finding("CORE:E:0003", impact_tier="conditional"),
+            _finding("CORE:S:0010"),
+            _finding("bold", "info"),
+        ]
+        assert leverage_basis(findings) == (1, 1, 2)

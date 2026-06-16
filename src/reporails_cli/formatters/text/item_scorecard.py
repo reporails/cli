@@ -15,7 +15,7 @@ from typing import Any
 
 from rich.console import Console
 
-from reporails_cli.formatters.text.score import score_for
+from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.scorecard import SurfaceHealth, _score_bar
 
 console = Console()
@@ -29,10 +29,9 @@ def compute_item_scores(
     """Per-file health scores — name + bar per scanned file.
 
     Used by capability-listing mode (`ails check <capability>`) so the
-    operator sees which item is the worst at a glance. Score uses the
-    same formula as `compute_surface_scores` but at file granularity:
-    per-file compliance band, per-file errors/warnings/infos, per-file
-    atom count from `per_file_analysis`.
+    operator sees which item is the worst at a glance. Each item's score is
+    the api's per-file `display_score` verbatim; severity counts come from
+    that file's findings.
     """
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
@@ -43,7 +42,9 @@ def compute_item_scores(
     findings_by_file: dict[str, list[Any]] = {}
     for f in result.findings:
         findings_by_file.setdefault(f.file, []).append(f)
-    analysis_by_file: dict[str, Any] = {fa.file: fa for fa in result.per_file_analysis}
+    # Server per-file paths are absolute; normalize to the same project-relative
+    # key space as `rel` so the per-file display_score lookup matches.
+    analysis_by_file: dict[str, Any] = {normalize_finding_path(fa.file, root): fa for fa in result.per_file_analysis}
 
     items: list[SurfaceHealth] = []
     try:
@@ -57,10 +58,8 @@ def compute_item_scores(
         n_errors = sum(1 for f in findings if f.severity == "error")
         n_warnings = sum(1 for f in findings if f.severity == "warning")
         n_infos = sum(1 for f in findings if f.severity == "info")
-        n_atoms = (analysis.stats.get("atoms", 0) if analysis else 0) or 0
-        band = analysis.compliance_band if analysis else ""
 
-        score = score_for(band, findings, n_atoms)
+        score = float(analysis.display_score) if analysis is not None else 0.0
 
         items.append(
             SurfaceHealth(
@@ -93,7 +92,7 @@ def _display_name_for_path(rel: str) -> str:
 def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
     """Format one item row: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  (N: Xe/Yw/Zi)'."""
     label = f"{s.name}:"
-    color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
+    color = score_color(s.score)
     bar = _score_bar(s.score, bar_width, color)
     breakdown = _severity_breakdown_markup(s)
     suffix = f"  {breakdown}" if breakdown else ""
@@ -128,7 +127,7 @@ def render_item_health(items: list[SurfaceHealth]) -> None:
     console.print()
     prev_band: str | None = None
     for s in items:
-        band = "red" if s.score < 4.0 else "yellow" if s.score < 7.0 else "green"
+        band = score_color(s.score)
         if prev_band is not None and band != prev_band:
             console.print()
         console.print(f"  {_item_cell(s, label_w)}")

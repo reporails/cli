@@ -461,16 +461,25 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
 
 
 def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
-    """Rewrite the aggregate `compliance_band` from the filtered per-file bands."""
+    """Rewrite the aggregate band + display score from the filtered per-file set.
+
+    The whole-project `display_score` is the api's verdict over every file; once
+    the view is narrowed to a subset (e.g. `ails check skills`) there is no api
+    aggregate for that subset, so the headline becomes the mean of the subset's
+    per-file display scores — matching the per-surface/per-item bars.
+    """
     if quality is None:
         return None
     from dataclasses import replace as _replace
+
+    from reporails_cli.formatters.text.scorecard import _mean_display_score
 
     bands = [fa.compliance_band for fa in per_file if fa.compliance_band]
     if not bands:
         return None
     majority = Counter(bands).most_common(1)[0][0]
-    return _replace(quality, compliance_band=majority)
+    mean_score = _mean_display_score(list(per_file)) if per_file else quality.display_score
+    return _replace(quality, compliance_band=majority, display_score=mean_score)
 
 
 def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root: Path) -> Any:

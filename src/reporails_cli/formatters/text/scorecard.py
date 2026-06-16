@@ -18,7 +18,11 @@ from reporails_cli.formatters.text.display_constants import (
     finding_category,
     get_term_width,
 )
-from reporails_cli.formatters.text.score import leverage_basis, score_for
+from reporails_cli.formatters.text.score import (
+    SCORE_GREEN_CUTOFF,
+    leverage_basis,
+    score_color,
+)
 
 console = Console()
 
@@ -35,15 +39,16 @@ def _hint_totals(result: Any) -> tuple[int, int]:
     return errors, warnings
 
 
-def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
-    """Compute the 0-10 whole-project display score.
+def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:  # noqa: ARG001
+    """Return the api's whole-project display score verbatim.
 
-    Delegates to the shared `score_for`: the compliance band sets the base and
-    only gate-mover findings penalize, so a severity re-bucket can't shift the
-    headline. Reads `result.findings` to count score-movers.
+    The score is the analysis service's own verdict, computed server-side; the CLI
+    renders it without re-deriving. Falls back to 0.0 when offline (no server quality).
+    `n_atoms` is retained for call-signature stability.
     """
-    band = result.quality.compliance_band if has_quality else ""
-    return score_for(band, result.findings, n_atoms)
+    if has_quality and result.quality is not None:
+        return float(result.quality.display_score)
+    return 0.0
 
 
 def print_score_line(score: float, tw: int) -> None:
@@ -51,7 +56,7 @@ def print_score_line(score: float, tw: int) -> None:
     bar_width = min(40, tw - 26)
     filled = round(bar_width * score / 10)
     bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
-    color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
+    color = score_color(score)
     console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  [dim]{bar}[/dim]")
 
 
@@ -126,10 +131,13 @@ def compute_surface_scores(
         tag = classify_file(f.file).split(":")[0]
         surface_findings.setdefault(tag, []).append(f)
 
-    # Group per-file analysis by surface (for compliance band + atom counts)
+    # Group per-file analysis by surface. Server per-file paths are absolute, but
+    # `classify_file` keys `main` on root-level path depth — so normalize to the
+    # project-relative form first (as `result.findings` already are), or every
+    # absolute path falls out of the `main` surface and its score reads 0.0.
     surface_analysis: dict[str, list[Any]] = {}
     for fa in result.per_file_analysis:
-        tag = classify_file(fa.file).split(":")[0]
+        tag = classify_file(normalize_finding_path(fa.file, root)).split(":")[0]
         surface_analysis.setdefault(tag, []).append(fa)
 
     # Collect all surfaces from any source
@@ -146,22 +154,11 @@ def compute_surface_scores(
         n_errors = sum(1 for f in findings if f.severity == "error")
         n_warnings = sum(1 for f in findings if f.severity == "warning")
         n_infos = sum(1 for f in findings if f.severity == "info")
-        n_atoms = sum(fa.stats.get("atoms", 0) for fa in analyses)
         # File count: prefer mapper discovery, fall back to findings/analysis
         n_files = surface_file_counts.get(key, max(len(analyses), len({f.file for f in findings})))
 
-        # Derive compliance band (majority vote across files in surface)
-        bands = [fa.compliance_band for fa in analyses if fa.compliance_band]
-        has_band = bool(bands)
-        if has_band:
-            # Majority band: most files determine the surface band
-            band_counts: Counter[str] = Counter(bands)
-            majority_band = band_counts.most_common(1)[0][0]
-        else:
-            majority_band = ""
-
-        # Score: shared gate-distance formula (band base, gate-mover penalty)
-        score = score_for(majority_band if has_band else "", findings, n_atoms)
+        # Score: mean of the api's per-file display scores over the surface's files.
+        score = _mean_display_score(analyses)
 
         surfaces.append(
             SurfaceHealth(
@@ -176,6 +173,22 @@ def compute_surface_scores(
             )
         )
     return surfaces
+
+
+def _mean_display_score(analyses: list[Any]) -> float:
+    """Atom-weighted mean of the api's per-file display scores.
+
+    Mirrors the server's whole-project roll-up so a surface's bar (and the filtered
+    headline) aggregate the same way the headline does. Falls back to a simple mean
+    when atom counts are unavailable; 0.0 when there is no server analysis.
+    """
+    scored = [(float(fa.display_score), int(fa.stats.get("atoms", 0))) for fa in analyses if fa is not None]
+    if not scored:
+        return 0.0
+    total_weight = sum(w for _, w in scored)
+    if total_weight <= 0:
+        return round(sum(s for s, _ in scored) / len(scored), 1)
+    return round(sum(s * w for s, w in scored) / total_weight, 1)
 
 
 def _count_categories(findings: list[Any]) -> dict[str, int]:
@@ -207,9 +220,12 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     """
     label = f"{s.name} ({s.file_count}):"
-    color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
+    color = score_color(s.score)
     bar = _score_bar(s.score, bar_width, color)
-    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+    # A surface can score well while errors remain, so the error count is what
+    # routes attention — surface the per-surface error tally next to the bar.
+    err = f"  [red]{s.errors} err[/red]" if s.errors else ""
+    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{err}"
 
 
 def _score_bar(score: float, bar_width: int, color: str) -> str:
@@ -282,33 +298,53 @@ def print_category_bars(findings: tuple[Any, ...], tw: int) -> None:
 # ── Scorecard sub-renderers ───────────────────────────────────────────
 
 
-def _render_score_bar(
+_VERDICT_LABEL_W = 9  # widest label is "Findings"
+
+
+def _render_verdict_block(
     result: Any,
     has_quality: bool,
     n_atoms: int,
     elapsed_ms: float,
 ) -> None:
-    """Render score line with progress bar (colored fill + dim empty)."""
-    tw = get_term_width()
-    score = compute_score(result, has_quality, n_atoms)
-    bar_width = min(30, tw - 40)
-    color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
-    bar = _score_bar(score, bar_width, color)
-    elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
-    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  {bar}{elapsed_s}")
-    _render_score_basis(result.findings)
+    """Render the Quality headline and the findings worklist beneath it.
 
-
-def _render_score_basis(findings: Any) -> None:
-    """Render the dim leverage-basis caption under the score bar.
-
-    Names what the number is driven by: score-movers move it, conditional and
-    cosmetic findings do not. Omitted when there are no findings.
+    One quality number — the server's single scoring verdict, which already folds in
+    delivery (completeness + truncation) so a structurally incomplete or truncated file
+    cannot read as high quality. The findings line below is the worklist, not a
+    competing score.
     """
-    movers, conditional, cosmetic = leverage_basis(findings)
-    if movers + conditional + cosmetic == 0:
-        return
-    console.print(f"  [dim]{movers} score-movers · {conditional} conditional · {cosmetic} cosmetic[/dim]")
+    tw = get_term_width()
+    bar_width = min(20, max(10, tw - 48))
+    elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
+
+    score: float | None = None
+    if has_quality and result.quality is not None:
+        score = compute_score(result, has_quality, n_atoms)
+        color = score_color(score)
+        bar = _score_bar(score, bar_width, color)
+        value = f"[{color} bold]{score:>4.1f}[/{color} bold] / 10"
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}{value}  {bar}{elapsed_s}")
+    else:
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (server diagnostics unavailable)[/dim]{elapsed_s}")
+
+    _render_findings_axis(result)
+
+    # Bridging caption when the score is high but errors remain, so a green headline
+    # above red errors does not read as "nothing to do".
+    if score is not None and score >= SCORE_GREEN_CUTOFF and result.stats.errors:
+        console.print("  [dim]Quality folds in the findings below; the listed errors are still your worklist.[/dim]")
+
+
+def _render_findings_axis(result: Any) -> None:
+    """Render the Findings worklist line — distinct from the score; errors carry red."""
+    s = result.stats
+    movers = leverage_basis(result.findings)[0]
+    err = f"[red]{s.errors} errors[/red]" if s.errors else f"[dim]{s.errors} errors[/dim]"
+    parts = [err, f"[yellow]{s.warnings} warnings[/yellow]", f"[dim]{s.infos} info[/dim]"]
+    if movers:
+        parts.append(f"{movers} score-movers")
+    console.print(f"  {'Findings':<{_VERDICT_LABEL_W}}{' · '.join(parts)}")
 
 
 @dataclass
@@ -422,20 +458,17 @@ def _render_results_summary(
     hint_errors: int,
     hint_warnings: int,
 ) -> tuple[int, int]:
-    """Render findings, pro diagnostics, and cross-file counts. Returns (visible_findings, pro_total)."""
+    """Render pro diagnostics + cross-file counts. Returns (visible_findings, pro_total).
+
+    The error/warning/info breakdown now lives in the top verdict block's Findings
+    line, so it is not repeated here.
+    """
     s = result.stats
     visible_findings = s.total_findings
-    parts = []
-    if s.errors:
-        parts.append(f"[red]{s.errors} errors[/red]")
-    parts.append(f"[yellow]{s.warnings} warnings[/yellow]")
-    parts.append(f"{s.infos} info")
-
-    console.print()
-    console.print(f"  {visible_findings} findings \u00b7 {' \u00b7 '.join(parts)}")
 
     pro_total = sum(h.count for h in result.hints) if result.hints else 0
     if pro_total:
+        console.print()
         pro_parts = []
         if hint_errors:
             pro_parts.append(f"[red]{hint_errors} errors[/red]")
@@ -476,7 +509,7 @@ def print_scorecard(
 
     console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
 
-    _render_score_bar(result, has_quality, n_atoms, elapsed_ms)
+    _render_verdict_block(result, has_quality, n_atoms, elapsed_ms)
 
     agent_name = agent.title() if agent else "auto"
     console.print(f"  Agent: {agent_name}")

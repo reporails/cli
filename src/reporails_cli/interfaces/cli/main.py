@@ -96,6 +96,27 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
     return None
 
 
+def _structural_local_findings(*finding_lists: list[LocalFinding]) -> tuple[dict[str, int], int]:
+    """Per-path structural-error counts plus the structural-rule total.
+
+    Structural/presence rules run client-side, so these are the only way the
+    delivery factor's completeness term reaches the api: the per-path gap counts
+    (numerator) and the count of structural rule classes (`required` denominator).
+    Counts only — IP-safe.
+    """
+    from reporails_cli.core.platform.adapters.registry import structural_rule_ids
+    from reporails_cli.core.platform.policy.completeness import structural_gaps_by_path
+
+    structural_ids = structural_rule_ids()
+    if not structural_ids:
+        return {}, 0
+    counts: dict[str, int] = {}
+    for findings in finding_lists:
+        for path, n in structural_gaps_by_path(findings, structural_ids).items():
+            counts[path] = counts.get(path, 0) + n
+    return counts, len(structural_ids)
+
+
 def _resolve_rule_token(token: str) -> str:
     """Map either a rule ID or a rule slug to a canonical ID."""
     if ":" in token:
@@ -352,7 +373,10 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         # 5. Server call (stub — returns None offline)
         if show_progress:
             spinner.update("[bold]Checking server...[/bold]")  # type: ignore[union-attr]
-        response = AilsClient().lint(ruleset_map) if ruleset_map is not None else None
+        local_findings, structural_required = _structural_local_findings(m_findings, content_findings, client_findings)
+        response = (
+            AilsClient().lint(ruleset_map, local_findings, structural_required) if ruleset_map is not None else None
+        )
         lint_result = response.result if response else None
         funnel_error = response.funnel_error if response else None
         server_report = lint_result.report if lint_result else None
