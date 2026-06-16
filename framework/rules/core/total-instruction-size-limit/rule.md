@@ -4,47 +4,50 @@ slug: total-instruction-size-limit
 title: Total Instruction Size Limit
 category: efficiency
 type: mechanical
-severity: high
+severity: medium
 backed_by: [advanced-context-engineering, agents-md-impact-efficiency, developer-context-cursor-study,
   fowler-context-engineering-agents, lost-in-the-middle-long-contexts, osmani-ai-coding-workflow,
   spec-writing-for-agents]
 match: {format: freeform}
 fix: |
-  Split this file. Move at most one topic per file (target ≤100 KB).
-  Move depth into a separate topic file and link with a
-  "Knowledge: see" pointer. Keep the slim directive surface here. Files
-  above the limit dilute every instruction they contain.
+  Trim the always-loaded surface. Keep eager files — the main instruction
+  file, its imports, and the memory index — lean, targeting the whole
+  one-round footprint under 100 KB. Move depth into skills, on-demand rules,
+  or linked topic files; those load only when needed and are not counted.
 ---
 
 # Total Instruction Size Limit
 
-The aggregate size of all instruction files in the project must not exceed 100 KB (102,400 bytes). Exceeding this limit wastes context budget and dilutes the effectiveness of individual instructions.
+The always-injected ("one round") instruction footprint should stay under 100 KB (102,400 bytes). This counts what the agent loads every turn: eager instruction files (the main file + its imports + the memory index) in full, and progressive-disclosure surfaces (skills, subagents) by their name + description metadata only. On-demand rules, recalled memory entries, and skill / agent bodies load only when needed and are not counted. A bloated always-on footprint wastes context budget every turn and dilutes every instruction it carries.
+
+This is an advisory ceiling. Agents that enforce a hard, lower cap with silent truncation — such as Codex's 32 KiB `AGENTS.md` limit — have their own stricter rule that supersedes this one.
 
 ## Antipatterns
 
-- Adding extensive documentation and examples to instruction files instead of keeping them concise. Instruction files should contain directives, not documentation.
-- Duplicating instructions across multiple files. Each copy adds to the aggregate size without adding value.
-- Including large code blocks or data tables in instruction files. Reference external files instead of embedding bulky content.
-- Not monitoring total size as the project grows. Individual files may be small, but the aggregate can silently exceed the limit.
+- Putting extensive documentation and examples in the eager instruction file instead of a skill or on-demand rule that loads only when relevant.
+- Duplicating instructions across eager files. Each copy adds to the every-turn footprint without adding value.
+- Embedding large code blocks or data tables in the main instruction file. Reference external files instead.
+- Not monitoring the eager footprint as the project grows — individual files may be small, but the always-on aggregate can creep up.
 
 ## Pass / Fail
 
 ### Pass
 
 ~~~~markdown
-Project with 5 instruction files totaling 40 KB:
-  CLAUDE.md (15 KB) + 4 scoped rules (6 KB each)
-Total: 39 KB -- well under the 100 KB limit.
+Eager footprint of ~38 KB:
+  CLAUDE.md (15 KB) + MEMORY.md index (5 KB) + 30 skills (~0.6 KB metadata each)
+Total one-round footprint: ~38 KB -- well under 100 KB.
+(Skill bodies and on-demand rules are not counted -- they load only when used.)
 ~~~~
 
 ### Fail
 
 ~~~~markdown
-Project with 20 instruction files totaling 120 KB:
-  CLAUDE.md (30 KB) + 19 scoped rules (5 KB each)
-Total: 125 KB -- exceeds the 100 KB limit.
+Eager footprint of ~120 KB:
+  CLAUDE.md (90 KB) + 12 @-imported topic files (~2.5 KB each)
+Total one-round footprint: ~120 KB -- exceeds 100 KB every turn.
 ~~~~
 
 ## Limitations
 
-Sums byte size across all instruction files (max 100 KB). Does not break down which files are over-contributing or warn when approaching the limit — it is a hard ceiling only.
+Counts the always-injected footprint, not every file on disk: eager files in full, skills / subagents by metadata only, on-demand and recalled surfaces excluded. Advisory — it does not break down which eager files over-contribute. Agents with a hard, enforced cap have a dedicated superseding rule.

@@ -102,3 +102,24 @@ class TestMemoryClassification:
         )
         assert root_claude is not None
         assert root_claude.file_type == "main"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_memory_index_eager_siblings_on_demand(self, tmp_path: Path) -> None:
+        """MEMORY.md keeps session_start (eager index); sibling entries flip to on_demand (recalled)."""
+        mem = tmp_path / ".claude" / "agent-memory" / "foo"
+        mem.mkdir(parents=True)
+        (mem / "MEMORY.md").write_text("# index\n")
+        (mem / "topic.md").write_text("# a recalled topic\n")
+        (tmp_path / "CLAUDE.md").write_text("# Project\n")
+
+        result = discover_from_config(tmp_path, "claude")
+        assert result is not None
+        instruction, _rule, _config = result
+        fts = load_config_file_types("claude")
+        assert fts is not None
+        classified = classify_files(tmp_path, instruction, _parse_file_types(fts), generic_scanning=False)
+
+        by_name = {cf.path.name: cf for cf in classified if cf.file_type == "subagent_memory"}
+        assert by_name["MEMORY.md"].properties.get("loading") == "session_start"
+        assert by_name["topic.md"].properties.get("loading") == "on_demand"

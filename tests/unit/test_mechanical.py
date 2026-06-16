@@ -403,6 +403,52 @@ class TestScopedProjectChecks:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_excludes_recalled_memory_entries(self, tmp_path: Path) -> None:
+        """Recalled memory siblings (on_demand) don't count toward total instruction size."""
+        (tmp_path / "MEMORY.md").write_text("idx")  # 3 bytes — eager index, counted
+        (tmp_path / "entry.md").write_text("x" * 100)  # recalled sibling, excluded
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 50})}
+        classified = [
+            ClassifiedFile(path=tmp_path / "MEMORY.md", file_type="memory", properties={"loading": "session_start"}),
+            ClassifiedFile(path=tmp_path / "entry.md", file_type="memory", properties={"loading": "on_demand"}),
+        ]
+        # The 100-byte sibling is excluded → only the 3-byte index counts → under max.
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_counts_memory_index(self, tmp_path: Path) -> None:
+        """The eager MEMORY.md index is still counted — only recalled siblings are dropped."""
+        (tmp_path / "MEMORY.md").write_text("x" * 100)  # eager index, over max
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5})}
+        classified = [
+            ClassifiedFile(path=tmp_path / "MEMORY.md", file_type="memory", properties={"loading": "session_start"}),
+        ]
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_counts_skill_metadata_not_body(self, tmp_path: Path) -> None:
+        """on_invocation surfaces (skills/agents) contribute only name+description, not the body."""
+        skill = tmp_path / "SKILL.md"
+        skill.write_text("---\nname: x\ndescription: short\n---\n" + ("BODY " * 1000))
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
+        classified = [ClassifiedFile(path=skill, file_type="skill", properties={"loading": "on_invocation"})]
+        # name(1) + description(5) = 6 bytes counted; the large body is ignored → under max.
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_excludes_on_demand_surfaces(self, tmp_path: Path) -> None:
+        """on_demand surfaces (e.g. .claude/rules) don't count toward the one-round footprint."""
+        rule_file = tmp_path / "rule.md"
+        rule_file.write_text("x" * 500)
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
+        classified = [ClassifiedFile(path=rule_file, file_type="scoped_rule", properties={"loading": "on_demand"})]
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_non_aggregate_check_runs_when_scoped(self, tmp_path: Path) -> None:
         """A scoped run still evaluates per-file checks (only aggregates are skipped)."""
         rules = {"CORE:S:0001": self._rule("CORE:S:0001", "file_exists", {})}
