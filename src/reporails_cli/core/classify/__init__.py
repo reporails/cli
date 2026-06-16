@@ -119,6 +119,14 @@ def _apply_project_overrides(
     return out
 
 
+# Memory surfaces share an index-and-recall shape across agents (claude +
+# gemini, source-verified): MEMORY.md is the eager index, sibling entries are
+# recalled on-demand. Stamped per-entry at classification so size/coherence
+# rules can tell the always-injected index from the recalled siblings.
+_MEMORY_SURFACES = frozenset({"memory", "subagent_memory"})
+_MEMORY_INDEX_FILENAME = "MEMORY.md"
+
+
 _FILE_TYPE_MATCH_ALIASES: dict[str, str] = {
     # Agent configs use plural surface keys ("rules", "skills") for
     # human readability; rules express match.type with the singular
@@ -425,6 +433,10 @@ def classify_files(
             if not _location_matches_mode(file_path, ft, ancestor_chain, matched_pattern):
                 continue
             props = dict(ft.properties)
+            # Per-entry memory loading: only MEMORY.md is the eager index;
+            # sibling entries are recalled on-demand.
+            if ft.name in _MEMORY_SURFACES and file_path.name != _MEMORY_INDEX_FILENAME:
+                props["loading"] = "on_demand"
             # Detect content_format for freeform files
             fmt = props.get("format")
             is_freeform = fmt == "freeform" or (isinstance(fmt, list) and "freeform" in fmt)

@@ -311,3 +311,27 @@ class TestInferAgentFromRuleId:
         from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id
 
         assert infer_agent_from_rule_id(rule_id) == expected
+
+
+class TestSizeRuleSupersession:
+    """CODEX:E:0001 supersedes the generic CORE:E:0001 with a hard 32 KiB cap; generic stays a warning."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_codex_supersedes_with_hard_cap(self, tmp_path: Path) -> None:
+        from reporails_cli.core.platform.adapters.registry import load_rules
+
+        rules = load_rules(project_root=tmp_path, scan_root=tmp_path, agent="codex")
+        assert "CORE:E:0001" not in rules  # superseded for codex
+        codex = rules["CODEX:E:0001"]
+        assert codex.severity.value == "high"  # an actual failure
+        maxes = [(c.args or {}).get("max") for c in codex.checks if c.check == "aggregate_byte_size"]
+        assert maxes == [32768]  # the codex cap replaces the inherited 102400, not both
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_generic_core_size_rule_is_a_warning(self, tmp_path: Path) -> None:
+        from reporails_cli.core.platform.adapters.registry import load_rules
+
+        rules = load_rules(project_root=tmp_path, scan_root=tmp_path, agent="claude")
+        assert rules["CORE:E:0001"].severity.value == "medium"  # renders as warning, not error

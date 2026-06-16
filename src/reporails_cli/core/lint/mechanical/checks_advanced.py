@@ -156,15 +156,62 @@ def extract_imports(
     return CheckResult(passed=True, message="No imports found")
 
 
+# Loading modes that do NOT contribute to the always-injected ("one round")
+# footprint: on_demand / discoverable surfaces load only when recalled or read.
+_EXCLUDED_LOADING = frozenset({"on_demand", "discoverable"})
+# Progressive-disclosure surfaces (skills, agents) inject only their
+# name + description metadata at startup, not their body.
+_PROGRESSIVE_LOADING = frozenset({"on_invocation"})
+
+
+def _metadata_bytes(path: Path) -> int:
+    """Startup footprint of a progressive surface — its name + description frontmatter only."""
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    if not content.startswith("---") or (end := content.find("---", 3)) < 0:
+        return 0
+    try:
+        fm = yaml.safe_load(content[3:end])
+    except yaml.YAMLError:
+        return 0
+    if not isinstance(fm, dict):
+        return 0
+    return len(f"{fm.get('name', '')}{fm.get('description', '')}".encode())
+
+
+def _eager_bytes(cf: ClassifiedFile) -> int:
+    """Bytes a classified surface contributes to the one-round (always-injected) footprint."""
+    loading = cf.properties.get("loading")
+    if loading in _EXCLUDED_LOADING:
+        return 0
+    try:
+        if loading in _PROGRESSIVE_LOADING:
+            return _metadata_bytes(cf.path)
+        return cf.path.stat().st_size
+    except OSError:
+        return 0
+
+
 def aggregate_byte_size(
     root: Path,
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check total byte size of all matching files."""
+    """Check the always-injected ("one round") instruction footprint against a byte cap.
+
+    Counts only what an agent loads every round: eager files (`loading: session_start`)
+    in full; progressive-disclosure surfaces (skills, agents — `loading: on_invocation`)
+    by their name + description metadata only; recalled/conditional surfaces
+    (`loading: on_demand` / `discoverable`, incl. recalled memory siblings) not at all.
+    The `pattern` form keeps counting full file sizes (no classified metadata).
+    """
     max_bytes = _safe_float(args.get("max"), float("inf"))
-    all_files = _get_counted_files(args, classified_files, root)
-    total = sum(f.stat().st_size for f in all_files)
+    if args.get("pattern"):
+        total = sum(f.stat().st_size for f in _get_counted_files(args, classified_files, root))
+    else:
+        total = sum(_eager_bytes(cf) for cf in classified_files if cf.path.is_file())
     if total <= max_bytes:
         return CheckResult(passed=True, message=f"Total {total}B within limit")
     return CheckResult(passed=False, message=f"Total {total}B exceeds max {max_bytes}")

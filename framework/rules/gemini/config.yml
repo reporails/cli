@@ -252,27 +252,32 @@ file_types:
         maintainer: human
 
   memory:
-    # Gemini's memory model is a four-tier hierarchy (see snippets.ts
-    # `renderOperationalGuidelines` in google-gemini/gemini-cli):
+    # Gemini's stable memory model is direct-edit markdown across four tiers
+    # (source-verified vs gemini-cli main @ 83d7567, 2026-06-15):
     #
-    #   1. Project Instructions  — ./GEMINI.md            (this config: `main`, scopes.project)
-    #   2. Subdir Instructions   — ./**/GEMINI.md         (this config: `nested_context`)
-    #   3. Private Project Memory — ~/.gemini/tmp/<hash>/memory/MEMORY.md
-    #                              + sibling *.md notes   (THIS block)
-    #   4. Global Personal Memory — ~/.gemini/GEMINI.md   (this config: `main`, scopes.user)
+    #   1. Project Instructions  — ./GEMINI.md                  (`main`, scopes.project)
+    #   2. Subdir Instructions   — ./**/GEMINI.md               (`nested_context`)
+    #   3. Private Project Memory — ~/.gemini/tmp/<project-id>/memory/MEMORY.md
+    #                              + sibling *.md notes          (THIS block)
+    #   4. Global Personal Memory — ~/.gemini/GEMINI.md         (`main`, scopes.user)
     #
     # Only tier 3 — the private project memory directory — lives under
-    # `memory`. The other tiers are GEMINI.md context files modeled by
-    # `main` and `nested_context`. The legacy "Gemini Added Memories"
-    # section model inside ~/.gemini/GEMINI.md has been retired upstream
-    # (0 hits in the gemini-cli source for that string) and is no longer
-    # the memory write target.
+    # `memory`; the other tiers are GEMINI.md context files (`main`,
+    # `nested_context`). The old `save_memory` tool + "Gemini Added Memories"
+    # section is REMOVED in source (0 git-grep hits; prompt snippets.ts:849
+    # "There is no save_memory tool") — the agent now writes memory by direct
+    # file edits.
     #
-    # The directory glob mirrors Claude's shape — MEMORY.md is the index
-    # and sibling *.md files are entries. `memory_locator` enumerates them
+    # Tier 3 is the STABLE surviving private surface and mirrors Claude's
+    # shape: MEMORY.md is a lean EAGER index, sibling *.md notes carry the
+    # detail and are RECALLED ON-DEMAND (snippets.ts:838,857). `<project-id>`
+    # is a slug short-id (migrated from a sha256 hash; ProjectRegistry
+    # .getShortId + performMigration). `memory_locator` enumerates the dir
     # via the standard directory-glob dispatch.
-    # See also https://geminicli.com/docs/reference/memport/ for the @-import
-    # syntax used to compose GEMINI.md files.
+    #
+    # "Auto Memory" (experimentalAutoMemory, off by default — config.ts:717)
+    # is optional background extraction that drafts review-inbox candidates
+    # INTO this same directory; it is not a separate storage model.
     source: https://geminicli.com/docs/cli/tutorials/memory-management/
     format: freeform
     scope: global
