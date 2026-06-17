@@ -170,3 +170,20 @@ class TestClientCheckRuleIds:
         findings = [_finding("ordering", "warning", "Prohibition before directive")]
         out = _render(monkeypatch, findings, regime)
         assert "CORE:D:0003" in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_rule_docs_url_maps_agent_and_slug(self) -> None:
+        from reporails_cli.formatters.text.display_constants import rule_docs_url
+
+        assert rule_docs_url("CORE:E:0003") == "https://reporails.com/rules/core/formatting-regime"
+        assert rule_docs_url("CODEX:E:0001") == "https://reporails.com/rules/codex/agents-md-within-size-limit"
+        # Bare labels / non-canonical tokens do not resolve to a docs page.
+        assert rule_docs_url("general") is None
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_triaged_render_hyperlinks_the_rule_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        regime = classify_regime({"within_capacity": True, "is_named": True, "weak_coupling": False, "confident": True})
+        out = _render(monkeypatch, [_finding("ordering", "warning", "Prohibition before directive")], regime)
+        assert "[link=https://reporails.com/rules/core/instruction-ordering]CORE:D:0003[/link]" in out
