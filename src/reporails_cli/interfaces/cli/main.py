@@ -683,7 +683,9 @@ def _dispatch_output(
     from reporails_cli.formatters import json as json_formatter
 
     if output_format == "json":
-        data = json_formatter.format_combined_result(display_result, ruleset_map=ruleset_map, project_root=project_root)
+        data = json_formatter.format_combined_result(
+            display_result, ruleset_map=ruleset_map, project_root=project_root, file_type_by_path=file_type_by_path
+        )
         data["elapsed_ms"] = round(elapsed_ms, 1)
         if capability_paths:
             data["capability_paths"] = sorted(_relativize_paths(capability_paths, project_root))
