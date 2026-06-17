@@ -478,7 +478,11 @@ def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
     if not bands:
         return None
     majority = Counter(bands).most_common(1)[0][0]
+    # All-unscored subset (every file has a None score) → keep the server's aggregate
+    # rather than rendering a 0.0/empty headline.
     mean_score = _mean_display_score(list(per_file)) if per_file else quality.display_score
+    if mean_score is None:
+        mean_score = quality.display_score
     return _replace(quality, compliance_band=majority, display_score=mean_score)
 
 

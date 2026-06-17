@@ -151,8 +151,10 @@ class FileAnalysis:
     compliance_band: str = ""
     stats: dict[str, Any] = field(default_factory=dict)
     # Server-computed 0-10 per-file quality score. Rendered verbatim; mean-aggregated
-    # for surface scores.
-    display_score: float = 0.0
+    # for surface scores. `None` marks an unscored file (no charged atoms — a
+    # non-instruction surface or an empty instruction file); rendered as "not scored"
+    # and excluded from surface aggregation.
+    display_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -495,7 +497,7 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
                 diagnostics=tuple(diagnostics),
                 compliance_band=fa.get("compliance_band", ""),
                 stats=fa.get("stats", {}),
-                display_score=fa.get("display_score", 0.0),
+                display_score=fa.get("display_score"),
             )
         )
     return tuple(items)

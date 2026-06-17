@@ -148,6 +148,41 @@ class TestReBucketStability:
         assert [it.score for it in before] == [it.score for it in after]
 
 
+class TestUnscoredFiles:
+    """A file with no charged atoms arrives with display_score=None — rendered as
+    'not scored', excluded from surface/item aggregation (REQ-199 item 2).
+    """
+
+    def _result(self, *files: tuple[str, float | None]) -> CombinedResult:
+        per_file = tuple(FileAnalysis(file=fp, compliance_band="LOW", display_score=ds) for fp, ds in files)
+        return CombinedResult(per_file_analysis=per_file, quality=QualityResult(compliance_band="LOW"))
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_item_score_is_none_for_unscored_file(self) -> None:
+        result = self._result(("/proj/.cursorignore", None))
+        ruleset = _RulesetMap(files=(_FileRecord(path="/proj/.cursorignore"),))
+        items = compute_item_scores(result, ruleset_map=ruleset, project_root="/proj")
+        assert [it.score for it in items] == [None]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_unscored_excluded_from_surface_mean(self) -> None:
+        # One scored 8.0 + one unscored on the main surface → mean is 8.0, not dragged.
+        result = self._result(("CLAUDE.md", 8.0), ("AGENTS.md", None))
+        main = next(s for s in compute_surface_scores(result) if s.name == "Main")
+        assert main.score == 8.0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_item_cell_renders_not_scored(self) -> None:
+        from reporails_cli.formatters.text.item_scorecard import _item_cell
+        from reporails_cli.formatters.text.scorecard import SurfaceHealth
+
+        cell = _item_cell(SurfaceHealth(name="cursorignore", score=None, file_count=1, finding_count=0), label_w=14)
+        assert "not scored" in cell
+
+
 class TestLeverageBasis:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic

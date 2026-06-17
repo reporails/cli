@@ -63,14 +63,19 @@ def _merge_with_server(
     client_findings: list[Any],
     ruleset_map: Any,
     target: Path,
+    agent: str = "",
 ) -> Any:
-    """Merge local findings with server diagnostics, returning CombinedResult."""
+    """Merge local findings with server diagnostics, returning CombinedResult.
+
+    `agent` must match the agent the findings were produced under, so agent-superseded
+    structural rules resolve to the same id the findings carry (see `structural_rule_ids`).
+    """
     from reporails_cli.core.platform.adapters.api_client import AilsClient
     from reporails_cli.core.platform.adapters.registry import structural_rule_ids
     from reporails_cli.core.platform.policy.completeness import structural_gaps_by_path
     from reporails_cli.core.platform.runtime.merger import merge_results
 
-    structural_ids = structural_rule_ids()
+    structural_ids = structural_rule_ids(agent)
     local_findings = structural_gaps_by_path(list(m_findings) + list(client_findings), structural_ids)
     response = AilsClient().lint(ruleset_map, local_findings, len(structural_ids)) if ruleset_map else None
     lint_result = response.result if response else None
@@ -103,7 +108,9 @@ def _run_pipeline(target: Path) -> dict[str, Any]:
     )
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
 
-    result = _merge_with_server(m_findings, content_findings + client_findings, ruleset_map, target)
+    result = _merge_with_server(
+        m_findings, content_findings + client_findings, ruleset_map, target, agent=effective_agent
+    )
     return json_formatter.format_combined_result(result)
 
 

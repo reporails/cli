@@ -96,18 +96,19 @@ def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
     return None
 
 
-def _structural_local_findings(*finding_lists: list[LocalFinding]) -> tuple[dict[str, int], int]:
+def _structural_local_findings(*finding_lists: list[LocalFinding], agent: str = "") -> tuple[dict[str, int], int]:
     """Per-path structural-error counts plus the structural-rule total.
 
     Structural/presence rules run client-side, so these are the only way the
     delivery factor's completeness term reaches the api: the per-path gap counts
     (numerator) and the count of structural rule classes (`required` denominator).
-    Counts only — IP-safe.
+    Counts only — IP-safe. `agent` must match the agent the findings were produced
+    under, so agent-superseded structural rules resolve to the same id the findings carry.
     """
     from reporails_cli.core.platform.adapters.registry import structural_rule_ids
     from reporails_cli.core.platform.policy.completeness import structural_gaps_by_path
 
-    structural_ids = structural_rule_ids()
+    structural_ids = structural_rule_ids(agent)
     if not structural_ids:
         return {}, 0
     counts: dict[str, int] = {}
@@ -373,7 +374,9 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         # 5. Server call (stub — returns None offline)
         if show_progress:
             spinner.update("[bold]Checking server...[/bold]")  # type: ignore[union-attr]
-        local_findings, structural_required = _structural_local_findings(m_findings, content_findings, client_findings)
+        local_findings, structural_required = _structural_local_findings(
+            m_findings, content_findings, client_findings, agent=effective_agent
+        )
         response = (
             AilsClient().lint(ruleset_map, local_findings, structural_required) if ruleset_map is not None else None
         )
