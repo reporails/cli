@@ -159,6 +159,33 @@ class TestLeverageAndRegime:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
+    def test_surface_health_keyed_against_passed_project_root(self) -> None:
+        """Surface scores must relativize absolute server `per_file` paths against the run's
+        `project_root` too (not just regime) — the MCP path where target != cwd."""
+        from reporails_cli.core.platform.adapters.api_client import FileAnalysis
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        root = Path("/tmp/proj")
+        findings = (FindingItem(file="CLAUDE.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
+        per_file = (
+            FileAnalysis(
+                file="/tmp/proj/CLAUDE.md",
+                compliance_band="HIGH",
+                display_score=8.0,
+                stats={"within_capacity": True, "is_named": True, "weak_coupling": False, "confident": True},
+            ),
+        )
+        result = _result(findings=findings, per_file_analysis=per_file)
+        scored = {
+            s["name"]: s["score"] for s in format_combined_result(result, project_root=root).get("surface_health", [])
+        }
+        assert scored.get("Main") == 8.0
+        # Wrong root (cwd): the absolute per_file path misroutes out of Main, the score drops.
+        stray = {s["name"]: s["score"] for s in format_combined_result(result).get("surface_health", [])}
+        assert stray.get("Main") != 8.0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_no_regime_key_when_offline(self) -> None:
         from reporails_cli.core.platform.runtime.merger import FindingItem
 

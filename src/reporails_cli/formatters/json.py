@@ -333,7 +333,7 @@ def format_combined_result(result: Any, ruleset_map: Any = None, project_root: P
         ]
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
-    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map)
+    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map, project_root=project_root or Path.cwd())
     if surfaces:
         data["surface_health"] = [
             {
