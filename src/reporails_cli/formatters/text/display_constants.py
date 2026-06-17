@@ -122,6 +122,23 @@ CLIENT_CHECK_CATEGORY = {
     "ambiguous_charge": "C",
 }
 
+# Client-check labels map to their canonical rule ID so local findings display the ID like
+# server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
+CLIENT_CHECK_RULE_ID = {
+    "format": "CORE:E:0003",
+    "bold": "CORE:E:0003",
+    "ordering": "CORE:D:0003",
+    "scope": "CORE:C:0048",
+    "heading_instruction": "CORE:S:0039",
+    "orphan": "CORE:C:0053",
+}
+
+
+def display_rule_id(rule: str) -> str:
+    """Canonical rule ID for a finding's rule token; unmapped tokens pass through."""
+    return CLIENT_CHECK_RULE_ID.get(rule, rule)
+
+
 # ── File classification lookup tables ─────────────────────────────────
 
 _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))

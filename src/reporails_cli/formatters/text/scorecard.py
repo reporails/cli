@@ -15,6 +15,7 @@ from reporails_cli.formatters.text.display_constants import (
     HRULE,
     RULE_CATEGORY_MAP,
     classify_file,
+    display_rule_id,
     finding_category,
     get_term_width,
 )
@@ -448,7 +449,7 @@ def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, 
     buckets: dict[str, dict[str, Any]] = {}
     for f in findings:
         bucket = buckets.setdefault(
-            f.rule,
+            display_rule_id(f.rule),
             {"count": 0, "severity": f.severity, "message": f.message},
         )
         bucket["count"] += 1

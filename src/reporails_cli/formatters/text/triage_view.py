@@ -23,6 +23,7 @@ from reporails_cli.formatters.text.display_constants import (
     HINT_TYPE_LABELS,
     SEV_WEIGHT,
     classify_file,
+    display_rule_id,
     friendly_name,
     get_term_width,
     per_file_stats,
@@ -81,7 +82,7 @@ def _render_structural_findings(
         raw = f.message or ""
         msg = truncate(raw, msg_width).replace("[", "\\[")
         line_ref = f"L{f.line:<4d} " if f.line > 1 else "      "
-        rule_id = f.rule.replace("[", "\\[")
+        rule_id = display_rule_id(f.rule).replace("[", "\\[")
         console.print(f"  [dim]{border}[/dim]   {icon} {line_ref}{msg}  [dim]{rule_id}[/dim]")
         _print_action(getattr(f, "fix", ""), border, msg_width)
     if len(structural) > limit:
@@ -104,7 +105,9 @@ def _render_quality_verbose(
     for (line, msg, rule), count in seen_q.items():
         line_ref = f"L{line:<4d} " if line > 1 else "      "
         suffix = f" ({count}\u00d7)" if count > 1 else ""
-        console.print(f"  [dim]{border}     {line_ref}{truncate(f'{msg}{suffix}', msg_width)}  {rule}[/dim]")
+        console.print(
+            f"  [dim]{border}     {line_ref}{truncate(f'{msg}{suffix}', msg_width)}  {display_rule_id(rule)}[/dim]"
+        )
 
 
 def _render_quality_compact(
@@ -166,7 +169,7 @@ def _render_triaged(
         icon = sev_icons.get(sev, " ")
         suffix = f" (\u00d7{count})" if count > 1 else ""
         text = truncate(f"{msg}{suffix}", msg_width).replace("[", "\\[")
-        rule_id = rule.replace("[", "\\[")
+        rule_id = display_rule_id(rule).replace("[", "\\[")
         console.print(f"  [dim]{border}[/dim]   {icon} {text}  [dim]{rule_id}[/dim]")
         _print_action(fix, border, msg_width)
     if result.collapsed:
