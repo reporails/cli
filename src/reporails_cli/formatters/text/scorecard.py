@@ -18,10 +18,10 @@ from reporails_cli.formatters.text.display_constants import (
     display_rule_id,
     finding_category,
     get_term_width,
+    rule_docs_url,
 )
 from reporails_cli.formatters.text.score import (
     SCORE_GREEN_CUTOFF,
-    leverage_basis,
     score_color,
 )
 
@@ -371,11 +371,8 @@ def _render_verdict_block(
 def _render_findings_axis(result: Any) -> None:
     """Render the Findings worklist line — distinct from the score; errors carry red."""
     s = result.stats
-    movers = leverage_basis(result.findings)[0]
     err = f"[red]{s.errors} errors[/red]" if s.errors else f"[dim]{s.errors} errors[/dim]"
     parts = [err, f"[yellow]{s.warnings} warnings[/yellow]", f"[dim]{s.infos} info[/dim]"]
-    if movers:
-        parts.append(f"{movers} score-movers")
     console.print(f"  {'Findings':<{_VERDICT_LABEL_W}}{' · '.join(parts)}")
 
 
@@ -481,7 +478,11 @@ def _render_top_rules(result: Any) -> None:
         snippet = message.split(".")[0].split("—")[0].strip()
         if len(snippet) > snippet_w:
             snippet = snippet[: snippet_w - 1] + "…"
-        console.print(f"    {rule:<{rule_w}} x{count:<{count_w}} {label}  {snippet}")
+        # Hyperlink the ID but pad by its visible length — the link markup is zero-width.
+        url = rule_docs_url(rule)
+        rule_cell = f"[link={url}]{rule}[/link]" if url else rule
+        pad = " " * max(0, rule_w - len(rule))
+        console.print(f"    {rule_cell}{pad} x{count:<{count_w}} {label}  {snippet}")
 
 
 def _render_results_summary(

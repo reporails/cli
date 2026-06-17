@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,39 @@ CLIENT_CHECK_RULE_ID = {
 def display_rule_id(rule: str) -> str:
     """Canonical rule ID for a finding's rule token; unmapped tokens pass through."""
     return CLIENT_CHECK_RULE_ID.get(rule, rule)
+
+
+_RULE_DOCS_BASE = "https://reporails.com/rules"
+
+
+@lru_cache(maxsize=1)
+def _rule_slug_map() -> dict[str, str]:
+    """`{rule_id: slug}` from the bundled framework registry, loaded once per process."""
+    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+
+    try:
+        return {r.id: r.slug for r in load_all_rules() if r.slug}
+    except (OSError, ValueError):
+        return {}
+
+
+def rule_docs_url(rule_id: str) -> str | None:
+    """Public docs URL (`/rules/<agent|core>/<slug>`) for a canonical rule ID, or None."""
+    parts = rule_id.split(":")
+    if len(parts) != 3:
+        return None
+    slug = _rule_slug_map().get(rule_id)
+    if not slug:
+        return None
+    agent = "core" if parts[0] == "CORE" else parts[0].lower()
+    return f"{_RULE_DOCS_BASE}/{agent}/{slug}"
+
+
+def linked_rule_id(rule: str) -> str:
+    """Rule token as a Rich hyperlink to its docs page; plain canonical ID if unresolvable."""
+    rule_id = display_rule_id(rule)
+    url = rule_docs_url(rule_id)
+    return f"[link={url}]{rule_id}[/link]" if url else rule_id
 
 
 # ── File classification lookup tables ─────────────────────────────────
