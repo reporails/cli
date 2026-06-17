@@ -25,11 +25,13 @@ These are guidance, not thresholds. A score of 6.5 with one critical finding can
 
 ## What contributes
 
-The overall score reflects:
+The score is a single verdict on how well-formed your instructions are — not a tally of findings (those are a separate worklist beneath it). It reflects:
 
-1. **Severity of findings that fired** — `critical`, `high`, `medium`, `low`, `info`. Higher severity weighs more.
-2. **Coverage of the rule set** — rules that didn't fire (because the relevant content was clean) contribute positively.
+1. **How clearly your instructions are written** — specific, well-formatted directives that don't contradict each other score higher than vague, buried, or conflicting ones.
+2. **Delivery** — whether your instructions actually reach the agent intact. Missing required structure, or content pushed past an agent's hard instruction-size limit (where the overflow is silently dropped before the agent ever sees it), pulls the score down.
 3. **Per-surface health** — each instruction surface (Main / Rules / Skills / Agents / Memory) contributes its own score to the overall picture.
+
+Files with no scorable instruction content — a non-instruction surface a coding agent still reads (like a `.cursorignore` path list) or an empty instruction file — show as `not scored` and don't count toward any surface or the overall number.
 
 ## Surface scores
 
