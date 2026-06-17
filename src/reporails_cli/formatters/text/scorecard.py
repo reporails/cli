@@ -78,7 +78,9 @@ class SurfaceHealth:
     """Per-surface health score for the scorecard."""
 
     name: str
-    score: float
+    # `None` marks an unscored item/surface (no charged atoms — a non-instruction
+    # surface or an empty instruction file); rendered as "not scored", no bar/band.
+    score: float | None
     file_count: int
     finding_count: int
     errors: int = 0
@@ -175,16 +177,22 @@ def compute_surface_scores(
     return surfaces
 
 
-def _mean_display_score(analyses: list[Any]) -> float:
+def _mean_display_score(analyses: list[Any]) -> float | None:
     """Atom-weighted mean of the api's per-file display scores.
 
     Mirrors the server's whole-project roll-up so a surface's bar (and the filtered
-    headline) aggregate the same way the headline does. Falls back to a simple mean
-    when atom counts are unavailable; 0.0 when there is no server analysis.
+    headline) aggregate the same way the headline does. Unscored files (`display_score`
+    is `None` — no charged atoms) are excluded from the aggregation, matching the
+    server roll-up. Falls back to a simple mean when atom counts are unavailable;
+    `None` when there is no scored analysis to aggregate.
     """
-    scored = [(float(fa.display_score), int(fa.stats.get("atoms", 0))) for fa in analyses if fa is not None]
+    scored = [
+        (float(fa.display_score), int(fa.stats.get("atoms", 0)))
+        for fa in analyses
+        if fa is not None and fa.display_score is not None
+    ]
     if not scored:
-        return 0.0
+        return None
     total_weight = sum(w for _, w in scored)
     if total_weight <= 0:
         return round(sum(s for s, _ in scored) / len(scored), 1)
@@ -220,11 +228,14 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     """
     label = f"{s.name} ({s.file_count}):"
+    err = f"  [red]{s.errors} err[/red]" if s.errors else ""
+    if s.score is None:
+        empty = "░" * bar_width
+        return f"{label:13s} [dim]{empty}[/dim]  [dim]not scored[/dim]{err}"
     color = score_color(s.score)
     bar = _score_bar(s.score, bar_width, color)
     # A surface can score well while errors remain, so the error count is what
     # routes attention — surface the per-surface error tally next to the bar.
-    err = f"  [red]{s.errors} err[/red]" if s.errors else ""
     return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{err}"
 
 

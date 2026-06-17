@@ -59,7 +59,9 @@ def compute_item_scores(
         n_warnings = sum(1 for f in findings if f.severity == "warning")
         n_infos = sum(1 for f in findings if f.severity == "info")
 
-        score = float(analysis.display_score) if analysis is not None else 0.0
+        # `None` → unscored: either no server analysis for this file, or the server
+        # returned no score (zero charged atoms — a non-instruction or empty file).
+        score = float(analysis.display_score) if analysis is not None and analysis.display_score is not None else None
 
         items.append(
             SurfaceHealth(
@@ -72,7 +74,8 @@ def compute_item_scores(
                 infos=n_infos,
             )
         )
-    items.sort(key=lambda it: (it.score, it.name))  # worst first, alphabetical tiebreak
+    # Worst first, alphabetical tiebreak; unscored items sort last (score is None).
+    items.sort(key=lambda it: (it.score is None, it.score or 0.0, it.name))
     return items
 
 
@@ -92,10 +95,13 @@ def _display_name_for_path(rel: str) -> str:
 def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
     """Format one item row: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  (N: Xe/Yw/Zi)'."""
     label = f"{s.name}:"
-    color = score_color(s.score)
-    bar = _score_bar(s.score, bar_width, color)
     breakdown = _severity_breakdown_markup(s)
     suffix = f"  {breakdown}" if breakdown else ""
+    if s.score is None:
+        empty = "░" * bar_width
+        return f"{label:<{label_w}} [dim]{empty}[/dim]  [dim]not scored[/dim]{suffix}"
+    color = score_color(s.score)
+    bar = _score_bar(s.score, bar_width, color)
     return f"{label:<{label_w}} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
 
 
@@ -127,7 +133,7 @@ def render_item_health(items: list[SurfaceHealth]) -> None:
     console.print()
     prev_band: str | None = None
     for s in items:
-        band = score_color(s.score)
+        band = "unscored" if s.score is None else score_color(s.score)
         if prev_band is not None and band != prev_band:
             console.print()
         console.print(f"  {_item_cell(s, label_w)}")

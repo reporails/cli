@@ -55,16 +55,21 @@ def clear_rule_cache() -> None:
     structural_rule_ids.cache_clear()
 
 
-@lru_cache(maxsize=1)
-def structural_rule_ids() -> frozenset[str]:
+@lru_cache(maxsize=8)
+def structural_rule_ids(agent: str = "") -> frozenset[str]:
     """Rule ids of the structural family — mechanical rules that run locally.
 
     These check section / config / file presence and hygiene; they are scored on a
     separate completeness axis, not the main score. Sourced from the registry
     (single source of truth); empty if none load.
+
+    Must be resolved with the SAME agent the findings were produced under: an agent
+    rule that supersedes a core structural rule (e.g. `CODEX:E:0001` superseding
+    `CORE:E:0001`) replaces it under the agent's id, so the no-agent (core-only) set
+    would miss it and the matching finding would be dropped from the completeness map.
     """
     try:
-        rules = load_rules()
+        rules = load_rules(agent=agent)
     except (OSError, ValueError, KeyError):
         return frozenset()
     return frozenset(
