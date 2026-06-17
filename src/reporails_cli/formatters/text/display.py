@@ -47,7 +47,7 @@ __all__ = [
 
 # ── Group rendering ───────────────────────────────────────────────────
 
-_GROUP_ORDER = ("main", "nested", "agent", "skill", "rule", "config", "memory", "file")
+_GROUP_ORDER = ("main", "nested", "agent", "skill", "rule", "config", "memory", "imported", "referenced", "file")
 _GROUP_LABELS = {
     "main": "Main",
     "nested": "Nested",
@@ -56,6 +56,8 @@ _GROUP_LABELS = {
     "rule": "Rules",
     "config": "Config",
     "memory": "Memory",
+    "imported": "Imported",
+    "referenced": "Referenced",
     "file": "Files",
 }
 
@@ -212,8 +214,21 @@ def _detect_tier(result: Any, has_quality: bool) -> str:
     return "free"
 
 
-def _build_file_groups(result: Any) -> dict[str, list[tuple[str, list[Any]]]]:
-    """Group findings by file type, sorted worst-first within each group."""
+def _build_file_groups(
+    result: Any,
+    file_type_by_path: dict[str, str] | None = None,
+    project_root: Path | None = None,
+) -> dict[str, list[tuple[str, list[Any]]]]:
+    """Group findings by file type, sorted worst-first within each group.
+
+    Generic-scanned files route by classifier `file_type`: `@`-import (`generic`) → the
+    `imported` group, markdown-link (`referenced`) → the `referenced` group. Everything else
+    falls back to the path-based `classify_file` tag.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    ft = file_type_by_path or {}
+    root = project_root or Path.cwd()
     by_file: dict[str, list[Any]] = {}
     for f in result.findings:
         by_file.setdefault(f.file, []).append(f)
@@ -222,8 +237,13 @@ def _build_file_groups(result: Any) -> dict[str, list[tuple[str, list[Any]]]]:
     for filepath, findings in by_file.items():
         if filepath in (".", ".:0"):
             continue
-        tag = classify_file(filepath)
-        group_key = tag.split(":")[0]
+        file_type = ft.get(normalize_finding_path(filepath, root), "")
+        if file_type == "generic":
+            group_key = "imported"
+        elif file_type == "referenced":
+            group_key = "referenced"
+        else:
+            group_key = classify_file(filepath).split(":")[0]
         groups.setdefault(group_key, []).append((filepath, findings))
 
     for group_files in groups.values():
@@ -311,6 +331,7 @@ def print_text_result(
     ruleset_map: object = None,
     funnel_error: object = None,
     project_root: Path | None = None,
+    file_type_by_path: dict[str, str] | None = None,
 ) -> None:
     """Print compact text output: files sorted worst-first, aggregated counts, scorecard at bottom.
 
@@ -339,7 +360,9 @@ def print_text_result(
         _render_funnel_cta(funnel_error)
         return
 
-    _render_findings_and_scorecard(result, ruleset_map, ascii_mode, verbose, scope, tier, elapsed_ms, root)
+    _render_findings_and_scorecard(
+        result, ruleset_map, ascii_mode, verbose, scope, tier, elapsed_ms, root, file_type_by_path or {}
+    )
     _render_funnel_cta(funnel_error)
 
 
@@ -352,6 +375,7 @@ def _render_findings_and_scorecard(
     tier: str,
     elapsed_ms: float,
     project_root: Path,
+    file_type_by_path: dict[str, str],
 ) -> None:
     """Render file groups, cross-file coordinates, and the bottom scorecard.
 
@@ -374,10 +398,12 @@ def _render_findings_and_scorecard(
         aliases_by_file=_build_aliases_by_file(project_root, result),
         regime_by_file=_build_regime_by_file(result, project_root),
     )
-    _render_file_groups(_build_file_groups(result), ctx)
+    _render_file_groups(_build_file_groups(result, file_type_by_path, project_root), ctx)
     _render_cross_file_coordinates(result, sev_icons)
 
-    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map, project_root=project_root)
+    surfaces = compute_surface_scores(
+        result, ruleset_map=ruleset_map, project_root=project_root, file_type_by_path=file_type_by_path
+    )
     item_health = None
     if len(surfaces) == 1 and surfaces[0].file_count > 1:
         item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=project_root)

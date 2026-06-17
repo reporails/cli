@@ -69,8 +69,24 @@ _SURFACE_NAMES = {
     "skill": "Skills",
     "agent": "Agents",
     "memory": "Memory",
+    "imported": "Imported",
 }
-_SURFACE_ORDER = ["main", "nested", "rule", "skill", "agent", "memory"]
+# `imported` (eager `@`-imports) earns a scored bar. `referenced` (discoverable markdown
+# links) deliberately gets NO surface bar — the harness never loads it, so a score would be
+# a false signal; its findings surface in the Referenced file-panel group instead.
+_SURFACE_ORDER = ["main", "nested", "rule", "skill", "agent", "memory", "imported"]
+
+
+def _surface_key(rel: str, ft_by_path: dict[str, str]) -> str:
+    """Surface tag for a path.
+
+    `@`-import-reached files (`file_type == "generic"`, eager) map to the Imported surface;
+    everything else falls back to the path-based `classify_file` tag. Markdown-`referenced`
+    files therefore land outside `_SURFACE_ORDER` and never get a scored bar (by design).
+    """
+    if ft_by_path.get(rel, "") == "generic":
+        return "imported"
+    return classify_file(rel).split(":")[0]
 
 
 @dataclass
@@ -98,6 +114,7 @@ def compute_surface_scores(
     result: Any,
     ruleset_map: Any = None,
     project_root: Any = None,
+    file_type_by_path: dict[str, str] | None = None,
 ) -> list[SurfaceHealth]:
     """Compute per-surface health scores from combined result.
 
@@ -116,22 +133,25 @@ def compute_surface_scores(
 
     root = Path(project_root) if project_root is not None else Path.cwd()
 
+    # Per-path classifier file_type (computed at the composition root for generic-scanned
+    # files) routes `@`-import-reached files to the Imported surface.
+    ft_by_path = file_type_by_path or {}
+
     # Count files per surface from ruleset_map (authoritative file list)
     surface_file_counts: dict[str, int] = {}
     if ruleset_map is not None:
         try:
             for fr in ruleset_map.files:
-                rel = normalize_finding_path(fr.path, root)
-                tag = classify_file(rel).split(":")[0]
-                surface_file_counts[tag] = surface_file_counts.get(tag, 0) + 1
+                key = _surface_key(normalize_finding_path(fr.path, root), ft_by_path)
+                surface_file_counts[key] = surface_file_counts.get(key, 0) + 1
         except (AttributeError, TypeError):
             pass
 
     # Group findings by surface
     surface_findings: dict[str, list[Any]] = {}
     for f in result.findings:
-        tag = classify_file(f.file).split(":")[0]
-        surface_findings.setdefault(tag, []).append(f)
+        key = _surface_key(normalize_finding_path(f.file, root), ft_by_path)
+        surface_findings.setdefault(key, []).append(f)
 
     # Group per-file analysis by surface. Server per-file paths are absolute, but
     # `classify_file` keys `main` on root-level path depth — so normalize to the
@@ -139,8 +159,8 @@ def compute_surface_scores(
     # absolute path falls out of the `main` surface and its score reads 0.0.
     surface_analysis: dict[str, list[Any]] = {}
     for fa in result.per_file_analysis:
-        tag = classify_file(normalize_finding_path(fa.file, root)).split(":")[0]
-        surface_analysis.setdefault(tag, []).append(fa)
+        key = _surface_key(normalize_finding_path(fa.file, root), ft_by_path)
+        surface_analysis.setdefault(key, []).append(fa)
 
     # Collect all surfaces from any source
     all_keys = set(surface_findings) | set(surface_analysis) | set(surface_file_counts)
@@ -539,6 +559,10 @@ def print_scorecard(
 
     if multi_surface and surface_health is not None:
         _render_surface_health(surface_health)
+        # Generic-scanned `@`-imports now count toward Quality — name the headline shift
+        # so the number isn't a surprise the user has to reverse-engineer.
+        if any(s.name == "Imported" for s in surface_health):
+            console.print("\n  [dim]Imported files (@-imports) are eagerly loaded, so they count toward Quality.[/dim]")
     elif has_items and item_health is not None:
         from reporails_cli.formatters.text.item_scorecard import render_item_health
 

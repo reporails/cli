@@ -118,6 +118,45 @@ def _structural_local_findings(*finding_lists: list[LocalFinding], agent: str = 
     return counts, len(structural_ids)
 
 
+def _generic_scan_file_types(
+    target: Path,
+    instruction_files: list[Path],
+    agent: str,
+    generic_scanning: bool,
+) -> tuple[list[Path], dict[str, str]]:
+    """Classify generic-scanned (link / import-reached) files at the composition root.
+
+    Returns `(import_extra, file_type_by_path)`:
+      - `import_extra` — `@`-import-reached files (`file_type == "generic"`, eagerly auto-loaded)
+        to ADD to the mapped + server-scored set so they earn an Imported quality score.
+        Markdown-`referenced` files are deliberately excluded: the harness never loads them, so
+        folding them into the score would be a false signal — they stay lint-only.
+      - `file_type_by_path` — normalized path -> file_type for ALL generic-scanned files (generic +
+        referenced), so the display routes them to the Imported surface / Referenced panel.
+    No-op (`([], {})`) when generic scanning is off.
+    """
+    if not generic_scanning:
+        return [], {}
+    from reporails_cli.core.classify import classify_files, load_file_types
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    try:
+        file_types = load_file_types(agent, project_root=target)
+        classified = classify_files(target, list(instruction_files), file_types, generic_scanning=True)
+    except (OSError, ValueError) as exc:
+        logger.warning("generic-scan classification skipped: %s", exc)
+        return [], {}
+
+    ft_by_path = {normalize_finding_path(str(cf.path), target): cf.file_type for cf in classified}
+    seen = {normalize_finding_path(str(p), target) for p in instruction_files}
+    import_extra = [
+        cf.path
+        for cf in classified
+        if cf.file_type == "generic" and normalize_finding_path(str(cf.path), target) not in seen
+    ]
+    return import_extra, ft_by_path
+
+
 def _resolve_rule_token(token: str) -> str:
     """Map either a rule ID or a rule slug to a canonical ID."""
     if ":" in token:
@@ -312,6 +351,15 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
                 _handle_no_instruction_files(effective_agent, output_format, console)
                 return
 
+    # Generic scanning: fold `@`-import-reached files into the mapped + scored set (they are
+    # eagerly auto-loaded, so they earn an Imported quality score); markdown-`referenced` files
+    # stay lint-only. `file_type_by_path` carries both for the display layer.
+    import_extra, file_type_by_path = _generic_scan_file_types(
+        target, instruction_files, effective_agent, bool(config.generic_scanning)
+    )
+    if import_extra:
+        instruction_files = list(instruction_files) + import_extra
+
     # Targeted scope (specific path, capability spec, or multi-path token) narrows
     # the pipeline to a subset, so project-aggregate rules must be skipped — they
     # only hold against a whole-project scan.
@@ -448,6 +496,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             ascii,
             verbose,
             funnel_error,
+            file_type_by_path,
         )
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
@@ -628,6 +677,7 @@ def _dispatch_output(
     ascii_mode: bool,
     verbose: bool,
     funnel_error: Any,
+    file_type_by_path: dict[str, str] | None = None,
 ) -> None:
     """Route formatted output to JSON / GitHub / text."""
     from reporails_cli.formatters import json as json_formatter
@@ -652,6 +702,7 @@ def _dispatch_output(
         ruleset_map=ruleset_map,
         funnel_error=funnel_error,
         project_root=project_root,
+        file_type_by_path=file_type_by_path,
     )
 
 
