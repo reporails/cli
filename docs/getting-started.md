@@ -33,20 +33,19 @@ Reporails — Diagnostics
 
   ── Summary ────────────────────────────────────────────────────────
 
-  Score: 7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (1.3s)
+  Quality   7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  (1.3s)
+  Findings 16 errors · 4 warnings · 1 info
   Agent: Claude
   Level: L4 Delegated
 
   Scope:
     instructions: 4 directive / 7 prose (50%)
                   3 constraint
-
-  21 findings · 4 warnings · 1 info
 ```
 
 Three things to read first:
 
-- **Score** — closer to 10 is better. See the [Score Guide](score-guide.md) for what each band means.
+- **Quality** — closer to 10 is better. See the [Score Guide](score-guide.md) for what each band means.
 - **Findings list** — each row is a rule that fired. Run `ails explain CORE:C:0035` (or whichever rule ID) to see what the rule checks for and how to fix it.
 - **Scope summary** — counts of directives, constraints, and prose detected. If a number looks wrong (e.g., zero directives), your instructions are probably written as prose rather than as commands the agent can act on.
 
