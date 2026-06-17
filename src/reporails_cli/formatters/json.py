@@ -261,13 +261,20 @@ def _file_entry(findings: list[dict[str, Any]], regime: dict[str, Any] | None) -
     return entry
 
 
-def format_combined_result(result: Any, ruleset_map: Any = None, project_root: Path | None = None) -> dict[str, Any]:
+def format_combined_result(
+    result: Any,
+    ruleset_map: Any = None,
+    project_root: Path | None = None,
+    file_type_by_path: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Format CombinedResult as JSON dict.
 
     Args:
         result: CombinedResult from merger
         ruleset_map: Optional RulesetMap for accurate file counts
         project_root: Root to relativize regime keys against (defaults to cwd)
+        file_type_by_path: Generic-scan file types, so surface_health routes @-imports
+            to the Imported surface consistently with the text view
 
     Returns:
         Dict with findings, stats, compliance, tier, category info.
@@ -333,7 +340,9 @@ def format_combined_result(result: Any, ruleset_map: Any = None, project_root: P
         ]
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
-    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map, project_root=project_root or Path.cwd())
+    surfaces = compute_surface_scores(
+        result, ruleset_map=ruleset_map, project_root=project_root or Path.cwd(), file_type_by_path=file_type_by_path
+    )
     if surfaces:
         data["surface_health"] = [
             {

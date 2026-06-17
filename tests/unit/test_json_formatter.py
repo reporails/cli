@@ -186,6 +186,24 @@ class TestLeverageAndRegime:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
+    def test_surface_health_routes_generic_to_imported(self) -> None:
+        """JSON surface_health must route @-import (`generic`) files to the Imported surface
+        when file_type_by_path is supplied — matching the text view (was text-only)."""
+        from reporails_cli.core.platform.adapters.api_client import FileAnalysis
+        from reporails_cli.core.platform.runtime.merger import FindingItem
+
+        root = Path("/tmp/proj")
+        findings = (FindingItem(file="docs/imp.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
+        per_file = (FileAnalysis(file="/tmp/proj/docs/imp.md", compliance_band="HIGH", display_score=6.0),)
+        result = _result(findings=findings, per_file_analysis=per_file)
+        with_ft = format_combined_result(result, project_root=root, file_type_by_path={"docs/imp.md": "generic"})
+        assert "Imported" in {s["name"] for s in with_ft.get("surface_health", [])}
+        # Without the map the file routes by path, not to Imported.
+        without_ft = format_combined_result(result, project_root=root)
+        assert "Imported" not in {s["name"] for s in without_ft.get("surface_health", [])}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
     def test_no_regime_key_when_offline(self) -> None:
         from reporails_cli.core.platform.runtime.merger import FindingItem
 
