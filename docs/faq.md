@@ -2,14 +2,16 @@
 title: "FAQ"
 description: "Common questions"
 version: "0.5.11"
-last_updated: 2026-05-20
+last_updated: 2026-06-17
 ---
 
 # FAQ
 
 ## Why is my score lower than I expected?
 
-The score reflects severity-weighted findings, not finding *count*. One critical finding will pull the score down further than five low-severity ones. Run `ails check -v` to see all findings, then look at the top of the list — if there's a `critical` or `high` row, that's the score driver.
+The score is a single quality verdict, **not a tally of findings**. It measures how strongly your instructions are written — how specific, direct, and well-structured they are, and how little they compete with one another — so a file with vague, buried, or conflicting instructions scores low even when the finding *count* is small, and a long file with many cosmetic findings can still score well. The `Findings` line is a separate worklist; clearing low-severity findings will not move the number much.
+
+To see what's pulling it down, run `ails check -v` and read the per-surface bars (Main, Rules, Skills, …) — the lowest-scoring surface is where the weak instructions live. See [Score Guide](score-guide.md) for how the number is built.
 
 If you disagree with a specific finding, [open an issue](https://github.com/reporails/cli/issues) so we can review the rule, and / or disable the rule locally — see [How do I disable a rule I disagree with?](#how-do-i-disable-a-rule-i-disagree-with) below.
 
