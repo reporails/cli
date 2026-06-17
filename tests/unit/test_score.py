@@ -9,6 +9,7 @@ severity re-bucket cannot move any displayed number.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import pytest
 
@@ -181,6 +182,52 @@ class TestUnscoredFiles:
 
         cell = _item_cell(SurfaceHealth(name="cursorignore", score=None, file_count=1, finding_count=0), label_w=14)
         assert "not scored" in cell
+
+
+class TestLinkedFileSurfaces:
+    """Generic-scanned files (REQ-200): `@`-import (`generic`) → scored Imported surface;
+    markdown-link (`referenced`) → Referenced file-panel group, never a surface bar.
+    """
+
+    def _result(self, *files: tuple[str, float]) -> CombinedResult:
+        per_file = tuple(FileAnalysis(file=fp, compliance_band="HIGH", display_score=ds) for fp, ds in files)
+        findings = tuple(
+            FindingItem(file=fp, line=1, severity="warning", rule="CORE:C:0042", message="m") for fp, _ in files
+        )
+        return CombinedResult(
+            findings=findings, per_file_analysis=per_file, quality=QualityResult(compliance_band="HIGH")
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_import_routes_to_scored_imported_surface(self) -> None:
+        result = self._result(("CLAUDE.md", 8.0), ("docs/imp.md", 6.0))
+        surfaces = compute_surface_scores(result, file_type_by_path={"docs/imp.md": "generic"})
+        assert {s.name: s.score for s in surfaces}.get("Imported") == 6.0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_referenced_gets_no_surface_bar(self) -> None:
+        result = self._result(("CLAUDE.md", 8.0), ("docs/ref.md", 5.0))
+        surfaces = compute_surface_scores(result, file_type_by_path={"docs/ref.md": "referenced"})
+        assert "Referenced" not in {s.name for s in surfaces}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_no_generic_scanning_no_linked_surfaces(self) -> None:
+        result = self._result(("CLAUDE.md", 8.0))
+        surfaces = compute_surface_scores(result, file_type_by_path={})
+        assert {s.name for s in surfaces} == {"Main"}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_build_file_groups_labels_imported_and_referenced(self) -> None:
+        from reporails_cli.formatters.text.display import _build_file_groups
+
+        result = self._result(("docs/imp.md", 6.0), ("docs/ref.md", 5.0))
+        groups = _build_file_groups(result, {"docs/imp.md": "generic", "docs/ref.md": "referenced"}, Path.cwd())
+        assert "imported" in groups
+        assert "referenced" in groups
 
 
 class TestLeverageBasis:
