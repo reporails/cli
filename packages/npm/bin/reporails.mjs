@@ -80,7 +80,7 @@ function ensureUv() {
 function proxy(args) {
   ensureUv();
 
-  const child = spawn("uvx", ["--refresh", "--from", PYPI_PACKAGE, CLI_COMMAND, ...args], {
+  const child = spawn("uvx", ["--refresh-package", PYPI_PACKAGE, "--from", PYPI_PACKAGE, CLI_COMMAND, ...args], {
     stdio: "inherit",
   });
 
