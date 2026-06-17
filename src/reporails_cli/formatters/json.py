@@ -309,6 +309,8 @@ def format_combined_result(
     data: dict[str, Any] = {
         "offline": result.offline,
         "tier": result.tier,
+        "quality": float(result.quality.display_score) if result.quality is not None else None,
+        "level": result.level.value,
         "files": {
             fp: _file_entry(findings, regime_by_file.get(fp))
             for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))

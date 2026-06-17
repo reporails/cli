@@ -3,6 +3,11 @@
 
 Usage: echo '<json>' | python3 parse_result.py
 Outputs: _SCORE=X.X  _LEVEL=LN  _VIOLATIONS=N  (one per line, eval-safe)
+
+_SCORE is the analysis service's whole-project Quality verdict (the same number
+`ails check` prints), read verbatim from the `quality` key — never recomputed here.
+It is empty when no server score is available (offline run); the min-score gate
+treats an empty score as "skip".
 """
 from __future__ import annotations
 
@@ -15,26 +20,15 @@ def main() -> None:
     files = d.get("files", {})
     stats = d.get("stats", {})
 
-    n_findings = sum(f.get("count", 0) for f in files.values())
-    errors = stats.get("errors", 0)
-    warnings = stats.get("warnings", 0)
-    total = errors + warnings + stats.get("infos", 0)
+    quality = d.get("quality")  # float, or None when offline / no server score
+    level = d.get("level", "L0")
+    violations = stats.get("total_findings", sum(f.get("count", 0) for f in files.values()))
 
-    if total == 0:
-        score = 10.0
-    else:
-        base = 6.0
-        denom = max(total, 1)
-        ep = min(4.0, errors / denom * 30)
-        wp = min(2.0, warnings / denom * 2)
-        score = max(0.0, min(10.0, base - ep - wp))
+    score_out = "" if quality is None else f"{float(quality):.1f}"
 
-    score = round(score, 1)
-    level = "L0" if not files else "L1"
-
-    print(f"_SCORE={score}")
+    print(f"_SCORE={score_out}")
     print(f"_LEVEL={level}")
-    print(f"_VIOLATIONS={n_findings}")
+    print(f"_VIOLATIONS={violations}")
 
 
 if __name__ == "__main__":
