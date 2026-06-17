@@ -111,7 +111,9 @@ def _run_pipeline(target: Path) -> dict[str, Any]:
     result = _merge_with_server(
         m_findings, content_findings + client_findings, ruleset_map, target, agent=effective_agent
     )
-    return json_formatter.format_combined_result(result)
+    # Key regime + surface health against the validated path, not the server cwd — for MCP
+    # `target` is an arbitrary path, so without this regime drops out and surface scores misroute.
+    return json_formatter.format_combined_result(result, ruleset_map=ruleset_map, project_root=target)
 
 
 def validate_tool(path: str = ".") -> dict[str, Any]:
