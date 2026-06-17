@@ -529,14 +529,17 @@ def print_scorecard(
     label = LEVEL_LABELS.get(level, "Unknown")
     console.print(f"  Level: {level.value} [bold]{label}[/bold]")
 
-    multi_surface = surface_health is not None and len(surface_health) > 1
-    has_items = item_health is not None and len(item_health) > 1
+    # Offline runs carry no server scores, so suppress the per-surface / per-item bars
+    # entirely — rendering every surface as "not scored" reads as broken. The "Quality
+    # n/a (server diagnostics unavailable)" headline already states the offline state.
+    multi_surface = has_quality and surface_health is not None and len(surface_health) > 1
+    has_items = has_quality and item_health is not None and len(item_health) > 1
     if scope is not None:
         _render_scope(scope, has_surface_health=multi_surface or has_items)
 
-    if surface_health is not None and len(surface_health) > 1:
+    if multi_surface and surface_health is not None:
         _render_surface_health(surface_health)
-    elif item_health is not None and len(item_health) > 1:
+    elif has_items and item_health is not None:
         from reporails_cli.formatters.text.item_scorecard import render_item_health
 
         render_item_health(item_health)
