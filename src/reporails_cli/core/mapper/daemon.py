@@ -220,7 +220,7 @@ def _init_daemon_process() -> None:
     _torch_blocker.install()
     # Drop any wall-clock backstop inherited from the forking `ails check` parent:
     # fork() clears the interval timer but the SIGALRM disposition carries over.
-    if hasattr(signal, "SIGALRM"):
+    if sys.platform != "win32":  # no SIGALRM/setitimer on Windows
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, signal.SIG_DFL)
     _pid_path().write_text(str(os.getpid()))

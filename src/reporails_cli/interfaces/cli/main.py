@@ -186,7 +186,7 @@ def _arm_check_timeout() -> None:
     """Backstop a runaway check with a SIGALRM wall-clock kill (POSIX-only; no-op on Windows)."""
     import signal
 
-    if not hasattr(signal, "SIGALRM"):  # Windows has no SIGALRM/setitimer
+    if sys.platform == "win32":  # no SIGALRM/setitimer on Windows
         return
     ceiling = _check_timeout_ceiling()
     if ceiling <= 0:
