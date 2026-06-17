@@ -2,7 +2,7 @@
 title: "Rules CLI"
 description: "Browse the framework rule registry and assemble preflight rule sets for authoring"
 version: "0.5.11"
-last_updated: 2026-05-19
+last_updated: 2026-06-17
 ---
 
 # Rules CLI
@@ -64,6 +64,27 @@ Enumerate the capability vocabulary an agent declares (`skills`, `agents`, `main
 ails rules capabilities                      # auto-detect agent from cwd
 ails rules capabilities --agent=claude       # explicit
 ails rules capabilities --agent=claude -f json
+```
+
+For each capability the text output shows the resolved path glob it scans and the number of matching targets in the current project, so you can see at a glance what `ails check <capability>` would actually pick up:
+
+```
+Capabilities for claude (5):
+  skills  .claude/skills/**/SKILL.md  10 found
+  agents  .claude/agents/**/*.md      3 found
+  ...
+```
+
+The JSON form keeps the flat `capabilities` name list and adds a `resolution` array alongside it — one entry per capability with `name`, `resolves_to` (the path glob), and `found` (the count of matching targets):
+
+```json
+{
+  "agent": "claude",
+  "capabilities": ["agents", "main", "rules", "skills"],
+  "resolution": [
+    { "name": "skills", "resolves_to": ".claude/skills/**/SKILL.md", "found": 10 }
+  ]
+}
 ```
 
 ### `ails explain <id-or-slug>`

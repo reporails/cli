@@ -2,7 +2,7 @@
 title: "Getting Started"
 description: "Install, first run, what the output means"
 version: "0.5.11"
-last_updated: 2026-05-20
+last_updated: 2026-06-17
 ---
 
 # Getting Started
@@ -46,7 +46,7 @@ Reporails — Diagnostics
 Three things to read first:
 
 - **Quality** — closer to 10 is better. See the [Score Guide](score-guide.md) for what each band means.
-- **Findings list** — each row is a rule that fired. Run `ails explain CORE:C:0035` (or whichever rule ID) to see what the rule checks for and how to fix it.
+- **Findings list** — each row is a rule that fired. Run `ails explain CORE:C:0035` (or whichever rule ID) to see what the rule checks for and how to fix it. In supporting terminals the rule IDs in the output are clickable links to their docs page.
 - **Scope summary** — counts of directives, constraints, and prose detected. If a number looks wrong (e.g., zero directives), your instructions are probably written as prose rather than as commands the agent can act on.
 
 ## Install permanently
@@ -102,6 +102,7 @@ ails check -f github        # GitHub Actions inline annotations
 ails check --strict         # exit code 1 if any finding fires
 ails check --agent claude   # only run rules scoped to one agent
 ails check --heal           # apply deterministic auto-fixes after validation
+ails check --fix            # alias for --heal (eslint / ruff convention)
 ails check --heal --dry-run # preview fixes without writing
 ```
 
