@@ -143,3 +143,30 @@ class TestActionRender:
         findings = [_finding("CORE:S:0024", "error", "Unresolved imports: main", fix="Add the import.")]
         out = _render(monkeypatch, findings, None)
         assert "→ Add the import." in out
+
+
+class TestClientCheckRuleIds:
+    """Client-check labels render their canonical rule ID, consistent with server findings."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_display_rule_id_maps_client_labels(self) -> None:
+        from reporails_cli.formatters.text.display_constants import display_rule_id
+
+        assert display_rule_id("format") == "CORE:E:0003"
+        assert display_rule_id("bold") == "CORE:E:0003"
+        assert display_rule_id("ordering") == "CORE:D:0003"
+        assert display_rule_id("scope") == "CORE:C:0048"
+        assert display_rule_id("heading_instruction") == "CORE:S:0039"
+        assert display_rule_id("orphan") == "CORE:C:0053"
+        # Server IDs and unmapped client diagnostics pass through unchanged.
+        assert display_rule_id("CORE:C:0042") == "CORE:C:0042"
+        assert display_rule_id("ambiguous_charge") == "ambiguous_charge"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_triaged_render_shows_canonical_id_not_label(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        regime = classify_regime({"within_capacity": True, "is_named": True, "weak_coupling": False, "confident": True})
+        findings = [_finding("ordering", "warning", "Prohibition before directive")]
+        out = _render(monkeypatch, findings, regime)
+        assert "CORE:D:0003" in out
