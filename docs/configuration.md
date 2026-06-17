@@ -2,7 +2,7 @@
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
 version: "0.5.11"
-last_updated: 2026-06-06
+last_updated: 2026-06-17
 ---
 
 # Configuration
@@ -207,7 +207,12 @@ By default, `ails check` only validates files that match one of the agent's decl
 generic_scanning: true
 ```
 
-When on, the discovery walker follows inline and reference Markdown links out of classified files (bounded depth, cycle-safe, tree-bound), and any reached `.md` file inside your repo gets a `generic` classification. Structural and formatting rules (charge ordering, direction imbalance, formatting hygiene) still fire on these files; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
+When on, the discovery walker follows links out of classified files (bounded depth, cycle-safe, tree-bound), and distinguishes two kinds of reached file by *how* they were reached:
+
+- **`@`-import-reached** files (`file_type: generic`) — pulled in by an `@`-import directive. The agent eagerly auto-loads these, so Reporails does too: they are scored and shown under an `Imported` surface that counts toward the Quality score.
+- **Markdown-link-reached** files (`[text](path)`, `file_type: referenced`) — discoverable but not loaded. The agent only reads them if it chooses to follow the link, so Reporails surfaces them in a labeled `Referenced` findings panel only: no score bar, and not counted in the headline.
+
+Structural and formatting rules (charge ordering, direction imbalance, formatting hygiene) still fire on both kinds; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
 
 ## Severity overrides
 
@@ -280,10 +285,12 @@ JSON output is one object per run, grouping findings under `files` keyed by path
           "severity": "warning",
           "rule": "CORE:C:0034",
           "category": "coherence",
+          "leverage": "conditional",
           "message": "Missing tech stack declaration"
         }
       ],
-      "count": 5
+      "count": 5,
+      "regime": { "named": "...", "within_capacity": true, "confidence": 0.87 }
     }
   },
   "stats": { "total_findings": 21, "errors": 0, "warnings": 16, "infos": 5, "cross_file_conflicts": 0, "cross_file_repetitions": 0 }
@@ -300,6 +307,11 @@ What differs by tier:
 | `pro{}` (summary of hints)                         | omitted   | included when present               |
 
 Always present, regardless of tier: `offline`, `files{}`, `stats`, `tier`, `top_rules`. `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map.
+
+Two additive fields enrich the output when the analysis service has data for the run. Both are **additive and backward-compatible** — existing JSON consumers and CI baselines that ignore them keep working unchanged:
+
+- **Per-file `regime`** — a `files.<path>.regime` object with `named`, `within_capacity`, and `confidence`. It is a structural read of the file; it is absent on offline runs (no analysis service).
+- **Per-finding `leverage`** — a `files.<path>.findings[].leverage` tier of `gate_mover`, `conditional`, or `cosmetic`, indicating how much fixing the finding is likely to move the score. The raw `severity` field is unchanged. See [Score Guide → How findings are triaged by leverage](score-guide.md#how-findings-are-triaged-by-leverage).
 
 GitHub annotations format emits one workflow command per finding so warnings appear inline on the diff in pull requests:
 

@@ -48,6 +48,8 @@ See [reporails.com/privacy-policy](https://reporails.com/privacy-policy) for the
 
 The local rules (mechanical and structural) run fully offline. The semantic rules (reinforcement patterns, content-quality checks, cross-file analysis) require a request to the diagnostic backend. There is no offline-only mode for those, the analysis and diagnostics runs server-side.
 
+When the analysis backend is unreachable, the run degrades gracefully: the headline reads `Quality n/a` and the per-surface and per-item score bars are suppressed (there's no single quality score without the analysis service). You still get the findings from the local rules, the scope summary, and the local (mechanical and structural) rule results — just no score.
+
 ## Is my instruction file ever stored on the diagnostic backend?
 
 No. Instruction file contents never leave your machine. The CLI parses your files locally and computes embeddings on-device; the diagnostic backend receives only analysis metadata (embeddings, structural counts, cluster IDs, file paths) — never the prose, examples, or reasoning text in your instruction files.
@@ -80,7 +82,7 @@ When you run `ails check --agent claude`, only CORE plus Claude-scoped rules fir
 
 ## How do I auto-fix findings?
 
-Run `ails check --heal` — it applies the deterministic fixes (missing sections, formatting) after validation. Preview what would change first with `ails check --heal --dry-run`.
+Run `ails check --heal` — it applies the deterministic fixes (missing sections, formatting) after validation. Preview what would change first with `ails check --heal --dry-run`. `--fix` is an alias for `--heal` (matching the eslint / ruff convention), so `ails check --fix` works the same way.
 
 ## What's the right way to file a bug?
 

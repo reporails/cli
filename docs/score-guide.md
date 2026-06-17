@@ -2,7 +2,7 @@
 title: "Score Guide"
 description: "How the score is built and what it tells you"
 version: "0.5.11"
-last_updated: 2026-05-20
+last_updated: 2026-06-17
 ---
 
 # Score Guide
@@ -56,7 +56,21 @@ Findings are sorted by severity, then by impact. The top entries are the ones to
 - **Message** — one-line description of what's wrong
 - **Fix** — suggested change or pattern to apply
 
+In supporting terminals the rule IDs in the text output are clickable links to their docs page.
+
 Anonymous runs show summary findings and cross-file conflict counts — enough to see whether your instructions are working. Sign in with `ails auth login` to unlock full per-finding fix text and the exact location of each cross-file conflict. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
+
+## How findings are triaged by leverage
+
+The score is the analysis service's single quality verdict; the `Findings` line beneath it is a separate worklist. To help you spend effort where it counts, findings are sorted by **leverage** — how much fixing one is likely to move the score — into three tiers:
+
+- **gate-mover** — fixing it is likely to move the score the most. These are the entries to clear first.
+- **conditional** — worth fixing, but the score impact depends on the rest of the file.
+- **cosmetic** — stylistic or local; clearing it rarely moves the number.
+
+Low-leverage findings don't clutter the default view: they collapse into a single `+N lower-priority (won't move your score yet)` line. Run `ails check -v` to expand them. Each shown finding may also carry an indented `→` action line — the concrete next step the rule recommends.
+
+Leverage is computed **per file**, so the same rule can rank differently in different files — a finding that's a gate-mover in a weak file may be cosmetic in a strong one. The leverage triage is a worklist aid, not a re-weighting of the score: the score is a single quality verdict, not a severity-weighted tally of findings.
 
 ## Improving the score
 
