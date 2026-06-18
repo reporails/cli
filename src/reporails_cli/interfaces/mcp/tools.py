@@ -32,14 +32,20 @@ def _serialize_match(match: FileMatch | None) -> dict[str, object]:
     return result
 
 
-def _discover_files(target: Path) -> tuple[list[Any], str, list[Any]] | None:
-    """Detect agents and discover instruction files. Returns (detected, agent, files) or None."""
+def _discover_files(target: Path, single_file: Path | None = None) -> tuple[list[Any], str, list[Any]] | None:
+    """Detect agents and discover instruction files. Returns (detected, agent, files) or None.
+
+    `target` is the discovery root (a directory). When `single_file` is given the
+    validated set is narrowed to that one file while agents resolve against `target`.
+    """
     from reporails_cli.core.discovery.agents import detect_agents, get_all_instruction_files, resolve_agent
     from reporails_cli.core.platform.config.config import get_project_config
 
     config = get_project_config(target)
     detected = detect_agents(target)
     effective_agent, _, _ = resolve_agent(config.default_agent, detected)
+    if single_file is not None:
+        return detected, effective_agent, [single_file.resolve()]
     instruction_files = get_all_instruction_files(target, agents=detected)
     if not instruction_files:
         return None
@@ -90,30 +96,51 @@ def _merge_with_server(
     )
 
 
+def _resolve_scan_target(target: Path) -> tuple[Path, Path | None]:
+    """Map a target to `(scan_root, single_file)`. A file roots at its project dir."""
+    from reporails_cli.core.discovery.agent_discovery import resolve_project_root
+
+    single_file = target if target.is_file() else None
+    return resolve_project_root(target), single_file
+
+
 def _run_pipeline(target: Path) -> dict[str, Any]:
-    """Run the full check pipeline and return CombinedResult as dict."""
+    """Run the full check pipeline and return CombinedResult as dict.
+
+    A file `target` narrows discovery to its project root and the validated set
+    to that single file, mirroring the CLI single-path mode.
+    """
+    scan_root, single_file = _resolve_scan_target(target)
+    discovery = _discover_files(scan_root, single_file=single_file)
+    if discovery is None:
+        return {"error": "No instruction files found"}
+    _detected, effective_agent, instruction_files = discovery
+    return _lint_discovered(scan_root, effective_agent, instruction_files)
+
+
+def _lint_discovered(scan_root: Path, effective_agent: str, instruction_files: list[Any]) -> dict[str, Any]:
+    """Run M-probes + content/client checks over discovered files, formatted as a dict.
+
+    Regime + surface health key against `scan_root` (the validated path), not the
+    server cwd — otherwise regime drops out and surface scores misroute for MCP.
+    """
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
     from reporails_cli.formatters import json as json_formatter
 
-    discovery = _discover_files(target)
-    if discovery is None:
-        return {"error": "No instruction files found"}
-    _detected, effective_agent, instruction_files = discovery
-
-    ruleset_map = _build_map(target, instruction_files)
-    m_findings = run_m_probes(target, instruction_files, agent=effective_agent)
+    ruleset_map = _build_map(scan_root, instruction_files)
+    m_findings = run_m_probes(scan_root, instruction_files, agent=effective_agent)
     content_findings = (
-        run_content_quality_checks(ruleset_map, target, instruction_files, agent=effective_agent) if ruleset_map else []
+        run_content_quality_checks(ruleset_map, scan_root, instruction_files, agent=effective_agent)
+        if ruleset_map
+        else []
     )
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
 
     result = _merge_with_server(
-        m_findings, content_findings + client_findings, ruleset_map, target, agent=effective_agent
+        m_findings, content_findings + client_findings, ruleset_map, scan_root, agent=effective_agent
     )
-    # Key regime + surface health against the validated path, not the server cwd — for MCP
-    # `target` is an arbitrary path, so without this regime drops out and surface scores misroute.
-    return json_formatter.format_combined_result(result, ruleset_map=ruleset_map, project_root=target)
+    return json_formatter.format_combined_result(result, ruleset_map=ruleset_map, project_root=scan_root)
 
 
 def validate_tool(path: str = ".") -> dict[str, Any]:
@@ -134,9 +161,8 @@ def validate_tool(path: str = ".") -> dict[str, Any]:
     target = Path(path).resolve()
     if not target.exists():
         return {"error": f"Path not found: {target}"}
-    # File paths are supported per the 0.5.11 bug-1 fix (commit cc58ebd): when
-    # arg1 is an existing file, the pipeline narrows discovery to the file's
-    # project root and the display filter to the single file.
+    # When `path` is an existing file, the pipeline narrows discovery to the
+    # file's project root and the validated set to that single file.
     try:
         return _run_pipeline(target)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
