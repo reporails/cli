@@ -60,7 +60,7 @@ Signed-in output folds cross-file findings back into the per-file list with the 
   │   ⚠ L42    Repeated test-runner directive (also in .claude/rules/python.md:8)
   │            Move the shared directive to .claude/rules/ and remove the root duplicate.
   │   ⚠       Missing tech stack declaration — list languages, frameworks, and runtimes  CORE:C:0034
-  │            Add: "Python 3.12, FastAPI, pytest" near the top of CLAUDE.md.
+  │            Add: "Python 3.12, Flask, pytest" near the top of CLAUDE.md.
   │   ⚠       Missing MCP documentation — describe MCP server configuration if applicable  CORE:C:0027
   │            Add a "## MCP servers" section listing each server, transport, and trigger.
   │     4 brief · 1 orphan

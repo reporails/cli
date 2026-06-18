@@ -50,7 +50,7 @@ A common pattern: a strong Main score with a weak Rules score means you've writt
 
 Findings are sorted by severity, then by impact. The top entries are the ones to fix first. Each finding shows:
 
-- **Rule ID** like `CORE:S:0001` — pass to `ails explain` for the rule body
+- **Rule ID** like `CORE:S:0002` — pass to `ails explain` for the rule body
 - **Severity** — `critical`, `high`, `medium`, `low`, `info`
 - **Location** — the file where the rule fired; line-level findings also show `L<n>` (e.g. `⚠ L9`), file-level findings show no line marker because the rule applies to the whole file
 - **Message** — one-line description of what's wrong
