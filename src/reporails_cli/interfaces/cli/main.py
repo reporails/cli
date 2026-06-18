@@ -26,6 +26,17 @@ import typer  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+# Force UTF-8 on stdout/stderr so the box-drawing and arrow glyphs in the rich
+# scorecard and the `-f md` output do not crash on consoles whose default
+# encoding (e.g. Windows cp1252) cannot encode them. The CLI ships to Windows
+# via npx; cp1252 raises UnicodeEncodeError on `→`/`—`/box-drawing characters.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except (ValueError, OSError) as exc:  # io.UnsupportedOperation on a detached/replaced stream
+            logger.debug("Could not set UTF-8 on output stream: %s", exc)
+
 from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules  # noqa: E402
 from reporails_cli.core.platform.dto.models import FileMatch, LocalFinding  # noqa: E402
 from reporails_cli.formatters import text as text_formatter  # noqa: E402
