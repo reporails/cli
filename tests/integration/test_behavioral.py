@@ -235,7 +235,10 @@ class TestCheckTextOutput:
     def test_score_displayed(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "text"])
         assert result.exit_code == 0
-        assert "SCORE:" in result.output or "/ 10" in result.output or "Score:" in result.output
+        # The summary always leads with the Quality headline: a score value when a
+        # server analysis is available, "Quality n/a" offline. The score-value render
+        # is covered online by the e2e suite.
+        assert "Quality" in result.output
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint
