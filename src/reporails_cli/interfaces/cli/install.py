@@ -49,11 +49,11 @@ def _install_to_path() -> bool:
         return False
 
 
-@app.command(rich_help_panel="Commands")
+@app.command(rich_help_panel="Maintenance")
 def install(
     path: str = typer.Argument(".", help="Project root"),
 ) -> None:
-    """Install the reporails MCP server and ails command."""
+    """Install the MCP server and ails command."""
     from reporails_cli.core.install.mcp_install import detect_mcp_targets, write_mcp_config
 
     target = Path(path).resolve()

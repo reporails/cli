@@ -12,6 +12,9 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from reporails_cli.core.discovery.walk import walk_markdown
+from reporails_cli.core.platform.utils.utils import matches_any_glob as _matches_any_glob
+
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.results import ProjectConfig
 
@@ -20,6 +23,12 @@ logger = logging.getLogger(__name__)
 # Directories that never contain instruction files — skipped unconditionally.
 # Project-specific exclusions come from .ails/config.yml exclude_dirs.
 _ALWAYS_SKIP = frozenset({".git", "__pycache__", "node_modules"})
+
+# Capabilities whose user-scope (home / absolute) patterns are NOT auto-pulled
+# into a repo-scoped check — they enumerate cross-project surfaces reachable
+# only via an explicit capability target (e.g. `ails check subagent_memory`).
+# Filtered via `_is_external_pattern` (defined below).
+_USER_SCOPE_OPT_IN_CAPABILITIES = frozenset({"subagent_memory"})
 
 
 def ci_glob(target: Path, pattern: str) -> list[Path]:
@@ -32,10 +41,11 @@ def ci_glob(target: Path, pattern: str) -> list[Path]:
     parts = Path(pattern).parts
     if len(parts) == 1 and "*" not in pattern:
         try:
-            return [p for p in target.iterdir() if p.name == pattern and not p.is_dir()]
+            # is_file() (not `not is_dir()`) so dangling symlinks are excluded.
+            return [p for p in target.iterdir() if p.name == pattern and p.is_file()]
         except OSError:
             return []
-    return list(target.glob(pattern))
+    return [p for p in target.glob(pattern) if p.is_file()]
 
 
 def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str:
@@ -351,14 +361,12 @@ def _glob_directory_entries(
         for d in _glob.glob(expanded_str):
             base = Path(d)
             if base.is_dir():
-                found.extend(p for p in base.rglob("*.md") if p.is_file())
+                found.extend(walk_markdown(base))
         return
 
     # In-tree pattern: resolve glob relative to target, enumerate .md inside each dir
     for base in _resolve_in_tree_dirs(dir_pattern, target, exclude_dirs):
-        found.extend(
-            entry for entry in base.rglob("*.md") if entry.is_file() and not is_excluded(entry, target, exclude_dirs)
-        )
+        found.extend(entry for entry in walk_markdown(base) if not is_excluded(entry, target, exclude_dirs))
 
 
 def _resolve_in_tree_dirs(
@@ -454,27 +462,6 @@ def _surface_exclude_patterns(agent_id: str, file_type_name: str, project_config
     return [str(p) for p in exclude]
 
 
-def _matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
-    """Check whether path matches any of the glob patterns relative to target."""
-    if not patterns:
-        return False
-    try:
-        rel = path.relative_to(target).as_posix()
-    except ValueError:
-        rel = str(path)
-    for pattern in patterns:
-        # PurePath.match supports glob-style; **/ wildcards may need normalization
-        try:
-            if Path(rel).match(pattern):
-                return True
-            # Also try absolute match for patterns that include the full prefix
-            if path.match(pattern):
-                return True
-        except ValueError:
-            continue
-    return False
-
-
 def discover_from_config(
     target: Path,
     agent_id: str,
@@ -516,6 +503,11 @@ def discover_from_config(
             continue
         patterns = list(_extract_patterns(spec))
         properties = _extract_properties(spec)
+
+        # Drop cross-project user-scope patterns from repo-scoped discovery —
+        # reachable only via an explicit capability target.
+        if ft_name in _USER_SCOPE_OPT_IN_CAPABILITIES:
+            patterns = [p for p in patterns if not _is_external_pattern(p)]
 
         bucket = categorize_file_type(patterns, properties)
         if bucket == "skip":

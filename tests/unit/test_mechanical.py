@@ -21,8 +21,10 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (
     check_import_targets_exist,
     count_at_least,
     count_at_most,
+    extract_imports,
     file_absent,
     filename_matches_pattern,
+    skill_entrypoint_present,
 )
 from reporails_cli.core.lint.mechanical.runner import (
     resolve_location,
@@ -306,6 +308,154 @@ class TestRunMechanicalChecks:
         assert violations[0].location == ".claude/rules/big.md:0"
 
 
+class TestSkillEntrypointPresent:
+    """skill_entrypoint_present flags skill directories lacking a SKILL.md."""
+
+    def _make_skill(self, root: Path, name: str, entry: str = "SKILL.md") -> Path:
+        d = root / ".claude" / "skills" / name
+        d.mkdir(parents=True)
+        (d / entry).write_text("# skill\n")
+        return d / entry
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_all_dirs_have_entrypoint_passes(self, tmp_path: Path) -> None:
+        self._make_skill(tmp_path, "alpha")
+        self._make_skill(tmp_path, "beta")
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", ".claude/skills/beta/SKILL.md", file_type="skill")
+        result = skill_entrypoint_present(tmp_path, {}, classified)
+        assert result.passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_missing_entrypoint_in_sibling_dir_fails(self, tmp_path: Path) -> None:
+        self._make_skill(tmp_path, "alpha")  # real skill anchors the skills-root
+        broken = tmp_path / ".claude" / "skills" / "broken"
+        broken.mkdir(parents=True)
+        (broken / "notes.md").write_text("no entry point here\n")
+        # Only the real skill is discovered/classified; the broken sibling is found by enumeration.
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
+        result = skill_entrypoint_present(tmp_path, {}, classified)
+        assert not result.passed
+        assert ".claude/skills/broken" in result.message
+        assert result.location == ".claude/skills/broken:0"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_no_skill_files_passes_vacuously(self, tmp_path: Path) -> None:
+        result = skill_entrypoint_present(tmp_path, {}, [])
+        assert result.passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_skipped_when_scoped(self, tmp_path: Path) -> None:
+        """As a project-aggregate check it is skipped under a scoped run."""
+        self._make_skill(tmp_path, "alpha")
+        broken = tmp_path / ".claude" / "skills" / "broken"
+        broken.mkdir(parents=True)
+        (broken / "notes.md").write_text("x\n")
+        rule = Rule(
+            id="CORE:S:0015",
+            title="Skill Entry Point Present",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            severity=Severity.MEDIUM,
+            match=FileMatch(type="skill"),
+            checks=[Check(id="CORE.S.0015.entrypoint", type="mechanical", check="skill_entrypoint_present")],
+        )
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
+        rules = {"CORE:S:0015": rule}
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+
+
+class TestScopedProjectChecks:
+    """Project-aggregate checks are skipped under a targeted (scoped) run."""
+
+    def _rule(self, rule_id: str, check_name: str, args: dict) -> Rule:
+        return Rule(
+            id=rule_id,
+            title=f"Rule {rule_id}",
+            category=Category.STRUCTURE,
+            type=RuleType.MECHANICAL,
+            severity=Severity.CRITICAL,
+            match=FileMatch(),
+            checks=[Check(id=f"{rule_id}:check:0001", type="mechanical", check=check_name, args=args)],
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_file_count_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2})}
+        classified = _cf(tmp_path, "CLAUDE.md")  # single file → count 1 < min 2
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("this content is well over five bytes")
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5})}
+        classified = _cf(tmp_path, "CLAUDE.md")
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_excludes_recalled_memory_entries(self, tmp_path: Path) -> None:
+        """Recalled memory siblings (on_demand) don't count toward total instruction size."""
+        (tmp_path / "MEMORY.md").write_text("idx")  # 3 bytes — eager index, counted
+        (tmp_path / "entry.md").write_text("x" * 100)  # recalled sibling, excluded
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 50})}
+        classified = [
+            ClassifiedFile(path=tmp_path / "MEMORY.md", file_type="memory", properties={"loading": "session_start"}),
+            ClassifiedFile(path=tmp_path / "entry.md", file_type="memory", properties={"loading": "on_demand"}),
+        ]
+        # The 100-byte sibling is excluded → only the 3-byte index counts → under max.
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_counts_memory_index(self, tmp_path: Path) -> None:
+        """The eager MEMORY.md index is still counted — only recalled siblings are dropped."""
+        (tmp_path / "MEMORY.md").write_text("x" * 100)  # eager index, over max
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5})}
+        classified = [
+            ClassifiedFile(path=tmp_path / "MEMORY.md", file_type="memory", properties={"loading": "session_start"}),
+        ]
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_counts_skill_metadata_not_body(self, tmp_path: Path) -> None:
+        """on_invocation surfaces (skills/agents) contribute only name+description, not the body."""
+        skill = tmp_path / "SKILL.md"
+        skill.write_text("---\nname: x\ndescription: short\n---\n" + ("BODY " * 1000))
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
+        classified = [ClassifiedFile(path=skill, file_type="skill", properties={"loading": "on_invocation"})]
+        # name(1) + description(5) = 6 bytes counted; the large body is ignored → under max.
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_aggregate_byte_size_excludes_on_demand_surfaces(self, tmp_path: Path) -> None:
+        """on_demand surfaces (e.g. .claude/rules) don't count toward the one-round footprint."""
+        rule_file = tmp_path / "rule.md"
+        rule_file.write_text("x" * 500)
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
+        classified = [ClassifiedFile(path=rule_file, file_type="scoped_rule", properties={"loading": "on_demand"})]
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_non_aggregate_check_runs_when_scoped(self, tmp_path: Path) -> None:
+        """A scoped run still evaluates per-file checks (only aggregates are skipped)."""
+        rules = {"CORE:S:0001": self._rule("CORE:S:0001", "file_exists", {})}
+        classified = _cf(tmp_path, "CLAUDE.md")  # file does not exist on disk
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 1
+
+
 class TestSafeFloat:
     """Tests for _safe_float type coercion helper."""
 
@@ -516,6 +666,29 @@ class TestCountAtLeast:
         assert result.passed
 
 
+class TestExtractImports:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_inline_code_decorator_not_an_import(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("Use `@pytest.mark.parametrize` when cases share the same shape.\n")
+        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        assert (result.annotations or {}).get("discovered_imports", []) == []
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_real_path_import_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("See @docs/guide.md and @README for setup.\n")
+        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        assert result.annotations["discovered_imports"] == ["docs/guide.md", "README"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_email_not_an_import(self, tmp_path: Path) -> None:
+        (tmp_path / "rules.md").write_text("Contact me@example.com for access.\n")
+        result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
+        assert (result.annotations or {}).get("discovered_imports", []) == []
+
+
 class TestCheckImportTargetsExist:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -688,17 +861,37 @@ class TestMatchTypeScoping:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_explicit_path_overrides_targets(self, tmp_path: Path) -> None:
-        """Explicit args.path takes priority over classified files."""
-        (tmp_path / "CLAUDE.md").write_text("# Main")
+    def test_explicit_path_intersects_classified(self, tmp_path: Path) -> None:
+        """Explicit args.path narrows within classified files, never widens past them.
+
+        Pre-0.5.11 the path arg overrode classified, which let cross-file
+        findings (e.g. broken links in `CLAUDE.md`) leak into targeted
+        `ails check agent:<name>` reports. Intersection is the corrected
+        contract: the path glob is a filter applied within the rule-matched
+        / capability-narrowed set, not a way around it.
+        """
+        claude = tmp_path / "CLAUDE.md"
+        claude.write_text("# Main")
         (tmp_path / "docs").mkdir()
-        (tmp_path / "docs" / "notes.md").write_text("# Notes")
+        notes = tmp_path / "docs" / "notes.md"
+        notes.write_text("# Notes")
+
+        # Only CLAUDE.md is in scope (classified) → docs/notes.md must NOT
+        # surface even though the path glob matches it.
         classified = _cf(tmp_path, "CLAUDE.md")
-        # path points to docs/ — path arg wins over classified files
         args = {"pattern": r"^CLAUDE\.md$", "path": "docs/**/*.md"}
         result = filename_matches_pattern(tmp_path, args, classified)
-        assert not result.passed
-        assert "notes.md" in result.message
+        assert result.passed
+
+        # When notes.md is also classified, the path glob narrows to it.
+        classified_both = _cf_mixed(
+            tmp_path,
+            ("CLAUDE.md", "main"),
+            ("docs/notes.md", "generic"),
+        )
+        result_both = filename_matches_pattern(tmp_path, args, classified_both)
+        assert not result_both.passed
+        assert "notes.md" in result_both.message
 
 
 class TestScopeDirFromGlob:

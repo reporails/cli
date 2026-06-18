@@ -35,12 +35,29 @@ class MechanicalFix:
 # ──────────────────────────────────────────────────────────────────
 
 _BACKTICK_RE = re.compile(r"`[^`]+`")
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
 
 
 def _is_inside_backticks(text: str, token: str) -> bool:
     """Check if every occurrence of token in text is inside backtick spans."""
     stripped = _BACKTICK_RE.sub("", text)
     return token not in stripped
+
+
+def _wrap_token_outside_links(text: str, token: str) -> str:
+    """Backtick-wrap the first occurrence of token outside markdown link labels/targets."""
+    spans = [m.span() for m in _MD_LINK_RE.finditer(text)]
+    pattern = re.compile(r"(?<!`)(?<![`\w])" + re.escape(token) + r"(?![`\w])(?!`)")
+    for m in pattern.finditer(text):
+        if all(m.end() <= s or m.start() >= e for s, e in spans):
+            return text[: m.start()] + f"`{token}`" + text[m.end() :]
+    # Fallback: first plain occurrence outside link spans
+    pos = text.find(token)
+    while pos != -1:
+        if all(pos + len(token) <= s or pos >= e for s, e in spans):
+            return text[:pos] + f"`{token}`" + text[pos + len(token) :]
+        pos = text.find(token, pos + 1)
+    return text
 
 
 def fix_unformatted_code(atoms: list[Atom], lines: list[str]) -> list[MechanicalFix]:
@@ -57,14 +74,7 @@ def fix_unformatted_code(atoms: list[Atom], lines: list[str]) -> list[Mechanical
         for token in atom.unformatted_code:
             if _is_inside_backticks(modified, token):
                 continue
-            # Replace the first non-backticked occurrence
-            # Use word boundary to avoid partial matches
-            pattern = re.compile(r"(?<!`)(?<![`\w])" + re.escape(token) + r"(?![`\w])(?!`)")
-            replacement = f"`{token}`"
-            modified, count = pattern.subn(replacement, modified, count=1)
-            if count == 0:
-                # Fallback: simple replacement for tokens at word boundaries
-                modified = modified.replace(token, f"`{token}`", 1)
+            modified = _wrap_token_outside_links(modified, token)
         if modified != original:
             lines[idx] = modified
             fixes.append(

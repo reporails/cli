@@ -15,6 +15,7 @@ from typing import Any
 
 from rich.console import Console
 
+from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.scorecard import SurfaceHealth, _score_bar
 
 console = Console()
@@ -28,10 +29,9 @@ def compute_item_scores(
     """Per-file health scores — name + bar per scanned file.
 
     Used by capability-listing mode (`ails check <capability>`) so the
-    operator sees which item is the worst at a glance. Score uses the
-    same formula as `compute_surface_scores` but at file granularity:
-    per-file compliance band, per-file errors/warnings/infos, per-file
-    atom count from `per_file_analysis`.
+    operator sees which item is the worst at a glance. Each item's score is
+    the api's per-file `display_score` verbatim; severity counts come from
+    that file's findings.
     """
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
@@ -42,7 +42,9 @@ def compute_item_scores(
     findings_by_file: dict[str, list[Any]] = {}
     for f in result.findings:
         findings_by_file.setdefault(f.file, []).append(f)
-    analysis_by_file: dict[str, Any] = {fa.file: fa for fa in result.per_file_analysis}
+    # Server per-file paths are absolute; normalize to the same project-relative
+    # key space as `rel` so the per-file display_score lookup matches.
+    analysis_by_file: dict[str, Any] = {normalize_finding_path(fa.file, root): fa for fa in result.per_file_analysis}
 
     items: list[SurfaceHealth] = []
     try:
@@ -56,18 +58,10 @@ def compute_item_scores(
         n_errors = sum(1 for f in findings if f.severity == "error")
         n_warnings = sum(1 for f in findings if f.severity == "warning")
         n_infos = sum(1 for f in findings if f.severity == "info")
-        n_atoms = (analysis.stats.get("atoms", 0) if analysis else 0) or 0
-        band = analysis.compliance_band if analysis else ""
 
-        if n_errors + n_warnings + n_infos == 0:
-            score = 10.0
-        else:
-            base = 6.0
-            if band:
-                base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
-            denom = max(n_atoms, n_errors + n_warnings + n_infos, 1)
-            penalty = min(4.0, (n_errors / denom) * 30) + min(2.0, (n_warnings / denom) * 2)
-            score = round(max(0.0, min(10.0, base - penalty)), 1)
+        # `None` → unscored: either no server analysis for this file, or the server
+        # returned no score (zero charged atoms — a non-instruction or empty file).
+        score = float(analysis.display_score) if analysis is not None and analysis.display_score is not None else None
 
         items.append(
             SurfaceHealth(
@@ -80,7 +74,8 @@ def compute_item_scores(
                 infos=n_infos,
             )
         )
-    items.sort(key=lambda it: (it.score, it.name))  # worst first, alphabetical tiebreak
+    # Worst first, alphabetical tiebreak; unscored items sort last (score is None).
+    items.sort(key=lambda it: (it.score is None, it.score or 0.0, it.name))
     return items
 
 
@@ -100,10 +95,13 @@ def _display_name_for_path(rel: str) -> str:
 def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15) -> str:
     """Format one item row: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  (N: Xe/Yw/Zi)'."""
     label = f"{s.name}:"
-    color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
-    bar = _score_bar(s.score, bar_width, color)
     breakdown = _severity_breakdown_markup(s)
     suffix = f"  {breakdown}" if breakdown else ""
+    if s.score is None:
+        empty = "░" * bar_width
+        return f"{label:<{label_w}} [dim]{empty}[/dim]  [dim]not scored[/dim]{suffix}"
+    color = score_color(s.score)
+    bar = _score_bar(s.score, bar_width, color)
     return f"{label:<{label_w}} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
 
 
@@ -135,7 +133,7 @@ def render_item_health(items: list[SurfaceHealth]) -> None:
     console.print()
     prev_band: str | None = None
     for s in items:
-        band = "red" if s.score < 4.0 else "yellow" if s.score < 7.0 else "green"
+        band = "unscored" if s.score is None else score_color(s.score)
         if prev_band is not None and band != prev_band:
             console.print()
         console.print(f"  {_item_cell(s, label_w)}")

@@ -24,9 +24,8 @@ from reporails_cli.core.platform.dto.ruleset import InlineToken
 
 # ──────────────────────────────────────────────────────────────────
 # RULE-BASED CHARGE CLASSIFIER
-# Corpus-calibrated verb lexicon from 434 projects (13,789 atoms).
-# Three phases: negation → modal → imperative verb detection.
-# No spaCy dependency.
+# Calibrated verb lexicon. Three phases: negation → modal → imperative
+# verb detection. No spaCy dependency.
 # ──────────────────────────────────────────────────────────────────
 
 # Phase 1: Negation / Prohibition
@@ -50,8 +49,8 @@ _MODAL_HEDGED: set[str] = {"should", "could", "might"}
 # Removed: "can" (capability), "may" (possibility) — not instructions.
 _ABSOLUTE_ADVERBS: set[str] = {"always", "only", "exclusively"}
 
-# Phase 3: Corpus-calibrated verb lexicon
-# CORE: charged_ratio >= 0.80, count >= 5 across 434 projects
+# Phase 3: calibrated verb lexicon
+# CORE: high-confidence charged verbs
 _VERBS_CORE: set[str] = {
     "add",
     "apply",
@@ -124,7 +123,7 @@ _VERBS_CORE: set[str] = {
     "wrap",
     "write",
 }
-# SUPPLEMENT: legitimate verbs too low-frequency in 434-project corpus
+# SUPPLEMENT: legitimate but lower-frequency charged verbs
 _VERBS_SUPPLEMENT: set[str] = {
     "accept",
     "achieve",
@@ -278,7 +277,7 @@ _VERBS_SUPPLEMENT: set[str] = {
     "warn",
     "wire",
 }
-# AMBIGUOUS: corpus ratio 0.60-0.80 or genuinely dual noun/verb in tech context
+# AMBIGUOUS: mixed-confidence or genuinely dual noun/verb in tech context
 _VERBS_AMBIGUOUS: set[str] = {
     "abstract",
     "archive",
@@ -721,6 +720,33 @@ def _check_postcolon_verb(doc: Any) -> tuple[str, int, str, str, bool] | None:
     return None
 
 
+_OBJECT_FRAME_LEAD_TAGS = frozenset({"NN", "NNP", "NNPS", "NNS", "VB", "VBP"})
+_OBJECT_FRAME_DET_TAGS = frozenset({"DT", "PRP$"})
+
+
+def _object_frame_result(
+    doc: Any,
+    root: Any,
+    has_subj: bool,
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """Lexicon-independent imperative rescue for the determiner-object frame.
+
+    A position-0 ROOT token (POS-ambiguous noun/verb) governing a determiner-led
+    object NP with no subject is an imperative ("Pin every dependency …",
+    "Lock the version …") even when the lead word is absent from the verb
+    lexicon. A noun-initial declarative fails it — its lead token is the
+    compound/subject of a finite main verb, so ROOT is not at position 0 and a
+    subject is present.
+    """
+    if root.i != 0 or has_subj or len(doc) < 2:
+        return None
+    if doc[0].tag_ not in _OBJECT_FRAME_LEAD_TAGS or doc[1].tag_ not in _OBJECT_FRAME_DET_TAGS:
+        return None
+    sc = _detect_scope_conditional(doc, has_cond_prefix)
+    return ("IMPERATIVE", 1, "imperative", "p3_spacy_obj_frame!amb", sc)
+
+
 def _classify_nn_tag(
     doc: Any,
     root: Any,
@@ -754,7 +780,9 @@ def _classify_nn_tag(
     cl = _check_colon_label(doc, root)
     if cl is not None:
         return cl
-    return ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
+    # Determiner-object frame: pos-0 lead token absent from the verb lexicon
+    frame = _object_frame_result(doc, root, has_subj, has_cond_prefix)
+    return frame if frame is not None else ("NEUTRAL", 0, "none", "p3_spacy_nn", False)
 
 
 def _classify_vb_vbp_tag(
@@ -778,9 +806,10 @@ def _classify_vb_vbp_tag(
         pre_words = {t.text.lower() for t in doc[: root.i]}
         if not (pre_words <= _CONTEXT_WORDS):
             return None  # fall through to lexicon
-    # Lexicon cross-check: only charge confirmed verbs
+    # Lexicon cross-check: only charge confirmed verbs. A pos-0 lead token
+    # absent from the lexicon still charges via the determiner-object frame.
     if root.text.lower() not in _ALL_VERBS:
-        return None  # fall through to lexicon
+        return _object_frame_result(doc, root, has_subj, has_cond_prefix)
     sc = _detect_scope_conditional(doc, has_cond_prefix)
     if tag == "VBP":
         next_tok = doc[root.i + 1] if root.i + 1 < len(doc) else None
@@ -836,6 +865,43 @@ def _check_verb0_rescue(
     return None
 
 
+def _root_inside_parenthetical(doc: Any, root: Any) -> bool:
+    """True if ROOT sits inside an unclosed '(' … ')' span — the signature of a
+    parse derail where spaCy picked an interior word as ROOT and demoted the lead verb."""
+    depth = 0
+    for tok in doc[: root.i]:
+        if tok.text == "(":
+            depth += 1
+        elif tok.text == ")":
+            depth = max(0, depth - 1)
+    return depth > 0
+
+
+def _check_nsubj_verb0_rescue(
+    doc: Any,
+    root: Any,
+    has_cond_prefix: bool,
+) -> tuple[str, int, str, str, bool] | None:
+    """Position-0 nsubj rescue: spaCy demoted a known lead verb to noun-subject.
+
+    Non-ambiguous lead verbs tagged nsubj are misparsed imperatives. Ambiguous
+    lead verbs rescue only when ROOT lands inside a parenthetical — the signature
+    of a parse derailed by a long inserted clause.
+    """
+    if root.i == 0 or len(doc) == 0:
+        return None
+    t0 = doc[0]
+    t0l = t0.text.lower()
+    if t0.dep_ not in ("nsubj", "nsubjpass") or t0l not in _ALL_VERBS:
+        return None
+    sc = _detect_scope_conditional(doc, has_cond_prefix)
+    if t0l not in _VERBS_AMBIGUOUS:
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue", sc)
+    if _root_inside_parenthetical(doc, root):
+        return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue!amb", sc)
+    return None
+
+
 _PAST_TENSE_TAGS = frozenset({"VBZ", "VBD", "VBN", "VBG"})
 
 _LATE_CONSTRAINT_RE = re.compile(
@@ -844,13 +910,20 @@ _LATE_CONSTRAINT_RE = re.compile(
 )
 
 
+_PARENS_SPAN_RE = re.compile(r"\([^()]*\)")
+
+
 def _has_late_constraint(text: str) -> bool:
     """True if text has constraint language after a sentence/clause boundary.
 
     Catches compound instructions like 'Prefer X. Do not introduce Y' and
     'Label — Avoid X' where the positive verb at the start masks a constraint.
+    Negations inside a parenthetical are subordinate clarifications of the lead
+    directive, not a compound top-level constraint, so parenthetical spans are
+    masked before the boundary check.
     """
-    return bool(_LATE_CONSTRAINT_RE.search(text))
+    masked = _PARENS_SPAN_RE.sub(" ", text)
+    return bool(_LATE_CONSTRAINT_RE.search(masked))
 
 
 def _spacy_pre_checks(
@@ -920,19 +993,12 @@ def _classify_phase3_spacy(
         # Position-0 nsubj rescue: spaCy demoted a known verb to noun-subject.
         # "Extract display logic" → spaCy: Extract(nsubj) display(ROOT/VBP)
         # "Group related local variables" → Group(nsubj) related(ROOT/VBD)
-        # In instruction files, position-0 non-ambiguous verbs tagged as
-        # nsubj are always misparsed imperatives. The ambiguous-verb guard
-        # prevents false positives; the nsubj dep guard limits to cases
-        # where spaCy explicitly assigned subject role to position 0.
-        if has_subj and root.i > 0 and not shallow:
-            t0 = doc[0]
-            if (
-                t0.dep_ in ("nsubj", "nsubjpass")
-                and t0.text.lower() in _ALL_VERBS
-                and t0.text.lower() not in _VERBS_AMBIGUOUS
-            ):
-                sc = _detect_scope_conditional(doc, has_cond_prefix)
-                return ("IMPERATIVE", 1, "imperative", "p3_spacy_nsubj_verb0_rescue", sc)
+        # Non-ambiguous lead verbs rescue unconditionally; ambiguous lead verbs
+        # rescue only when ROOT lands inside a parenthetical (parse derail).
+        if has_subj and not shallow:
+            nsubj_rescue = _check_nsubj_verb0_rescue(doc, root, has_cond_prefix)
+            if nsubj_rescue is not None:
+                return nsubj_rescue
 
         # POS classification by tag group
         if tag in {"NN", "NNS", "NNP", "NNPS"}:

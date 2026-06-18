@@ -78,3 +78,18 @@ class TestRunMProbes:
 
         rules = load_rules(project_root=level2_project, scan_root=level2_project)
         assert all(not k.startswith("CLAUDE:") for k in rules)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_scoped_skips_project_shape_rule(self, dev_rules_dir: Path, level1_project: Path) -> None:
+        """A single-file scoped run must not fire CORE:S:0010 (project needs ≥2 files)."""
+        from reporails_cli.core.discovery.agents import get_all_instruction_files
+        from reporails_cli.core.lint.rule_runner import run_m_probes
+
+        files = get_all_instruction_files(level1_project)
+        if not files:
+            pytest.skip("No instruction files in fixture")
+        unscoped = {f.rule for f in run_m_probes(level1_project, files, scoped=False)}
+        scoped = {f.rule for f in run_m_probes(level1_project, files, scoped=True)}
+        assert "CORE:S:0010" in unscoped  # whole-project enforcement still fires
+        assert "CORE:S:0010" not in scoped  # narrowed subset must not misfire

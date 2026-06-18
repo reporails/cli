@@ -1,8 +1,8 @@
 ---
 title: "Score Guide"
 description: "How the score is built and what it tells you"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.11"
+last_updated: 2026-06-17
 ---
 
 # Score Guide
@@ -25,11 +25,13 @@ These are guidance, not thresholds. A score of 6.5 with one critical finding can
 
 ## What contributes
 
-The overall score reflects:
+The score is a single verdict on how well-formed your instructions are — not a tally of findings (those are a separate worklist beneath it). It reflects:
 
-1. **Severity of findings that fired** — `critical`, `high`, `medium`, `low`, `info`. Higher severity weighs more.
-2. **Coverage of the rule set** — rules that didn't fire (because the relevant content was clean) contribute positively.
+1. **How clearly your instructions are written** — specific, well-formatted directives that don't contradict each other score higher than vague, buried, or conflicting ones.
+2. **Delivery** — whether your instructions actually reach the agent intact. Missing required structure, or content pushed past an agent's hard instruction-size limit (where the overflow is silently dropped before the agent ever sees it), pulls the score down.
 3. **Per-surface health** — each instruction surface (Main / Rules / Skills / Agents / Memory) contributes its own score to the overall picture.
+
+Files with no scorable instruction content — a non-instruction surface a coding agent still reads (like a `.cursorignore` path list) or an empty instruction file — show as `not scored` and don't count toward any surface or the overall number.
 
 ## Surface scores
 
@@ -48,13 +50,27 @@ A common pattern: a strong Main score with a weak Rules score means you've writt
 
 Findings are sorted by severity, then by impact. The top entries are the ones to fix first. Each finding shows:
 
-- **Rule ID** like `CORE:S:0001` — pass to `ails explain` for the rule body
+- **Rule ID** like `CORE:S:0002` — pass to `ails explain` for the rule body
 - **Severity** — `critical`, `high`, `medium`, `low`, `info`
 - **Location** — the file where the rule fired; line-level findings also show `L<n>` (e.g. `⚠ L9`), file-level findings show no line marker because the rule applies to the whole file
 - **Message** — one-line description of what's wrong
 - **Fix** — suggested change or pattern to apply
 
+In supporting terminals the rule IDs in the text output are clickable links to their docs page.
+
 Anonymous runs show summary findings and cross-file conflict counts — enough to see whether your instructions are working. Sign in with `ails auth login` to unlock full per-finding fix text and the exact location of each cross-file conflict. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
+
+## How findings are triaged by leverage
+
+The score is the analysis service's single quality verdict; the `Findings` line beneath it is a separate worklist. To help you spend effort where it counts, findings are sorted by **leverage** — how much fixing one is likely to move the score — into three tiers:
+
+- **gate-mover** — fixing it is likely to move the score the most. These are the entries to clear first.
+- **conditional** — worth fixing, but the score impact depends on the rest of the file.
+- **cosmetic** — stylistic or local; clearing it rarely moves the number.
+
+Low-leverage findings don't clutter the default view: they collapse into a single `+N lower-priority (won't move your score yet)` line. Run `ails check -v` to expand them. Each shown finding may also carry an indented `→` action line — the concrete next step the rule recommends.
+
+Leverage is computed **per file**, so the same rule can rank differently in different files — a finding that's a gate-mover in a weak file may be cosmetic in a strong one. The leverage triage is a worklist aid, not a re-weighting of the score: the score is a single quality verdict, not a severity-weighted tally of findings.
 
 ## Improving the score
 
@@ -72,8 +88,20 @@ By default `ails check` always exits 0. To make CI fail, see [Configuration → 
 
 ## Consistency over time
 
-Score moves should be small commit-to-commit. A sudden drop usually means you removed reinforcement, introduced a contradiction, or pushed a file that exceeds size limits. The CLI tracks score deltas automatically — JSON output (`ails check -f json`) includes `score_delta`, `level_previous`, and `violations_delta` fields when there's a previous run cached, so a CI step can flag the regression without needing to re-run against the previous commit.
+Score moves should be small commit-to-commit. A sudden drop usually means you removed reinforcement, introduced a contradiction, or pushed a file that exceeds size limits. To track score over time in CI, record the score from each run (the GitHub Action exposes a `score` output) and compare across commits.
+
+## Prevent findings before they happen
+
+`ails check` is the post-hoc loop — file already exists, findings reported. The score is a lagging indicator. The leading indicator is `ails rules`, which gives you the rule set to follow **while** writing, not after. Before authoring a new skill / agent / rule, run:
+
+```bash
+ails rules list --capability=skill                  # preflight rules for a SKILL.md
+ails rules list --capability=agent                  # for an agent definition
+ails rules list --capability=rule -f md             # markdown output to paste into an authoring prompt
+```
+
+See [Rules CLI](rules-cli.md) for full command reference.
 
 ---
 
-[← Configuration](configuration.md) · Score Guide · [Capability Levels →](capability-levels.md)
+[← Configuration](configuration.md) · Score Guide · [Rules CLI →](rules-cli.md)

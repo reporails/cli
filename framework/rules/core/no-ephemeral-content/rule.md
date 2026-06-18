@@ -7,6 +7,11 @@ type: deterministic
 severity: high
 backed_by: [claude-code-issue-13579, spec-writing-for-agents]
 match: {format: freeform}
+fix: |
+  Remove session-specific content — dates ("as of 2026-05-20"), TODO
+  timestamps, "currently/right now", in-progress markers, "the current
+  sprint". Instruction files are durable; transient state belongs in
+  plans, task lists, or learning entries that age out cleanly.
 ---
 
 # No Ephemeral Content

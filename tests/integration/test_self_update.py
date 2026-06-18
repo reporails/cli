@@ -126,7 +126,9 @@ class TestSelfUpdateIntegration:
                 ".pytest_cache",
                 ".ails",
                 "dist",
+                "specs",
             ),
+            ignore_dangling_symlinks=True,
         )
 
         subprocess.run(

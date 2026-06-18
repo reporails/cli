@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +122,56 @@ CLIENT_CHECK_CATEGORY = {
     "scope": "S",
     "ambiguous_charge": "C",
 }
+
+# Client-check labels map to their canonical rule ID so local findings display the ID like
+# server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
+CLIENT_CHECK_RULE_ID = {
+    "format": "CORE:E:0003",
+    "bold": "CORE:E:0003",
+    "ordering": "CORE:D:0003",
+    "scope": "CORE:C:0048",
+    "heading_instruction": "CORE:S:0039",
+    "orphan": "CORE:C:0053",
+}
+
+
+def display_rule_id(rule: str) -> str:
+    """Canonical rule ID for a finding's rule token; unmapped tokens pass through."""
+    return CLIENT_CHECK_RULE_ID.get(rule, rule)
+
+
+_RULE_DOCS_BASE = "https://reporails.com/rules"
+
+
+@lru_cache(maxsize=1)
+def _rule_slug_map() -> dict[str, str]:
+    """`{rule_id: slug}` from the bundled framework registry, loaded once per process."""
+    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+
+    try:
+        return {r.id: r.slug for r in load_all_rules() if r.slug}
+    except (OSError, ValueError):
+        return {}
+
+
+def rule_docs_url(rule_id: str) -> str | None:
+    """Public docs URL (`/rules/<agent|core>/<slug>`) for a canonical rule ID, or None."""
+    parts = rule_id.split(":")
+    if len(parts) != 3:
+        return None
+    slug = _rule_slug_map().get(rule_id)
+    if not slug:
+        return None
+    agent = "core" if parts[0] == "CORE" else parts[0].lower()
+    return f"{_RULE_DOCS_BASE}/{agent}/{slug}"
+
+
+def linked_rule_id(rule: str) -> str:
+    """Rule token as a Rich hyperlink to its docs page; plain canonical ID if unresolvable."""
+    rule_id = display_rule_id(rule)
+    url = rule_docs_url(rule_id)
+    return f"[link={url}]{rule_id}[/link]" if url else rule_id
+
 
 # ── File classification lookup tables ─────────────────────────────────
 
@@ -263,14 +314,13 @@ def file_type_summary(filepaths: set[str]) -> str:
     return ", ".join(parts)
 
 
-def per_file_stats(filepath: str, ruleset_map: Any) -> str:
+def per_file_stats(filepath: str, ruleset_map: Any, project_root: Path) -> str:
     """Compute per-file stats from RulesetMap atoms. Returns compact stat string."""
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-        project_root = Path.cwd()
         norm_target = normalize_finding_path(filepath, project_root)
         atoms = [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) == norm_target]
     except (AttributeError, TypeError):
@@ -303,6 +353,7 @@ def get_group_atoms(
     group_key: str,  # noqa: ARG001
     group_files: list[tuple[str, list[Any]]],
     ruleset_map: Any,
+    project_root: Path,
 ) -> list[Any]:
     """Get all atoms belonging to files in this group."""
     if ruleset_map is None:
@@ -310,7 +361,6 @@ def get_group_atoms(
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-        project_root = Path.cwd()
         norm_fps = {normalize_finding_path(fp, project_root) for fp, _ in group_files}
         return [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) in norm_fps]
     except (AttributeError, TypeError):

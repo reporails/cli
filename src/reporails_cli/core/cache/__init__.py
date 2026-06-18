@@ -307,7 +307,7 @@ def cache_violation_dismissal(target: Path, violation: Any) -> None:
                 "rule_id": violation.rule_id,
                 "location": file_path,
                 "verdict": "pass",
-                "reason": "Dismissed via ails heal",
+                "reason": "Dismissed via ails check --heal",
             }
         ],
     )

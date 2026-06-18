@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: critical
 match: {}
+fix: |
+  Pick one direction for the topic and remove the contradicting
+  instruction. When two charged atoms on the same topic point opposite
+  ways (one directive, one constraint), the model follows the
+  last-seen instruction — which one wins is fragile across edits.
+  Designate one file as authoritative and remove the conflicting one.
 ---
 
 # Same-Topic Reinforcement and Conflict

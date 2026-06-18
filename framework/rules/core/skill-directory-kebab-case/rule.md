@@ -8,6 +8,11 @@ severity: medium
 backed_by: []
 match: {type: skill}
 source: https://agentskills.io/specification
+fix: |
+  Rename the skill directory to kebab-case — only lowercase letters,
+  digits, and hyphens. `commitHelper/` → `commit-helper/`,
+  `Review_PR/` → `review-pr/`. The skill loader discovers skills by
+  directory name; non-kebab-case names break invocation.
 ---
 # Skill Directory Kebab Case
 

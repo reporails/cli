@@ -1,8 +1,8 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.5.10"
-last_updated: 2026-05-18
+version: "0.5.11"
+last_updated: 2026-06-17
 ---
 
 # Configuration
@@ -56,6 +56,8 @@ default_agent: claude
 auto_update_check: true
 ```
 
+The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `exclude_files`, `overrides`, `rule_thresholds`, `generic_scanning`, and more) — project values win per-key where the two overlap.
+
 Set values from the command line:
 
 ```bash
@@ -95,6 +97,32 @@ For one-off runs, pass `--exclude-dirs` on the command line:
 ```bash
 ails check --exclude-dirs examples --exclude-dirs third_party
 ```
+
+## Excluding individual files
+
+`exclude_files` targets *specific files* rather than directory names. Each entry is a glob matched against the file path **relative to the project root**, so you can name an exact file, files one level down, or any file by basename:
+
+```yaml
+# PROJECT_ROOT/.ails/config.yml
+exclude_files:
+  - .claude/agents/lead.md   # that exact file
+  - .claude/skills/*/SKILL.md # each skill's SKILL.md (one level down)
+  - "**/lead.md"             # any lead.md, anywhere
+```
+
+The common case is a project that symlinks coding-agent harness artifacts (skills, agents, rules) in from another repo. Those files are authored and linted where they live, so scoring them here just adds noise — list their paths under `exclude_files` to drop them. Selection is by path, not by "is a symlink", because symlinks are also used legitimately (e.g. `CLAUDE.md → AGENTS.md`).
+
+Patterns use [`pathlib` glob semantics](https://docs.python.org/3/library/pathlib.html#pathlib.PurePath.match): each `*` and `**` segment matches **exactly one** path component — it is *not* a recursive `git`-style globstar. So a pattern matches at a fixed depth: `.claude/skills/*/SKILL.md` and `.claude/skills/**/*` both reach files exactly one directory below `skills/`, not files nested deeper. To cover several depths, list one pattern per depth. This matches the convention the `surfaces` include / exclude patterns already use.
+
+A bare `**` or `**/*` matches *every* file in the project — it drops all instruction files and the scan exits with `No instruction files found`. Always anchor the pattern to a path prefix (`.claude/skills/...`).
+
+For one-off runs, pass `--exclude-files`:
+
+```bash
+ails check --exclude-files ".claude/skills/**/*" --exclude-files ".claude/agents/lead.md"
+```
+
+Explicitly targeting an excluded file still scans it — `ails check ./.claude/agents/lead.md` overrides the exclusion, since exclusion only applies to discovery.
 
 ## Per-surface include / exclude
 
@@ -179,7 +207,12 @@ By default, `ails check` only validates files that match one of the agent's decl
 generic_scanning: true
 ```
 
-When on, the discovery walker follows inline and reference Markdown links out of classified files (bounded depth, cycle-safe, tree-bound), and any reached `.md` file inside your repo gets a `generic` classification. Structural and formatting rules (charge ordering, direction imbalance, formatting hygiene) still fire on these files; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
+When on, the discovery walker follows links out of classified files (bounded depth, cycle-safe, tree-bound), and distinguishes two kinds of reached file by *how* they were reached:
+
+- **`@`-import-reached** files (`file_type: generic`) — pulled in by an `@`-import directive. The agent eagerly auto-loads these, so Reporails does too: they are scored and shown under an `Imported` surface that counts toward the Quality score.
+- **Markdown-link-reached** files (`[text](path)`, `file_type: referenced`) — discoverable but not loaded. The agent only reads them if it chooses to follow the link, so Reporails surfaces them in a labeled `Referenced` findings panel only: no score bar, and not counted in the headline.
+
+Structural and formatting rules (charge ordering, direction imbalance, formatting hygiene) still fire on both kinds; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
 
 ## Severity overrides
 
@@ -212,7 +245,7 @@ The CLI does not have a built-in `--min-score` flag. To gate on a minimum score,
     min-score: "7.0"          # exit 1 if score < 7.0
 ```
 
-Outside the action, wrap `ails check -f json` in a script that parses the `score` field and exits accordingly.
+Outside the action, use `--strict` for a pass/fail gate; for score-based gating, the GitHub Action's `min-score` input is the supported path.
 
 ## Authentication
 
@@ -251,13 +284,16 @@ JSON output is one object per run, grouping findings under `files` keyed by path
           "line": 18,
           "severity": "warning",
           "rule": "CORE:C:0034",
+          "category": "coherence",
+          "leverage": "conditional",
           "message": "Missing tech stack declaration"
         }
       ],
-      "count": 5
+      "count": 5,
+      "regime": { "named": "...", "within_capacity": true, "confidence": 0.87 }
     }
   },
-  "stats": { "total": 21, "errors": 0, "warnings": 16, "info": 5 }
+  "stats": { "total_findings": 21, "errors": 0, "warnings": 16, "infos": 5, "cross_file_conflicts": 0, "cross_file_repetitions": 0 }
 }
 ```
 
@@ -270,7 +306,12 @@ What differs by tier:
 | `cross_file_coordinates[]` (counts per file pair)  | included  | omitted                             |
 | `pro{}` (summary of hints)                         | omitted   | included when present               |
 
-Always present, regardless of tier: `offline`, `files{}`, `stats`. `surface_health[]` is added when surfaces are populated.
+Always present, regardless of tier: `offline`, `files{}`, `stats`, `tier`, `top_rules`. `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map.
+
+Two additive fields enrich the output when the analysis service has data for the run. Both are **additive and backward-compatible** — existing JSON consumers and CI baselines that ignore them keep working unchanged:
+
+- **Per-file `regime`** — a `files.<path>.regime` object with `named`, `within_capacity`, and `confidence`. It is a structural read of the file; it is absent on offline runs (no analysis service).
+- **Per-finding `leverage`** — a `files.<path>.findings[].leverage` tier of `gate_mover`, `conditional`, or `cosmetic`, indicating how much fixing the finding is likely to move the score. The raw `severity` field is unchanged. See [Score Guide → How findings are triaged by leverage](score-guide.md#how-findings-are-triaged-by-leverage).
 
 GitHub annotations format emits one workflow command per finding so warnings appear inline on the diff in pull requests:
 

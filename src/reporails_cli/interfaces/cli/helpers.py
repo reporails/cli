@@ -16,8 +16,9 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="ails",
-    help="Validate and score AI instruction files - what ails your repo?",
+    help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your Harness's instructions"),
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console(emoji=False, highlight=False)
 
@@ -26,6 +27,19 @@ def _is_ci() -> bool:
     """Check if running in CI environment."""
     ci_vars = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")
     return any(os.environ.get(var) for var in ci_vars)
+
+
+def _warn_unresolved_skills(unresolved: list[Any], project_root: Path) -> None:
+    """Print one stderr warning per declared-but-unresolved skill."""
+    for skill in unresolved:
+        try:
+            rel = skill.declared_in.relative_to(project_root)
+        except ValueError:
+            rel = skill.declared_in
+        print(
+            f"Warning: {rel} declares skill {skill.skill_name!r} — not found under .claude/skills/",
+            file=sys.stderr,
+        )
 
 
 def _default_format() -> str:
@@ -106,11 +120,13 @@ def _resolve_agent_filters(
     all_detected: list[Any],
     target: Path,
     exclude_dirs: list[str] | None,
+    exclude_files: list[str] | None = None,
 ) -> tuple[str, bool, bool, list[Any]]:
     """Resolve agent selection and filter detected agents. Returns (agent, assumed, mixed, filtered)."""
     from reporails_cli.core.discovery.agents import (
         detect_single_agent,
         filter_agents_by_exclude_dirs,
+        filter_agents_by_exclude_files,
         filter_agents_by_id,
         resolve_agent,
     )
@@ -125,7 +141,9 @@ def _resolve_agent_filters(
             single = detect_single_agent(target, agent)
             if single:
                 filtered = [single]
-    return effective, assumed, mixed, filter_agents_by_exclude_dirs(filtered, target, exclude_dirs)
+    filtered = filter_agents_by_exclude_dirs(filtered, target, exclude_dirs)
+    filtered = filter_agents_by_exclude_files(filtered, target, exclude_files)
+    return effective, assumed, mixed, filtered
 
 
 def _handle_no_instruction_files(effective_agent: str, output_format: str, con: Console) -> None:

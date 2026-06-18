@@ -921,6 +921,27 @@ class TestIntegration:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    def test_exclude_files(self, tmp_path: Path) -> None:
+        """--exclude-files glob should prevent scanning matching files; siblings still scan."""
+        rule_yml = _write_rule(
+            tmp_path,
+            {"checks": [{"id": "EXCLF", "pattern-regex": "secret", "message": "x"}]},
+        )
+        sub = tmp_path / ".claude" / "agents"
+        sub.mkdir(parents=True)
+        _write_target(tmp_path, "secret content\n")
+        (sub / "lead.md").write_text("secret in lead\n")
+        (sub / "other.md").write_text("secret in other\n")
+
+        sarif = run_validation([rule_yml], tmp_path, exclude_files=[".claude/agents/lead.md"])
+        uris = [r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for r in _sarif_results(sarif)]
+
+        assert any("CLAUDE.md" in u for u in uris)
+        assert any("other.md" in u for u in uris), "sibling file must still be scanned"
+        assert not any("lead.md" in u for u in uris), "excluded file must be dropped"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_symlink_extra_targets(self, tmp_path: Path) -> None:
         """Extra targets (from symlinks) should be scanned."""
         rule_yml = _write_rule(

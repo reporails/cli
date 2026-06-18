@@ -3,12 +3,27 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
 
 logger = logging.getLogger(__name__)
+
+
+def parse_idle_timeout_env(var_name: str, default_s: int) -> int | None:
+    """Parse an idle-timeout env var (seconds): unset/blank/non-numeric → default,
+    a positive int → that value, 0 or negative → None (idle shutdown disabled)."""
+    raw = os.environ.get(var_name, "").strip()
+    if not raw:
+        return default_s
+    try:
+        value = int(raw)
+    except ValueError:
+        return default_s
+    return value if value > 0 else None
+
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.models import AgentConfig, FileTypeDeclaration, GlobalConfig, ProjectConfig

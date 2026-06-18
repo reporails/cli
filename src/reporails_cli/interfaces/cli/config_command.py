@@ -15,14 +15,16 @@ logger = logging.getLogger(__name__)
 
 config_app = typer.Typer(
     name="config",
-    help="Get and set project configuration (.ails/config.yml).",
+    help="Get and set project configuration.",
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 # Keys that map to ProjectConfig fields
 KNOWN_KEYS = {
     "default_agent": str,
     "exclude_dirs": list,
+    "exclude_files": list,
     "disabled_rules": list,
     "framework_version": str,
     "tier": str,

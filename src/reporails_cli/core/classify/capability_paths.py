@@ -1,6 +1,6 @@
 """Capability path resolver — reverse lookup from (agent, capability, name) to path.
 
-Per-capability targeting (`ails check skill backlog`) needs the inverse of
+Per-capability targeting (`ails check skills:backlog`) needs the inverse of
 file classification: given a capability keyword from the agent's
 ``file_types:`` config and an optional name, resolve to the canonical file
 path(s) under the project.
@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.classify import load_file_types
+from reporails_cli.core.discovery.agent_discovery import _is_external_pattern
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 
 _CAPABILITY_SINGULAR_TO_PLURAL: dict[str, str] = {
@@ -27,18 +28,26 @@ _CAPABILITY_SINGULAR_TO_PLURAL: dict[str, str] = {
     "memory": "memories",
     "subagent_memory": "subagent_memories",
     "nested_context": "nested_contexts",
+    "referenced": "references",
 }
 
 # Capabilities that fold into a primary bucket for the redesigned display.
-# `ails check main` resolves to files of either type; `ails check memories`
-# enumerates both memory and subagent_memory entries. Tuple members are the
-# config keys each agent might use — claude declares `child_instruction`,
-# most other agents declare `nested_context` for the nested subtree shape.
+# `ails check main` resolves to root-level family only (main + override).
+# Nested CLAUDE.md / nested_context / child_instruction files have their own
+# capability and are NOT folded under `main`. `ails check memories` enumerates
+# both memory and subagent_memory entries.
 _CAPABILITY_FOLD: dict[str, tuple[str, ...]] = {
-    "main": ("main", "nested_context", "child_instruction"),
+    "main": ("main", "override"),
     "memories": ("memory", "subagent_memory"),
     "memory": ("memory", "subagent_memory"),
 }
+
+# Capabilities not declared in any agent's `config.yml` — they're synthesized
+# by the classifier at scan time. `referenced` enumerates `[text](path)`-reached
+# files (`file_type: referenced`) and works across all agents since markdown
+# links are universal. Requires `generic_scanning: true` in `.ails/config.yml`
+# for results to be non-empty.
+_VIRTUAL_CAPABILITIES: frozenset[str] = frozenset({"referenced", "references"})
 
 
 def available_capabilities(agent: str, project_root: Path | None = None) -> list[str]:
@@ -53,9 +62,15 @@ def canonicalize_capability(arg: str, agent: str, project_root: Path | None = No
     when any member of the fold tuple is declared by the agent — the
     listing path walks the fold tuple. For non-fold aliases, returns the
     singular config key declared by the agent.
+
+    Virtual capabilities (`referenced` / `references`) are synthesized by
+    the classifier and don't appear in any agent config; they canonicalize
+    to the singular `referenced` regardless of agent.
     """
     if not arg:
         return None
+    if arg in _VIRTUAL_CAPABILITIES:
+        return "referenced"
     decls = available_capabilities(agent, project_root)
     if arg in decls:
         return arg
@@ -100,6 +115,9 @@ def list_capability_targets(
     `memory_locator.memory_entries_for_agent` so user-scope entries
     surface in the listing.
     """
+    if capability == "referenced":
+        return _list_referenced_targets(agent, project_root)
+
     out: list[Path] = []
     seen: set[Path] = set()
     for ft_name in _resolve_fold(agent, capability, project_root):
@@ -109,7 +127,7 @@ def list_capability_targets(
         if _is_user_scope_memory(ft_name, decl.patterns):
             paths = _user_scope_memory_paths(agent, project_root)
         else:
-            paths = _glob_patterns(decl.patterns, project_root, exclude_dirs)
+            paths = _glob_patterns(decl.patterns, project_root, exclude_dirs, decl=decl)
         for path in paths:
             resolved = _safe_resolve(path)
             if resolved in seen:
@@ -117,6 +135,32 @@ def list_capability_targets(
             seen.add(resolved)
             out.append(path)
     return out
+
+
+def _list_referenced_targets(agent: str, project_root: Path) -> list[Path]:
+    """Enumerate `[text](path)`-reached files via classifier output.
+
+    Runs link-walker discovery (`generic_scanning: true`) against the
+    detected agent's surfaces and returns paths whose synthesized
+    `file_type == "referenced"`. Requires `generic_scanning` to be enabled
+    in the project — if disabled, returns an empty list (classifier won't
+    walk).
+    """
+    from reporails_cli.core.classify import classify_files, load_file_types
+    from reporails_cli.core.discovery.agent_discovery import discover_from_config
+
+    discovered = discover_from_config(project_root, agent)
+    if discovered is None:
+        return []
+    instruction_files, _rule_files, _config_files = discovered
+    file_types = load_file_types(agent, project_root=project_root)
+    classified = classify_files(
+        project_root,
+        instruction_files,
+        file_types,
+        generic_scanning=True,
+    )
+    return [cf.path for cf in classified if cf.file_type == "referenced"]
 
 
 def _resolve_fold(agent: str, capability: str, project_root: Path) -> tuple[str, ...]:
@@ -201,6 +245,7 @@ def _glob_patterns(
     patterns: tuple[str, ...],
     project_root: Path,
     exclude_dirs: list[str] | tuple[str, ...] | None = None,
+    decl: FileTypeDeclaration | None = None,
 ) -> list[Path]:
     """Expand glob patterns under project_root. Skips user/managed-scope patterns.
 
@@ -214,6 +259,13 @@ def _glob_patterns(
     path whose ancestor-chain (relative to project_root) contains a
     directory name in the set is filtered out so listing-mode matches
     full-project discovery.
+
+    `decl` carries the file_type semantics — when provided, files matched
+    via a loose-leaf pattern (`**/X.md` or bare `X.md`) are filtered by the
+    declaration's `scope` + `loading` properties (global+session_start →
+    cwd-level only; nested → descendants only), mirroring `classify_files`
+    so `ails check main` and `ails check child_instruction` partition
+    shared `**/CLAUDE.md` matches the same way the classifier does.
 
     Symlink handling: paths are kept in their pre-resolve form so a project
     symlink (e.g. `.claude/` linked to a hub directory) surfaces files
@@ -233,12 +285,51 @@ def _glob_patterns(
                 continue
             if _is_under_excluded_dir(path, project_root, excl_set):
                 continue
+            if decl is not None and not _decl_location_matches(path, decl, pattern, project_root):
+                continue
             resolved = path.resolve()
             if resolved in seen_resolved:
                 continue
             seen_resolved.add(resolved)
             out.append(path)
     return out
+
+
+def _decl_location_matches(
+    file_path: Path,
+    decl: FileTypeDeclaration,
+    matched_pattern: str,
+    project_root: Path,
+) -> bool:
+    """Apply the classify-level `scope`/`loading` filter to a listing-path match.
+
+    Mirrors `core.classify._location_matches_mode` for the listing case
+    where `project_root` doubles as scan_root and the ancestor chain
+    reduces to `{project_root}` (the listing path is invoked at the
+    project root, not at an arbitrary cwd).
+    """
+    scope = decl.properties.get("scope")
+    loading = decl.properties.get("loading")
+    parent = file_path.parent
+    in_ancestor_chain = parent == project_root
+
+    if scope == "global" and loading == "session_start":
+        if _is_loose_leaf_pattern(matched_pattern):
+            return in_ancestor_chain
+        return True
+    if scope == "nested":
+        return not in_ancestor_chain
+    return True
+
+
+def _is_loose_leaf_pattern(pattern: str) -> bool:
+    """Pattern that can match a file at any directory depth.
+
+    Mirrors `core.classify._is_loose_leaf_pattern`.
+    """
+    if pattern.startswith("**/"):
+        return True
+    return "/" not in pattern and "**" not in pattern
 
 
 def _is_under_excluded_dir(path: Path, project_root: Path, excl: set[str]) -> bool:
@@ -250,12 +341,6 @@ def _is_under_excluded_dir(path: Path, project_root: Path, excl: set[str]) -> bo
     except ValueError:
         return False
     return any(part in excl for part in rel.parts[:-1])
-
-
-def _is_external_pattern(pattern: str) -> bool:
-    if pattern.startswith(("~", "/")):
-        return True
-    return len(pattern) >= 2 and pattern[1] == ":"
 
 
 def _name_extractor_for(capability: str) -> Callable[[Path], str]:

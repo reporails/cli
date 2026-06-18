@@ -8,29 +8,21 @@ scorecard rendering lives in scorecard.py.
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
 from reporails_cli.formatters.text.display_constants import (
-    AGG_ORDER,
-    AGGREGATE_LABELS,
-    AGGREGATE_RULES,
-    HINT_SEV_ORDER,
-    HINT_TYPE_LABELS,
     HRULE,
     SEV_WEIGHT,
     classify_file,
     file_type_summary,
-    friendly_name,
     get_group_atoms,
     get_sev_icons,
-    get_term_width,
     group_stats_line,
-    per_file_stats,
     short_path,
-    truncate,
 )
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
@@ -39,6 +31,7 @@ from reporails_cli.formatters.text.scorecard import (
     print_score_line,
     print_scorecard,
 )
+from reporails_cli.formatters.text.triage_view import print_file_card
 
 console = Console()
 
@@ -52,155 +45,9 @@ __all__ = [
 ]
 
 
-# ── Inline hints ──────────────────────────────────────────────────────
-
-
-def _print_inline_hints(file_hints: list[Any], border: str) -> None:
-    """Render inline Pro diagnostic counts inside a file card (free tier)."""
-    pro_total = sum(h.count for h in file_hints)
-    pro_errors = sum(getattr(h, "error_count", 0) for h in file_hints)
-    err_str = f" ({pro_errors} error{'s' if pro_errors != 1 else ''})" if pro_errors else ""
-    sorted_hints = sorted(file_hints, key=lambda h: HINT_SEV_ORDER.get(getattr(h, "severity", "warning"), 9))
-    categories: list[str] = []
-    seen: set[str] = set()
-    for h in sorted_hints:
-        label = HINT_TYPE_LABELS.get(h.diagnostic_type, h.diagnostic_type)
-        if label not in seen:
-            categories.append(label)
-            seen.add(label)
-        if len(categories) >= 2:
-            break
-    cat_str = f" \u2014 {', '.join(categories)}" if categories else ""
-    console.print(f"  [dim]{border}     \u2295 {pro_total} Pro diagnostics{err_str}{cat_str}[/dim]")
-
-
-# ── File card ─────────────────────────────────────────────────────────
-
-
-def _render_structural_findings(
-    structural: list[Any],
-    sev_icons: dict[str, str],
-    verbose: bool,
-    border: str,
-    msg_width: int,
-) -> None:
-    """Render structural (non-aggregate) findings in a file card."""
-    structural.sort(key=lambda f: SEV_WEIGHT.get(f.severity, 9))
-    limit = 2 if not verbose else 999
-    for f in structural[:limit]:
-        icon = sev_icons.get(f.severity, " ")
-        raw = f.message or ""
-        msg = truncate(raw, msg_width).replace("[", "\\[")
-        line_ref = f"L{f.line:<4d} " if f.line > 1 else "      "
-        rule_id = f.rule.replace("[", "\\[")
-        console.print(f"  [dim]{border}[/dim]   {icon} {line_ref}{msg}  [dim]{rule_id}[/dim]")
-    if len(structural) > limit:
-        console.print(f"  [dim]{border}     ... and {len(structural) - limit} more[/dim]")
-
-
-def _render_quality_verbose(
-    findings: list[Any],
-    border: str,
-    msg_width: int,
-) -> None:
-    """Render quality findings in verbose mode (deduped per-line detail)."""
-    quality_findings = [f for f in findings if f.rule in AGGREGATE_RULES]
-    quality_findings.sort(key=lambda f: (f.line, f.rule))
-    seen_q: dict[tuple[int, str, str], int] = {}
-    for f in quality_findings:
-        msg = f.message or AGGREGATE_LABELS.get(f.rule, f.rule)
-        key = (f.line, msg, f.rule)
-        seen_q[key] = seen_q.get(key, 0) + 1
-    for (line, msg, rule), count in seen_q.items():
-        line_ref = f"L{line:<4d} " if line > 1 else "      "
-        suffix = f" ({count}\u00d7)" if count > 1 else ""
-        console.print(f"  [dim]{border}     {line_ref}{truncate(f'{msg}{suffix}', msg_width)}  {rule}[/dim]")
-
-
-def _render_quality_compact(
-    quality_counts: Counter[str],
-    border: str,
-    tw: int,
-) -> None:
-    """Render quality findings in compact mode (aggregate counts)."""
-    parts = [f"{quality_counts[rule]} {AGGREGATE_LABELS[rule]}" for rule in AGG_ORDER if rule in quality_counts]
-    if parts:
-        agg_line = " \u00b7 ".join(parts)
-        console.print(f"  [dim]{border}     {truncate(agg_line, tw - 8)}[/dim]")
-
-
-def _format_alias_suffix(canonical: str, aliases: list[str]) -> str:
-    """Build the ` (+alias1, +alias2)` label for a file with duplicates.
-
-    Picks the shortest distinguishing fragment per alias — the differing leading
-    path component when the alias lives under a different parent (e.g.
-    `.claude/skills/foo` vs canonical `.agents/skills/foo` → render `+.claude`),
-    or the filename when only the leaf differs (e.g. `AGENTS.md` vs `CLAUDE.md`
-    in the same dir → render `+CLAUDE.md`).
-    """
-    if not aliases:
-        return ""
-    canonical_parts = Path(canonical).parts
-    labels: list[str] = []
-    for alias in aliases:
-        alias_p = Path(alias)
-        alias_parts = alias_p.parts
-        label = alias_p.name
-        for i, (c, a) in enumerate(zip(canonical_parts, alias_parts, strict=False)):
-            if c != a:
-                label = a if i < len(alias_parts) - 1 else alias_p.name
-                break
-        labels.append(label)
-    return f" (+{', +'.join(labels)})"
-
-
-def _print_file_card(
-    filepath: str,
-    findings: list[Any],
-    sev_icons: dict[str, str],
-    verbose: bool,
-    ruleset_map: Any = None,
-    file_hints: list[Any] | None = None,
-    aliases_by_file: dict[str, list[str]] | None = None,
-) -> None:
-    """Print one file's card: name, stats, structural findings, then quality aggregate."""
-    quality_counts: Counter[str] = Counter()
-    structural: list[Any] = []
-    for f in findings:
-        if f.rule in AGGREGATE_RULES:
-            quality_counts[f.rule] += 1
-        else:
-            structural.append(f)
-
-    name = friendly_name(filepath, classify_file(filepath))
-    alias_list = (aliases_by_file or {}).get(filepath, [])
-    name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
-    stats = per_file_stats(filepath, ruleset_map)
-    b = "\u2502"
-    msg_width = get_term_width() - 35
-
-    console.print(f"  [dim]{b}[/dim] [bold]{name}[/bold]{f'  [dim]{stats}[/dim]' if stats else ''}")
-    if verbose:
-        short = short_path(filepath)
-        if short != name:
-            console.print(f"  [dim]{b}   {short}[/dim]")
-
-    _render_structural_findings(structural, sev_icons, verbose, b, msg_width)
-
-    if verbose:
-        _render_quality_verbose(findings, b, msg_width)
-    else:
-        _render_quality_compact(quality_counts, b, msg_width + 35)
-
-    if file_hints:
-        _print_inline_hints(file_hints, b)
-
-    console.print(f"  [dim]{b}[/dim]")
-
-
 # ── Group rendering ───────────────────────────────────────────────────
 
-_GROUP_ORDER = ("main", "nested", "agent", "skill", "rule", "config", "memory")
+_GROUP_ORDER = ("main", "nested", "agent", "skill", "rule", "config", "memory", "imported", "referenced", "file")
 _GROUP_LABELS = {
     "main": "Main",
     "nested": "Nested",
@@ -209,62 +56,68 @@ _GROUP_LABELS = {
     "rule": "Rules",
     "config": "Config",
     "memory": "Memory",
+    "imported": "Imported",
+    "referenced": "Referenced",
+    "file": "Files",
 }
 
 
-def _render_group_header(gkey: str, group_files: list[tuple[str, list[Any]]], ruleset_map: Any) -> None:
+def _render_group_header(
+    gkey: str, group_files: list[tuple[str, list[Any]]], ruleset_map: Any, project_root: Path
+) -> None:
     """Print group header with optional atom stats."""
-    group_atoms = get_group_atoms(gkey, group_files, ruleset_map)
+    group_atoms = get_group_atoms(gkey, group_files, ruleset_map, project_root)
     stats = f"  [dim]{group_stats_line(group_atoms)}[/dim]" if group_atoms else ""
     label = _GROUP_LABELS.get(gkey, gkey.title())
     console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({len(group_files)})[/dim]{stats}")
 
 
-def _render_one_group(
-    gkey: str,
-    group_files: list[tuple[str, list[Any]]],
-    sev_icons: dict[str, str],
-    verbose: bool,
-    ruleset_map: Any,
-    hints_by_file: dict[str, list[Any]],
-    aliases_by_file: dict[str, list[str]] | None = None,
-) -> None:
+@dataclass(frozen=True)
+class _CardContext:
+    """Per-run rendering inputs threaded into each file card."""
+
+    sev_icons: dict[str, str]
+    verbose: bool
+    project_root: Path = field(default_factory=Path.cwd)
+    ruleset_map: Any = None
+    hints_by_file: dict[str, list[Any]] = field(default_factory=dict)
+    aliases_by_file: dict[str, list[str]] = field(default_factory=dict)
+    regime_by_file: dict[str, Any] = field(default_factory=dict)
+
+
+def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: _CardContext) -> None:
     """Render a single file group: header, file cards, footer."""
-    _render_group_header(gkey, group_files, ruleset_map)
-    b = "\u2502"
-    max_cards = 3 if not verbose else 999
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root)
+    max_cards = 3 if not ctx.verbose else 999
 
     for i, (filepath, findings) in enumerate(group_files):
         if i >= max_cards:
             remaining = sum(len(fs) for _, fs in group_files[i:])
-            console.print(f"  [dim]{b}   ... and {len(group_files) - i} more ({remaining} findings)[/dim]")
+            console.print(f"  [dim]\u2502   ... and {len(group_files) - i} more ({remaining} findings)[/dim]")
             break
-        _print_file_card(
+        print_file_card(
             filepath,
             findings,
-            sev_icons,
-            verbose,
-            ruleset_map=ruleset_map,
-            file_hints=hints_by_file.get(filepath),
-            aliases_by_file=aliases_by_file,
+            ctx.sev_icons,
+            ctx.verbose,
+            ctx.regime_by_file.get(normalize_finding_path(filepath, ctx.project_root)),
+            ruleset_map=ctx.ruleset_map,
+            file_hints=ctx.hints_by_file.get(filepath),
+            aliases_by_file=ctx.aliases_by_file,
+            project_root=ctx.project_root,
         )
 
     console.print(f"  [dim]\u2514\u2500 {sum(len(fs) for _, fs in group_files)} findings[/dim]\n")
 
 
-def _render_file_groups(
-    groups: dict[str, list[tuple[str, list[Any]]]],
-    sev_icons: dict[str, str],
-    verbose: bool,
-    ruleset_map: Any,
-    hints_by_file: dict[str, list[Any]],
-    aliases_by_file: dict[str, list[str]] | None = None,
-) -> None:
+def _render_file_groups(groups: dict[str, list[tuple[str, list[Any]]]], ctx: _CardContext) -> None:
     """Render all file groups with cards."""
     for gkey in _GROUP_ORDER:
         group_files = groups.get(gkey, [])
         if group_files:
-            _render_one_group(gkey, group_files, sev_icons, verbose, ruleset_map, hints_by_file, aliases_by_file)
+            _render_one_group(gkey, group_files, ctx)
 
 
 def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str]) -> None:
@@ -361,8 +214,21 @@ def _detect_tier(result: Any, has_quality: bool) -> str:
     return "free"
 
 
-def _build_file_groups(result: Any) -> dict[str, list[tuple[str, list[Any]]]]:
-    """Group findings by file type, sorted worst-first within each group."""
+def _build_file_groups(
+    result: Any,
+    file_type_by_path: dict[str, str] | None = None,
+    project_root: Path | None = None,
+) -> dict[str, list[tuple[str, list[Any]]]]:
+    """Group findings by file type, sorted worst-first within each group.
+
+    Generic-scanned files route by classifier `file_type`: `@`-import (`generic`) → the
+    `imported` group, markdown-link (`referenced`) → the `referenced` group. Everything else
+    falls back to the path-based `classify_file` tag.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    ft = file_type_by_path or {}
+    root = project_root or Path.cwd()
     by_file: dict[str, list[Any]] = {}
     for f in result.findings:
         by_file.setdefault(f.file, []).append(f)
@@ -371,8 +237,13 @@ def _build_file_groups(result: Any) -> dict[str, list[tuple[str, list[Any]]]]:
     for filepath, findings in by_file.items():
         if filepath in (".", ".:0"):
             continue
-        tag = classify_file(filepath)
-        group_key = tag.split(":")[0]
+        file_type = ft.get(normalize_finding_path(filepath, root), "")
+        if file_type == "generic":
+            group_key = "imported"
+        elif file_type == "referenced":
+            group_key = "referenced"
+        else:
+            group_key = classify_file(filepath).split(":")[0]
         groups.setdefault(group_key, []).append((filepath, findings))
 
     for group_files in groups.values():
@@ -391,6 +262,23 @@ def _build_hints_by_file(hints: Any, project_root: Path) -> dict[str, list[Any]]
             norm = normalize_finding_path(h.file, project_root)
             result.setdefault(norm, []).append(h)
     return result
+
+
+def _build_regime_by_file(result: Any, project_root: Path) -> dict[str, Any]:
+    """Build a file-keyed index of per-file regimes from server analysis stats.
+
+    Empty for offline runs (no `per_file_analysis`) — callers then render the
+    neutral findings view.
+    """
+    from reporails_cli.core.platform.policy.leverage import classify_regime
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    regimes: dict[str, Any] = {}
+    for fa in result.per_file_analysis:
+        regime = classify_regime(fa.stats)
+        if regime is not None:
+            regimes[normalize_finding_path(fa.file, project_root)] = regime
+    return regimes
 
 
 def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str]]:
@@ -442,20 +330,26 @@ def print_text_result(
     verbose: bool,
     ruleset_map: object = None,
     funnel_error: object = None,
+    project_root: Path | None = None,
+    file_type_by_path: dict[str, str] | None = None,
 ) -> None:
     """Print compact text output: files sorted worst-first, aggregated counts, scorecard at bottom.
 
     `funnel_error` is a FunnelError from the API client when a 4xx response or
     local preflight rejected the payload — surfaces the upgrade CTA below the
     scorecard so users see why server diagnostics are missing.
+
+    `project_root` is the root finding/regime paths are keyed against — passed
+    from the run's `target` so single-path scans line up with their findings
+    instead of falling back to the neutral view. Defaults to cwd.
     """
     from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return
 
-    project_root = Path.cwd()
-    all_files, scope = _collect_files_and_scope(result, ruleset_map, project_root)
+    root = project_root or Path.cwd()
+    all_files, scope = _collect_files_and_scope(result, ruleset_map, root)
     has_quality = result.quality is not None and bool(result.quality.compliance_band)
     tier = _detect_tier(result, has_quality)
     scope.type_str = file_type_summary(all_files) if all_files else "0 files"
@@ -466,7 +360,9 @@ def print_text_result(
         _render_funnel_cta(funnel_error)
         return
 
-    _render_findings_and_scorecard(result, ruleset_map, ascii_mode, verbose, scope, has_quality, tier, elapsed_ms)
+    _render_findings_and_scorecard(
+        result, ruleset_map, ascii_mode, verbose, scope, tier, elapsed_ms, root, file_type_by_path or {}
+    )
     _render_funnel_cta(funnel_error)
 
 
@@ -476,9 +372,10 @@ def _render_findings_and_scorecard(
     ascii_mode: bool,
     verbose: bool,
     scope: Any,
-    has_quality: bool,
     tier: str,
     elapsed_ms: float,
+    project_root: Path,
+    file_type_by_path: dict[str, str],
 ) -> None:
     """Render file groups, cross-file coordinates, and the bottom scorecard.
 
@@ -490,16 +387,26 @@ def _render_findings_and_scorecard(
     from reporails_cli.formatters.text.item_scorecard import compute_item_scores
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
+    has_quality = result.quality is not None and bool(result.quality.compliance_band)
     sev_icons = get_sev_icons(ascii_mode)
-    hints_idx = _build_hints_by_file(result.hints, Path.cwd())
-    aliases_idx = _build_aliases_by_file(Path.cwd(), result)
-    _render_file_groups(_build_file_groups(result), sev_icons, verbose, ruleset_map, hints_idx, aliases_idx)
+    ctx = _CardContext(
+        sev_icons=sev_icons,
+        verbose=verbose,
+        project_root=project_root,
+        ruleset_map=ruleset_map,
+        hints_by_file=_build_hints_by_file(result.hints, project_root),
+        aliases_by_file=_build_aliases_by_file(project_root, result),
+        regime_by_file=_build_regime_by_file(result, project_root),
+    )
+    _render_file_groups(_build_file_groups(result, file_type_by_path, project_root), ctx)
     _render_cross_file_coordinates(result, sev_icons)
 
-    surfaces = compute_surface_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd())
+    surfaces = compute_surface_scores(
+        result, ruleset_map=ruleset_map, project_root=project_root, file_type_by_path=file_type_by_path
+    )
     item_health = None
     if len(surfaces) == 1 and surfaces[0].file_count > 1:
-        item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=Path.cwd())
+        item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=project_root)
 
     print_scorecard(
         result,
@@ -542,12 +449,20 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
     """
     from dataclasses import replace as _replace
 
-    from reporails_cli.core.platform.runtime.merger import CombinedStats
+    from reporails_cli.core.platform.runtime.merger import CombinedStats, normalize_finding_path
 
-    rel_keys = {str(_relativize(p, project_root)) for p in paths}
-    findings = tuple(f for f in result.findings if f.file in rel_keys)
-    cross = tuple(cf for cf in result.cross_file if cf.file_1 in rel_keys or cf.file_2 in rel_keys)
-    per_file = tuple(fa for fa in result.per_file_analysis if fa.file in rel_keys)
+    def _in_scope(path: str) -> bool:
+        # `findings` are already project-relative; server `per_file` / `cross_file`
+        # carry absolute paths, so normalize before the membership test.
+        return normalize_finding_path(path, project_root) in rel_keys
+
+    # Normalize keys through the same function as findings so out-of-tree
+    # targets (e.g. `~/.claude/...` memory) match — `_relativize` falls back to
+    # the absolute path while `normalize_finding_path` yields the `~/` form.
+    rel_keys = {normalize_finding_path(str(p), project_root) for p in paths}
+    findings = tuple(f for f in result.findings if _in_scope(f.file))
+    cross = tuple(cf for cf in result.cross_file if _in_scope(cf.file_1) or _in_scope(cf.file_2))
+    per_file = tuple(fa for fa in result.per_file_analysis if _in_scope(fa.file))
     sev = Counter(f.severity for f in findings)
     stats = CombinedStats(
         total_findings=len(findings),
@@ -572,16 +487,29 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
 
 
 def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
-    """Rewrite the aggregate `compliance_band` from the filtered per-file bands."""
+    """Rewrite the aggregate band + display score from the filtered per-file set.
+
+    The whole-project `display_score` is the api's verdict over every file; once
+    the view is narrowed to a subset (e.g. `ails check skills`) there is no api
+    aggregate for that subset, so the headline becomes the mean of the subset's
+    per-file display scores — matching the per-surface/per-item bars.
+    """
     if quality is None:
         return None
     from dataclasses import replace as _replace
+
+    from reporails_cli.formatters.text.scorecard import _mean_display_score
 
     bands = [fa.compliance_band for fa in per_file if fa.compliance_band]
     if not bands:
         return None
     majority = Counter(bands).most_common(1)[0][0]
-    return _replace(quality, compliance_band=majority)
+    # All-unscored subset (every file has a None score) → keep the server's aggregate
+    # rather than rendering a 0.0/empty headline.
+    mean_score = _mean_display_score(list(per_file)) if per_file else quality.display_score
+    if mean_score is None:
+        mean_score = quality.display_score
+    return _replace(quality, compliance_band=majority, display_score=mean_score)
 
 
 def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root: Path) -> Any:

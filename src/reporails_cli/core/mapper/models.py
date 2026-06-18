@@ -83,6 +83,13 @@ class Models:
                         self._nlp = None
         return self._nlp
 
+    def unload(self) -> None:
+        """Drop loaded models so their memory is reclaimed; next access reloads."""
+        with self._st_lock:
+            self._st = None
+        with self._nlp_lock:
+            self._nlp = _UNSET
+
     def warmup(self) -> None:
         """Eagerly load both models in parallel.
 

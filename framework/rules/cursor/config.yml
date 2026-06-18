@@ -2,12 +2,13 @@
 # Schema: schemas/agent.schema.yml v0.5.0
 #
 # Synced from .claude/skills/audit-agent/assets/registry/cursor/config.yml
-# Last verified: 2026-05-06
+# Last verified: 2026-06-15
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - User Rules (Cursor Settings UI text)
 #   - Team Rules (Cursor dashboard, cloud-managed)
 #   - Cursor Automations (cloud-only, no on-disk file)
+#   - Cursor Memories (cloud / agent-state, no static project file)
 #   - Design Mode (in-app UI)
 #   - CLI --output-format (CLI flag, not a file)
 

@@ -316,3 +316,48 @@ class TestWalkGlobFollowsSymlinkedDirs:
         results = walk_glob(project, "SKILL.md", frozenset())
 
         assert len(results) == 1
+
+
+class TestCiGlobSkipsDanglingSymlinks:
+    """Regression: a dangling symlink in .claude/rules/ crashed `ails check .`
+    (FileNotFoundError at mapper read) because ci_glob passed broken symlinks
+    through discovery."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_exact_name_dangling_symlink_excluded(self, tmp_path: Path) -> None:
+        """iterdir branch: dangling symlink matching the exact pattern → excluded."""
+        from reporails_cli.core.discovery.agent_discovery import ci_glob
+
+        os.symlink(str(tmp_path / "missing-target.md"), str(tmp_path / "CLAUDE.md"))
+
+        assert ci_glob(tmp_path, "CLAUDE.md") == []
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_wildcard_dangling_symlink_excluded(self, tmp_path: Path) -> None:
+        """glob branch: dangling symlink matching a wildcard pattern → excluded."""
+        from reporails_cli.core.discovery.agent_discovery import ci_glob
+
+        rules = tmp_path / ".claude" / "rules"
+        rules.mkdir(parents=True)
+        (rules / "real.md").write_text("# Real\n")
+        os.symlink(str(tmp_path / "hub" / "gone.md"), str(rules / "dangling.md"))
+
+        results = ci_glob(tmp_path, ".claude/rules/*.md")
+
+        assert [p.name for p in results] == ["real.md"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_valid_symlink_kept(self, tmp_path: Path) -> None:
+        """Valid symlink-to-file still discovered (symlink-follow preserved)."""
+        from reporails_cli.core.discovery.agent_discovery import ci_glob
+
+        target = tmp_path / "shared.md"
+        target.write_text("# Shared\n")
+        os.symlink(str(target), str(tmp_path / "CLAUDE.md"))
+
+        results = ci_glob(tmp_path, "CLAUDE.md")
+
+        assert [p.name for p in results] == ["CLAUDE.md"]

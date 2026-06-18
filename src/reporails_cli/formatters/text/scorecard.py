@@ -6,7 +6,7 @@ Renders the bottom summary section: score bar, scope, findings, compliance, CTA.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from rich.console import Console
@@ -15,8 +15,14 @@ from reporails_cli.formatters.text.display_constants import (
     HRULE,
     RULE_CATEGORY_MAP,
     classify_file,
+    display_rule_id,
     finding_category,
     get_term_width,
+    rule_docs_url,
+)
+from reporails_cli.formatters.text.score import (
+    SCORE_GREEN_CUTOFF,
+    score_color,
 )
 
 console = Console()
@@ -34,30 +40,16 @@ def _hint_totals(result: Any) -> tuple[int, int]:
     return errors, warnings
 
 
-def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:
-    """Compute a 0-10 display score from compliance band + finding severity.
+def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:  # noqa: ARG001
+    """Return the api's whole-project display score verbatim.
 
-    Band sets the base range, severity rates adjust within it.
-    Rates are relative to instruction count so larger projects
-    aren't penalized for having more atoms to check.
+    The score is the analysis service's own verdict, computed server-side; the CLI
+    renders it without re-deriving. Falls back to 0.0 when offline (no server quality).
+    `n_atoms` is retained for call-signature stability.
     """
-    s = result.stats
-    hint_errors, hint_warnings = _hint_totals(result)
-    total_errors = s.errors + hint_errors
-    total_warnings = s.warnings + hint_warnings
-
-    if total_errors + total_warnings + s.infos == 0:
-        return 10.0
-
-    base = 6.0
-    if has_quality:
-        band = result.quality.compliance_band
-        base = 8.5 if band == "HIGH" else 5.5 if band == "MODERATE" else 3.0
-
-    denom = max(n_atoms, total_errors + total_warnings + s.infos, 1)
-    penalty = min(4.0, (total_errors / denom) * 30) + min(2.0, (total_warnings / denom) * 2)
-
-    return float(round(max(0.0, min(10.0, base - penalty)), 1))
+    if has_quality and result.quality is not None:
+        return float(result.quality.display_score)
+    return 0.0
 
 
 def print_score_line(score: float, tw: int) -> None:
@@ -65,7 +57,7 @@ def print_score_line(score: float, tw: int) -> None:
     bar_width = min(40, tw - 26)
     filled = round(bar_width * score / 10)
     bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
-    color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
+    color = score_color(score)
     console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  [dim]{bar}[/dim]")
 
 
@@ -78,8 +70,24 @@ _SURFACE_NAMES = {
     "skill": "Skills",
     "agent": "Agents",
     "memory": "Memory",
+    "imported": "Imported",
 }
-_SURFACE_ORDER = ["main", "nested", "rule", "skill", "agent", "memory"]
+# `imported` (eager `@`-imports) earns a scored bar. `referenced` (discoverable markdown
+# links) deliberately gets NO surface bar — the harness never loads it, so a score would be
+# a false signal; its findings surface in the Referenced file-panel group instead.
+_SURFACE_ORDER = ["main", "nested", "rule", "skill", "agent", "memory", "imported"]
+
+
+def _surface_key(rel: str, ft_by_path: dict[str, str]) -> str:
+    """Surface tag for a path.
+
+    `@`-import-reached files (`file_type == "generic"`, eager) map to the Imported surface;
+    everything else falls back to the path-based `classify_file` tag. Markdown-`referenced`
+    files therefore land outside `_SURFACE_ORDER` and never get a scored bar (by design).
+    """
+    if ft_by_path.get(rel, "") == "generic":
+        return "imported"
+    return classify_file(rel).split(":")[0]
 
 
 @dataclass
@@ -87,18 +95,27 @@ class SurfaceHealth:
     """Per-surface health score for the scorecard."""
 
     name: str
-    score: float
+    # `None` marks an unscored item/surface (no charged atoms — a non-instruction
+    # surface or an empty instruction file); rendered as "not scored", no bar/band.
+    score: float | None
     file_count: int
     finding_count: int
     errors: int = 0
     warnings: int = 0
     infos: int = 0
+    # Findings grouped by Category enum value (`structure`, `direction`,
+    # `coherence`, `efficiency`, `maintenance`, `governance`). Empty when no
+    # findings have a recognizable category code. Sum of values equals
+    # `finding_count` for findings whose rule-id second segment maps via
+    # `CATEGORY_CODES`; rules with non-standard IDs are excluded.
+    category_breakdown: dict[str, int] = field(default_factory=dict)
 
 
 def compute_surface_scores(
     result: Any,
     ruleset_map: Any = None,
     project_root: Any = None,
+    file_type_by_path: dict[str, str] | None = None,
 ) -> list[SurfaceHealth]:
     """Compute per-surface health scores from combined result.
 
@@ -117,28 +134,34 @@ def compute_surface_scores(
 
     root = Path(project_root) if project_root is not None else Path.cwd()
 
+    # Per-path classifier file_type (computed at the composition root for generic-scanned
+    # files) routes `@`-import-reached files to the Imported surface.
+    ft_by_path = file_type_by_path or {}
+
     # Count files per surface from ruleset_map (authoritative file list)
     surface_file_counts: dict[str, int] = {}
     if ruleset_map is not None:
         try:
             for fr in ruleset_map.files:
-                rel = normalize_finding_path(fr.path, root)
-                tag = classify_file(rel).split(":")[0]
-                surface_file_counts[tag] = surface_file_counts.get(tag, 0) + 1
+                key = _surface_key(normalize_finding_path(fr.path, root), ft_by_path)
+                surface_file_counts[key] = surface_file_counts.get(key, 0) + 1
         except (AttributeError, TypeError):
             pass
 
     # Group findings by surface
     surface_findings: dict[str, list[Any]] = {}
     for f in result.findings:
-        tag = classify_file(f.file).split(":")[0]
-        surface_findings.setdefault(tag, []).append(f)
+        key = _surface_key(normalize_finding_path(f.file, root), ft_by_path)
+        surface_findings.setdefault(key, []).append(f)
 
-    # Group per-file analysis by surface (for compliance band + atom counts)
+    # Group per-file analysis by surface. Server per-file paths are absolute, but
+    # `classify_file` keys `main` on root-level path depth — so normalize to the
+    # project-relative form first (as `result.findings` already are), or every
+    # absolute path falls out of the `main` surface and its score reads 0.0.
     surface_analysis: dict[str, list[Any]] = {}
     for fa in result.per_file_analysis:
-        tag = classify_file(fa.file).split(":")[0]
-        surface_analysis.setdefault(tag, []).append(fa)
+        key = _surface_key(normalize_finding_path(fa.file, root), ft_by_path)
+        surface_analysis.setdefault(key, []).append(fa)
 
     # Collect all surfaces from any source
     all_keys = set(surface_findings) | set(surface_analysis) | set(surface_file_counts)
@@ -154,30 +177,11 @@ def compute_surface_scores(
         n_errors = sum(1 for f in findings if f.severity == "error")
         n_warnings = sum(1 for f in findings if f.severity == "warning")
         n_infos = sum(1 for f in findings if f.severity == "info")
-        n_atoms = sum(fa.stats.get("atoms", 0) for fa in analyses)
         # File count: prefer mapper discovery, fall back to findings/analysis
         n_files = surface_file_counts.get(key, max(len(analyses), len({f.file for f in findings})))
 
-        # Derive compliance band (majority vote across files in surface)
-        bands = [fa.compliance_band for fa in analyses if fa.compliance_band]
-        has_band = bool(bands)
-        if has_band:
-            # Majority band: most files determine the surface band
-            band_counts: Counter[str] = Counter(bands)
-            majority_band = band_counts.most_common(1)[0][0]
-        else:
-            majority_band = ""
-
-        # Score: same formula as compute_score
-        if n_errors + n_warnings + n_infos == 0:
-            score = 10.0
-        else:
-            base = 6.0
-            if has_band:
-                base = 8.5 if majority_band == "HIGH" else 5.5 if majority_band == "MODERATE" else 3.0
-            denom = max(n_atoms, n_errors + n_warnings + n_infos, 1)
-            penalty = min(4.0, (n_errors / denom) * 30) + min(2.0, (n_warnings / denom) * 2)
-            score = round(max(0.0, min(10.0, base - penalty)), 1)
+        # Score: mean of the api's per-file display scores over the surface's files.
+        score = _mean_display_score(analyses)
 
         surfaces.append(
             SurfaceHealth(
@@ -188,9 +192,54 @@ def compute_surface_scores(
                 errors=n_errors,
                 warnings=n_warnings,
                 infos=n_infos,
+                category_breakdown=_count_categories(findings),
             )
         )
     return surfaces
+
+
+def _mean_display_score(analyses: list[Any]) -> float | None:
+    """Atom-weighted mean of the api's per-file display scores.
+
+    Mirrors the server's whole-project roll-up so a surface's bar (and the filtered
+    headline) aggregate the same way the headline does. Unscored files (`display_score`
+    is `None` — no charged atoms) are excluded from the aggregation, matching the
+    server roll-up. Falls back to a simple mean when atom counts are unavailable;
+    `None` when there is no scored analysis to aggregate.
+    """
+    scored = [
+        (float(fa.display_score), int(fa.stats.get("atoms", 0)))
+        for fa in analyses
+        if fa is not None and fa.display_score is not None
+    ]
+    if not scored:
+        return None
+    total_weight = sum(w for _, w in scored)
+    if total_weight <= 0:
+        return round(sum(s for s, _ in scored) / len(scored), 1)
+    return round(sum(s * w for s, w in scored) / total_weight, 1)
+
+
+def _count_categories(findings: list[Any]) -> dict[str, int]:
+    """Group findings by rule-id-derived Category value.
+
+    Reads each finding's rule id (e.g. `CORE:C:0042`), pulls the second
+    segment (`C`), and maps it via `CATEGORY_CODES` to a category label.
+    Rules whose id shape doesn't yield a known code are skipped — the
+    counts only cover categorized findings.
+    """
+    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
+
+    counts: Counter[str] = Counter()
+    for f in findings:
+        parts = (f.rule or "").split(":")
+        if len(parts) < 2:
+            continue
+        category = CATEGORY_CODES.get(parts[1])
+        if category is None:
+            continue
+        counts[category.value] += 1
+    return dict(counts)
 
 
 def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
@@ -200,9 +249,15 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     """
     label = f"{s.name} ({s.file_count}):"
-    color = "green" if s.score >= 7.0 else "yellow" if s.score >= 4.0 else "red"
+    err = f"  [red]{s.errors} err[/red]" if s.errors else ""
+    if s.score is None:
+        empty = "░" * bar_width
+        return f"{label:13s} [dim]{empty}[/dim]  [dim]not scored[/dim]{err}"
+    color = score_color(s.score)
     bar = _score_bar(s.score, bar_width, color)
-    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]"
+    # A surface can score well while errors remain, so the error count is what
+    # routes attention — surface the per-surface error tally next to the bar.
+    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{err}"
 
 
 def _score_bar(score: float, bar_width: int, color: str) -> str:
@@ -275,20 +330,50 @@ def print_category_bars(findings: tuple[Any, ...], tw: int) -> None:
 # ── Scorecard sub-renderers ───────────────────────────────────────────
 
 
-def _render_score_bar(
+_VERDICT_LABEL_W = 9  # widest label is "Findings"
+
+
+def _render_verdict_block(
     result: Any,
     has_quality: bool,
     n_atoms: int,
     elapsed_ms: float,
 ) -> None:
-    """Render score line with progress bar (colored fill + dim empty)."""
+    """Render the Quality headline and the findings worklist beneath it.
+
+    One quality number — the server's single scoring verdict, which already folds in
+    delivery (completeness + truncation) so a structurally incomplete or truncated file
+    cannot read as high quality. The findings line below is the worklist, not a
+    competing score.
+    """
     tw = get_term_width()
-    score = compute_score(result, has_quality, n_atoms)
-    bar_width = min(30, tw - 40)
-    color = "green" if score >= 7.0 else "yellow" if score >= 4.0 else "red"
-    bar = _score_bar(score, bar_width, color)
+    bar_width = min(20, max(10, tw - 48))
     elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
-    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  {bar}{elapsed_s}")
+
+    score: float | None = None
+    if has_quality and result.quality is not None:
+        score = compute_score(result, has_quality, n_atoms)
+        color = score_color(score)
+        bar = _score_bar(score, bar_width, color)
+        value = f"[{color} bold]{score:>4.1f}[/{color} bold] / 10"
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}{value}  {bar}{elapsed_s}")
+    else:
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (server diagnostics unavailable)[/dim]{elapsed_s}")
+
+    _render_findings_axis(result)
+
+    # Bridging caption when the score is high but errors remain, so a green headline
+    # above red errors does not read as "nothing to do".
+    if score is not None and score >= SCORE_GREEN_CUTOFF and result.stats.errors:
+        console.print("  [dim]Quality folds in the findings below; the listed errors are still your worklist.[/dim]")
+
+
+def _render_findings_axis(result: Any) -> None:
+    """Render the Findings worklist line — distinct from the score; errors carry red."""
+    s = result.stats
+    err = f"[red]{s.errors} errors[/red]" if s.errors else f"[dim]{s.errors} errors[/dim]"
+    parts = [err, f"[yellow]{s.warnings} warnings[/yellow]", f"[dim]{s.infos} info[/dim]"]
+    console.print(f"  {'Findings':<{_VERDICT_LABEL_W}}{' · '.join(parts)}")
 
 
 @dataclass
@@ -361,7 +446,7 @@ def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, 
     buckets: dict[str, dict[str, Any]] = {}
     for f in findings:
         bucket = buckets.setdefault(
-            f.rule,
+            display_rule_id(f.rule),
             {"count": 0, "severity": f.severity, "message": f.message},
         )
         bucket["count"] += 1
@@ -393,7 +478,11 @@ def _render_top_rules(result: Any) -> None:
         snippet = message.split(".")[0].split("—")[0].strip()
         if len(snippet) > snippet_w:
             snippet = snippet[: snippet_w - 1] + "…"
-        console.print(f"    {rule:<{rule_w}} x{count:<{count_w}} {label}  {snippet}")
+        # Hyperlink the ID but pad by its visible length — the link markup is zero-width.
+        url = rule_docs_url(rule)
+        rule_cell = f"[link={url}]{rule}[/link]" if url else rule
+        pad = " " * max(0, rule_w - len(rule))
+        console.print(f"    {rule_cell}{pad} x{count:<{count_w}} {label}  {snippet}")
 
 
 def _render_results_summary(
@@ -402,20 +491,17 @@ def _render_results_summary(
     hint_errors: int,
     hint_warnings: int,
 ) -> tuple[int, int]:
-    """Render findings, pro diagnostics, and cross-file counts. Returns (visible_findings, pro_total)."""
+    """Render pro diagnostics + cross-file counts. Returns (visible_findings, pro_total).
+
+    The error/warning/info breakdown now lives in the top verdict block's Findings
+    line, so it is not repeated here.
+    """
     s = result.stats
     visible_findings = s.total_findings
-    parts = []
-    if s.errors:
-        parts.append(f"[red]{s.errors} errors[/red]")
-    parts.append(f"[yellow]{s.warnings} warnings[/yellow]")
-    parts.append(f"{s.infos} info")
-
-    console.print()
-    console.print(f"  {visible_findings} findings \u00b7 {' \u00b7 '.join(parts)}")
 
     pro_total = sum(h.count for h in result.hints) if result.hints else 0
     if pro_total:
+        console.print()
         pro_parts = []
         if hint_errors:
             pro_parts.append(f"[red]{hint_errors} errors[/red]")
@@ -456,7 +542,7 @@ def print_scorecard(
 
     console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
 
-    _render_score_bar(result, has_quality, n_atoms, elapsed_ms)
+    _render_verdict_block(result, has_quality, n_atoms, elapsed_ms)
 
     agent_name = agent.title() if agent else "auto"
     console.print(f"  Agent: {agent_name}")
@@ -465,14 +551,21 @@ def print_scorecard(
     label = LEVEL_LABELS.get(level, "Unknown")
     console.print(f"  Level: {level.value} [bold]{label}[/bold]")
 
-    multi_surface = surface_health is not None and len(surface_health) > 1
-    has_items = item_health is not None and len(item_health) > 1
+    # Offline runs carry no server scores, so suppress the per-surface / per-item bars
+    # entirely — rendering every surface as "not scored" reads as broken. The "Quality
+    # n/a (server diagnostics unavailable)" headline already states the offline state.
+    multi_surface = has_quality and surface_health is not None and len(surface_health) > 1
+    has_items = has_quality and item_health is not None and len(item_health) > 1
     if scope is not None:
         _render_scope(scope, has_surface_health=multi_surface or has_items)
 
-    if surface_health is not None and len(surface_health) > 1:
+    if multi_surface and surface_health is not None:
         _render_surface_health(surface_health)
-    elif item_health is not None and len(item_health) > 1:
+        # Generic-scanned `@`-imports now count toward Quality — name the headline shift
+        # so the number isn't a surprise the user has to reverse-engineer.
+        if any(s.name == "Imported" for s in surface_health):
+            console.print("\n  [dim]Imported files (@-imports) are eagerly loaded, so they count toward Quality.[/dim]")
+    elif has_items and item_health is not None:
         from reporails_cli.formatters.text.item_scorecard import render_item_health
 
         render_item_health(item_health)

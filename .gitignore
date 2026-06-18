@@ -8,8 +8,8 @@ __pycache__
 .pytest_cache
 .ruff_cache
 
-# Internal specs
-specs/
+# Internal coordination surface — private inner repo, never ships in the public CLI
+/hub/
 
 # Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/

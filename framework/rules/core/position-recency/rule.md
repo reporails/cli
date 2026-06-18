@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: high
 match: {}
+fix: |
+  Move the abstract directive earlier in the file, or follow it
+  immediately with a named-construct elaboration. Directives buried
+  deep in a file with abstract phrasing lose attention to anything
+  that comes after. Front-load specificity — name the tool / file /
+  command in the same sentence the directive appears in.
 ---
 
 # Position Recency

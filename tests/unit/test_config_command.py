@@ -180,6 +180,18 @@ class TestConfigEdgeCases:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
+    def test_set_exclude_files_parses_comma_separated_list(self, tmp_path: Path) -> None:
+        """`exclude_files` is an accepted list key; comma-separated input persists as a YAML list."""
+        result = runner.invoke(
+            config_app,
+            ["set", "exclude_files", ".claude/agents/lead.md, .claude/skills/**", "--path", str(tmp_path)],
+        )
+        assert result.exit_code == 0, result.output
+        data = yaml.safe_load((tmp_path / ".ails" / "config.yml").read_text())
+        assert data["exclude_files"] == [".claude/agents/lead.md", ".claude/skills/**"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_malformed_global_config_handled(self, tmp_path: Path) -> None:
         """Malformed YAML in global config should not crash config list."""
         global_home = tmp_path / ".reporails"

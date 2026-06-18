@@ -10,10 +10,21 @@ import json
 import logging
 import socket
 import sys
+import time
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+class DaemonStatus(str, Enum):
+    """Result of ``ensure_daemon`` — drives caller's user-visible messaging."""
+
+    ATTACHED = "attached"  # daemon already running, ping succeeded
+    STARTED = "started"  # we forked it; ping confirms it is responding
+    STARTING = "starting"  # we forked it; socket exists but ping not yet ack'd
+    UNAVAILABLE = "unavailable"  # Windows, fork failure, or process died
 
 
 def _socket_path() -> Path:
@@ -114,15 +125,31 @@ def map_ruleset_via_daemon(
         return None
 
 
-def ensure_daemon() -> bool:
-    """Ensure global daemon is running. Start it if not. Returns True if available."""
+def ensure_daemon() -> DaemonStatus:
+    """Ensure global daemon is running. Start it if not.
+
+    Returns a status enum the caller uses to drive user-visible messaging and
+    decide whether to attempt a daemon round-trip or go straight to in-process
+    mapping. A readiness ping after ``start_daemon`` distinguishes a fully
+    attached daemon (``STARTED``) from one whose socket is bound but whose
+    model warmup is still in flight (``STARTING``).
+    """
     from reporails_cli.core.mapper.daemon import is_daemon_running, start_daemon
 
     if is_daemon_running():
-        return True
+        return DaemonStatus.ATTACHED
 
     try:
         start_daemon()
-        return is_daemon_running()
     except OSError:
-        return False
+        return DaemonStatus.UNAVAILABLE
+
+    if not is_daemon_running():
+        return DaemonStatus.UNAVAILABLE
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        if ping() is not None:
+            return DaemonStatus.STARTED
+        time.sleep(0.05)
+    return DaemonStatus.STARTING

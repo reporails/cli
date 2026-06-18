@@ -148,6 +148,7 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         severity=_parse_severity(frontmatter),
         slug=frontmatter.get("slug", ""),
         execution=Execution(raw_execution),
+        fix=str(frontmatter.get("fix", "") or "").strip(),
         match=_parse_match(frontmatter),
         supersedes=frontmatter.get("supersedes"),
         inherited=frontmatter.get("inherited"),

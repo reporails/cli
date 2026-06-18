@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from fnmatch import fnmatch
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -32,8 +33,10 @@ from reporails_cli.core.platform.config.bootstrap import (
 )
 from reporails_cli.core.platform.dto.models import (
     AgentConfig,
+    Execution,
     ProjectConfig,
     Rule,
+    RuleType,
     Severity,
 )
 from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file, parse_frontmatter
@@ -49,6 +52,29 @@ def clear_rule_cache() -> None:
     """Clear the rule loading cache. Called by --refresh and after ails update."""
     _path_cache.clear()
     clear_yaml_cache()
+    structural_rule_ids.cache_clear()
+
+
+@lru_cache(maxsize=8)
+def structural_rule_ids(agent: str = "") -> frozenset[str]:
+    """Rule ids of the structural family — mechanical rules that run locally.
+
+    These check section / config / file presence and hygiene; they are scored on a
+    separate completeness axis, not the main score. Sourced from the registry
+    (single source of truth); empty if none load.
+
+    Must be resolved with the SAME agent the findings were produced under: an agent
+    rule that supersedes a core structural rule (e.g. `CODEX:E:0001` superseding
+    `CORE:E:0001`) replaces it under the agent's id, so the no-agent (core-only) set
+    would miss it and the matching finding would be dropped from the completeness map.
+    """
+    try:
+        rules = load_rules(agent=agent)
+    except (OSError, ValueError, KeyError):
+        return frozenset()
+    return frozenset(
+        rid for rid, rule in rules.items() if rule.type == RuleType.MECHANICAL and rule.execution == Execution.LOCAL
+    )
 
 
 def get_rules_dir() -> Path:

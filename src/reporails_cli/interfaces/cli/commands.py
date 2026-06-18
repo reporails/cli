@@ -1,4 +1,4 @@
-"""CLI commands — version, update."""
+"""CLI commands — version, update, root --version/-V flag."""
 
 from __future__ import annotations
 
@@ -7,9 +7,31 @@ import typer
 from reporails_cli.interfaces.cli.helpers import app, console
 
 
-@app.command("version", rich_help_panel="Configuration")
+def _print_version_and_exit(value: bool) -> None:
+    if value:
+        from reporails_cli import __version__ as cli_version
+
+        print(cli_version)
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    _version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        is_eager=True,
+        callback=_print_version_and_exit,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """Root callback — handles --version/-V short form."""
+
+
+@app.command("version", rich_help_panel="Maintenance")
 def show_version() -> None:
-    """Show CLI version and install method."""
+    """Show the version and install method."""
     from reporails_cli import __version__ as cli_version
     from reporails_cli.core.install.self_update import detect_install_method
 
@@ -17,7 +39,7 @@ def show_version() -> None:
     console.print(f"Install: {detect_install_method().value}")
 
 
-@app.command("update", rich_help_panel="Commands")
+@app.command("update", rich_help_panel="Maintenance")
 def update() -> None:
     """Update ails to the latest version."""
     import shutil

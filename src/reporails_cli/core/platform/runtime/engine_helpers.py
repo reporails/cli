@@ -187,8 +187,8 @@ def _filter_dismissed_violations(  # pylint: disable=too-many-locals
 ) -> list[Violation]:
     """Filter out dismissed violations (cached as 'pass' in judgment cache).
 
-    Deterministic violations dismissed via ``ails heal`` are cached with
-    verdict='pass'. This removes them so ``ails check`` also hides them.
+    Deterministic violations dismissed via ``ails check --heal`` are cached
+    with verdict='pass'. This removes them so ``ails check`` also hides them.
     When ``use_cache=False`` (--refresh), all violations pass through.
     """
     if not violations or not use_cache:

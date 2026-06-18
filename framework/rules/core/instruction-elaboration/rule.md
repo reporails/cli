@@ -7,6 +7,12 @@ type: mechanical
 execution: server
 severity: high
 match: {}
+fix: |
+  Expand the instruction to 15-50 distinct tokens. Add the conditions
+  under which it applies, the specific tool / file / command involved,
+  and one concrete example. "Test the code" → "Run \`pytest tests/\`
+  with the \`-v\` flag before each \`git commit\` so failures surface
+  inline." Too-short instructions lack tokens the model can activate on.
 ---
 
 # Instruction Elaboration
@@ -27,7 +33,7 @@ Instructions with too few tokens are effectively invisible. Instructions padded 
 ~~~~markdown
 Use `pytest` with `@pytest.mark.parametrize` for boundary cases in
 `tests/unit/`. Run `uv run poe qa_fast` before committing.
-*Do NOT use `unittest.mock` or `MagicMock`.*
+*Do not rely on mocking libraries or test doubles.*
 ~~~~
 
 ### Fail
@@ -38,7 +44,7 @@ Run tests.
 
 ## Fix
 
-Elaborate instructions with multiple specific, diverse terms — each naming a different concrete aspect. "Do not use `unittest.mock`, `MagicMock`, `@patch`, or any test double for external service boundaries. Test against real implementations — real database connections, real HTTP endpoints, real queue consumers." Each named construct strengthens the instruction independently. Do NOT pad with generic filler: "when writing tests in this project's codebase, please ensure that you avoid using..." — filler tokens dilute without strengthening.
+Elaborate directives with multiple specific, diverse terms, each naming a different concrete aspect: `pytest`, `@pytest.mark.parametrize`, `tests/unit/`, real database connections, real HTTP endpoints. Naming strengthens a directive you want the model to follow. Prohibitions are the inverse: state the forbidden thing as an abstract category rather than a named construct, because naming a prohibited API anchors the forbidden concept instead of suppressing it. *Do not pad with generic filler.* Phrases like "when writing tests in this project, please ensure that you avoid using" dilute the signal without adding distinct terms.
 
 ## Limitations
 

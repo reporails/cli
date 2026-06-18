@@ -16,7 +16,7 @@ from pathlib import Path
 # Claude Code: @README, @docs/guide.md, @~/path, @./relative
 # Gemini CLI: @./path.md, @../path.md, @/absolute/path.md
 # Must NOT match: email@addr, @mentions in code blocks, inline `@code`
-_IMPORT_REF_RE = re.compile(
+IMPORT_REF_RE = re.compile(
     r"(?<![`\w@])"  # not inside backtick or after word char/@ (email)
     r"@("
     r"~[\w./_-]+"  # ~/home/path
@@ -52,7 +52,7 @@ _NON_EXPANDABLE_EXT = frozenset(
 _MAX_IMPORT_DEPTH = 5
 
 # Fenced code block pattern for stripping before import detection
-_FENCED_BLOCK_RE = re.compile(r"^(`{3,}|~{3,}).*?^\1", re.MULTILINE | re.DOTALL)
+FENCED_BLOCK_RE = re.compile(r"^(`{3,}|~{3,}).*?^\1", re.MULTILINE | re.DOTALL)
 
 
 def _resolve_import_target(
@@ -104,7 +104,7 @@ def expand_imports(
     if visited is None:
         visited = {str(source_path.resolve())}
 
-    code_ranges = [(m.start(), m.end()) for m in _FENCED_BLOCK_RE.finditer(content)]
+    code_ranges = [(m.start(), m.end()) for m in FENCED_BLOCK_RE.finditer(content)]
 
     def _in_code_block(pos: int) -> bool:
         return any(start <= pos < end for start, end in code_ranges)
@@ -122,4 +122,4 @@ def expand_imports(
         visited.add(str(target))
         return expand_imports(imported, target, depth=depth + 1, visited=visited)
 
-    return _IMPORT_REF_RE.sub(_replace, content)
+    return IMPORT_REF_RE.sub(_replace, content)

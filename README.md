@@ -1,4 +1,4 @@
-# Reporails CLI (v0.5.10)
+# Reporails CLI (v0.5.11)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Claude, Codex, Copilot, Cursor, and Gemini.**
 > 
@@ -12,36 +12,37 @@ npx @reporails/cli check
 uvx --from reporails-cli ails check
 ```
 
-No install, no account. Actionable findings in seconds - fix them, run again, watch the score improve:
+No install, no account. The headline is a single **Quality** score (the analysis service's verdict on how well-formed your instructions are); fix the findings that move it, run again, watch it climb:
 
 ```
-Reporails - Diagnostics
+Reporails — Diagnostics
 
-  ┌─ Main (4)  61 directive / 9 constraint · 71% prose
+  ┌─ Main (1)  10 directive / 1 constraint · 71% prose
   │ CLAUDE.md  10 dir / 1 con / 1 amb · 71% prose
-  │           Missing tech stack declaration - list languages, frameworks, and runtimes  CORE:C:0034
-  │           Missing MCP documentation - describe MCP server configuration if applicable  CORE:C:0027
-  │     ... and 3 more
-  │     4 brief · 1 orphan
+  │   ✗       Missing tech stack declaration — list languages, frameworks, runtimes  CORE:C:0034
+  │       → Name the languages, frameworks, and runtimes the project targets.
+  │   ⚠       'pytest' should be in backticks (×3)  CORE:E:0003
+  │       → Wrap in backticks: `pytest`
+  │     ◦ +4 lower-priority (won't move your score yet) · -v to list
+  │     ⊕ 6 Pro diagnostics (1 error) — isolated instructions, buried directives
   │
-  └─ 181 findings
-
-  [⋯ Agents (3) · Skills (10) · Rules (13)  +318 findings ⋯]
+  └─ 12 findings
 
   ── Summary ────────────────────────────────────────────────────────
 
-  Score: 7.3 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (3.9s)
+  Quality   6.4 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (4.1s)
+  Findings 3 errors · 38 warnings · 12 info
   Agent: Claude
+  Level: L4 Delegated
 
   Scope:
-    instructions: 277 directive / 448 prose (56%)
-                  75 constraint / 10 ambiguous
+    instructions: 64 directive / 102 prose (61%)
+                  18 constraint / 4 ambiguous
 
-  Main (4):     ▓▓▓▓▓▓▓▓▓▓░░░░░   6.9    Rules (13):   ▓▓▓▓▓▓▓▓▓▓▓▓░░░   7.9
-  Skills (10):  ▓▓▓▓▓▓▓▓▓▓▓░░░░   7.2    Agents (3):   ▓▓▓▓▓▓▓▓▓▓░░░░░   6.9
+  Main (1):    ▓▓▓▓▓▓▓▓▓░░░░░░   6.4  1 err    Rules (2):   ▓▓▓▓▓▓▓▓▓▓▓▓░░░   7.9
+  Skills (3):  ▓▓▓▓▓▓▓▓▓▓▓░░░░   7.2           Agents (1):  ▓▓▓▓▓▓▓▓▓▓░░░░░   6.6
 
-  499 findings · 5 errors · 416 warnings · 70 info
-  2 cross-file conflicts · 7 cross-file repetitions
+  + 41 Pro diagnostics (1 error · 32 warnings) — sign in for line numbers + fix coordinates
 ```
 
 ## Install permanently
@@ -74,7 +75,7 @@ Run on every PR so instruction-quality regressions (contradictions, oversized fi
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - sign-in for full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires
-    min-score: "7.0"                            # exit 1 if score < 7.0
+    min-score: "7.0"                            # exit 1 if Quality < 7.0
 ```
 
 Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
@@ -86,6 +87,8 @@ Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` 
 - [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md) - anonymous vs signed in, what each mode includes
 - [Configuration](https://github.com/reporails/cli/blob/main/docs/configuration.md) - disabling rules, project / global config, exclude paths
 - [Score Guide](https://github.com/reporails/cli/blob/main/docs/score-guide.md) - how the score is built and what it tells you
+- [Capability Levels](https://github.com/reporails/cli/blob/main/docs/capability-levels.md) - the L0-L7 ladder and what each level requires
+- [Rules CLI](https://github.com/reporails/cli/blob/main/docs/rules-cli.md) - `ails rules list --capability=skill` and friends — preflight rules before authoring
 - [FAQ](https://github.com/reporails/cli/blob/main/docs/faq.md) - common questions
 
 ## Built and validated for

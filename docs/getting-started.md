@@ -1,8 +1,8 @@
 ---
 title: "Getting Started"
 description: "Install, first run, what the output means"
-version: "0.5.10"
-last_updated: 2026-05-18
+version: "0.5.11"
+last_updated: 2026-06-17
 ---
 
 # Getting Started
@@ -33,20 +33,20 @@ Reporails — Diagnostics
 
   ── Summary ────────────────────────────────────────────────────────
 
-  Score: 7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  (1.3s)
+  Quality   7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  (1.3s)
+  Findings 16 errors · 4 warnings · 1 info
   Agent: Claude
+  Level: L4 Delegated
 
   Scope:
     instructions: 4 directive / 7 prose (50%)
                   3 constraint
-
-  21 findings · 4 warnings · 1 info
 ```
 
 Three things to read first:
 
-- **Score** — closer to 10 is better. See the [Score Guide](score-guide.md) for what each band means.
-- **Findings list** — each row is a rule that fired. Run `ails explain CORE:C:0035` (or whichever rule ID) to see what the rule checks for and how to fix it.
+- **Quality** — closer to 10 is better. See the [Score Guide](score-guide.md) for what each band means.
+- **Findings list** — each row is a rule that fired. Run `ails explain CORE:C:0035` (or whichever rule ID) to see what the rule checks for and how to fix it. In supporting terminals the rule IDs in the output are clickable links to their docs page.
 - **Scope summary** — counts of directives, constraints, and prose detected. If a number looks wrong (e.g., zero directives), your instructions are probably written as prose rather than as commands the agent can act on.
 
 ## Install permanently
@@ -89,7 +89,7 @@ See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configurat
 
 ## Common follow-ups
 
-- **The score is lower than you expected.** Run `ails check -v` to see all findings (the default output truncates after a per-file budget). Then `ails explain CORE:S:0001` (or whichever rule ID) to see the rule body and pass / fail examples. The [Score Guide](score-guide.md) explains what each band means, how per-surface scores roll up, and which rules to fix first for the biggest score improvement.
+- **The score is lower than you expected.** Run `ails check -v` to see all findings (the default output truncates after a per-file budget). Then `ails explain CORE:S:0002` (or whichever rule ID) to see the rule body and pass / fail examples. The [Score Guide](score-guide.md) explains what each band means, how per-surface scores roll up, and which rules to fix first for the biggest score improvement.
 - **You disagree with a rule.** Browse [reporails.com/rules](https://reporails.com/rules) for the rule's intent before deciding, then either disable it or override its severity in `.ails/config.yml` — see [Configuration → Disabling rules](configuration.md#disabling-rules).
 - **You want this in CI.** See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme) and [Configuration → Authentication](configuration.md#authentication) for capturing your API key with `ails auth token` and wiring it as `secrets.REPORAILS_API_KEY`.
 
@@ -101,20 +101,25 @@ ails check -f json          # machine-readable JSON
 ails check -f github        # GitHub Actions inline annotations
 ails check --strict         # exit code 1 if any finding fires
 ails check --agent claude   # only run rules scoped to one agent
+ails check --heal           # apply deterministic auto-fixes after validation
+ails check --fix            # alias for --heal (eslint / ruff convention)
+ails check --heal --dry-run # preview fixes without writing
 ```
 
 The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats` and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
 
 ## Focus on one file or capability
 
-When the whole-repo view is too noisy, name the capability and (optionally) the target:
+When the whole-repo view is too noisy, name the target. Each positional is `capability:name`, `@capability` (all of capability), or a path:
 
 ```bash
-ails check skill backlog    # focus on .claude/skills/backlog/SKILL.md
-ails check rule git         # focus on .claude/rules/git.md
-ails check agent rule-writer
-                            # subagent + any skills its frontmatter preloads
-ails check skill            # listing mode — table of all skills with scores
+ails check skills:backlog    # focus on .claude/skills/backlog/SKILL.md
+ails check rules:git         # focus on .claude/rules/git.md
+ails check agents:rule-writer
+                             # subagent + any skills its frontmatter preloads
+ails check @skills           # listing mode — table of all skills with scores
+ails check ./CLAUDE.md       # focus on a path
+ails check skills:backlog @agents  # mix: one skill + all agents
 ```
 
 The full pipeline still runs (so cross-file rules see the whole project), but only the focused file or capability appears in the output, with findings grouped by rule and a `Next:` action pointer. Listing mode (`ails check <capability>` with no name) prints a per-target score table for that capability under the detected agent. Capability names come from the agent's declared `file_types:` — both singular and plural are accepted.

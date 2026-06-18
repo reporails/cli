@@ -20,6 +20,7 @@ from reporails_cli.core.lint.mechanical.checks import (
     _resolve_glob_targets,
     _safe_float,
 )
+from reporails_cli.core.mapper.imports import FENCED_BLOCK_RE, IMPORT_REF_RE
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 
@@ -128,14 +129,20 @@ def extract_imports(
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check for @import references in instruction files."""
+    """Check for @import references in instruction files.
+
+    Uses the canonical `IMPORT_REF_RE` and fenced-block treatment from
+    `core/mapper/imports.py` so detection matches `expand_imports` — inline
+    `@code`, emails, and non-path `@tokens` are excluded.
+    """
     imports_found: list[str] = []
     for match in _get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
             content = match.read_text(encoding="utf-8")
-            imports_found.extend(re.findall(r"@[\w./-]+", content))
+            stripped = FENCED_BLOCK_RE.sub("", content)
+            imports_found.extend(m.group(1) for m in IMPORT_REF_RE.finditer(stripped))
         except OSError:
             continue
     if imports_found:
@@ -149,15 +156,62 @@ def extract_imports(
     return CheckResult(passed=True, message="No imports found")
 
 
+# Loading modes that do NOT contribute to the always-injected ("one round")
+# footprint: on_demand / discoverable surfaces load only when recalled or read.
+_EXCLUDED_LOADING = frozenset({"on_demand", "discoverable"})
+# Progressive-disclosure surfaces (skills, agents) inject only their
+# name + description metadata at startup, not their body.
+_PROGRESSIVE_LOADING = frozenset({"on_invocation"})
+
+
+def _metadata_bytes(path: Path) -> int:
+    """Startup footprint of a progressive surface — its name + description frontmatter only."""
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    if not content.startswith("---") or (end := content.find("---", 3)) < 0:
+        return 0
+    try:
+        fm = yaml.safe_load(content[3:end])
+    except yaml.YAMLError:
+        return 0
+    if not isinstance(fm, dict):
+        return 0
+    return len(f"{fm.get('name', '')}{fm.get('description', '')}".encode())
+
+
+def _eager_bytes(cf: ClassifiedFile) -> int:
+    """Bytes a classified surface contributes to the one-round (always-injected) footprint."""
+    loading = cf.properties.get("loading")
+    if loading in _EXCLUDED_LOADING:
+        return 0
+    try:
+        if loading in _PROGRESSIVE_LOADING:
+            return _metadata_bytes(cf.path)
+        return cf.path.stat().st_size
+    except OSError:
+        return 0
+
+
 def aggregate_byte_size(
     root: Path,
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check total byte size of all matching files."""
+    """Check the always-injected ("one round") instruction footprint against a byte cap.
+
+    Counts only what an agent loads every round: eager files (`loading: session_start`)
+    in full; progressive-disclosure surfaces (skills, agents — `loading: on_invocation`)
+    by their name + description metadata only; recalled/conditional surfaces
+    (`loading: on_demand` / `discoverable`, incl. recalled memory siblings) not at all.
+    The `pattern` form keeps counting full file sizes (no classified metadata).
+    """
     max_bytes = _safe_float(args.get("max"), float("inf"))
-    all_files = _get_counted_files(args, classified_files, root)
-    total = sum(f.stat().st_size for f in all_files)
+    if args.get("pattern"):
+        total = sum(f.stat().st_size for f in _get_counted_files(args, classified_files, root))
+    else:
+        total = sum(_eager_bytes(cf) for cf in classified_files if cf.path.is_file())
     if total <= max_bytes:
         return CheckResult(passed=True, message=f"Total {total}B within limit")
     return CheckResult(passed=False, message=f"Total {total}B exceeds max {max_bytes}")
@@ -179,7 +233,8 @@ def import_depth(
             content = filepath.read_text(encoding="utf-8")
         except OSError:
             return depth
-        refs = re.findall(r"@([\w./-]+)", content)
+        stripped = FENCED_BLOCK_RE.sub("", content)
+        refs = [m.group(1) for m in IMPORT_REF_RE.finditer(stripped)]
         max_d = depth
         for ref in refs:
             target = filepath.parent / ref
@@ -214,6 +269,37 @@ def directory_file_types(
     if bad:
         return CheckResult(passed=False, message=f"Non-{extensions} files: {', '.join(bad[:5])}")
     return CheckResult(passed=True, message=f"All files in {path} match {extensions}")
+
+
+def skill_entrypoint_present(
+    root: Path,
+    args: dict[str, Any],
+    _classified_files: list[ClassifiedFile],
+) -> CheckResult:
+    """Flag skill directories that lack a SKILL.md entry point.
+
+    Skills-root directories are located by globbing for existing entry
+    files (agent-agnostic); every immediate subdirectory of a skills root
+    must then contain the entry file. Project-aggregate: enumerates whole
+    skills roots, so it is skipped under scoped runs (see `_PROJECT_SCOPE_CHECKS`).
+    """
+    entry = str(args.get("entry", "SKILL.md"))
+    roots = {f.parent.parent for f in _resolve_glob_targets(f"**/{entry}", root) if f.is_file()}
+    missing: list[str] = []
+    for skills_root in sorted(roots):
+        if not skills_root.is_dir():
+            continue
+        for sub in sorted(p for p in skills_root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+            if not (sub / entry).is_file():
+                rel = sub.relative_to(root).as_posix() if sub.is_relative_to(root) else sub.name
+                missing.append(rel)
+    if not missing:
+        return CheckResult(passed=True, message=f"All skill directories contain {entry}")
+    return CheckResult(
+        passed=False,
+        message=f"Skill directory missing {entry}: {', '.join(missing[:5])}",
+        location=f"{missing[0]}:0",
+    )
 
 
 def frontmatter_valid_glob(

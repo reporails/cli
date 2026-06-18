@@ -6,6 +6,11 @@ category: efficiency
 type: mechanical
 severity: medium
 match: {}
+fix: |
+  Wrap the constraint sentence in `*single-asterisks*` for italic
+  emphasis. The model attends to italic markup on constraints more
+  reliably than to plain prose. `Do not edit \`generated/\` files.` →
+  `*Do not edit \`generated/\` files.*`
 ---
 
 # Italic Constraints

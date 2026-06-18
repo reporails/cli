@@ -7,6 +7,11 @@ type: mechanical
 severity: high
 backed_by: []
 match: {format: [freeform, frontmatter]}
+fix: |
+  Update the link target to point to an existing path. Either fix the
+  path (typo, wrong directory) or create the target file. Bare-token
+  links like `[ENGINE.md](ENGINE.md)` are usually wrap-bug artifacts —
+  review heal output and use a relative path the reader can follow.
 ---
 
 # Markdown Link Targets Resolve

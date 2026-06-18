@@ -34,8 +34,9 @@ jobs:
           echo "score=$SCORE"
           echo "level=$LEVEL"
           echo "violations=$VIOLATIONS"
-          [ -n "$SCORE" ] || { echo "FAIL: no score output"; exit 1; }
+          # score is intentionally empty on an offline run (no server score) — do not require it
           [ -n "$LEVEL" ] || { echo "FAIL: no level output"; exit 1; }
+          [ -n "$VIOLATIONS" ] || { echo "FAIL: no violations output"; exit 1; }
           [ -n "$RESULT" ] || { echo "FAIL: no result output"; exit 1; }
 
   pass-explicit-agent:
@@ -68,22 +69,31 @@ jobs:
 
   # --- Fail scenarios ---
 
-  fail-min-score:
-    name: "Fail: min-score gate rejects low score"
+  skip-min-score-offline:
+    name: "Pass: min-score gate skips on an offline run"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./action
-        id: should-fail
+        id: gate
         continue-on-error: true
         with:
           min-score: "11"
           from-source: "true"
-      - name: Verify failure
-        if: steps.should-fail.outcome != 'failure'
+      - name: Verify gate skipped (no server score offline)
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          SCORE: ${{ steps.gate.outputs.score }}
         run: |
-          echo "Expected failure from min-score=11 but got: ${{ steps.should-fail.outcome }}"
-          exit 1
+          echo "outcome=$OUTCOME score=$SCORE"
+          # Offline there is no server score, so the min-score gate logs a warning and
+          # skips rather than failing the build — even an unreachable min-score=11 passes.
+          # The score-rejection path needs a live server score and is covered by unit tests.
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "FAIL: min-score gate failed the build offline (should skip)"
+            exit 1
+          fi
+          [ -z "$SCORE" ] || { echo "FAIL: expected empty score on offline run, got $SCORE"; exit 1; }
 
   fail-strict:
     name: "Fail: strict mode on violations"

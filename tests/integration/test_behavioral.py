@@ -235,7 +235,10 @@ class TestCheckTextOutput:
     def test_score_displayed(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "text"])
         assert result.exit_code == 0
-        assert "SCORE:" in result.output or "/ 10" in result.output or "Score:" in result.output
+        # The summary always leads with the Quality headline: a score value when a
+        # server analysis is available, "Quality n/a" offline. The score-value render
+        # is covered online by the e2e suite.
+        assert "Quality" in result.output
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint
@@ -532,7 +535,7 @@ class TestCheckConfig:
 
 
 class TestHealCommand:
-    """ails heal must auto-fix and report remaining violations."""
+    """ails check --heal must auto-fix and report remaining violations."""
 
     # test_heal_missing_path covered by smoke tests
 
@@ -547,7 +550,7 @@ class TestHealCommand:
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
 
@@ -569,7 +572,7 @@ class TestHealCommand:
         (p / "CLAUDE.md").write_text("# Project\n\nBasic project.\n")
 
         # First pass — applies fixes
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
         assert result.exit_code in (0, None)
         # Should produce some output (fixes applied, violations listed, or nothing to heal)
         assert len(result.output.strip()) > 0
@@ -585,7 +588,7 @@ class TestHealCommand:
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p), "-f", "json"])
+        result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
 
         assert result.exit_code in (0, None), f"heal failed: {result.output}"
         data = json.loads(result.output)
@@ -603,7 +606,7 @@ class TestHealCommand:
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
         assert result.exit_code in (0, None)
 
     @pytest.mark.integration
@@ -618,7 +621,7 @@ class TestHealCommand:
         # Minimal content that will have non-fixable violations
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
-        result = runner.invoke(app, ["heal", str(p)])
+        result = runner.invoke(app, ["check", str(p), "--heal"])
 
         assert result.exit_code in (0, None)
         # Should show either fixes applied or remaining violations

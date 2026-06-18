@@ -1,17 +1,23 @@
 ---
 title: "FAQ"
 description: "Common questions"
-version: "0.5.6"
-last_updated: 2026-05-04
+version: "0.5.11"
+last_updated: 2026-06-17
 ---
 
 # FAQ
 
 ## Why is my score lower than I expected?
 
-The score reflects severity-weighted findings, not finding *count*. One critical finding will pull the score down further than five low-severity ones. Run `ails check -v` to see all findings, then look at the top of the list — if there's a `critical` or `high` row, that's the score driver.
+The score is a single quality verdict, **not a tally of findings**. It measures how strongly your instructions are written — how specific, direct, and well-structured they are, and how little they compete with one another — so a file with vague, buried, or conflicting instructions scores low even when the finding *count* is small, and a long file with many cosmetic findings can still score well. The `Findings` line is a separate worklist; clearing low-severity findings will not move the number much.
+
+To see what's pulling it down, run `ails check -v` and read the per-surface bars (Main, Rules, Skills, …) — the lowest-scoring surface is where the weak instructions live. See [Score Guide](score-guide.md) for how the number is built.
 
 If you disagree with a specific finding, [open an issue](https://github.com/reporails/cli/issues) so we can review the rule, and / or disable the rule locally — see [How do I disable a rule I disagree with?](#how-do-i-disable-a-rule-i-disagree-with) below.
+
+## How do I make an agent write rule-compliant skills on the first try?
+
+Use `ails rules list --capability=skill -f md` to fetch the workflow-ordered rule set, then paste it into the agent's authoring prompt. The agent reads the constraints first and writes a compliant SKILL.md instead of patching findings after `ails check`. Same flow for `--capability=agent`, `--capability=rule`, `--capability=main`. `--no-examples` strips Pass/Fail blocks for a shorter context payload. See [Rules CLI](rules-cli.md).
 
 ## How do I disable a rule I disagree with?
 
@@ -42,6 +48,8 @@ See [reporails.com/privacy-policy](https://reporails.com/privacy-policy) for the
 
 The local rules (mechanical and structural) run fully offline. The semantic rules (reinforcement patterns, content-quality checks, cross-file analysis) require a request to the diagnostic backend. There is no offline-only mode for those, the analysis and diagnostics runs server-side.
 
+When the analysis backend is unreachable, the run degrades gracefully: the headline reads `Quality n/a` and the per-surface and per-item score bars are suppressed (there's no single quality score without the analysis service). You still get the findings from the local rules, the scope summary, and the local (mechanical and structural) rule results — just no score.
+
 ## Is my instruction file ever stored on the diagnostic backend?
 
 No. Instruction file contents never leave your machine. The CLI parses your files locally and computes embeddings on-device; the diagnostic backend receives only analysis metadata (embeddings, structural counts, cluster IDs, file paths) — never the prose, examples, or reasoning text in your instruction files.
@@ -71,6 +79,10 @@ See the [GitHub Actions section in the README](https://github.com/reporails/cli#
 No. Reporails ships **CORE rules** that are agent-neutral (file size, heading hierarchy, reinforcement patterns, credential handling, cross-file consistency) and **per-agent rules** that target each agent's own config formats (Claude hooks, Cursor `.mdc` rule frontmatter, Copilot instructions, Codex AGENTS.md conventions, Gemini commands and extensions). See [Agent Support → Cross-agent rules](agent-support.md#cross-agent-rules) for the breakdown of which rules fire universally.
 
 When you run `ails check --agent claude`, only CORE plus Claude-scoped rules fire. Without `--agent`, Reporails [auto-detects which agents are present](agent-support.md#how-agent-detection-works) by looking for each agent's base config file and runs the corresponding rule sets.
+
+## How do I auto-fix findings?
+
+Run `ails check --heal` — it applies the deterministic fixes (missing sections, formatting) after validation. Preview what would change first with `ails check --heal --dry-run`. `--fix` is an alias for `--heal` (matching the eslint / ruff convention), so `ails check --fix` works the same way.
 
 ## What's the right way to file a bug?
 

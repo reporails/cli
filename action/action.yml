@@ -123,13 +123,17 @@ runs:
       run: |
         python3 -c "
         import sys
-        score = float('${{ steps.check.outputs.score }}')
+        raw = '${{ steps.check.outputs.score }}'.strip()
+        if not raw:
+            print('::warning::No quality score available (offline run) — skipping min-score gate')
+            sys.exit(0)
+        score = float(raw)
         threshold = float('${{ inputs.min-score }}')
         if score < threshold:
-            print(f'::error::Score {score:.1f} is below minimum threshold {threshold:.1f}')
+            print(f'::error::Quality {score:.1f} is below minimum threshold {threshold:.1f}')
             sys.exit(1)
         else:
-            print(f'Score {score:.1f} meets minimum threshold {threshold:.1f}')
+            print(f'Quality {score:.1f} meets minimum threshold {threshold:.1f}')
         "
 
     - name: Write step summary

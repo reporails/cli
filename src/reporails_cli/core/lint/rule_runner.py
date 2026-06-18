@@ -42,6 +42,7 @@ def _collect_mechanical_findings(
     rules: dict[str, Rule],
     project_dir: Path,
     classified: list[Any],
+    scoped: bool = False,
 ) -> list[LocalFinding]:
     """Run mechanical checks and convert Violations to LocalFinding."""
     from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
@@ -51,7 +52,7 @@ def _collect_mechanical_findings(
         k: v for k, v in rules.items() if v.type == RuleType.MECHANICAL and v.execution == Execution.LOCAL
     }
     findings: list[LocalFinding] = []
-    for v in run_mechanical_checks(mechanical_rules, project_dir, classified):
+    for v in run_mechanical_checks(mechanical_rules, project_dir, classified, scoped=scoped):
         file_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
         line = 0
         if ":" in v.location:
@@ -64,6 +65,7 @@ def _collect_mechanical_findings(
                 severity=_to_display_severity(v.severity.value),
                 rule=v.rule_id,
                 message=v.message,
+                fix=v.fix,
                 source="m_probe",
                 check_id=v.check_id or "",
             )
@@ -126,40 +128,57 @@ def _collect_deterministic_findings(
                 project_dir,
                 instruction_files=target_files,
                 min_lines_overrides=min_lines_overrides,
+                fix_by_rule={rule.id: rule.fix} if rule.fix else None,
             )
         )
     return findings
+
+
+def _extend_with_generic(
+    instruction_files: list[Path],
+    classified: list[Any],
+    generic_scanning: bool,
+) -> list[Path]:
+    """Append link-walked generic-class files so rules without explicit `match` see them."""
+    effective = list(instruction_files)
+    if not generic_scanning:
+        return effective
+    known = set(effective)
+    for cf in classified:
+        if cf.path not in known and cf.file_type == "generic":
+            effective.append(cf.path)
+            known.add(cf.path)
+    return effective
 
 
 def run_m_probes(
     project_dir: Path,
     instruction_files: list[Path],
     agent: str = "",
+    scoped: bool = False,
 ) -> list[LocalFinding]:
-    """Run M-probe checks (mechanical + deterministic) against instruction files."""
+    """Run M-probe checks (mechanical + deterministic) against instruction files.
+
+    When `scoped` is True (targeted check — capability/path/file scope),
+    project-aggregate mechanical checks are skipped so they cannot misfire
+    against a narrowed subset.
+    """
     from reporails_cli.core.classify import classify_files, load_file_types
     from reporails_cli.core.platform.adapters.registry import load_rules
     from reporails_cli.core.platform.config.config import get_project_config
 
-    rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
     file_types = load_file_types(agent or "generic")
     try:
         generic_scanning = get_project_config(project_dir).generic_scanning
     except (OSError, ValueError):
         generic_scanning = False
     classified = classify_files(project_dir, instruction_files, file_types, generic_scanning=generic_scanning)
-    # Extend instruction_files with link-walked generic-class files so
-    # downstream rules without explicit `match` still see them.
-    effective_files = list(instruction_files)
-    if generic_scanning:
-        known = set(effective_files)
-        for cf in classified:
-            if cf.path not in known and cf.file_type == "generic":
-                effective_files.append(cf.path)
-                known.add(cf.path)
+    effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
 
     findings: list[LocalFinding] = []
-    findings.extend(_collect_mechanical_findings(rules, project_dir, classified))
+    findings.extend(_collect_mechanical_findings(rules, project_dir, classified, scoped=scoped))
     findings.extend(_collect_deterministic_findings(rules, project_dir, effective_files, classified))
 
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 9), f.line))
@@ -186,7 +205,8 @@ def run_content_quality_checks(
     if not isinstance(ruleset_map, _RulesetMap):
         return []
 
-    rules = load_rules(project_root=project_dir, scan_root=project_dir, agent=agent)
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
 
     # Classify files so content_checker can respect rule.match targeting
     classified = []

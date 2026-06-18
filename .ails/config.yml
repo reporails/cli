@@ -2,8 +2,7 @@ default_agent: claude
 exclude_dirs:
   - fixtures
   - .venv
-  - docs
-  - specs
+  - hub
   - framework
   - .mypy_cache
   - .ruff_cache

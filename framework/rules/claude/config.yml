@@ -272,8 +272,10 @@ file_types:
 
   memory:
     # Memory directory holds MEMORY.md (index, eager) + sibling *.md topic
-    # files (read on-demand). Directory glob matches both with shared
-    # `loading: session_start`; per-entry loading split is a future move.
+    # files (read on-demand). The directory glob matches both; the classifier
+    # stamps the per-entry split — MEMORY.md keeps `loading: session_start`,
+    # siblings become `loading: on_demand` — so size/coherence rules count the
+    # injected index, not the recalled entries.
     source: https://code.claude.com/docs/en/memory#auto-memory
     format: freeform
     scope: global

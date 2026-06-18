@@ -24,13 +24,20 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Idle shutdown is opt-in via AILS_DAEMON_IDLE_S env var (seconds). Without
-# the override, the daemon runs in the background until explicitly stopped
-# (`ails daemon stop`) or killed — matching user expectations for a
-# background mapper. The env var stays available for integration tests that
-# want fast cleanup (e.g. AILS_DAEMON_IDLE_S=5).
-_IDLE_TIMEOUT_S_RAW = os.environ.get("AILS_DAEMON_IDLE_S")
-_IDLE_TIMEOUT_S: int | None = int(_IDLE_TIMEOUT_S_RAW) if _IDLE_TIMEOUT_S_RAW else None
+# Idle shutdown is on by default (30 min) so resident embedding models don't
+# pin memory indefinitely on an idle machine. Override the window via the
+# AILS_DAEMON_IDLE_S env var (seconds) — set low for CI (e.g. 5), set 0 to
+# disable idle shutdown entirely (daemon runs until `ails daemon stop`/kill).
+_DEFAULT_IDLE_TIMEOUT_S = 1800
+
+
+def _parse_idle_timeout() -> int | None:
+    from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
+
+    return parse_idle_timeout_env("AILS_DAEMON_IDLE_S", _DEFAULT_IDLE_TIMEOUT_S)
+
+
+_IDLE_TIMEOUT_S: int | None = _parse_idle_timeout()
 _SOCKET_BACKLOG = 2
 _MAX_REQUEST_BYTES = 10_000_000  # 10MB
 
@@ -188,9 +195,11 @@ def start_daemon() -> int:
 
         pid = os.fork()
         if pid > 0:
-            # Parent — wait briefly for daemon to be ready
+            # Parent — wait for child's accept loop to bind the socket.
+            # Cold model imports can take >2s; 4s headroom keeps the parent
+            # from giving up before the child has bound.
             sock_path = _socket_path()
-            for _ in range(20):
+            for _ in range(40):
                 time.sleep(0.1)
                 if sock_path.exists():
                     break
@@ -209,6 +218,11 @@ def _init_daemon_process() -> None:
     from reporails_cli.core.platform.runtime import _torch_blocker
 
     _torch_blocker.install()
+    # Drop any wall-clock backstop inherited from the forking `ails check` parent:
+    # fork() clears the interval timer but the SIGALRM disposition carries over.
+    if sys.platform != "win32":  # no SIGALRM/setitimer on Windows
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
     _pid_path().write_text(str(os.getpid()))
 
     import logging as _logging
@@ -249,9 +263,10 @@ def _daemon_main() -> None:
     ``map_ruleset`` requests block on ``warmup_done`` before dispatching;
     ``ping`` and ``shutdown`` are answered immediately regardless.
 
-    Lifecycle: runs until explicit shutdown command, SIGTERM/SIGINT, or
-    optional idle timeout (opt-in via AILS_DAEMON_IDLE_S). No parent-process
-    tracking; the global daemon isn't a child of any specific CLI process.
+    Lifecycle: runs until explicit shutdown command, SIGTERM/SIGINT, or the
+    idle timeout (default 30 min, AILS_DAEMON_IDLE_S seconds; 0 disables). No
+    parent-process tracking; the global daemon isn't a child of any specific
+    CLI process.
 
     Unreachable on Windows: callers gate on sys.platform before invoking.
     """
@@ -306,6 +321,7 @@ def _daemon_main() -> None:
     server_sock.close()
     sock_path.unlink(missing_ok=True)
     _pid_path().unlink(missing_ok=True)
+    models.unload()  # release resident models before the daemon process exits
 
 
 def _handle_connection(
