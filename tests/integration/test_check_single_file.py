@@ -81,19 +81,24 @@ def _claude_findings(data: dict) -> int:
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
-def test_single_file_scan_finds_violations(tmp_path: Path) -> None:
+def test_single_file_scan_finds_violations(tmp_path: Path, monkeypatch) -> None:
     """Regression: `ails check <file>` on a non-clean CLAUDE.md returns findings, not 'No findings.'
 
     Before the scan_root-normalization fix, a single-file target classified
     as empty (no file_type), so no rules applied and the scan returned zero
     findings even when the file had real violations.
+
+    Run from the project directory with a relative target — the canonical
+    usage — so path normalization stays single-drive (on Windows pytest's
+    tmp_path and the repo checkout can land on different drives, which breaks
+    the cross-drive `relative_to` the display filter relies on).
     """
     project = tmp_path / "proj"
     project.mkdir()
     (project / "CLAUDE.md").write_text(_VIOLATION_LADEN, encoding="utf-8")
+    monkeypatch.chdir(project)
 
-    target = project / "CLAUDE.md"
-    result = runner.invoke(app, ["check", str(target), "--agent", "claude", "-f", "json"])
+    result = runner.invoke(app, ["check", "CLAUDE.md", "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert _claude_findings(data) > 0, "single-file scan surfaced no findings for a non-clean CLAUDE.md"
@@ -137,6 +142,7 @@ def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monk
     agent_mem.mkdir(parents=True)
     (agent_mem / "note.md").write_text("# Lead memory\n\nPin every dependency.\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # `Path.home()` reads USERPROFILE on Windows, not HOME
 
     project = tmp_path / "proj"
     project.mkdir()
