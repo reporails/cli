@@ -399,7 +399,7 @@ def classify_files(
     the classifier walks Markdown links from each classified file and
     assigns `file_type: "generic"` to any in-tree `.md` files reachable
     via those links that aren't already classified. See `link_walker.py`
-    and REQ-025 Phase C for the rationale.
+    for the walk implementation.
 
     Args:
         scan_root: Project root / cwd-equivalent for relative paths and

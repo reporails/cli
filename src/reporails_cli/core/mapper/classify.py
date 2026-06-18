@@ -24,9 +24,8 @@ from reporails_cli.core.platform.dto.ruleset import InlineToken
 
 # ──────────────────────────────────────────────────────────────────
 # RULE-BASED CHARGE CLASSIFIER
-# Corpus-calibrated verb lexicon from 434 projects (13,789 atoms).
-# Three phases: negation → modal → imperative verb detection.
-# No spaCy dependency.
+# Calibrated verb lexicon. Three phases: negation → modal → imperative
+# verb detection. No spaCy dependency.
 # ──────────────────────────────────────────────────────────────────
 
 # Phase 1: Negation / Prohibition
@@ -50,8 +49,8 @@ _MODAL_HEDGED: set[str] = {"should", "could", "might"}
 # Removed: "can" (capability), "may" (possibility) — not instructions.
 _ABSOLUTE_ADVERBS: set[str] = {"always", "only", "exclusively"}
 
-# Phase 3: Corpus-calibrated verb lexicon
-# CORE: charged_ratio >= 0.80, count >= 5 across 434 projects
+# Phase 3: calibrated verb lexicon
+# CORE: high-confidence charged verbs
 _VERBS_CORE: set[str] = {
     "add",
     "apply",
@@ -124,7 +123,7 @@ _VERBS_CORE: set[str] = {
     "wrap",
     "write",
 }
-# SUPPLEMENT: legitimate verbs too low-frequency in 434-project corpus
+# SUPPLEMENT: legitimate but lower-frequency charged verbs
 _VERBS_SUPPLEMENT: set[str] = {
     "accept",
     "achieve",
@@ -278,7 +277,7 @@ _VERBS_SUPPLEMENT: set[str] = {
     "warn",
     "wire",
 }
-# AMBIGUOUS: corpus ratio 0.60-0.80 or genuinely dual noun/verb in tech context
+# AMBIGUOUS: mixed-confidence or genuinely dual noun/verb in tech context
 _VERBS_AMBIGUOUS: set[str] = {
     "abstract",
     "archive",

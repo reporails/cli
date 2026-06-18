@@ -24,7 +24,7 @@ Bit-identity
 The fp32 ONNX model is a Xenova-maintained export of
 ``sentence-transformers/all-MiniLM-L6-v2`` and produces output
 bit-identical to the PyTorch reference (cosine similarity = 1.0 within
-float32 epsilon on this repo's 906 atoms; 405 findings exact match).
+float32 epsilon).
 
 Length-sorted batching
 ----------------------

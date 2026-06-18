@@ -159,7 +159,7 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     # When True, the classifier extends past pattern-classified files via Markdown
     # link-reachability and assigns `file_type: "generic"` to reached `.md`
     # files in the project tree. Default off — anonymous tryout sees zero
-    # generic findings. See REQ-025 Phase C.
+    # generic findings.
     generic_scanning: bool = False
 
 
