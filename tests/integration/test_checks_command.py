@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -20,9 +22,16 @@ requires_rules = pytest.mark.skipif(
 )
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _run(*args: str) -> tuple[int, str, str]:
-    proc = subprocess.run(["ails", *args], capture_output=True, text=True, check=False)
-    return proc.returncode, proc.stdout, proc.stderr
+    # Force a wide, color-free render so help/option tokens (e.g. `--capability`)
+    # are not split by ANSI styling or column wrapping — CI runners set FORCE_COLOR
+    # and a narrow terminal width, which broke literal substring assertions.
+    env = {**os.environ, "COLUMNS": "200", "NO_COLOR": "1"}
+    proc = subprocess.run(["ails", *args], capture_output=True, text=True, check=False, env=env)
+    return proc.returncode, _ANSI_RE.sub("", proc.stdout), _ANSI_RE.sub("", proc.stderr)
 
 
 @pytest.mark.integration
