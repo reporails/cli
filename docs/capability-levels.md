@@ -61,7 +61,7 @@ Each rung exists because the rung below it fails in a specific way. The trigger 
 | L5   | L6 | A constraint must hold 100% of the time, not 95%                                        |
 | L6   | L7 | You keep correcting the same preference across sessions                                 |
 
-Climbing without a symptom adds structure the model has to navigate without solving a problem you had. Under-climbing is more common: *"agent didn't run tests before pushing"* reads like a prompt-engineering problem but is usually a missing L6 hook; *"agent forgot we use Cloudflare Workers"* reads like context drift but is usually a missing L7 memory entry.
+Climbing without a symptom adds structure the model has to navigate without solving a problem you had. Under-climbing is more common: *"agent didn't run tests before pushing"* reads like a prompt-engineering problem but is usually a missing L6 hook; *"agent forgot we use pnpm, not npm"* reads like context drift but is usually a missing L7 memory entry.
 
 ---
 
