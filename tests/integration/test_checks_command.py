@@ -30,8 +30,14 @@ def _run(*args: str) -> tuple[int, str, str]:
     # are not split by ANSI styling or column wrapping — CI runners set FORCE_COLOR
     # and a narrow terminal width, which broke literal substring assertions.
     env = {**os.environ, "COLUMNS": "200", "NO_COLOR": "1"}
-    proc = subprocess.run(["ails", *args], capture_output=True, text=True, check=False, env=env)
-    return proc.returncode, _ANSI_RE.sub("", proc.stdout), _ANSI_RE.sub("", proc.stderr)
+    # Decode as UTF-8 to match the CLI's UTF-8 output. Without this, text=True
+    # decodes with the OS locale (cp1252 on Windows), which cannot decode the
+    # rich help panel's box-drawing glyphs — the reader thread dies and
+    # proc.stdout comes back None.
+    proc = subprocess.run(
+        ["ails", *args], capture_output=True, text=True, encoding="utf-8", check=False, env=env
+    )
+    return proc.returncode, _ANSI_RE.sub("", proc.stdout or ""), _ANSI_RE.sub("", proc.stderr or "")
 
 
 @pytest.mark.integration
