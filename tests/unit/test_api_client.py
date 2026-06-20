@@ -11,14 +11,21 @@ from reporails_cli.core.funnel import (
     LintResponse,
     preflight_oversized,
 )
+from reporails_cli.core.platform.adapters import api_client as api_client_mod
 from reporails_cli.core.platform.adapters.api_client import (
     AilsClient,
     LintResult,
+    _api_key_from_credentials,
     _deserialize_cross_file_coordinates,
     _deserialize_hints,
     _deserialize_lint_result,
     _deserialize_per_file,
     _strip_and_serialize,
+    _tier_from_config,
+)
+from reporails_cli.core.platform.contract.errors import (
+    ConfigUnreadableError,
+    CredentialsUnreadableError,
 )
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
@@ -58,6 +65,83 @@ class TestAilsClient:
     def test_custom_base_url(self) -> None:
         client = AilsClient(base_url="https://custom.example.com")
         assert client.base_url == "https://custom.example.com"
+
+
+class TestFaultDistinction:
+    """A caught fault becomes a distinct typed cause; genuine absence stays "".
+
+    Models `test_auth_edge_challenge.py`: monkeypatch the file/config reads so each
+    fault class is exercised without a real corrupt file on the host.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_missing_credentials_file_returns_empty(self, monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
+        """Genuine absence (no file) → "" with no raise."""
+        from pathlib import Path
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        assert _api_key_from_credentials() == ""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_corrupt_credentials_raises_typed_cause(self, monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
+        """A corrupt credentials file is a fault, not absence → CredentialsUnreadableError."""
+        from pathlib import Path
+
+        creds = tmp_path / ".reporails" / "credentials.yml"  # type: ignore[operator]
+        creds.parent.mkdir(parents=True)
+        creds.write_text("api_key: [unterminated", encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        with pytest.raises(CredentialsUnreadableError):
+            _api_key_from_credentials()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_absent_tier_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Genuine absence (config present, tier unset) → "" with no raise."""
+
+        class _Cfg:
+            tier = ""
+
+        monkeypatch.setattr("reporails_cli.core.platform.config.config.get_global_config", lambda: _Cfg())
+        assert _tier_from_config() == ""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_unreadable_config_raises_typed_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A config-read OSError is a fault, not absence → ConfigUnreadableError."""
+
+        def _boom() -> object:
+            raise OSError("disk gone")
+
+        monkeypatch.setattr("reporails_cli.core.platform.config.config.get_global_config", _boom)
+        with pytest.raises(ConfigUnreadableError):
+            _tier_from_config()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_client_degrades_to_anonymous_on_corrupt_credentials(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """AilsClient() with a fault on read → no raise, anonymous tier, visible WARNING."""
+        import logging
+
+        monkeypatch.delenv("AILS_API_KEY", raising=False)
+        monkeypatch.delenv("AILS_TIER", raising=False)
+
+        def _raise_creds() -> str:
+            raise CredentialsUnreadableError("corrupt")
+
+        monkeypatch.setattr(api_client_mod, "_api_key_from_credentials", _raise_creds)
+        monkeypatch.setattr(api_client_mod, "_tier_from_config", lambda: "")
+
+        with caplog.at_level(logging.WARNING, logger="reporails_cli.core.platform.adapters.api_client"):
+            client = AilsClient()
+
+        assert client.api_key == ""
+        assert client.tier == "free"
+        assert any(rec.levelno == logging.WARNING for rec in caplog.records)
 
 
 class TestV2WireFormat:

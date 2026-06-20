@@ -15,6 +15,8 @@ import typer
 import yaml
 from rich.console import Console
 
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+
 logger = logging.getLogger(__name__)
 
 console = Console(emoji=False, highlight=False)
@@ -34,8 +36,9 @@ GITHUB_CLIENT_ID = ""  # Always sourced from the platform — see _resolve_clien
 DEFAULT_PLATFORM_URL = "https://reporails.com"
 
 
-class PlatformUnavailableError(Exception):
-    """The Reporails platform's auth surface couldn't be reached or returned an unexpected response."""
+# PlatformUnavailableError moved to core.platform.contract.errors; re-exported above
+# so the existing `auth_command.PlatformUnavailableError` import path keeps working.
+__all__ = ["PlatformUnavailableError"]
 
 
 # Markers identifying a Cloudflare edge interstitial (managed challenge / JS challenge).

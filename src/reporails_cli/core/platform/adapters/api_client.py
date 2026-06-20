@@ -12,6 +12,7 @@ import base64
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +20,11 @@ from reporails_cli.core.funnel import (
     LintResponse,
     parse_error_body,
     preflight_oversized,
+)
+from reporails_cli.core.platform.contract.errors import (
+    ConfigUnreadableError,
+    CredentialsUnreadableError,
+    PlatformError,
 )
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
@@ -183,34 +189,56 @@ class LintResult:
 
 
 def _tier_from_config() -> str:
-    """Read tier from global config (~/.reporails/config.yml)."""
+    """Read tier from global config (~/.reporails/config.yml).
+
+    Returns "" only for genuine absence (no config / no tier). Raises
+    ConfigUnreadableError when the config exists but cannot be read.
+    """
     try:
         from reporails_cli.core.platform.config.config import get_global_config
-
-        cfg = get_global_config()
-        return cfg.tier
-    except (ImportError, AttributeError, OSError) as exc:
-        logger.debug("Could not read tier from config: %s", exc)
+    except ImportError:
+        logger.debug("Config module unavailable — defaulting tier")
         return ""
+    try:
+        return get_global_config().tier
+    except (OSError, AttributeError) as exc:
+        raise ConfigUnreadableError(f"Could not read tier from config: {exc}") from exc
 
 
 def _api_key_from_credentials() -> str:
-    """Read API key from ~/.reporails/credentials.yml (set by `ails auth login`)."""
+    """Read API key from ~/.reporails/credentials.yml (set by `ails auth login`).
+
+    Returns "" only for genuine absence (no file / no key). Raises
+    CredentialsUnreadableError when the file exists but cannot be read or parsed.
+    """
     from pathlib import Path
 
     try:
         import yaml
-
-        path = Path.home() / ".reporails" / "credentials.yml"
-        if not path.exists():
-            return ""
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data.get("api_key", "") if isinstance(data, dict) else ""
     except ImportError:
         logger.debug("PyYAML not installed — cannot read credentials")
         return ""
+
+    path = Path.home() / ".reporails" / "credentials.yml"
+    if not path.exists():
+        return ""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
-        logger.debug("Could not read credentials file: %s", exc)
+        raise CredentialsUnreadableError(f"Could not read credentials file: {exc}") from exc
+    return data.get("api_key", "") if isinstance(data, dict) else ""
+
+
+def _degrade_on_fault(reader: Callable[[], str], unit: str) -> str:
+    """Run a credentials/config read; on PlatformError drop the unit with a visible WARNING.
+
+    The legitimate crash-firewall: a corrupt file surfaces as a WARNING and the
+    session continues anonymous, rather than crashing or being debug-buried.
+    """
+    try:
+        return reader()
+    except PlatformError as exc:
+        logger.warning("Dropping %s and continuing anonymous: %s", unit, exc)
         return ""
 
 
@@ -230,8 +258,10 @@ class AilsClient:
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url or os.environ.get("AILS_SERVER_URL", "https://api.reporails.com")
-        self.api_key = api_key or os.environ.get("AILS_API_KEY") or _api_key_from_credentials()
-        self.tier = tier or os.environ.get("AILS_TIER") or _tier_from_config() or "free"
+        self.api_key = (
+            api_key or os.environ.get("AILS_API_KEY") or _degrade_on_fault(_api_key_from_credentials, "API key")
+        )
+        self.tier = tier or os.environ.get("AILS_TIER") or _degrade_on_fault(_tier_from_config, "tier") or "free"
         self.timeout = timeout
 
     def lint(
