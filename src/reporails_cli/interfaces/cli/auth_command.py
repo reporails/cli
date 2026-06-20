@@ -38,6 +38,20 @@ class PlatformUnavailableError(Exception):
     """The Reporails platform's auth surface couldn't be reached or returned an unexpected response."""
 
 
+# Markers identifying a Cloudflare edge interstitial (managed challenge / JS challenge).
+_EDGE_CHALLENGE_MARKERS = (
+    "Just a moment",
+    "Attention Required! | Cloudflare",
+    "challenge-platform",
+    "cf-mitigated",
+)
+
+
+def _is_edge_challenge(body: str) -> bool:
+    """Detect a Cloudflare edge-challenge interstitial in a response body."""
+    return any(marker in body for marker in _EDGE_CHALLENGE_MARKERS)
+
+
 def _user_agent() -> str:
     """User-Agent string for outbound auth requests to the platform.
 
@@ -123,6 +137,11 @@ def _resolve_client_id(base_url: str) -> str:
 
     if resp.status_code != 200:
         logger.warning("Platform returned HTTP %s for client-id", resp.status_code)
+        if _is_edge_challenge(resp.text):
+            raise PlatformUnavailableError(
+                "Reporails platform is behind an upstream Cloudflare edge challenge — "
+                "this is not fixable in the CLI. Retry shortly or contact support@reporails.com.",
+            )
         raise PlatformUnavailableError(
             f"Reporails platform returned HTTP {resp.status_code} for client-id endpoint.",
         )
@@ -292,6 +311,12 @@ def login(
         )
         raise typer.Exit(1) from exc
     except (httpx.HTTPError, OSError) as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and _is_edge_challenge(exc.response.text):
+            console.print(
+                "  [red]Upstream Cloudflare edge challenge[/] — not fixable in the CLI. "
+                "Retry shortly or contact support@reporails.com.",
+            )
+            raise typer.Exit(1) from exc
         console.print(f"  [red]Failed to exchange token:[/] {exc}")
         raise typer.Exit(1) from exc
 
