@@ -170,6 +170,9 @@ def map_ruleset(
     files are re-tokenized and re-embedded. Clustering always re-runs.
     """
     from reporails_cli.core.cache.map_cache import MapCache
+    from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+
+    timer = get_stage_timer()
 
     if models is None:
         models = get_models()
@@ -187,9 +190,14 @@ def map_ruleset(
         map_cache,
         _load_registry(),
     )
+    timer.mark("classify")
 
-    # Embed uncached atoms
+    # Embed uncached atoms. Force the lazy ONNX load before the first encode so
+    # the model-load cost times apart from embed-inference — on a warm daemon
+    # the model is already resident and this load mark reads ~0.
     if atoms_needing_embed:
+        _ = models.st
+        timer.mark("load")
         _embed_atoms_deduped(atoms_needing_embed, models.st)
         if map_cache is not None:
             _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records)
@@ -205,8 +213,12 @@ def map_ruleset(
         _embed_atoms_deduped(unembedded, models.st)
 
     _embed_file_descriptions(file_records, models.st)
+    timer.mark("embed")
 
-    ruleset = build_ruleset_map(file_records, all_atoms, cluster_topics(all_atoms))
+    clusters = cluster_topics(all_atoms)
+    timer.mark("cluster")
+
+    ruleset = build_ruleset_map(file_records, all_atoms, clusters)
     _validate_and_log(ruleset)
 
     return ruleset

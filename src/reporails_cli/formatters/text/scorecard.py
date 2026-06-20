@@ -148,7 +148,8 @@ def compute_surface_scores(
         except (AttributeError, TypeError):
             pass
 
-    # Group findings by surface
+    # Group findings by surface. Re-normalize defensively (cheap, ~#findings) rather
+    # than trust the unenforced "FindingItem.file already normalized" invariant.
     surface_findings: dict[str, list[Any]] = {}
     for f in result.findings:
         key = _surface_key(normalize_finding_path(f.file, root), ft_by_path)

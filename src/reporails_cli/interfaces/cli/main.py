@@ -388,6 +388,16 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     start_time = time.perf_counter()
 
+    import os as _os
+
+    from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+
+    # Developer-only diagnostic: the per-stage breakdown names internal pipeline
+    # stages, so it is gated behind an env var rather than the public -v / JSON
+    # surface. Unset by default; no internal stage names reach end users.
+    stage_timer = get_stage_timer()
+    stage_timer.configure(enabled=bool(_os.environ.get("AILS_STAGE_TIMING")))
+
     with spinner:
         from reporails_cli.interfaces.cli.check_mapper import build_ruleset_map, resolve_daemon_status
 
@@ -414,11 +424,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             if verbose:
                 console.print(f"[dim]Mapper unavailable: {exc}. Content checks skipped.[/dim]")
 
+        stage_timer.mark("map")
+
         # 3. Run M probes (mechanical + structural deterministic)
         if show_progress:
             spinner.update("[bold]Running M probes...[/bold]")  # type: ignore[union-attr]
         _progress("Running M probes...")
         m_findings = run_m_probes(target, instruction_files, agent=effective_agent, scoped=is_targeted)
+        stage_timer.mark("m_probe")
 
         # 4. Run content-quality checks + client checks on map
         content_findings: list[LocalFinding] = []
@@ -429,6 +442,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             _progress("Running content checks...")
             content_findings = run_content_quality_checks(ruleset_map, target, instruction_files, agent=effective_agent)
             client_findings = run_client_checks(ruleset_map)
+        stage_timer.mark("content")
 
         # 5. Server call (stub — returns None offline)
         if show_progress:
@@ -444,6 +458,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         server_report = lint_result.report if lint_result else None
         hints = lint_result.hints if lint_result else ()
         cross_file_coordinates = lint_result.cross_file_coordinates if lint_result else ()
+        stage_timer.mark("server")
 
     # 5b. Memory index validation (client-side, reads local filesystem)
     memory_findings: list[LocalFinding] = []
@@ -509,6 +524,8 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             funnel_error,
             file_type_by_path,
         )
+    stage_timer.mark("render")
+    _emit_stage_timing(stage_timer, output_format)
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
@@ -694,10 +711,15 @@ def _dispatch_output(
     from reporails_cli.formatters import json as json_formatter
 
     if output_format == "json":
+        from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+
         data = json_formatter.format_combined_result(
             display_result, ruleset_map=ruleset_map, project_root=project_root, file_type_by_path=file_type_by_path
         )
         data["elapsed_ms"] = round(elapsed_ms, 1)
+        timer = get_stage_timer()
+        if timer.enabled:
+            data["timing"] = timer.as_dict()
         if capability_paths:
             data["capability_paths"] = sorted(_relativize_paths(capability_paths, project_root))
         print(json.dumps(data, indent=2))
@@ -717,6 +739,19 @@ def _dispatch_output(
         project_root=project_root,
         file_type_by_path=file_type_by_path,
     )
+
+
+def _emit_stage_timing(stage_timer: Any, output_format: str) -> None:
+    """Print the per-stage timing table (dev-only, gated by `AILS_STAGE_TIMING`).
+
+    Only renders when the timer was enabled via the env var; the internal stage
+    names never reach the default text / JSON output.
+    """
+    if output_format == "json" or not stage_timer.enabled or not stage_timer.records:
+        return
+    console.print("\n  [dim]── Stage timing (wall-clock) ──[/dim]")
+    for line in stage_timer.render_lines():
+        console.print(f"  [dim]{line}[/dim]")
 
 
 def _run_heal_pass(
