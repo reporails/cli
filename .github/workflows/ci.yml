@@ -10,6 +10,7 @@ on:
     branches:
       - "[0-9]*.[0-9]*.[0-9]*"
       - main
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -46,3 +47,23 @@ jobs:
       # Smoke tests intentionally not gated in CI yet — a few test cases have
       # environment-dependent assumptions that pass locally but fail on the GH
       # runner. Re-enable once the smoke suite is hermetic.
+
+  # Live-path regression — hits the real platform host, so it stays out of the
+  # gated QA matrix (offline CI must remain green when the edge is flaky).
+  # Manual via the Actions tab; the assertion is the new-user activation hop.
+  live:
+    name: Live activation path
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Live network tests
+        run: uv run poe test_live

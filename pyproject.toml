@@ -110,6 +110,7 @@ type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v"
 test_smoke = "pytest tests/smoke/ -v -m e2e"
+test_live = "pytest -v -m requires_network"
 qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_markers", "test_unit"]
 qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration", "test_smoke"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"

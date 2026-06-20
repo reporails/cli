@@ -2,6 +2,8 @@
 
 ### Added
 
+- testing: opt-in live-network lane exercising the `ails auth login` activation path so first-contact auth regressions surface in CI rather than at a new user.
+
 ### Changed
 
 ### Fixed
