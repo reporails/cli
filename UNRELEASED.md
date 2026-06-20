@@ -3,6 +3,7 @@
 ### Added
 
 - testing: added internal regression coverage to keep `ails check` output stable across refactors.
+- testing: added an architecture check that keeps error handling at the network boundary consistent, so faults surface clearly instead of being silently swallowed.
 - testing: opt-in live-network lane exercising the `ails auth login` activation path so first-contact auth regressions surface in CI rather than at a new user.
 
 ### Changed
