@@ -429,7 +429,7 @@ def _disambiguate_shared_files(detected: list[DetectedAgent]) -> list[DetectedAg
     """Drop agents whose instruction files are entirely shared with other agents.
 
     AGENTS.md is a cross-agent standard — any project with it triggers detection
-    for cursor, copilot, codex, gemini, and generic. This function removes agents
+    for cursor, copilot, codex, antigravity, and generic. This function removes agents
     that found ONLY shared files (files claimed by 2+ agents), keeping agents that
     have at least one distinctive file. Generic is exempt (catch-all for AGENTS.md).
     """

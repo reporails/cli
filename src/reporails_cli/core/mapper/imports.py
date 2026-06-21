@@ -1,6 +1,6 @@
 """Stage 0 — `@path` inline import expansion.
 
-Claude Code and Gemini CLI splice imported file content at the reference
+Claude Code and Antigravity CLI splice imported file content at the reference
 position before the model sees it. The mapper must see the same expanded
 content to produce accurate atom counts and downstream classification.
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 # Match @path references in instruction files.
 # Claude Code: @README, @docs/guide.md, @~/path, @./relative
-# Gemini CLI: @./path.md, @../path.md, @/absolute/path.md
+# Antigravity CLI: @./path.md, @../path.md, @/absolute/path.md
 # Must NOT match: email@addr, @mentions in code blocks, inline `@code`
 IMPORT_REF_RE = re.compile(
     r"(?<![`\w@])"  # not inside backtick or after word char/@ (email)
@@ -88,7 +88,7 @@ def expand_imports(
 ) -> str:
     """Expand @path inline imports in instruction file content.
 
-    Claude Code and Gemini CLI use @path syntax for inline expansion —
+    Claude Code and Antigravity CLI use @path syntax for inline expansion —
     the file content is spliced in at the reference position before the
     model sees it. The mapper must see the same expanded content.
 

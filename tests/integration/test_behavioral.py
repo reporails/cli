@@ -385,7 +385,7 @@ class TestAgentCrossValidation:
     def test_registry_populated_from_configs(self) -> None:
         """Registry should contain at least the big 5 agents."""
         agents = get_known_agents()
-        for agent_id in ("claude", "cursor", "copilot", "codex", "gemini"):
+        for agent_id in ("claude", "cursor", "copilot", "codex", "antigravity"):
             assert agent_id in agents, f"Agent {agent_id} missing from registry"
 
 

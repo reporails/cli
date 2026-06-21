@@ -120,7 +120,7 @@ def _apply_project_overrides(
 
 
 # Memory surfaces share an index-and-recall shape across agents (claude +
-# gemini, source-verified): MEMORY.md is the eager index, sibling entries are
+# antigravity, source-verified): MEMORY.md is the eager index, sibling entries are
 # recalled on-demand. Stamped per-entry at classification so size/coherence
 # rules can tell the always-injected index from the recalled siblings.
 _MEMORY_SURFACES = frozenset({"memory", "subagent_memory"})

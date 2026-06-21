@@ -7,7 +7,7 @@ version: "1.1.0"
 
 # Implemented scope — these agents have full config.yml and audited docs.
 # The rest are cataloged but not reconciled.
-implemented: [claude, codex, copilot, cursor, gemini]
+implemented: [antigravity, claude, codex, copilot, cursor]
 
 # Capability taxonomy — stable IDs mapped to human labels.
 taxonomy:
@@ -35,6 +35,7 @@ agents:
   aider:      [root, user_surfaces, config]
   amazonq:    [root, scoped, hooks, mcp, subagents, enterprise, plugins, agents_md, cross_read, user_surfaces, config]
   amp:        [root, scoped, skills, mcp, enterprise, agents_md, cross_read, user_surfaces, config]
+  antigravity: [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output]
   augment:    [root, scoped, mcp, agents_md, cross_read, user_surfaces, config]
   bito:       [root, enterprise, agents_md, cross_read, user_surfaces, config]
   blackbox:   [skills, user_surfaces, config]
@@ -48,7 +49,6 @@ agents:
   copilot:    [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
   cursor:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output, scheduled_tasks]
   devin:      [root, scoped, mcp, memory, enterprise, agents_md, user_surfaces, config, templates]
-  gemini:     [root, scoped, skills, hooks, mcp, subagents, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates, output]
   goose:      [root, scoped, mcp, memory, enterprise, plugins, agents_md, cross_read, user_surfaces, config, templates]
   jetbrains:  [root, scoped, mcp, enterprise, user_surfaces, config]
   junie:      [root, agents_md, user_surfaces, config]

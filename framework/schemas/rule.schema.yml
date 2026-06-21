@@ -29,7 +29,7 @@ reserved_agent_prefixes:
   - AIDER
   - CONTINUE
   - ROO
-  - GEMINI
+  - ANTIGRAVITY
 
 reserved_package_prefixes:
   - RRAILS

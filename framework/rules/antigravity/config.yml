@@ -1,0 +1,318 @@
+# Google Antigravity Agent Configuration
+# Schema: schemas/agent.schema.yml v0.5.0
+#
+# Synced from .claude/skills/audit-agent/assets/registry/antigravity/config.yml
+# Last verified: 2026-06-21
+#
+# Provenance. Google retired the open-source `gemini` CLI on 2026-06-18 and
+# succeeded it with the Antigravity CLI (Google transition blog, 2026-06-18).
+# Antigravity reads AGENTS.md + GEMINI.md project rules and the global
+# ~/.gemini/GEMINI.md, keeps Agent Skills / Hooks / Subagents / Extensions
+# (now "plugins"), and stores its own state under ~/.gemini/antigravity/.
+# AGENTS.md is the go-forward primary instruction file; GEMINI.md is retained
+# as the backward-compat instruction surface (Antigravity still reads it).
+#
+# Items intentionally NOT included here (not measurable on disk):
+#   - Cloud-managed enterprise policies (Google Cloud admin / Code Assist Enterprise)
+#   - Scheduled tasks (CLI itself doesn't have native scheduling — uses external cron)
+#
+# UNCONFIRMED: the exact Antigravity hook wire format. antigravity.google/docs is
+# JS-rendered and not machine-fetchable; the blog confirms Hooks are kept but not
+# the schema. The `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules inherit
+# the Gemini-CLI `.gemini/settings.json` shape pending accessible Antigravity hook
+# docs — re-verify when antigravity.google/docs/hooks becomes fetchable.
+
+agent: antigravity
+version: "0.5.0"
+prefix: ANTIGRAVITY
+name: Google Antigravity
+
+file_types:
+  main:
+    # AGENTS.md (go-forward primary) + GEMINI.md (backward-compat) walked from
+    # project root through ancestors of cwd to .git or home. All discovered files
+    # concatenated. Global user rules live at ~/.gemini/GEMINI.md (shared with the
+    # legacy gemini surface; Antigravity hardcodes its global rules here too).
+    source: https://antigravity.google/docs/gcli-migration
+    required: true
+    format: freeform
+    scope: global
+    cardinality: chain
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md", "**/GEMINI.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/GEMINI.md"]
+        precedence: user
+        vcs: external
+        maintainer: hybrid
+        lifecycle: mutable
+
+  nested_context:
+    # Subdirectory AGENTS.md / GEMINI.md files — loaded on-demand when the agent
+    # accesses files in those directories. scope: nested captures the
+    # location-based subtree applicability.
+    source: https://antigravity.google/docs/gcli-migration
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md", "**/GEMINI.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  cross_read:
+    # Additional cross-agent context file when context.fileName is configured.
+    # AGENTS.md is promoted to `main` (Antigravity's go-forward primary); CONTEXT.md
+    # remains an opt-in cross-read.
+    source: https://antigravity.google/docs/gcli-migration
+    format: freeform
+    scope: global
+    cardinality: chain
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/CONTEXT.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  skills:
+    # `.agents/skills/` is the go-forward Antigravity skills location; a legacy
+    # `.gemini/skills/` folder must be relocated to `.agents/skills/` to be
+    # recognized. User skills also ship under ~/.gemini/antigravity-cli/plugins.
+    source: https://antigravity.google/docs/gcli-migration
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".agents/skills/**/SKILL.md", ".gemini/skills/**/SKILL.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns:
+          - "~/.agents/skills/**/SKILL.md"
+          - "~/.gemini/antigravity-cli/skills/**/SKILL.md"
+          - "~/.gemini/skills/**/SKILL.md"
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  agents:
+    # Subagents — reusable agent definitions (e.g. code-reviewer.md,
+    # security-auditor.md, test-engineer.md). Project agents under .agents/agents/
+    # (go-forward) or .gemini/agents/ (legacy). Custom agents invoked via @name.
+    source: https://antigravity.google/docs/gcli-migration
+    format: [frontmatter, freeform]
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".agents/agents/*.md", ".gemini/agents/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/agents/*.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  commands:
+    # TOML format with prompt + description, supports {{args}}, !{shell}, @{file}
+    source: https://antigravity.google/docs/gcli-migration
+    format: schema_validated
+    scope: task_scoped
+    cardinality: collection
+    lifecycle: static
+    loading: on_invocation
+    scopes:
+      project:
+        patterns: [".gemini/commands/*.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/commands/*.toml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  hooks:
+    # Hooks are kept by Antigravity (Google transition blog). The wire format and
+    # event set below are INHERITED from the Gemini-CLI `.gemini/settings.json`
+    # `hooks` key (11 events) pending accessible Antigravity hook docs — see the
+    # UNCONFIRMED note in the header and the 3 ANTIGRAVITY:S:* hook rules.
+    source: https://antigravity.google/docs/gcli-migration
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/settings.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/settings.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  config:
+    # Antigravity stores config under the .gemini/ directory (project) and
+    # ~/.gemini/antigravity/ (user state: mcp_config.json, conversations/, brain/,
+    # global_workflows/). JSON and TOML settings files are both honored.
+    source: https://antigravity.google/docs/gcli-migration
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/settings.json", ".gemini/settings.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns:
+          - "~/.gemini/settings.json"
+          - "~/.gemini/settings.toml"
+          - "~/.gemini/antigravity/**"
+        precedence: user
+        vcs: external
+        maintainer: human
+      system_defaults:
+        patterns:
+          - "/etc/gemini-cli/system-defaults.json"
+          - "/Library/Application Support/GeminiCli/system-defaults.json"
+          - "C:/ProgramData/gemini-cli/system-defaults.json"
+        precedence: managed
+        vcs: external
+        maintainer: system
+      system_overrides:
+        patterns:
+          - "/etc/gemini-cli/settings.json"
+          - "/Library/Application Support/GeminiCli/settings.json"
+        precedence: managed
+        vcs: external
+        maintainer: system
+
+  mcp:
+    # Antigravity separates MCP servers into a dedicated lightweight JSON profile
+    # (mcp_config.json) rather than nesting them in primary settings. Legacy
+    # gemini settings.json `mcpServers` key still read for backward-compat.
+    source: https://antigravity.google/docs/gcli-migration
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".agents/mcp_config.json", ".gemini/settings.json", ".gemini/settings.toml"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns:
+          - "~/.gemini/antigravity/mcp_config.json"
+          - "~/.gemini/settings.json"
+          - "~/.gemini/settings.toml"
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  extensions:
+    # Plugin system (Gemini "Extensions" are now Antigravity "plugins"): bundles
+    # MCP servers, commands, skills, hooks, themes. Installed plugins live under
+    # ~/.gemini/antigravity-cli/plugins/.
+    source: https://antigravity.google/docs/gcli-migration
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/extensions/**"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/antigravity-cli/plugins/**"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  geminiignore:
+    source: https://antigravity.google/docs/gcli-migration
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".geminiignore"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  system_prompt:
+    # Replace default system prompt entirely
+    source: https://antigravity.google/docs/gcli-migration
+    format: freeform
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".gemini/system-prompt.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  memory:
+    # Antigravity's private persistent state lives under ~/.gemini/antigravity/
+    # (brain/, conversations/, global_workflows/) — direct-edit, recalled on
+    # demand. The legacy ~/.gemini/GEMINI.md "## Gemini Added Memories" section
+    # is retained as a backward-compat memory surface (`main`, scopes.user).
+    source: https://antigravity.google/docs/gcli-migration
+    format: freeform
+    scope: global
+    cardinality: collection
+    lifecycle: mutable
+    loading: session_start
+    scopes:
+      user_project:
+        patterns:
+          - "~/.gemini/antigravity/brain/**"
+          - "~/.gemini/antigravity/global_workflows/**"
+        precedence: user
+        vcs: external
+        maintainer: hybrid
+
+excludes:
+  - CLAUDE:*
+  - CODEX:*

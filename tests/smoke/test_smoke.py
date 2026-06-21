@@ -296,7 +296,9 @@ class TestCrossAgentContamination:
         data = _check_json(claude_only, agent="claude")
         findings = _all_findings(data)
         assert len(findings) > 0, "Claude fixture must produce findings"
-        foreign = {f["rule"] for f in findings if f["rule"].split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "GEMINI")}
+        foreign = {
+            f["rule"] for f in findings if f["rule"].split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "ANTIGRAVITY")
+        }
         assert not foreign, f"Foreign agent rules fired under --agent claude: {foreign}"
 
     @pytest.mark.e2e
