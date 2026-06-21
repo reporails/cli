@@ -49,7 +49,11 @@ _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
         "structural_rule_ids",
         "OSError,ValueError,KeyError",
     ),  # TODO: raise a typed fault
-    ("src/reporails_cli/core/platform/adapters/registry.py", "_load_from_path", "Exception"),  # TODO: raise a typed fault
+    (
+        "src/reporails_cli/core/platform/adapters/registry.py",
+        "_load_from_path",
+        "Exception",
+    ),  # TODO: raise a typed fault
     (
         "src/reporails_cli/core/platform/adapters/registry.py",
         "_apply_agent_overrides",

@@ -34,9 +34,7 @@ def _run(*args: str) -> tuple[int, str, str]:
     # decodes with the OS locale (cp1252 on Windows), which cannot decode the
     # rich help panel's box-drawing glyphs — the reader thread dies and
     # proc.stdout comes back None.
-    proc = subprocess.run(
-        ["ails", *args], capture_output=True, text=True, encoding="utf-8", check=False, env=env
-    )
+    proc = subprocess.run(["ails", *args], capture_output=True, text=True, encoding="utf-8", check=False, env=env)
     return proc.returncode, _ANSI_RE.sub("", proc.stdout or ""), _ANSI_RE.sub("", proc.stderr or "")
 
 
