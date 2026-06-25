@@ -173,6 +173,16 @@ def linked_rule_id(rule: str) -> str:
     return f"[link={url}]{rule_id}[/link]" if url else rule_id
 
 
+def rule_aliases(rule: str) -> set[str]:
+    """Every name a suppression directive may use for a finding's rule: raw token, canonical ID, slug."""
+    canon = display_rule_id(rule)
+    names = {rule, canon}
+    slug = _rule_slug_map().get(canon)
+    if slug:
+        names.add(slug)
+    return names
+
+
 # ── File classification lookup tables ─────────────────────────────────
 
 _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))

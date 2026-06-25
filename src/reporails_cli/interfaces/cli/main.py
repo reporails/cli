@@ -487,6 +487,13 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         level=project_level,
         tier=lint_result.tier if lint_result else "",
     )
+
+    # 7a. Drop findings an author silenced with an inline rule-named directive,
+    # before display and before strict gating. The rule stays armed elsewhere.
+    from reporails_cli.core.lint.suppression import apply_suppressions
+    from reporails_cli.formatters.text.display_constants import rule_aliases
+
+    result = apply_suppressions(result, project_root=target, alias_fn=rule_aliases)
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
     # 7. Path filter for the display: reuse the upfront-narrow set so

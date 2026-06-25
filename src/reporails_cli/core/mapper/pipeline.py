@@ -47,7 +47,9 @@ def map_file(path: Path) -> tuple[list[Atom], str]:
     Returns:
         (atoms, content_hash)
     """
-    content = path.read_text(encoding="utf-8", errors="replace")
+    from reporails_cli.core.lint.suppression import strip_directives
+
+    content = strip_directives(path.read_text(encoding="utf-8", errors="replace"))
     atoms = tokenize(content)
     for a in atoms:
         a.file_path = str(path)
@@ -66,9 +68,10 @@ def _classify_file(
         atoms_to_dicts,
         dicts_to_atoms,
     )
+    from reporails_cli.core.lint.suppression import strip_directives
 
     raw_content = path.read_text(encoding="utf-8", errors="replace")
-    content = expand_imports(raw_content, path)
+    content = strip_directives(expand_imports(raw_content, path))
     chash = content_hash(content)
 
     cached = map_cache.get(chash) if map_cache else None
