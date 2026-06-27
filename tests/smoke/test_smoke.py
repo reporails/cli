@@ -717,6 +717,9 @@ class TestUnknownAgentValidation:
     @pytest.mark.subsys_cli_ux
     def test_uppercase_agent_no_match(self, claude_only: Path) -> None:
         """--agent CLAUDE (uppercase) finds no files — agents are case-sensitive."""
+        # Force text format: under CI (GITHUB_ACTIONS set) the default format is
+        # machine-readable, so the human "No instruction files found" line only
+        # appears when text output is requested explicitly.
         result = runner.invoke(
             app,
             [
@@ -724,6 +727,8 @@ class TestUnknownAgentValidation:
                 str(claude_only),
                 "--agent",
                 "CLAUDE",
+                "-f",
+                "text",
             ],
         )
         assert result.exit_code == 0
