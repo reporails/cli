@@ -40,6 +40,7 @@
 - check: `ails check <file> --heal -f json` run anonymously now still emits the full diagnosis JSON (the auth notice goes to stderr) — a machine consumer that adds `--heal` no longer loses all diagnostic data.
 - check: `--strict` now exits non-zero for a displayed error on a user-scope target (e.g. `ails check subagent_memory --strict`), matching what the run displayed.
 - auth: a session no longer silently downgrades to the free tier when the server returns a tier alongside an otherwise-unparseable response body.
+- testing: the heal scope-safety regression for `ails check . <token> --heal` now runs in an isolated working directory, so it no longer depends on the checkout carrying a root `CLAUDE.md` — it passes identically in CI and locally.
 
 ### Removed
 

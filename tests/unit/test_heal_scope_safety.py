@@ -8,6 +8,7 @@ before any pipeline work; an explicit target, a `--dry-run` preview, or the
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -77,8 +78,15 @@ def test_heal_refusal_is_json_parseable_under_json_format() -> None:
 def test_heal_dot_plus_token_still_refused(second: str) -> None:
     """`ails check . <token> --heal`: the `.` keeps every file in scope, so a second
     narrower token must NOT rescue the whole-project rewrite — it is still refused.
-    Regression: a second token previously flipped `whole_project_heal` to False."""
-    result = runner.invoke(app, ["check", ".", second, "--heal"])
+    Regression: a second token previously flipped `whole_project_heal` to False.
+
+    Runs in an isolated cwd carrying a CLAUDE.md so the second token resolves to a
+    real in-tree target (a file, or the detected agent's `skills` capability);
+    otherwise a "path not found" exits before the scope guard, which made this test
+    depend on the runner's cwd happening to carry a root CLAUDE.md."""
+    with runner.isolated_filesystem():
+        Path("CLAUDE.md").write_text("# Project\n", encoding="utf-8")
+        result = runner.invoke(app, ["check", ".", second, "--heal"])
     assert result.exit_code == 2
     assert "needs an explicit target" in result.stdout
 
