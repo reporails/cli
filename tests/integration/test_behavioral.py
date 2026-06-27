@@ -537,7 +537,26 @@ class TestCheckConfig:
 class TestHealCommand:
     """ails check --heal must auto-fix and report remaining violations."""
 
+    @pytest.fixture(autouse=True)
+    def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--heal is an authenticated affordance; these tests exercise the fix path, so authenticate."""
+        monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+
     # test_heal_missing_path covered by smoke tests
+
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
+    @requires_model
+    @requires_rules
+    def test_heal_anonymous_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Anonymous (no key) gets the diagnosis but not the fix — `--heal` returns an auth notice."""
+        monkeypatch.delenv("AILS_API_KEY", raising=False)
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+        result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
+        assert "heal_requires_auth" in result.output
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint

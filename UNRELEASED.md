@@ -16,6 +16,12 @@
 
 - rules: renamed the Google agent rule pack and registry entry from `gemini` to `antigravity`, following Google's 2026-06-18 retirement of the Gemini CLI in favor of the Antigravity CLI. The pack still validates legacy `GEMINI.md` / `~/.gemini/` files for backward-compat and now also recognizes Antigravity's `AGENTS.md` primary and `.agents/` skills layout. `ails check` reports the agent as `antigravity`; the five implemented agents are now claude, codex, copilot, cursor, antigravity.
 - testing: normalized code formatting in two test modules (no behavior change).
+- check: `ails check --heal` now requires you to name what to fix. A whole-project heal — a bare `--heal`, or `ails check . --heal` / `ails check ./ --heal` — is refused; pass an explicit target (`ails check CLAUDE.md --heal`), preview everything with `--dry-run`, or opt into a whole-project rewrite with the new `--cwd` flag. `--heal` also never writes through an in-tree symlink whose real file lies outside the named target, so a scoped heal cannot modify files outside its scope. Prevents accidental project-wide and out-of-scope rewrites.
+- check: applying fixes now requires an account. The diagnosis stays free for everyone, but `--heal` (apply or `--dry-run` preview) needs sign-in — anonymous users get the full diagnosis plus a prompt to run `ails auth login`. This keeps the free experience honest: the diagnosis names what to fix; the fix is the account feature.
+- explain: `ails explain <rule>` now shows the rule's Pass / Fail examples, matching `ails rules -f md`. Both surfaces draw examples from the same fence-aware extractor, and both now name an absent example block ("no Pass / Fail examples") instead of silently omitting it.
+- json: `-f json` and the `--format github` trailing JSON now emit canonical rule IDs (e.g. `CORE:S:0039`) for findings that previously carried a bare client-side token like `format` or `orphan`, matching the text output. The raw token is preserved under a new `label` key when it differs, so machine baselines keyed on it stay stable. As a result those findings now carry a populated `category` and join the per-surface category breakdown, and `top_rules` is keyed by canonical ID. (The `ambiguous_charge` classifier-confidence marker has no canonical rule and intentionally stays label-only.)
+- rules: a rule's check can now declare `project_scope: true` in `checks.yml` to be skipped on a narrowed (single-target) run where a whole-project aggregate is meaningless — previously this was hard-coded in the engine, so adding such a rule required a code change. No change to default whole-project scans.
+- help: the `npx @reporails/cli` help output now lists the `ails rules` command.
 
 ### Fixed
 
@@ -24,5 +30,11 @@
 - performance: `ails check` is substantially faster on large projects, with identical output.
 - auth: `ails auth login` now identifies an upstream edge challenge (e.g. a Cloudflare interstitial in front of the auth endpoint) as the real cause instead of reporting a generic HTTP error or a misleading "OAuth not configured" message. Both the client-id lookup and the token-exchange step recognize the challenge page and tell you it is not fixable in the CLI — retry shortly or contact support.
 - check: a whole-project scan no longer lets your machine-wide agent config decide which agent a repository is. A global home-directory file such as `~/.codex/config.toml` could make `ails check` treat a project that only has an `AGENTS.md` as that specific agent's project, narrowing the findings to that agent's rules instead of the cross-agent core set. Discovery now ignores home-scope (`~/...`) paths during a repository scan; those surfaces remain reachable only when you target them explicitly (e.g. `ails check subagent_memory`).
+- check: per-surface health bars stay column-aligned when a surface name is long and its file count reaches two digits — the name column now sizes to the widest label in the set instead of a fixed width.
+- check: targeting a directory (`ails check <dir>`) no longer drops instruction files that are symlinks pointing outside that directory; an in-tree symlinked file under the target is now scanned.
+- update: rule-framework archive extraction is forward-compatible with Python 3.14's stricter tar handling (uses the safe `data` extraction filter).
 
 ### Removed
+
+- internal: removed two unused output-rendering helpers; no change to `ails check` output.
+- internal: pruned several unused internal modules (a feature-summary helper, a display stub, a dead init path, a rules-path resolver, and an orphan-feature detector); no user-facing behavior change.

@@ -156,15 +156,3 @@ def _handle_no_instruction_files(effective_agent: str, output_format: str, con: 
         at = get_known_agents().get(effective_agent)
         hint = at.instruction_patterns[0] if at else "AGENTS.md"
         con.print(f"No instruction files found.\nLevel: L0 (Absent)\n\n[dim]Create a {hint} to get started.[/dim]")
-
-
-def _resolve_rules_paths(rules: list[str] | None, con: Console) -> list[Path] | None:
-    """Validate and resolve --rules CLI option paths. Exits if any path missing."""
-    if not rules:
-        return None
-    resolved = [Path(r).resolve() for r in rules]
-    for rp in resolved:
-        if not rp.is_dir():
-            con.print(f"[red]Error:[/red] Rules directory not found: {rp}")
-            raise typer.Exit(2)
-    return resolved

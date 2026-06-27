@@ -8,6 +8,24 @@ from __future__ import annotations
 from typing import Any
 
 
+def _append_examples(lines: list[str], examples: dict[str, Any]) -> None:
+    """Render Pass / Fail examples, naming their absence rather than omitting silently."""
+    pass_ex, fail_ex = examples.get("pass"), examples.get("fail")
+    if not pass_ex and not fail_ex:
+        lines.append("Examples: none — this rule has no Pass / Fail examples.")
+        lines.append("")
+        return
+    lines.append("Examples:")
+    if pass_ex:
+        lines.append("  Pass:")
+        lines.append(pass_ex)
+        lines.append("")
+    if fail_ex:
+        lines.append("  Fail:")
+        lines.append(fail_ex)
+        lines.append("")
+
+
 def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
     """Format rule explanation for terminal."""
     lines = []
@@ -28,6 +46,9 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         lines.append("Description:")
         lines.append(f"  {rule_data['description']}")
         lines.append("")
+
+    if "examples" in rule_data:
+        _append_examples(lines, rule_data["examples"] or {})
 
     # Support both checks and legacy antipatterns
     checks = rule_data.get("checks", rule_data.get("antipatterns", []))

@@ -1153,6 +1153,11 @@ class TestExplainCommand:
 class TestHealCommand:
     """ails check --heal applies auto-fixes and reports results."""
 
+    @pytest.fixture(autouse=True)
+    def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--heal is an authenticated affordance; authenticate so the fix path runs."""
+        monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     def test_missing_path_errors(self) -> None:
@@ -1499,6 +1504,11 @@ _HEALABLE = (
 @pytest.mark.e2e
 class TestHealDryRun:
     """--heal --dry-run previews fixes without mutating files."""
+
+    @pytest.fixture(autouse=True)
+    def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--heal preview is an authenticated affordance; authenticate so the preview path runs."""
+        monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux

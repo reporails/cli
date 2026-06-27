@@ -240,6 +240,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
     heal: bool = typer.Option(False, "--heal", "--fix", help="Apply auto-fixes after validation."),
     dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing."),
+    cwd: bool = typer.Option(False, "--cwd", help="With --heal: opt into rewriting the whole project."),
 ) -> None:
     """Validate and score your instruction files.
 
@@ -294,6 +295,19 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     output_format = format or _default_format()
 
+    # Scope-safety: --heal writes files. Refuse an implicit whole-project rewrite —
+    # require an explicit narrowing target (a file, a subdir, or a capability), a
+    # --dry-run preview, or the --cwd opt-in. A bare `--heal`, `ails check . --heal`,
+    # and `ails check ./ --heal` all resolve to the whole project root with no
+    # narrowing, so they are all refused. Emit the refusal in the active format so a
+    # machine consumer still gets parseable output.
+    whole_project_heal = (
+        target == project_root and not capability_specs and not any(t != project_root for t in path_targets)
+    )
+    if heal and not dry_run and not cwd and whole_project_heal:
+        _emit_heal_scope_refusal(output_format)
+        raise typer.Exit(2)
+
     # 1. Detect agents and resolve which one to use
     detected = detect_agents(target)
     config = get_project_config(target)
@@ -317,11 +331,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     if single_file is not None:
         instruction_files = [single_file.resolve()]
     elif target != project_root:
-        instruction_files = [
-            f
-            for f in instruction_files
-            if f == target or (target.is_dir() and f.resolve().is_relative_to(target.resolve()))
-        ]
+        instruction_files = [f for f in instruction_files if _file_under_target(f, target)]
     if not instruction_files:
         _handle_no_instruction_files(effective_agent, output_format, console)
         return
@@ -537,8 +547,25 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
     if heal:
-        heal_files = [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
-        _run_heal_pass(target, heal_files, ruleset_map, effective_agent, dry_run, output_format)
+        # Fixes are an authenticated affordance — anonymous users get the (free) diagnosis
+        # above but not the fix (preview or apply). Closes the trust risk of an anonymous
+        # user reading a low-leverage auto-fix as "fixed". The server stays the tier
+        # authority; this is the client-side gate that offers the affordance at all.
+        from reporails_cli.core.platform.adapters.api_client import has_api_key
+
+        if not has_api_key():
+            _emit_heal_auth_required(output_format)
+        else:
+            heal_files = (
+                [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
+            )
+            # Heal writes through to each file's real location. A file kept in scope only
+            # because it is an in-tree symlink whose real target escapes the heal scope must
+            # NOT be written — that would mutate a file physically outside the named target.
+            # It stays scored/scanned (above); it is just excluded from the write set here.
+            if not dry_run:
+                heal_files = [f for f in heal_files if _resolved_within_target(f, target)]
+            _run_heal_pass(target, heal_files, ruleset_map, effective_agent, dry_run, output_format)
 
     if _should_exit_strict(strict, capability_paths, target, result):
         raise typer.Exit(1)
@@ -644,19 +671,77 @@ def _classify_target_token(token: str, sniff_agent: str, project_root: Path) -> 
     return ("path", Path(token).resolve())
 
 
+def _resolved_within_target(f: Path, target: Path) -> bool:
+    """True when the file's real (symlink-resolved) location is within the heal target.
+
+    Heal writes through to the real file, so an in-tree symlink whose resolved path
+    escapes the target must not be written — never mutate a file outside the named scope.
+    """
+    fr = f.resolve()
+    tr = target.resolve()
+    return fr == tr or fr.is_relative_to(tr)
+
+
+def _emit_heal_auth_required(output_format: str) -> None:
+    """Emit the --heal auth-required notice in the active output format (anon gets diagnosis, not fix)."""
+    if output_format in ("json", "github"):
+        print(
+            json.dumps(
+                {
+                    "error": "heal_requires_auth",
+                    "message": "Applying fixes (--heal) requires an account. Run `ails auth login`.",
+                }
+            )
+        )
+        return
+    console.print(
+        "[yellow]Fixes need an account.[/yellow] The diagnosis above is free; applying fixes is not.\n"
+        "  Run [bold]ails auth login[/bold] to enable [bold]--heal[/bold]."
+    )
+
+
+def _emit_heal_scope_refusal(output_format: str) -> None:
+    """Emit the --heal scope-safety refusal in the active output format."""
+    if output_format in ("json", "github"):
+        print(
+            json.dumps(
+                {
+                    "error": "heal_requires_target",
+                    "message": "--heal writes files and needs an explicit target, --dry-run, or --cwd.",
+                }
+            )
+        )
+        return
+    console.print(
+        "[red]✗ --heal writes to files and needs an explicit target.[/red]\n"
+        "  Name what to fix (e.g. [bold]ails check CLAUDE.md --heal[/bold] or "
+        "[bold]ails check skills --heal[/bold]),\n"
+        "  preview the whole project with [bold]--dry-run[/bold], or opt into a "
+        "whole-project rewrite with [bold]--cwd[/bold]."
+    )
+
+
 def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Path]) -> list[Path]:
     """Keep only instruction files that are equal to or beneath one of `path_targets`."""
-    narrowed: list[Path] = []
-    for f in instruction_files:
-        f_res = f.resolve()
-        for tgt in path_targets:
-            if tgt.is_file() and f_res == tgt:
-                narrowed.append(f)
-                break
-            if tgt.is_dir() and (f_res == tgt or f_res.is_relative_to(tgt)):
-                narrowed.append(f)
-                break
-    return narrowed
+    return [f for f in instruction_files if any(_file_under_target(f, tgt) for tgt in path_targets)]
+
+
+def _file_under_target(f: Path, tgt: Path) -> bool:
+    """True when instruction file `f` is the target or sits beneath it.
+
+    Tests the file's logical absolute path alongside its symlink-resolved path so a
+    directory target keeps in-tree symlinked files (e.g. hub-symlinked rules) instead
+    of dropping them when resolution escapes the target. The single shared check used
+    by both the single-directory narrowing and the multi-path `--target` narrowing.
+    """
+    import os
+
+    candidates = (Path(os.path.abspath(f)), f.resolve())
+    if tgt.is_file():
+        return any(p == tgt for p in candidates)
+    if tgt.is_dir():
+        return any(p == tgt or p.is_relative_to(tgt) for p in candidates)
+    return False
 
 
 def _sniff_agent(agent: str, project_root: Path) -> str:
@@ -862,7 +947,7 @@ def explain(
         raise typer.Exit(2)
 
     rule = loaded_rules[rule_id_upper]
-    rule_data = {
+    rule_data: dict[str, Any] = {
         "title": rule.title,
         "category": rule.category.value,
         "type": rule.type.value,
@@ -880,8 +965,16 @@ def explain(
         if len(parts) >= 3:
             rule_data["description"] = parts[2].strip()[:500]
 
+    # Pass / Fail examples — same fence-aware extraction `ails rules -f md` uses,
+    # so the two surfaces agree on example presence (named as absent when missing).
+    from reporails_cli.core.platform.adapters.rules_query import load_rule_examples
+
+    rule_data["examples"] = load_rule_examples(rule)
+
     output = text_formatter.format_rule(rule_id_upper, rule_data)
-    console.print(output)
+    # markup=False: the rule body / Pass-Fail examples contain literal `[...]` (markdown
+    # links, regex classes, the `[type]` check annotation) that Rich would eat as tags.
+    console.print(output, markup=False)
 
 
 def main() -> None:

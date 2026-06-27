@@ -223,6 +223,22 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
             parts.append(body)
             parts.append("")
 
+    if "examples" in rule_data:
+        examples = rule_data["examples"] or {}
+        pass_ex, fail_ex = examples.get("pass"), examples.get("fail")
+        if not pass_ex and not fail_ex:
+            parts.append("Examples: none — this rule has no Pass / Fail examples.")
+            parts.append("")
+        else:
+            parts.append("Examples:")
+            if pass_ex:
+                parts.append("Pass:")
+                parts.append(pass_ex)
+            if fail_ex:
+                parts.append("Fail:")
+                parts.append(fail_ex)
+            parts.append("")
+
     checks = rule_data.get("checks", [])
     if checks:
         parts.append("Checks:")

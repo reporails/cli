@@ -61,8 +61,9 @@ if mismatches:
     sys.exit(1)
 
 # Verify the root README carries the current version in its first heading.
-# packages/npm/README.md is a symlink to this file (committed under our control),
-# so checking it separately would be redundant.
+# packages/npm/README.md is a publish-time copy of this file (not a committed
+# symlink — a symlinked README breaks npmjs.com per-version display), so checking
+# the root README here is sufficient.
 expected_ver = py.get("version", "")
 readme_root = Path(pyproject_path).parent / "README.md"
 first_heading = ""

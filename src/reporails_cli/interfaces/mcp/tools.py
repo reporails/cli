@@ -237,7 +237,7 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | d
         }
 
     rule = rules[rule_id_upper]
-    rule_data = {
+    rule_data: dict[str, Any] = {
         "title": rule.title,
         "category": rule.category.value,
         "type": rule.type.value,
@@ -256,5 +256,11 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | d
                 rule_data["description"] = parts[2].strip()[:500]
         except (OSError, ValueError):
             pass
+
+    # Pass / Fail examples — same extractor `ails explain` / `ails rules -f md` use,
+    # so the MCP explain surface agrees with the CLI on example presence.
+    from reporails_cli.core.platform.adapters.rules_query import load_rule_examples
+
+    rule_data["examples"] = load_rule_examples(rule)
 
     return mcp_formatter.format_rule(rule_id_upper, rule_data)

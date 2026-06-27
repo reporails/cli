@@ -364,6 +364,3 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "memory_dir_exists": directory_exists,
     "total_size_check": aggregate_byte_size,
 }
-
-# Checks that aggregate across the whole project and are meaningless on a narrowed subset.
-_PROJECT_SCOPE_CHECKS = frozenset({"file_count", "aggregate_byte_size", "skill_entrypoint_present"})

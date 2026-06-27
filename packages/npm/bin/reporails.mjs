@@ -13,6 +13,7 @@ ails — Validate and score AI instruction files
 Usage:
   ails check [PATH] [OPTIONS]     Validate instruction files
   ails explain RULE_ID            Show rule details
+  ails rules [list|capabilities]  Browse the framework rule registry
   ails install [PATH]             Install MCP server for detected agents
   ails update                     Update rules framework
   ails update --cli               Upgrade CLI package itself

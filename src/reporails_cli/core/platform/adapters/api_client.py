@@ -242,6 +242,18 @@ def _degrade_on_fault(reader: Callable[[], str], unit: str) -> str:
         return ""
 
 
+def has_api_key() -> bool:
+    """True when an API key is available (env override or stored credentials).
+
+    Client-side affordance gate: distinguishes an authenticated user from an
+    anonymous one without consulting the server. The server remains the tier
+    authority; this only gates which local affordances are offered.
+    """
+    if os.environ.get("AILS_API_KEY"):
+        return True
+    return bool(_degrade_on_fault(_api_key_from_credentials, "API key"))
+
+
 class AilsClient:
     """Diagnostic API client — HTTP to diagnostic API, local fallback.
 

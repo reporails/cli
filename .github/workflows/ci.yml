@@ -21,6 +21,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        # macos-latest deliberately omitted: ubuntu-latest covers the POSIX/Unix
+        # surface and windows-latest covers the non-POSIX surface; macOS is POSIX-like,
+        # so it is unlikely to surface issues ubuntu does not, and GitHub's macOS
+        # runners bill far more CI minutes. Revisit if a macOS-specific defect appears.
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4

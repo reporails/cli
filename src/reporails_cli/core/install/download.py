@@ -36,7 +36,9 @@ def _safe_extractall(tar: tarfile.TarFile, dest: Path) -> None:
             if target.startswith("/") or ".." in target.split("/"):
                 msg = f"Unsafe symlink in archive: {member.name} -> {target}"
                 raise RuntimeError(msg)
-    tar.extractall(path=dest)
+    # `filter="data"` is the safe extraction filter (Python 3.12+); it also silences
+    # the 3.14 deprecation that defaults the filter and would otherwise warn/break.
+    tar.extractall(path=dest, filter="data")
 
 
 def _validate_rules_structure(rules_path: Path) -> None:

@@ -87,11 +87,13 @@ class TestLeverageAndRegime:
         data = format_combined_result(_result(findings=findings))
         entries = data["files"]["a.md"]["findings"]
         by_rule = {e["rule"]: e for e in entries}
+        # `bold` canonicalizes to CORE:E:0003 on the wire (raw token kept under `label`).
         assert by_rule["CORE:C:0044"]["leverage"] == "gate_mover"
-        assert by_rule["bold"]["leverage"] == "cosmetic"
+        assert by_rule["CORE:E:0003"]["leverage"] == "cosmetic"
+        assert by_rule["CORE:E:0003"]["label"] == "bold"
         # Raw severity is the unchanged machine baseline.
         assert by_rule["CORE:C:0044"]["severity"] == "warning"
-        assert by_rule["bold"]["severity"] == "info"
+        assert by_rule["CORE:E:0003"]["severity"] == "info"
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -257,13 +259,17 @@ class TestPerFindingCategory:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_category_empty_for_bare_token_rule_id(self) -> None:
-        """Bare-token rule ids (issue #31 D) yield empty category, not a crash."""
+    def test_bare_token_canonicalized_to_category(self) -> None:
+        """Bare-token rule ids (issue #31 D) are canonicalized on the wire, so they
+        now carry a category and preserve the raw token under `label`."""
         from reporails_cli.core.platform.runtime.merger import FindingItem
 
         findings = (FindingItem(file="a.md", line=1, severity="warning", rule="format", message="x"),)
         data = format_combined_result(_result(findings=findings))
-        assert data["files"]["a.md"]["findings"][0]["category"] == ""
+        entry = data["files"]["a.md"]["findings"][0]
+        assert entry["rule"] == "CORE:E:0003"
+        assert entry["label"] == "format"
+        assert entry["category"] == "efficiency"
 
 
 class TestSurfaceCategoryBreakdown:
@@ -285,8 +291,9 @@ class TestSurfaceCategoryBreakdown:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_breakdown_excludes_bare_token_rule_ids(self) -> None:
-        """Bare-token rule ids (issue #31 D) drop out of the breakdown, leaving sum < finding_count."""
+    def test_breakdown_includes_canonicalized_bare_tokens(self) -> None:
+        """Bare-token rule ids (issue #31 D) are canonicalized before the breakdown,
+        so the breakdown now sums to finding_count instead of dropping them."""
         from reporails_cli.core.platform.runtime.merger import FindingItem
 
         findings = (
@@ -296,5 +303,5 @@ class TestSurfaceCategoryBreakdown:
         data = format_combined_result(_result(findings=findings))
         sh = data["surface_health"][0]
         assert sh["finding_count"] == 2
-        assert sum(sh["category_breakdown"].values()) == 1
-        assert sh["category_breakdown"] == {"coherence": 1}
+        assert sum(sh["category_breakdown"].values()) == 2
+        assert sh["category_breakdown"] == {"coherence": 1, "efficiency": 1}

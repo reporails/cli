@@ -104,25 +104,6 @@ HINT_TYPE_LABELS = {
 
 HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
 
-# Category extraction from rule IDs and client check labels
-RULE_CATEGORY_MAP = {
-    "S": "Structure",
-    "C": "Content",
-    "E": "Efficiency",
-    "G": "Governance",
-    "D": "Maintenance",
-}
-
-CLIENT_CHECK_CATEGORY = {
-    "format": "S",
-    "bold": "E",
-    "orphan": "C",
-    "heading_instruction": "S",
-    "ordering": "C",
-    "scope": "S",
-    "ambiguous_charge": "C",
-}
-
 # Client-check labels map to their canonical rule ID so local findings display the ID like
 # server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
 CLIENT_CHECK_RULE_ID = {
@@ -434,11 +415,3 @@ def group_stats_line(atoms: list[Any]) -> str:
         instr_parts.append(f"{n_con} constraint")
     instr_str = " / ".join(instr_parts) if instr_parts else "0 instructions"
     return f"{instr_str} \u00b7 {prose_pct}% prose"
-
-
-def finding_category(rule: str) -> str:
-    """Extract category letter from rule ID or client check label."""
-    parts = rule.split(":")
-    if len(parts) >= 2 and len(parts[1]) == 1 and parts[1].isalpha():
-        return parts[1]
-    return CLIENT_CHECK_CATEGORY.get(rule, "C")

@@ -27,8 +27,6 @@ from reporails_cli.formatters.text.display_constants import (
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
     compute_score,
-    print_category_bars,
-    print_score_line,
     print_scorecard,
 )
 from reporails_cli.formatters.text.triage_view import print_file_card
@@ -38,8 +36,6 @@ console = Console()
 # Re-export for backward compat (tests, other modules importing from display)
 __all__ = [
     "compute_score",
-    "print_category_bars",
-    "print_score_line",
     "print_scorecard",
     "print_text_result",
 ]

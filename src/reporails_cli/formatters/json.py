@@ -287,20 +287,26 @@ def format_combined_result(
         return {"error": "Invalid result type"}
 
     from reporails_cli.core.platform.policy.leverage import resolve_leverage
+    from reporails_cli.formatters.text.display_constants import display_rule_id
 
     # Group findings by file for agent consumption — agents work file-by-file.
     # `leverage` is additive (raw `severity` is unchanged — the machine baseline).
     # It reflects the server's live per-finding tier when present, else the table.
+    # `rule` is the canonical `<NS>:<CAT>:<SLOT>` id (same as text output); the raw
+    # client-check token, when it differs, is preserved under `label` for baseline stability.
     by_file: dict[str, list[dict[str, Any]]] = {}
     for f in result.findings:
+        canonical = display_rule_id(f.rule)
         entry: dict[str, Any] = {
             "line": f.line,
             "severity": f.severity,
-            "rule": f.rule,
-            "category": _category_for_rule(f.rule),
+            "rule": canonical,
+            "category": _category_for_rule(canonical),
             "leverage": resolve_leverage(f).value,
             "message": f.message,
         }
+        if canonical != f.rule:
+            entry["label"] = f.rule
         if f.fix:
             entry["fix"] = f.fix
         by_file.setdefault(f.file, []).append(entry)
@@ -368,10 +374,12 @@ def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]
     Used by both the JSON envelope and the text scorecard so the
     aggregation has one source of truth.
     """
+    from reporails_cli.formatters.text.display_constants import display_rule_id
+
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     buckets: dict[str, dict[str, Any]] = {}
     for f in findings:
-        rule = f.rule
+        rule = display_rule_id(f.rule)
         bucket = buckets.setdefault(rule, {"count": 0, "severity": f.severity})
         bucket["count"] += 1
         if severity_rank.get(f.severity, 3) < severity_rank.get(bucket["severity"], 3):
