@@ -22,6 +22,7 @@
 - json: `-f json` and the `--format github` trailing JSON now emit canonical rule IDs (e.g. `CORE:S:0039`) for findings that previously carried a bare client-side token like `format` or `orphan`, matching the text output. The raw token is preserved under a new `label` key when it differs, so machine baselines keyed on it stay stable. As a result those findings now carry a populated `category` and join the per-surface category breakdown, and `top_rules` is keyed by canonical ID. (The `ambiguous_charge` classifier-confidence marker has no canonical rule and intentionally stays label-only.)
 - rules: a rule's check can now declare `project_scope: true` in `checks.yml` to be skipped on a narrowed (single-target) run where a whole-project aggregate is meaningless — previously this was hard-coded in the engine, so adding such a rule required a code change. No change to default whole-project scans.
 - help: the `npx @reporails/cli` help output now lists the `ails rules` command.
+- check: the collapsed lower-priority findings row no longer claims those findings "won't move your score yet" — it now reads `+N lower-priority · -v to list`. The old wording implied the deferred findings would move the score once the higher-priority ones were fixed, which overpromised; the row simply marks the collapsed tail.
 
 ### Fixed
 

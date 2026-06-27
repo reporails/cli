@@ -174,7 +174,7 @@ def _render_triaged(
         _print_action(fix, border, msg_width)
     if result.collapsed:
         n = len(result.collapsed)
-        console.print(f"  [dim]{border}     ◦ +{n} lower-priority (won't move your score yet) · -v to list[/dim]")
+        console.print(f"  [dim]{border}     ◦ +{n} lower-priority · -v to list[/dim]")
 
 
 def _render_card_body(
