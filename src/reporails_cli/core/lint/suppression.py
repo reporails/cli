@@ -57,19 +57,47 @@ def build_index(
     finding_files: Iterable[str],
     project_root: Path | None,
 ) -> SuppressionIndex:
-    """Scan each finding-bearing file for directives and key them by (file, line)."""
+    """Scan each finding-bearing file for directives and key them by (file, line).
+
+    Directives are parsed from the import-EXPANDED content, the same coordinate
+    space the classifier assigns finding line numbers in (`strip_directives(
+    expand_imports(...))`). Parsing the raw file instead would diverge whenever an
+    `@import` precedes a directive, so the suppression would silently miss.
+    """
+    from reporails_cli.core.mapper.imports import expand_imports
+
     index: SuppressionIndex = {}
     for rel in set(finding_files):
         path = _resolve(rel, project_root)
         if path is None:
             continue
         try:
-            text = path.read_text(encoding="utf-8")
+            raw = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        try:
+            text = expand_imports(raw, path)
+        except (OSError, UnicodeDecodeError, RecursionError):
+            text = raw
         for lineno, rules in parse_directives(text).items():
             index[(rel, lineno)] = rules
     return index
+
+
+def suppressed_lines(
+    finding_files: Iterable[str],
+    project_root: Path | None,
+) -> dict[str, set[int]]:
+    """Per-file set of lines carrying any suppression directive (for the heal write path).
+
+    Heal must not mechanically rewrite a line the author explicitly annotated as
+    reviewed with an `ails-disable-line` directive; this surfaces those lines keyed
+    by the same expanded coordinate space the atoms use.
+    """
+    out: dict[str, set[int]] = {}
+    for rel, lineno in build_index(finding_files, project_root):
+        out.setdefault(rel, set()).add(lineno)
+    return out
 
 
 def is_suppressed(

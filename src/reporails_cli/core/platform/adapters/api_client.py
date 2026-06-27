@@ -664,7 +664,9 @@ def _deserialize_lint_result(data: dict[str, Any]) -> LintResult:
     report_data = data.get("report")
     if not isinstance(report_data, dict):
         logger.warning("API response missing 'report' key or not a dict")
-        return LintResult(report=RulesetReport())
+        # Forward the server tier even on a malformed report — dropping it here silently
+        # relabels a pro/anonymous session as the default 'free' downstream.
+        return LintResult(report=RulesetReport(), tier=data.get("tier", "free"))
 
     report = RulesetReport(
         per_file=_deserialize_per_file(report_data),

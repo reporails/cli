@@ -151,6 +151,29 @@ def _extend_with_generic(
     return effective
 
 
+def _drop_excluded(
+    classified: list[Any],
+    exclude_files: list[str] | None,
+    project_dir: Path,
+    keep: list[Path] | None = None,
+) -> list[Any]:
+    """Drop link-walked classified files matching `exclude_files`. The generic-scan link
+    walk re-discovers @import-reached files agent discovery already excluded, so the
+    exclusion is re-applied here. An EXPLICITLY-targeted file in `keep` is never dropped —
+    naming a file (even one matching an exclude glob) overrides the project exclusion, so
+    the file still gets scored instead of returning a falsely-clean empty result."""
+    if not exclude_files:
+        return classified
+    from reporails_cli.core.platform.utils.utils import matches_any_glob
+
+    keep_resolved = {p.resolve() for p in keep} if keep else set()
+    return [
+        cf
+        for cf in classified
+        if cf.path.resolve() in keep_resolved or not matches_any_glob(cf.path, exclude_files, project_dir)
+    ]
+
+
 def run_m_probes(
     project_dir: Path,
     instruction_files: list[Path],
@@ -171,10 +194,14 @@ def run_m_probes(
     rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
     file_types = load_file_types(agent or "generic")
     try:
-        generic_scanning = get_project_config(project_dir).generic_scanning
+        _config = get_project_config(project_dir)
+        generic_scanning = _config.generic_scanning
+        exclude_files = _config.exclude_files
     except (OSError, ValueError):
         generic_scanning = False
+        exclude_files = None
     classified = classify_files(project_dir, instruction_files, file_types, generic_scanning=generic_scanning)
+    classified = _drop_excluded(classified, exclude_files, project_dir, keep=instruction_files)
     effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
 
     findings: list[LocalFinding] = []
@@ -213,9 +240,13 @@ def run_content_quality_checks(
     if instruction_files:
         file_types = load_file_types(agent or "generic")
         try:
-            generic_scanning = get_project_config(project_dir).generic_scanning
+            _config = get_project_config(project_dir)
+            generic_scanning = _config.generic_scanning
+            exclude_files = _config.exclude_files
         except (OSError, ValueError):
             generic_scanning = False
+            exclude_files = None
         classified = classify_files(project_dir, instruction_files, file_types, generic_scanning=generic_scanning)
+        classified = _drop_excluded(classified, exclude_files, project_dir, keep=instruction_files)
 
     return run_content_checks(ruleset_map, rules, classified)

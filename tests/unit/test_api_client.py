@@ -70,7 +70,7 @@ class TestAilsClient:
 class TestFaultDistinction:
     """A caught fault becomes a distinct typed cause; genuine absence stays "".
 
-    Models `test_auth_edge_challenge.py`: monkeypatch the file/config reads so each
+    Models `test_auth_error_messaging.py`: monkeypatch the file/config reads so each
     fault class is exercised without a real corrupt file on the host.
     """
 
@@ -401,9 +401,9 @@ class TestPayloadCaps:
 class TestOutgoingHeaders:
     """Asserts on the outgoing HTTP request shape.
 
-    The default `httpx` User-Agent (`python-httpx/*`) trips Cloudflare's
-    bot-fight rules on anonymous-tier requests, producing a 403 with a
-    "Just a moment..." HTML challenge. Cost-free unit assertion that
+    The default `httpx` User-Agent (`python-httpx/*`) trips the upstream
+    edge bot-mitigation rules on anonymous-tier requests, producing a 403
+    with a "Just a moment..." HTML challenge. Cost-free unit assertion that
     every outgoing diagnostic request carries a custom UA prevents the
     next regression of the same shape.
     """
@@ -452,7 +452,7 @@ class TestOutgoingHeaders:
 
         ua = captured["headers"].get("User-Agent", "")
         assert ua.startswith("reporails-cli/"), (
-            f"outgoing request UA must start with 'reporails-cli/' to avoid Cloudflare bot-fight 403; got {ua!r}"
+            f"outgoing request UA must start with 'reporails-cli/' to avoid an edge bot-mitigation 403; got {ua!r}"
         )
 
     @pytest.mark.unit
@@ -626,3 +626,19 @@ class TestDeserializePerFileImpactTier:
         }
         (fa,) = _deserialize_per_file(data)
         assert fa.diagnostics[0].impact_tier == ""
+
+
+class TestTierForwardedOnMalformedReport:
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_tier_forwarded_when_report_missing(self) -> None:
+        """Regression: a 2xx response with a missing/garbled `report` but a real `tier`
+        was deserialized as tier 'free', silently relabeling a pro/anonymous session."""
+        result = _deserialize_lint_result({"tier": "pro"})
+        assert result.tier == "pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_tier_defaults_free_when_both_absent(self) -> None:
+        result = _deserialize_lint_result({})
+        assert result.tier == "free"

@@ -1,7 +1,7 @@
 """Live-path regression for the new-user activation first hop.
 
 Exercises `_resolve_client_id` against the real platform host. This is the
-exact network hop that a Cloudflare edge challenge on `/api/auth/client-id`
+exact network hop that a transient network/edge issue on `/api/auth/client-id`
 would break — if the endpoint stops serving 200 JSON with a non-empty
 client_id, terminal-based `ails auth login` cannot start the device flow.
 
@@ -35,7 +35,7 @@ def test_resolve_client_id_returns_nonempty_against_live_platform() -> None:
 @pytest.mark.slow
 @pytest.mark.subsys_api
 def test_client_id_endpoint_serves_200_json() -> None:
-    """The client-id endpoint serves 200 with a JSON body (no edge challenge)."""
+    """The client-id endpoint serves 200 with a JSON body (no interstitial)."""
     resp = httpx.get(
         f"{DEFAULT_PLATFORM_URL}/api/auth/client-id",
         timeout=10.0,

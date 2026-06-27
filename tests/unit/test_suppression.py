@@ -126,3 +126,28 @@ class TestBuildIndex:
     @pytest.mark.subsys_lint
     def test_missing_file_skipped(self, tmp_path: Path) -> None:
         assert build_index(["does-not-exist.md"], tmp_path) == {}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_directive_line_tracks_import_expansion(self, tmp_path: Path) -> None:
+        """Regression: build_index parsed the raw file, but findings carry line numbers
+        from the import-EXPANDED content. With an `@import` above a directive, the two
+        diverged and the suppression silently missed. The index must key the directive
+        at its EXPANDED line so `(file, finding.line)` matches."""
+        (tmp_path / "frag.md").write_text("imported line one\nimported line two\n", encoding="utf-8")
+        main = tmp_path / "CLAUDE.md"
+        # Directive is on raw line 2, but @frag.md expands to 2 lines, pushing it to
+        # expanded line 3.
+        main.write_text("@frag.md\nDo the thing.  <!-- ails-disable-line CORE:C:0049 -->\n", encoding="utf-8")
+
+        from reporails_cli.core.mapper.imports import expand_imports
+
+        expanded = expand_imports(main.read_text(encoding="utf-8"), main)
+        expected_line = next(i for i, line in enumerate(expanded.splitlines(), start=1) if "ails-disable-line" in line)
+        assert expected_line != 2, "import expansion did not move the directive off its raw line"
+
+        index = build_index(["CLAUDE.md"], tmp_path)
+
+        assert ("CLAUDE.md", expected_line) in index, f"directive not keyed at expanded line: {index}"
+        assert index[("CLAUDE.md", expected_line)] == {"CORE:C:0049"}
+        assert ("CLAUDE.md", 2) not in index, "directive keyed at the raw line (pre-expansion)"

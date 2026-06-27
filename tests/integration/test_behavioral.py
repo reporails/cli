@@ -557,6 +557,10 @@ class TestHealCommand:
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
         result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
         assert "heal_requires_auth" in result.output
+        # Regression (finding 10): the free diagnosis JSON must still be emitted for an
+        # anonymous `--heal -f json` — a machine consumer that adds --heal previously
+        # lost all diagnostic data and got only the auth error.
+        assert '"offline"' in result.output and '"files"' in result.output
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint

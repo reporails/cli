@@ -68,3 +68,17 @@ class TestBacktickWrapSkipsMarkdownLinks:
 
         assert lines[0] == "Use `pyproject.toml` for config.\n"
         assert fixes == []
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_token_only_as_substring_left_untouched(self) -> None:
+        """Regression: the substring fallback wrapped a token mid-word (`npm` inside
+        `npmrc`), corrupting prose. A token with no word-boundaried occurrence outside
+        a link must be left unchanged, not wrapped mid-word."""
+        lines = ["Edit your npmrc file by hand.\n"]
+        atoms = [_atom(1, lines[0], ["npm"])]
+
+        fixes = fix_unformatted_code(atoms, lines)
+
+        assert lines[0] == "Edit your npmrc file by hand.\n"
+        assert fixes == []

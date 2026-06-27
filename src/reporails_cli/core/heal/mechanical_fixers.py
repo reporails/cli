@@ -11,11 +11,14 @@ preserve line number stability for subsequent edits.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,12 +54,9 @@ def _wrap_token_outside_links(text: str, token: str) -> str:
     for m in pattern.finditer(text):
         if all(m.end() <= s or m.start() >= e for s, e in spans):
             return text[: m.start()] + f"`{token}`" + text[m.end() :]
-    # Fallback: first plain occurrence outside link spans
-    pos = text.find(token)
-    while pos != -1:
-        if all(pos + len(token) <= s or pos >= e for s, e in spans):
-            return text[:pos] + f"`{token}`" + text[pos + len(token) :]
-        pos = text.find(token, pos + 1)
+    # No word-boundaried occurrence outside a link: nothing safe to wrap. A plain
+    # substring fallback would wrap the token mid-word (e.g. `npm` inside `npmrc`),
+    # corrupting the line — so leave the text unchanged.
     return text
 
 
@@ -257,11 +257,18 @@ def apply_mechanical_fixes(
     *,
     dry_run: bool = False,
     fix_types: set[str] | None = None,
+    allowed_files: set[Path] | None = None,
+    suppressed: dict[Path, set[int]] | None = None,
 ) -> list[MechanicalFix]:
     """Apply all mechanical fixes to files in the ruleset map.
 
     Returns the list of fixes applied. When dry_run is True, computes
-    fixes but does not write files.
+    fixes but does not write files. When `allowed_files` is given (resolved
+    paths), a mapped file outside it is skipped — the write set is bounded to
+    the scoped heal files, so a file whose real path escapes the heal target
+    is never rewritten. When `suppressed` (resolved path -> line numbers) is
+    given, atoms on those lines are skipped — a line the author annotated with
+    an `ails-disable-line` directive is reviewed, so heal leaves it unmodified.
     """
     all_fixes: list[MechanicalFix] = []
 
@@ -276,24 +283,42 @@ def apply_mechanical_fixes(
         path = Path(file_path)
         if not path.is_file():
             continue
-
-        content = path.read_text(encoding="utf-8")
-        lines = content.splitlines(keepends=True)
-        file_fixes: list[MechanicalFix] = []
-
-        # Apply in order: format → bold → italic_constraint → ordering
-        if "format" in allowed:
-            file_fixes.extend(fix_unformatted_code(atoms, lines))
-        if "bold" in allowed:
-            file_fixes.extend(fix_bold_on_constraints(atoms, lines))
-        if "italic_constraint" in allowed:
-            file_fixes.extend(fix_italic_constraints(atoms, lines))
-        if "ordering" in allowed:
-            file_fixes.extend(fix_ordering(atoms, lines))
-
-        if file_fixes and not dry_run:
-            path.write_text("".join(lines), encoding="utf-8")
-
-        all_fixes.extend(file_fixes)
+        resolved = path.resolve()
+        if allowed_files is not None and resolved not in allowed_files:
+            continue
+        sup_lines = suppressed.get(resolved, set()) if suppressed else set()
+        active = [a for a in atoms if a.line not in sup_lines] if sup_lines else atoms
+        all_fixes.extend(_fix_one_file(path, active, allowed, dry_run))
 
     return all_fixes
+
+
+def _fix_one_file(path: Path, atoms: list[Atom], allowed: set[str], dry_run: bool) -> list[MechanicalFix]:
+    """Apply the enabled fixers to one file's atoms; write unless dry_run. Returns its fixes."""
+    content = path.read_text(encoding="utf-8")
+    # Skip files whose @imports expand: atom.line is import-expanded, the fixer edits raw
+    # lines, so a write would mis-target.
+    from reporails_cli.core.mapper.imports import expand_imports
+
+    try:
+        if expand_imports(content, path) != content:
+            return []
+    except Exception as exc:  # any import-resolution error: skip this file, never abort the heal pass
+        logger.warning("Skipping mechanical fix for %s: import-expansion failed: %s", path, exc)
+        return []
+
+    lines = content.splitlines(keepends=True)
+    fixers = (
+        ("format", fix_unformatted_code),
+        ("bold", fix_bold_on_constraints),
+        ("italic_constraint", fix_italic_constraints),
+        ("ordering", fix_ordering),
+    )
+    file_fixes: list[MechanicalFix] = []
+    for name, fixer in fixers:
+        if name in allowed:
+            file_fixes.extend(fixer(atoms, lines))
+
+    if file_fixes and not dry_run:
+        path.write_text("".join(lines), encoding="utf-8")
+    return file_fixes
