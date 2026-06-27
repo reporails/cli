@@ -7,6 +7,9 @@
 - testing: added an architecture check that keeps error handling at the network boundary consistent, so faults surface clearly instead of being silently swallowed.
 - testing: opt-in live-network lane exercising the `ails auth login` activation path so first-contact auth regressions surface in CI rather than at a new user.
 - testing: the suite now runs against an isolated home directory, so a contributor's machine-wide config (`~/.reporails/config.yml`, `~/.codex/`, `~/.claude/`) no longer leaks into agent-detection tests — they pass or fail the same way locally as in CI. Includes a regression test pinning that a global `~/.codex/config.toml` cannot hijack detection of an `AGENTS.md`-only project.
+- testing: the end-to-end smoke suite now runs in CI on every push. It is hermetic — diagnostics run offline (no network), home is isolated, and the few assertions that can only be observed through the bundled mapper model skip cleanly on the model-free runner — so smoke regressions are caught in CI instead of shipping green.
+- testing: the rule-library lint pass (`ails test --lint`) now runs as part of the QA gate, so a duplicate rule ID anywhere in the rule library or a malformed rule fails the gate instead of slipping through unnoticed.
+- testing: new CI-gated coverage for three previously-untested behaviors — `ails check --heal --dry-run` leaving files unmodified, the friendly "Path not found" error on a bare keyword that is neither a path nor a capability, and multi-target `ails check` (several targets in one invocation) scoping the scan to exactly those targets.
 
 ### Changed
 
