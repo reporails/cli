@@ -462,12 +462,27 @@ def _surface_exclude_patterns(agent_id: str, file_type_name: str, project_config
     return [str(p) for p in exclude]
 
 
+def _repo_scoped_patterns(patterns: list[str], ft_name: str, repo_scoped: bool) -> list[str]:
+    """Drop cross-project user-scope (~/..., absolute) patterns from a repo-scoped scan.
+
+    Resolving them against the developer's HOME falsely marks an agent present — a
+    global ~/.codex/config.toml makes codex look distinctive, collapsing a shared
+    AGENTS.md to that agent and dropping the generic core findings. Home-scope
+    surfaces stay reachable via an explicit capability target, which resolves them
+    through classify.capability_paths / memory_locator, not this path.
+    """
+    if repo_scoped or ft_name in _USER_SCOPE_OPT_IN_CAPABILITIES:
+        return [p for p in patterns if not _is_external_pattern(p)]
+    return patterns
+
+
 def discover_from_config(
     target: Path,
     agent_id: str,
     rules_paths: list[Path] | None = None,
     extra_exclude_dirs: frozenset[str] = frozenset(),
     project_config: ProjectConfig | None = None,
+    repo_scoped: bool = False,
 ) -> tuple[list[Path], list[Path], list[Path]] | None:
     """Discover files using config.yml file_types.
 
@@ -501,13 +516,10 @@ def discover_from_config(
     for ft_name, spec in file_types.items():
         if not isinstance(spec, dict):
             continue
-        patterns = list(_extract_patterns(spec))
+        patterns = _repo_scoped_patterns(list(_extract_patterns(spec)), ft_name, repo_scoped)
+        if not patterns:
+            continue
         properties = _extract_properties(spec)
-
-        # Drop cross-project user-scope patterns from repo-scoped discovery —
-        # reachable only via an explicit capability target.
-        if ft_name in _USER_SCOPE_OPT_IN_CAPABILITIES:
-            patterns = [p for p in patterns if not _is_external_pattern(p)]
 
         bucket = categorize_file_type(patterns, properties)
         if bucket == "skip":

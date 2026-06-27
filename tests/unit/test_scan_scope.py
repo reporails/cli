@@ -11,6 +11,7 @@ surface even though they live outside the repo. Scope assertions filter these ou
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -683,3 +684,35 @@ class TestProjectConfigSurfaceAdjustments:
         assert (draft_dir / "draft.mdc").as_posix() not in all_paths, (
             "exclude on cursor.rules must also drop the file from cursor.bugbot_rules"
         )
+
+
+class TestRepoScopedDiscoveryIgnoresHomeConfig:
+    """A repo scan must not let the developer's global ~/ config decide detection.
+
+    Regression: a global ``~/.codex/config.toml`` made codex look distinctive on
+    a bare ``AGENTS.md`` repo, collapsing detection from generic to codex (and,
+    with a global ``default_agent``, dropping every finding). Repo-scoped
+    discovery now drops user-scope (``~/...``) patterns; home surfaces stay
+    reachable only via an explicit capability target.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_global_codex_config_does_not_hijack_agents_md_detection(self, tmp_path: Path) -> None:
+        # The autouse _isolate_home fixture points HOME at a clean temp dir;
+        # plant the global codex config there to recreate the leak trigger.
+        home = Path(os.environ["HOME"])
+        (home / ".codex").mkdir(parents=True, exist_ok=True)
+        (home / ".codex" / "config.toml").write_text('model = "x"\n', encoding="utf-8")
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("# Agents\n\nAlways do the thing.\n", encoding="utf-8")
+
+        clear_agent_cache()
+        detected_ids = {a.agent_type.id for a in detect_agents(repo)}
+
+        # Generic owns a bare cross-agent AGENTS.md. The global codex config must
+        # not make codex the sole detected agent (it did before the fix).
+        assert "generic" in detected_ids, f"home config hijacked detection: {detected_ids}"
+        assert "codex" not in detected_ids, f"global ~/.codex/config.toml leaked into a repo scan: {detected_ids}"

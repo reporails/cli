@@ -332,7 +332,7 @@ def detect_agents(  # pylint: disable=too-many-locals
 
         # Config-driven discovery from bundled config.yml
         config_result = _discover_from_config(
-            target, agent_id, rules_paths, project_excludes, project_config=project_config
+            target, agent_id, rules_paths, project_excludes, project_config=project_config, repo_scoped=True
         )
         if config_result is None:
             continue
@@ -375,7 +375,7 @@ def detect_single_agent(
     if not agent_type:
         return None
 
-    config_result = _discover_from_config(target, agent_id, rules_paths)
+    config_result = _discover_from_config(target, agent_id, rules_paths, repo_scoped=True)
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result
