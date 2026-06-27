@@ -1481,9 +1481,12 @@ class TestMechanicalChecksE2E:
 # ===========================================================================
 
 
-# Content whose mechanical fixers fire model-free (spacy classification, not
-# the ONNX embedder): a bare code token (→ backtick wrap) and a bolded
-# constraint (→ full-sentence italic).
+# Content the mechanical fixers rewrite WHEN the bundled mapper model is
+# present: a bare code token (→ backtick wrap) and a bolded constraint
+# (→ full-sentence italic). Model-free (the CI runner) no fixer fires on it —
+# mechanical fixes need the ruleset map and the additive C:0003/C:0010 probes
+# are not in the model-free set — so the real fix/no-fix contrast lives in the
+# @requires_model tests below.
 _HEALABLE = (
     "# My Project\n\n"
     "## Setup\n\n"
@@ -1501,7 +1504,13 @@ class TestHealDryRun:
     @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_dry_run_does_not_mutate(self, tmp_path: Path) -> None:
-        """--dry-run must leave the file byte-identical even when fixes exist."""
+        """--heal --dry-run exits cleanly and leaves the file byte-identical.
+
+        Runs model-free on CI, where no fixer fires on _HEALABLE, so this pins
+        the weaker no-crash / no-spurious-write contract on the no-fix path.
+        The load-bearing "fixes exist but --dry-run withholds them" contrast is
+        test_dry_run_matches_real_fix_set (@requires_model).
+        """
         project = tmp_path / "project"
         project.mkdir()
         target = project / "CLAUDE.md"
@@ -1634,15 +1643,18 @@ class TestVariadicTargets:
     @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_multi_target_excludes_untargeted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A third, untargeted file must not appear when two targets are named."""
+        """A third, discoverable-but-untargeted file must not appear when two targets are named."""
         project = tmp_path / "project"
         (project / "docs").mkdir(parents=True)
+        (project / "extra").mkdir(parents=True)
         (project / "CLAUDE.md").write_text("# Proj\n\nshort\n")
         (project / "docs" / "CLAUDE.md").write_text("# Docs\n\nshort nested\n")
-        (project / "OTHER.md").write_text("# Other\n\nshort other\n")
+        # A third instruction file a whole-project scan WOULD discover — naming
+        # two targets must scope it out, so its absence is load-bearing.
+        (project / "extra" / "CLAUDE.md").write_text("# Extra\n\nshort extra\n")
         monkeypatch.chdir(project)
 
         result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
         assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
         files = _finding_files(json.loads(result.output))
-        assert not any("OTHER.md" in f for f in files), f"untargeted file leaked in: {files}"
+        assert not any("extra/CLAUDE.md" in f for f in files), f"untargeted file leaked in: {files}"

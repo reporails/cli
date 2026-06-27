@@ -10,6 +10,7 @@
 - testing: the end-to-end smoke suite now runs in CI on every push. It is hermetic — diagnostics run offline (no network), home is isolated, and the few assertions that can only be observed through the bundled mapper model skip cleanly on the model-free runner — so smoke regressions are caught in CI instead of shipping green.
 - testing: the rule-library lint pass (`ails test --lint`) now runs as part of the QA gate, so a duplicate rule ID anywhere in the rule library or a malformed rule fails the gate instead of slipping through unnoticed.
 - testing: new CI-gated coverage for three previously-untested behaviors — `ails check --heal --dry-run` leaving files unmodified, the friendly "Path not found" error on a bare keyword that is neither a path nor a capability, and multi-target `ails check` (several targets in one invocation) scoping the scan to exactly those targets.
+- testing: hardened that new coverage — the multi-target test now asserts against a file the scan would otherwise discover, so it genuinely proves out-of-target scoping, and the `--heal --dry-run` no-mutation test documents that its full assertion runs only where the bundled model is present.
 
 ### Changed
 
