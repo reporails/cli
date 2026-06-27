@@ -44,6 +44,7 @@
 - auth: a session no longer silently downgrades to the free tier when the server returns a tier alongside an otherwise-unparseable response body.
 - testing: the heal scope-safety regression for `ails check . <token> --heal` now runs in an isolated working directory, so it no longer depends on the checkout carrying a root `CLAUDE.md` — it passes identically in CI and locally.
 - testing: the uppercase-agent smoke test now requests text output explicitly, so it asserts the human "No instruction files found" message reliably under CI (where the default output format is machine-readable) instead of only locally.
+- testing: the project auto-memory regression tests skip on Windows, where the `~/.claude/projects/<slug>/memory/` slug derivation is POSIX-path-shaped and does not form a valid Windows path component — the behavior they assert holds only on POSIX.
 
 ### Removed
 

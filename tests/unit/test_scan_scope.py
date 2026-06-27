@@ -719,6 +719,10 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="auto-memory slug keying is POSIX-path-shaped; Windows uses a different convention",
+    )
     def test_project_auto_memory_surfaces_in_repo_scan(self, tmp_path: Path) -> None:
         """The project's own slug-keyed `~/.claude/projects/<slug>/memory/` survives a repo scan.
 
@@ -747,6 +751,10 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="auto-memory slug keying is POSIX-path-shaped; Windows uses a different convention",
+    )
     def test_foreign_project_auto_memory_does_not_surface(self, tmp_path: Path) -> None:
         """Only the scanned project's slug-keyed memory surfaces — a sibling project's does not."""
         from reporails_cli.core.discovery.agent_discovery import discover_from_config
