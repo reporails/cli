@@ -30,6 +30,13 @@ _ALWAYS_SKIP = frozenset({".git", "__pycache__", "node_modules"})
 # Filtered via `_is_external_pattern` (defined below).
 _USER_SCOPE_OPT_IN_CAPABILITIES = frozenset({"subagent_memory"})
 
+# Capabilities whose user-scope patterns are project-specific despite the `~`
+# prefix — the `~/.claude/projects/*/memory/` glob is slug-keyed to the current
+# project in `_glob_directory_entries`, so it surfaces only THIS project's
+# auto-memory and survives a repo-scoped scan (it does not drive agent detection,
+# so it cannot reintroduce the home-config hijack the external-drop guards against).
+_PROJECT_SCOPED_HOME_CAPABILITIES = frozenset({"memory"})
+
 
 def ci_glob(target: Path, pattern: str) -> list[Path]:
     """Case-sensitive glob — agent specs treat filename casing as authoritative.
@@ -469,8 +476,12 @@ def _repo_scoped_patterns(patterns: list[str], ft_name: str, repo_scoped: bool) 
     global ~/.codex/config.toml makes codex look distinctive, collapsing a shared
     AGENTS.md to that agent and dropping the generic core findings. Home-scope
     surfaces stay reachable via an explicit capability target, which resolves them
-    through classify.capability_paths / memory_locator, not this path.
+    through classify.capability_paths / memory_locator, not this path. The project-scoped
+    auto-memory (`memory`) is exempt — its `~/.claude/projects/*/memory/` glob slug-keys to the
+    current project, so it is project-specific, not a cross-project hijack surface.
     """
+    if ft_name in _PROJECT_SCOPED_HOME_CAPABILITIES:
+        return patterns
     if repo_scoped or ft_name in _USER_SCOPE_OPT_IN_CAPABILITIES:
         return [p for p in patterns if not _is_external_pattern(p)]
     return patterns

@@ -716,3 +716,54 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         # not make codex the sole detected agent (it did before the fix).
         assert "generic" in detected_ids, f"home config hijacked detection: {detected_ids}"
         assert "codex" not in detected_ids, f"global ~/.codex/config.toml leaked into a repo scan: {detected_ids}"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_project_auto_memory_surfaces_in_repo_scan(self, tmp_path: Path) -> None:
+        """The project's own slug-keyed `~/.claude/projects/<slug>/memory/` survives a repo scan.
+
+        Regression: the home-config external-drop also dropped the project's auto-memory,
+        which is slug-keyed to THIS project (not cross-project) and so is project-specific.
+        """
+        from reporails_cli.core.discovery.agent_discovery import discover_from_config
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text("# root\n", encoding="utf-8")
+
+        # Auto-memory lives at ~/.claude/projects/<slug>/memory/, slug = resolved path, / -> -.
+        home = Path(os.environ["HOME"])
+        slug = str(repo.resolve()).replace("/", "-")
+        mem_dir = home / ".claude" / "projects" / slug / "memory"
+        mem_dir.mkdir(parents=True)
+        (mem_dir / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        clear_agent_cache()
+        result = discover_from_config(repo, "claude", repo_scoped=True)
+        assert result is not None
+        instructions, _rules, _configs = result
+        names = {p.as_posix() for p in instructions}
+        assert (mem_dir / "MEMORY.md").as_posix() in names, "project auto-memory must surface in a repo scan"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_foreign_project_auto_memory_does_not_surface(self, tmp_path: Path) -> None:
+        """Only the scanned project's slug-keyed memory surfaces — a sibling project's does not."""
+        from reporails_cli.core.discovery.agent_discovery import discover_from_config
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text("# root\n", encoding="utf-8")
+
+        home = Path(os.environ["HOME"])
+        foreign_slug = str((tmp_path / "other").resolve()).replace("/", "-")
+        foreign_mem = home / ".claude" / "projects" / foreign_slug / "memory"
+        foreign_mem.mkdir(parents=True)
+        (foreign_mem / "MEMORY.md").write_text("# Other\n", encoding="utf-8")
+
+        clear_agent_cache()
+        result = discover_from_config(repo, "claude", repo_scoped=True)
+        assert result is not None
+        instructions, _rules, _configs = result
+        names = {p.as_posix() for p in instructions}
+        assert (foreign_mem / "MEMORY.md").as_posix() not in names, "another project's auto-memory must not leak in"
