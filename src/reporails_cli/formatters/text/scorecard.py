@@ -319,8 +319,12 @@ def _render_verdict_block(
     _render_findings_axis(result)
 
     # Bridging caption when the score is high but errors remain, so a green headline
-    # above red errors does not read as "nothing to do".
-    if score is not None and score >= SCORE_GREEN_CUTOFF and result.stats.errors:
+    # above red errors does not read as "nothing to do". Gate on visible error
+    # findings (the worklist actually rendered below), not the stats count — anon /
+    # free tier gates its errors into Pro hints, leaving no list for the caption to
+    # point at.
+    visible_errors = sum(1 for f in (result.findings or []) if f.severity == "error")
+    if score is not None and score >= SCORE_GREEN_CUTOFF and visible_errors:
         console.print("  [dim]Quality folds in the findings below; the listed errors are still your worklist.[/dim]")
 
 
