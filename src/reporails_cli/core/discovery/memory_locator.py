@@ -59,7 +59,7 @@ def _entries_from_spec(
     spec: dict[str, Any],
     project_root: Path,
 ) -> list[MemoryEntry]:
-    """Dispatch on locator type — `file_section` (gemini) vs scopes (claude)."""
+    """Dispatch on locator type — `file_section` (a heading in one file) vs scopes (directory globs)."""
     locator = spec.get("locator")
     if isinstance(locator, dict) and locator.get("type") == "file_section":
         return _entries_from_file_section(agent, locator)
@@ -67,10 +67,10 @@ def _entries_from_spec(
 
 
 def _entries_from_file_section(agent: str, locator: dict[str, Any]) -> list[MemoryEntry]:
-    """Extract section content from a single file (gemini shape).
+    """Extract section content from a single file (file_section shape).
 
     `file` is the path to read (supports `~/` expansion). `section` is
-    the literal section heading (e.g. `"## Gemini Added Memories"`).
+    the literal section heading (e.g. a `"## Added Memories"` heading).
     Returns a single MemoryEntry with the section body when the section
     exists and is non-empty; otherwise an empty list.
     """

@@ -240,6 +240,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
     heal: bool = typer.Option(False, "--heal", "--fix", help="Apply auto-fixes after validation."),
     dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing."),
+    cwd: bool = typer.Option(False, "--cwd", help="With --heal: opt into rewriting the whole project."),
 ) -> None:
     """Validate and score your instruction files.
 
@@ -294,6 +295,21 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
 
     output_format = format or _default_format()
 
+    # Scope-safety: --heal writes files. Refuse an implicit whole-project rewrite —
+    # require an explicit narrowing target (a file, a subdir, or a capability), a
+    # --dry-run preview, or the --cwd opt-in. A bare `--heal`, `ails check . --heal`,
+    # and `ails check ./ --heal` all resolve to the whole project root with no
+    # narrowing, so they are all refused. Targeting the project root explicitly (`.`)
+    # stays whole-project even when a second, narrower token is also passed — the root
+    # token keeps every file in scope, so the narrower token cannot rescue it. Emit the
+    # refusal in the active format so a machine consumer still gets parseable output.
+    root_targeted = any(t == project_root for t in path_targets)
+    no_narrowing = not path_targets and not capability_specs
+    whole_project_heal = target == project_root and (no_narrowing or root_targeted)
+    if heal and not dry_run and not cwd and whole_project_heal:
+        _emit_heal_scope_refusal(output_format)
+        raise typer.Exit(2)
+
     # 1. Detect agents and resolve which one to use
     detected = detect_agents(target)
     config = get_project_config(target)
@@ -317,11 +333,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     if single_file is not None:
         instruction_files = [single_file.resolve()]
     elif target != project_root:
-        instruction_files = [
-            f
-            for f in instruction_files
-            if f == target or (target.is_dir() and f.resolve().is_relative_to(target.resolve()))
-        ]
+        instruction_files = [f for f in instruction_files if _file_under_target(f, target)]
     if not instruction_files:
         _handle_no_instruction_files(effective_agent, output_format, console)
         return
@@ -368,6 +380,13 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     import_extra, file_type_by_path = _generic_scan_file_types(
         target, instruction_files, effective_agent, bool(config.generic_scanning)
     )
+    if import_extra and excl_files:
+        # The @-import link-walk re-discovers files agent discovery already excluded;
+        # re-apply exclude_files so an excluded file does not silently re-enter the
+        # mapped + scored set via an import from a non-excluded file.
+        from reporails_cli.core.platform.utils.utils import matches_any_glob
+
+        import_extra = [f for f in import_extra if not matches_any_glob(f, excl_files, target)]
     if import_extra:
         instruction_files = list(instruction_files) + import_extra
 
@@ -387,6 +406,16 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
     spinner = console.status("[bold]Starting...[/bold]") if show_progress else nullcontext()
 
     start_time = time.perf_counter()
+
+    import os as _os
+
+    from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+
+    # Developer-only diagnostic: the per-stage breakdown names internal pipeline
+    # stages, so it is gated behind an env var rather than the public -v / JSON
+    # surface. Unset by default; no internal stage names reach end users.
+    stage_timer = get_stage_timer()
+    stage_timer.configure(enabled=bool(_os.environ.get("AILS_STAGE_TIMING")))
 
     with spinner:
         from reporails_cli.interfaces.cli.check_mapper import build_ruleset_map, resolve_daemon_status
@@ -414,11 +443,14 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             if verbose:
                 console.print(f"[dim]Mapper unavailable: {exc}. Content checks skipped.[/dim]")
 
+        stage_timer.mark("map")
+
         # 3. Run M probes (mechanical + structural deterministic)
         if show_progress:
             spinner.update("[bold]Running M probes...[/bold]")  # type: ignore[union-attr]
         _progress("Running M probes...")
         m_findings = run_m_probes(target, instruction_files, agent=effective_agent, scoped=is_targeted)
+        stage_timer.mark("m_probe")
 
         # 4. Run content-quality checks + client checks on map
         content_findings: list[LocalFinding] = []
@@ -429,6 +461,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             _progress("Running content checks...")
             content_findings = run_content_quality_checks(ruleset_map, target, instruction_files, agent=effective_agent)
             client_findings = run_client_checks(ruleset_map)
+        stage_timer.mark("content")
 
         # 5. Server call (stub — returns None offline)
         if show_progress:
@@ -444,6 +477,7 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         server_report = lint_result.report if lint_result else None
         hints = lint_result.hints if lint_result else ()
         cross_file_coordinates = lint_result.cross_file_coordinates if lint_result else ()
+        stage_timer.mark("server")
 
     # 5b. Memory index validation (client-side, reads local filesystem)
     memory_findings: list[LocalFinding] = []
@@ -472,6 +506,13 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         level=project_level,
         tier=lint_result.tier if lint_result else "",
     )
+
+    # 7a. Drop findings an author silenced with an inline rule-named directive,
+    # before display and before strict gating. The rule stays armed elsewhere.
+    from reporails_cli.core.lint.suppression import apply_suppressions
+    from reporails_cli.formatters.text.display_constants import rule_aliases
+
+    result = apply_suppressions(result, project_root=target, alias_fn=rule_aliases)
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
     # 7. Path filter for the display: reuse the upfront-narrow set so
@@ -496,7 +537,20 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
         display_result = result
         display_map = ruleset_map
 
-    if not (heal and output_format == "json"):
+    # Fixes are an authenticated affordance — anonymous users get the (free) diagnosis
+    # but not the fix (preview or apply). Resolve auth up front so the diagnosis dispatch
+    # can tell "authed heal in JSON" (which replaces stdout with the heal-result JSON)
+    # apart from "anonymous heal" (which still gets the diagnosis JSON).
+    heal_authed = False
+    if heal:
+        from reporails_cli.core.platform.adapters.api_client import has_api_key
+
+        heal_authed = has_api_key()
+
+    # Skip the diagnosis dispatch only when an AUTHED heal in JSON mode will emit the
+    # heal-result JSON in its place. An anonymous `--heal -f json` still gets the full
+    # diagnosis on stdout — the fix is gated, the diagnosis is not.
+    if not (heal_authed and output_format == "json"):
         _dispatch_output(
             output_format,
             display_result,
@@ -509,12 +563,27 @@ def check(  # noqa: C901  # pylint: disable=too-many-locals
             funnel_error,
             file_type_by_path,
         )
+    stage_timer.mark("render")
+    _emit_stage_timing(stage_timer, output_format)
 
     _show_agent_auto_detect_hint(effective_agent, output_format, assumed, mixed, detected)
 
     if heal:
-        heal_files = [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
-        _run_heal_pass(target, heal_files, ruleset_map, effective_agent, dry_run, output_format)
+        # Closes the trust risk of an anonymous user reading a low-leverage auto-fix as
+        # "fixed". The server stays the tier authority; this is the client-side gate.
+        if not heal_authed:
+            _emit_heal_auth_required(output_format)
+        else:
+            # Bound the write set, then drop files whose real path escapes the heal scope —
+            # an in-tree symlink (incl. a capability target) must not be written through.
+            # Applies to apply AND --dry-run preview, so the preview matches the write scope.
+            heal_scope = single_path if single_path is not None else target
+            candidate = (
+                [f for f in instruction_files if f in capability_paths] if capability_paths else instruction_files
+            )
+            heal_files = [f for f in candidate if _resolved_within_target(f, heal_scope)]
+            _notify_heal_scope_skips(len(candidate) - len(heal_files), output_format)
+            _run_heal_pass(target, heal_files, ruleset_map, effective_agent, dry_run, output_format)
 
     if _should_exit_strict(strict, capability_paths, target, result):
         raise typer.Exit(1)
@@ -620,19 +689,97 @@ def _classify_target_token(token: str, sniff_agent: str, project_root: Path) -> 
     return ("path", Path(token).resolve())
 
 
+def _resolved_within_target(f: Path, target: Path) -> bool:
+    """True when the file's real (symlink-resolved) location is within the heal target.
+
+    Heal writes through to the real file, so an in-tree symlink whose resolved path
+    escapes the target must not be written — never mutate a file outside the named scope.
+    """
+    fr = f.resolve()
+    tr = target.resolve()
+    return fr == tr or fr.is_relative_to(tr)
+
+
+def _notify_heal_scope_skips(n_skipped: int, output_format: str) -> None:
+    """Tell the user heal skipped N files whose real path escapes the named scope.
+
+    Without this a capability/dir heal over symlinks-into-a-shared-tree reports `0 fixes`
+    and reads as "nothing to fix" when it actually refused to touch out-of-scope files.
+    """
+    if n_skipped <= 0 or output_format in ("json", "github"):
+        return
+    console.print(
+        f"[dim]{n_skipped} file(s) skipped — they resolve outside the heal scope "
+        f"(e.g. an in-tree symlink to a shared tree); heal will not write through them.[/dim]"
+    )
+
+
+def _emit_heal_auth_required(output_format: str) -> None:
+    """Emit the --heal auth-required notice in the active output format (anon gets diagnosis, not fix).
+
+    Under json/github the diagnosis already occupies stdout (anon still gets the free
+    diagnosis), so the auth notice goes to stderr — stdout stays a single valid JSON
+    object the consumer can parse, instead of two concatenated objects.
+    """
+    if output_format in ("json", "github"):
+        print(
+            json.dumps(
+                {
+                    "error": "heal_requires_auth",
+                    "message": "Applying fixes (--heal) requires an account. Run `ails auth login`.",
+                }
+            ),
+            file=sys.stderr,
+        )
+        return
+    console.print(
+        "[yellow]Fixes need an account.[/yellow] The diagnosis above is free; applying fixes is not.\n"
+        "  Run [bold]ails auth login[/bold] to enable [bold]--heal[/bold]."
+    )
+
+
+def _emit_heal_scope_refusal(output_format: str) -> None:
+    """Emit the --heal scope-safety refusal in the active output format."""
+    if output_format in ("json", "github"):
+        print(
+            json.dumps(
+                {
+                    "error": "heal_requires_target",
+                    "message": "--heal writes files and needs an explicit target, --dry-run, or --cwd.",
+                }
+            )
+        )
+        return
+    console.print(
+        "[red]✗ --heal writes to files and needs an explicit target.[/red]\n"
+        "  Name what to fix (e.g. [bold]ails check CLAUDE.md --heal[/bold] or "
+        "[bold]ails check skills --heal[/bold]),\n"
+        "  preview the whole project with [bold]--dry-run[/bold], or opt into a "
+        "whole-project rewrite with [bold]--cwd[/bold]."
+    )
+
+
 def _narrow_to_path_targets(instruction_files: list[Path], path_targets: set[Path]) -> list[Path]:
     """Keep only instruction files that are equal to or beneath one of `path_targets`."""
-    narrowed: list[Path] = []
-    for f in instruction_files:
-        f_res = f.resolve()
-        for tgt in path_targets:
-            if tgt.is_file() and f_res == tgt:
-                narrowed.append(f)
-                break
-            if tgt.is_dir() and (f_res == tgt or f_res.is_relative_to(tgt)):
-                narrowed.append(f)
-                break
-    return narrowed
+    return [f for f in instruction_files if any(_file_under_target(f, tgt) for tgt in path_targets)]
+
+
+def _file_under_target(f: Path, tgt: Path) -> bool:
+    """True when instruction file `f` is the target or sits beneath it.
+
+    Tests the file's logical absolute path alongside its symlink-resolved path so a
+    directory target keeps in-tree symlinked files (e.g. hub-symlinked rules) instead
+    of dropping them when resolution escapes the target. The single shared check used
+    by both the single-directory narrowing and the multi-path `--target` narrowing.
+    """
+    import os
+
+    candidates = (Path(os.path.abspath(f)), f.resolve())
+    if tgt.is_file():
+        return any(p == tgt for p in candidates)
+    if tgt.is_dir():
+        return any(p == tgt or p.is_relative_to(tgt) for p in candidates)
+    return False
 
 
 def _sniff_agent(agent: str, project_root: Path) -> str:
@@ -694,10 +841,15 @@ def _dispatch_output(
     from reporails_cli.formatters import json as json_formatter
 
     if output_format == "json":
+        from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+
         data = json_formatter.format_combined_result(
             display_result, ruleset_map=ruleset_map, project_root=project_root, file_type_by_path=file_type_by_path
         )
         data["elapsed_ms"] = round(elapsed_ms, 1)
+        timer = get_stage_timer()
+        if timer.enabled:
+            data["timing"] = timer.as_dict()
         if capability_paths:
             data["capability_paths"] = sorted(_relativize_paths(capability_paths, project_root))
         print(json.dumps(data, indent=2))
@@ -719,6 +871,19 @@ def _dispatch_output(
     )
 
 
+def _emit_stage_timing(stage_timer: Any, output_format: str) -> None:
+    """Print the per-stage timing table (dev-only, gated by `AILS_STAGE_TIMING`).
+
+    Only renders when the timer was enabled via the env var; the internal stage
+    names never reach the default text / JSON output.
+    """
+    if output_format == "json" or not stage_timer.enabled or not stage_timer.records:
+        return
+    console.print("\n  [dim]── Stage timing (wall-clock) ──[/dim]")
+    for line in stage_timer.render_lines():
+        console.print(f"  [dim]{line}[/dim]")
+
+
 def _run_heal_pass(
     target: Path,
     instruction_files: list[Path],
@@ -728,6 +893,7 @@ def _run_heal_pass(
     output_format: str,
 ) -> None:
     """Apply mechanical + additive fixers using the already-built map."""
+    from reporails_cli.core.lint.suppression import suppressed_lines
     from reporails_cli.interfaces.cli.heal import (
         _apply_additive_fixes,
         _apply_mechanical_fixes,
@@ -736,7 +902,14 @@ def _run_heal_pass(
 
     show = sys.stdout.isatty() and output_format != "json"
     heal_start = time.perf_counter()
-    mech = _apply_mechanical_fixes(ruleset_map, target, dry_run, show, console)
+    # A line the author annotated with an `ails-disable-line` directive is reviewed —
+    # heal must not mechanically rewrite it. Key the suppressed lines by resolved path
+    # so they match the atom files regardless of path form.
+    supp_raw = suppressed_lines([str(f) for f in instruction_files], target)
+    suppressed = {Path(k).resolve(): v for k, v in supp_raw.items()}
+    # Both fixer families write only within the scoped `instruction_files` set — the
+    # mechanical pass is bounded by it so it cannot rewrite a mapped file outside scope.
+    mech = _apply_mechanical_fixes(ruleset_map, target, dry_run, show, console, instruction_files, suppressed)
     additive = _apply_additive_fixes(target, instruction_files, effective_agent, dry_run, show, console)
     heal_ms = round((time.perf_counter() - heal_start) * 1000, 1)
     _output_heal_results(mech + additive, mech, additive, dry_run, heal_ms, output_format, console)
@@ -751,7 +924,13 @@ def _should_exit_strict(
     if not strict:
         return False
     if capability_paths:
-        rel_keys = _relativize_paths(capability_paths, project_root)
+        # Key the scope set with the SAME normalization the display filter uses
+        # (`normalize_finding_path`), not `_relativize_paths`. The two diverge for
+        # user-scope paths (`~/.claude/...`), so a strict run on such a target could
+        # exit 0 while the display showed errors for it.
+        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+        rel_keys = {normalize_finding_path(str(p), project_root) for p in capability_paths}
         return any(f.file in rel_keys for f in result.findings)
     return bool(result.findings)
 
@@ -820,7 +999,7 @@ def explain(
         raise typer.Exit(2)
 
     rule = loaded_rules[rule_id_upper]
-    rule_data = {
+    rule_data: dict[str, Any] = {
         "title": rule.title,
         "category": rule.category.value,
         "type": rule.type.value,
@@ -838,8 +1017,16 @@ def explain(
         if len(parts) >= 3:
             rule_data["description"] = parts[2].strip()[:500]
 
+    # Pass / Fail examples — same fence-aware extraction `ails rules -f md` uses,
+    # so the two surfaces agree on example presence (named as absent when missing).
+    from reporails_cli.core.platform.adapters.rules_query import load_rule_examples
+
+    rule_data["examples"] = load_rule_examples(rule)
+
     output = text_formatter.format_rule(rule_id_upper, rule_data)
-    console.print(output)
+    # markup=False: the rule body / Pass-Fail examples contain literal `[...]` (markdown
+    # links, regex classes, the `[type]` check annotation) that Rich would eat as tags.
+    console.print(output, markup=False)
 
 
 def main() -> None:

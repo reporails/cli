@@ -12,7 +12,7 @@ source: https://agentskills.io/specification
 
 # Skill Description Length
 
-The `description` field in `SKILL.md` YAML frontmatter MUST be present and concise. The Agent Skills open standard at agentskills.io caps the field at **1024 characters**, and GitHub Copilot enforces the same 1024-character cap explicitly. Claude Code caps the combined `description` + `when_to_use` text at **1,536 characters** in the skill listing. Codex bounds the entire skill list (not the individual description) at roughly 2% of the model context window or 8000 characters. Cursor and Gemini do not document a hard cap but follow the open standard. A description that respects 1024 characters is portable across every agent; long descriptions waste context tokens and risk truncation in the agents that enforce the tighter cap. Front-load the key use case.
+The `description` field in `SKILL.md` YAML frontmatter MUST be present and concise. The Agent Skills open standard at agentskills.io caps the field at **1024 characters**, and GitHub Copilot enforces the same 1024-character cap explicitly. Claude Code caps the combined `description` + `when_to_use` text at **1,536 characters** in the skill listing. Codex bounds the entire skill list (not the individual description) at roughly 2% of the model context window or 8000 characters. Cursor and Antigravity do not document a hard cap but follow the open standard. A description that respects 1024 characters is portable across every agent; long descriptions waste context tokens and risk truncation in the agents that enforce the tighter cap. Front-load the key use case.
 
 ## Antipatterns
 

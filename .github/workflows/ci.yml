@@ -10,6 +10,7 @@ on:
     branches:
       - "[0-9]*.[0-9]*.[0-9]*"
       - main
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -20,6 +21,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        # macos-latest deliberately omitted: ubuntu-latest covers the POSIX/Unix
+        # surface and windows-latest covers the non-POSIX surface; macOS is POSIX-like,
+        # so it is unlikely to surface issues ubuntu does not, and GitHub's macOS
+        # runners bill far more CI minutes. Revisit if a macOS-specific defect appears.
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
@@ -37,12 +42,38 @@ jobs:
       - name: Type check
         run: uv run poe type
 
+      - name: Rule lint
+        run: uv run poe test_lint
+
       - name: Unit tests
         run: uv run poe test_unit
 
       - name: Integration tests
         run: uv run poe test_integration
 
-      # Smoke tests intentionally not gated in CI yet — a few test cases have
-      # environment-dependent assumptions that pass locally but fail on the GH
-      # runner. Re-enable once the smoke suite is hermetic.
+      # Smoke suite is hermetic: tests/smoke/conftest.py forces offline
+      # diagnostics (no network), HOME is isolated, and tests that can only
+      # be observed via the mapper model declare `requires_model` so they
+      # skip cleanly on the model-free runner.
+      - name: Smoke tests
+        run: uv run poe test_smoke
+
+  # Live-path regression — hits the real platform host, so it stays out of the
+  # gated QA matrix (offline CI must remain green when the edge is flaky).
+  # Manual via the Actions tab; the assertion is the new-user activation hop.
+  live:
+    name: Live activation path
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Live network tests
+        run: uv run poe test_live

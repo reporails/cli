@@ -40,6 +40,22 @@ requires_rules = pytest.mark.skipif(
 )
 
 
+def _model_installed() -> bool:
+    from reporails_cli.bundled import get_models_path
+
+    return (get_models_path() / "minilm-l6-v2" / "onnx" / "model.onnx").is_file()
+
+
+# The bundled ONNX model is gitignored and absent in CI, so content/client
+# checks (which need the mapper) don't run there. Tests whose assertion can
+# only be observed via a content/client finding must declare this marker so
+# they skip cleanly without the model rather than failing on the CI runner.
+requires_model = pytest.mark.skipif(
+    not _model_installed(),
+    reason="Bundled ONNX model not installed (content checks unavailable)",
+)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -296,7 +312,9 @@ class TestCrossAgentContamination:
         data = _check_json(claude_only, agent="claude")
         findings = _all_findings(data)
         assert len(findings) > 0, "Claude fixture must produce findings"
-        foreign = {f["rule"] for f in findings if f["rule"].split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "GEMINI")}
+        foreign = {
+            f["rule"] for f in findings if f["rule"].split(":")[0] in ("CODEX", "COPILOT", "CURSOR", "ANTIGRAVITY")
+        }
         assert not foreign, f"Foreign agent rules fired under --agent claude: {foreign}"
 
     @pytest.mark.e2e
@@ -358,8 +376,15 @@ class TestMultiAgentProject:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
+    @requires_model
     def test_no_agent_scans_all_on_mixed_signals(self, multi_agent: Path) -> None:
-        """Without --agent on multi-agent project, mixed signals → scan all instruction files."""
+        """Without --agent on multi-agent project, mixed signals → scan all instruction files.
+
+        CLAUDE.md earns findings here only from content/client checks, which need
+        the bundled mapper model — hence `requires_model`. The project-level
+        M-probe (`CORE:G:0001`) attaches to a single representative file, so the
+        claude-file inclusion is not observable model-free in mixed-signal mode.
+        """
         data = _check_json(multi_agent)
         files = _finding_files(data)
         assert len(files) > 0, "Multi-agent project should produce findings"
@@ -692,6 +717,9 @@ class TestUnknownAgentValidation:
     @pytest.mark.subsys_cli_ux
     def test_uppercase_agent_no_match(self, claude_only: Path) -> None:
         """--agent CLAUDE (uppercase) finds no files — agents are case-sensitive."""
+        # Force text format: under CI (GITHUB_ACTIONS set) the default format is
+        # machine-readable, so the human "No instruction files found" line only
+        # appears when text output is requested explicitly.
         result = runner.invoke(
             app,
             [
@@ -699,6 +727,8 @@ class TestUnknownAgentValidation:
                 str(claude_only),
                 "--agent",
                 "CLAUDE",
+                "-f",
+                "text",
             ],
         )
         assert result.exit_code == 0
@@ -768,8 +798,13 @@ class TestDefaultAgentConfig:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
+    @requires_model
     def test_no_config_mixed_signals_scans_all(self, multi_agent: Path) -> None:
-        """Without config on multi-agent project, mixed signals → scan all instruction files."""
+        """Without config on multi-agent project, mixed signals → scan all instruction files.
+
+        Claude-file inclusion is observable only via content/client findings,
+        which need the bundled mapper model — hence `requires_model`.
+        """
         data = _check_json(multi_agent)
         files = _finding_files(data)
         # Mixed signals: claude + copilot → all instruction files scanned with core rules
@@ -1123,6 +1158,11 @@ class TestExplainCommand:
 class TestHealCommand:
     """ails check --heal applies auto-fixes and reports results."""
 
+    @pytest.fixture(autouse=True)
+    def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--heal is an authenticated affordance; authenticate so the fix path runs."""
+        monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     def test_missing_path_errors(self) -> None:
@@ -1440,3 +1480,196 @@ class TestMechanicalChecksE2E:
 
         # Should complete without crash — findings may be many due to content issues
         assert "files" in data
+
+
+# ===========================================================================
+# Heal Dry-Run
+#
+# `ails check --heal --dry-run` must PREVIEW deterministic fixes without
+# writing them. Pins the no-mutation contract: the same fixture that a real
+# heal rewrites must be left byte-identical under --dry-run.
+# ===========================================================================
+
+
+# Content the mechanical fixers rewrite WHEN the bundled mapper model is
+# present: a bare code token (→ backtick wrap) and a bolded constraint
+# (→ full-sentence italic). Model-free (the CI runner) no fixer fires on it —
+# mechanical fixes need the ruleset map and the additive C:0003/C:0010 probes
+# are not in the model-free set — so the real fix/no-fix contrast lives in the
+# @requires_model tests below.
+_HEALABLE = (
+    "# My Project\n\n"
+    "## Setup\n\n"
+    "You must run npm install before starting the app.\n\n"
+    "## Constraints\n\n"
+    "- **Never** commit secrets to the repository.\n"
+)
+
+
+@pytest.mark.e2e
+class TestHealDryRun:
+    """--heal --dry-run previews fixes without mutating files."""
+
+    @pytest.fixture(autouse=True)
+    def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--heal preview is an authenticated affordance; authenticate so the preview path runs."""
+        monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @requires_rules
+    def test_dry_run_does_not_mutate(self, tmp_path: Path) -> None:
+        """--heal --dry-run exits cleanly and leaves the file byte-identical.
+
+        Runs model-free on CI, where no fixer fires on _HEALABLE, so this pins
+        the weaker no-crash / no-spurious-write contract on the no-fix path.
+        The load-bearing "fixes exist but --dry-run withholds them" contrast is
+        test_dry_run_matches_real_fix_set (@requires_model).
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        target = project / "CLAUDE.md"
+        target.write_text(_HEALABLE)
+        before = target.read_text()
+
+        result = runner.invoke(app, ["check", str(project), "--heal", "--dry-run", "--agent", "claude"])
+        assert result.exit_code in (0, None), f"dry-run heal failed:\n{result.output}"
+        assert target.read_text() == before, "--dry-run must not modify the file"
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @requires_rules
+    @requires_model
+    def test_dry_run_previews_fixes(self, tmp_path: Path) -> None:
+        """--dry-run reports the fixes it WOULD apply (preview, not silence).
+
+        Mechanical fixers read atoms off the ruleset map, which needs the
+        bundled mapper model — hence `requires_model`. The model-free safety
+        contract (no mutation) is pinned by `test_dry_run_does_not_mutate`.
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text(_HEALABLE)
+
+        result = runner.invoke(app, ["check", str(project), "--heal", "--dry-run", "-f", "json", "--agent", "claude"])
+        assert result.exit_code in (0, None), f"dry-run heal json failed:\n{result.output}"
+        data = json.loads(result.output)
+        assert len(data.get("auto_fixed", [])) > 0, "dry-run should still list the fixes it would make"
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @requires_rules
+    @requires_model
+    def test_dry_run_matches_real_fix_set(self, tmp_path: Path) -> None:
+        """Real heal mutates and applies the same fix count dry-run only previews.
+
+        Both arms need real fixes (mechanical, atom-level) — `requires_model`.
+        """
+        # Dry-run project — must stay unchanged.
+        dry = tmp_path / "dry"
+        dry.mkdir()
+        (dry / "CLAUDE.md").write_text(_HEALABLE)
+        dry_result = runner.invoke(app, ["check", str(dry), "--heal", "--dry-run", "-f", "json", "--agent", "claude"])
+        dry_data = json.loads(dry_result.output)
+        assert (dry / "CLAUDE.md").read_text() == _HEALABLE, "dry-run mutated the file"
+
+        # Real project — must change and apply the same fixes.
+        real = tmp_path / "real"
+        real.mkdir()
+        (real / "CLAUDE.md").write_text(_HEALABLE)
+        real_result = runner.invoke(app, ["check", str(real), "--heal", "-f", "json", "--agent", "claude"])
+        real_data = json.loads(real_result.output)
+        assert (real / "CLAUDE.md").read_text() != _HEALABLE, "real heal should mutate the file"
+        assert len(dry_data.get("auto_fixed", [])) == len(real_data.get("auto_fixed", [])), (
+            "dry-run preview count must match the real applied count"
+        )
+
+
+# ===========================================================================
+# Friendly Bare-Keyword Error
+#
+# The variadic-targets redesign routes a positional token to either a
+# capability or a filesystem path. A bare word that is neither an existing
+# path nor a recognized capability must produce a clear "Path not found"
+# error with exit 2 — not a silent zero-finding pass or a crash.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestBareKeywordError:
+    """A bare non-path, non-capability token errors clearly."""
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    def test_bare_keyword_exits_2(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`ails check <bogus-word>` exits 2 (clear error, not silent success)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Proj\n\nminimal\n")
+        monkeypatch.chdir(project)
+
+        result = runner.invoke(app, ["check", "nonexistentkeywordxyz", "--agent", "claude"])
+        assert result.exit_code == 2, f"Expected exit 2, got {result.exit_code}:\n{result.output}"
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    def test_bare_keyword_names_the_token(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The error message names what was not found."""
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("# Proj\n\nminimal\n")
+        monkeypatch.chdir(project)
+
+        result = runner.invoke(app, ["check", "nonexistentkeywordxyz", "--agent", "claude"])
+        assert "Path not found" in result.output, f"Missing friendly error:\n{result.output}"
+
+
+# ===========================================================================
+# Variadic Multi-Target Check
+#
+# `ails check <a> <b>` accepts multiple targets in one invocation and scopes
+# the scan to exactly those targets. Pins that both targets are scanned (not
+# just the first) and that out-of-target files stay out.
+# ===========================================================================
+
+
+@pytest.mark.e2e
+class TestVariadicTargets:
+    """Multiple targets in one ails check invocation all get scanned."""
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @requires_rules
+    def test_two_targets_both_scanned(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two explicit file targets must both appear in the findings file set."""
+        project = tmp_path / "project"
+        (project / "docs").mkdir(parents=True)
+        (project / "CLAUDE.md").write_text("# Proj\n\nshort\n")
+        (project / "docs" / "CLAUDE.md").write_text("# Docs\n\nshort nested\n")
+        monkeypatch.chdir(project)
+
+        result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
+        assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
+        files = _finding_files(json.loads(result.output))
+        assert "CLAUDE.md" in files, f"first target not scanned: {files}"
+        assert "docs/CLAUDE.md" in files, f"second target not scanned: {files}"
+
+    @pytest.mark.e2e
+    @pytest.mark.subsys_cli_ux
+    @requires_rules
+    def test_multi_target_excludes_untargeted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A third, discoverable-but-untargeted file must not appear when two targets are named."""
+        project = tmp_path / "project"
+        (project / "docs").mkdir(parents=True)
+        (project / "extra").mkdir(parents=True)
+        (project / "CLAUDE.md").write_text("# Proj\n\nshort\n")
+        (project / "docs" / "CLAUDE.md").write_text("# Docs\n\nshort nested\n")
+        # A third instruction file a whole-project scan WOULD discover — naming
+        # two targets must scope it out, so its absence is load-bearing.
+        (project / "extra" / "CLAUDE.md").write_text("# Extra\n\nshort extra\n")
+        monkeypatch.chdir(project)
+
+        result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
+        assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
+        files = _finding_files(json.loads(result.output))
+        assert not any("extra/CLAUDE.md" in f for f in files), f"untargeted file leaked in: {files}"

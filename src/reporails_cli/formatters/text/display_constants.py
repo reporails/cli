@@ -104,25 +104,6 @@ HINT_TYPE_LABELS = {
 
 HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
 
-# Category extraction from rule IDs and client check labels
-RULE_CATEGORY_MAP = {
-    "S": "Structure",
-    "C": "Content",
-    "E": "Efficiency",
-    "G": "Governance",
-    "D": "Maintenance",
-}
-
-CLIENT_CHECK_CATEGORY = {
-    "format": "S",
-    "bold": "E",
-    "orphan": "C",
-    "heading_instruction": "S",
-    "ordering": "C",
-    "scope": "S",
-    "ambiguous_charge": "C",
-}
-
 # Client-check labels map to their canonical rule ID so local findings display the ID like
 # server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
 CLIENT_CHECK_RULE_ID = {
@@ -171,6 +152,16 @@ def linked_rule_id(rule: str) -> str:
     rule_id = display_rule_id(rule)
     url = rule_docs_url(rule_id)
     return f"[link={url}]{rule_id}[/link]" if url else rule_id
+
+
+def rule_aliases(rule: str) -> set[str]:
+    """Every name a suppression directive may use for a finding's rule: raw token, canonical ID, slug."""
+    canon = display_rule_id(rule)
+    names = {rule, canon}
+    slug = _rule_slug_map().get(canon)
+    if slug:
+        names.add(slug)
+    return names
 
 
 # ── File classification lookup tables ─────────────────────────────────
@@ -314,15 +305,49 @@ def file_type_summary(filepaths: set[str]) -> str:
     return ", ".join(parts)
 
 
-def per_file_stats(filepath: str, ruleset_map: Any, project_root: Path) -> str:
-    """Compute per-file stats from RulesetMap atoms. Returns compact stat string."""
+def index_atoms_by_norm_path(atoms: Any, project_root: Path) -> dict[str, list[Any]]:
+    """Group atoms by normalized file path, normalizing each distinct path once.
+
+    Collapses the per-card / per-group re-normalization of every atom (an
+    O(atoms x files) render hot loop) into one `normalize_finding_path` call per
+    distinct `file_path`. Built once per render and shared via `_CardContext`.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    memo: dict[str, str] = {}
+    out: dict[str, list[Any]] = {}
+    for a in atoms:
+        fp = a.file_path
+        norm = memo.get(fp)
+        if norm is None:
+            norm = normalize_finding_path(fp, project_root)
+            memo[fp] = norm
+        out.setdefault(norm, []).append(a)
+    return out
+
+
+def per_file_stats(
+    filepath: str,
+    ruleset_map: Any,
+    project_root: Path,
+    atoms_by_path: dict[str, list[Any]] | None = None,
+) -> str:
+    """Compute per-file stats from RulesetMap atoms. Returns compact stat string.
+
+    `atoms_by_path` is the prebuilt normalized-path index from
+    `index_atoms_by_norm_path`; when absent (e.g. ad-hoc callers/tests) it falls
+    back to the per-atom normalize scan.
+    """
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
         norm_target = normalize_finding_path(filepath, project_root)
-        atoms = [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) == norm_target]
+        if atoms_by_path is not None:
+            atoms = atoms_by_path.get(norm_target, [])
+        else:
+            atoms = [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) == norm_target]
     except (AttributeError, TypeError):
         return ""
     if not atoms:
@@ -354,14 +379,24 @@ def get_group_atoms(
     group_files: list[tuple[str, list[Any]]],
     ruleset_map: Any,
     project_root: Path,
+    atoms_by_path: dict[str, list[Any]] | None = None,
 ) -> list[Any]:
-    """Get all atoms belonging to files in this group."""
+    """Get all atoms belonging to files in this group.
+
+    Uses the prebuilt `atoms_by_path` index when supplied; otherwise falls back
+    to the per-atom normalize scan.
+    """
     if ruleset_map is None:
         return []
     try:
         from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
         norm_fps = {normalize_finding_path(fp, project_root) for fp, _ in group_files}
+        if atoms_by_path is not None:
+            atoms: list[Any] = []
+            for fp in norm_fps:
+                atoms.extend(atoms_by_path.get(fp, []))
+            return atoms
         return [a for a in ruleset_map.atoms if normalize_finding_path(a.file_path, project_root) in norm_fps]
     except (AttributeError, TypeError):
         return []
@@ -380,11 +415,3 @@ def group_stats_line(atoms: list[Any]) -> str:
         instr_parts.append(f"{n_con} constraint")
     instr_str = " / ".join(instr_parts) if instr_parts else "0 instructions"
     return f"{instr_str} \u00b7 {prose_pct}% prose"
-
-
-def finding_category(rule: str) -> str:
-    """Extract category letter from rule ID or client check label."""
-    parts = rule.split(":")
-    if len(parts) >= 2 and len(parts[1]) == 1 and parts[1].isalpha():
-        return parts[1]
-    return CLIENT_CHECK_CATEGORY.get(rule, "C")

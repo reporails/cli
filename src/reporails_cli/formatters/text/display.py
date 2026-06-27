@@ -27,8 +27,6 @@ from reporails_cli.formatters.text.display_constants import (
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
     compute_score,
-    print_category_bars,
-    print_score_line,
     print_scorecard,
 )
 from reporails_cli.formatters.text.triage_view import print_file_card
@@ -38,8 +36,6 @@ console = Console()
 # Re-export for backward compat (tests, other modules importing from display)
 __all__ = [
     "compute_score",
-    "print_category_bars",
-    "print_score_line",
     "print_scorecard",
     "print_text_result",
 ]
@@ -63,10 +59,14 @@ _GROUP_LABELS = {
 
 
 def _render_group_header(
-    gkey: str, group_files: list[tuple[str, list[Any]]], ruleset_map: Any, project_root: Path
+    gkey: str,
+    group_files: list[tuple[str, list[Any]]],
+    ruleset_map: Any,
+    project_root: Path,
+    atoms_by_path: dict[str, list[Any]] | None = None,
 ) -> None:
     """Print group header with optional atom stats."""
-    group_atoms = get_group_atoms(gkey, group_files, ruleset_map, project_root)
+    group_atoms = get_group_atoms(gkey, group_files, ruleset_map, project_root, atoms_by_path)
     stats = f"  [dim]{group_stats_line(group_atoms)}[/dim]" if group_atoms else ""
     label = _GROUP_LABELS.get(gkey, gkey.title())
     console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({len(group_files)})[/dim]{stats}")
@@ -83,13 +83,14 @@ class _CardContext:
     hints_by_file: dict[str, list[Any]] = field(default_factory=dict)
     aliases_by_file: dict[str, list[str]] = field(default_factory=dict)
     regime_by_file: dict[str, Any] = field(default_factory=dict)
+    atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
 
 
 def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: _CardContext) -> None:
     """Render a single file group: header, file cards, footer."""
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root)
+    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root, ctx.atoms_by_path)
     max_cards = 3 if not ctx.verbose else 999
 
     for i, (filepath, findings) in enumerate(group_files):
@@ -107,6 +108,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             file_hints=ctx.hints_by_file.get(filepath),
             aliases_by_file=ctx.aliases_by_file,
             project_root=ctx.project_root,
+            atoms_by_path=ctx.atoms_by_path,
         )
 
     console.print(f"  [dim]\u2514\u2500 {sum(len(fs) for _, fs in group_files)} findings[/dim]\n")
@@ -151,6 +153,10 @@ def _collect_files_and_scope(
 
     all_files: set[str] = set()
     if result.findings:
+        # `FindingItem.file` is normalized at merge, but re-normalize defensively —
+        # the idempotent call is cheap (~#findings) and avoids betting the display on
+        # an unenforced single-producer invariant. The O(atoms x files) render hot loop
+        # is fixed in the atoms-side index (see display_constants), not here.
         all_files.update(normalize_finding_path(f.file, project_root) for f in result.findings)
 
     scope = ScopeInfo()
@@ -384,11 +390,15 @@ def _render_findings_and_scorecard(
     `ails check skills` lists each skill with its own score);
     single-file runs show neither — the top `Score:` covers it.
     """
+    from reporails_cli.formatters.text.display_constants import index_atoms_by_norm_path
     from reporails_cli.formatters.text.item_scorecard import compute_item_scores
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
     has_quality = result.quality is not None and bool(result.quality.compliance_band)
     sev_icons = get_sev_icons(ascii_mode)
+    atoms_by_path = (
+        index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
+    )
     ctx = _CardContext(
         sev_icons=sev_icons,
         verbose=verbose,
@@ -397,6 +407,7 @@ def _render_findings_and_scorecard(
         hints_by_file=_build_hints_by_file(result.hints, project_root),
         aliases_by_file=_build_aliases_by_file(project_root, result),
         regime_by_file=_build_regime_by_file(result, project_root),
+        atoms_by_path=atoms_by_path,
     )
     _render_file_groups(_build_file_groups(result, file_type_by_path, project_root), ctx)
     _render_cross_file_coordinates(result, sev_icons)

@@ -361,7 +361,14 @@ class TestSkillEntrypointPresent:
             type=RuleType.MECHANICAL,
             severity=Severity.MEDIUM,
             match=FileMatch(type="skill"),
-            checks=[Check(id="CORE.S.0015.entrypoint", type="mechanical", check="skill_entrypoint_present")],
+            checks=[
+                Check(
+                    id="CORE.S.0015.entrypoint",
+                    type="mechanical",
+                    check="skill_entrypoint_present",
+                    project_scope=True,
+                )
+            ],
         )
         classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
         rules = {"CORE:S:0015": rule}
@@ -372,7 +379,7 @@ class TestSkillEntrypointPresent:
 class TestScopedProjectChecks:
     """Project-aggregate checks are skipped under a targeted (scoped) run."""
 
-    def _rule(self, rule_id: str, check_name: str, args: dict) -> Rule:
+    def _rule(self, rule_id: str, check_name: str, args: dict, project_scope: bool = False) -> Rule:
         return Rule(
             id=rule_id,
             title=f"Rule {rule_id}",
@@ -380,14 +387,22 @@ class TestScopedProjectChecks:
             type=RuleType.MECHANICAL,
             severity=Severity.CRITICAL,
             match=FileMatch(),
-            checks=[Check(id=f"{rule_id}:check:0001", type="mechanical", check=check_name, args=args)],
+            checks=[
+                Check(
+                    id=f"{rule_id}:check:0001",
+                    type="mechanical",
+                    check=check_name,
+                    args=args,
+                    project_scope=project_scope,
+                )
+            ],
         )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_count_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2})}
+        rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2}, project_scope=True)}
         classified = _cf(tmp_path, "CLAUDE.md")  # single file → count 1 < min 2
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
@@ -396,7 +411,7 @@ class TestScopedProjectChecks:
     @pytest.mark.subsys_lint
     def test_aggregate_byte_size_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("this content is well over five bytes")
-        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5})}
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5}, project_scope=True)}
         classified = _cf(tmp_path, "CLAUDE.md")
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0

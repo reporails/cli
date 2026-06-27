@@ -11,6 +11,9 @@ __pycache__
 # Internal coordination surface — private inner repo, never ships in the public CLI
 /hub/
 
+# doku session/worker state — hub coordination bookkeeping, never tracked in the public CLI
+/.doku/
+
 # Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/
 /.mcp.json

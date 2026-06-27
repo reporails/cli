@@ -29,7 +29,7 @@ reserved_agent_prefixes:
   - AIDER
   - CONTINUE
   - ROO
-  - GEMINI
+  - ANTIGRAVITY
 
 reserved_package_prefixes:
   - RRAILS
@@ -228,6 +228,11 @@ fields:
         type: boolean
         default: false
         description: "Whether pattern operates across the full target set (not per-file)"
+      project_scope:
+        required: false
+        type: boolean
+        default: false
+        description: "Project-aggregate check — skipped under a scoped/narrowed run where the aggregate is meaningless. Data-driven scoped-skip (no engine edit)."
       # shared optional fields
       replaces:
         required: false

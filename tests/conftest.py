@@ -11,6 +11,25 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate HOME so a developer's global config can't leak into discovery.
+
+    A real `~/.reporails/config.yml` (`default_agent`), `~/.codex/`, or
+    `~/.claude/` on the contributor's machine otherwise alters agent detection
+    and config merge, making detection tests pass in clean CI but fail locally.
+    Points HOME and the frozen `REPORAILS_HOME` constant at a fresh temp dir so
+    every test sees the clean-HOME baseline CI runs under.
+    """
+    from reporails_cli.core.platform.config import bootstrap
+
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(bootstrap, "REPORAILS_HOME", home / ".reporails")
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Register custom CLI options."""
     parser.addoption(

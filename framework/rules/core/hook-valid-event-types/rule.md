@@ -11,7 +11,7 @@ match: {type: config}
 
 # Hook Valid Event Types
 
-Config files must contain a `"hooks"` key. This base rule gates hook validation — agent-specific rules (Claude, Codex, Copilot, Cursor, Gemini) supersede with checks for recognized event names per agent.
+Config files must contain a `"hooks"` key. This base rule gates hook validation — agent-specific rules (Claude, Codex, Copilot, Cursor, Antigravity) supersede with checks for recognized event names per agent.
 
 ## Antipatterns
 

@@ -2,7 +2,7 @@
 
 The two classes describe different harness loading models:
 
-- `generic` — reached via `@<path>` import in a Claude/Gemini surface. The
+- `generic` — reached via `@<path>` import in a Claude/Antigravity surface. The
   harness auto-loads the imported content alongside its parent, so the
   file is genuinely present in the agent's context budget.
 - `referenced` — reached only via `[text](path)` / `[ref]: path` markdown

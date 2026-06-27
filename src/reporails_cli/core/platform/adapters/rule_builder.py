@@ -98,6 +98,7 @@ def _load_checks(frontmatter: dict[str, Any]) -> list[Check]:
             replaces=item.get("replaces", ""),
             severity=item.get("severity", ""),
             message=item.get("message", ""),
+            project_scope=item.get("project_scope", False),
         )
         for item in frontmatter.get("checks", [])
     ]

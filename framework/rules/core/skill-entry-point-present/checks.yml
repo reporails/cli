@@ -5,5 +5,6 @@ checks:
 - id: CORE.S.0015.entrypoint
   type: mechanical
   check: skill_entrypoint_present
+  project_scope: true
   args:
     entry: SKILL.md

@@ -281,7 +281,7 @@ def skill_entrypoint_present(
     Skills-root directories are located by globbing for existing entry
     files (agent-agnostic); every immediate subdirectory of a skills root
     must then contain the entry file. Project-aggregate: enumerates whole
-    skills roots, so it is skipped under scoped runs (see `_PROJECT_SCOPE_CHECKS`).
+    skills roots, so its check entry is flagged `project_scope: true` to skip under scoped runs.
     """
     entry = str(args.get("entry", "SKILL.md"))
     roots = {f.parent.parent for f in _resolve_glob_targets(f"**/{entry}", root) if f.is_file()}

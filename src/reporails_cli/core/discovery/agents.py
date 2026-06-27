@@ -332,7 +332,7 @@ def detect_agents(  # pylint: disable=too-many-locals
 
         # Config-driven discovery from bundled config.yml
         config_result = _discover_from_config(
-            target, agent_id, rules_paths, project_excludes, project_config=project_config
+            target, agent_id, rules_paths, project_excludes, project_config=project_config, repo_scoped=True
         )
         if config_result is None:
             continue
@@ -375,7 +375,7 @@ def detect_single_agent(
     if not agent_type:
         return None
 
-    config_result = _discover_from_config(target, agent_id, rules_paths)
+    config_result = _discover_from_config(target, agent_id, rules_paths, repo_scoped=True)
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result
@@ -429,7 +429,7 @@ def _disambiguate_shared_files(detected: list[DetectedAgent]) -> list[DetectedAg
     """Drop agents whose instruction files are entirely shared with other agents.
 
     AGENTS.md is a cross-agent standard — any project with it triggers detection
-    for cursor, copilot, codex, gemini, and generic. This function removes agents
+    for cursor, copilot, codex, antigravity, and generic. This function removes agents
     that found ONLY shared files (files claimed by 2+ agents), keeping agents that
     have at least one distinctive file. Generic is exempt (catch-all for AGENTS.md).
     """

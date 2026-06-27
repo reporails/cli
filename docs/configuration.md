@@ -80,6 +80,22 @@ disabled_rules:
 
 Browse the full rule reference at [reporails.com/rules](https://reporails.com/rules) to look up each rule's body and pass / fail examples before disabling — sometimes the rule's intent fits your project but the surface form doesn't, and a severity override (below) reads better than a disable. `ails explain CORE:C:0010` shows the rule body inline from the CLI when you already know the ID.
 
+## Suppressing one finding on one line
+
+`disabled_rules` turns a rule off everywhere. When a single line is an intentional, reviewed exception but the rule is still worth running everywhere else, mark just that line with an inline directive instead:
+
+```markdown
+## Always run the tests before committing  <!-- ails-disable-line CORE:C:0047 -->
+```
+
+The directive is an HTML comment, so it stays invisible when the file renders. It suppresses **only** the named rule **only** on its own line — the same rule still fires on every other line, and other rules on the annotated line still fire. Name several rules with a space- or comma-separated list:
+
+```markdown
+Some heading line  <!-- ails-disable-line CORE:C:0047, CORE:C:0042 -->
+```
+
+Use the rule ID shown next to the finding in `ails check` output (e.g. `CORE:C:0047`); the rule's slug works too. A directive that names no rule suppresses nothing — suppression is always targeted, so it stays auditable in review. The directive text never affects how the rest of the line is analyzed.
+
 ## Excluding directories
 
 `exclude_dirs` is a list of directory *names* (not paths). Any directory matching one of these names is skipped no matter where it appears. The setting exists because the discovery walk scans every directory looking for instruction files — without an exclude list it would descend into vendored trees (`node_modules`, `vendor/`), build output (`dist/`, `target/`), and data dumps (`data/`), surfacing third-party `CLAUDE.md` / `AGENTS.md` files you didn't author and slowing the scan.

@@ -1,0 +1,9 @@
+checks:
+- id: ANTIGRAVITY.S.0002.config-file-exists
+  type: mechanical
+  check: file_exists
+- id: ANTIGRAVITY.S.0002.handler-has-type
+  type: deterministic
+  expect: present
+  pattern-regex: '"type"\s*:\s*"command"'
+  message: No handler with a valid type field found — only "command" is supported

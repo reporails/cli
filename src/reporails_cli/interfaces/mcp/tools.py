@@ -140,6 +140,13 @@ def _lint_discovered(scan_root: Path, effective_agent: str, instruction_files: l
     result = _merge_with_server(
         m_findings, content_findings + client_findings, ruleset_map, scan_root, agent=effective_agent
     )
+    # Honor inline `ails-disable-line` directives on this surface too — the CLI `check`
+    # path drops them before display, so the agent-facing MCP surface must match or it
+    # re-flags a finding the author already dismissed.
+    from reporails_cli.core.lint.suppression import apply_suppressions
+    from reporails_cli.formatters.text.display_constants import rule_aliases
+
+    result = apply_suppressions(result, project_root=scan_root, alias_fn=rule_aliases)
     return json_formatter.format_combined_result(result, ruleset_map=ruleset_map, project_root=scan_root)
 
 
@@ -237,7 +244,7 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | d
         }
 
     rule = rules[rule_id_upper]
-    rule_data = {
+    rule_data: dict[str, Any] = {
         "title": rule.title,
         "category": rule.category.value,
         "type": rule.type.value,
@@ -256,5 +263,11 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | d
                 rule_data["description"] = parts[2].strip()[:500]
         except (OSError, ValueError):
             pass
+
+    # Pass / Fail examples — same extractor `ails explain` / `ails rules -f md` use,
+    # so the MCP explain surface agrees with the CLI on example presence.
+    from reporails_cli.core.platform.adapters.rules_query import load_rule_examples
+
+    rule_data["examples"] = load_rule_examples(rule)
 
     return mcp_formatter.format_rule(rule_id_upper, rule_data)

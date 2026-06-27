@@ -206,23 +206,3 @@ def _detect_capability(features: DetectedFeatures, capability_id: str) -> bool:
     if detector is None:
         return False
     return detector(features)
-
-
-def detect_orphan_features(features: DetectedFeatures, base_level: Level) -> bool:
-    """Check if project has capabilities detected above base level.
-
-    Example: L2 project with skills directory (L6 feature) → has_orphan = True
-    Display as "L2+" to indicate advanced features present.
-    """
-    if base_level == Level.L6:
-        return False
-
-    base_index = _LEVEL_ORDER.index(base_level) if base_level in _LEVEL_ORDER else -1
-
-    for level in _LEVEL_ORDER[base_index + 1 :]:
-        capabilities = LEVEL_CAPS.get(level.value, [])
-        for cap_id in capabilities:
-            if _detect_capability(features, cap_id):
-                return True
-
-    return False

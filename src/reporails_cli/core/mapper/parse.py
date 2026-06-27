@@ -743,6 +743,21 @@ _EMBEDDED_IMPERATIVE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Markdown link/citation + code-span syntax. A charge word inside a link
+# label, a citation reference, or a code span is referential, not
+# instructional, so it must not promote a neutral atom to AMBIGUOUS.
+# Mirrors `link_walker._INLINE_LINK_RE` / `_REF_DEFINITION_RE`.
+_INLINE_LINK_RE = re.compile(r"\[(?:[^\]]+)\]\([^)]+\)")
+_REF_DEFINITION_RE = re.compile(r"^\s*\[(?:[^\]]+)\]:\s*\S+", re.MULTILINE)
+_CODE_SPAN_RE = re.compile(r"`[^`]*`")
+
+
+def _strip_refs_for_marker_scan(text: str) -> str:
+    """Drop link labels, citation refs, and code spans before marker detection."""
+    t = _CODE_SPAN_RE.sub(" ", text)
+    t = _INLINE_LINK_RE.sub(" ", t)
+    return _REF_DEFINITION_RE.sub(" ", t)
+
 
 def _scan_neutral_for_embedded_markers(atoms: list[Atom]) -> None:
     """Scan neutral atoms for embedded charge markers.
@@ -772,7 +787,7 @@ def _scan_neutral_for_embedded_markers(atoms: list[Atom]) -> None:
             continue
         if atom.rule in _TRUSTED_NEUTRAL_RULES:
             continue
-        text = atom.text
+        text = _strip_refs_for_marker_scan(atom.text)
         markers: list[str] = []
         for m in _EMBEDDED_CONSTRAINT_RE.finditer(text):
             markers.append(f"constraint:{m.group().strip()}")
@@ -800,7 +815,7 @@ def _scan_charged_for_compound_markers(atoms: list[Atom]) -> None:
     for atom in atoms:
         if atom.charge_value == 0 or atom.kind == "heading":
             continue
-        text = atom.text
+        text = _strip_refs_for_marker_scan(atom.text)
         opposite: list[str] = []
         if atom.charge_value == 1:
             for m in _EMBEDDED_CONSTRAINT_RE.finditer(text):

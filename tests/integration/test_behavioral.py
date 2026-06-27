@@ -385,7 +385,7 @@ class TestAgentCrossValidation:
     def test_registry_populated_from_configs(self) -> None:
         """Registry should contain at least the big 5 agents."""
         agents = get_known_agents()
-        for agent_id in ("claude", "cursor", "copilot", "codex", "gemini"):
+        for agent_id in ("claude", "cursor", "copilot", "codex", "antigravity"):
             assert agent_id in agents, f"Agent {agent_id} missing from registry"
 
 
@@ -537,7 +537,30 @@ class TestCheckConfig:
 class TestHealCommand:
     """ails check --heal must auto-fix and report remaining violations."""
 
+    @pytest.fixture(autouse=True)
+    def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--heal is an authenticated affordance; these tests exercise the fix path, so authenticate."""
+        monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+
     # test_heal_missing_path covered by smoke tests
+
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
+    @requires_model
+    @requires_rules
+    def test_heal_anonymous_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Anonymous (no key) gets the diagnosis but not the fix — `--heal` returns an auth notice."""
+        monkeypatch.delenv("AILS_API_KEY", raising=False)
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+        result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
+        assert "heal_requires_auth" in result.output
+        # Regression (finding 10): the free diagnosis JSON must still be emitted for an
+        # anonymous `--heal -f json` — a machine consumer that adds --heal previously
+        # lost all diagnostic data and got only the auth error.
+        assert '"offline"' in result.output and '"files"' in result.output
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint

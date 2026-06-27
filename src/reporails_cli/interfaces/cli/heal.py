@@ -20,15 +20,26 @@ def _apply_mechanical_fixes(
     dry_run: bool,
     show_progress: bool,
     console: Any,
+    allowed_files: list[Path] | None = None,
+    suppressed: dict[Path, set[int]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Apply atom-level mechanical fixes. Returns list of fix dicts."""
+    """Apply atom-level mechanical fixes. Returns list of fix dicts.
+
+    `allowed_files` bounds the write set to the scoped heal files; a mapped file
+    outside it (e.g. an in-tree symlink whose real path escapes the target) is skipped.
+    `suppressed` maps a resolved file path to the line numbers the author annotated
+    with an `ails-disable-line` directive; heal leaves those lines unmodified.
+    """
     if ruleset_map is None:
         return []
     if show_progress:
         console.print("[bold]Applying mechanical fixes...[/bold]")
     from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
 
-    mech_fixes = apply_mechanical_fixes(ruleset_map, target, dry_run=dry_run)
+    allowed = {p.resolve() for p in allowed_files} if allowed_files is not None else None
+    mech_fixes = apply_mechanical_fixes(
+        ruleset_map, target, dry_run=dry_run, allowed_files=allowed, suppressed=suppressed
+    )
     return [
         {"rule_id": mf.fix_type, "file_path": mf.file_path, "line": mf.line, "description": mf.description}
         for mf in mech_fixes

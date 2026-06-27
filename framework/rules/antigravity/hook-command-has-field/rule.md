@@ -1,5 +1,5 @@
 ---
-id: GEMINI:S:0003
+id: ANTIGRAVITY:S:0003
 slug: hook-command-has-field
 title: Hook Command Has Field
 category: structure
@@ -8,12 +8,12 @@ severity: high
 backed_by: []
 match: {type: config}
 supersedes: CORE:S:0029
-source: https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/index.md
+source: https://antigravity.google/docs/gcli-migration
 ---
 
 # Hook Command Has Field
 
-Hook handlers with `"type": "command"` in `.gemini/settings.json` MUST include a `"command"` field containing the shell command to execute. Without it, Gemini CLI has no command to run and the hook fails silently.
+Hook handlers with `"type": "command"` in `.gemini/settings.json` MUST include a `"command"` field containing the shell command to execute. Without it, the agent has no command to run and the hook fails silently.
 
 ## Antipatterns
 
@@ -36,4 +36,4 @@ Hook handlers with `"type": "command"` in `.gemini/settings.json` MUST include a
 
 ## Limitations
 
-Checks that at least one handler has a command field with a non-empty value.
+Checks that at least one handler has a command field with a non-empty value. The handler contract is inherited from Gemini CLI pending accessible Antigravity hook documentation.

@@ -18,8 +18,11 @@ BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
 WIRE_MAX_FILES = 500
 WIRE_MAX_CLUSTERS = 2000
 
-# Per-tier body byte caps. Mirrored locally so preflight_byte_size returns
-# a FunnelError before transmission instead of a server 4xx.
+# Per-tier body byte caps. These mirror the server's authoritative per-tier
+# `payload_bytes` caps so preflight_byte_size returns a FunnelError before
+# transmission instead of a server 4xx. Keep these two values in sync with the
+# server-side per-tier caps; a divergence sends an oversized body that the
+# server then rejects.
 WIRE_MAX_BYTES_BY_TIER = {
     "anonymous": 2 * 1024 * 1024,
     "pro": 20 * 1024 * 1024,

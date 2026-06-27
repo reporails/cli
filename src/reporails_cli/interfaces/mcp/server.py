@@ -140,7 +140,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "agent": {
                         "type": "string",
-                        "description": "Optional agent filter (claude, codex, gemini, ...); empty = all agents",
+                        "description": "Optional agent filter (claude, codex, antigravity, ...); empty = all agents",
                         "default": "",
                     },
                 },

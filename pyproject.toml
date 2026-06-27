@@ -1,6 +1,6 @@
 [project]
 name = "reporails-cli"
-version = "0.5.11"
+version = "0.5.12"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -110,8 +110,10 @@ type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
 test_integration = "pytest tests/integration/ -v"
 test_smoke = "pytest tests/smoke/ -v -m e2e"
-qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_markers", "test_unit"]
-qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_unit", "test_integration", "test_smoke"]
+test_live = "pytest -v -m requires_network"
+test_lint = "ails test --lint --rules-root framework/rules"
+qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_markers", "test_lint", "test_unit"]
+qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_lint", "test_unit", "test_integration", "test_smoke"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
 fetch_bundled_model = "python scripts/fetch_bundled_model.py"
 test_markers = "python scripts/check_test_markers.py"

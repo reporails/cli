@@ -164,6 +164,7 @@ class Check(BaseModel):
     replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
     severity: str = ""  # Check-level severity override (empty = use rule severity)
     message: str = ""  # Check-level message (empty = use check result message)
+    project_scope: bool = False  # Skip under a scoped/narrowed run (project-aggregate check)
 
 
 class Rule(BaseModel):

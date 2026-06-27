@@ -1,8 +1,8 @@
 checks:
-- id: GEMINI.S.0003.config-file-exists
+- id: ANTIGRAVITY.S.0003.config-file-exists
   type: mechanical
   check: file_exists
-- id: GEMINI.S.0003.command-has-field
+- id: ANTIGRAVITY.S.0003.command-has-field
   type: deterministic
   expect: present
   pattern-regex: '"command"\s*:\s*"[^"]+"'

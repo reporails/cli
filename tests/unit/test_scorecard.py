@@ -60,3 +60,64 @@ class TestComputeSurfaceScores:
         names = {s.name: s.file_count for s in surfaces}
         assert names.get("Nested") == 1
         assert "Main" not in names
+
+
+@dataclass
+class _Quality:
+    display_score: float
+
+
+@dataclass
+class _Stats:
+    errors: int = 0
+    warnings: int = 0
+    infos: int = 0
+
+
+@dataclass
+class _Finding:
+    severity: str
+    rule: str = "CORE:R:0001"
+    message: str = "example finding"
+
+
+@dataclass
+class _VerdictResult:
+    quality: _Quality | None
+    stats: _Stats
+    findings: tuple = ()
+
+
+class TestVerdictCaption:
+    """The 'still your worklist' caption must point at a list that actually rendered."""
+
+    def _capture(self, result: object) -> str:
+        from reporails_cli.formatters.text.scorecard import _render_verdict_block, console
+
+        with console.capture() as cap:
+            _render_verdict_block(result, has_quality=True, n_atoms=0, elapsed_ms=0)
+        # Collapse Rich soft-wrap newlines so the caption is matchable as one string.
+        return " ".join(cap.get().split())
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_caption_shown_when_error_findings_listed(self) -> None:
+        """High score + a visible error finding -> the bridging caption renders."""
+        result = _VerdictResult(
+            quality=_Quality(display_score=8.5),
+            stats=_Stats(errors=2),
+            findings=(_Finding(severity="error"),),
+        )
+        assert "still your worklist" in self._capture(result)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_caption_suppressed_when_no_error_findings_listed(self) -> None:
+        """Anon/free: stats count errors but they are gated out of the list -> no caption."""
+        result = _VerdictResult(
+            quality=_Quality(display_score=8.5),
+            stats=_Stats(errors=2),  # stats count gated errors
+            findings=(),  # but nothing rendered in the worklist below
+        )
+        out = self._capture(result)
+        assert "still your worklist" not in out

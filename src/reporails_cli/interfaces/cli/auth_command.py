@@ -15,6 +15,8 @@ import typer
 import yaml
 from rich.console import Console
 
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+
 logger = logging.getLogger(__name__)
 
 console = Console(emoji=False, highlight=False)
@@ -34,8 +36,9 @@ GITHUB_CLIENT_ID = ""  # Always sourced from the platform — see _resolve_clien
 DEFAULT_PLATFORM_URL = "https://reporails.com"
 
 
-class PlatformUnavailableError(Exception):
-    """The Reporails platform's auth surface couldn't be reached or returned an unexpected response."""
+# PlatformUnavailableError moved to core.platform.contract.errors; re-exported above
+# so the existing `auth_command.PlatformUnavailableError` import path keeps working.
+__all__ = ["PlatformUnavailableError"]
 
 
 def _user_agent() -> str:
@@ -103,7 +106,7 @@ def _resolve_client_id(base_url: str) -> str:
     """Resolve the GitHub OAuth client ID, trying embedded constant then platform.
 
     Raises PlatformUnavailableError when the platform endpoint is reachable but
-    returns a non-JSON body (typical of an edge challenge page) — the original
+    returns a non-JSON body (a transient network/proxy state) — the original
     code silently swallowed this into an empty client_id and surfaced it as a
     misleading "OAuth not configured" message.
     """
@@ -124,7 +127,8 @@ def _resolve_client_id(base_url: str) -> str:
     if resp.status_code != 200:
         logger.warning("Platform returned HTTP %s for client-id", resp.status_code)
         raise PlatformUnavailableError(
-            f"Reporails platform returned HTTP {resp.status_code} for client-id endpoint.",
+            f"Reporails platform returned HTTP {resp.status_code} for the client-id endpoint — "
+            "likely a transient network or edge issue. Retry shortly or contact support@reporails.com.",
         )
 
     try:
@@ -132,9 +136,8 @@ def _resolve_client_id(base_url: str) -> str:
     except ValueError as exc:
         logger.warning("Platform returned non-JSON for client-id: %s", resp.text[:200])
         raise PlatformUnavailableError(
-            "Reporails platform returned a non-JSON body for the client-id endpoint — "
-            "likely a Cloudflare challenge or proxy error page. Check your network or "
-            "contact support@reporails.com.",
+            "Reporails platform returned an unexpected (non-JSON) response for the client-id endpoint — "
+            "likely a transient network or edge issue. Retry shortly or contact support@reporails.com.",
         ) from exc
 
 
@@ -287,8 +290,8 @@ def login(
             exchange.text[:200],
         )
         console.print(
-            "  [red]Platform returned a non-JSON response[/] (likely a Cloudflare "
-            "challenge page). Contact support@reporails.com.",
+            "  [red]Platform returned an unexpected (non-JSON) response[/] — likely a transient "
+            "network or edge issue. Retry shortly or contact support@reporails.com.",
         )
         raise typer.Exit(1) from exc
     except (httpx.HTTPError, OSError) as exc:

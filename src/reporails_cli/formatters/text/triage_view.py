@@ -174,7 +174,7 @@ def _render_triaged(
         _print_action(fix, border, msg_width)
     if result.collapsed:
         n = len(result.collapsed)
-        console.print(f"  [dim]{border}     ◦ +{n} lower-priority (won't move your score yet) · -v to list[/dim]")
+        console.print(f"  [dim]{border}     ◦ +{n} lower-priority · -v to list[/dim]")
 
 
 def _render_card_body(
@@ -236,12 +236,13 @@ def print_file_card(
     file_hints: list[Any] | None = None,
     aliases_by_file: dict[str, list[str]] | None = None,
     project_root: Path | None = None,
+    atoms_by_path: dict[str, list[Any]] | None = None,
 ) -> None:
     """Print one file's card: name, stats, triaged findings (or neutral fallback)."""
     name = friendly_name(filepath, classify_file(filepath))
     alias_list = (aliases_by_file or {}).get(filepath, [])
     name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
-    stats = per_file_stats(filepath, ruleset_map, project_root or Path.cwd())
+    stats = per_file_stats(filepath, ruleset_map, project_root or Path.cwd(), atoms_by_path)
     border = "│"
     msg_width = get_term_width() - 35
 

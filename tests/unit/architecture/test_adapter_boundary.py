@@ -60,8 +60,7 @@ def _iter_imports(file_path: Path) -> list[str]:
 @pytest.mark.architecture
 def test_adapters_do_not_import_subsystems_or_outer_layers() -> None:
     """Adapters must not depend on subsystems, interfaces, or formatters."""
-    if not ADAPTERS.is_dir():
-        pytest.skip(f"{ADAPTERS} does not exist yet")
+    assert ADAPTERS.is_dir(), f"{ADAPTERS} must exist"
     forbidden = _FORBIDDEN_PREFIXES + _FORBIDDEN_SUBSYSTEM_PREFIXES
     violations: list[tuple[Path, str]] = [
         (py, imp)

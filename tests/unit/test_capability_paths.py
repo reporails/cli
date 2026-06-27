@@ -142,7 +142,7 @@ def test_canonicalize_handles_empty_string() -> None:
 def test_canonicalize_referenced_singular_and_plural() -> None:
     """`referenced` and `references` both canonicalize to `referenced`, agent-agnostic."""
     for keyword in ("referenced", "references"):
-        for agent in ("claude", "gemini", "codex"):
+        for agent in ("claude", "antigravity", "codex"):
             assert canonicalize_capability(keyword, agent) == "referenced"
 
 
@@ -151,7 +151,7 @@ def test_canonicalize_referenced_singular_and_plural() -> None:
 def test_is_capability_keyword_recognizes_referenced() -> None:
     """`referenced` and `references` are accepted as capability keywords by every agent."""
     for keyword in ("referenced", "references"):
-        for agent in ("claude", "gemini"):
+        for agent in ("claude", "antigravity"):
             assert is_capability_keyword(keyword, agent) is True
 
 

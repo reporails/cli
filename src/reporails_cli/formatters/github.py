@@ -105,10 +105,13 @@ def format_combined_annotations(result: Any) -> str:
     if not isinstance(result, CombinedResult):
         return ""
 
+    from reporails_cli.formatters.text.display_constants import display_rule_id
+
     lines: list[str] = []
     for f in result.findings:
         command = "error" if f.severity == "error" else "warning"
-        title = _escape_workflow_property(f"[{f.rule}]")
+        # Canonical rule id, matching the trailing JSON summary's `rule` field.
+        title = _escape_workflow_property(f"[{display_rule_id(f.rule)}]")
         file_val = _escape_workflow_property(f.file)
         message = _escape_workflow_data(f.message)
         lines.append(f"::{command} file={file_val},line={f.line},title={title}::{message}")

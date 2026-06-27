@@ -98,13 +98,12 @@ def run_mechanical_checks(
         target: Project root directory
         classified_files: Classified files for file targeting
         scoped: When True, skip project-aggregate checks that are
-            meaningless on a narrowed subset (see `_PROJECT_SCOPE_CHECKS`).
+            meaningless on a narrowed subset (checks flagged `project_scope: true`).
 
     Returns:
         List of Violation objects for failed checks
     """
     from reporails_cli.core.classify import match_files
-    from reporails_cli.core.lint.mechanical.checks import _PROJECT_SCOPE_CHECKS
 
     violations: list[Violation] = []
 
@@ -126,7 +125,7 @@ def run_mechanical_checks(
         for check in rule.checks:
             if check.type != "mechanical":
                 continue
-            if scoped and check.check in _PROJECT_SCOPE_CHECKS:
+            if scoped and check.project_scope:
                 continue
             violation, result = dispatch_single_check(
                 check, rule, target, matched, location, extra_args=accumulated_args

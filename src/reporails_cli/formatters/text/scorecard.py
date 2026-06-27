@@ -13,10 +13,8 @@ from rich.console import Console
 
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
-    RULE_CATEGORY_MAP,
     classify_file,
     display_rule_id,
-    finding_category,
     get_term_width,
     rule_docs_url,
 )
@@ -50,15 +48,6 @@ def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:  #
     if has_quality and result.quality is not None:
         return float(result.quality.display_score)
     return 0.0
-
-
-def print_score_line(score: float, tw: int) -> None:
-    """Print score with progress bar."""
-    bar_width = min(40, tw - 26)
-    filled = round(bar_width * score / 10)
-    bar = "\u2593" * filled + "\u2591" * (bar_width - filled)
-    color = score_color(score)
-    console.print(f"  Score: [{color} bold]{score:.1f}[/{color} bold] / 10  [dim]{bar}[/dim]")
 
 
 # ── Surface health ────────────────────────────────────────────────────
@@ -148,7 +137,8 @@ def compute_surface_scores(
         except (AttributeError, TypeError):
             pass
 
-    # Group findings by surface
+    # Group findings by surface. Re-normalize defensively (cheap, ~#findings) rather
+    # than trust the unenforced "FindingItem.file already normalized" invariant.
     surface_findings: dict[str, list[Any]] = {}
     for f in result.findings:
         key = _surface_key(normalize_finding_path(f.file, root), ft_by_path)
@@ -223,16 +213,16 @@ def _mean_display_score(analyses: list[Any]) -> float | None:
 def _count_categories(findings: list[Any]) -> dict[str, int]:
     """Group findings by rule-id-derived Category value.
 
-    Reads each finding's rule id (e.g. `CORE:C:0042`), pulls the second
-    segment (`C`), and maps it via `CATEGORY_CODES` to a category label.
-    Rules whose id shape doesn't yield a known code are skipped — the
-    counts only cover categorized findings.
+    Canonicalizes each finding's rule id first (a bare client-check token like
+    `format` maps to `CORE:E:0003`), pulls the second segment, and maps it via
+    `CATEGORY_CODES`. Only ids that still lack a known code after canonicalization
+    are skipped, so the breakdown stays consistent with the per-finding categories.
     """
     from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 
     counts: Counter[str] = Counter()
     for f in findings:
-        parts = (f.rule or "").split(":")
+        parts = display_rule_id(f.rule or "").split(":")
         if len(parts) < 2:
             continue
         category = CATEGORY_CODES.get(parts[1])
@@ -242,22 +232,24 @@ def _count_categories(findings: list[Any]) -> dict[str, int]:
     return dict(counts)
 
 
-def _surface_cell(s: SurfaceHealth, bar_width: int = 15) -> str:
+def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13) -> str:
     """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓▓▓▓▓▓░░░░  7.2'.
 
     bar_width=15 is the smallest width that visually distinguishes 6.9 from 7.2
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
+    label_width pads the name column to the widest label in the set so the two
+    columns stay aligned when a long name carries a 2-digit count.
     """
     label = f"{s.name} ({s.file_count}):"
     err = f"  [red]{s.errors} err[/red]" if s.errors else ""
     if s.score is None:
         empty = "░" * bar_width
-        return f"{label:13s} [dim]{empty}[/dim]  [dim]not scored[/dim]{err}"
+        return f"{label:<{label_width}s} [dim]{empty}[/dim]  [dim]not scored[/dim]{err}"
     color = score_color(s.score)
     bar = _score_bar(s.score, bar_width, color)
     # A surface can score well while errors remain, so the error count is what
     # routes attention — surface the per-surface error tally next to the bar.
-    return f"{label:13s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{err}"
+    return f"{label:<{label_width}s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{err}"
 
 
 def _score_bar(score: float, bar_width: int, color: str) -> str:
@@ -282,49 +274,13 @@ def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
     """
     if len(surfaces) <= 1:
         return
+    label_width = max(len(f"{s.name} ({s.file_count}):") for s in surfaces)
     console.print()
     for i in range(0, len(surfaces), 2):
-        left = _surface_cell(surfaces[i])
-        right = _surface_cell(surfaces[i + 1]) if i + 1 < len(surfaces) else ""
+        left = _surface_cell(surfaces[i], label_width=label_width)
+        right = _surface_cell(surfaces[i + 1], label_width=label_width) if i + 1 < len(surfaces) else ""
         sep = "    " if right else ""
         console.print(f"  {left}{sep}{right}")
-
-
-# ── Category bars ─────────────────────────────────────────────────────
-
-
-def _render_category_bar(cat_key: str, count: int, has_errors: bool, bar_max: int, max_count: int) -> None:
-    """Render a single category bar line."""
-    name = RULE_CATEGORY_MAP.get(cat_key, cat_key)
-    bar_len = max(1, round(bar_max * count / max_count))
-    bar_color = "yellow" if has_errors else "green"
-    bar = "\u2588" * bar_len
-    pad = " " * (bar_max - bar_len + 1)
-    sev_icon = "[red]\u2717[/red]" if has_errors else "[dim]\u25cb[/dim]"
-    console.print(f"  {name:<14s}[{bar_color}]{bar}[/{bar_color}]{pad}[dim]{count:>4d}[/dim]  {sev_icon}")
-
-
-def print_category_bars(findings: tuple[Any, ...], tw: int) -> None:
-    """Print per-category finding breakdown with colored bars."""
-    cat_counts: Counter[str] = Counter()
-    cat_errors: Counter[str] = Counter()
-    for f in findings:
-        cat = finding_category(f.rule)
-        cat_counts[cat] += 1
-        if f.severity == "error":
-            cat_errors[cat] += 1
-
-    if not cat_counts:
-        return
-
-    max_count = max(cat_counts.values())
-    bar_max = min(20, tw - 30)
-    console.print()
-    for cat_key in ["S", "C", "E", "G", "D"]:
-        count = cat_counts.get(cat_key, 0)
-        if count:
-            _render_category_bar(cat_key, count, cat_errors.get(cat_key, 0) > 0, bar_max, max_count)
-    console.print()
 
 
 # ── Scorecard sub-renderers ───────────────────────────────────────────
@@ -363,8 +319,12 @@ def _render_verdict_block(
     _render_findings_axis(result)
 
     # Bridging caption when the score is high but errors remain, so a green headline
-    # above red errors does not read as "nothing to do".
-    if score is not None and score >= SCORE_GREEN_CUTOFF and result.stats.errors:
+    # above red errors does not read as "nothing to do". Gate on visible error
+    # findings (the worklist actually rendered below), not the stats count — anon /
+    # free tier gates its errors into Pro hints, leaving no list for the caption to
+    # point at.
+    visible_errors = sum(1 for f in (result.findings or []) if f.severity == "error")
+    if score is not None and score >= SCORE_GREEN_CUTOFF and visible_errors:
         console.print("  [dim]Quality folds in the findings below; the listed errors are still your worklist.[/dim]")
 
 

@@ -118,6 +118,9 @@ def _print_md_section(rule: Rule, *, with_examples: bool) -> None:
     if not with_examples:
         return
     examples = load_rule_examples(rule)
+    if not examples.get("pass") and not examples.get("fail"):
+        print("_No Pass / Fail examples in this rule._")
+        return
     if examples.get("pass"):
         print("**Pass**:")
         print()

@@ -5,5 +5,6 @@ checks:
 - id: CORE.S.0010.modular
   type: mechanical
   check: file_count
+  project_scope: true
   args:
     min: 2
