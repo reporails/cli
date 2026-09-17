@@ -10,11 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 from reporails_cli.core.platform.config.bootstrap import get_reporails_home
+from reporails_cli.core.platform.dto.analytics import AnalyticsEntry, ProjectAnalytics
 
 
 def get_analytics_dir() -> Path:
@@ -68,37 +68,6 @@ def get_project_id(target: Path) -> str:
 def get_project_name(target: Path) -> str:
     """Get human-readable project name."""
     return target.resolve().name
-
-
-# =============================================================================
-# Analytics Data Models
-# =============================================================================
-
-
-@dataclass
-class AnalyticsEntry:
-    """Single analytics entry for a project scan."""
-
-    timestamp: str
-    score: float
-    level: str
-    violations_count: int
-    rules_checked: int
-    elapsed_ms: float
-    instruction_files: int
-
-
-@dataclass
-class ProjectAnalytics:
-    """Analytics for a single project."""
-
-    project_id: str
-    project_name: str
-    project_path: str
-    first_seen: str
-    last_seen: str
-    scan_count: int = 0
-    history: list[AnalyticsEntry] = field(default_factory=list)
 
 
 # =============================================================================
