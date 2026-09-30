@@ -11,17 +11,18 @@ const HELP = `
 ails — Validate and score AI instruction files
 
 Usage:
-  ails check [PATH] [OPTIONS]     Validate instruction files
-  ails explain RULE_ID            Show rule details
-  ails rules [list|capabilities]  Browse the framework rule registry
-  ails install [PATH]             Install MCP server for detected agents
-  ails update                     Update rules framework
-  ails update --cli               Upgrade CLI package itself
-  ails version                    Show version info
+  ails check [TARGET...] [OPTIONS]       Validate and score your instruction files
+  ails explain RULE_ID                   Show what a rule checks, by ID or slug
+  ails rules [list|agents|capabilities]  Browse the framework rule registry
+  ails auth [login|status|token|logout]  Authenticate with the Reporails platform
+  ails config [get|set|list]             Get and set project configuration
+  ails install                           Put ails on PATH, print how to connect your agent
+  ails update                            Update ails to the latest version
+  ails version                           Show the version and install method
 
 Examples:
-  npx @reporails/cli check               # Validate your setup
-  npx @reporails/cli install              # Install MCP server
+  npx @reporails/cli check                # Validate your setup
+  npx @reporails/cli install              # Put ails on PATH + next-step guidance
   npx @reporails/cli explain CORE:S:0001  # Explain a rule
 
 Aliases:
