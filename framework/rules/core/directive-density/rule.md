@@ -4,7 +4,7 @@ slug: directive-density
 title: Directive Density
 category: direction
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, claude-md-guide,
   developer-context-cursor-study, fowler-pushing-ai-autonomy, openai-community-agents-md-optimization,
   osmani-ai-coding-workflow, spec-writing-for-agents]
@@ -13,7 +13,7 @@ see_also: []
 ---
 # Directive Density
 
-Instruction files must contain at least one directive atom — a sentence that tells the agent what to do using imperative or absolute modality. Files with only descriptive prose and no actionable directives have no behavioral effect on the agent.
+Instruction files must contain at least one directive — a sentence that tells the agent what to do using imperative or absolute wording. Files with only descriptive prose and no actionable directives have no behavioral effect on the agent.
 
 ## Antipatterns
 

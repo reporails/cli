@@ -5,14 +5,8 @@ title: "Direction Imbalance"
 category: direction
 type: mechanical
 execution: server
-severity: medium
+severity: high
 match: {}
-fix: |
-  Add a directive (+1) before the constraint (-1) on the same topic.
-  Pattern: directive → reasoning → constraint. "Run \`pytest\` before
-  each commit. Tests catch regressions early. *Do not skip tests when
-  the CI is red.*" The model follows the last-seen instruction on a
-  topic; constraint-first means the directive never lands.
 ---
 
 # Direction Imbalance
@@ -31,7 +25,7 @@ Directives and constraints within the same topic must have balanced strength. Wh
 
 ~~~~markdown
 Run `uv run pytest tests/` before submitting changes. Verify all tests pass.
-*Do NOT skip the test suite or push with failing tests.*
+*Do not skip the test suite or push with failing tests.*
 ~~~~
 
 ### Fail
@@ -40,13 +34,6 @@ Run `uv run pytest tests/` before submitting changes. Verify all tests pass.
 You might want to run tests if you have time.
 NEVER skip tests. NEVER push without testing. NEVER submit untested code.
 ~~~~
-
-## Fix
-
-Match instruction strength to behavioral intent. If the intended behavior is "X then Y" (sequential), make sure both sides are equally strong:
-- Make the enabling instruction imperative, not conditional ("State your conclusion" not "When done, stop")
-- Make the enabling instruction name specific constructs ("implementation file" not "verified facts")
-- Add reinforcing instructions for the weaker side if needed
 
 ## Limitations
 

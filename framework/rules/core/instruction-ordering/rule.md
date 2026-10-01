@@ -7,6 +7,8 @@ type: mechanical
 execution: server
 severity: high
 match: {}
+surface_mutations:
+  memory: {applies: false}
 ---
 
 # Instruction Ordering
@@ -25,30 +27,23 @@ Within a topic, the ORDER of instructions matters. Putting the directive first, 
 
 ~~~~markdown
 Use `pytest` with real database connections for integration tests.
-Real integration tests catch deployment failures that mocks hide.
-*Do NOT use `unittest.mock` or test doubles for service boundaries.*
+Real integration tests catch deployment failures before they reach production.
+*Do not use mocking libraries or test doubles for service boundaries.*
 ~~~~
 
 ### Fail
 
 ~~~~markdown
-Don't use mock objects or test doubles. They hide integration bugs.
-Use real database connections instead.
+# Shell Commands
+
+This project runs its test suite and deploy scripts through subprocess calls.
+
+*Do not use `subprocess.run` with `shell=True`.*
+Use `subprocess.run` with `shell=False`.
+
+Document any new script in `docs/scripts.md`.
 ~~~~
-
-## Fix
-
-Restructure instructions as:
-```
-[DIRECTIVE] Use real implementations — real database connections, real HTTP endpoints.
-[REASONING] Real integration tests catch deployment failures and configuration
-errors that would otherwise reach production undetected.
-[CONSTRAINT] Do not use mock objects, stubs, or test doubles.
-```
-
-Never write "Don't use X. Instead, use Y." Write "Use Y. [reason for Y]. Don't use X."
-Reasoning should support the directive, not explain what's wrong with the prohibited thing.
 
 ## Limitations
 
-Detects ordering patterns within instruction clusters. Cannot evaluate whether the reasoning content actually supports the directive.
+Fires on a prohibition that comes before every directive on its topic. A directive and a prohibition on one subject but worded very differently may not be recognized as one topic. Order inside one sentence is not checked, and what the reasoning between a directive and its prohibition says is covered by The Ideal Instruction (`CORE:C:0053`).
