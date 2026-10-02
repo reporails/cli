@@ -1,8 +1,10 @@
 default_agent: claude
 exclude_dirs:
   - fixtures
+  - fixture
   - .venv
   - hub
+  - tmp
   - framework
   - .mypy_cache
   - .ruff_cache
