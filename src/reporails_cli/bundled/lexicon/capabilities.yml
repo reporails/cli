@@ -1,0 +1,34 @@
+# Capability keyword vocabulary — the single source shared by core/classify
+# (capability_paths.py) and the read-side platform/adapters query (rules_query.py),
+# replacing a hand-kept mirror. Agent-agnostic keyword grammar.
+
+# A word a user may type for a kind of file -> the agent config key it names. Input only:
+# everything past the input resolves to, and reports, the config key.
+input_forms:
+  skill: skills
+  rule: rules
+  agent: agents
+  subagent: agents
+  command: commands
+  plugin: plugins
+  hook: hooks
+
+# Display alias -> the config keys it folds together.
+# `ails check main` resolves to root-level family only (main + override).
+# `ails check memories` enumerates both memory and subagent_memory entries.
+fold:
+  main:
+    - main
+    - override
+  memories:
+    - memory
+    - subagent_memory
+  memory:
+    - memory
+    - subagent_memory
+
+# Capabilities synthesized by the classifier at scan time (not declared in any
+# agent config). `referenced` enumerates `[text](path)`-reached files.
+virtual:
+  - referenced
+  - references
