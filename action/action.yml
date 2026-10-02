@@ -21,7 +21,7 @@ inputs:
     description: 'Comma-separated directory names to exclude from scanning (e.g., "vendor,dist")'
     default: ''
   version:
-    description: 'CLI version to install (e.g., 0.3.0). Defaults to latest.'
+    description: 'CLI version to install (e.g., 0.3.0). Empty = the version this Action was released with (the latest release when run from a branch).'
     default: ''
   from-source:
     description: 'Install CLI from local checkout instead of PyPI (for CI testing of the action itself).'
@@ -38,7 +38,7 @@ outputs:
     description: 'Validation score (0-10)'
     value: ${{ steps.check.outputs.score }}
   level:
-    description: 'Maturity level (L0-L6)'
+    description: 'Maturity level (L0-L7)'
     value: ${{ steps.check.outputs.level }}
   violations:
     description: 'Number of violations found'
@@ -46,6 +46,12 @@ outputs:
   result:
     description: 'Full JSON result'
     value: ${{ steps.check.outputs.result }}
+  server-status:
+    description: 'Diagnostics server outcome for this run: "ok" or "server-unavailable" (rejected, timed out, or unreachable).'
+    value: ${{ steps.check.outputs.server-status }}
+  server-error:
+    description: 'Reason token when server-status is "server-unavailable" (e.g. rate_limit_exceeded, timeout, network_error). Empty otherwise.'
+    value: ${{ steps.check.outputs.server-error }}
 
 runs:
   using: 'composite'
@@ -57,53 +63,118 @@ runs:
 
     - name: Install reporails CLI
       shell: bash
+      env:
+        INPUT_FROM_SOURCE: ${{ inputs.from-source }}
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
-        if [ "${{ inputs.from-source }}" = "true" ]; then
-          pip install "${{ github.workspace }}" --quiet
-        elif [ -n "${{ inputs.version }}" ]; then
-          pip install "reporails-cli==${{ inputs.version }}" --quiet
+        if [ "$INPUT_FROM_SOURCE" = "true" ]; then
+          pip install "$GITHUB_WORKSPACE" --quiet
+        elif [ -n "$INPUT_VERSION" ]; then
+          pip install "reporails-cli==$INPUT_VERSION" --quiet
         else
           pip install reporails-cli --quiet
         fi
+
+    # Keep the analysis model between runs: it is downloaded on the first run
+    # only, and later runs on the same runner OS restore it from the cache.
+    # The entry changes only when the CLI moves to a new model. It is saved
+    # after the check even when the check fails, so a run with findings under
+    # `strict` still keeps the model. A CLI version that carries the model in
+    # its package has nothing to cache, and these steps are skipped.
+    - name: Locate reporails model
+      id: model
+      shell: bash
+      run: |
+        python - >> "$GITHUB_OUTPUT" << 'PY'
+        try:
+            from reporails_cli.core.mapper.model_fetch import MODEL_VERSION, cache_models_dir
+        except ImportError:
+            pass
+        else:
+            print(f"version={MODEL_VERSION}")
+            print(f"dir={cache_models_dir()}")
+        PY
+
+    - name: Restore reporails model
+      id: model-cache
+      if: steps.model.outputs.dir != ''
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.model.outputs.dir }}
+        key: reporails-model-${{ runner.os }}-${{ steps.model.outputs.version }}
+
+    # Warm the analysis cache across runs: unchanged instruction files are
+    # served from the previous run's cache, so only files touched by the diff
+    # pay the cold analysis cost. Results are unaffected: any changed file (or
+    # a changed file it imports) is re-analyzed and the score matches a full
+    # cold run. The exact key changes when any Markdown or `.mdc` file changes;
+    # the prefix restore-key keeps the cache warm on every run in between. The
+    # model is cached separately above, so an instruction edit never re-saves it.
+    - name: Cache reporails analysis
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.reporails/cache/*
+          !~/.reporails/cache/models
+        key: reporails-cache-${{ runner.os }}-${{ inputs.version }}-${{ hashFiles('**/*.md', '**/AGENTS.md', '**/*.mdc') }}
+        restore-keys: |
+          reporails-cache-${{ runner.os }}-${{ inputs.version }}-
+          reporails-cache-${{ runner.os }}-
 
     - name: Run ails check
       id: check
       shell: bash
       env:
         AILS_API_KEY: ${{ inputs.api-key }}
-        AILS_SERVER_URL: ${{ inputs.server-url }}
+        INPUT_SERVER_URL: ${{ inputs.server-url }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_STRICT: ${{ inputs.strict }}
+        INPUT_AGENT: ${{ inputs.agent }}
+        INPUT_EXCLUDE_DIR: ${{ inputs.exclude-dir }}
       run: |
-        # Build command
-        CMD="ails check ${{ inputs.path }} --format github --ascii"
-
-        if [ "${{ inputs.strict }}" = "true" ]; then
-          CMD="$CMD --strict"
+        # An unset `server-url` input must stay unset: exporting it as an
+        # empty string reads as a deliberate "no server" choice downstream.
+        if [ -n "$INPUT_SERVER_URL" ]; then
+          export AILS_SERVER_URL="$INPUT_SERVER_URL"
         fi
 
-        if [ -n "${{ inputs.agent }}" ]; then
-          CMD="$CMD --agent ${{ inputs.agent }}"
+        # Build command as an array (not a string) so no element is subject to
+        # word-splitting/globbing and no caller input is interpolated into the
+        # script text itself — every value below reaches the shell only via a
+        # quoted env-var expansion.
+        CMD=(ails check "$INPUT_PATH" --format github --ascii)
+
+        if [ "$INPUT_STRICT" = "true" ]; then
+          CMD+=(--strict)
         fi
 
-        if [ -n "${{ inputs.exclude-dir }}" ]; then
-          IFS=',' read -ra DIRS <<< "${{ inputs.exclude-dir }}"
+        if [ -n "$INPUT_AGENT" ]; then
+          CMD+=(--agent "$INPUT_AGENT")
+        fi
+
+        if [ -n "$INPUT_EXCLUDE_DIR" ]; then
+          IFS=',' read -ra DIRS <<< "$INPUT_EXCLUDE_DIR"
           for dir in "${DIRS[@]}"; do
-            CMD="$CMD --exclude-dirs $(echo "$dir" | xargs)"
+            trimmed_dir="$(echo "$dir" | xargs)"
+            CMD+=(--exclude-dirs "$trimmed_dir")
           done
         fi
 
         # Run and capture output (annotations go to stdout for GitHub to pick up)
-        OUTPUT=$($CMD) || EXIT_CODE=$?
+        OUTPUT=$("${CMD[@]}") || EXIT_CODE=$?
         EXIT_CODE=${EXIT_CODE:-0}
 
         echo "$OUTPUT"
 
         # Parse JSON from last line (CombinedResult schema: files, stats)
         JSON_LINE=$(echo "$OUTPUT" | tail -n 1)
-        eval "$(echo "$JSON_LINE" | python3 "${{ github.action_path }}/parse_result.py")"
+        eval "$(echo "$JSON_LINE" | python3 "$GITHUB_ACTION_PATH/parse_result.py")"
 
         echo "score=$_SCORE" >> "$GITHUB_OUTPUT"
         echo "level=$_LEVEL" >> "$GITHUB_OUTPUT"
         echo "violations=$_VIOLATIONS" >> "$GITHUB_OUTPUT"
+        echo "server-status=$_RESULT" >> "$GITHUB_OUTPUT"
+        echo "server-error=$_SERVER_REASON" >> "$GITHUB_OUTPUT"
 
         # Store full JSON for downstream steps
         {
@@ -117,18 +188,44 @@ runs:
           exit "$EXIT_CODE"
         fi
 
+    - name: Check reporails model
+      id: model-ready
+      if: ${{ !cancelled() && steps.model.outputs.dir != '' && steps.model-cache.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: |
+        python -c "from reporails_cli.core.mapper.model_fetch import cache_models_dir, models_present; print('ready=' + str(models_present(cache_models_dir())).lower())" >> "$GITHUB_OUTPUT"
+
+    - name: Save reporails model
+      if: ${{ !cancelled() && steps.model-ready.outputs.ready == 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.model.outputs.dir }}
+        key: ${{ steps.model-cache.outputs.cache-primary-key }}
+
     - name: Apply min-score gate
       if: inputs.min-score != ''
       shell: bash
+      env:
+        SCORE: ${{ steps.check.outputs.score }}
+        SERVER_STATUS: ${{ steps.check.outputs.server-status }}
+        SERVER_ERROR: ${{ steps.check.outputs.server-error }}
+        INPUT_MIN_SCORE: ${{ inputs.min-score }}
       run: |
         python3 -c "
+        import os
         import sys
-        raw = '${{ steps.check.outputs.score }}'.strip()
+        raw = os.environ.get('SCORE', '').strip()
+        server_status = os.environ.get('SERVER_STATUS', '').strip()
+        server_error = os.environ.get('SERVER_ERROR', '').strip()
         if not raw:
+            if server_status == 'server-unavailable':
+                token = server_error or 'unknown'
+                print(f'::error::Quality gate cannot run: diagnostics server unavailable ({token})')
+                sys.exit(1)
             print('::warning::No quality score available (offline run) — skipping min-score gate')
             sys.exit(0)
         score = float(raw)
-        threshold = float('${{ inputs.min-score }}')
+        threshold = float(os.environ['INPUT_MIN_SCORE'])
         if score < threshold:
             print(f'::error::Quality {score:.1f} is below minimum threshold {threshold:.1f}')
             sys.exit(1)
@@ -142,4 +239,4 @@ runs:
       env:
         REPORAILS_RESULT: ${{ steps.check.outputs.result }}
       run: |
-        python3 "${{ github.action_path }}/summary.py" >> "$GITHUB_STEP_SUMMARY"
+        python3 "$GITHUB_ACTION_PATH/summary.py" >> "$GITHUB_STEP_SUMMARY"
