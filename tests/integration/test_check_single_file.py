@@ -1,6 +1,6 @@
 """End-to-end coverage for `ails check <single-file>` discovery scope.
 
-Bug 1 (0.5.11): `ails check <file>` was enumerating user-scope
+`ails check <file>` was enumerating user-scope
 `~/.claude/CLAUDE.md` even when the operator named one explicit project
 file. The display surfaced findings from a file the operator hadn't
 asked about; per-file count and summary count failed to reconcile.
@@ -25,6 +25,7 @@ runner = CliRunner()
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
 def test_single_file_target_does_not_surface_user_scope(tmp_path: Path) -> None:
     """`ails check <project-CLAUDE.md>` filters out user-scope `~/.claude/CLAUDE.md`."""
     project = tmp_path / "proj"
@@ -49,6 +50,7 @@ def test_single_file_target_does_not_surface_user_scope(tmp_path: Path) -> None:
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
 def test_single_file_target_reconciles_summary_and_panel_counts(tmp_path: Path) -> None:
     """Total findings count equals the per-file finding count for the single target."""
     project = tmp_path / "proj"
@@ -81,6 +83,7 @@ def _claude_findings(data: dict) -> int:
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
 def test_single_file_scan_finds_violations(tmp_path: Path, monkeypatch) -> None:
     """Regression: `ails check <file>` on a non-clean CLAUDE.md returns findings, not 'No findings.'
 
@@ -129,6 +132,7 @@ def test_single_file_scan_matches_whole_project(tmp_path: Path) -> None:
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
 def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monkeypatch) -> None:
     """`ails check subagent_memory` reaches global `~/.claude/agent-memory/` files.
 
@@ -159,6 +163,7 @@ def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monk
 
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
 def test_exclude_files_explicit_target_overrides_exclusion(tmp_path: Path, monkeypatch) -> None:
     """`exclude_files` drops a file from whole-project discovery, but an explicit target scans it.
 

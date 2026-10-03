@@ -63,8 +63,8 @@ def test_rules_list_capability_skill_json() -> None:
     code, out, _ = _run("rules", "list", "--capability=skill", "--agent=claude", "-f", "json")
     assert code == 0
     payload = json.loads(out)
-    assert payload["capability"] == "skill"
-    assert payload["capabilities"] == ["skill"]
+    assert payload["capability"] == "skills"
+    assert payload["capabilities"] == ["skills"]
     assert payload["agent"] == "claude"
     assert payload["count"] > 0
     for entry in payload["checks"]:
@@ -77,7 +77,7 @@ def test_rules_list_capability_skill_json() -> None:
 def test_rules_list_capability_md_includes_examples() -> None:
     code, out, _ = _run("rules", "list", "--capability=skill", "--agent=claude", "-f", "md")
     assert code == 0
-    assert out.startswith("# Checks for authoring a skill")
+    assert out.startswith("# Checks for authoring skills")
     assert "**Pass**:" in out
 
 
@@ -97,7 +97,7 @@ def test_rules_list_repeatable_capability() -> None:
     code, out, _ = _run("rules", "list", "--capability=skill", "--capability=agent", "--agent=claude", "-f", "json")
     assert code == 0
     payload = json.loads(out)
-    assert set(payload["capabilities"]) == {"skill", "agent"}
+    assert set(payload["capabilities"]) == {"skills", "agents"}
     # Should yield more rules than skill-only
     code_one, out_one, _ = _run("rules", "list", "--capability=skill", "--agent=claude", "-f", "json")
     assert code_one == 0
@@ -119,6 +119,31 @@ def test_rules_list_severity_filter() -> None:
 def test_rules_list_invalid_severity() -> None:
     code, _, _err = _run("rules", "list", "--severity=bogus")
     assert code != 0
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_lint
+def test_rules_list_invalid_format_is_usage_error() -> None:
+    """An unknown `--format` value must exit 2 and name the valid set, not fall back to text."""
+    code, out, _ = _run("rules", "list", "-f", "bogus")
+    assert code == 2
+    assert "text" in out and "md" in out and "json" in out
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_lint
+def test_rules_agents_invalid_format_is_usage_error() -> None:
+    code, out, _ = _run("rules", "agents", "-f", "bogus")
+    assert code == 2
+    assert "text" in out and "json" in out
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_lint
+def test_rules_capabilities_invalid_format_is_usage_error() -> None:
+    code, out, _ = _run("rules", "capabilities", "--agent=claude", "-f", "bogus")
+    assert code == 2
+    assert "text" in out and "json" in out
 
 
 @pytest.mark.integration

@@ -54,6 +54,7 @@ requires_rules = pytest.mark.skipif(
 class TestCheckCommand:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
+    @pytest.mark.requires_model
     def test_json_output_parseable(self, level2_project: Path) -> None:
         """JSON output should be valid JSON with expected keys."""
         result = runner.invoke(
@@ -75,6 +76,7 @@ class TestCheckCommand:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
+    @pytest.mark.requires_model
     def test_strict_mode_exits_1_on_violations(self, level2_project: Path) -> None:
         """--strict should exit 1 when violations exist."""
         # Use level2 — more rules apply, more likely to have violations
