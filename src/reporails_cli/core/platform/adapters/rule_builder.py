@@ -98,7 +98,8 @@ def _load_checks(frontmatter: dict[str, Any]) -> list[Check]:
             replaces=item.get("replaces", ""),
             severity=item.get("severity", ""),
             message=item.get("message", ""),
-            project_scope=item.get("project_scope", False),
+            project_scope=item.get("project_scope", ""),
+            convention=item.get("convention", False),
         )
         for item in frontmatter.get("checks", [])
     ]
@@ -129,6 +130,8 @@ def _parse_match(frontmatter: dict[str, Any]) -> FileMatch | None:
             vcs=raw.get("vcs"),
             loading=raw.get("loading"),
             precedence=raw.get("precedence"),
+            loading_verb=raw.get("loading_verb"),
+            link_source_type=raw.get("link_source_type"),
         )
     if raw is not None:
         # Empty match (match: {}) parsed as None by YAML — treat as match-all
@@ -154,6 +157,10 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         supersedes=frontmatter.get("supersedes"),
         inherited=frontmatter.get("inherited"),
         depends_on=frontmatter.get("depends_on", []),
+        enforcement_required=bool(frontmatter.get("enforcement_required", False)),
+        enforcement_mechanism=frontmatter.get("enforcement_mechanism"),
+        requires_capability=frontmatter.get("requires_capability"),
+        surface_mutations=frontmatter.get("surface_mutations"),
         checks=_load_checks(frontmatter),
         sources=frontmatter.get("sources", []),
         see_also=frontmatter.get("see_also", []),
