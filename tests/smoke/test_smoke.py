@@ -43,16 +43,18 @@ requires_rules = pytest.mark.skipif(
 def _model_installed() -> bool:
     from reporails_cli.bundled import get_models_path
 
+    # The bundled embed model is needed for a content/client finding; the NLTK
+    # tagger dependency was removed, so only the ONNX asset is checked now.
     return (get_models_path() / "minilm-l6-v2" / "onnx" / "model.onnx").is_file()
 
 
-# The bundled ONNX model is gitignored and absent in CI, so content/client
-# checks (which need the mapper) don't run there. Tests whose assertion can
-# only be observed via a content/client finding must declare this marker so
-# they skip cleanly without the model rather than failing on the CI runner.
+# The bundled ONNX model + NLTK data are gitignored and absent in CI, so
+# content/client checks (which need the mapper) don't run there. Tests whose
+# assertion can only be observed via a content/client finding must declare this
+# marker so they skip cleanly without the assets rather than failing on the CI runner.
 requires_model = pytest.mark.skipif(
     not _model_installed(),
-    reason="Bundled ONNX model not installed (content checks unavailable)",
+    reason="Bundled ONNX model / NLTK data not installed (content checks unavailable)",
 )
 
 
@@ -162,6 +164,17 @@ def _finding_files(data: dict) -> set[str]:
     return set(data.get("files", {}).keys())
 
 
+def _scanned_file_count(data: dict) -> int:
+    """Total instruction files the run actually scanned, across every surface.
+
+    `files` lists only the files that EARNED a finding, so it cannot answer
+    "was this file scanned?" — a scanned file with zero findings is absent
+    from it. `surface_health` carries the per-surface file counts, which is
+    the scan-breadth signal and is observable with diagnostics offline.
+    """
+    return sum(s.get("file_count", 0) for s in data.get("surface_health", []))
+
+
 # ===========================================================================
 # Default Agent — Core Rules Only
 #
@@ -181,7 +194,7 @@ class TestDefaultAgentCoreOnly:
     def test_core_rules_produce_violations(self, generic_only: Path) -> None:
         """Without --agent, core rules must produce violations on fixture content.
 
-        This catches Bug 3 (empty template context): rules_checked can be >0
+        This catches an empty template context: rules_checked can be >0
         even when templates don't resolve — but violations will be 0 because
         no files match the unresolved {{instruction_files}} glob.
         """
@@ -378,20 +391,23 @@ class TestMultiAgentProject:
     @requires_rules
     @requires_model
     def test_no_agent_scans_all_on_mixed_signals(self, multi_agent: Path) -> None:
-        """Without --agent on multi-agent project, mixed signals → scan all instruction files.
+        """Without --agent on a multi-agent project, mixed signals → scan every instruction file.
 
-        CLAUDE.md earns findings here only from content/client checks, which need
-        the bundled mapper model — hence `requires_model`. The project-level
-        M-probe (`CORE:G:0001`) attaches to a single representative file, so the
-        claude-file inclusion is not observable model-free in mixed-signal mode.
+        Asserted on scan BREADTH, not on which file earns a finding. The fixture
+        holds three instruction files (AGENTS.md + CLAUDE.md on the main surface,
+        copilot-instructions.md nested); scoping to one agent scans fewer, which
+        is what makes this assertion redden on a discovery regression.
+
+        Finding attribution cannot carry this assertion: in mixed-signal mode the
+        project-level probes attach to a single representative file, so CLAUDE.md's
+        own findings come from server diagnostics — which the hermetic offline
+        harness suppresses by design.
         """
         data = _check_json(multi_agent)
-        files = _finding_files(data)
-        assert len(files) > 0, "Multi-agent project should produce findings"
         findings = _all_findings(data)
         assert len(findings) > 0, "Multi-agent fixture must produce findings"
-        # Mixed signals: claude + copilot → scan all instruction files with core rules
-        assert "CLAUDE.md" in files, f"Mixed signals should scan CLAUDE.md, got: {files}"
+        scanned = _scanned_file_count(data)
+        assert scanned == 3, f"Mixed signals should scan all 3 instruction files, scanned {scanned}"
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -749,8 +765,8 @@ class TestFormatValidation:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_unknown_format_falls_through(self, claude_only: Path) -> None:
-        """-f sarif falls through to text output (no format validation gate)."""
+    def test_unknown_format_is_a_usage_error(self, claude_only: Path) -> None:
+        """-f sarif is a usage error naming the formats that exist, not a silent text run."""
         result = runner.invoke(
             app,
             [
@@ -760,7 +776,10 @@ class TestFormatValidation:
                 "sarif",
             ],
         )
-        assert result.exit_code == 0, f"Unknown format should not crash: {result.output}"
+        assert result.exit_code == 2, f"Unknown format must be rejected: {result.output}"
+        assert "sarif" in result.output
+        for known in ("text", "json", "github"):
+            assert known in result.output
 
 
 # ===========================================================================
@@ -800,15 +819,17 @@ class TestDefaultAgentConfig:
     @requires_rules
     @requires_model
     def test_no_config_mixed_signals_scans_all(self, multi_agent: Path) -> None:
-        """Without config on multi-agent project, mixed signals → scan all instruction files.
+        """With no config at all, mixed signals → scan every instruction file.
 
-        Claude-file inclusion is observable only via content/client findings,
-        which need the bundled mapper model — hence `requires_model`.
+        Same breadth contract as the --agent-less case, reached by a different
+        route (no `default_agent` configured rather than no flag passed).
+        Asserted on the scanned-file count, which a scoping regression reduces;
+        finding attribution would not redden, because the project-level probes
+        attach to one representative file.
         """
         data = _check_json(multi_agent)
-        files = _finding_files(data)
-        # Mixed signals: claude + copilot → all instruction files scanned with core rules
-        assert "CLAUDE.md" in files, f"Mixed signals should include CLAUDE.md, got: {files}"
+        scanned = _scanned_file_count(data)
+        assert scanned == 3, f"Mixed signals should scan all 3 instruction files, scanned {scanned}"
 
 
 # ===========================================================================
@@ -937,14 +958,20 @@ class TestConfigGlobal:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_global_set_tier(self) -> None:
-        """--global set works for string key."""
+    def test_global_set_rejects_removed_tier_key(self) -> None:
+        """`tier` is not a settable key — tier is resolved from subscription state.
+
+        A client-side `tier` key could never change the answer, so it was removed;
+        re-adding one (or accepting unknown keys silently) reddens this, because
+        the write would succeed and the read-back would echo the value.
+        """
         result = runner.invoke(app, ["config", "set", "--global", "tier", "pro"])
-        assert result.exit_code == 0
+        assert result.exit_code == 2, f"expected unknown-key rejection:\n{result.output}"
+        assert "Unknown config key: tier" in result.output
 
         result = runner.invoke(app, ["config", "get", "--global", "tier"])
-        assert result.exit_code == 0
-        assert "pro" in result.output
+        assert result.exit_code == 2
+        assert "pro" not in result.output
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1242,61 +1269,40 @@ class TestHealCommand:
 # ===========================================================================
 # Install Command
 #
-# `ails install` detects agents and writes MCP config. Tests use
-# monkeypatch to avoid writing to real agent config locations.
+# `ails install` ensures the engine (CLI + MCP server) is on PATH and prints
+# the per-agent plugin-install guidance. It no longer writes per-agent MCP
+# config or copies a skill — the reporails plugin carries both.
 # ===========================================================================
 
 
 @pytest.mark.e2e
 class TestInstallCommand:
-    """ails install detects agents and writes MCP config."""
+    """ails install ensures the engine on PATH and prints per-agent plugin install."""
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_install_detects_claude(self, tmp_path: Path) -> None:
-        """Install on project with CLAUDE.md detects claude agent."""
-        project = tmp_path / "project"
-        project.mkdir()
-        (project / "CLAUDE.md").write_text("# My Project\n")
-        # Create .claude dir so MCP config can be written there
-        (project / ".claude").mkdir()
-
-        result = runner.invoke(app, ["install", str(project)])
+    def test_install_shows_plugin_guidance(self) -> None:
+        """Install prints the per-agent plugin-install commands and never says the plugin is unavailable."""
+        result = runner.invoke(app, ["install"])
         assert result.exit_code == 0, f"install failed:\n{result.output}"
-        assert "claude" in result.output.lower()
-        assert "Restart" in result.output
+        out = " ".join(result.output.lower().split())
+        assert "plugin" in out
+        for agent in ("claude code", "codex", "cursor", "github copilot", "antigravity"):
+            assert agent in out
+        assert "reporails/plugin" in out
+        assert "published" not in out
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_install_no_agents(self, tmp_path: Path) -> None:
-        """Install on empty project succeeds with guidance message."""
-        project = tmp_path / "empty"
-        project.mkdir()
-
-        result = runner.invoke(app, ["install", str(project)])
-        assert result.exit_code == 0
-        assert "No supported agents" in result.output
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_install_missing_path(self) -> None:
-        result = runner.invoke(app, ["install", "/tmp/no-such-path-xyz-abc-987"])
-        assert result.exit_code == 1
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    def test_install_writes_config_file(self, tmp_path: Path) -> None:
-        """Install must write an MCP config file."""
-        project = tmp_path / "project"
-        project.mkdir()
-        (project / "CLAUDE.md").write_text("# My Project\n")
-        (project / ".claude").mkdir()
-
-        runner.invoke(app, ["install", str(project)])
-        # MCP config written to .mcp.json (project root) or .claude/mcp.json
-        mcp_json = project / ".mcp.json"
-        claude_mcp = project / ".claude" / "mcp.json"
-        assert mcp_json.exists() or claude_mcp.exists(), f"MCP config not created. Files: {list(project.rglob('*'))}"
+    def test_install_writes_no_agent_config(self, tmp_path: Path) -> None:
+        """Install no longer writes a per-agent MCP config — the plugin registers the server."""
+        # Run install in an isolated cwd so a reintroduced per-agent config write
+        # would land here and redden the guard.
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(app, ["install"])
+            assert result.exit_code == 0, f"install failed:\n{result.output}"
+            assert not Path(".mcp.json").exists()
+            assert not Path(".claude/mcp.json").exists()
 
 
 # Update command removed in 0.5.2 — tests removed.
@@ -1641,7 +1647,7 @@ class TestVariadicTargets:
     @pytest.mark.subsys_cli_ux
     @requires_rules
     def test_two_targets_both_scanned(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Two explicit file targets must both appear in the findings file set."""
+        """Two explicit file targets must both be scanned, with or without findings."""
         project = tmp_path / "project"
         (project / "docs").mkdir(parents=True)
         (project / "CLAUDE.md").write_text("# Proj\n\nshort\n")
@@ -1650,9 +1656,8 @@ class TestVariadicTargets:
 
         result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
         assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
-        files = _finding_files(json.loads(result.output))
-        assert "CLAUDE.md" in files, f"first target not scanned: {files}"
-        assert "docs/CLAUDE.md" in files, f"second target not scanned: {files}"
+        scanned = _scanned_file_count(json.loads(result.output))
+        assert scanned == 2, f"both explicit targets must be scanned, scanned {scanned}"
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1671,5 +1676,8 @@ class TestVariadicTargets:
 
         result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
         assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
-        files = _finding_files(json.loads(result.output))
+        data = json.loads(result.output)
+        files = _finding_files(data)
         assert not any("extra/CLAUDE.md" in f for f in files), f"untargeted file leaked in: {files}"
+        scanned = _scanned_file_count(data)
+        assert scanned == 2, f"only the two named targets must be scanned, scanned {scanned}"
