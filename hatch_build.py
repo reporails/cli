@@ -1,4 +1,10 @@
-"""Hatch build hook to bundle framework content, excluding test fixtures."""
+"""Hatch build hook to bundle framework content, excluding test fixtures.
+
+The wheel is lean: it carries code + rules + small data files, but NOT the ML
+model set. End users fetch the model once, on first use, into the persistent
+user cache (see ``src/reporails_cli/core/mapper/model_fetch.py``), so the wheel
+stays small for `pip`/`npx` and the model version decouples from the CLI version.
+"""
 
 from __future__ import annotations
 
@@ -12,14 +18,9 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 FRAMEWORK_INCLUDES = {
     "framework/rules": "reporails_cli/rules",
     "framework/sources.yml": "reporails_cli/sources.yml",
+    # Consumed at runtime by the capability-gating rule filter.
+    "framework/capabilities_matrix.yml": "reporails_cli/capabilities_matrix.yml",
 }
-
-# Bundled ML assets (gitignored, but must be in wheel).
-# Populated by scripts/fetch_bundled_model.py before build.
-BUNDLED_MODEL = "src/reporails_cli/bundled/models"
-BUNDLED_MODEL_DEST = "reporails_cli/bundled/models"
-BUNDLED_SPACY = "src/reporails_cli/bundled/spacy"
-BUNDLED_SPACY_DEST = "reporails_cli/bundled/spacy"
 
 # Directory names to skip when bundling (rule test fixtures are dev-only)
 SKIP_DIRS = {"tests"}
@@ -41,31 +42,6 @@ class CustomBuildHook(BuildHookInterface):
                     if path.is_file() and not _in_skip_dir(path, src):
                         rel = path.relative_to(src)
                         force_include[str(path)] = f"{dest_rel}/{rel}"
-
-        # Bundle ONNX model (gitignored but required at runtime)
-        model_dir = root / BUNDLED_MODEL
-        if model_dir.is_dir():
-            for path in model_dir.rglob("*"):
-                if not path.is_file():
-                    continue
-                # Skip HF download cache metadata
-                if ".cache" in path.parts:
-                    continue
-                rel = path.relative_to(root / "src")
-                force_include[str(path)] = str(rel)
-
-        # Bundle spaCy en_core_web_sm model (gitignored but required at runtime)
-        spacy_dir = root / BUNDLED_SPACY
-        if spacy_dir.is_dir():
-            for path in spacy_dir.rglob("*"):
-                if not path.is_file():
-                    continue
-                rel = path.relative_to(root / "src")
-                force_include[str(path)] = str(rel)
-
-        # Remove the pyproject.toml force-include entries (they'd double-include)
-        # — handled by clearing them from config before this hook, or by
-        #   removing them from pyproject.toml entirely.
 
 
 def _in_skip_dir(path: Path, base: Path) -> bool:

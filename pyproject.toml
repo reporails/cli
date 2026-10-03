@@ -1,80 +1,100 @@
 [project]
 name = "reporails-cli"
-version = "0.5.12"
+version = "0.6.0"
 description = "AI instruction diagnostics for coding agents"
 readme = "README.md"
-license = "BUSL-1.1"
+license = "BUSL-1.1 AND LicenseRef-Reporails-Model"
+# LICENSE covers the CLI source; LICENSE-weights (the Reporails Model Licence)
+# covers the model files; NOTICE and LICENSE-APACHE-2.0 cover the third-party
+# parts of the model set. All four ship in the wheel metadata; the wheel itself
+# is lean (no weights), so LICENSE-weights, NOTICE and LICENSE-APACHE-2.0 also
+# travel with the fetched model set — they are part of the fetch manifest (see
+# core/mapper/model_fetch.py), pulled next to the weights.
+license-files = ["LICENSE", "LICENSE-weights", "NOTICE", "LICENSE-APACHE-2.0"]
 requires-python = ">=3.12,<3.14"
-authors = [{ name = "Reporails Team" }]
-keywords = ["ai-instructions", "claude", "codex", "copilot", "cursor", "gemini", "diagnostics", "validation", "mcp"]
+authors = [{ name = "Mészáros Gábor e.v.", email = "info@reporails.com" }]
+keywords = ["ai-instructions", "antigravity", "claude", "codex", "copilot", "cursor", "diagnostics", "validation", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Quality Assurance",
 ]
 
 dependencies = [
-    "typer>=0.12.0",
+    # 0.12.0-0.12.3 crash at runtime on a type annotation this CLI uses
+    # (`list[str] | None`); 0.12.4 is the first floor that runs.
+    "typer>=0.12.4",
     "rich>=13.0.0",
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
-    "mcp>=1.0.0",
+    "mcp>=2,<3",
     "packaging>=23.0",
     "markdown-it-py>=3.0.0",
     # Cross-platform regex timeout (built into the matcher; works on Windows
     # where SIGALRM is unavailable). Drop-in replacement for stdlib `re`.
     "regex>=2024.11.6",
-    # Embedding stack — ONNX Runtime + HF tokenizers on bundled MiniLM-L6-v2.
-    # No torch, no sentence-transformers. See core/_torch_blocker.py and
-    # core/mapper/onnx_embedder.py for the reason and the wiring.
+    # Embedding stack — ONNX Runtime + HF tokenizers on the bundled embedding model.
+    # No torch, no sentence-transformers. See core/platform/runtime/_torch_blocker.py
+    # and core/mapper/onnx_embedder.py for the reason and the wiring.
     "onnxruntime>=1.18,<2",
     "tokenizers>=0.19,<1",
     "numpy>=1.26,<3",
-    # spaCy provides the dependency-parser branch of the classifier. With
-    # the torch blocker active, spaCy loads in ~1s. The en_core_web_sm
-    # pipeline files ship inside the wheel under bundled/spacy/ rather
-    # than as a separate runtime dep — spaCy does not publish its language
-    # models on PyPI, so a direct-URL pin would block PyPI publication.
-    "spacy>=3.8.11,<4",
-    # sklearn for topic clustering in mapper
-    "scikit-learn>=1.4.0",
     "msgpack>=1.0.0",
+    # Cross-process lock around the one-time model download (POSIX and Windows).
+    "filelock>=3.25",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
+    # Hard per-test wall-clock cap — a hanging test (a blocked subprocess, a
+    # deadlocked daemon/server, an infinite loop, a model load that never returns)
+    # fails after the cap instead of freezing the machine. The timeout traceback
+    # names the culprit. See `--timeout` in `[tool.pytest.ini_options].addopts`.
+    "pytest-timeout>=2.3.0",
     "mypy>=1.8.0",
     "types-PyYAML>=6.0.0",
     "ruff>=0.3.0",
     "pylint>=3.0.0",
     "poethepoet>=0.25.0",
+    "import-linter>=2.0",
+    # Behavioral tier (integration + e2e) — Gherkin scenarios driving the real
+    # `ails` binary via subprocess. Separate first-class suite (`uv run behave`),
+    # NOT in the unit pytest pile. See tests/behave/.
+    "behave>=1.3.3",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
+    # Hard per-test wall-clock cap — a hanging test (a blocked subprocess, a
+    # deadlocked daemon/server, an infinite loop, a model load that never returns)
+    # fails after the cap instead of freezing the machine. The timeout traceback
+    # names the culprit. See `--timeout` in `[tool.pytest.ini_options].addopts`.
+    "pytest-timeout>=2.3.0",
     "mypy>=1.8.0",
     "types-PyYAML>=6.0.0",
     "ruff>=0.3.0",
     "pylint>=3.0.0",
     "poethepoet>=0.25.0",
+    "import-linter>=2.0",
+    # Behavioral tier — Gherkin scenarios driving the real `ails` binary. See tests/behave/.
+    "behave>=1.3.3",
     # huggingface_hub: only needed by scripts/fetch_bundled_model.py on
-    # dev machines and in CI. Not a runtime dep — end users get the
-    # pre-bundled wheel with the ONNX model already inside.
+    # dev machines and in CI. Not a runtime dep — end users fetch the ONNX
+    # model set on first run instead (see core/mapper/model_fetch.py); the
+    # wheel itself ships no weights.
     "huggingface_hub>=0.23",
     # Research / test extras (not on the CLI critical path)
     "scipy>=1.17.1",
     "networkx>=3.6.1",
     "matplotlib>=3.10.8",
     "sympy>=1.14.0",
-    "scikit-learn>=1.8.0",
     "anthropic>=0.40.0",
 ]
 
@@ -97,23 +117,88 @@ build-backend = "hatchling.build"
 packages = ["src/reporails_cli"]
 artifacts = [
     "src/reporails_cli/bundled/*.yml",
+    "src/reporails_cli/bundled/lexicon/*.yml",
+]
+# Named explicitly, not left to `.gitignore` alone: a checkout outside the
+# repo's own root (for example a worktree under a system temp directory) can
+# make hatchling treat its own gitignore-derived excludes as inapplicable,
+# and these must never ship regardless. The model set is fetched on first
+# run (see core/mapper/model_fetch.py), never bundled; `.env.example` is a
+# stray dev template no code reads.
+exclude = [
+    "src/reporails_cli/bundled/models",
+    "src/reporails_cli/bundled/spacy",
+    "src/reporails_cli/.env.example",
 ]
 
 [tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.hatch.build.targets.sdist]
+# The sdist is published to PyPI alongside the wheel. `scripts/` and
+# `.githooks/` are maintainer tooling, not build input — the wheel's build
+# hook is `hatch_build.py` at the repo root — and publishing them buys
+# nothing and widens the surface. Every other entry here is named explicitly
+# for the same reason as the wheel `exclude` above: a checkout outside the
+# repo's own root can make hatchling's gitignore-derived excludes
+# inapplicable to its own build, so dev caches, the fetched-at-runtime model
+# tree, the rule-harness fixtures, the corpus-derived test data, and the
+# unreferenced dev template must all be named here too, not left to
+# `.gitignore` alone. The same goes for the project's own `.ails/` settings,
+# scratch folders, editor and tool state, and the import-linter cache: the
+# archive carries tracked source only.
+exclude = [
+    "/scripts",
+    "/.githooks",
+    "/.ails",
+    "/.claude",
+    "/.idea",
+    "/.vscode",
+    "/.venv",
+    "/.mcp.json",
+    "/tmp",
+    "**/.import_linter_cache",
+    "/src/reporails_cli/bundled/models",
+    "/src/reporails_cli/bundled/spacy",
+    "/src/reporails_cli/.env.example",
+    "/framework/rules/**/tests",
+    "/tests/unit/test_prose_split_corpus.py",
+    "**/.mypy_cache",
+    "**/.mypy_cache_win32",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+    "**/__pycache__",
+]
 
 [tool.poe.tasks]
 fmt = "ruff format src/ tests/"
 lint_fix = "ruff check --fix src/ tests/"
 lint = "ruff check src/ tests/"
-pylint_struct = "pylint src/reporails_cli/ --disable=all --enable=R0902,R0904,R0911,R0912,R0913,R0914,R0915,R0916,C0301,C0302 --exit-zero --fail-under=9.99"
+pylint_struct = "python scripts/pylint_gate.py"
+lint_imports = "lint-imports"
+arch_data = "python scripts/bundled_data_gate.py"
+arch_no_fix = "python scripts/no_public_fix_gate.py"
+arch = ["lint_imports", "arch_data", "arch_no_fix"]
 type = "mypy src/"
 test_unit = "pytest tests/unit/ -v"
-test_integration = "pytest tests/integration/ -v"
+# Default integration gate EXCLUDES `-m slow` — the slow tier (real wheel build +
+# venv + pip install, tens of seconds to minutes each) is opt-in so the local `qa`
+# gate stays fast. `test_integration_all` runs everything (release CI).
+test_integration = "pytest tests/integration/ -v -m 'not slow'"
+test_integration_all = "pytest tests/integration/ -v"
 test_smoke = "pytest tests/smoke/ -v -m e2e"
 test_live = "pytest -v -m requires_network"
 test_lint = "ails test --lint --rules-root framework/rules"
-qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_markers", "test_lint", "test_unit"]
-qa = ["fmt", "lint_fix", "lint", "pylint_struct", "type", "test_lint", "test_unit", "test_integration", "test_smoke"]
+# Behavioral tier (integration + e2e) — Gherkin scenarios driving the real `ails`
+# binary via subprocess. A separate first-class suite, NOT in the unit pytest pile.
+# The enforcement floor for composed multi-step behavior; new composed coverage
+# goes here, not into more isolated unit tests. See tests/behave/.
+test_behave = "behave"
+# Mutation probe — measures whether a suite CATCHES bugs (kill-rate), not just that it
+# passes. Diagnostic, not a gate: it names where tests miss real bugs so the catching
+# test can be added. Usage: uv run poe test_mutation src/<module>.py tests/unit/<test>.py [max]
+test_mutation = "python scripts/mutation_probe.py"
+qa_fast = ["fmt", "lint_fix", "lint", "pylint_struct", "arch", "type", "test_markers", "test_lint", "test_unit"]
+qa = ["fmt", "lint_fix", "lint", "pylint_struct", "arch", "type", "test_lint", "test_unit", "test_integration", "test_smoke", "test_behave"]
 mcp_dev = "python -m reporails_cli.interfaces.mcp.server"
 fetch_bundled_model = "python scripts/fetch_bundled_model.py"
 test_markers = "python scripts/check_test_markers.py"
@@ -150,10 +235,6 @@ explicit_package_bases = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "reporails_cli._archived.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
@@ -173,9 +254,77 @@ max-locals = 15
 max-line-length = 120
 max-module-lines = 600
 
+# Hexagonal-layer contracts. Graph-based (transitive) complement to the AST
+# architecture tests in tests/unit/architecture/. Dependencies flow outward,
+# purity flows inward; run via `poe arch` (lint-imports).
+# Start at the current clean state, then tighten as layers migrate inward.
+[tool.importlinter]
+root_package = "reporails_cli"
+
+[[tool.importlinter.contracts]]
+name = "core never imports interfaces or formatters"
+type = "forbidden"
+source_modules = ["reporails_cli.core"]
+forbidden_modules = [
+    "reporails_cli.interfaces",
+    "reporails_cli.formatters",
+]
+
+# Transitive-clean: the pure layers (contract/dto/policy) hold only data shapes
+# and decision functions — no wiring, no subsystem reach.
+[[tool.importlinter.contracts]]
+name = "pure core (contract/dto/policy) imports no wiring or subsystems"
+type = "forbidden"
+source_modules = [
+    "reporails_cli.core.platform.contract",
+    "reporails_cli.core.platform.dto",
+    "reporails_cli.core.platform.policy",
+]
+forbidden_modules = [
+    "reporails_cli.core.platform.adapters",
+    "reporails_cli.core.platform.runtime",
+    "reporails_cli.core.platform.config",
+    "reporails_cli.core.platform.observability",
+    "reporails_cli.core.platform.utils",
+    "reporails_cli.core.cache",
+    "reporails_cli.core.classify",
+    "reporails_cli.core.discovery",
+    "reporails_cli.core.heal",
+    "reporails_cli.core.install",
+    "reporails_cli.core.lint",
+    "reporails_cli.core.mapper",
+    "reporails_cli.interfaces",
+    "reporails_cli.formatters",
+]
+
+# Direct-import boundary (matches the AST arch tests' granularity, minus their
+# trailing-dot blind spot). The transitive tails into subsystems run through
+# config/runtime impurities those layers own; policing them is a later tighten.
+[[tool.importlinter.contracts]]
+name = "platform adapters import no subsystems or outer layers"
+type = "forbidden"
+source_modules = ["reporails_cli.core.platform.adapters"]
+forbidden_modules = [
+    "reporails_cli.core.cache",
+    "reporails_cli.core.classify",
+    "reporails_cli.core.discovery",
+    "reporails_cli.core.heal",
+    "reporails_cli.core.install",
+    "reporails_cli.core.lint",
+    "reporails_cli.core.mapper",
+    "reporails_cli.interfaces",
+    "reporails_cli.formatters",
+]
+allow_indirect_imports = "true"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers"
+# `--timeout=300`: hard 5-minute per-test wall-clock cap (pytest-timeout). No legit
+# test approaches it (the slowest, the `slow`-gated self_update wheel builds, run
+# ~80s); a hang — a blocked subprocess/network call, a deadlocked daemon, an
+# infinite loop — fails that test at 5 min with a traceback naming where it hung,
+# instead of freezing the machine. Override per-test with `@pytest.mark.timeout(N)`.
+addopts = "--strict-markers --timeout=300"
 markers = [
     # Lane — mutually exclusive within a test
     "unit: Fast, isolated, no I/O outside repo, no ML models",
