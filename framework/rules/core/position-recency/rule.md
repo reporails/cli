@@ -5,38 +5,28 @@ title: "Position Recency"
 category: coherence
 type: mechanical
 execution: server
-severity: high
+severity: low
 match: {}
-fix: |
-  Move the abstract directive earlier in the file, or follow it
-  immediately with a named-construct elaboration. Directives buried
-  deep in a file with abstract phrasing lose attention to anything
-  that comes after. Front-load specificity — name the tool / file /
-  command in the same sentence the directive appears in.
 ---
 
 # Position Recency
 
-Instructions at the end of a multi-instruction context dominate. Instructions at the beginning are dramatically weak.
+A prohibition that names exactly what it forbids, placed early among instructions on unrelated subjects, is easily lost: the instructions after it outweigh it, and naming the forbidden thing draws attention to it rather than protecting the constraint.
 
 ## Antipatterns
 
-- **Placing critical constraints at the top of the file.** A "NEVER delete production data" instruction at line 1 is in the weakest position. Later instructions on unrelated topics will dominate, and the constraint may be ignored.
-- **Burying critical instructions in the middle.** An important directive sandwiched between boilerplate sections gets minimal attention from the model. Middle positions are weaker than both the beginning and the end.
-- **Relying on emphasis alone.** Bold text or uppercase ("**IMPORTANT**") does not compensate for weak position. A normal instruction at the end outperforms an emphasized instruction at the beginning.
+- **A named prohibition ahead of unrelated instructions.** ``*NEVER modify `.env` files directly.*`` at the top of a file whose other instructions cover setup and testing is outweighed by everything after it.
+- **No directive on the same subject.** The file forbids touching `.env` files but never says how environment configuration is handled, so nothing pairs with the constraint.
 
 ## Pass / Fail
 
 ### Pass
 
 ~~~~markdown
-# Project Setup
-
-Use `uv sync` to install dependencies.
-
 # Constraints
 
-*NEVER modify `.env` files directly.*
+Load environment values from `.env.example` and the deploy pipeline's secret store.
+*Never modify `.env` files directly.*
 ~~~~
 
 ### Fail
@@ -52,10 +42,6 @@ Use `uv sync` to install dependencies.
 Run `uv run poe qa` for testing.
 ~~~~
 
-## Fix
-
-Place highest-priority instructions LAST. Moving a critical instruction from the beginning to the end of a file dramatically increases compliance. For conflicting instructions, the last one wins — reorder or remove the conflict.
-
 ## Limitations
 
-Evaluates position of abstract (non-named) instructions. Named instructions are not penalized for position — specificity overrides position effects.
+Fires only on a prohibition that names what it forbids, sits early among instructions on unrelated subjects, and has no directive on the same subject in the file. An abstract or unnamed instruction, a directive, or a prohibition that follows a directive on its subject does not fire, wherever it sits. A directive on the same subject worded very differently from the prohibition may not be recognized as its match, so a genuinely related instruction elsewhere in the file can still be missed.

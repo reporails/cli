@@ -5,7 +5,7 @@ title: "Relevance Decay"
 category: coherence
 type: mechanical
 execution: server
-severity: medium
+severity: high
 match: {}
 ---
 
@@ -43,10 +43,6 @@ Be thorough and careful in all tasks.
 Always produce high-quality output.
 Double-check your work.
 ~~~~
-
-## Fix
-
-If you need the same behavior across diverse task types, write separate versions of the instruction with domain-specific vocabulary for each. "Use `pytest` fixtures for test setup" only works for testing tasks — if you also want consistent patterns in scripts, write a separate instruction naming script-relevant constructs.
 
 ## Limitations
 

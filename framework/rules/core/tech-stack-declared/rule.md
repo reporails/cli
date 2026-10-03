@@ -4,7 +4,7 @@ slug: tech-stack-declared
 title: Tech Stack Declared
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
   awesome-copilot-meta-instructions, claude-md-optimization-study, developer-context-cursor-study,
   dometrain-claude-md-guide, fowler-context-engineering-agents, fowler-pushing-ai-autonomy,

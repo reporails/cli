@@ -1,0 +1,11 @@
+checks:
+- id: CORE.C.0057.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0057.not_both_gates_closed
+  type: deterministic
+  patterns:
+  - pattern-regex: '\A---\n(?:(?!\n---\n)[\s\S])*?disable-model-invocation[ \t]*:[ \t]*true(?:(?!\n---\n)[\s\S])*\n---\n'
+  - pattern-regex: '\A---\n(?:(?!\n---\n)[\s\S])*?user-invocable[ \t]*:[ \t]*false(?:(?!\n---\n)[\s\S])*\n---\n'
+  expect: absent
+  message: "Skill sets both disable-model-invocation:true and user-invocable:false — neither the model nor the user can invoke it; keep at most one gate closed"

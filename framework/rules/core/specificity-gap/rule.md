@@ -7,12 +7,6 @@ type: mechanical
 execution: server
 severity: critical
 match: {}
-fix: |
-  Replace vague verbs with named constructs in `backticks`. "Run the tests"
-  → "Run \`pytest tests/ -v\`". "Follow the style" → "Use \`ruff format\`,
-  4-space indent". "Update the module" → "Update \`auth/login.py\`". Each
-  charged instruction should name at least one specific tool, file, or
-  command the model can pattern-match against.
 ---
 
 # Specificity Gap
@@ -43,14 +37,6 @@ Run the tests before committing.
 Use appropriate mocking libraries.
 ~~~~
 
-## Fix
-
-Replace "Don't use mocking" with "Don't use `unittest.mock`,
-`MagicMock`, `patch()`". Replace "Follow the coding style" with "Use `ruff format`,
-4-space indent, `snake_case` for functions". Name the exact tools, functions, files,
-patterns, and libraries. Category names ("mocking libraries") are as vague as
-abstract concepts — the model needs the import path, not the category.
-
 ## Limitations
 
-Measures whether instructions contain named constructs (backtick-wrapped tokens, file paths, function names). Cannot evaluate whether the named constructs are the right ones for the project.
+Measures whether instructions contain named constructs (backtick-wrapped tokens, file paths, function names). Cannot evaluate whether the named constructs are the right ones for the project. A prohibition among other instructions on different topics gets no per-instruction finding, since naming the forbidden tool there can make the agent more likely to use it, and it is not counted against the file-level share of named instructions. For such a prohibition, state what it forbids as a category, or put a directive on the same topic that names the allowed tool, with its reason, just before it.
