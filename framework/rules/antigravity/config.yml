@@ -1,8 +1,7 @@
 # Google Antigravity Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Synced from .claude/skills/audit-agent/assets/registry/antigravity/config.yml
-# Last verified: 2026-06-21
+# Last verified: 2026-09-30
 #
 # Provenance. Google retired the open-source `gemini` CLI on 2026-06-18 and
 # succeeded it with the Antigravity CLI (Google transition blog, 2026-06-18).
@@ -14,18 +13,21 @@
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - Cloud-managed enterprise policies (Google Cloud admin / Code Assist Enterprise)
-#   - Scheduled tasks (CLI itself doesn't have native scheduling — uses external cron)
+#   - scheduled_tasks: native `/schedule` (one-time timers + recurring cron jobs,
+#     confirmed 2026-09-03), but the on-disk cron store path not documented.
 #
-# UNCONFIRMED: the exact Antigravity hook wire format. antigravity.google/docs is
-# JS-rendered and not machine-fetchable; the blog confirms Hooks are kept but not
-# the schema. The `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules inherit
-# the Gemini-CLI `.gemini/settings.json` shape pending accessible Antigravity hook
-# docs — re-verify when antigravity.google/docs/hooks becomes fetchable.
+# Hooks (re-verified 2026-09-30, antigravity.google/docs/hooks/ is now fetchable):
+# a dedicated `hooks.json` at project ".agents/hooks.json" and global
+# "~/.gemini/config/hooks.json" — no longer the Gemini-CLI `.gemini/settings.json`
+# shape. 5 events (PreToolUse, PostToolUse, PreInvocation, PostInvocation, Stop),
+# handler `type` optional (defaults to "command"), `command` required, `timeout`
+# optional. See the `hooks` file_type and the 3 ANTIGRAVITY:S:* hook rules below.
 
 agent: antigravity
 version: "0.5.0"
 prefix: ANTIGRAVITY
 name: Google Antigravity
+home_dir: .gemini  # the folder holding the agent's own files; a path inside it points at this agent
 
 file_types:
   main:
@@ -88,10 +90,14 @@ file_types:
         maintainer: human
 
   skills:
-    # `.agents/skills/` is the go-forward Antigravity skills location; a legacy
-    # `.gemini/skills/` folder must be relocated to `.agents/skills/` to be
-    # recognized. User skills also ship under ~/.gemini/antigravity-cli/plugins.
-    source: https://antigravity.google/docs/gcli-migration
+    # `.agents/skills/` is the go-forward Antigravity skills location. The
+    # migration docs are explicit that a legacy `.gemini/skills/` folder is
+    # NOT automatically recognized: "you must manually rename or relocate the
+    # folder to `.agents/skills/`" — so `.gemini/skills/` is not a discovery
+    # surface (re-verified 2026-09-30, antigravity.google/docs/cli/gcli-migration).
+    # User skills ship under ~/.gemini/antigravity-cli/skills/ (current) —
+    # ~/.gemini/skills/ is the same kind of unrecognized legacy path.
+    source: https://antigravity.google/docs/cli/gcli-migration
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -99,15 +105,14 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".agents/skills/**/SKILL.md", ".gemini/skills/**/SKILL.md"]
+        patterns: [".agents/skills/**/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns:
-          - "~/.agents/skills/**/SKILL.md"
-          - "~/.gemini/antigravity-cli/skills/**/SKILL.md"
-          - "~/.gemini/skills/**/SKILL.md"
+          - "~/.agents/skills/**/*.md"
+          - "~/.gemini/antigravity-cli/skills/**/*.md"
         precedence: user
         vcs: external
         maintainer: human
@@ -154,29 +159,6 @@ file_types:
         vcs: external
         maintainer: human
 
-  hooks:
-    # Hooks are kept by Antigravity (Google transition blog). The wire format and
-    # event set below are INHERITED from the Gemini-CLI `.gemini/settings.json`
-    # `hooks` key (11 events) pending accessible Antigravity hook docs — see the
-    # UNCONFIRMED note in the header and the 3 ANTIGRAVITY:S:* hook rules.
-    source: https://antigravity.google/docs/gcli-migration
-    format: schema_validated
-    scope: global
-    cardinality: collection
-    lifecycle: static
-    loading: session_start
-    scopes:
-      project:
-        patterns: [".gemini/settings.json"]
-        precedence: project
-        vcs: committed
-        maintainer: human
-      user:
-        patterns: ["~/.gemini/settings.json"]
-        precedence: user
-        vcs: external
-        maintainer: human
-
   config:
     # Antigravity stores config under the .gemini/ directory (project) and
     # ~/.gemini/antigravity/ (user state: mcp_config.json, conversations/, brain/,
@@ -217,11 +199,45 @@ file_types:
         vcs: external
         maintainer: system
 
+  # Declaration order is the classifier tiebreak: `classify_files` takes the
+  # FIRST declaration whose pattern matches, so `config` MUST stay declared
+  # before `mcp` — both claim `.gemini/settings.json` (legacy `mcpServers`
+  # back-compat). `hooks` now targets a dedicated `hooks.json` file (below)
+  # and no longer overlaps `.gemini/settings.json`.
+  hooks:
+    # Hooks are kept by Antigravity (Google transition blog). Dedicated
+    # "hooks.json" files — project ".agents/hooks.json", global
+    # "~/.gemini/config/hooks.json" — NOT the Gemini-CLI `.gemini/settings.json`
+    # `hooks` key. 5 events: PreToolUse, PostToolUse, PreInvocation,
+    # PostInvocation, Stop. Handler `type` optional (default "command"),
+    # `command` required, `timeout` optional (default 30). Re-verified
+    # 2026-09-30 against antigravity.google/docs/hooks/ — see the 3
+    # ANTIGRAVITY:S:* hook rules.
+    source: https://antigravity.google/docs/hooks/
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".agents/hooks.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.gemini/config/hooks.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
   mcp:
     # Antigravity separates MCP servers into a dedicated lightweight JSON profile
     # (mcp_config.json) rather than nesting them in primary settings. Legacy
     # gemini settings.json `mcpServers` key still read for backward-compat.
-    source: https://antigravity.google/docs/gcli-migration
+    # Global profile re-verified 2026-09-30: "~/.gemini/config/mcp_config.json"
+    # (antigravity.google/docs/cli/gcli-migration), not "~/.gemini/antigravity/".
+    source: https://antigravity.google/docs/cli/gcli-migration
     format: schema_validated
     scope: global
     cardinality: collection
@@ -235,7 +251,7 @@ file_types:
         maintainer: human
       user:
         patterns:
-          - "~/.gemini/antigravity/mcp_config.json"
+          - "~/.gemini/config/mcp_config.json"
           - "~/.gemini/settings.json"
           - "~/.gemini/settings.toml"
         precedence: user
@@ -316,3 +332,5 @@ file_types:
 excludes:
   - CLAUDE:*
   - CODEX:*
+  - CORE:S:0014  # descriptive-filenames — Antigravity declares no `rules` (scoped-file) type at all; only main/nested_context/cross_read/skills/agents/commands/config/hooks/mcp/extensions/geminiignore/system_prompt/memory (antigravity.google/docs/gcli-migration)
+  - CORE:S:0026  # import-references-used — Antigravity declares no path-scoped file type; it has no scoped-rule surface to carry @path imports (antigravity.google/docs/gcli-migration)

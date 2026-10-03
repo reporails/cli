@@ -3,7 +3,16 @@ checks:
   type: mechanical
   check: file_exists
 - id: ANTIGRAVITY.S.0003.command-has-field
-  type: deterministic
-  expect: present
-  pattern-regex: '"command"\s*:\s*"[^"]+"'
-  message: No command handler with a command field found
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0029.has-command-field
+  severity: medium
+  args:
+    message: Command handler has no command field
+    named_hooks: true
+    handlers: grouped
+    default_type: command
+    select:
+      type: [command]
+    require:
+      non_empty: [command]

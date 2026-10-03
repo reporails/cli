@@ -4,21 +4,23 @@ slug: hook-valid-event-types
 title: Hook Valid Event Types
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: hooks}
 supersedes: CORE:S:0027
-source: https://antigravity.google/docs/gcli-migration
+source: https://antigravity.google/docs/hooks/
 ---
 
 # Hook Valid Event Types
 
-Hook event keys in `.gemini/settings.json` MUST use recognized hook event type names (11 events). Unrecognized event names are silently ignored, so a typo means the hook never fires. Antigravity keeps the Hooks surface from Gemini CLI; the event-type set here is inherited pending published Antigravity hook docs.
+Hook event keys in `.agents/hooks.json` (or the global `~/.gemini/config/hooks.json`) MUST use recognized hook event type names (5 events: `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop`). Unrecognized event names are silently ignored, so a typo means the hook never fires.
 
 ## Antipatterns
 
-- **Camel-case typos.** Writing event names with wrong capitalization. The agent silently ignores unrecognized keys.
-- **Cross-agent event names.** Using event names from another agent (e.g., Claude's `PreToolUse` instead of the `.gemini/settings.json` convention).
+- **Camel-case typos.** Writing event names with wrong capitalization, such as `"posttooluse"` or `"PreTOOLUse"`. The agent silently ignores unrecognized keys.
+- **Cross-agent event names.** Using event names from another agent's convention (e.g. Gemini-CLI's `SessionStart` or Claude's `SubagentStop`) instead of the 5 Antigravity hook events.
 - **Deprecated event names.** Using event names from older versions that have been renamed or removed.
 
 ## Pass / Fail
@@ -27,8 +29,13 @@ Hook event keys in `.gemini/settings.json` MUST use recognized hook event type n
 
 ```json
 {
-  "hooks": {
-    "SessionStart": [{ "type": "command", "command": "echo hook" }]
+  "my-linter-hook": {
+    "PostToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [{ "type": "command", "command": "./scripts/lint.sh" }]
+      }
+    ]
   }
 }
 ```
@@ -37,12 +44,17 @@ Hook event keys in `.gemini/settings.json` MUST use recognized hook event type n
 
 ```json
 {
-  "hooks": {
-    "onToolUse": [{ "type": "command", "command": "echo hook" }]
+  "my-linter-hook": {
+    "onToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [{ "type": "command", "command": "./scripts/lint.sh" }]
+      }
+    ]
   }
 }
 ```
 
 ## Limitations
 
-Checks that at least one recognized event type is present. Does not detect misspelled event names if a valid one also exists. The event-type set is inherited from Gemini CLI pending accessible Antigravity hook documentation.
+Checks that at least one recognized event type is present, and separately flags a key shaped like an event name that isn't one of the 5 recognized names — so a typo next to a valid event is still caught. Does not evaluate matcher or handler contents.
