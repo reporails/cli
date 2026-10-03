@@ -1,1 +1,5 @@
-Add .env and credentials files to permissions.deny
+{
+  "permissions": {
+    "deny": ["Read(.env)", "Read(credentials.yml)", "Read(*.pem)"]
+  }
+}

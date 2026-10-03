@@ -4,40 +4,40 @@ slug: mcp-config-declares-servers
 title: Mcp Config Declares Servers
 category: governance
 type: mechanical
+enforcement_required: true
+enforcement_mechanism: managed_settings
 severity: medium
 backed_by: [enterprise-claude-usage, fowler-context-engineering-agents]
-match: {type: config}
+match: {type: mcp}
 ---
 # Mcp Config Declares Servers
 
-Config files must contain a heading referencing MCP or mcpServers. Without declared server entries, the agent has no record of which MCP tools are available or how they are scoped.
+The file an agent actually reads for MCP servers must declare at least one. Claude Code reads project-scope servers from `.mcp.json` and user-scope servers from `~/.claude.json` — not from `settings.json`, which has no `mcpServers` key at all. Each agent's own MCP surface is declared under that agent's `mcp` file type; this rule follows that surface, whatever file it names. Without a declared entry, the agent has no record of which MCP tools are available or how they are scoped.
 
 ## Antipatterns
 
-- A config file that references MCP tools in prose but has no heading containing "MCP" or "mcpServers" -- the heading-match check looks for those terms in section headers, not body text.
-- Adding a heading like "## External Tools" that describes MCP servers without using the term "MCP" in the heading -- the check requires the heading itself to match.
-- Declaring servers only in a separate JSON/YAML config without any heading reference in the instruction config file -- the check targets config-type instruction files, not raw tool configs.
+- **Looking for servers in the wrong file**: Adding `permissions` or `hooks` to `settings.json` and expecting that to satisfy MCP declaration. Claude Code never reads `mcpServers` from `settings.json` — it reads `.mcp.json` (project scope) or `~/.claude.json` (user scope).
+- **MCP tools described only in prose**: Mentioning MCP tools in a comment or a separate doc without a server entry in the MCP config file itself. The check reads that file's own content, not prose about it.
+- **Key present but never populated**: Declaring an empty servers object and never filling it in.
 
 ## Pass / Fail
 
 ### Pass
 
-~~~~markdown
-## MCP Servers
-
-- filesystem: read/write access to project directory
-- github: issue and PR operations, scoped to current repo
-~~~~
+```json
+{
+  "mcpServers": {
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"] }
+  }
+}
+```
 
 ### Fail
 
-~~~~markdown
-## External Integrations
-
-We use several MCP tools for file access and GitHub operations.
-See the settings file for details.
-~~~~
+```json
+{}
+```
 
 ## Limitations
 
-Checks for a heading containing "MCP" or "mcpServers". Does not verify the config declares valid server entries with tool allowlists.
+Checks for a `"mcpServers"` or `"servers"` key (JSON) or a `[mcp_servers.` table (TOML), whichever the active agent's own MCP file format uses. Does not verify the declared servers carry valid scope constraints or a working command.

@@ -4,6 +4,8 @@ slug: project-config-self-contained
 title: Project Config Self Contained
 category: governance
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: ci
 severity: medium
 backed_by: []
 match: {type: main}

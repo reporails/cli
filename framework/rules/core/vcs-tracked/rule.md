@@ -4,7 +4,9 @@ slug: vcs-tracked
 title: Vcs Tracked
 category: governance
 type: mechanical
-severity: high
+enforcement_required: true
+enforcement_mechanism: ci
+severity: medium
 backed_by: [advanced-context-engineering, agent-readmes-empirical-study, agentic-coding-adoption-github,
   agents-md-impact-efficiency, claude-code-issue-13579, claude-md-guide, dometrain-claude-md-guide,
   openai-community-agents-md-optimization, rules-directory-mechanics, spec-writing-for-agents]

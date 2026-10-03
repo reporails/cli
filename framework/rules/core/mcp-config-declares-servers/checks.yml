@@ -3,12 +3,8 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.G.0008.content_check
-  type: content_query
-  query: has_heading_matching
-  args:
-    terms:
-    - MCP
-    - mcpServers
-    message: Missing MCP server declarations — config must declare servers with scope
-      constraints
+  type: deterministic
   expect: present
+  pattern-regex: '"mcpServers"\s*:|"servers"\s*:|\[mcp_servers\.'
+  message: Missing MCP server declarations — the file the agent reads for MCP
+    servers has no server entries

@@ -1,6 +1,11 @@
 checks:
 - id: CORE.G.0006.no-hardcoded-paths
-  type: deterministic
-  expect: absent
-  pattern-regex: '"command"\s*:\s*"/(home|Users|tmp|var|etc|opt)/'
-  message: Hook command contains hardcoded absolute path — use the agent's project directory variable
+  type: mechanical
+  check: hook_handlers
+  args:
+    message: Hook command contains hardcoded absolute path — use the agent's project directory variable
+    block: hooks
+    handlers: grouped
+    require:
+      not_matches:
+        command: '^/(?:home|Users|tmp|var|etc|opt)/'
