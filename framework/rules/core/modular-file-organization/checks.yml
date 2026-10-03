@@ -5,6 +5,6 @@ checks:
 - id: CORE.S.0010.modular
   type: mechanical
   check: file_count
-  project_scope: true
+  project_scope: aggregate
   args:
     min: 2

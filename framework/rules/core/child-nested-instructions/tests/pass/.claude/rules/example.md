@@ -1,5 +1,7 @@
-Child CLAUDE.md files add to parent rules, they don't override them
-# === SEMANTIC JUDGMENT REQUIRED ===
-# Write content satisfying all prior M/D checks,
-# but testing the specific semantic question at this stage.
-# One judgment call per rule — do not generate.
+# API Module Rules
+
+These rules extend the root instructions for files under `src/api/`.
+
+- Return typed response models from every handler; never a bare dict.
+- Validate request bodies with the shared `RequestSchema` base class.
+- Log every 5xx with the request id so traces stay joinable.

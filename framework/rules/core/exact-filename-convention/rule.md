@@ -4,7 +4,7 @@ slug: exact-filename-convention
 title: Exact Filename Convention
 category: structure
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, builder-ai-instruction-best-practices,
   claude-md-guide, claude-md-optimization-study, enterprise-claude-usage, evaluating-agents-md,
   fowler-context-engineering-agents, instruction-limits-principles, microsoft-awesome-copilot-blog,

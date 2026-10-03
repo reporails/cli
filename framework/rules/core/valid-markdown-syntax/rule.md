@@ -42,4 +42,4 @@ title: Project
 
 ## Limitations
 
-Checks that the file parses into at least one content atom. Catches empty files and files with only frontmatter, but does not detect all structural issues — an unclosed code block that still produces some atoms before the fence would pass.
+Checks that the file parses into at least one piece of content. Catches empty files and files with only frontmatter, but does not detect all structural issues — an unclosed code block that still produces some content before the fence would pass.

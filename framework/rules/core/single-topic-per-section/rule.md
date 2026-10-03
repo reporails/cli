@@ -5,13 +5,14 @@ title: Single Topic Per Section
 category: structure
 type: mechanical
 severity: medium
+depends_on: [CORE:S:0016]
 backed_by: [developer-context-cursor-study, lost-in-the-middle-long-contexts, openai-community-agents-md-optimization,
   rules-directory-mechanics, spec-writing-for-agents]
-match: {format: freeform}
+match: {type: [main, override, agents_md, legacy_cursorrules, cross_read, system_prompt], cardinality: [singleton, chain]}
 ---
 # Single Topic Per Section
 
-The instruction file must have layered structure with at least 3 headings. Sufficient heading count indicates that content is split into focused sections rather than lumped under one or two broad headings.
+The agent's main instruction file must have layered structure with at least 3 headings. Sufficient heading count indicates that content is split into focused sections rather than lumped under one or two broad headings.
 
 ## Antipatterns
 

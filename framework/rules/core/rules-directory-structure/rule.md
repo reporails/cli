@@ -6,7 +6,7 @@ category: structure
 type: mechanical
 severity: medium
 backed_by: [claude-md-guide]
-match: {type: scoped_rule}
+match: {type: rules}
 ---
 
 # Rules Directory Structure
