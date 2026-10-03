@@ -1,0 +1,86 @@
+NOTICE
+
+Reporails model files
+
+This file travels with the Reporails model files (the files fetched by the
+Reporails CLI "ails"). Keep it next to them.
+
+The Reporails classifier files are licensed under the Reporails Model Licence
+(file LICENSE-weights). Copyright 2026 Mészáros Gábor e.v., trading as
+Reporails. The folder minilm-l6-v2/ and the third-party parts named below are
+not covered by that licence.
+
+1. all-MiniLM-L6-v2 (folder minilm-l6-v2/)
+
+   Model:      all-MiniLM-L6-v2
+   Authors:    the sentence-transformers project
+               https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+   ONNX form:  converted to ONNX by Xenova
+               https://huggingface.co/Xenova/all-MiniLM-L6-v2
+   Licence:    Apache License, Version 2.0 (file LICENSE-APACHE-2.0, next to
+               this file)
+   Changes:    none by Reporails. The files in minilm-l6-v2/ are used as
+               published in the Xenova ONNX conversion.
+
+   The Apache License, Version 2.0 applies to these files. You may use, copy
+   and distribute them under its terms. Reporails' licence for its own model
+   files does not apply to them.
+
+2. MiniLM-L6-H384-uncased (base of 1)
+
+   all-MiniLM-L6-v2 was fine-tuned from nreimers/MiniLM-L6-H384-uncased
+   https://huggingface.co/nreimers/MiniLM-L6-H384-uncased
+   licensed under the MIT License. That model is a six-layer reduction of
+   Microsoft's MiniLM (https://github.com/microsoft/unilm/tree/master/minilm).
+   Its licence, as published in that repository:
+
+   The MIT License (MIT)
+
+   Copyright (c) Microsoft Corporation
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+3. Reporails classifier encoders (modified derivatives of 1)
+
+   The files charge_encoder_encA.onnx and charge_encoder_encB.onnx are
+   modified versions of all-MiniLM-L6-v2: Reporails trained the whole encoder
+   further, so these files differ from the original. They are licensed under
+   the Reporails Model Licence for the changes made by Reporails; the Apache
+   License, Version 2.0 continues to apply to the parts that come from
+   all-MiniLM-L6-v2.
+
+   The files multislot_head_encA.onnx and multislot_head_encB.onnx are
+   Reporails' own and are licensed under the Reporails Model Licence.
+
+Where the licence texts go
+
+   The Apache License, Version 2.0 (Apache-2.0 section 4(a)) must be given
+   to every recipient of the minilm-l6-v2/ files and of the modified encoders.
+   Ship these three files together, in the root of the model set, in the same
+   place and the same way as LICENSE-weights:
+
+     LICENSE-weights        Reporails Model Licence
+     NOTICE                 this file
+     LICENSE-APACHE-2.0     the unmodified Apache-2.0 text from
+                            https://www.apache.org/licenses/LICENSE-2.0.txt
+
+   That means: in the cli repository next to LICENSE-weights, in the wheel
+   metadata (pyproject license-files), on the model host in the same
+   directory as the model files, and in the fetch manifest of
+   core/mapper/model_fetch.py so a downloaded set carries all three.
