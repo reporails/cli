@@ -27,12 +27,12 @@ CONFIG_PATH = REPO_ROOT / "framework" / "rules" / "{agent}" / "config.yml"
 
 # Capability -> file_type keys that anchor it (any-of).
 FILE_TYPE_ANCHORS: dict[str, set[str]] = {
-    "root": {"main"},
-    "scoped": {"rules", "legacy_cursorrules", "cursorrules", "nested_context"},
+    "main": {"main"},
+    "rules": {"rules", "legacy_cursorrules", "cursorrules", "nested_context"},
     "skills": {"skills", "skill_metadata"},
     "hooks": {"hooks"},
     "mcp": {"mcp"},
-    "subagents": {"agents"},
+    "agents": {"agents"},
     "memory": {"memory"},
     "enterprise": {"enterprise", "managed_policy"},
     "plugins": {"plugins", "extensions"},
@@ -62,13 +62,14 @@ PATTERN_ANCHORS: dict[str, str] = {
 # surface. The substring keys the exemption to its justification comment, so the
 # exemption dies if the comment is removed.
 EXEMPTIONS: dict[tuple[str, str], str] = {
+    ("antigravity", "scheduled_tasks"): "on-disk cron store path not documented",
+    ("codex", "output"): "personality setting lives in config.toml",
     ("codex", "plugins"): "marketplace install path not documented",
     ("codex", "scheduled_tasks"): "Codex Desktop Automations on-disk path not documented",
     ("copilot", "memory"): "Copilot Memory: cloud-hosted",
     ("copilot", "enterprise"): "Org instructions: GitHub org settings",
     ("copilot", "plugins"): "Copilot Extensions: cloud-hosted",
     ("cursor", "memory"): "Cursor Memories",
-    ("cursor", "output"): "CLI --output-format",
     ("cursor", "scheduled_tasks"): "Cursor Automations (cloud-only",
 }
 
