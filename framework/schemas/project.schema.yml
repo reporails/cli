@@ -2,7 +2,7 @@
 version: "0.1.0"
 
 # Removed instruction_files (moved to agent config).
-# Updated rules.disabled/overrides for coordinate format.
+# Updated rules.disabled for coordinate format.
 
 fields:
   schema_version:
@@ -46,7 +46,7 @@ fields:
   rules:
     required: false
     type: object
-    description: "Project-level rule overrides and exclusions"
+    description: "Project-level rule exclusions"
     properties:
       disabled:
         type: array
@@ -54,19 +54,6 @@ fields:
         items:
           type: string
           pattern: "^[A-Z_]+:[SCDEGM]:[0-9]{4}$"
-      overrides:
-        type: object
-        description: "Per-check severity adjustments (key = check coordinate)"
-        additionalProperties:
-          type: object
-          properties:
-            severity:
-              type: enum
-              values: [critical, high, medium, low]
-              description: "Override default severity for this check"
-            disabled:
-              type: boolean
-              description: "Disable this specific check"
 
   scoring:
     required: false
@@ -166,7 +153,6 @@ validation:
   - rule: "Unknown fields should warn, not error"
   - rule: "If tiers.core is false, no rules are enforced"
   - rule: "rules.disabled items must be valid rule coordinates"
-  - rule: "rules.overrides keys must be valid check coordinates"
 
 examples:
   minimal: |
@@ -185,14 +171,11 @@ examples:
     scoring:
       scope: aggregate
 
-  with_overrides: |
+  with_disabled_rules: |
     schema_version: "0.1.0"
     agent: claude
     rules:
       disabled: ["CORE:E:0002"]
-      overrides:
-        "CORE.S.0001.file-exists":
-          severity: medium
 
   strict: |
     schema_version: "0.1.0"

@@ -39,7 +39,18 @@ fields:
   core:
     required: false
     type: boolean
-    description: "If true, this config represents CORE itself"
+    description: "If true, this config is the shared standard (CORE) every other agent also reads; it is the default agent and owns the files no single agent claims"
+
+  home_dir:
+    required: false
+    type: string
+    pattern: "^\\.[^/]+$"
+    description: "The dot-folder holding the agent's own files (.claude, .github for Copilot). A path inside it points at this agent"
+
+  shared_names:
+    required: false
+    type: array
+    description: "Root file names the shared standard (the core config) defines and other agents also read (AGENTS.md); such a name points at no single agent"
 
   file_types:
     required: true
@@ -71,6 +82,12 @@ fields:
             - path_scoped: applies via in-file frontmatter path filter (e.g. Claude rules with paths:, Cursor rules with globs:).
             - task_scoped: invocation-time loading (skills, agents, commands).
             - nested: applies to a subdirectory subtree by virtue of file location (no frontmatter); subdirectory CLAUDE.md / AGENTS.md / GEMINI.md.
+        path_key:
+          type: string
+          description: "Frontmatter key holding a path_scoped capability's path filter (`paths` for Claude rules, `globs` for Cursor rules; `globs` when a file type declares none). A file whose filter is empty loads at session start."
+        always_key:
+          type: string
+          description: "Frontmatter key that makes a path_scoped file with an empty filter load at session start when it is true (`alwaysApply` for Cursor rules). Declared and not true, such a file loads on demand; not declared, it loads at session start."
         cardinality:
           type: enum
           values: [singleton, optional, collection, hierarchical, chain]
@@ -126,7 +143,7 @@ fields:
       type: string
       pattern: "^[A-Z_]+:[SCDEGM*]:[0-9]{4}$|^[A-Z_]+:\\*$"
 
-  # NOTE: severity overrides belong in project.schema.yml rules.overrides, not here.
+  # NOTE: there is no project-level severity override; a rule's severity comes from its rule.md.
   # The agent schema no longer defines overrides — agent config.yml should
   # use excludes for rules that don't apply to the agent.
 

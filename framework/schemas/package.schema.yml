@@ -92,18 +92,6 @@ fields:
       pattern: "^CORE:[SCDEGM]:[0-9]{4}$"
     description: "Core rule IDs this package opts out of" 
 
-  overrides:
-    required: false
-    type: object
-    description: "Per-check severity adjustments on core rules (key = check ID)"
-    additionalProperties:
-      type: object
-      properties:
-        severity:
-          type: enum
-          values: [critical, high, medium, low]
-          description: "Override default severity"
-
 validation:
   - rule: "prefix must be in reserved_package_prefixes"
   - rule: "prefix must NOT be in reserved_agent_prefixes"

@@ -77,15 +77,58 @@ fields:
     default: local
     description: "Where the rule executes. local = checks.yml on client. server = diagnostic from API, no local checks."
 
+  enforcement_required:
+    required: false
+    type: boolean
+    default: false
+    description: >
+      Whether this rule's concern needs an out-of-band enforcement partner —
+      a lint finding alone cannot make it stick. Prohibition/governance-class
+      rules that gate real agent behavior (hooks, permissions, CI) set this
+      true and name the mechanism in enforcement_mechanism.
+
+  enforcement_mechanism:
+    required: false
+    type: enum
+    values: [hook, permission, ci, managed_settings, static_analysis]
+    description: >
+      The out-of-band mechanism that actually enforces this rule when
+      enforcement_required is true. hook: agent hook; permission: permission
+      deny list; ci: CI / git-hook gate; managed_settings: managed policy
+      settings; static_analysis: static scan. Empty unless enforcement_required.
+
+  requires_capability:
+    required: false
+    type: string
+    description: >
+      Capability ID from capabilities_matrix.yml taxonomy (e.g. memory, hooks,
+      skills, agents) — the same name as the agent config's file type. When set, the rule fires only for agents whose capability set
+      per the matrix includes it; agents lacking the capability never see the
+      rule. Empty = fires for every agent (the common case).
+
+  surface_mutations:
+    required: false
+    type: object
+    description: >
+      Per-surface applicability overrides — declares which concerns apply on
+      which agent surface (memory vs main vs rules), so a content-quality
+      rule stops mis-firing on agent-written surfaces such as MEMORY.md. Keys
+      are surface / file-type names; values declare the applicable-concern
+      subset. Population is deferred pending the memory-surface coverage work.
+
   fix:
     required: false
     type: string
     max_length: 1000
     description: >
-      Canonical operator-facing fix text for this rule (max 1000 chars).
-      Read into LocalFinding.fix at emission time. Mirrors the
-      skill-description ceiling. Empty when the rule has no actionable
-      fix text yet (the plugin helper UX falls back to asking the user).
+      RETIRED FROM PUBLIC RULES — do not author. Fix / remediation text is paid
+      content and no longer lives in these open rule files; it is delivered
+      per-finding by the diagnostic service, tier-gated, from a private store.
+      Adding a `fix:` field (or a `## Fix` body section) here re-leaks the paid
+      IP onto a public surface. The field is retained in the schema only so an
+      accidental legacy occurrence still validates rather than erroring on an
+      unknown key; a mechanical gate (scripts/no_public_fix_gate.py, run in
+      `poe arch` / `qa`) fails the build if any rule.md carries it.
 
   severity:
     required: true
@@ -99,8 +142,16 @@ fields:
     description: "Property-based file targeting. Unspecified properties are wildcards."
     properties:
       type:
-        type: string
-        description: "Named file type (main, scoped_rule, skill, config, override, memory, mcp, managed)"
+        type: [string, array]
+        description: >
+          Named file type, or a list for OR-matching (e.g. [config, hooks]).
+          The value is the agent config's `file_types:` key, exactly as the
+          config names it (e.g. main, nested_context, child_instruction, rules,
+          skills, agents, plugins, config, hooks, mcp, override, memory,
+          subagent_memory), or `generic` for a file no config type matches.
+          A rule that reads markdown adds `format: [frontmatter, freeform]`, so
+          an agent whose surface of that type is not markdown (Codex's TOML
+          `agents`, its Starlark `rules`) is never checked by it.
       scope:
         type: enum
         values: [global, path_scoped, task_scoped, nested, user, system]
@@ -123,6 +174,14 @@ fields:
           data_block: structured visualization/data blocks (mermaid, embedded yaml/json).
           table: markdown tables.
           list: ordered/unordered lists.
+      loading_verb:
+        type: [enum, array]
+        values: [read, imported]
+        description: "How a link-walked file reached the scan: read by the agent or spliced by an import. Single value or list for OR-matching."
+      link_source_type:
+        type: [enum, array]
+        values: [main, memory, subagent_memory, skill]
+        description: "The classified type of the file that linked to this one. Single value or list for OR-matching."
       cardinality:
         type: enum
         values: [singleton, optional, collection, hierarchical, chain]
@@ -204,15 +263,32 @@ fields:
           - filename_matches_pattern
           - file_absent
           - content_absent
+          # markdown link + skill/frontmatter checks
+          - extract_markdown_links
+          - check_markdown_link_targets_exist
+          - frontmatter_matches_dirname
+          - skill_entrypoint_present
+          - glob_match
+          # hook_handlers.py — hook config checks
+          - hook_handlers
       args:
         required: false
         type: object
         description: "Check-specific arguments (e.g., path, min, max)"
-      # deterministic
-      pattern:
-        required_if: "type == deterministic"
+      # deterministic — a deterministic check carries exactly ONE of the three
+      # operators below (see core/lint/regex/compiler.py `_SUPPORTED_OPERATORS`).
+      pattern-regex:
+        required: false
         type: string
-        description: "Regex pattern to detect evidence"
+        description: "Single regex to detect evidence. With expect: present a match satisfies the check; with expect: absent a match is the violation."
+      pattern-either:
+        required: false
+        type: array
+        description: "OR-set of regex strings — the check matches when ANY entry matches. Alternative to pattern-regex."
+      patterns:
+        required: false
+        type: array
+        description: "AND-composite: a list of `{pattern-regex: <str>}` and/or `{pattern-not-regex: <str>}` entries — every pattern-regex must match and every pattern-not-regex must not."
       expect:
         required: false
         type: enum
@@ -222,7 +298,7 @@ fields:
       message:
         required_if: "type == deterministic"
         type: string
-        description: "Human-readable message describing what was detected or missing"
+        description: "Human-readable message describing what was detected or missing. On a non-deterministic check this is the check-level message override."
       cross_file:
         required: false
         type: boolean
@@ -230,9 +306,28 @@ fields:
         description: "Whether pattern operates across the full target set (not per-file)"
       project_scope:
         required: false
+        type: enum
+        values: [aggregate, once]
+        description: "Project-wide check, not tied to one file. aggregate: a project-aggregate check, skipped under a scoped/narrowed run where the aggregate is meaningless. once: a project-wide fact reported once per project (not once per agent) and kept on a scoped/narrowed run. Data-driven (no engine edit)."
+      convention:
+        required: false
         type: boolean
         default: false
-        description: "Project-aggregate check — skipped under a scoped/narrowed run where the aggregate is meaningless. Data-driven scoped-skip (no engine edit)."
+        description: "The finding names a documentation convention the file does not follow (a missing section or topic). Text output lists such findings as one counted line; JSON output keeps each and marks it `convention: true`."
+      min_lines:
+        required: false
+        type: integer
+        description: >
+          Minimum file line count below which the check does not run. Read into
+          the runner's min_lines_map; a project may override it per rule via
+          `.ails/config.yml: rule_thresholds.<RULE:ID>.min_lines`.
+      follow_imports:
+        required: false
+        type: boolean
+        default: false
+        description: >
+          Deterministic check only. Also read the text an `@path` import splices into the file,
+          and report a match on the imported file and line where it is written.
       # shared optional fields
       replaces:
         required: false
@@ -244,10 +339,6 @@ fields:
         type: enum
         values: [critical, high, medium, low, info]
         description: "Check-level severity override (empty = use rule severity)"
-      message:
-        required: false
-        type: string
-        description: "Check-level human-readable message override"
       # content_query
       query:
         required_if: "type == content_query"
@@ -399,7 +490,7 @@ examples:
     type: mechanical
     severity: medium
     inherited: CORE:S:0038
-    match: {type: scoped_rule}
+    match: {type: rules, format: [frontmatter, freeform]}
     ---
 
   with_depends_on: |
