@@ -7,7 +7,7 @@ import from any `core/<subsystem>/` (cache, classify, mapper, ...) or from
 `interfaces/` or `formatters/`. Subsystems import adapters, not the reverse.
 
 Runs in **report-only** mode today. Flip `_FAIL_ON_VIOLATION = True` once
-Phase 5 of the platform migration completes.
+the platform migration completes.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ _FAIL_ON_VIOLATION = True
 
 # Known temporary exceptions. Each entry: (importer_path_relative_to_root, imported_module).
 # Removed as the corresponding migration phase completes.
-_KNOWN_EXCEPTIONS: set[tuple[str, str]] = set()  # all entries resolved by Phase 7
+_KNOWN_EXCEPTIONS: set[tuple[str, str]] = set()  # all entries resolved
 
 
 def _iter_imports(file_path: Path) -> list[str]:
