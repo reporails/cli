@@ -4,7 +4,7 @@ slug: output-format-specified
 title: Output Format Specified
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, claude-code-issue-13579, developer-context-cursor-study,
   fowler-pushing-ai-autonomy, prompthub-cursor-rules-analysis]
 match: {type: main}

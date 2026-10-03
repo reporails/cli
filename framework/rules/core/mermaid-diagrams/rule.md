@@ -10,22 +10,18 @@ backed_by:
 - flowbench-workflow-format-benchmark
 - fowler-pushing-ai-autonomy
 match: {format: freeform}
-fix: |
-  Add a `mermaid` flowchart block alongside the prose description of the
-  procedure. Use `flowchart TD` for top-down branching procedures. The
-  diagram gives the agent a structured map to walk; prose alone leaves
-  the procedure shape implicit.
+surface_mutations:
+  memory: {applies: false}
 ---
 
 # Flowcharts for Procedures
 
-Instruction files with branching workflows must include mermaid flowcharts. Numbered lists that contain conditional language ("if", "when", "otherwise") without an accompanying mermaid block indicate a procedure that would be clearer as a diagram.
+Branching workflows read more clearly as a flowchart. When an instruction file spells out a multi-step procedure as a numbered list laced with conditional language ("if", "when", "otherwise"), the rule flags it as a candidate for a mermaid diagram. Files with no branching procedure are never flagged — the rule fires only where a branching numbered list is actually present, not on the mere absence of a diagram.
 
 ## Antipatterns
 
-- Writing a numbered list with "if X then do Y, otherwise do Z" steps but no mermaid block -- the check flags branching steps that lack a corresponding flowchart.
-- Adding a mermaid block that shows a linear sequence while the prose describes branching -- the `has_branching_steps` check detects conditionals in numbered lists independent of the diagram content.
-- Using prose paragraphs for conditional workflows instead of numbered lists -- the check specifically targets numbered lists with conditional keywords, so conditional paragraphs are not flagged but also not well-structured.
+- Writing a numbered list with "if X then do Y, otherwise do Z" steps -- the rule flags the branching procedure and suggests adding a mermaid flowchart that shows the control flow and branch paths.
+- Using prose paragraphs for conditional workflows instead of numbered lists -- the rule targets numbered lists with conditional keywords, so conditional paragraphs are not flagged (but are also not well-structured).
 
 ## Pass / Fail
 
@@ -53,12 +49,6 @@ graph TD
 4. When staging looks good, promote to production
 ~~~~
 
-## Fix
-
-For procedures with 3+ steps and branching logic, add a ` ```mermaid ` flowchart showing the control flow and all branch paths. Write prose below the flowchart explaining *why* each decision matters — the diagram shows what happens, the prose explains why.
-
-Use numbered lists for linear sequences without branches. Do not add flowcharts to non-procedural content like tool constraints or project identity.
-
 ## Limitations
 
-Detects numbered lists with conditional language ("if", "when", "otherwise") and checks for ` ```mermaid ` blocks. Uses `scope_conditional` atom classification to identify branching — may miss implicit branches not marked by conditional keywords. Does not verify that mermaid diagrams are syntactically valid or represent the described procedure.
+Fires only on files that contain a numbered list (three or more steps) with conditional language ("if", "when", "otherwise") — it flags the branching procedure itself, not the absence of a diagram, so files without a branching workflow are never flagged. It may miss implicit branches not marked by conditional keywords, and it does not confirm whether a matching diagram is already present or verify that any diagram is syntactically valid.

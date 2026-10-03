@@ -5,38 +5,35 @@ title: "The Ideal Instruction"
 category: coherence
 type: mechanical
 execution: server
-severity: medium
+severity: critical
 match: {}
-fix: |
-  Strengthen the weak instructions. For each weak finding, apply the
-  named-construct pattern (`backtick`-wrap a specific tool / file /
-  command), the imperative-modality pattern (replace "consider" /
-  "try" / "should" with direct verbs), and the elaboration pattern
-  (target 15-50 distinct tokens per instruction). See `ails explain
-  CORE:C:0053` for the full ideal-instruction shape.
+surface_mutations:
+  memory: {applies: false}
 ---
 
 # The Ideal Instruction
 
 An instruction competes for attention against everything else in context. The strongest instructions dominate; weak instructions are effectively invisible.
 
-Five properties determine instruction strength (they multiply): specificity (name exact constructs), modality (use direct commands), elaboration (15-50 distinct terms), position (place critical instructions last), and topic relevance (instruction matches the task). The gap between a well-written and poorly-written instruction is enormous.
+Five properties determine instruction strength: specificity (name exact constructs), modality (use direct commands), elaboration (one compact sentence that names what it applies to, not a terse fragment), position (place critical instructions last), and topic relevance (instruction matches the task). They combine, but they are not the same kind of lever: specificity and elaboration do double duty — each strengthens the instruction and helps it stand out against competing same-topic content — while modality only sets how directly the command is phrased. Position lifts an abstract instruction; a named one is largely immune to it. The gap between a well-written and poorly-written instruction is enormous.
 
 ## Antipatterns
 
 - **Hedged language**: "You might want to consider using `ruff` for formatting." Hedged modality weakens the instruction — direct commands ("Use `ruff` for formatting") are stronger.
 - **Generic terms instead of named constructs**: "Use a linter for code quality" instead of "Use `ruff check` for linting." Specificity requires naming the exact tool, file, or command.
-- **Constraint-first ordering**: "Don't use `black`. Use `ruff` instead." Leading with the prohibition activates the wrong concept first. Directive-first ordering is more effective.
-- **Terse instructions without elaboration**: "Format code." Too few distinct tokens — the instruction lacks the detail needed to compete for attention in context.
+- **Naming what a prohibition forbids**: among other instructions on different topics, naming the forbidden tool can make the agent more likely to use it. Put a directive on the same topic that names the allowed tool, with its reason, just before the prohibition, or state the prohibition as a category.
+- **Constraint-first ordering**: "Don't format files by hand. Use `ruff format` instead." Leading with the prohibition activates the wrong concept first. Directive-first ordering is more effective.
+- **Terse instructions without elaboration**: "Format code." Too few words — the instruction lacks the detail needed to compete for attention in context.
 
 ## Pass / Fail
 
 ### Pass
 
 ~~~~markdown
-Use `ruff check --fix` for all linting in `src/` and `tests/`. The project
-enforces consistent style through pre-commit hooks. *Do NOT run `black`
-or apply manual formatting.*
+Use `ruff check --fix` for all linting in `src/` and `tests/`.
+Run `pre-commit run --all-files` before every commit to keep the style consistent.
+Format code with `ruff format`, because the CI style check runs it.
+*Do not run any other formatter on files in this repository.*
 ~~~~
 
 ### Fail
@@ -44,16 +41,6 @@ or apply manual formatting.*
 ~~~~markdown
 You should probably consider formatting your code consistently.
 ~~~~
-
-## Fix
-
-1. Elaborate with distinct relevant terms — the single largest improvement factor
-2. Use exact names — `unittest.mock`, not "mocking libraries"
-3. Order: directive first, reasoning, constraint last
-4. Place critical instructions last in the file
-5. Use direct commands, not hedged language
-6. One instruction per topic (eliminates same-topic competition)
-7. Keep surrounding same-topic prose brief (reduces attention dilution)
 
 ## Limitations
 

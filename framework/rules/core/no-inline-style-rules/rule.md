@@ -29,7 +29,7 @@ Instruction files must not use agent-specific rendering directives like inline s
 ~~~~markdown
 ## Constraints
 
-*Do NOT modify files in `dist/`.* Use `ruff` for all formatting.
+*Do not modify files in `dist/`.* Use `ruff` for all formatting.
 Run `uv run ails check .` after changes.
 ~~~~
 
