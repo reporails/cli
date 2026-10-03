@@ -1,186 +1,59 @@
-"""API client for reporails diagnostic server.
+"""Client for the reporails diagnostics server.
 
-Sends text-stripped RulesetMap to the diagnostic API (default: api.reporails.com)
-and deserializes the response. AILS_SERVER_URL overrides the default endpoint.
-
-Response dataclasses define the wire format — shared contract between CLI and API.
+Sends a text-stripped RulesetMap and deserializes the response into the shared
+`dto.diagnostics` shapes. AILS_SERVER_URL overrides the default server.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import os
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.funnel import (
-    LintResponse,
-    parse_error_body,
-    preflight_oversized,
-)
+from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
+from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
     CredentialsUnreadableError,
     PlatformError,
 )
+from reporails_cli.core.platform.dto.diagnostics import (
+    DEFAULT_RETRY_AFTER_S,
+    CrossFileCoordinate,
+    CrossFileFinding,
+    Diagnostic,
+    FileAnalysis,
+    FunnelError,
+    Hint,
+    LintResponse,
+    LintResult,
+    LocalTier,
+    QualityResult,
+    RulesetReport,
+)
+from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.policy.preflight import parse_error_body, preflight_oversized
 
 logger = logging.getLogger(__name__)
+
+# The diagnostics server used when `AILS_SERVER_URL` is unset.
+DEFAULT_SERVER_URL = "https://api.reporails.com"
 
 
 def _user_agent() -> str:
     """Return `reporails-cli/<version>` for outgoing diagnostic requests.
 
-    Sending a distinct UA lets the server (and any CDN/WAF in front of it)
-    identify legitimate CLI traffic. The default `python-httpx/*` UA is a
-    common bot-fight trigger.
+    Sends a distinct UA instead of the default `python-httpx/*` one.
     """
     try:
-        from importlib.metadata import version
-
         return f"reporails-cli/{version('reporails-cli')}"
-    except Exception:  # importlib.metadata.PackageNotFoundError + defensive
+    except PackageNotFoundError:
         return "reporails-cli/unknown"
-
-
-# ──────────────────────────────────────────────────────────────────
-# RESPONSE DATACLASSES
-# ──────────────────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class Diagnostic:
-    """A single diagnostic from the server."""
-
-    file: str
-    line: int
-    severity: str  # "error" | "warning" | "info"
-    rule: str  # diagnostic rule identifier
-    message: str
-    fix: str = ""
-    line_2: int = 0  # secondary line (conflict pairs)
-    impact_tier: str = ""  # server-computed leverage tier; "" when offline/not computed
-
-
-@dataclass(frozen=True)
-class Hint:
-    """An interaction diagnostic hint (free tier).
-
-    Surfaces that a problem exists without line-level detail or fix suggestions.
-    The detection is the gift; the fix is the product.
-    Severity is preserved so the free tier can show honest error/warning counts.
-    """
-
-    file: str
-    diagnostic_type: str
-    count: int
-    summary: str
-    severity: str = "warning"  # worst severity of the gated diagnostics
-    error_count: int = 0  # how many of the gated diagnostics were errors
-    warning_count: int = 0  # how many were warnings
-
-
-@dataclass(frozen=True)
-class CrossFileCoordinate:
-    """Aggregated cross-file finding for free tier (no lines, no detail).
-
-    Shows WHICH files interact and the type/count, but not WHERE or HOW.
-    The detection is the gift; the fix is the product.
-    """
-
-    file_1: str
-    file_2: str
-    finding_type: str  # "conflict" | "repetition"
-    count: int
-
-
-@dataclass(frozen=True)
-class CrossFileFinding:
-    """A cross-file conflict or repetition."""
-
-    file_1: str
-    file_2: str
-    line_1: int
-    line_2: int
-    charge_1: int
-    charge_2: int
-    finding_type: str  # "conflict" | "repetition"
-    topicality: str = ""  # "near" | "moderate" | "far"; "" when offline/not computed
-
-
-@dataclass(frozen=True)
-class TargetScore:
-    """Per-instruction compliance breakdown (Pro tier)."""
-
-    line: int
-    file_path: str
-    compliance_band: str  # "HIGH" | "MODERATE" | "LOW"
-    impact_rank: int
-    capacity: str = ""  # "low" | "moderate" | "high"; "" when offline/not computed
-    diagnostics: tuple[Diagnostic, ...] = ()
-
-
-@dataclass(frozen=True)
-class ContextResult:
-    """Results for a loading context."""
-
-    context_name: str
-    files: tuple[str, ...] = ()
-    compliance_band: str = ""
-    n_charged: int = 0
-    n_atoms: int = 0
-    per_target: tuple[TargetScore, ...] = ()
-
-
-@dataclass(frozen=True)
-class QualityResult:
-    """Aggregate quality assessment."""
-
-    contexts: tuple[ContextResult, ...] = ()
-    compliance_band: str = ""  # aggregate
-    # Server-computed 0-10 whole-project quality score. The CLI renders it verbatim —
-    # it computes no score of its own.
-    display_score: float = 0.0
-    weakest_context: str | None = None
-    strongest_context: str | None = None
-
-
-@dataclass(frozen=True)
-class FileAnalysis:
-    """Per-file server analysis."""
-
-    file: str
-    diagnostics: tuple[Diagnostic, ...] = ()
-    compliance_band: str = ""
-    stats: dict[str, Any] = field(default_factory=dict)
-    # Server-computed 0-10 per-file quality score. Rendered verbatim; mean-aggregated
-    # for surface scores. `None` marks an unscored file (no charged atoms — a
-    # non-instruction surface or an empty instruction file); rendered as "not scored"
-    # and excluded from surface aggregation.
-    display_score: float | None = None
-
-
-@dataclass(frozen=True)
-class RulesetReport:
-    """Full server analysis report."""
-
-    per_file: tuple[FileAnalysis, ...] = ()
-    cross_file: tuple[CrossFileFinding, ...] = ()
-    quality: QualityResult = field(default_factory=QualityResult)
-    stats: dict[str, int] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class LintResult:
-    """Result from lint() — wraps report + hints for tier gating."""
-
-    report: RulesetReport
-    hints: tuple[Hint, ...] = ()
-    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = ()
-    tier: str = "free"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -242,24 +115,41 @@ def _degrade_on_fault(reader: Callable[[], str], unit: str) -> str:
         return ""
 
 
+def resolve_api_key() -> str:
+    """The API key in effect: ``AILS_API_KEY`` when set, else the stored credentials.
+
+    Returns "" when neither holds a key; an unreadable credentials file drops
+    to "" with a WARNING.
+    """
+    return os.environ.get("AILS_API_KEY") or _degrade_on_fault(_api_key_from_credentials, "API key")
+
+
+def default_server_api_key() -> str:
+    """The API key in effect when ``AILS_SERVER_URL`` is unset or the default server, else "".
+
+    A key paired with another server (a local or staging one) is not returned.
+    """
+    server = os.environ.get("AILS_SERVER_URL", "").strip().rstrip("/")
+    if server and server != DEFAULT_SERVER_URL:
+        return ""
+    return resolve_api_key()
+
+
 def has_api_key() -> bool:
     """True when an API key is available (env override or stored credentials).
 
     Client-side affordance gate: distinguishes an authenticated user from an
-    anonymous one without consulting the server. The server remains the tier
-    authority; this only gates which local affordances are offered.
+    anonymous one without consulting the server. This only gates which local
+    affordances are offered; the plan itself is whatever the server reports.
     """
-    if os.environ.get("AILS_API_KEY"):
-        return True
-    return bool(_degrade_on_fault(_api_key_from_credentials, "API key"))
+    return bool(resolve_api_key())
 
 
 class AilsClient:
-    """Diagnostic API client — HTTP to diagnostic API, local fallback.
+    """Diagnostics client — HTTP to the diagnostics server, local fallback.
 
-    Sends a text-stripped RulesetMap to the diagnostic API (default:
-    api.reporails.com) via POST /diagnose. AILS_SERVER_URL overrides
-    the endpoint. Returns None when the server is unreachable.
+    Sends a text-stripped RulesetMap to the server. AILS_SERVER_URL overrides
+    the default server. Returns None when the server is unreachable.
     """
 
     def __init__(
@@ -269,35 +159,41 @@ class AilsClient:
         tier: str | None = None,
         timeout: float = 30.0,
     ) -> None:
-        self.base_url = base_url or os.environ.get("AILS_SERVER_URL", "https://api.reporails.com")
-        self.api_key = (
-            api_key or os.environ.get("AILS_API_KEY") or _degrade_on_fault(_api_key_from_credentials, "API key")
-        )
+        self.base_url = base_url or os.environ.get("AILS_SERVER_URL") or DEFAULT_SERVER_URL
+        self.api_key = api_key or resolve_api_key()
         self.tier = tier or os.environ.get("AILS_TIER") or _degrade_on_fault(_tier_from_config, "tier") or "free"
         self.timeout = timeout
 
     def lint(
         self,
         ruleset_map: RulesetMap,
-        local_findings: dict[str, int] | None = None,
+        local: Sequence[LocalEntry] = (),
         structural_required: int = 0,
+        *,
+        root: Path,
     ) -> LintResponse:
         """Run diagnostics on a ruleset map via the API.
 
-        `local_findings` is a `{path: structural-error count}` map for rules that
-        run client-side (structural/presence checks), and `structural_required` is
-        the count of structural rule classes the project is subject to. Both ride the
-        request so the server can fold the client-measured delivery factor into each
-        file's score. Returns LintResponse — `.result` on 2xx, `.funnel_error` on a
-        tier-aware 4xx or local preflight rejection, both None on network failure.
+        `root` is the checked project's own root — the same root the rest of the run
+        resolves local paths against — and every
+        wire `path` / `local_files` entry rides relative to it, never the terminal's working
+        directory. The caller always has it; there is no default.
+        `local` holds one entry per reported local finding, and `structural_required`
+        is the count of structural rule classes the project is subject to.
+        Returns LintResponse — `.result` on 2xx, `.funnel_error` on a tier-aware 4xx or
+        local preflight rejection, both None on network failure.
         """
         if not self.base_url:
             logger.debug("No server URL configured — diagnostics unavailable offline")
             return LintResponse()
-        return self._lint_remote(ruleset_map, local_findings or {}, structural_required)
+        return self._lint_remote(ruleset_map, local, structural_required, root)
 
     def _lint_remote(
-        self, ruleset_map: RulesetMap, local_findings: dict[str, int], structural_required: int
+        self,
+        ruleset_map: RulesetMap,
+        local: Sequence[LocalEntry],
+        structural_required: int,
+        root: Path,
     ) -> LintResponse:
         """POST the projected RulesetMap to the diagnostic backend."""
         try:
@@ -306,11 +202,11 @@ class AilsClient:
             logger.debug("httpx not installed — cannot use remote diagnostics")
             return LintResponse()
 
-        from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_payload
+        from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_local, project_payload
 
-        payload = project_payload(ruleset_map)
-        if local_findings:
-            payload["local_findings"] = local_findings
+        payload = project_payload(ruleset_map, root)
+        if local:
+            payload.update(project_local(local, [f["path"] for f in payload["files"]], root))
         if structural_required:
             payload["structural_required"] = structural_required
         if not payload.get("files"):
@@ -320,14 +216,30 @@ class AilsClient:
         if cap_error is not None:
             logger.warning("Preflight rejected payload: %s (%d/%d)", cap_error.error, cap_error.size, cap_error.limit)
             return LintResponse(funnel_error=cap_error)
+        cooldown = active_cooldown(self.base_url, self.api_key)
+        if cooldown is not None:
+            logger.debug("Rate limit still in effect for %ds — skipping remote diagnostics", cooldown.reset_in)
+            return LintResponse(funnel_error=cooldown)
         body = encode_msgpack(payload)
-        from reporails_cli.core.funnel import preflight_byte_size
-
-        byte_error = preflight_byte_size(len(body), has_api_key=bool(self.api_key))
-        if byte_error is not None:
-            logger.warning("Preflight rejected payload bytes: %d > %d", byte_error.size, byte_error.limit)
-            return LintResponse(funnel_error=byte_error)
         return self._post_payload(httpx, body)
+
+    def _status_error(self, response: Any) -> FunnelError:
+        """The funnel error for a non-2xx reply: a busy or slow server, a tier-aware 4xx, or a plain HTTP error."""
+        status = response.status_code
+        retry_after = getattr(response, "headers", {}).get("Retry-After")
+        funnel_err = parse_error_body(status, response.text, retry_after)
+        if funnel_err is not None:
+            logger.log(
+                logging.WARNING if funnel_err.retryable else logging.DEBUG,
+                "Server returned %d %s for tier=%s",
+                status,
+                funnel_err.error,
+                funnel_err.tier,
+            )
+            record_cooldown(self.base_url, self.api_key, funnel_err)
+            return funnel_err
+        logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", status)
+        return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
 
     def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
@@ -352,30 +264,32 @@ class AilsClient:
             return LintResponse(result=_deserialize_lint_result(resp.json()))
         except httpx.TimeoutException:
             logger.warning("Remote diagnostic request timed out after %.1fs", self.timeout)
-            return LintResponse()
+            return LintResponse(funnel_error=FunnelError(error="timeout", reset_in=DEFAULT_RETRY_AFTER_S))
         except httpx.HTTPStatusError as exc:
-            funnel_err = parse_error_body(exc.response.status_code, exc.response.text)
-            if funnel_err is not None:
-                logger.debug(
-                    "Server returned %d %s for tier=%s", exc.response.status_code, funnel_err.error, funnel_err.tier
-                )
-                return LintResponse(funnel_error=funnel_err)
-            logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", exc.response.status_code)
-            return LintResponse()
+            return LintResponse(funnel_error=self._status_error(exc.response))
         except httpx.HTTPError as exc:
             logger.warning("Remote diagnostic network error: %s", exc)
-            return LintResponse()
+            return LintResponse(
+                funnel_error=FunnelError(
+                    error="network_error",
+                    message="Could not reach the diagnostics server",
+                )
+            )
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
             logger.warning("Remote diagnostic response malformed: %s", exc)
-            return LintResponse()
+            return LintResponse(
+                funnel_error=FunnelError(
+                    error="malformed_response",
+                    message="Diagnostics server returned an unreadable response",
+                )
+            )
 
 
 # ──────────────────────────────────────────────────────────────────
-# WIRE FORMAT — serialization for API transport (v2, obfuscated)
+# WIRE FORMAT — serialization for API transport
 # ──────────────────────────────────────────────────────────────────
 
 # Encoding tables — map semantic names to wire-format short codes.
-# These exist ONLY in source code; they never appear in output.
 _CHARGE_ENC = {"CONSTRAINT": 0, "DIRECTIVE": 1, "IMPERATIVE": 2, "NEUTRAL": 3, "AMBIGUOUS": 4}
 _MODALITY_ENC = {"imperative": 0, "direct": 1, "absolute": 2, "hedged": 3, "none": 4}
 _SPECIFICITY_ENC = {"named": 0, "abstract": 1}
@@ -390,126 +304,24 @@ _FORMAT_ENC = {
     "data_block": 7,
 }
 _KIND_ENC = {"heading": 0, "excitation": 1}
-_STYLE_ENC = {"backtick": 0, "italic": 1, "bold": 2, "none": 3}
-
-
-def _serialize_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
-    """Serialize a single atom to v2 wire format."""
-    d: dict[str, Any] = {
-        "line": a.line,
-        "t": _KIND_ENC.get(a.kind, 1),
-        "c": _CHARGE_ENC.get(a.charge, 3),
-        "cv": a.charge_value,
-        "m": _MODALITY_ENC.get(a.modality, 4),
-        "s": _SPECIFICITY_ENC.get(a.specificity, 1),
-        "sc": a.scope_conditional,
-        "f": _FORMAT_ENC.get(a.format, 0),
-        "pi": a.position_index,
-        "tc": a.token_count,
-        "fi": file_idx.get(a.file_path, -1),
-        "k": a.cluster_id,
-    }
-    il = [
-        *[{"term": tok, "s": 0} for tok in a.named_tokens],
-        *[{"term": tok, "s": 1} for tok in a.italic_tokens],
-        *[{"term": tok, "s": 2} for tok in a.bold_tokens],
-        *[{"term": tok, "s": 3} for tok in a.unformatted_code],
-    ]
-    if il:
-        d["il"] = il
-    if a.embedding_int8 is not None:
-        raw = bytes(v & 0xFF for v in a.embedding_int8)
-        d["e"] = base64.b64encode(raw).decode("ascii")
-    if a.heading_context:
-        d["hc"] = a.heading_context
-    if a.depth is not None:
-        d["d"] = a.depth
-    if a.ambiguous:
-        d["a"] = True
-    if a.embedded_charge_markers:
-        d["ecm"] = list(a.embedded_charge_markers)
-    return d
-
-
-def _serialize_files(ruleset_map: RulesetMap) -> list[dict[str, Any]]:
-    """Serialize file entries to v2 wire format."""
-    import numpy as np
-
-    files_out = []
-    for f in ruleset_map.files:
-        fd: dict[str, Any] = {
-            "path": f.path,
-            "content_hash": f.content_hash,
-            "loading": f.loading,
-            "scope": f.scope,
-            "agent": f.agent,
-        }
-        if f.globs:
-            fd["globs"] = list(f.globs)
-        if f.description:
-            fd["description"] = f.description
-        if f.description_embedding:
-            raw = np.asarray(f.description_embedding, dtype=np.int8).tobytes()
-            fd["description_embedding_b64"] = base64.b64encode(raw).decode("ascii")
-        files_out.append(fd)
-    return files_out
-
-
-def _serialize_clusters(ruleset_map: RulesetMap) -> list[dict[str, Any]]:
-    """Serialize cluster entries to v2 wire format."""
-    import numpy as np
-
-    clusters_out = []
-    for c in ruleset_map.clusters:
-        cd: dict[str, Any] = {
-            "id": c.id,
-            "n_atoms": c.n_atoms,
-            "n_charged": c.n_charged,
-            "n_neutral": c.n_neutral,
-        }
-        if c.centroid:
-            raw = np.asarray(c.centroid, dtype=np.float32).tobytes()
-            cd["centroid_b64"] = base64.b64encode(raw).decode("ascii")
-        clusters_out.append(cd)
-    return clusters_out
-
-
-def _strip_and_serialize(ruleset_map: RulesetMap) -> dict[str, Any]:
-    """Serialize RulesetMap to v2 wire format (obfuscated field names).
-
-    Strips text, plain_text, rule, role, topics from atoms.
-    Replaces semantic field names with short codes and enum strings with integers.
-    Instruction content never leaves the client.
-    """
-    file_idx = {f.path: i for i, f in enumerate(ruleset_map.files)}
-
-    return {
-        "schema_version": "2",
-        "embedding_model": ruleset_map.embedding_model,
-        "generated_at": ruleset_map.generated_at,
-        "files": _serialize_files(ruleset_map),
-        "atoms": [_serialize_atom(a, file_idx) for a in ruleset_map.atoms],
-        "clusters": _serialize_clusters(ruleset_map),
-        "summary": {
-            "n_atoms": ruleset_map.summary.n_atoms,
-            "n_charged": ruleset_map.summary.n_charged,
-            "n_neutral": ruleset_map.summary.n_neutral,
-            "n_topics": ruleset_map.summary.n_topics,
-            "n_topics_charged": ruleset_map.summary.n_topics_charged,
-        },
-    }
 
 
 def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ...]:
     """Deserialize the per_file section of the API response."""
     items: list[FileAnalysis] = []
     for fa in report_data.get("per_file", []):
-        fa_file = fa.get("file")
+        if not isinstance(fa, dict):
+            logger.warning("Skipping per_file entry that is not an object: %s", fa)
+            continue
+        fa_file: Any = fa.get("file")
         if fa_file is None:
             logger.warning("Skipping per_file entry with missing 'file' key")
             continue
         diagnostics: list[Diagnostic] = []
         for d in fa.get("diagnostics", []):
+            if not isinstance(d, dict):
+                logger.warning("Skipping diagnostic that is not an object in file %s: %s", fa_file, d)
+                continue
             d_line = d.get("line")
             d_severity = d.get("severity")
             d_rule = d.get("rule")
@@ -529,15 +341,14 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
                     rule=d_rule,
                     message=d_message,
                     fix=d.get("fix", ""),
-                    line_2=d.get("line_2", 0),
                     impact_tier=d.get("impact_tier", ""),
+                    pi=_opt_int(d.get("pi")),
                 )
             )
         items.append(
             FileAnalysis(
                 file=fa_file,
                 diagnostics=tuple(diagnostics),
-                compliance_band=fa.get("compliance_band", ""),
                 stats=fa.get("stats", {}),
                 display_score=fa.get("display_score"),
             )
@@ -548,7 +359,7 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
 def _deserialize_cross_file(report_data: dict[str, Any]) -> tuple[CrossFileFinding, ...]:
     """Deserialize the cross_file section of the API response."""
     items: list[CrossFileFinding] = []
-    _required_keys = ("file_1", "file_2", "line_1", "line_2", "charge_1", "charge_2", "finding_type")
+    _required_keys = ("file_1", "file_2", "line_1", "line_2", "finding_type")
     for cf in report_data.get("cross_file", []):
         vals = {k: cf.get(k) for k in _required_keys}
         if any(v is None for v in vals.values()):
@@ -560,63 +371,37 @@ def _deserialize_cross_file(report_data: dict[str, Any]) -> tuple[CrossFileFindi
                 file_2=vals["file_2"],
                 line_1=vals["line_1"],
                 line_2=vals["line_2"],
-                charge_1=vals["charge_1"],
-                charge_2=vals["charge_2"],
                 finding_type=vals["finding_type"],
-                topicality=cf.get("topicality", ""),
             )
         )
     return tuple(items)
 
 
-def _deserialize_quality(report_data: dict[str, Any]) -> QualityResult:
-    """Deserialize the quality section of the API response."""
-    q_data = report_data.get("quality", {})
-    context_items: list[ContextResult] = []
-    for ctx in q_data.get("contexts", []):
-        ctx_name = ctx.get("context_name")
-        if ctx_name is None:
-            logger.warning("Skipping context entry with missing 'context_name'")
+def _deserialize_local_tiers(report_data: dict[str, Any]) -> tuple[LocalTier, ...]:
+    """Deserialize the local_tiers section of the report; a malformed row is skipped."""
+    raw = report_data.get("local_tiers")
+    rows: list[LocalTier] = []
+    for row in raw if isinstance(raw, list) else ():
+        if not isinstance(row, dict):
+            logger.warning("Skipping local_tiers entry that is not an object: %s", row)
             continue
-        target_items: list[TargetScore] = []
-        for ts in ctx.get("per_target", []):
-            ts_line = ts.get("line")
-            ts_path = ts.get("file_path")
-            ts_band = ts.get("compliance_band")
-            ts_rank = ts.get("impact_rank")
-            if any(v is None for v in (ts_line, ts_path, ts_band, ts_rank)):
-                logger.warning(
-                    "Skipping per_target entry with missing required field in context %s: %s",
-                    ctx_name,
-                    ts,
-                )
-                continue
-            target_items.append(
-                TargetScore(
-                    line=ts_line,
-                    file_path=ts_path,
-                    compliance_band=ts_band,
-                    impact_rank=ts_rank,
-                    capacity=ts.get("capacity", ""),
-                )
-            )
-        context_items.append(
-            ContextResult(
-                context_name=ctx_name,
-                files=tuple(ctx.get("files", [])),
-                compliance_band=ctx.get("compliance_band", ""),
-                n_charged=ctx.get("n_charged", 0),
-                n_atoms=ctx.get("n_atoms", 0),
-                per_target=tuple(target_items),
-            )
-        )
-    return QualityResult(
-        contexts=tuple(context_items),
-        compliance_band=q_data.get("compliance_band", ""),
-        display_score=q_data.get("display_score", 0.0),
-        weakest_context=q_data.get("weakest_context"),
-        strongest_context=q_data.get("strongest_context"),
-    )
+        file, rule, line, tier = (row.get(k) for k in ("file", "rule", "line", "impact_tier"))
+        if not (isinstance(file, str) and isinstance(rule, str) and isinstance(tier, str) and tier):
+            logger.warning("Skipping local_tiers entry with missing field: %s", row)
+            continue
+        if not isinstance(line, int) or isinstance(line, bool):
+            logger.warning("Skipping local_tiers entry with a non-integer line: %s", row)
+            continue
+        rows.append(LocalTier(file=file, rule=rule, line=line, impact_tier=tier))
+    return tuple(rows)
+
+
+def _deserialize_quality(report_data: dict[str, Any]) -> QualityResult | None:
+    """Deserialize the quality section of the API response; None when the reply carries none."""
+    q_data = report_data.get("quality")
+    if not isinstance(q_data, dict):
+        return None
+    return QualityResult(display_score=q_data.get("display_score"))
 
 
 def _deserialize_hints(data: dict[str, Any]) -> tuple[Hint, ...]:
@@ -626,8 +411,7 @@ def _deserialize_hints(data: dict[str, Any]) -> tuple[Hint, ...]:
         h_file = h.get("file")
         h_type = h.get("diagnostic_type")
         h_count = h.get("count")
-        h_summary = h.get("summary")
-        if any(v is None for v in (h_file, h_type, h_count, h_summary)):
+        if any(v is None for v in (h_file, h_type, h_count)):
             logger.warning("Skipping hint entry with missing required field: %s", h)
             continue
         items.append(
@@ -635,7 +419,6 @@ def _deserialize_hints(data: dict[str, Any]) -> tuple[Hint, ...]:
                 file=h_file,
                 diagnostic_type=h_type,
                 count=h_count,
-                summary=h_summary,
                 severity=h.get("severity", "warning"),
                 error_count=h.get("error_count", 0),
                 warning_count=h.get("warning_count", 0),
@@ -660,24 +443,28 @@ def _deserialize_cross_file_coordinates(data: dict[str, Any]) -> tuple[CrossFile
 
 
 def _deserialize_lint_result(data: dict[str, Any]) -> LintResult:
-    """Deserialize API JSON response to LintResult."""
+    """Deserialize API JSON response to LintResult; a body that is not an object is a malformed response."""
+    if not isinstance(data, dict):
+        raise ValueError(f"response body is {type(data).__name__}, not an object")
     report_data = data.get("report")
     if not isinstance(report_data, dict):
         logger.warning("API response missing 'report' key or not a dict")
         # Forward the server tier even on a malformed report — dropping it here silently
         # relabels a pro/anonymous session as the default 'free' downstream.
-        return LintResult(report=RulesetReport(), tier=data.get("tier", "free"))
+        return LintResult(report=RulesetReport(), tier=str(data.get("tier") or ""))
 
     report = RulesetReport(
         per_file=_deserialize_per_file(report_data),
+        local_tiers=_deserialize_local_tiers(report_data),
         cross_file=_deserialize_cross_file(report_data),
         quality=_deserialize_quality(report_data),
-        stats=report_data.get("stats", {}),
     )
 
     return LintResult(
         report=report,
         hints=_deserialize_hints(data),
         cross_file_coordinates=_deserialize_cross_file_coordinates(data),
-        tier=data.get("tier", "free"),
+        # A response that names no tier stays EMPTY, never "free".
+        tier=str(data.get("tier") or ""),
+        workflow=deserialize_workflow(data),
     )
