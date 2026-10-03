@@ -141,6 +141,7 @@ class TestCheckJsonSchema:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_required_keys_present(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         assert result.exit_code == 0
@@ -153,6 +154,7 @@ class TestCheckJsonSchema:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_files_is_dict_with_findings(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         data = json.loads(result.output)
@@ -164,6 +166,7 @@ class TestCheckJsonSchema:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_finding_has_required_fields(self, minimal_project: Path) -> None:
         result = runner.invoke(app, ["check", str(minimal_project), "-f", "json"])
         data = json.loads(result.output)
@@ -181,8 +184,13 @@ class TestCheckJsonSchema:
         result = runner.invoke(app, ["check", str(empty_project), "-f", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["violations"] == []
+        # One envelope: an empty project reports the normal-run shape with an empty
+        # finding set, not a second `{"violations": [], "score": 0, ...}` payload.
+        assert data["files"] == {}
+        assert data["stats"]["total_findings"] == 0
+        assert data["quality"] is None
         assert data["level"] == "L0"
+        assert "violations" not in data
 
 
 # ===========================================================================
@@ -197,6 +205,7 @@ class TestCheckScanScope:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_nested_child_only_scans_child(self, nested_project: Path) -> None:
         result = runner.invoke(app, ["check", str(nested_project), "-f", "json"])
         assert result.exit_code == 0
@@ -210,6 +219,7 @@ class TestCheckScanScope:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_nested_child_violation_count_reasonable(self, nested_project: Path) -> None:
         """A single-file project should have a bounded number of violations."""
         result = runner.invoke(app, ["check", str(nested_project), "-f", "json"])
@@ -270,6 +280,7 @@ class TestCheckMultiFile:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_multiple_agents_detected(self, multi_file_project: Path) -> None:
         result = runner.invoke(app, ["check", str(multi_file_project), "-f", "json"])
         data = json.loads(result.output)
@@ -290,6 +301,7 @@ class TestCheckScoreConsistency:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_deterministic_stats(self, structured_project: Path) -> None:
         stats_list = []
         for _ in range(3):
@@ -333,10 +345,16 @@ class TestCheckAgentFlag:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     def test_wrong_agent_no_false_positive(self, tmp_path: Path) -> None:
-        """--agent claude on a project with only AGENTS.md must NOT scan it."""
+        """--agent claude on a project with only AGENTS.md must NOT scan it when Claude
+        Code is set to read CLAUDE.md files only (its `instructionFiles` setting)."""
         p = tmp_path / "proj"
         p.mkdir()
         (p / "AGENTS.md").write_text("# Agents\n\nInstructions.\n")
+        settings = Path.home() / ".claude" / "settings.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(
+            json.dumps({"pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}}})
+        )
         result = runner.invoke(app, ["check", str(p), "--agent", "claude", "-f", "text"])
         assert "No instruction files found" in result.output
 
@@ -344,6 +362,7 @@ class TestCheckAgentFlag:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_codex_agent_scans_agents_md(self, tmp_path: Path) -> None:
         """--agent codex should find and validate AGENTS.md."""
         p = tmp_path / "proj"
@@ -359,6 +378,7 @@ class TestCheckAgentFlag:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_no_agent_core_rules_fire(self, tmp_path: Path) -> None:
         """No --agent must still apply core rules (not just file presence)."""
         p = tmp_path / "proj"
@@ -410,6 +430,7 @@ class TestAgentMatrix:
     @pytest.mark.subsys_diagnostic
     @requires_rules
     @pytest.mark.parametrize("agent_id", sorted(get_known_agents()))
+    @pytest.mark.requires_model
     def test_agent_check_finds_files(self, agent_id: str, tmp_path: Path) -> None:
         """ails check --agent X must detect the agent's instruction file."""
         if agent_id in _YAML_AGENTS:
@@ -454,6 +475,7 @@ class TestCheckFileTarget:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_single_file_target(self, minimal_project: Path) -> None:
         """Pointing at a specific file should work."""
         target = minimal_project / "CLAUDE.md"
@@ -499,6 +521,7 @@ class TestCheckConfig:
     @pytest.mark.subsys_lint
     @pytest.mark.subsys_diagnostic
     @requires_rules
+    @pytest.mark.requires_model
     def test_disabled_rules_excluded(self, tmp_path: Path) -> None:
         """Rules listed in .ails/config.yml disabled_rules should not fire."""
         p = tmp_path / "proj"
@@ -557,7 +580,7 @@ class TestHealCommand:
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
         result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
         assert "heal_requires_auth" in result.output
-        # Regression (finding 10): the free diagnosis JSON must still be emitted for an
+        # Regression: the free diagnosis JSON must still be emitted for an
         # anonymous `--heal -f json` — a machine consumer that adds --heal previously
         # lost all diagnostic data and got only the auth error.
         assert '"offline"' in result.output and '"files"' in result.output

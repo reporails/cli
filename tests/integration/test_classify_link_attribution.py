@@ -66,7 +66,7 @@ def test_skill_link_attribution() -> None:
     """SKILL.md -> architecture.md (markdown link) classifies arch as `referenced`."""
     _root, classified = _classify("skill-link")
     arch = _referenced_by_name(classified, "architecture.md")
-    assert arch.properties.get("link_source_type") == ["skill"]
+    assert arch.properties.get("link_source_type") == ["skills"]
     assert arch.properties.get("loading_verb") == ["read"]
     assert arch.properties.get("link_depth") == "1"
     assert arch.properties.get("loading") == "discoverable"
@@ -91,7 +91,7 @@ def test_multi_source_merges_attribution() -> None:
     """Main + skill both link to shared.md -> classified `referenced`, source types merged."""
     _root, classified = _classify("multi-source")
     shared = _referenced_by_name(classified, "shared.md")
-    assert shared.properties.get("link_source_type") == ["main", "skill"]
+    assert shared.properties.get("link_source_type") == ["main", "skills"]
     sources = shared.properties.get("link_source_path")
     assert isinstance(sources, list) and "CLAUDE.md" in sources and any("SKILL.md" in s for s in sources)
     assert shared.properties.get("loading") == "discoverable"
