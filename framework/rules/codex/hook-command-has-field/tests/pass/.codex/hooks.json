@@ -1,1 +1,1 @@
-{ "type": "command", "command": "npm test" }
+{ "hooks": { "SessionStart": [{ "type": "command", "command": "npm test" }] } }

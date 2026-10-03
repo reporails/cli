@@ -1,0 +1,11 @@
+checks:
+- id: CODEX.S.0006.file_in_scope
+  type: mechanical
+  check: file_exists
+  replaces: CORE.S.0021.file_in_scope
+- id: CODEX.S.0006.content_check
+  type: deterministic
+  expect: present
+  replaces: CORE.S.0021.content_check
+  message: Empty Codex configuration file — declare at least one setting or table in config.toml
+  pattern-regex: '(?m)^[ \t]*(?:\[[^\]\r\n]+\]|[A-Za-z0-9_"''.-]+[ \t]*=)'

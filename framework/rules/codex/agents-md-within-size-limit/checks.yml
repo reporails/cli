@@ -3,6 +3,6 @@ checks:
   type: mechanical
   check: aggregate_byte_size
   replaces: CORE.E.0001.check
-  project_scope: true
+  project_scope: aggregate
   args:
     max: 32768

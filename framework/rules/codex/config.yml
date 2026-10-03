@@ -5,13 +5,14 @@
 # does not indicate a Codex project. Detection requires .codex/ markers
 # (config.toml, rules/, agents/, hooks.json) or AGENTS.override.md.
 #
-# Synced from .claude/skills/audit-agent/assets/registry/codex/config.yml
-# Last verified: 2026-06-15
+# Last verified: 2026-09-03
 #
 # Items intentionally NOT included here (cannot be statically measured):
 #   - fallback_main: project_doc_fallback_filenames is user-configurable in
 #     ~/.codex/config.toml; the validator cannot statically know what filenames
 #     a user has declared.
+#   - output: persona/style customization. The personality setting lives in config.toml
+#     (friendly/pragmatic) — a config key, not a standalone file.
 #   - plugins: marketplace install path not documented in stable form.
 #   - scheduled_tasks: Codex Desktop Automations on-disk path not documented.
 #   - cloud-managed requirements / macOS MDM preferences (not flat files).
@@ -20,13 +21,14 @@ agent: codex
 version: "0.5.0"
 prefix: CODEX
 name: OpenAI Codex
+home_dir: .codex  # the folder holding the agent's own files; a path inside it points at this agent
 
 file_types:
   main:
     # AGENTS.md walked from project root to cwd, concatenated (chain).
     # Per-directory order: AGENTS.override.md > AGENTS.md > project_doc_fallback_filenames.
     # Combined byte cap: project_doc_max_bytes (32 KiB default).
-    source: https://developers.openai.com/codex/guides/agents-md/
+    source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
     format: freeform
     scope: global
     cardinality: chain
@@ -48,7 +50,7 @@ file_types:
   override:
     # AGENTS.override.md — same walk as main, checked first at each directory level.
     # Also recognized at ~/.codex/AGENTS.override.md (declared on `main.user` above).
-    source: https://developers.openai.com/codex/guides/agents-md/
+    source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
     format: freeform
     scope: global
     cardinality: chain
@@ -66,7 +68,7 @@ file_types:
     # project-root → cwd, so files BELOW cwd aren't eagerly loaded — but a user
     # who cd's into those subdirectories will pick them up. scope: nested
     # captures the subtree-by-location semantic without overloading `global`.
-    source: https://developers.openai.com/codex/guides/agents-md/
+    source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
     format: freeform
     scope: nested
     cardinality: hierarchical
@@ -84,7 +86,7 @@ file_types:
     # repo root .agents/skills, user ~/.agents/skills + ~/.codex/skills, admin
     # /etc/codex/skills (Linux/macOS) or %ProgramData%\OpenAI\Codex\skills (Windows),
     # and system bundled (no on-disk path).
-    source: https://developers.openai.com/codex/skills/
+    source: https://learn.chatgpt.com/docs/build-skills
     format: [frontmatter, freeform]
     scope: task_scoped
     cardinality: hierarchical
@@ -92,26 +94,26 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".agents/skills/**/SKILL.md"]
+        patterns: [".agents/skills/**/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.agents/skills/**/SKILL.md", "~/.codex/skills/**/SKILL.md"]
+        patterns: ["~/.agents/skills/**/*.md", "~/.codex/skills/**/*.md"]
         precedence: user
         vcs: external
         maintainer: human
       system:
         patterns:
-          - "/etc/codex/skills/**/SKILL.md"
-          - "C:/ProgramData/OpenAI/Codex/skills/**/SKILL.md"
+          - "/etc/codex/skills/**/*.md"
+          - "C:/ProgramData/OpenAI/Codex/skills/**/*.md"
         precedence: managed
         vcs: external
         maintainer: system
 
   skill_metadata:
     # Per-skill optional: zero or one openai.yaml per skill
-    source: https://developers.openai.com/codex/skills/
+    source: https://learn.chatgpt.com/docs/build-skills
     format: schema_validated
     scope: task_scoped
     cardinality: optional
@@ -125,7 +127,7 @@ file_types:
         maintainer: human
 
   agents:
-    source: https://developers.openai.com/codex/subagents
+    source: https://learn.chatgpt.com/docs/agent-configuration/subagents
     format: schema_validated
     scope: task_scoped
     cardinality: collection
@@ -146,7 +148,7 @@ file_types:
   rules:
     # Starlark .rules — execution control via prefix_rule(). Both project and
     # user scopes documented.
-    source: https://developers.openai.com/codex/rules
+    source: https://learn.chatgpt.com/docs/agent-configuration/rules
     format: schema_validated
     scope: global
     cardinality: collection
@@ -165,10 +167,13 @@ file_types:
         maintainer: human
 
   hooks:
-    # 6 events: SessionStart, PreToolUse, PostToolUse, PermissionRequest,
-    # UserPromptSubmit, Stop. Requires [features] codex_hooks = true.
-    # Hooks can also live inline in [hooks] table inside config.toml.
-    source: https://developers.openai.com/codex/hooks
+    # 12 events (re-verified 2026-09-30): SessionStart, SessionEnd, SubagentStart,
+    # SubagentStop, PreToolUse, PermissionRequest, PostToolUse, PreCompact,
+    # PostCompact, UserPromptSubmit, Stop, Interrupt. Handler types `command` and
+    # `mcp_tool` (`prompt`/`agent` parsed but skipped). Requires
+    # [features] codex_hooks = true. Hooks can also live inline in a [hooks]
+    # table inside config.toml.
+    source: https://learn.chatgpt.com/docs/hooks
     format: schema_validated
     scope: global
     cardinality: collection
@@ -190,7 +195,7 @@ file_types:
     # User-level singleton: ~/.codex/config.toml.
     # Project-level chain: .codex/config.toml walked from project root to cwd
     # (closest wins). Trusted projects only.
-    source: https://developers.openai.com/codex/config-advanced/
+    source: https://learn.chatgpt.com/docs/config-file/config-advanced
     format: schema_validated
     scope: global
     cardinality: chain
@@ -212,7 +217,7 @@ file_types:
   mcp:
     # MCP servers in [mcp_servers.<id>] tables. Both user and project config.toml
     # accept the section; project scope requires trusted-project status.
-    source: https://developers.openai.com/codex/mcp
+    source: https://learn.chatgpt.com/docs/extend/mcp
     format: schema_validated
     scope: global
     cardinality: collection
@@ -250,7 +255,7 @@ file_types:
     # it exists) while inviting no instruction-quality rule pressure.
     # `maintainer: agent` and `lifecycle: mutable` mark it as agent-owned
     # cache, not human-authored content.
-    source: https://developers.openai.com/codex/memories
+    source: https://learn.chatgpt.com/docs/customization/memories
     format: opaque
     scope: global
     cardinality: collection
@@ -260,7 +265,7 @@ file_types:
   enterprise:
     # Admin-enforced requirements.toml. Constrains approval policy, sandbox,
     # MCP allowlists, hooks, command rules, filesystem permissions.
-    source: https://developers.openai.com/codex/enterprise/managed-configuration
+    source: https://learn.chatgpt.com/docs/enterprise/managed-configuration
     format: schema_validated
     scope: global
     cardinality: singleton
@@ -278,5 +283,7 @@ file_types:
 excludes:
   - CLAUDE:*
   - COPILOT:*
-  - CORE:S:0024  # import-targets-resolve — Codex AGENTS.md does not honor @<path> import syntax (single-file format per developers.openai.com/codex/guides/agents-md)
+  - CORE:S:0024  # import-targets-resolve — Codex AGENTS.md does not honor @<path> import syntax (single-file format per learn.chatgpt.com/docs/agent-configuration/agents-md)
+  - CORE:S:0014  # descriptive-filenames — Codex's only `rules` surface is `.codex/rules/*.rules`, Starlark (schema_validated), not the md/yml/yaml prose files this naming convention targets (learn.chatgpt.com/docs/agent-configuration/rules)
+  - CORE:S:0026  # import-references-used — Codex has no path-scoped instruction surface; `.codex/rules/*.rules` are Starlark with no @path import syntax documented (learn.chatgpt.com/docs/agent-configuration/rules)
   - CORE:S:0033  # import-depth-within-limit — Codex AGENTS.md does not support chained @import

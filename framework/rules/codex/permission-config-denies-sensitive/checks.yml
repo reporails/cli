@@ -1,0 +1,11 @@
+checks:
+- id: CODEX.G.0002.file_in_scope
+  type: mechanical
+  check: file_exists
+  replaces: CORE.G.0005.file_in_scope
+- id: CODEX.G.0002.content_check
+  type: deterministic
+  expect: absent
+  replaces: CORE.G.0005.content_check
+  message: Codex sandbox is turned off — remove sandbox_mode = "danger-full-access" so secrets and credentials stay out of reach
+  pattern-regex: '(?m)^[ 	]*(?:[A-Za-z0-9_"''-]+[ 	]*\.[ 	]*)*sandbox_mode[ 	]*=[ 	]*["'']danger-full-access["'']'

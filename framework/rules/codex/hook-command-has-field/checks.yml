@@ -3,7 +3,15 @@ checks:
   type: mechanical
   check: file_exists
 - id: CODEX.S.0005.command-has-field
-  type: deterministic
-  expect: present
-  pattern-regex: '"command"\s*:\s*"[^"]+"'
-  message: No command handler with a command field found
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0029.has-command-field
+  severity: medium
+  args:
+    message: Command handler has no command field
+    block: hooks
+    handlers: grouped
+    select:
+      type: [command]
+    require:
+      non_empty: [command]

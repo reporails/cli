@@ -1,1 +1,1 @@
-{ "command": "echo" }
+{ "hooks": { "SessionStart": [{ "command": "echo" }] } }

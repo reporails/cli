@@ -3,7 +3,15 @@ checks:
   type: mechanical
   check: file_exists
 - id: CODEX.S.0004.handler-has-type
-  type: deterministic
-  expect: present
-  pattern-regex: '"type"\s*:\s*"command"'
-  message: No handler with type command found
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0028.has-type-field
+  severity: medium
+  args:
+    message: Hook handler has no type Codex runs — set "type" to command or mcp_tool
+    block: hooks
+    handlers: grouped
+    select:
+      has: [type, command, commandWindows, server, tool, prompt]
+    require:
+      type: [command, mcp_tool]
