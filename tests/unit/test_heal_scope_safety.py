@@ -118,7 +118,7 @@ def test_mechanical_fixes_bounded_to_allowed_files(tmp_path: object) -> None:
             charge="NEUTRAL",
             charge_value=0,
             modality="none",
-            specificity=0.0,
+            specificity="abstract",
             unformatted_code=["pyproject.toml"],
             file_path=file_path,
         )
@@ -160,7 +160,7 @@ def test_mechanical_fixes_skip_suppressed_lines(tmp_path: object) -> None:
             charge="NEUTRAL",
             charge_value=0,
             modality="none",
-            specificity=0.0,
+            specificity="abstract",
             unformatted_code=["pyproject.toml"],
             file_path=str(f),
         )
@@ -199,7 +199,7 @@ def test_mechanical_fixes_skip_files_with_imports(tmp_path: object) -> None:
         charge="NEUTRAL",
         charge_value=0,
         modality="none",
-        specificity=0.0,
+        specificity="abstract",
         unformatted_code=["pyproject.toml"],
         file_path=str(f),
     )

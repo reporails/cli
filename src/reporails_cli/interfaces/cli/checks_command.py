@@ -13,15 +13,17 @@ from collections.abc import Iterable
 
 import typer
 
+from reporails_cli.core.lint.rule_pages import load_rule_examples
 from reporails_cli.core.platform.adapters.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
     list_known_agents,
     load_all_rules,
-    load_rule_examples,
     sort_rules_for_authoring,
 )
 from reporails_cli.core.platform.dto.models import Rule, Severity
+from reporails_cli.core.platform.utils.utils import strip_frontmatter
+from reporails_cli.interfaces.cli.check_support import _serialize_match
 from reporails_cli.interfaces.cli.helpers import console
 
 
@@ -32,7 +34,15 @@ def list_checks(
     output_format: str = "text",
     no_examples: bool = False,
 ) -> None:
-    """List framework checks, optionally filtered to capabilities / agent / severity."""
+    """List framework checks, optionally filtered to capabilities / agent / severity.
+
+    Each capability is reported as the config file type it names (`skill` reads as `skills`).
+    """
+    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+
+    if capabilities:
+        input_forms = load_capability_vocabulary().input_forms
+        capabilities = [input_forms.get(c, c) for c in capabilities]
     agents = [agent] if agent else None
     rules = load_all_rules(agents=agents)
     if capabilities:
@@ -63,8 +73,6 @@ def _emit(
 def _scope_label(capabilities: list[str] | None) -> str:
     if not capabilities:
         return "registry"
-    if len(capabilities) == 1:
-        return f"authoring a {capabilities[0]}"
     return f"authoring {' / '.join(capabilities)}"
 
 
@@ -157,17 +165,6 @@ def _rule_to_dict(rule: Rule) -> dict[str, object]:
     }
 
 
-def _serialize_match(match: object) -> dict[str, object]:
-    if match is None:
-        return {}
-    result: dict[str, object] = {}
-    for prop in ("type", "format", "scope", "cardinality", "lifecycle", "maintainer", "vcs", "loading", "precedence"):
-        val = getattr(match, prop, None)
-        if val is not None:
-            result[prop] = val
-    return result
-
-
 def _category_order(present: Iterable[str]) -> list[str]:
     order = ["structure", "direction", "coherence", "efficiency", "maintenance", "governance"]
     present_set: set[str] = set(present)
@@ -190,8 +187,4 @@ def _read_body(rule: Rule) -> str:
         text = rule.md_path.read_text(encoding="utf-8")
     except OSError:
         return ""
-    if text.startswith("---"):
-        end = text.find("\n---", 3)
-        if end != -1:
-            text = text[end + 4 :]
-    return text.lstrip("\n").rstrip()
+    return strip_frontmatter(text).lstrip("\n").rstrip()

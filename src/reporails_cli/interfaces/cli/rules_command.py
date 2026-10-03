@@ -23,6 +23,40 @@ rules_app = typer.Typer(
 )
 app.add_typer(rules_app, name="rules", rich_help_panel="Explore")
 
+_LIST_FORMATS = ("text", "md", "json")
+_SIMPLE_FORMATS = ("text", "json")
+
+
+def _require_format(output_format: str, valid: tuple[str, ...]) -> None:
+    """Exit 2 with a usage error when `output_format` is not one of `valid`."""
+    if output_format not in valid:
+        valid_str = " | ".join(valid)
+        console.print(f"[red]Error:[/red] invalid --format '{output_format}'; expected one of: {valid_str}")
+        raise typer.Exit(2)
+
+
+def _require_known_capabilities(capabilities: list[str] | None, agent: str | None) -> None:
+    """Exit 2 naming a `--capability` the selected agent (or any agent) does not declare."""
+    if not capabilities:
+        return
+    from reporails_cli.core.classify.capability_paths import available_capabilities, canonicalize_capability
+    from reporails_cli.core.platform.adapters.rules_query import list_known_agents
+    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+
+    agents = [agent] if agent else list_known_agents()
+    unknown = [c for c in capabilities if not any(canonicalize_capability(c, a) for a in agents)]
+    if not unknown:
+        return
+    known = set(load_capability_vocabulary().virtual)
+    for a in agents:
+        known.update(available_capabilities(a))
+    scope = f"agent '{agent}'" if agent else "any agent"
+    names = ", ".join(repr(c) for c in unknown)
+    console.print(
+        f"[red]Error:[/red] unknown capability {names} for {scope}; known: {', '.join(sorted(known)) or '(none)'}"
+    )
+    raise typer.Exit(2)
+
 
 @rules_app.command("list")
 def rules_list(
@@ -30,7 +64,7 @@ def rules_list(
         None,
         "--capability",
         "-c",
-        help="Filter to rules whose `match.type` includes this capability. Repeatable.",
+        help="Filter to rules that apply to this capability (e.g. skills, agents, hooks). Repeatable.",
     ),
     agent: str = typer.Option(None, "--agent", "-a", help="Restrict to this agent's namespace plus CORE."),
     severity: str = typer.Option(None, "--severity", "-s", help="Minimum severity (`critical|high|medium|low`)."),
@@ -38,6 +72,8 @@ def rules_list(
     no_examples: bool = typer.Option(False, "--no-examples", help="Strip Pass / Fail blocks from md output."),
 ) -> None:
     """List rules in the registry, optionally filtered by capability / agent / severity."""
+    _require_format(output_format, _LIST_FORMATS)
+    _require_known_capabilities(capabilities, agent)
     list_checks(
         capabilities=capabilities or None,
         agent=agent,
@@ -51,7 +87,8 @@ def rules_list(
 def rules_agents(
     output_format: str = typer.Option("text", "--format", "-f", help="Output format: text | json."),
 ) -> None:
-    """List known agents (from `framework/rules/<agent>/`)."""
+    """List known agents."""
+    _require_format(output_format, _SIMPLE_FORMATS)
     from reporails_cli.core.platform.adapters.rules_query import list_known_agents
 
     agents = list_known_agents()
@@ -72,6 +109,7 @@ def rules_capabilities(
     output_format: str = typer.Option("text", "--format", "-f", help="Output format: text | json."),
 ) -> None:
     """List the capabilities you can target and what each resolves to."""
+    _require_format(output_format, _SIMPLE_FORMATS)
     from pathlib import Path
 
     from reporails_cli.core.classify import load_file_types
