@@ -6,20 +6,20 @@ category: structure
 type: mechanical
 severity: high
 backed_by: [awesome-copilot-meta-instructions]
-match: {type: scoped_rule}
+match: {type: rules, format: [frontmatter, freeform]}
 supersedes: CORE:S:0038
 source: https://code.visualstudio.com/docs/copilot/customization/custom-instructions
 ---
 
 # Path Scope Declared
 
-Scoped `.github/copilot-instructions.md` files MUST include an `applyTo` field in their YAML frontmatter to declare which file patterns the instructions target. Without `applyTo`, Copilot applies the instructions globally, which defeats the purpose of scoped instruction files and can cause irrelevant guidance to appear in unrelated contexts. The slug aligns with the `path-scope-declared` family used by Claude (`paths:`) and Cursor (`globs:`); Copilot's frontmatter key is `applyTo:` per the VS Code Copilot docs.
+A scoped instructions file MUST declare its file-pattern filter in frontmatter. `.github/instructions/**/*.instructions.md` files use `applyTo`; VS Code Copilot also reads `.claude/rules/**/*.md` for cross-agent compatibility, and for those files the VS Code docs say to keep Claude's own `paths` key instead of `applyTo`. Without a scope key in the file type that requires one, Copilot applies the instructions globally, which defeats the purpose of scoping and can surface irrelevant guidance in unrelated contexts.
 
 ## Antipatterns
 
-- **Scoped file without `applyTo`.** Creating a `.github/copilot-instructions.md` intended for Python files but not adding `applyTo: "**/*.py"`. Copilot applies the instructions to all files, including JavaScript and YAML.
-- **Using `globs` or `paths` instead of `applyTo`.** These keys work for Claude Code and Cursor respectively, but Copilot only recognizes `applyTo`.
-- **`applyTo` in the wrong file.** Adding `applyTo` to the root-level instructions file instead of a scoped variant. The root file applies globally by design.
+- **`.instructions.md` without `applyTo`.** Creating a `.github/instructions/python.instructions.md` intended for Python files but not adding `applyTo: "**/*.py"`. Copilot applies the instructions to all files, including JavaScript and YAML.
+- **Using `globs` or `paths` in `.instructions.md`.** Copilot only recognizes `applyTo` in this file family; `globs` (Cursor) and `paths` (Claude, outside `.claude/rules/`) have no effect there.
+- **`applyTo` in the wrong file.** Adding `applyTo` to the root-level `.github/copilot-instructions.md` instead of a scoped `.instructions.md` variant. The root file applies globally by design.
 
 ## Pass / Fail
 
@@ -38,6 +38,8 @@ Use type hints on all function signatures.
 ```markdown
 Use type hints on all function signatures.
 ```
+
+A `.claude/rules/*.md` file scoped with `paths:` also passes — that key is correct for this file family and draws no finding.
 
 ## Limitations
 

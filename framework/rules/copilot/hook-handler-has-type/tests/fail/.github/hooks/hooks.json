@@ -1,1 +1,1 @@
-{ "command": "echo" }
+{ "hooks": { "preToolUse": [{ "type": "shell", "command": "echo" }] } }

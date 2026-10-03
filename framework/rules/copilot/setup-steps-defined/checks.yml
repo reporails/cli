@@ -2,10 +2,8 @@ checks:
 - id: COPILOT.S.0002.setup_file_exists
   type: mechanical
   check: file_exists
-- id: COPILOT.S.0002.has_steps_array
-  expect: absent
-  message: Steps array not found
-  patterns:
-  - pattern-regex: (?s)\A[\s\S]+
-  - pattern-not-regex: '(?:^|\n)steps\s*:'
+- id: COPILOT.S.0002.has_setup_steps_job
   type: deterministic
+  expect: present
+  pattern-regex: '(?m)^\s+copilot-setup-steps\s*:'
+  message: Workflow does not define a job named 'copilot-setup-steps' — Copilot only runs a job with this exact id

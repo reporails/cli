@@ -1,1 +1,7 @@
-# No recognized events
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [{ "type": "command", "bash": "./guard.sh" }],
+    "preToolUsse": [{ "type": "command", "bash": "./guard.sh" }]
+  }
+}

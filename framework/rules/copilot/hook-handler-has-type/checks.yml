@@ -2,8 +2,15 @@ checks:
 - id: COPILOT.S.0004.config-file-exists
   type: mechanical
   check: file_exists
-- id: COPILOT.S.0004.handler-has-type
-  type: deterministic
-  expect: present
-  pattern-regex: '"type"\s*:\s*"command"'
-  message: No handler with a valid type field found — VS Code Copilot supports only "command"
+- id: COPILOT.S.0004.invalid-type-value
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0028.has-type-field
+  severity: medium
+  args:
+    message: Handler "type" must be "command", "http", or "prompt" when present (defaults to "command" if omitted)
+    block: hooks
+    handlers: direct
+    default_type: command
+    require:
+      type: [command, http, prompt]
