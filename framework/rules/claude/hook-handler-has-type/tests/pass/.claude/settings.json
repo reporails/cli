@@ -1,1 +1,8 @@
-"type": "command"
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "command": "npm run lint" },
+      { "type": "prompt", "prompt": "Check for security issues" }
+    ]
+  }
+}

@@ -4,9 +4,11 @@ slug: hook-uses-project-dir
 title: Hook Uses Project Dir Variable
 category: governance
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: medium
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
 supersedes: CORE:G:0006
 source: https://code.claude.com/docs/en/hooks
 ---
@@ -49,5 +51,5 @@ Hook shell commands SHOULD reference `$CLAUDE_PROJECT_DIR` or `$CLAUDE_ENV_FILE`
 
 ## Limitations
 
-Checks that at least one Claude environment variable reference exists. Does not flag individual commands that use hardcoded paths if other commands already use the variable.
+Fires only when the hooks block has at least one `"type": "command"` handler that runs a command; a config whose hooks are all prompt or agent handlers draws no finding. Checks that at least one of those commands references a Claude environment variable; a reference elsewhere in the file does not count. Does not flag individual commands that use hardcoded paths if other commands already use the variable. Only handlers inside the hook block are read; a file that is not valid JSON draws no finding here.
 

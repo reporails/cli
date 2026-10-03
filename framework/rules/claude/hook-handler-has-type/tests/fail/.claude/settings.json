@@ -1,1 +1,7 @@
-# Instruction file content
+{
+  "hooks": {
+    "PreToolUse": [
+      { "command": "npm run lint" }
+    ]
+  }
+}

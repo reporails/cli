@@ -4,9 +4,11 @@ slug: hook-handler-has-type
 title: Hook Handler Has Type
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
 source: https://code.claude.com/docs/en/hooks
 supersedes: CORE:S:0028
 ---
@@ -50,5 +52,5 @@ Each hook handler object in `.claude/settings.json` MUST contain a `"type"` fiel
 
 ## Limitations
 
-Checks that at least one handler has a valid type field. Does not verify every handler individually when multiple handlers are defined for the same event.
+Checks each handler object on its own and reports every one with no `"type"` or with a type outside the five, on the line where it starts. An object counts as a handler when it carries a `"type"`, `"command"`, `"url"`, `"prompt"`, `"server"`, or `"tool"` field; a matcher group (an object holding a `"hooks"` list) is not a handler. Only handlers inside the hook block are read; a file that is not valid JSON draws no finding here.
 

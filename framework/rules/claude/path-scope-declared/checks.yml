@@ -3,6 +3,7 @@ checks:
   type: mechanical
   check: frontmatter_key
   args:
+    lenient: true
     key: paths
   message: "Path-scoped rule should declare 'paths' in frontmatter"
   severity: info
@@ -16,6 +17,7 @@ checks:
   type: mechanical
   check: frontmatter_valid_glob
   args:
+    lenient: true
     path: ".claude/rules"
     require_matches: true
   message: "Path glob in frontmatter does not match any files in the project"
@@ -24,6 +26,7 @@ checks:
   type: mechanical
   check: frontmatter_extra_keys
   args:
+    lenient: true
     allowed: [paths]
     path: ".claude/rules/**/*.md"
   message: "Only 'paths' frontmatter key is processed by Claude Code — other keys are silently ignored"

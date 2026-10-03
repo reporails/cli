@@ -5,6 +5,7 @@ agent: claude
 version: "0.5.0"
 prefix: CLAUDE
 name: Claude Code
+home_dir: .claude  # the folder holding the agent's own files; a path inside it points at this agent
 
 file_types:
   main:
@@ -17,7 +18,8 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: ["**/CLAUDE.md"]
+        # The docs name both `./CLAUDE.md` and `./.claude/CLAUDE.md` as the project file.
+        patterns: ["**/CLAUDE.md", ".claude/CLAUDE.md"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -66,10 +68,51 @@ file_types:
         vcs: committed
         maintainer: human
 
+  agents_md:
+    # AGENTS.md read through Claude Code's built-in `agents-md` plugin. The user's
+    # `pluginConfigs["agents-md@builtin"].options.instructionFiles` setting decides when:
+    # `claude-md-or-agents-md` (the default) loads it only when no CLAUDE.md,
+    # .claude/CLAUDE.md or CLAUDE.local.md sits in the working directory or above it;
+    # `claude-md-and-agents-md` loads it alongside CLAUDE.md; `claude-md` and
+    # `managed-only` never load it. Discovery keeps an AGENTS.md here only when Claude
+    # would load it. Classified apart from `main`: CLAUDE.md stays the main file.
+    source: https://code.claude.com/docs/en/memory#agents-md
+    format: freeform
+    scope: global
+    cardinality: chain
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md", ".claude/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  nested_context:
+    # A subdirectory's AGENTS.md, read on demand when Claude opens a file there and that
+    # subdirectory has no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md of its own.
+    # The same `instructionFiles` setting applies as for `agents_md`.
+    source: https://code.claude.com/docs/en/memory#when-claude-code-reads-agents-md
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/AGENTS.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   rules:
     source: https://code.claude.com/docs/en/memory#organize-rules-with-clauderules
     format: [frontmatter, freeform]
     scope: path_scoped
+    # `paths:` (a list, or one comma-separated string) scopes a rule; a rule
+    # without it loads at session start.
+    path_key: paths
     cardinality: collection
     lifecycle: static
     loading: on_demand
@@ -96,22 +139,30 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".claude/skills/**/SKILL.md"]
+        patterns: [".claude/skills/**/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.claude/skills/**/SKILL.md"]
+        patterns: ["~/.claude/skills/**/*.md"]
         precedence: user
         vcs: external
         maintainer: human
       managed:
         patterns:
-          - "/etc/claude-code/skills/**/SKILL.md"
-          - "/Library/Application Support/ClaudeCode/skills/**/SKILL.md"
+          - "/etc/claude-code/skills/**/*.md"
+          - "/Library/Application Support/ClaudeCode/skills/**/*.md"
         precedence: managed
         vcs: external
         maintainer: system
+      plugin:
+        # A Claude Code plugin's own skills, relative to the plugin root: a directory
+        # holding .claude-plugin/plugin.json (code.claude.com/docs/en/plugins-reference#standard-layout).
+        root_marker: .claude-plugin/plugin.json
+        patterns: ["skills/**/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
 
   agents:
     source: https://code.claude.com/docs/en/sub-agents
@@ -131,6 +182,14 @@ file_types:
         precedence: user
         vcs: external
         maintainer: human
+      plugin:
+        # A Claude Code plugin's own agents, relative to the plugin root: a directory
+        # holding .claude-plugin/plugin.json (code.claude.com/docs/en/plugins-reference#standard-layout).
+        root_marker: .claude-plugin/plugin.json
+        patterns: ["agents/**/*.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
 
   commands:
     source: https://code.claude.com/docs/en/skills
@@ -149,6 +208,14 @@ file_types:
         patterns: ["~/.claude/commands/*.md"]
         precedence: user
         vcs: external
+        maintainer: human
+      plugin:
+        # A Claude Code plugin's own commands, relative to the plugin root: a directory
+        # holding .claude-plugin/plugin.json (code.claude.com/docs/en/plugins-reference#standard-layout).
+        root_marker: .claude-plugin/plugin.json
+        patterns: ["commands/*.md"]
+        precedence: project
+        vcs: committed
         maintainer: human
 
   scheduled_tasks:
@@ -185,19 +252,11 @@ file_types:
         precedence: user
         vcs: external
         maintainer: human
-
-  hooks:
-    # Hooks configured in settings.json, skill/agent frontmatter, plugin hooks/hooks.json
-    # 27 events, 5 types (command/HTTP/mcp_tool/prompt/agent). Verified 2026-05-06.
-    source: https://code.claude.com/docs/en/hooks
-    format: schema_validated
-    scope: global
-    cardinality: collection
-    lifecycle: static
-    loading: on_demand
-    scopes:
-      project:
-        patterns: [".claude/settings.json"]
+      plugin:
+        # A Claude Code plugin's own output styles, relative to the plugin root: a directory
+        # holding .claude-plugin/plugin.json (code.claude.com/docs/en/plugins-reference#standard-layout).
+        root_marker: .claude-plugin/plugin.json
+        patterns: ["output-styles/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -243,6 +302,29 @@ file_types:
         vcs: external
         maintainer: system
         cardinality: collection
+
+  # Declaration order is the classifier tiebreak: `classify_files` takes the
+  # FIRST declaration whose pattern matches, so `config` MUST stay declared
+  # before `hooks` — both claim `.claude/settings.json`. A hooks block lives
+  # INSIDE the settings file, so the file itself is a `config` surface and the
+  # 30 `match: {type: config}` rules (hook, permission, MCP-server, settings
+  # scope) must see it. `hooks` keeps the pattern for capability targeting
+  # (`ails check hooks`, `ails rules capabilities`) but classifies nothing.
+  hooks:
+    # Hooks configured in settings.json, skill/agent frontmatter, plugin hooks/hooks.json
+    # 33 events, 5 types (command/HTTP/mcp_tool/prompt/agent).
+    source: https://code.claude.com/docs/en/hooks
+    format: schema_validated
+    scope: global
+    cardinality: collection
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: [".claude/settings.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
 
   mcp:
     source: https://code.claude.com/docs/en/settings
@@ -360,6 +442,18 @@ file_types:
         precedence: project
         vcs: external
         maintainer: human
+      plugin:
+        # The manifest of a plugin that sits below the project root (a marketplace's
+        # plugins/<name>/.claude-plugin/plugin.json).
+        root_marker: .claude-plugin/plugin.json
+        patterns: [".claude-plugin/plugin.json"]
+        precedence: project
+        vcs: committed
+        maintainer: human
 
 excludes:
-  - CORE:C:0026  # Cross-agent compatibility — AGENTS.md is not a Claude surface
+  - CORE:S:0005  # identity-fields-in-frontmatter — a `.claude/rules` file's documented frontmatter is `paths:` only; Claude Code defines no id, name or slug for rule files (code.claude.com/docs/en/memory#organize-rules-with-clauderules)
+  - CORE:C:0026  # Cross-agent compatibility — targets `main`, which for Claude is
+    # CLAUDE.md, a Claude-only file. The AGENTS.md Claude reads through its `agents-md`
+    # plugin is its own `agents_md` / `nested_context` type, which this rule never targets
+    # (code.claude.com/docs/en/memory#agents-md).
