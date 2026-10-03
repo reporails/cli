@@ -1,6 +1,3 @@
-permissions:
-  allow:
-    - Read
-hooks:
-  PreToolUse:
-    - command: lint
+{
+  "env": { "NODE_ENV": "development" }
+}

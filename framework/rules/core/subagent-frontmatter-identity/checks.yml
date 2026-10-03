@@ -1,0 +1,22 @@
+checks:
+- id: CORE.S.0057.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0057.has_name
+  type: mechanical
+  check: frontmatter_key
+  args:
+    path: "**/agents/*.md"
+    key: name
+  message: "Subagent frontmatter missing name field — the dispatch handle the harness routes against"
+- id: CORE.S.0057.has_description
+  type: mechanical
+  check: frontmatter_key
+  args:
+    path: "**/agents/*.md"
+    key: description
+  message: "Subagent frontmatter missing description field — the text the model reads to decide when to delegate"
+- id: CORE.S.0057.frontmatter_reads
+  type: mechanical
+  check: frontmatter_valid_yaml
+  message: "Subagent frontmatter is not valid YAML — fix the block so it reads as a mapping"

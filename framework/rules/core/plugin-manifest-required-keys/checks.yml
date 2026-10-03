@@ -1,0 +1,14 @@
+checks:
+- id: CORE.S.0058.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.S.0058.has_name
+  type: deterministic
+  pattern-regex: '\A\s*+\{(?:[^{}\[\]"]++|"(?:[^"\\]++|\\.)*+"|(\{(?:[^{}\[\]"]++|"(?:[^"\\]++|\\.)*+"|(?-1)|(?+1))*+\})|(\[(?:[^{}\[\]"]++|"(?:[^"\\]++|\\.)*+"|(?-2)|(?-1))*+\]))*?"name"\s*+:\s*+"[^"]'
+  expect: present
+  message: "Plugin manifest missing name — the unique identifier and skill namespace (/<name>:<skill>)"
+- id: CORE.S.0058.has_description
+  type: deterministic
+  pattern-regex: '\A\s*+\{(?:[^{}\[\]"]++|"(?:[^"\\]++|\\.)*+"|(\{(?:[^{}\[\]"]++|"(?:[^"\\]++|\\.)*+"|(?-1)|(?+1))*+\})|(\[(?:[^{}\[\]"]++|"(?:[^"\\]++|\\.)*+"|(?-2)|(?-1))*+\]))*?"description"\s*+:\s*+"[^"]'
+  expect: present
+  message: "Plugin manifest missing description — the summary shown in the plugin manager"

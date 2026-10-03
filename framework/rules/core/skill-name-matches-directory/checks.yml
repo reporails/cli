@@ -3,7 +3,7 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.S.0036.name_matches_dir
-  expect: present
-  message: Skill frontmatter missing kebab-case name field
-  pattern-regex: 'name:\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)*'
-  type: deterministic
+  type: mechanical
+  check: frontmatter_matches_dirname
+  args: {field: name}
+  message: Skill frontmatter name must match the containing directory
