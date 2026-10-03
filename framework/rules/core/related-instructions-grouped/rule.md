@@ -4,15 +4,16 @@ slug: related-instructions-grouped
 title: "Related Instructions Grouped"
 category: efficiency
 type: mechanical
-severity: medium
+severity: low
+depends_on: [CORE:S:0016]
 backed_by:
 - claude-md-guide
 - spec-writing-for-agents
-match: {format: freeform}
+match: {type: [main, override, agents_md, legacy_cursorrules, cross_read, system_prompt], cardinality: [singleton, chain]}
 ---
 # Related Instructions Grouped
 
-Related instructions must be grouped together, not scattered across the file. Co-location reduces the agent's search effort.
+The agent's main instruction file must group related instructions by topic into their own sections, rather than scattering a topic's directives across the file — grouping by topic keeps each directive near the context that makes it relevant. But grouping is not cramming: directives packed tightly together compete hardest for attention, since the closer two directives sit the more they draw from the same share. Group BY TOPIC; do not simply co-locate everything.
 
 ## Antipatterns
 

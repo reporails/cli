@@ -4,7 +4,7 @@ slug: instruction-file-size-limit
 title: Instruction File Size Limit
 category: efficiency
 type: mechanical
-severity: high
+severity: low
 backed_by: [advanced-context-engineering, agent-readmes-empirical-study, builder-ai-instruction-best-practices,
   claude-md-guide, claudemd-best-practices-mermaid-for-workflows, developer-context-cursor-study,
   dometrain-claude-md-guide, enterprise-claude-usage, evaluating-agents-md, fowler-context-engineering-agents,
