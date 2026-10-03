@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters.api_client import FileAnalysis, QualityResult
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
 from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
-from reporails_cli.formatters.text.score import leverage_basis, score_color
+from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.scorecard import compute_score, compute_surface_scores
 
 
@@ -49,7 +49,7 @@ class TestComputeScore:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_returns_api_display_score_verbatim(self) -> None:
-        result = CombinedResult(quality=QualityResult(compliance_band="HIGH", display_score=7.3))
+        result = CombinedResult(quality=QualityResult(display_score=7.3))
         assert compute_score(result, has_quality=True) == 7.3
 
     @pytest.mark.unit
@@ -58,13 +58,22 @@ class TestComputeScore:
         # No server quality → no api scalar to render.
         assert compute_score(CombinedResult(quality=None), has_quality=False) == 0.0
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_none_display_score_returns_none_not_typeerror(self) -> None:
+        # A project where no file had any charged atoms: the api returns
+        # `display_score: null` (not a fabricated floor). The CLI must render that
+        # as "unscored", never raise `TypeError: float() argument ... NoneType`.
+        result = CombinedResult(quality=QualityResult(display_score=None))
+        assert compute_score(result, has_quality=True) is None
+
 
 class TestSurfaceAndItemScores:
     """Surface = mean of per-file display scores; item = the file's display score."""
 
     def _result(self, *files: tuple[str, float]) -> CombinedResult:
-        per_file = tuple(FileAnalysis(file=fp, compliance_band="HIGH", display_score=ds) for fp, ds in files)
-        return CombinedResult(per_file_analysis=per_file, quality=QualityResult(compliance_band="HIGH"))
+        per_file = tuple(FileAnalysis(file=fp, display_score=ds, stats={"atoms": 1}) for fp, ds in files)
+        return CombinedResult(per_file_analysis=per_file, quality=QualityResult())
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -89,8 +98,8 @@ class TestSurfaceAndItemScores:
         # depth, so without normalization an absolute CLAUDE.md falls out of `main`
         # and the surface reads 0.0. Guard the normalization.
         result = CombinedResult(
-            per_file_analysis=(FileAnalysis(file="/proj/CLAUDE.md", compliance_band="HIGH", display_score=9.0),),
-            quality=QualityResult(compliance_band="HIGH"),
+            per_file_analysis=(FileAnalysis(file="/proj/CLAUDE.md", display_score=9.0, stats={"atoms": 1}),),
+            quality=QualityResult(),
         )
         surfaces = compute_surface_scores(result, project_root="/proj")
         main = next(s for s in surfaces if s.name == "Main")
@@ -119,11 +128,11 @@ class TestReBucketStability:
     """
 
     def _result(self, findings: tuple[FindingItem, ...] | list[FindingItem]) -> CombinedResult:
-        per_file = (FileAnalysis(file="CLAUDE.md", compliance_band="HIGH", display_score=7.7),)
+        per_file = (FileAnalysis(file="CLAUDE.md", display_score=7.7, stats={"atoms": 1}),)
         return CombinedResult(
             findings=tuple(findings),
             per_file_analysis=per_file,
-            quality=QualityResult(compliance_band="HIGH", display_score=7.7),
+            quality=QualityResult(display_score=7.7),
         )
 
     @pytest.mark.unit
@@ -151,12 +160,12 @@ class TestReBucketStability:
 
 class TestUnscoredFiles:
     """A file with no charged atoms arrives with display_score=None — rendered as
-    'not scored', excluded from surface/item aggregation (REQ-199 item 2).
+    'not scored', excluded from surface/item aggregation.
     """
 
     def _result(self, *files: tuple[str, float | None]) -> CombinedResult:
-        per_file = tuple(FileAnalysis(file=fp, compliance_band="LOW", display_score=ds) for fp, ds in files)
-        return CombinedResult(per_file_analysis=per_file, quality=QualityResult(compliance_band="LOW"))
+        per_file = tuple(FileAnalysis(file=fp, display_score=ds, stats={"atoms": 1}) for fp, ds in files)
+        return CombinedResult(per_file_analysis=per_file, quality=QualityResult())
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -185,18 +194,16 @@ class TestUnscoredFiles:
 
 
 class TestLinkedFileSurfaces:
-    """Generic-scanned files (REQ-200): `@`-import (`generic`) → scored Imported surface;
+    """Generic-scanned files: `@`-import (`generic`) → scored Imported surface;
     markdown-link (`referenced`) → Referenced file-panel group, never a surface bar.
     """
 
     def _result(self, *files: tuple[str, float]) -> CombinedResult:
-        per_file = tuple(FileAnalysis(file=fp, compliance_band="HIGH", display_score=ds) for fp, ds in files)
+        per_file = tuple(FileAnalysis(file=fp, display_score=ds, stats={"atoms": 1}) for fp, ds in files)
         findings = tuple(
             FindingItem(file=fp, line=1, severity="warning", rule="CORE:C:0042", message="m") for fp, _ in files
         )
-        return CombinedResult(
-            findings=findings, per_file_analysis=per_file, quality=QualityResult(compliance_band="HIGH")
-        )
+        return CombinedResult(findings=findings, per_file_analysis=per_file, quality=QualityResult())
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -228,16 +235,3 @@ class TestLinkedFileSurfaces:
         groups = _build_file_groups(result, {"docs/imp.md": "generic", "docs/ref.md": "referenced"}, Path.cwd())
         assert "imported" in groups
         assert "referenced" in groups
-
-
-class TestLeverageBasis:
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_counts_split_by_tier(self) -> None:
-        findings = [
-            _finding("CORE:C:0042", impact_tier="gate_mover"),
-            _finding("CORE:E:0003", impact_tier="conditional"),
-            _finding("CORE:S:0010"),
-            _finding("bold", "info"),
-        ]
-        assert leverage_basis(findings) == (1, 1, 2)

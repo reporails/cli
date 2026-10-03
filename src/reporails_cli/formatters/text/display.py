@@ -14,10 +14,11 @@ from typing import Any
 
 from rich.console import Console
 
+from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     SEV_WEIGHT,
-    classify_file,
     file_type_summary,
     get_group_atoms,
     get_sev_icons,
@@ -26,30 +27,23 @@ from reporails_cli.formatters.text.display_constants import (
 )
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
-    compute_score,
     print_scorecard,
 )
 from reporails_cli.formatters.text.triage_view import print_file_card
+from reporails_cli.formatters.triage import split_conventions
 
 console = Console()
-
-# Re-export for backward compat (tests, other modules importing from display)
-__all__ = [
-    "compute_score",
-    "print_scorecard",
-    "print_text_result",
-]
 
 
 # ── Group rendering ───────────────────────────────────────────────────
 
-_GROUP_ORDER = ("main", "nested", "agent", "skill", "rule", "config", "memory", "imported", "referenced", "file")
+_GROUP_ORDER = ("main", "nested", "agents", "skills", "rules", "config", "memory", "imported", "referenced", "file")
 _GROUP_LABELS = {
     "main": "Main",
     "nested": "Nested",
-    "agent": "Agents",
-    "skill": "Skills",
-    "rule": "Rules",
+    "agents": "Agents",
+    "skills": "Skills",
+    "rules": "Rules",
     "config": "Config",
     "memory": "Memory",
     "imported": "Imported",
@@ -111,7 +105,8 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             atoms_by_path=ctx.atoms_by_path,
         )
 
-    console.print(f"  [dim]\u2514\u2500 {sum(len(fs) for _, fs in group_files)} findings[/dim]\n")
+    shown = sum(len(split_conventions(fs, ctx.verbose)[0]) for _, fs in group_files)
+    console.print(f"  [dim]\u2514\u2500 {shown} findings[/dim]\n")
 
 
 def _render_file_groups(groups: dict[str, list[tuple[str, list[Any]]]], ctx: _CardContext) -> None:
@@ -122,18 +117,46 @@ def _render_file_groups(groups: dict[str, list[tuple[str, list[Any]]]], ctx: _Ca
             _render_one_group(gkey, group_files, ctx)
 
 
+# The upgrade surface for a signed-in user (the subscribe button lives there).
+_SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
+
+
+def _render_detail_cta() -> None:
+    """Print the "how to get line-level detail" call to action.
+
+    Keyed on whether a key is held locally, not on the reported tier: a
+    signed-in user told to run `ails auth login` is sent to a dead end, so
+    they get the upgrade surface instead.
+    """
+    from reporails_cli.core.platform.adapters.api_client import has_api_key
+
+    if has_api_key():
+        console.print(
+            "\n  [dim]Line-level detail \u2192 "
+            f"[link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link][/dim]"
+        )
+    else:
+        console.print(
+            "\n  [dim]Line-level detail \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro[/dim]"
+        )
+
+
 def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str]) -> None:
-    """Render the cross-file coordinates section (free tier)."""
+    """Render the cross-file coordinates section (free tier).
+
+    Only `repetition` and `overlap` coordinates reach here \u2014 `merge_results`
+    drops `conflict` entries.
+    """
     if not result.cross_file_coordinates:
         return
     console.print(f"  [dim]\u2500\u2500 Cross-file {HRULE}[/dim]\n")
     for coord in result.cross_file_coordinates:
-        icon = sev_icons.get("error" if coord.finding_type == "conflict" else "warning", "\u25cf")
+        icon = sev_icons.get("warning", "\u25cf")
         s = "s" if coord.count != 1 else ""
         short_1 = short_path(coord.file_1)
         short_2 = short_path(coord.file_2)
         console.print(f"  {icon}  {short_1} \u2194 {short_2} \u2014 {coord.count} {coord.finding_type}{s}")
-    console.print("\n  [dim]Line-level detail and fixes \u2192 [bold]ails auth login[/bold][/dim]")
+    _render_detail_cta()
     console.print()
 
 
@@ -187,32 +210,49 @@ def _count_atoms(atoms: Any) -> ScopeInfo:
 
 
 def _detect_agent_name(ruleset_map: Any) -> str:
-    """Detect primary agent name from ruleset_map file records."""
+    """Detect the agent(s) whose rules ran, from the ruleset map's file records.
+
+    A single resolved agent returns its id, unchanged. Two or more distinct agent ids
+    among the file records name a union run (two or more agents own files natively,
+    each running its own rules on its own files, never collapsed to `generic`) — every
+    one of them is returned, joined, so the scorecard names every agent whose rules ran
+    rather than only the most common one. `map_instruction_files`'s `stamp_file_agents`
+    is what makes each record's `agent` the discovery-resolved owner rather than the
+    mapper's own, independently-guessed match, so this count is trustworthy.
+    """
     try:
         from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
         if isinstance(ruleset_map, RulesetMap):
-            agent_counts = Counter(fr.agent for fr in ruleset_map.files if fr.agent != "generic")
-            if agent_counts:
-                return agent_counts.most_common(1)[0][0]
+            ids = sorted({fr.agent for fr in ruleset_map.files if fr.agent != "generic"})
+            if ids:
+                return " + ".join(ids)
     except (AttributeError, ImportError, TypeError):
         pass
     return ""
 
 
 def _detect_tier(result: Any, has_quality: bool) -> str:
-    """Determine the display tier string."""
-    creds_tier = ""
-    try:
-        from reporails_cli.interfaces.cli.auth_command import _read_credentials
+    """Determine the display tier string from the wire tier, never local credentials.
 
-        creds_tier = _read_credentials().get("tier", "")
-    except (FileNotFoundError, KeyError, OSError):
-        pass
+    `result.tier` is the tier the diagnostic response reported and is the single
+    source of truth for the banner — the local credentials file (which may carry a
+    retired legacy tier string) must never influence this. The `hints`/`has_quality`
+    fallback only applies when the result carries no tier at all.
+
+    Only an EMPTY wire tier reaches that fallback. A tier the response DID name is
+    decided on the shared tier vocabulary: unentitled when it is in
+    `UNENTITLED_TIERS`, entitled otherwise — so a tier name this client build does
+    not know yet (a new paid plan) reads as entitled rather than silently
+    downgrading a paying session to the free banner.
+    """
+    from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
+
     if result.offline:
         return "offline"
-    if creds_tier == "beta":
-        return "Pro (beta)"
+    wire_tier = getattr(result, "tier", "") or ""
+    if wire_tier:
+        return "free" if wire_tier in UNENTITLED_TIERS else "Pro"
     if result.hints:
         return "free"
     if has_quality:
@@ -276,8 +316,8 @@ def _build_regime_by_file(result: Any, project_root: Path) -> dict[str, Any]:
     Empty for offline runs (no `per_file_analysis`) — callers then render the
     neutral findings view.
     """
-    from reporails_cli.core.platform.policy.leverage import classify_regime
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+    from reporails_cli.formatters.triage import classify_regime
 
     regimes: dict[str, Any] = {}
     for fa in result.per_file_analysis:
@@ -297,7 +337,7 @@ def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[st
     one row. Both alias sources are returned as project-relative posix strings
     so `_print_file_card` can do a plain dict lookup.
     """
-    from reporails_cli.core.discovery.agents import compute_same_dir_content_aliases, get_file_aliases
+    from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     out: dict[str, list[str]] = {}
@@ -356,7 +396,7 @@ def print_text_result(
 
     root = project_root or Path.cwd()
     all_files, scope = _collect_files_and_scope(result, ruleset_map, root)
-    has_quality = result.quality is not None and bool(result.quality.compliance_band)
+    has_quality = result.quality is not None
     tier = _detect_tier(result, has_quality)
     scope.type_str = file_type_summary(all_files) if all_files else "0 files"
 
@@ -394,7 +434,7 @@ def _render_findings_and_scorecard(
     from reporails_cli.formatters.text.item_scorecard import compute_item_scores
     from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
-    has_quality = result.quality is not None and bool(result.quality.compliance_band)
+    has_quality = result.quality is not None
     sev_icons = get_sev_icons(ascii_mode)
     atoms_by_path = (
         index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
@@ -429,17 +469,25 @@ def _render_findings_and_scorecard(
         scope=scope,
         surface_health=surfaces,
         item_health=item_health,
+        verbose=verbose,
+        project_root=project_root,
     )
 
 
 def _render_funnel_cta(funnel_error: object) -> None:
     """Render the conversion CTA + bug-report link when a FunnelError is present."""
-    from reporails_cli.core.funnel import FunnelError, _short_url_label, format_bug_report_url, format_cta
+    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+    from reporails_cli.formatters.text.funnel_cta import _short_url_label, format_bug_report_url, format_cta
 
     if not isinstance(funnel_error, FunnelError):
         return
     cta = format_cta(funnel_error)
     if not cta:
+        return
+    if funnel_error.retryable:
+        console.print()
+        console.print(f"  [yellow]⚠[/yellow]  {cta}")
+        console.print()
         return
     bug_url = format_bug_report_url(funnel_error)
     bug_label = _short_url_label(bug_url)
@@ -454,13 +502,18 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
     """Return a CombinedResult containing only rows for `paths`.
 
     Filters findings, cross-file pairs, per-file analysis, AND the
-    aggregate `quality.compliance_band` — without filtering the band,
-    the top score uses whole-project base while surface-health uses the
-    filtered base and the two scores disagree.
+    aggregate quality — without filtering it, the top score uses the
+    whole project while surface-health uses the filtered files and the
+    two scores disagree.
     """
     from dataclasses import replace as _replace
 
-    from reporails_cli.core.platform.runtime.merger import CombinedStats, normalize_finding_path
+    from reporails_cli.core.platform.runtime.merger import (
+        CombinedStats,
+        count_cross_file_overlaps,
+        count_cross_file_repetitions,
+        normalize_finding_path,
+    )
 
     def _in_scope(path: str) -> bool:
         # `findings` are already project-relative; server `per_file` / `cross_file`
@@ -473,6 +526,9 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
     rel_keys = {normalize_finding_path(str(p), project_root) for p in paths}
     findings = tuple(f for f in result.findings if _in_scope(f.file))
     cross = tuple(cf for cf in result.cross_file if _in_scope(cf.file_1) or _in_scope(cf.file_2))
+    # The aggregate form is scoped by the same rule, so the narrowed view's
+    # repetition and overlap counts match its narrowed pair list at every tier.
+    coords = tuple(c for c in result.cross_file_coordinates if _in_scope(c.file_1) or _in_scope(c.file_2))
     per_file = tuple(fa for fa in result.per_file_analysis if _in_scope(fa.file))
     sev = Counter(f.severity for f in findings)
     stats = CombinedStats(
@@ -480,8 +536,8 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
         errors=sev.get("error", 0),
         warnings=sev.get("warning", 0),
         infos=sev.get("info", 0),
-        cross_file_conflicts=sum(1 for c in cross if c.finding_type == "conflict"),
-        cross_file_repetitions=sum(1 for c in cross if c.finding_type == "repetition"),
+        cross_file_repetitions=count_cross_file_repetitions(cross, coords),
+        cross_file_overlaps=count_cross_file_overlaps(cross, coords),
         m_probe_count=result.stats.m_probe_count,
         client_check_count=result.stats.client_check_count,
         server_diagnostic_count=result.stats.server_diagnostic_count,
@@ -491,6 +547,7 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
         result,
         findings=findings,
         cross_file=cross,
+        cross_file_coordinates=coords,
         stats=stats,
         per_file_analysis=per_file,
         quality=quality,
@@ -498,10 +555,10 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
 
 
 def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
-    """Rewrite the aggregate band + display score from the filtered per-file set.
+    """Rewrite the aggregate display score from the filtered per-file set.
 
-    The whole-project `display_score` is the api's verdict over every file; once
-    the view is narrowed to a subset (e.g. `ails check skills`) there is no api
+    The whole-project `display_score` covers every file; once
+    the view is narrowed to a subset (e.g. `ails check skills`) there is no
     aggregate for that subset, so the headline becomes the mean of the subset's
     per-file display scores — matching the per-surface/per-item bars.
     """
@@ -511,34 +568,34 @@ def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
 
     from reporails_cli.formatters.text.scorecard import _mean_display_score
 
-    bands = [fa.compliance_band for fa in per_file if fa.compliance_band]
-    if not bands:
+    if not any(int(fa.stats.get("atoms", 0) or 0) > 0 for fa in per_file):
         return None
-    majority = Counter(bands).most_common(1)[0][0]
-    # All-unscored subset (every file has a None score) → keep the server's aggregate
-    # rather than rendering a 0.0/empty headline.
+    # All-unscored subset (every file has a None score) → fall back to the reported
+    # whole-project aggregate, which itself may be `None` when the whole project has
+    # no scorable content — the renderer treats that as "n/a", never as a fabricated
+    # score, so passing `None` through here is correct, not a missed case.
     mean_score = _mean_display_score(list(per_file)) if per_file else quality.display_score
     if mean_score is None:
         mean_score = quality.display_score
-    return _replace(quality, compliance_band=majority, display_score=mean_score)
+    return _replace(quality, display_score=mean_score)
 
 
 def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root: Path) -> Any:
     """Return a RulesetMap restricted to `paths` (matching files + their atoms)."""
-    from dataclasses import replace as _replace
-
     if ruleset_map is None or not paths:
         return ruleset_map
     keep = {str(_relativize(p, project_root)) for p in paths} | {str(p) for p in paths}
     files = tuple(fr for fr in ruleset_map.files if str(fr.path) in keep)
     atoms = tuple(a for a in ruleset_map.atoms if a.file_path in keep)
-    return _replace(ruleset_map, files=files, atoms=atoms)
+    # RulesetMap/RulesetSummary are Pydantic models; dataclasses.replace
+    # raises TypeError on a BaseModel, so use model_copy for the Pydantic target.
+    return ruleset_map.model_copy(update={"files": files, "atoms": atoms})
 
 
 def _relativize(path: Path, project_root: Path) -> Path:
     """Return `path` relative to `project_root` without resolving symlinks.
 
-    Symlinks may point outside the project (e.g. hub-symlinked skills);
+    Symlinks may point outside the project (e.g. symlinked skills);
     resolving would push the path outside `project_root` and force the
     fallback. Use textual prefix stripping instead.
     """
@@ -547,6 +604,6 @@ def _relativize(path: Path, project_root: Path) -> Path:
     except ValueError:
         pass
     try:
-        return Path(path).resolve().relative_to(project_root.resolve())
+        return safe_resolve(Path(path)).relative_to(safe_resolve(project_root))
     except ValueError:
         return path

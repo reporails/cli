@@ -12,6 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.classify.file_tags import classify_file
+
 # ── Aggregate rule sets ───────────────────────────────────────────────
 
 # Diagnostics NOT in this set are displayed as structural findings (top of card).
@@ -23,22 +25,24 @@ AGGREGATE_RULES = {
     "CORE:E:0004",
     "CORE:C:0043",
     "CORE:E:0003",
+    "CORE:C:0058",
     # Server diagnostics — interaction
     "CORE:C:0041",
     "CORE:C:0044",
     "CORE:C:0046",
     "CORE:C:0047",
     "CORE:D:0002",
+    "CORE:D:0003",
     "CORE:C:0051",
     "CORE:C:0050",
+    "CORE:C:0052",
     "CORE:C:0040",
+    "CORE:S:0039",
+    "CORE:C:0060",
     # Client check labels
     "format",
     "bold",
-    "orphan",
     "heading_instruction",
-    "ordering",
-    "scope",
     # Classifier confidence
     "ambiguous_charge",
 }
@@ -46,44 +50,50 @@ AGGREGATE_RULES = {
 AGGREGATE_LABELS: dict[str, str] = {
     "CORE:C:0042": "vague",
     "CORE:E:0004": "brief",
+    "CORE:C:0058": "packed",
     "CORE:C:0043": "weak",
     "CORE:E:0003": "bold issues",
-    "CORE:C:0041": "diluted",
-    "CORE:C:0044": "overloaded",
+    "CORE:C:0041": "excess context",
+    "CORE:C:0044": "overlapping",
     "CORE:C:0046": "conflicting",
     "CORE:C:0047": "buried",
     "CORE:D:0002": "unbalanced",
+    "CORE:D:0003": "out of order",
     "CORE:C:0051": "weak overall",
-    "CORE:C:0050": "low coverage",
+    "CORE:C:0050": "context near vague",
+    "CORE:C:0052": "default wins",
     "CORE:C:0040": "redundant",
     "format": "unformatted",
     "bold": "bold",
-    "orphan": "orphan",
     "heading_instruction": "heading as instruction",
-    "ordering": "misordered",
-    "scope": "broad scope",
+    "CORE:C:0060": "broad scope",
     "ambiguous_charge": "ambiguous",
 }
+
+# Rule ids counted under another aggregate key: the heading rule's findings are grouped under
+# the short heading label.
+AGGREGATE_KEY = {"CORE:S:0039": "heading_instruction"}
 
 AGG_ORDER = [
     "CORE:C:0042",
     "CORE:E:0004",
+    "CORE:C:0058",
     "CORE:C:0043",
     "format",
     "CORE:E:0003",
     "bold",
-    "ordering",
-    "orphan",
     "heading_instruction",
-    "scope",
+    "CORE:C:0060",
     "ambiguous_charge",
     "CORE:C:0044",
     "CORE:C:0041",
     "CORE:C:0047",
     "CORE:D:0002",
+    "CORE:D:0003",
     "CORE:C:0046",
     "CORE:C:0051",
     "CORE:C:0050",
+    "CORE:C:0052",
     "CORE:C:0040",
 ]
 
@@ -91,15 +101,18 @@ SEV_WEIGHT = {"error": 0, "warning": 1, "info": 2}
 HRULE = "\u2500" * 56
 
 HINT_TYPE_LABELS = {
-    "CORE:C:0044": "topic overload",
+    "CORE:C:0044": "topic overlap",
     "CORE:C:0047": "buried instructions",
     "CORE:C:0046": "conflicts",
     "CORE:C:0041": "content dilution",
     "CORE:C:0051": "vague overall",
     "CORE:D:0002": "unbalanced topics",
-    "CORE:C:0050": "low named coverage",
-    "CORE:C:0053": "isolated instructions",
+    "CORE:D:0003": "prohibitions out of order",
+    "CORE:C:0050": "vague instructions amid context",
+    "CORE:C:0052": "topics the default wins",
+    "CORE:C:0053": "weak instructions",
     "CORE:C:0040": "repetition",
+    "CORE:C:0059": "ambiguous phrasing",
 }
 
 HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
@@ -109,10 +122,7 @@ HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
 CLIENT_CHECK_RULE_ID = {
     "format": "CORE:E:0003",
     "bold": "CORE:E:0003",
-    "ordering": "CORE:D:0003",
-    "scope": "CORE:C:0048",
     "heading_instruction": "CORE:S:0039",
-    "orphan": "CORE:C:0053",
 }
 
 
@@ -147,6 +157,38 @@ def rule_docs_url(rule_id: str) -> str | None:
     return f"{_RULE_DOCS_BASE}/{agent}/{slug}"
 
 
+@lru_cache(maxsize=1)
+def _rule_title_map() -> dict[str, str]:
+    """`{rule_id: title}` from the bundled framework registry, loaded once per process."""
+    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+
+    try:
+        return {r.id: r.title for r in load_all_rules() if r.title}
+    except (OSError, ValueError):
+        return {}
+
+
+def rule_title(rule_id: str) -> str:
+    """The registry title of a canonical rule ID, or an empty string when none is known."""
+    return _rule_title_map().get(rule_id, "")
+
+
+def rule_label(rule_id: str) -> dict[str, str] | None:
+    """`{"title": ..., "url": ...}` for a canonical rule ID — a coding agent's label for a
+    bare rule code. `url` is omitted when unresolvable; `None` when neither title nor url
+    resolves (e.g. an unknown/retired rule ID)."""
+    title = _rule_title_map().get(rule_id)
+    url = rule_docs_url(rule_id)
+    if not title and not url:
+        return None
+    entry: dict[str, str] = {}
+    if title:
+        entry["title"] = title
+    if url:
+        entry["url"] = url
+    return entry
+
+
 def linked_rule_id(rule: str) -> str:
     """Rule token as a Rich hyperlink to its docs page; plain canonical ID if unresolvable."""
     rule_id = display_rule_id(rule)
@@ -154,10 +196,16 @@ def linked_rule_id(rule: str) -> str:
     return f"[link={url}]{rule_id}[/link]" if url else rule_id
 
 
+# A rule a suppression directive may also name by its short token, as it has always been written.
+SHORT_TOKEN = {"CORE:S:0039": "heading_instruction"}
+
+
 def rule_aliases(rule: str) -> set[str]:
     """Every name a suppression directive may use for a finding's rule: raw token, canonical ID, slug."""
     canon = display_rule_id(rule)
     names = {rule, canon}
+    if canon in SHORT_TOKEN:
+        names.add(SHORT_TOKEN[canon])
     slug = _rule_slug_map().get(canon)
     if slug:
         names.add(slug)
@@ -166,23 +214,17 @@ def rule_aliases(rule: str) -> set[str]:
 
 # ── File classification lookup tables ─────────────────────────────────
 
-_CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))
-# Case-sensitive — matches agent specs (CLAUDE.md, AGENTS.md uppercase per
-# Codex source `DEFAULT_AGENTS_MD_FILENAME = "AGENTS.md"` and the agents.md
-# spec). Wrong-case copies (e.g. `agents.md` lowercase in skill assets) are
-# not real instruction files.
-_MAIN_NAMES = frozenset(("CLAUDE.md", "AGENTS.md", ".cursorrules", ".windsurfrules", "copilot-instructions.md"))
-
-_TYPE_ORDER = ["main", "nested", "rule", "skill", "agent", "config", "memory", "file"]
-_TYPE_PLURALS = {
-    "main": "main",
-    "nested": "nested",
-    "rule": "rules",
-    "skill": "skills",
-    "agent": "agents",
-    "config": "configs",
-    "memory": "memory",
-    "file": "files",
+_TYPE_ORDER = ["main", "nested", "rules", "skills", "agents", "config", "memory", "file"]
+# A tag's count label: (one, many).
+_TYPE_LABELS = {
+    "main": ("main", "main"),
+    "nested": ("nested", "nested"),
+    "rules": ("rule", "rules"),
+    "skills": ("skill", "skills"),
+    "agents": ("agent", "agents"),
+    "config": ("config", "configs"),
+    "memory": ("memory", "memory"),
+    "file": ("file", "files"),
 }
 
 # ── Small utility functions ────────────────────────────────────────────
@@ -205,43 +247,6 @@ def truncate(text: str, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 1] + "\u2026"
-
-
-def classify_file(filepath: str) -> str:
-    """Classify a file path into a human-readable type tag."""
-    p = Path(filepath)
-    name = p.name
-    parts = p.parts
-
-    # Check structural directories first
-    if "skills" in parts and name == "SKILL.md":
-        idx = parts.index("skills")
-        return f"skill:{parts[idx + 1]}" if idx + 1 < len(parts) - 1 else "skill"
-    if "agents" in parts and name.endswith(".md"):
-        return f"agent:{p.stem}"
-    if "rules" in parts and name.endswith(".md"):
-        return f"rule:{p.stem}"
-
-    # Check name-based and directory-based categories
-    tag = _classify_by_name(name, parts)
-    return tag if tag else "file"
-
-
-def _classify_by_name(name: str, parts: tuple[str, ...]) -> str:
-    """Classify by filename or directory membership. Returns empty string if unrecognized."""
-    if name in _CONFIG_NAMES:
-        return "config"
-    if "memory" in parts:
-        return "memory"
-    # Case-sensitive — matches discovery (walk_glob) and agent specs.
-    # Wrong-case copies (e.g. `agents.md` lowercase) are not instruction files.
-    if name in _MAIN_NAMES:
-        # Files at the project root are `main`; subdirectory copies of the
-        # same filename are `nested` (per scope: nested in agent.schema.yml).
-        # `parts` for a relative path like `tests/CLAUDE.md` has length 2;
-        # a root-level `CLAUDE.md` has length 1.
-        return "main" if len(parts) <= 1 else "nested"
-    return ""
 
 
 def friendly_name(filepath: str, tag: str) -> str:
@@ -300,8 +305,8 @@ def file_type_summary(filepaths: set[str]) -> str:
     for t in _TYPE_ORDER:
         n = type_counts.get(t, 0)
         if n > 0:
-            label = _TYPE_PLURALS.get(t, t) if n > 1 else t
-            parts.append(f"{n} {label}")
+            one, many = _TYPE_LABELS.get(t, (t, t))
+            parts.append(f"{n} {many if n > 1 else one}")
     return ", ".join(parts)
 
 
@@ -415,3 +420,8 @@ def group_stats_line(atoms: list[Any]) -> str:
         instr_parts.append(f"{n_con} constraint")
     instr_str = " / ".join(instr_parts) if instr_parts else "0 instructions"
     return f"{instr_str} \u00b7 {prose_pct}% prose"
+
+
+def conventions_phrase(n: int) -> str:
+    """The counted line for the findings that only ask a file to document something."""
+    return f"{n:,} documentation convention{'s' if n != 1 else ''} not present"
