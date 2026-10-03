@@ -163,7 +163,7 @@
       },
       "location": "AGENTS.md:17",
       "pass_value": "pass",
-      "rule_id": "CORE:C:0048"
+      "rule_id": "CORE:C:0060"
     },
     {
       "choices": [
@@ -257,7 +257,7 @@
       "CORE:C:0033",
       "CORE:C:0046",
       "CORE:C:0047",
-      "CORE:C:0048",
+      "CORE:C:0060",
       "CORE:S:0045",
       "CORE:S:0046",
       "CORE:S:0047",
@@ -477,9 +477,9 @@
       "severity": "medium"
     },
     {
-      "check_id": "CORE.C.0048.file_count_gate",
+      "check_id": "CORE.C.0060.file_count_gate",
       "location": "AGENTS.md:0",
-      "rule_id": "CORE:C:0048",
+      "rule_id": "CORE:C:0060",
       "severity": "medium"
     },
     {
