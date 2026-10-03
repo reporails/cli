@@ -8,26 +8,32 @@ from reporails_cli.interfaces.cli.helpers import console
 
 daemon_app = typer.Typer(
     name="daemon",
-    help="Manage the global mapper daemon.",
+    help="Manage the background analysis daemon.",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 
 @daemon_app.command()
-def start(
-    path: str | None = typer.Argument(None, help="[Deprecated] Ignored — daemon is global.", hidden=True),
-) -> None:
-    """Start the mapper daemon (keeps models loaded in background)."""
-    from reporails_cli.core.mapper.daemon import is_daemon_running, start_daemon
-
-    if path is not None and path != ".":
-        console.print("[yellow]Note: path argument is deprecated. The daemon is now global.[/yellow]")
+def start() -> None:
+    """Start the analysis daemon (keeps models loaded in background)."""
+    from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon, start_daemon
+    from reporails_cli.core.mapper.daemon_client import ping, runs_newer_code, runs_older_code, serves_this_code
 
     if is_daemon_running():
-        console.print("[dim]Daemon already running.[/dim]")
-        return
+        pong = ping()
+        if pong is None or serves_this_code(pong):
+            console.print("[dim]Daemon already running.[/dim]")
+            return
+        if not runs_older_code(pong):
+            whose = "A newer version's" if runs_newer_code(pong) else "An unrecognized version's"
+            console.print(f"[dim]{whose} daemon is running; this version checks without it.[/dim]")
+            return
+        if not retire_daemon(pong.get("pid")):
+            console.print("[yellow]A daemon from an older version of ails is busy; try again when it is idle.[/yellow]")
+            raise typer.Exit(1)
+        console.print("Stopped the daemon left by an older version of ails.")
 
-    console.print("Starting mapper daemon...")
+    console.print("Starting analysis daemon...")
     try:
         pid = start_daemon()
     except OSError as exc:
@@ -42,14 +48,9 @@ def start(
 
 
 @daemon_app.command()
-def stop(
-    path: str | None = typer.Argument(None, help="[Deprecated] Ignored.", hidden=True),
-) -> None:
-    """Stop the mapper daemon."""
+def stop() -> None:
+    """Stop the analysis daemon."""
     from reporails_cli.core.mapper.daemon import stop_daemon
-
-    if path is not None and path != ".":
-        console.print("[yellow]Note: path argument is deprecated. The daemon is now global.[/yellow]")
 
     if stop_daemon():
         console.print("[green]Daemon stopped.[/green]")
@@ -58,22 +59,27 @@ def stop(
 
 
 @daemon_app.command()
-def status(
-    path: str | None = typer.Argument(None, help="[Deprecated] Ignored.", hidden=True),
-) -> None:
+def status() -> None:
     """Show daemon status."""
     from reporails_cli.core.mapper.daemon import is_daemon_running
-    from reporails_cli.core.mapper.daemon_client import ping
-
-    if path is not None and path != ".":
-        console.print("[yellow]Note: path argument is deprecated. The daemon is now global.[/yellow]")
+    from reporails_cli.core.mapper.daemon_client import ping, runs_newer_code, runs_older_code, serves_this_code
 
     if not is_daemon_running():
         console.print("Daemon: [dim]not running[/dim]")
         return
 
     resp = ping()
-    if resp and resp.get("ok"):
-        console.print(f"Daemon: [green]running[/green] (PID {resp.get('pid', '?')})")
-    else:
+    if not (resp and resp.get("ok")):
         console.print("Daemon: [yellow]PID file exists but unresponsive[/yellow]")
+        return
+    code = resp.get("code")
+    details = [f"PID {resp.get('pid', '?')}"]
+    if isinstance(code, str):
+        details.append(f"version {code.rpartition('+map')[0] or code}")
+    if runs_older_code(resp):
+        details.append("left by an older version of ails; the next check replaces it")
+    elif runs_newer_code(resp):
+        details.append("a newer version's daemon; this version checks without it")
+    elif not serves_this_code(resp):
+        details.append("an unrecognized version's daemon; this version checks without it")
+    console.print(f"Daemon: [green]running[/green] ({', '.join(details)})")

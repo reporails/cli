@@ -16,6 +16,7 @@ import yaml
 from rich.console import Console
 
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, UNENTITLED_TIERS
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,6 @@ GITHUB_CLIENT_ID = ""  # Always sourced from the platform — see _resolve_clien
 
 # Reporails platform URL — configurable for local dev
 DEFAULT_PLATFORM_URL = "https://reporails.com"
-
-
-# PlatformUnavailableError moved to core.platform.contract.errors; re-exported above
-# so the existing `auth_command.PlatformUnavailableError` import path keeps working.
-__all__ = ["PlatformUnavailableError"]
 
 
 def _user_agent() -> str:
@@ -71,21 +67,43 @@ def _read_credentials() -> dict[str, str]:
 
 
 def _write_credentials(api_key: str, github_login: str, tier: str) -> None:
-    """Store credentials securely."""
+    """Store credentials securely.
+
+    The directory and the file are owner-only from their first byte — on
+    NTFS (no POSIX mode bits) that guarantee doesn't apply, so Windows keeps
+    the whatever-the-filesystem-gives-it default and only warns. On POSIX,
+    `os.open` with an explicit mode creates the file at 0600 directly (a mode
+    with no group/other bits, so no umask can widen it), instead of writing
+    the plaintext key at the platform default and narrowing it a moment
+    later — that gap let a concurrent reader on a shared host see the key.
+
+    The `os.open` mode only applies when the call creates the file: a
+    `credentials.yml` already on disk at a wider mode (an older CLI version,
+    a restore that dropped permissions) would otherwise keep that mode after
+    a fresh key is written. `fchmod` after opening forces 0600 either way,
+    new file or existing.
+    """
+    import os
+
     path = _credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.dump(
-            {"api_key": api_key, "github_login": github_login, "tier": tier},
-            default_flow_style=False,
-        ),
-        encoding="utf-8",
+    data = yaml.dump(
+        {"api_key": api_key, "github_login": github_login, "tier": tier},
+        default_flow_style=False,
     )
-    # Restrict permissions to owner only (NTFS ACLs don't support mode bits)
     if sys.platform == "win32":
+        path.write_text(data, encoding="utf-8")
         logger.warning("File permissions not enforced on Windows — secure %s manually", path)
-    else:
-        path.chmod(0o600)
+        return
+    path.parent.chmod(0o700)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)  # the mode above only took effect if this call created the file
+    except BaseException:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(data)
 
 
 def _clear_credentials() -> None:
@@ -106,9 +124,8 @@ def _resolve_client_id(base_url: str) -> str:
     """Resolve the GitHub OAuth client ID, trying embedded constant then platform.
 
     Raises PlatformUnavailableError when the platform endpoint is reachable but
-    returns a non-JSON body (a transient network/proxy state) — the original
-    code silently swallowed this into an empty client_id and surfaced it as a
-    misleading "OAuth not configured" message.
+    returns a non-JSON body (a transient network/proxy state), so that state is
+    not reported as a misleading "OAuth not configured" message.
     """
     import httpx
 
@@ -177,24 +194,26 @@ def _poll_github_token(client_id: str, device_code: str, interval: int) -> str |
 
 
 def _handle_exchange_response(payload: dict[str, str]) -> None:
-    """Handle the API key exchange response — waitlist, already enrolled, or success."""
-    if payload.get("error") == "waitlist":
-        username = payload.get("github_login", "")
-        console.print(f"  [yellow]Beta is full.[/] You're on the list, @{username}.")
-        console.print("  We'll email you at launch.\n")
-        console.print("  [dim]In the meantime: npx ails check . for free diagnostics[/dim]\n")
-        raise typer.Exit(0)
+    """Handle the API key exchange response — already enrolled, or success.
 
+    This branches on the reply and on whether a local key already exists only.
+    """
     if payload.get("already_enrolled"):
         username = payload.get("github_login", "")
-        tier = payload.get("tier", "beta")
+        tier = _tier_phrase(payload.get("tier", ""))
         creds = _read_credentials()
         if creds.get("api_key"):
-            console.print(f"  Already enrolled as [bold]@{username}[/] ({tier} tier).")
+            console.print(f"  Already enrolled as [bold]@{username}[/]{tier}.")
             console.print("  Your existing key is still active.\n")
         else:
-            console.print(f"  [yellow]You're enrolled as @{username} ({tier} tier),[/]")
-            console.print("  but your local key is missing. Contact support or re-register.\n")
+            console.print(f"  [yellow]You're enrolled as @{username}{tier},[/]")
+            from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
+
+            console.print("  but this machine has no key, and logging in again cannot return it.")
+            console.print(
+                f"  → Generate a new key on [link={_SUBSCRIBE_URL}]reporails.com/account[/link] "
+                "and set it as [bold]AILS_API_KEY[/].\n"
+            )
         raise typer.Exit(0)
 
     api_key = payload.get("api_key")
@@ -203,11 +222,25 @@ def _handle_exchange_response(payload: dict[str, str]) -> None:
         raise typer.Exit(1)
 
     username = payload.get("github_login", "")
-    tier = payload.get("tier", "beta")
+    tier = str(payload.get("tier") or "")
+    # No tier from the server means no tier on disk. Writing a stand-in here
+    # persists a claim nobody made, and `auth status` then echoes it for the
+    # life of the credentials file.
     _write_credentials(api_key, username, tier)
 
-    console.print("  [green]Welcome to the beta![/] Full diagnostics unlocked.")
-    console.print(f"  Authenticated as [bold]@{username}[/]\n")
+    console.print(f"  [green]Signed in as[/] [bold]@{username}[/]{_tier_phrase(tier)}.")
+    console.print("  Your diagnosis is unchanged; [bold]ails check --heal[/bold] is now enabled.")
+    if tier in ENTITLED_TIERS:
+        # Already paying — no upgrade pitch to a Pro/team key, matching the
+        # tier-aware line `ails check` itself shows a Pro run.
+        console.print("  [dim]Fixes are in the JSON output (--format json) and the MCP tools.[/dim]\n")
+    else:
+        # Unpaid tiers get no server fix text; this one line replaces it,
+        # matching the line an unpaid `ails check` run shows.
+        from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
+
+        console.print("  Pro adds fix text for the remaining findings and the order to apply them.")
+        console.print(f"  → [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]\n")
 
 
 @auth_app.command("login")
@@ -240,8 +273,8 @@ def login(
     creds = _read_credentials()
     if creds.get("api_key"):
         console.print(
-            f"\n  Already authenticated as [bold]@{creds.get('github_login', '?')}[/] "
-            f"({creds.get('tier', 'free').title()} tier).\n"
+            f"\n  Already authenticated as [bold]@{creds.get('github_login', '?')}[/]"
+            f"{_tier_phrase(creds.get('tier', ''))}.\n"
             "  Run [bold]ails auth logout[/] first to re-authenticate.\n",
         )
         raise typer.Exit(0)
@@ -301,40 +334,101 @@ def login(
     _handle_exchange_response(payload)
 
 
+def _env_api_key() -> str:
+    """Read the `AILS_API_KEY` env override — mirrors api_client.py's env-wins precedence."""
+    import os
+
+    return os.environ.get("AILS_API_KEY", "")
+
+
+# Stored tiers that are safe to echo verbatim — the shared tier vocabulary, not a
+# second copy of it. Anything else (empty, or a retired legacy tier string) is
+# resolved at check time, so this never prints a stale value.
+_DISPLAYABLE_TIERS = ENTITLED_TIERS | UNENTITLED_TIERS
+_TIER_UNKNOWN_MSG = "(resolved at check time)"
+
+
+def _tier_phrase(tier: str) -> str:
+    """Render a stored/echoed tier as a trailing ` (<tier> tier)` fragment, or ``.
+
+    The same filter `auth status` applies: only a tier in the shared vocabulary is
+    echoed. An unknown or absent tier adds nothing rather than inventing one.
+    """
+    return f" ({tier} tier)" if tier in _DISPLAYABLE_TIERS else ""
+
+
 @auth_app.command("status")
 def status() -> None:
     """Show current authentication status."""
+    env_key = _env_api_key()
     creds = _read_credentials()
-    if not creds.get("api_key"):
+    api_key = env_key or creds.get("api_key", "")
+
+    if not api_key:
         console.print("\n  Not authenticated. Run [bold]ails auth login[/] to sign in.\n")
         raise typer.Exit(0)
 
-    api_key = creds["api_key"]
     # Show prefix only, never the full key
     prefix = api_key[:16] + "..." if len(api_key) > 16 else api_key
+    source = "env AILS_API_KEY" if env_key else str(_credentials_path())
 
-    console.print(f"\n  Authenticated as [bold]@{creds.get('github_login', '?')}[/]")
-    console.print(f"  Tier: [bold]{creds.get('tier', '?')}[/]")
+    # The stored github_login/tier are only meaningful when the effective key IS the
+    # locally cached one — an env-provided key may not match anything on disk at all.
+    known_identity = bool(creds.get("api_key")) and creds.get("api_key") == api_key
+    stored_tier = creds.get("tier", "") if known_identity else ""
+    tier_line = stored_tier if stored_tier in _DISPLAYABLE_TIERS else _TIER_UNKNOWN_MSG
+
+    console.print()
+    if known_identity:
+        github_login = creds.get("github_login", "?")
+        console.print(f"  Authenticated as [bold]@{github_login}[/]")
+    else:
+        # An env-provided key may not match anything cached on disk, so there
+        # is no local github handle to show — and this CLI has no way to look
+        # one up for a key it did not issue, so it never will be. Say that
+        # plainly instead of `@?` or a promise of a later resolution (only the
+        # tier below is genuinely resolved later, by the server, on a check).
+        console.print("  Authenticated with an API key [dim](no local identity on record)[/dim]")
+    console.print(f"  Tier: [bold]{tier_line}[/]")
     console.print(f"  Key:  {prefix}")
-    console.print(f"  File: {_credentials_path()}\n")
+    console.print(f"  Source: {source}\n")
 
 
 @auth_app.command("logout")
 def logout() -> None:
-    """Clear stored credentials."""
+    """Clear stored credentials.
+
+    Only clears the on-disk credentials file — an `AILS_API_KEY` set in the
+    environment is a shell/CI concern and is never modified by this command.
+    """
+    env_key = _env_api_key()
     creds = _read_credentials()
+
     if not creds.get("api_key"):
-        console.print("\n  Not authenticated.\n")
+        if env_key:
+            console.print(
+                "\n  No stored credentials to clear. [yellow]AILS_API_KEY[/] is still set "
+                "in this shell's environment — unset it separately to fully sign out.\n",
+            )
+        else:
+            console.print("\n  Not authenticated.\n")
         raise typer.Exit(0)
 
     username = creds.get("github_login", "?")
     _clear_credentials()
-    console.print(f"\n  [green]Logged out.[/] Credentials for @{username} removed.\n")
+    if env_key:
+        console.print(
+            f"\n  [green]Logged out.[/] Credentials for @{username} removed. "
+            "[yellow]AILS_API_KEY[/] is still set in this shell's environment and will "
+            "still authenticate ails commands — unset it to fully sign out.\n",
+        )
+    else:
+        console.print(f"\n  [green]Logged out.[/] Credentials for @{username} removed.\n")
 
 
 @auth_app.command("token")
 def token() -> None:
-    """Print the stored API key to stdout for use in CI environments.
+    """Print the effective API key to stdout for use in CI environments.
 
     Treat this output like a secret — the key is the value to set as
     `AILS_API_KEY` in your CI provider's secret store, or to pass via the
@@ -343,13 +437,18 @@ def token() -> None:
         AILS_API_KEY=$(ails auth token)
         gh secret set REPORAILS_API_KEY -b "$(ails auth token)"
 
-    Exits non-zero if not authenticated, so scripts can detect missing
-    credentials.
+    Honors an `AILS_API_KEY` env override (env wins over the stored credentials
+    file), so it reflects the same key `ails check` would authenticate with.
+    Exits non-zero if no key is available from either source, so scripts can
+    detect missing credentials.
     """
+    env_key = _env_api_key()
     creds = _read_credentials()
-    if not creds.get("api_key"):
+    api_key = env_key or creds.get("api_key", "")
+
+    if not api_key:
         console.print("\n  Not authenticated. Run [bold]ails auth login[/] to sign in.\n")
         raise typer.Exit(1)
 
     # Plain print so the key pipes cleanly without rich formatting.
-    print(creds["api_key"])
+    print(api_key)

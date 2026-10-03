@@ -11,10 +11,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from reporails_cli.interfaces.cli.auth_command import (
-    PlatformUnavailableError,
-    _resolve_client_id,
-)
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.interfaces.cli.auth_command import _resolve_client_id
 
 
 class _FakeResponse:
