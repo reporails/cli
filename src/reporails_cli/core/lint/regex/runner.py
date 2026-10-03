@@ -2,36 +2,27 @@
 
 from __future__ import annotations
 
-import fnmatch
 import logging
-from pathlib import Path, PurePosixPath
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import regex as re
 
-from reporails_cli.core.discovery.walk import walk_files, walk_markdown
+from reporails_cli.core.discovery.agent_discovery import is_excluded
+from reporails_cli.core.discovery.agents import load_project_exclude_dirs
+from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_markdown
 from reporails_cli.core.lint.regex.compiler import (
     CombinedPattern,
     CompiledCheck,
+    CompiledRuleSet,
     compile_rules,
 )
+from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.dto.models import LocalFinding
-from reporails_cli.core.platform.utils.utils import matches_any_glob
+from reporails_cli.core.platform.utils.utils import glob_matches, matches_any_glob, strip_frontmatter
 
 logger = logging.getLogger(__name__)
-
-
-def _strip_frontmatter(content: str) -> str:
-    """Replace YAML frontmatter with blank lines to preserve line numbers."""
-    if not content.startswith("---"):
-        return content
-    end = content.find("\n---", 3)
-    if end == -1:
-        return content
-    end_of_closing = content.find("\n", end + 4)
-    if end_of_closing == -1:
-        end_of_closing = len(content)
-    return "\n" * content[:end_of_closing].count("\n") + content[end_of_closing:]
 
 
 def _find_line_number(content: str, match: re.Match[str]) -> int:
@@ -44,27 +35,10 @@ def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
 
 
 def _file_matches_path_filter(file_path: str, path_includes: tuple[str, ...]) -> bool:
-    """Check if a file path matches any of the path include patterns."""
+    """Check if a file path matches any of the path include patterns (a templated one never does)."""
     if not path_includes:
         return True
-    filename = Path(file_path).name
-    rel = file_path.lstrip("./")
-    p = PurePosixPath(rel)
-    for pattern in path_includes:
-        if "{{" in pattern:
-            continue
-        if "**" in pattern:
-            clean = pattern.lstrip("./")
-            if p.match(clean):
-                return True
-            if "**/" in clean:
-                collapsed = clean.replace("**/", "")
-                if fnmatch.fnmatch(rel, collapsed) or fnmatch.fnmatch(filename, collapsed):
-                    return True
-            continue
-        if any(fnmatch.fnmatch(c, pattern) for c in (file_path, filename, rel)):
-            return True
-    return False
+    return any("{{" not in pattern and glob_matches(file_path, pattern) for pattern in path_includes)
 
 
 def _append_extra(seen: set[Path], targets: list[Path], extra_targets: list[Path] | None) -> None:
@@ -72,7 +46,7 @@ def _append_extra(seen: set[Path], targets: list[Path], extra_targets: list[Path
     if not extra_targets:
         return
     for extra in extra_targets:
-        resolved = extra.resolve()
+        resolved = safe_resolve(extra)
         if resolved not in seen and resolved.exists():
             seen.add(resolved)
             targets.append(resolved)
@@ -88,7 +62,7 @@ def _resolve_scan_targets(
         seen: set[Path] = set()
         targets: list[Path] = []
         for ifile in instruction_files:
-            resolved = ifile.resolve()
+            resolved = safe_resolve(ifile)
             if resolved not in seen and resolved.exists():
                 seen.add(resolved)
                 targets.append(ifile)
@@ -96,10 +70,11 @@ def _resolve_scan_targets(
         return targets
 
     scan_dir = target if target.is_dir() else target.parent
-    targets = list(walk_markdown(scan_dir))
+    excluded = load_project_exclude_dirs(scan_dir)
+    targets = list(walk_markdown(scan_dir, excluded))
     if not targets:
-        targets = list(walk_files(scan_dir, _is_text_file))
-    seen = {t.resolve() for t in targets}
+        targets = list(walk_files(scan_dir, excluded, _is_text_file))
+    seen = {safe_resolve(t) for t in targets}
     _append_extra(seen, targets, extra_targets)
     return targets
 
@@ -116,6 +91,15 @@ def _is_text_file(file_path: Path) -> bool:
 _REGEX_TIMEOUT_S = 0.5
 
 
+def _safe_search(pat: re.Pattern[str], content: str) -> re.Match[str] | None:
+    """Run pat.search with the regex library's native timeout against catastrophic backtracking."""
+    try:
+        return pat.search(content, timeout=_REGEX_TIMEOUT_S)
+    except TimeoutError:
+        logger.warning("Regex search timed out after %.1fs: %s", _REGEX_TIMEOUT_S, pat.pattern[:80])
+        return None
+
+
 def _match_check(
     check: CompiledCheck,
     content: str,
@@ -123,29 +107,53 @@ def _match_check(
 ) -> list[re.Match[str]]:
     """Execute a single compiled check against file content.
 
-    No per-pattern `timeout=` here — the `regex` library is already immune to
-    most catastrophic-backtracking patterns that hang stdlib `re`, and adding
-    `timeout=` to every search ~doubles per-call overhead. ReDoS protection
-    rides on `_safe_finditer` (combined-alternation paths, where rule authors
-    most plausibly hit pathological cases) plus the 1 MB file-size cap.
+    Every `pat.search` runs through `_safe_search`, so the `regex` library's
+    native `timeout=` bounds a pathological pattern rather than letting it hang
+    the scan; the 1 MB file-size cap is the second bound.
     """
     if check.body_only:
-        content = body_content if body_content is not None else _strip_frontmatter(content)
+        content = body_content if body_content is not None else strip_frontmatter(content, keep_lines=True)
     if check.either_patterns:
-        return [m for pat in check.either_patterns if (m := pat.search(content))]
+        return [m for pat in check.either_patterns if (m := _safe_search(pat, content))]
 
     matches = []
     for pat in check.patterns:
-        m = pat.search(content)
+        m = _safe_search(pat, content)
         if not m:
             return []
         matches.append(m)
 
     for pat in check.negative_patterns:
-        if pat.search(content):
+        if _safe_search(pat, content):
             return []
 
     return matches
+
+
+def _every_match(
+    check: CompiledCheck,
+    content: str,
+    body_content: str | None = None,
+) -> list[re.Match[str]]:
+    """Every matching line of a check that forbids something: its first match on each line.
+
+    A check made of several patterns that must all match reports the lines of its last pattern
+    (the earlier ones only gate the check, e.g. "this is a hooks block"), so one forbidden thing
+    is one finding, not one per pattern; a single pattern, or an either-set, reports each line it matches.
+    """
+    first = _match_check(check, content, body_content)
+    if not first:
+        return first
+    if check.body_only:
+        content = body_content if body_content is not None else strip_frontmatter(content, keep_lines=True)
+    found = sorted(
+        (m for pat in (check.either_patterns or check.patterns[-1:]) for m in _safe_finditer(pat, content)),
+        key=lambda m: m.start(),
+    )
+    one_per_line: dict[int, re.Match[str]] = {}
+    for m in found:
+        one_per_line.setdefault(_find_line_number(content, m), m)
+    return list(one_per_line.values()) or (first if check.either_patterns else first[-1:])
 
 
 def _build_sarif(
@@ -161,17 +169,6 @@ def _build_sarif(
             }
         ],
     }
-
-
-def _should_exclude(file_path: Path, scan_root: Path, exclude_dirs: list[str] | None) -> bool:
-    """Check if file should be excluded based on directory exclusion list."""
-    if not exclude_dirs:
-        return False
-    try:
-        rel = file_path.relative_to(scan_root)
-    except ValueError:
-        return False
-    return bool(set(exclude_dirs) & set(rel.parts))
 
 
 def _should_exclude_file(file_path: Path, scan_root: Path, exclude_files: list[str] | None) -> bool:
@@ -218,6 +215,16 @@ def _get_applicable_checks(
     return applicable
 
 
+def _relative_uri(path: Path, scan_root: Path) -> str:
+    """`path` relative to the scan root as written in a result, or as it is when outside it."""
+    for root in (scan_root, safe_resolve(scan_root)):
+        try:
+            return path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+    return str(path)
+
+
 def _emit_results(
     check: CompiledCheck,
     matches: list[re.Match[str]],
@@ -225,8 +232,13 @@ def _emit_results(
     content: str,
     results: list[dict[str, Any]],
     rule_defs: dict[str, dict[str, Any]],
+    imports: tuple[list[int], list[tuple[Path, int] | None], Path] | None = None,
 ) -> None:
-    """Append SARIF results for matched check."""
+    """Append SARIF results for matched check.
+
+    `imports` is the line map and line origins of import-expanded `content` plus the scan root: a match
+    is then reported on the file and line where its text is written.
+    """
     if check.id not in rule_defs:
         rule_defs[check.id] = {
             "id": check.id,
@@ -235,6 +247,14 @@ def _emit_results(
 
     for match in matches:
         line = _find_line_number(content, match)
+        uri = file_uri
+        if imports:
+            line_map, origins, scan_root = imports
+            origin = origins[line - 1]
+            if origin is None:
+                line = line_map[line - 1]
+            else:
+                uri, line = _relative_uri(origin[0], scan_root), origin[1]
         snippet = _get_snippet(match)
         results.append(
             {
@@ -243,7 +263,7 @@ def _emit_results(
                 "locations": [
                     {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": file_uri},
+                            "artifactLocation": {"uri": uri},
                             "region": {
                                 "startLine": line,
                                 "snippet": {"text": snippet},
@@ -314,6 +334,23 @@ def _scan_combined(
 _MAX_FILE_SIZE = 1_048_576  # 1 MB
 
 
+def _check_hits(
+    check: CompiledCheck,
+    content: str,
+    expanded: tuple[str, list[int], list[tuple[Path, int] | None]] | None,
+    scan_root: Path,
+) -> tuple[list[re.Match[str]], str, tuple[list[int], list[tuple[Path, int] | None], Path] | None]:
+    """A check's matches, the text they were found in, and the import line mapping to report them against.
+
+    A check that follows imports reads the import-expanded text; any other reads the file as written.
+    """
+    imports = None
+    if check.follow_imports and expanded:
+        content, imports = expanded[0], (expanded[1], expanded[2], scan_root)
+    match_fn = _every_match if check.every_match else _match_check
+    return match_fn(check, content), content, imports
+
+
 def _scan_file(
     file_path: Path,
     scan_root: Path,
@@ -329,7 +366,7 @@ def _scan_file(
         if file_path.stat().st_size > _MAX_FILE_SIZE:
             logger.debug("Skipping oversized file: %s", file_path)
             return
-        content = file_path.read_text(encoding="utf-8")
+        content = file_path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return
 
@@ -338,21 +375,16 @@ def _scan_file(
     except ValueError:
         file_uri = str(file_path)
 
-    body_content: str | None = None
-    if any(c.body_only for c in checks):
-        body_content = _strip_frontmatter(content)
-
     if combined_patterns:
         _scan_combined(content, file_uri, combined_patterns, results, rule_defs)
 
+    expanded = expand_imports_with_origins(content, file_path) if any(c.follow_imports for c in checks) else None
     for check in checks:
-        matches = _match_check(check, content, body_content)
-        if not matches:
-            continue
-        if first_match_only:
-            _emit_results(check, matches[:1], file_uri, content, results, rule_defs)
-        else:
-            _emit_results(check, matches, file_uri, content, results, rule_defs)
+        matches, text, imports = _check_hits(check, content, expanded, scan_root)
+        if matches:
+            _emit_results(
+                check, matches[:1] if first_match_only else matches, file_uri, text, results, rule_defs, imports
+            )
 
 
 def _scan_all_targets(
@@ -360,14 +392,14 @@ def _scan_all_targets(
     scan_root: Path,
     universal: list[CompiledCheck],
     by_pattern: dict[str, list[CompiledCheck]],
-    exclude_dirs: list[str] | None,
+    exclude_dirs: frozenset[str],
     exclude_files: list[str] | None = None,
 ) -> dict[str, Any]:
     """Scan all targets and return SARIF-shaped dict."""
     results: list[dict[str, Any]] = []
     rule_defs: dict[str, dict[str, Any]] = {}
     for file_path in scan_targets:
-        if not file_path.is_file() or _should_exclude(file_path, scan_root, exclude_dirs):
+        if not file_path.is_file() or is_excluded(file_path, scan_root, exclude_dirs):
             continue
         if _should_exclude_file(file_path, scan_root, exclude_files):
             continue
@@ -376,6 +408,36 @@ def _scan_all_targets(
             continue
         _scan_file(file_path, scan_root, individual, results, rule_defs)
     return _build_sarif(results, list(rule_defs.values()))
+
+
+def _compile_ruleset(yml_paths: list[Path], body_only_paths: set[Path] | None) -> CompiledRuleSet:
+    """Compile the rule files that exist, warning about rules with unsupported operators."""
+    valid_paths = [p for p in yml_paths if p and p.exists()]
+    if not valid_paths:
+        return CompiledRuleSet()
+    ruleset = compile_rules(valid_paths, body_only_paths=body_only_paths)
+    if ruleset.skipped:
+        logger.warning("Skipped rules with unsupported operators: %s", ", ".join(ruleset.skipped))
+    return ruleset
+
+
+def _scan_ruleset(
+    ruleset: CompiledRuleSet,
+    target: Path,
+    extra_targets: list[Path] | None = None,
+    instruction_files: list[Path] | None = None,
+    exclude_dirs: frozenset[str] = frozenset(),
+    exclude_files: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run a compiled ruleset over the scan targets, returns SARIF-shaped dict."""
+    if not ruleset.checks:
+        return {"runs": []}
+    scan_targets = _resolve_scan_targets(target, instruction_files, extra_targets)
+    if not scan_targets:
+        return {"runs": []}
+    scan_root = target if target.is_dir() else target.parent
+    universal, by_pattern = _partition_checks(ruleset.checks)
+    return _scan_all_targets(scan_targets, scan_root, universal, by_pattern, exclude_dirs, exclude_files)
 
 
 def run_validation(
@@ -388,81 +450,47 @@ def run_validation(
     exclude_files: list[str] | None = None,
 ) -> dict[str, Any]:
     """Execute regex validation with specified rule configs, returns SARIF-shaped dict."""
-    valid_paths = [p for p in yml_paths if p and p.exists()]
-    if not valid_paths:
-        return {"runs": []}
-
-    ruleset = compile_rules(valid_paths, body_only_paths=body_only_paths)
-    if not ruleset.checks:
-        return {"runs": []}
-
-    if ruleset.skipped:
-        logger.warning("Skipped rules with unsupported operators: %s", ", ".join(ruleset.skipped))
-
-    scan_targets = _resolve_scan_targets(target, instruction_files, extra_targets)
-    if not scan_targets:
-        return {"runs": []}
-
-    scan_root = target if target.is_dir() else target.parent
-    universal, by_pattern = _partition_checks(ruleset.checks)
-    return _scan_all_targets(scan_targets, scan_root, universal, by_pattern, exclude_dirs, exclude_files)
-
-
-def _load_check_expectations(
-    yml_paths: list[Path],
-) -> tuple[dict[str, str], dict[str, str], dict[str, int]]:
-    """Load expect, message, and min_lines values from check definitions."""
-    import yaml
-
-    expect_map: dict[str, str] = {}
-    message_map: dict[str, str] = {}
-    min_lines_map: dict[str, int] = {}
-    for yml_path in yml_paths:
-        if not yml_path.exists():
-            continue
-        try:
-            data = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
-            for check_def in data.get("checks", []):
-                if check_def.get("type") != "deterministic":
-                    continue
-                if check_def.get("fallback"):
-                    continue
-                cid = check_def.get("id", "")
-                expect_map[cid] = check_def.get("expect", "present")
-                message_map[cid] = check_def.get("message", "")
-                ml = check_def.get("min_lines")
-                if isinstance(ml, (int, float)) and ml > 0:
-                    min_lines_map[cid] = int(ml)
-        except Exception:  # yaml.YAMLError or OSError; skip unreadable files
-            continue
-    return expect_map, message_map, min_lines_map
+    ruleset = _compile_ruleset(yml_paths, body_only_paths)
+    return _scan_ruleset(
+        ruleset, target, extra_targets, instruction_files, frozenset(exclude_dirs or ()), exclude_files
+    )
 
 
 def _collect_sarif_matches(
     sarif: dict[str, Any],
-) -> tuple[set[tuple[str, str]], dict[tuple[str, str], tuple[int, str]]]:
-    """Extract matched (check_id, file) pairs and details from SARIF output."""
+) -> tuple[set[tuple[str, str]], dict[tuple[str, str], list[tuple[int, str, str]]]]:
+    """Extract matched (check_id, file) pairs and details from SARIF output.
+
+    Each detail carries a matched line, its message, and the matched text
+    (SARIF ``region.snippet.text``). The matched text lets the merge layer
+    recognize when two rules with the same pattern flagged one secret, so it
+    reports once instead of twice. A pair holds one detail per matched line.
+    """
     pairs: set[tuple[str, str]] = set()
-    details: dict[tuple[str, str], tuple[int, str]] = {}
+    details: dict[tuple[str, str], list[tuple[int, str, str]]] = {}
     for run in sarif.get("runs", []):
         for result in run.get("results", []):
             cid = result.get("ruleId", "")
             msg = result.get("message", {}).get("text", "")
-            fp, ln = "", 0
+            fp, ln, snippet = "", 0, ""
             for loc in result.get("locations", []):
                 phys = loc.get("physicalLocation", {})
                 fp = phys.get("artifactLocation", {}).get("uri", "")
-                ln = phys.get("region", {}).get("startLine", 0)
+                region = phys.get("region", {})
+                ln = region.get("startLine", 0)
+                snippet = region.get("snippet", {}).get("text", "")
                 break
             pairs.add((cid, fp))
-            details[(cid, fp)] = (ln, msg)
+            entry = (ln, msg, snippet)
+            if entry not in details.setdefault((cid, fp), []):
+                details[(cid, fp)].append(entry)
     return pairs, details
 
 
 def _resolve_scanned_files(
     target: Path,
     instruction_files: list[Path] | None,
-    exclude_dirs: list[str] | None,
+    exclude_dirs: frozenset[str],
     exclude_files: list[str] | None = None,
 ) -> list[str]:
     """Build list of relative file paths that were scanned."""
@@ -471,7 +499,7 @@ def _resolve_scanned_files(
     for fp in _resolve_scan_targets(target, instruction_files, None):
         if not fp.is_file():
             continue
-        if _should_exclude(fp, scan_root, exclude_dirs) or _should_exclude_file(fp, scan_root, exclude_files):
+        if is_excluded(fp, scan_root, exclude_dirs) or _should_exclude_file(fp, scan_root, exclude_files):
             continue
         try:
             scanned.append(fp.relative_to(scan_root).as_posix())
@@ -481,16 +509,17 @@ def _resolve_scanned_files(
 
 
 def _emit_expect_findings(
-    expect_map: dict[str, str],
-    message_map: dict[str, str],
+    checks: list[CompiledCheck],
     matched_pairs: set[tuple[str, str]],
-    match_details: dict[tuple[str, str], tuple[int, str]],
+    match_details: dict[tuple[str, str], list[tuple[int, str, str]]],
     scanned_files: list[str],
-    min_lines_map: dict[str, int] | None = None,
     scan_root: Path | None = None,
     fix_by_rule: dict[str, str] | None = None,
 ) -> list[LocalFinding]:
     """Convert expect/match results to LocalFinding list.
+
+    A check that declares `paths.include` only reports on the files those filters name: a
+    file outside them is neither failing nor passing it.
 
     When a check declares `min_lines`, files below that line count are
     skipped — neither marked as failing nor as passing. Used by rules
@@ -503,33 +532,30 @@ def _emit_expect_findings(
     edit. Empty when the rule has no declared fix.
     """
     findings: list[LocalFinding] = []
-    min_lines_map = min_lines_map or {}
     fix_by_rule = fix_by_rule or {}
-    for check_id, expect in expect_map.items():
+    for check in checks:
+        check_id = check.id
         parts = check_id.split(".")
         rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}" if len(parts) >= 3 else check_id
-        check_suffix = (
-            f"check:{parts[parts.index('check') + 1]}"
-            if "check" in parts and parts.index("check") + 1 < len(parts)
-            else ""
-        )
-        msg = message_map.get(check_id, "")
+        severity = check.severity
+        msg = check.message
         fix_text = fix_by_rule.get(rule_id, "")
-        min_lines = min_lines_map.get(check_id, 0)
-        if expect == "absent":
-            for file_path in scanned_files:
-                if (check_id, file_path) in matched_pairs:
-                    line, match_msg = match_details[(check_id, file_path)]
+        if check.every_match:
+            # A match can sit in a file the scan did not list: the text an `@path` import splices in.
+            imported = sorted(fp for cid, fp in matched_pairs if cid == check_id and fp not in scanned_files)
+            for file_path in [*scanned_files, *imported]:
+                for line, match_msg, snippet in match_details.get((check_id, file_path), ()):
                     findings.append(
                         LocalFinding(
                             file=file_path,
                             line=line,
-                            severity="warning",
+                            severity=severity,
                             rule=rule_id,
                             message=match_msg or msg,
                             fix=fix_text,
                             source="m_probe",
-                            check_id=check_suffix,
+                            check_id=check_id,
+                            signature=snippet,
                         )
                     )
         else:
@@ -537,16 +563,17 @@ def _emit_expect_findings(
                 LocalFinding(
                     file=file_path,
                     line=1,
-                    severity="warning",
+                    severity=severity,
                     rule=rule_id,
                     message=msg,
                     fix=fix_text,
                     source="m_probe",
-                    check_id=check_suffix,
+                    check_id=check_id,
                 )
                 for file_path in scanned_files
                 if (check_id, file_path) not in matched_pairs
-                and not _file_below_min_lines(file_path, min_lines, scan_root)
+                and _file_matches_path_filter(file_path, check.path_includes)
+                and not _file_below_min_lines(file_path, check.min_lines, scan_root)
             )
     return findings
 
@@ -561,7 +588,7 @@ def _file_below_min_lines(rel_path: str, min_lines: int, scan_root: Path | None)
         return False
     full = scan_root / rel_path
     try:
-        return len(full.read_text(encoding="utf-8", errors="replace").splitlines()) < min_lines
+        return len(full.read_text(encoding="utf-8-sig", errors="replace").splitlines()) < min_lines
     except OSError:
         return False
 
@@ -570,7 +597,7 @@ def run_checks(
     yml_paths: list[Path],
     target: Path,
     instruction_files: list[Path] | None = None,
-    exclude_dirs: list[str] | None = None,
+    exclude_dirs: frozenset[str] = frozenset(),
     body_only_paths: set[Path] | None = None,
     min_lines_overrides: dict[str, int] | None = None,
     fix_by_rule: dict[str, str] | None = None,
@@ -588,52 +615,30 @@ def run_checks(
     registry; propagates to `LocalFinding.fix` so MCP / JSON consumers
     can render the per-finding suggested edit.
     """
-    expect_map, message_map, min_lines_map = _load_check_expectations(yml_paths)
-    if min_lines_overrides:
-        min_lines_map = _apply_min_lines_overrides(min_lines_map, expect_map, min_lines_overrides)
-    sarif = run_validation(
-        yml_paths,
-        target,
-        instruction_files=instruction_files,
-        exclude_dirs=exclude_dirs,
-        body_only_paths=body_only_paths,
-        exclude_files=exclude_files,
+    ruleset = _compile_ruleset(yml_paths, body_only_paths)
+    checks = _apply_min_lines_overrides(ruleset.checks, min_lines_overrides) if min_lines_overrides else ruleset.checks
+    sarif = _scan_ruleset(
+        ruleset, target, instruction_files=instruction_files, exclude_dirs=exclude_dirs, exclude_files=exclude_files
     )
     matched_pairs, match_details = _collect_sarif_matches(sarif)
     scanned_files = _resolve_scanned_files(target, instruction_files, exclude_dirs, exclude_files)
     scan_root = target if target.is_dir() else target.parent
     return _emit_expect_findings(
-        expect_map,
-        message_map,
-        matched_pairs,
-        match_details,
-        scanned_files,
-        min_lines_map=min_lines_map,
-        scan_root=scan_root,
-        fix_by_rule=fix_by_rule,
+        checks, matched_pairs, match_details, scanned_files, scan_root=scan_root, fix_by_rule=fix_by_rule
     )
 
 
-def _apply_min_lines_overrides(
-    min_lines_map: dict[str, int],
-    expect_map: dict[str, str],
-    overrides: dict[str, int],
-) -> dict[str, int]:
+def _apply_min_lines_overrides(checks: list[CompiledCheck], overrides: dict[str, int]) -> list[CompiledCheck]:
     """Merge `rule_thresholds[rule_id].min_lines` over per-check defaults.
 
     The override key is the rule id (e.g. `CORE:S:0013`); the check
-    id (e.g. `CORE.S.0013.pattern_check`) extends it. Walk `expect_map`
-    to find which check ids belong to a rule id and overwrite their
-    min_lines entry.
+    id (e.g. `CORE.S.0013.pattern_check`) extends it.
     """
-    out = dict(min_lines_map)
-    for check_id in expect_map:
-        parts = check_id.split(".")
-        if len(parts) < 3:
-            continue
-        rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}"
-        if rule_id in overrides:
-            out[check_id] = int(overrides[rule_id])
+    out: list[CompiledCheck] = []
+    for check in checks:
+        parts = check.id.split(".")
+        rule_id = f"{parts[0]}:{parts[1]}:{parts[2]}" if len(parts) >= 3 else ""
+        out.append(replace(check, min_lines=int(overrides[rule_id])) if rule_id in overrides else check)
     return out
 
 

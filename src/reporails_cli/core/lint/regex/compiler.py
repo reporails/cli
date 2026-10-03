@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,7 @@ _SUPPORTED_OPERATORS = {"pattern-regex", "pattern-either", "patterns"}
 
 
 @dataclass(frozen=True)
-class CompiledCheck:  # pylint: disable=too-many-instance-attributes
+class CompiledCheck:
     """A single compiled regex check from a YAML rule file."""
 
     id: str
@@ -30,6 +30,9 @@ class CompiledCheck:  # pylint: disable=too-many-instance-attributes
     either_patterns: tuple[re.Pattern[str], ...]  # OR — any must match
     path_includes: tuple[str, ...]  # Resolved path filters
     body_only: bool = False  # True → strip frontmatter before matching
+    every_match: bool = False  # True → report every matching line, not the first (a check that forbids something)
+    follow_imports: bool = False  # True → also read the text an `@path` import splices in, reporting at its source
+    min_lines: int = 0  # > 0 → a file shorter than this many lines is neither failing nor passing the check
 
 
 @dataclass
@@ -56,17 +59,49 @@ def _get_operator(rule_entry: dict[str, Any]) -> str | None:
     return None
 
 
-def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
-    """Compile a single YAML rule entry into a CompiledCheck.
+def display_severity(raw: str) -> str:
+    """Normalize a severity to the display vocabulary (`error` / `warning` / `info`).
 
+    `Rule.severity` and `Check.severity` carry the SARIF-adjacent
+    `critical`/`high`/`medium`/`low`/`info` vocabulary; the merger and
+    text formatters only count `error`/`warning`/`info`.
+    """
+    if raw in ("error", "critical", "high"):
+        return "error"
+    if raw in ("low", "info"):
+        return "info"
+    return "warning"
+
+
+def _min_lines(rule_entry: dict[str, Any]) -> int:
+    """A check's `min_lines` gate, 0 when it declares none or a non-positive one."""
+    value = rule_entry.get("min_lines")
+    return int(value) if isinstance(value, (int, float)) and value > 0 else 0
+
+
+def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
+    """Compile a single YAML rule entry into a CompiledCheck, with its reporting flags.
+
+    A check that forbids something (`expect: absent`) reports every match; `follow_imports: true`
+    makes a check read imported text as well; `min_lines` gates it to files of at least that length.
     Returns None if the rule uses unsupported operators.
     """
+    check = _compile_operator(rule_entry)
+    if check is None:
+        return None
+    return replace(
+        check,
+        every_match=rule_entry.get("expect") == "absent",
+        follow_imports=rule_entry.get("follow_imports") is True,
+        min_lines=_min_lines(rule_entry),
+    )
+
+
+def _compile_operator(rule_entry: dict[str, Any]) -> CompiledCheck | None:
+    """Compile a rule entry's pattern operator into a CompiledCheck. None for an unsupported one."""
     rule_id = rule_entry.get("id", "unknown")
     message = rule_entry.get("message", "")
-    severity = rule_entry.get("severity", "WARNING").lower()
-
-    # Normalize severity to SARIF levels
-    severity = "error" if severity in ("error", "critical", "high") else "warning"
+    severity = display_severity(rule_entry.get("severity", "WARNING").lower())
 
     # Extract path filters
     paths_config = rule_entry.get("paths", {})
@@ -186,16 +221,7 @@ def compile_rules(
                     check = _compile_single_rule(rule_entry)
                     if check is not None:
                         if body_only_paths and yml_path in body_only_paths:
-                            check = CompiledCheck(
-                                id=check.id,
-                                message=check.message,
-                                severity=check.severity,
-                                patterns=check.patterns,
-                                negative_patterns=check.negative_patterns,
-                                either_patterns=check.either_patterns,
-                                path_includes=check.path_includes,
-                                body_only=True,
-                            )
+                            check = replace(check, body_only=True)
                         result.checks.append(check)
                     else:
                         result.skipped.append(rule_id)

@@ -20,9 +20,35 @@ from reporails_cli.core.lint.regex.compiler import (
 )
 from reporails_cli.core.lint.regex.runner import (
     _file_matches_path_filter,
+    _find_line_number,
     _match_check,
     run_validation,
 )
+from reporails_cli.core.platform.utils.utils import strip_frontmatter
+
+
+class TestLineAndFrontmatterEdges:
+    """Edge behaviors that mutation showed were uncovered: the 1-based line number
+    and the unterminated-frontmatter path. Each kills a mutant that had survived.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_line_number_is_one_based(self) -> None:
+        import re as _re
+
+        content = "line0\nline1\nTARGET here"
+        m = _re.search("TARGET", content)
+        assert m is not None
+        assert _find_line_number(content, m) == 3  # kills the off-by-one `+ 1 -> - 1`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_unterminated_frontmatter_is_left_intact(self) -> None:
+        content = "---\nkey: val\nno closing fence here"
+        # No `\n---` close → returns content unchanged; kills `end == -1 -> != -1`.
+        assert strip_frontmatter(content, keep_lines=True) == content
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -239,8 +265,8 @@ class TestCompilerEdgeCases:
         assert severities["SEV-3"] == "error"  # high
         assert severities["SEV-4"] == "warning"  # WARNING
         assert severities["SEV-5"] == "warning"  # warning
-        assert severities["SEV-6"] == "warning"  # info
-        assert severities["SEV-7"] == "warning"  # LOW
+        assert severities["SEV-6"] == "info"  # info
+        assert severities["SEV-7"] == "info"  # LOW
         assert severities["SEV-8"] == "warning"  # empty
 
     @pytest.mark.unit
