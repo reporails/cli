@@ -1,1 +1,1 @@
-{ "type": "command", "command": "npm test" }
+{ "hooks": { "preToolUse": [{ "type": "command", "command": "npm test" }] } }

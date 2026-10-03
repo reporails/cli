@@ -4,9 +4,11 @@ slug: hook-prompt-has-field
 title: Hook Prompt Has Field
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
 source: https://cursor.com/docs/hooks
 supersedes: CORE:S:0030
 ---
@@ -34,6 +36,8 @@ Hook handlers with `"type": "prompt"` in `.cursor/hooks.json` MUST include a `"p
 { "type": "prompt" }
 ```
 
+A hooks file with no `"type": "prompt"` handler at all — e.g. only `{ "command": "./hooks/format.sh" }` — also passes: there is no prompt handler for this check to require a prompt on.
+
 ## Limitations
 
-Checks that at least one handler has a prompt field with a non-empty value.
+Checks each `"type": "prompt"` handler object for its own non-empty `"prompt"` field, and reports every handler that lacks one on the line where it starts. A config with no prompt-typed handler draws no finding. Only handlers inside the hook block are read; a file that is not valid JSON draws no finding here.

@@ -2,8 +2,17 @@ checks:
 - id: CURSOR.S.0005.config-file-exists
   type: mechanical
   check: file_exists
-- id: CURSOR.S.0005.prompt-has-field
-  type: deterministic
-  expect: present
-  pattern-regex: '"prompt"\s*:\s*"[^"]+"'
-  message: No prompt handler with a prompt field found
+- id: CURSOR.S.0005.prompt_hook_has_prompt
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0030.has-prompt-field
+  severity: medium
+  args:
+    message: Prompt handler has no prompt field
+    block: hooks
+    handlers: direct
+    default_type: command
+    select:
+      type: [prompt]
+    require:
+      non_empty: [prompt]

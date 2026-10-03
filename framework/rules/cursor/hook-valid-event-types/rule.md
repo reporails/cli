@@ -4,9 +4,11 @@ slug: hook-valid-event-types
 title: Hook Valid Event Types
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
 source: https://cursor.com/docs/hooks
 supersedes: CORE:S:0027
 ---
@@ -45,4 +47,4 @@ Hook event keys in `.cursor/hooks.json` MUST use recognized Cursor event type na
 
 ## Limitations
 
-Checks that at least one recognized Cursor event type is present. Does not detect misspelled event names if a valid one also exists.
+Checks that at least one recognized Cursor event type is present, and separately flags a key shaped like an event name (an array of handler objects) that is not a recognized name, so a typo next to a valid event is still caught.

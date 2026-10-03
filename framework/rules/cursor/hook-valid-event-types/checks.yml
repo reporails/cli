@@ -4,6 +4,15 @@ checks:
   check: file_exists
 - id: CURSOR.S.0002.valid-event-types
   type: deterministic
-  expect: present
-  pattern-regex: (?:sessionStart|sessionEnd|preToolUse|postToolUse|postToolUseFailure|subagentStart|subagentStop|beforeShellExecution|afterShellExecution|beforeMCPExecution|afterMCPExecution|beforeReadFile|afterFileEdit|beforeSubmitPrompt|preCompact|stop|afterAgentResponse|afterAgentThought|beforeTabFileRead|afterTabFileEdit)
+  expect: absent
   message: No recognized Cursor event type names found in hook configuration
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-not-regex: (?:sessionStart|sessionEnd|preToolUse|postToolUse|postToolUseFailure|subagentStart|subagentStop|beforeShellExecution|afterShellExecution|beforeMCPExecution|afterMCPExecution|beforeReadFile|afterFileEdit|beforeSubmitPrompt|preCompact|stop|afterAgentResponse|afterAgentThought|beforeTabFileRead|afterTabFileEdit|workspaceOpen)
+- id: CURSOR.S.0002.no-unrecognized-event-key
+  type: deterministic
+  expect: absent
+  message: An event-shaped key next to a recognized event name is not a recognized Cursor event type
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-regex: '"(?!(?:sessionStart|sessionEnd|preToolUse|postToolUse|postToolUseFailure|subagentStart|subagentStop|beforeShellExecution|afterShellExecution|beforeMCPExecution|afterMCPExecution|beforeReadFile|afterFileEdit|beforeSubmitPrompt|preCompact|stop|afterAgentResponse|afterAgentThought|beforeTabFileRead|afterTabFileEdit|workspaceOpen)")[A-Za-z]+"\s*:\s*\[\s*\{'

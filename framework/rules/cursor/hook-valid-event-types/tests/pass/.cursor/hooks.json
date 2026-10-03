@@ -1,1 +1,6 @@
-Valid hook events: sessionStart, preToolUse, postToolUse
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{ "type": "command", "command": "echo hook" }]
+  }
+}

@@ -1,8 +1,7 @@
 # Cursor Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Synced from .claude/skills/audit-agent/assets/registry/cursor/config.yml
-# Last verified: 2026-06-15
+# Last verified: 2026-09-03
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - User Rules (Cursor Settings UI text)
@@ -10,12 +9,18 @@
 #   - Cursor Automations (cloud-only, no on-disk file)
 #   - Cursor Memories (cloud / agent-state, no static project file)
 #   - Design Mode (in-app UI)
-#   - CLI --output-format (CLI flag, not a file)
+#
+# NOT a capability: CLI `--output-format` (text/json/stream-json) is structured
+# data serialization, not persona/style customization — so `output` is absent
+# from cursor's capability list. The `output` capability means
+# persona/style (cf. claude output-styles, codex `personality`), which Cursor
+# does not have.
 
 agent: cursor
 version: "0.5.0"
 prefix: CURSOR
 name: Cursor
+home_dir: .cursor  # the folder holding the agent's own files; a path inside it points at this agent
 
 file_types:
   main:
@@ -60,6 +65,8 @@ file_types:
     source: https://cursor.com/docs/rules
     format: [frontmatter, freeform]
     scope: path_scoped
+    path_key: globs
+    always_key: alwaysApply
     cardinality: collection
     lifecycle: static
     loading: on_demand
@@ -87,7 +94,8 @@ file_types:
         maintainer: human
 
   skills:
-    # Cross-agent skill paths supported (.claude/skills, .codex/skills, .agents/skills)
+    # Primary directories per docs: .agents/skills and .cursor/skills. .claude/skills
+    # and .codex/skills are cross-agent legacy compatibility paths.
     source: https://cursor.com/docs/skills
     format: [frontmatter, freeform]
     scope: task_scoped
@@ -96,12 +104,12 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".cursor/skills/**/SKILL.md", ".claude/skills/**/SKILL.md", ".codex/skills/**/SKILL.md"]
+        patterns: [".agents/skills/**/*.md", ".cursor/skills/**/*.md", ".claude/skills/**/*.md", ".codex/skills/**/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.cursor/skills/**/SKILL.md", "~/.claude/skills/**/SKILL.md", "~/.codex/skills/**/SKILL.md"]
+        patterns: ["~/.agents/skills/**/*.md", "~/.cursor/skills/**/*.md", "~/.claude/skills/**/*.md", "~/.codex/skills/**/*.md"]
         precedence: user
         vcs: external
         maintainer: human
@@ -189,8 +197,9 @@ file_types:
         maintainer: human
 
   config:
-    # Cursor settings — both project (.vscode/settings.json or .cursor/settings.json)
-    # and user (~/.cursor/settings.json) levels
+    # Cursor CLI configuration. The project level is `.cursor/cli.json` and carries only
+    # permissions (allow/deny lists); the user level is `~/.cursor/cli-config.json`.
+    # Editor settings (.vscode/settings.json) are not Cursor agent configuration.
     source: https://cursor.com/docs/cli/reference/configuration
     format: schema_validated
     scope: global
@@ -199,12 +208,12 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: [".vscode/settings.json", ".cursor/settings.json"]
+        patterns: [".cursor/cli.json"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.cursor/settings.json"]
+        patterns: ["~/.cursor/cli-config.json"]
         precedence: user
         vcs: external
         maintainer: human
@@ -289,3 +298,4 @@ file_types:
 excludes:
   - CLAUDE:*
   - CODEX:*
+  - CORE:S:0005  # identity-fields-in-frontmatter — Cursor rule frontmatter is description, globs and alwaysApply; it defines no id, name or slug (cursor.com/docs/rules)
