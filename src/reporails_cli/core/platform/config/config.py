@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from reporails_cli.core.platform.utils.utils import load_yaml_file
+from reporails_cli.core.platform.utils.utils import is_first_yaml_failure, load_yaml_file, yaml_error_line
 
 if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.models import AgentConfig, GlobalConfig, ProjectConfig
+    from reporails_cli.core.platform.dto.results import AgentConfig, GlobalConfig, ProjectConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def get_agent_config(agent: str) -> AgentConfig:
         AgentConfig with excludes and overrides, or defaults if missing/malformed
     """
     from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
-    from reporails_cli.core.platform.dto.models import AgentConfig
+    from reporails_cli.core.platform.dto.results import AgentConfig
 
     config_path = get_agent_config_path(agent)
     if not config_path.exists():
@@ -52,6 +52,18 @@ def get_agent_config(agent: str) -> AgentConfig:
     except (yaml.YAMLError, OSError, ValueError) as exc:
         logger.warning("Failed to parse agent config %s: %s", config_path, exc)
         return AgentConfig()
+
+
+_SEGMENTATION_MODES = frozenset({"legacy", "structure-aware"})
+
+
+def _coerce_segmentation(raw: object) -> str | None:
+    """Coerce a `segmentation` value to a known mode, or None when absent/invalid."""
+    if isinstance(raw, str) and raw in _SEGMENTATION_MODES:
+        return raw
+    if raw is not None:
+        logger.warning("Unknown segmentation mode %r; falling back to 'legacy'", raw)
+    return None
 
 
 def _data_str_list(data: dict[str, object], key: str) -> list[str]:
@@ -88,37 +100,35 @@ def get_global_config() -> GlobalConfig:
     can keep its default semantics.
     """
     from reporails_cli.core.platform.config.bootstrap import get_global_config_path
-    from reporails_cli.core.platform.dto.models import GlobalConfig
+    from reporails_cli.core.platform.dto.results import GlobalConfig
 
     config_path = get_global_config_path()
     if not config_path.exists():
         return GlobalConfig()
 
     try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        raw = load_yaml_file(config_path) or {}
         data: dict[str, object] = raw if isinstance(raw, dict) else {}
         framework_path = data.get("framework_path")
         gs_raw = data.get("generic_scanning")
         generic_scanning = bool(gs_raw) if isinstance(gs_raw, bool) else None
-        overrides_raw = data.get("overrides", {})
-        overrides: dict[str, dict[str, str]] = overrides_raw if isinstance(overrides_raw, dict) else {}
         return GlobalConfig(
             framework_path=Path(framework_path) if isinstance(framework_path, str) else None,
-            auto_update_check=bool(data.get("auto_update_check", True)),
             default_agent=str(data.get("default_agent", "")) if isinstance(data.get("default_agent"), str) else "",
             tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
             disabled_rules=_data_str_list(data, "disabled_rules"),
             exclude_dirs=_data_str_list(data, "exclude_dirs"),
             exclude_files=_data_str_list(data, "exclude_files"),
-            overrides=overrides,
             rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
             generic_scanning=generic_scanning,
             packages=_data_str_list(data, "packages"),
             agents=_data_str_dict(data, "agents"),
             surfaces=_data_str_dict(data, "surfaces"),
+            segmentation=_coerce_segmentation(data.get("segmentation")),
         )
-    except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to parse global config %s: %s", config_path, exc)
+    except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError: not UTF-8
+        if is_first_yaml_failure(config_path):
+            logger.warning("Global config %s is not read: %s", config_path, yaml_error_line(exc))
         return GlobalConfig()
 
 
@@ -157,8 +167,9 @@ def _load_yaml_dict(config_path: Path) -> dict[str, object] | None:
             logger.warning("Config file %s did not parse to a mapping", config_path)
             return None
         return data
-    except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to parse project config %s: %s", config_path, exc)
+    except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError: not UTF-8
+        if is_first_yaml_failure(config_path):
+            logger.warning("Project config %s is not read: %s", config_path, yaml_error_line(exc))
         return None
 
 
@@ -171,8 +182,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     Global defaults from `~/.reporails/config.yml` then merge under the
     project layer: list fields (`disabled_rules`, `exclude_dirs`,
     `packages`) extend with global entries the project didn't already
-    declare; dict fields (`overrides`, `rule_thresholds`, `agents`,
-    `surfaces`) deep-merge under project values; `default_agent` and
+    declare; dict fields (`rule_thresholds`, `agents`, `surfaces`)
+    deep-merge under project values; `default_agent` and
     `generic_scanning` use the project value when set, otherwise inherit
     from the global layer.
 
@@ -185,7 +196,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     Returns:
         ProjectConfig with loaded or default values, layered with globals.
     """
-    from reporails_cli.core.platform.dto.models import ProjectConfig
+    from reporails_cli.core.platform.dto.results import MapperConfig, ProjectConfig
 
     base = _load_yaml_dict(project_root / ".ails" / "config.yml") or {}
     local = _load_yaml_dict(project_root / ".ails" / "config.local.yml") or {}
@@ -195,17 +206,14 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     if not data:
         return _apply_globals(ProjectConfig(), global_cfg)
 
-    fw = data.get("framework_version")
     da = data.get("default_agent", "")
-    ovr = data.get("overrides", {})
     gs_raw = data.get("generic_scanning")
     has_gs_in_project = isinstance(gs_raw, bool)
+    seg = _coerce_segmentation(data.get("segmentation"))
 
     config = ProjectConfig(
-        framework_version=fw if isinstance(fw, str) else None,
         packages=_data_str_list(data, "packages"),
         disabled_rules=_data_str_list(data, "disabled_rules"),
-        overrides=ovr if isinstance(ovr, dict) else {},
         exclude_dirs=_data_str_list(data, "exclude_dirs"),
         exclude_files=_data_str_list(data, "exclude_files"),
         default_agent=da if isinstance(da, str) else "",
@@ -213,14 +221,21 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         surfaces=_data_str_dict(data, "surfaces"),
         rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
         generic_scanning=bool(gs_raw) if has_gs_in_project else False,
+        mapper=MapperConfig(segmentation=seg or "legacy"),
     )
-    return _apply_globals(config, global_cfg, has_project_generic_scanning=has_gs_in_project)
+    return _apply_globals(
+        config,
+        global_cfg,
+        has_project_generic_scanning=has_gs_in_project,
+        has_project_segmentation=seg is not None,
+    )
 
 
 def _apply_globals(
     config: ProjectConfig,
     global_cfg: GlobalConfig,
     has_project_generic_scanning: bool = False,
+    has_project_segmentation: bool = False,
 ) -> ProjectConfig:
     """Layer `~/.reporails/config.yml` defaults under per-project values.
 
@@ -235,12 +250,13 @@ def _apply_globals(
     config.exclude_dirs = _extend_unique(config.exclude_dirs, global_cfg.exclude_dirs)
     config.exclude_files = _extend_unique(config.exclude_files, global_cfg.exclude_files)
     config.packages = _extend_unique(config.packages, global_cfg.packages)
-    config.overrides = _merge_under(config.overrides, global_cfg.overrides)
     config.rule_thresholds = _merge_under(config.rule_thresholds, global_cfg.rule_thresholds)
     config.agents = _merge_under(config.agents, global_cfg.agents)
     config.surfaces = _merge_under(config.surfaces, global_cfg.surfaces)
     if not has_project_generic_scanning and global_cfg.generic_scanning is not None:
         config.generic_scanning = global_cfg.generic_scanning
+    if not has_project_segmentation and global_cfg.segmentation is not None:
+        config.mapper.segmentation = global_cfg.segmentation
     return config
 
 

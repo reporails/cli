@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
 
@@ -24,9 +23,6 @@ def parse_idle_timeout_env(var_name: str, default_s: int) -> int | None:
         return default_s
     return value if value > 0 else None
 
-
-if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.models import AgentConfig, FileTypeDeclaration, GlobalConfig, ProjectConfig
 
 # Constants
 REPORAILS_HOME = Path.home() / ".reporails"
@@ -63,6 +59,8 @@ def get_rules_path() -> Path:
 
     Resolution: config override → bundled (package default).
     """
+    from reporails_cli.core.platform.config.config import get_global_config
+
     config = get_global_config()
     if config.framework_path and config.framework_path.is_dir():
         rules_sub = config.framework_path / "rules"
@@ -83,6 +81,8 @@ def get_framework_root() -> Path:
 
     Resolution: config override → bundled package root.
     """
+    from reporails_cli.core.platform.config.config import get_global_config
+
     config = get_global_config()
     if config.framework_path and config.framework_path.is_dir():
         return config.framework_path
@@ -113,34 +113,6 @@ def get_agent_config_path(agent: str) -> Path:
     return get_rules_path() / dir_name / "config.yml"
 
 
-def get_agent_config(agent: str) -> AgentConfig:
-    """Load agent config (excludes + overrides) from framework.
-
-    Delegated to core.config. Re-exported here for backward compatibility.
-    """
-    from reporails_cli.core.platform.config.config import get_agent_config as _get_agent_config
-
-    return _get_agent_config(agent)
-
-
-def get_agent_file_types(
-    agent: str = "claude",
-    rules_paths: list[Path] | None = None,
-) -> list[FileTypeDeclaration]:
-    """Load file type declarations from agent config.
-
-    Args:
-        agent: Agent identifier (default: claude)
-        rules_paths: Optional rules directories to search first
-
-    Returns:
-        List of FileTypeDeclaration from the agent's config.yml file_types section
-    """
-    from reporails_cli.core.classify import load_file_types
-
-    return load_file_types(agent, rules_paths)
-
-
 def get_schemas_path() -> Path:
     """Get path to rule schemas (schemas/ under framework root)."""
     return get_framework_root() / "schemas"
@@ -151,34 +123,9 @@ def get_global_packages_path() -> Path:
     return get_reporails_home() / "packages"
 
 
-def get_version_file() -> Path:
-    """Get path to version file (~/.reporails/version)."""
-    return get_reporails_home() / "version"
-
-
 def get_global_config_path() -> Path:
     """Get path to global config file (~/.reporails/config.yml)."""
     return get_reporails_home() / "config.yml"
-
-
-def get_global_config() -> GlobalConfig:
-    """Load global configuration from ~/.reporails/config.yml.
-
-    Delegated to core.config. Re-exported here for backward compatibility.
-    """
-    from reporails_cli.core.platform.config.config import get_global_config as _get_global_config
-
-    return _get_global_config()
-
-
-def get_project_config(project_root: Path) -> ProjectConfig:
-    """Load project configuration from .ails/config.yml.
-
-    Delegated to core.config. Re-exported here for backward compatibility.
-    """
-    from reporails_cli.core.platform.config.config import get_project_config as _get_project_config
-
-    return _get_project_config(project_root)
 
 
 def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
@@ -208,17 +155,6 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
         if global_dir.is_dir():
             paths.append(global_dir)
     return paths
-
-
-def get_installed_version() -> str | None:
-    """Read installed framework version from ~/.reporails/version."""
-    version_file = get_version_file()
-    if not version_file.exists():
-        return None
-    try:
-        return version_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
 
 
 def is_initialized() -> bool:
