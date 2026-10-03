@@ -24,6 +24,7 @@ jobs:
         id: check
         with:
           from-source: "true"
+          server-url: "http://127.0.0.1:9"
       - name: Verify outputs
         env:
           SCORE: ${{ steps.check.outputs.score }}
@@ -50,6 +51,7 @@ jobs:
           agent: claude
           exclude-dir: "vendor,dist"
           from-source: "true"
+          server-url: "http://127.0.0.1:9"
       - name: Verify agent was applied
         env:
           SCORE: ${{ steps.check.outputs.score }}
@@ -66,11 +68,12 @@ jobs:
         with:
           min-score: "1"
           from-source: "true"
+          server-url: "http://127.0.0.1:9"
 
   # --- Fail scenarios ---
 
-  skip-min-score-offline:
-    name: "Pass: min-score gate skips on an offline run"
+  fail-min-score-offline:
+    name: "Fail: min-score gate cannot run when the diagnostics server is unreachable"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,22 +81,23 @@ jobs:
         id: gate
         continue-on-error: true
         with:
-          min-score: "11"
+          min-score: "1"
           from-source: "true"
-      - name: Verify gate skipped (no server score offline)
+          server-url: "http://127.0.0.1:9"
+      - name: Verify gate failed (a quality gate that cannot run must not pass)
         env:
           OUTCOME: ${{ steps.gate.outcome }}
           SCORE: ${{ steps.gate.outputs.score }}
+          SERVER_STATUS: ${{ steps.gate.outputs.server-status }}
         run: |
-          echo "outcome=$OUTCOME score=$SCORE"
-          # Offline there is no server score, so the min-score gate logs a warning and
-          # skips rather than failing the build — even an unreachable min-score=11 passes.
+          echo "outcome=$OUTCOME score=$SCORE server-status=$SERVER_STATUS"
+          # server-url points at a closed local port, so there is no server score and the
+          # min-score gate fails the step rather than passing a gate that could not run.
+          # The run without min-score still passes offline (see pass-default).
           # The score-rejection path needs a live server score and is covered by unit tests.
-          if [ "$OUTCOME" = "failure" ]; then
-            echo "FAIL: min-score gate failed the build offline (should skip)"
-            exit 1
-          fi
-          [ -z "$SCORE" ] || { echo "FAIL: expected empty score on offline run, got $SCORE"; exit 1; }
+          [ "$OUTCOME" = "failure" ] || { echo "FAIL: expected the min-score gate to fail, outcome=$OUTCOME"; exit 1; }
+          [ "$SERVER_STATUS" = "server-unavailable" ] || { echo "FAIL: expected server-status server-unavailable, got $SERVER_STATUS"; exit 1; }
+          [ -z "$SCORE" ] || { echo "FAIL: expected empty score when the server is unreachable, got $SCORE"; exit 1; }
 
   fail-strict:
     name: "Fail: strict mode on violations"
@@ -115,6 +119,7 @@ jobs:
           agent: claude
           strict: "true"
           from-source: "true"
+          server-url: "http://127.0.0.1:9"
       - name: Verify failure
         env:
           OUTCOME: ${{ steps.should-fail.outcome }}

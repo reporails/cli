@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -16,20 +19,41 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags: the release condition below checks whether the
+          # `pyproject.toml` version's tag already exists, which a shallow clone
+          # (the actions/checkout default) would not reliably answer for a tag
+          # that isn't within the shallow depth.
+          fetch-depth: 0
 
-      - name: Detect version branch merge
+      - name: Detect unreleased version
         id: check
         run: |
+          # Detection keys on the `pyproject.toml` version having no matching tag
+          # yet — not on the merge-commit subject. The previous detection matched
+          # `Merge.*from.*X.Y.Z` in the HEAD commit message, which only exists for
+          # a merge-commit-style merge; this repo has squash-merge and rebase-merge
+          # both enabled, and either produces a push to `main` with no such subject.
+          # That miss made `is_release=false` silently — every downstream job
+          # (qa/build/publish/npm/tag) has `needs` on this job (directly or
+          # transitively) and GitHub Actions skips (not fails) a job whose `needs`
+          # resolved to a skipped upstream, so a wrong merge button published
+          # nothing while the workflow still reported green.
           VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          # Check if this push is a merge from a version branch
-          MERGE_BRANCH=$(git log -1 --pretty=%s | grep -oP 'Merge.*from.*\K[0-9]+\.[0-9]+\.[0-9]+' || true)
-          if [ "$MERGE_BRANCH" = "$VERSION" ]; then
+          # Belt-and-suspenders on top of the full-history checkout above — makes
+          # the tag list explicit and current regardless of checkout defaults.
+          git fetch --tags --force
+          # Tag naming matches the `tag` job below (`git tag "$VERSION"` — bare
+          # version, no `v` prefix; the two `v0.0.1`/`v0.0.2` tags in this repo's
+          # history predate that convention).
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Not a release: tag $VERSION already exists."
+          else
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "Release detected: $VERSION"
-          else
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-            echo "Not a release merge (merge_branch=$MERGE_BRANCH, version=$VERSION)"
+            echo "Release detected: $VERSION has no tag yet."
           fi
 
   qa:
@@ -54,6 +78,12 @@ jobs:
       - name: Lint
         run: uv run poe lint
 
+      - name: Structural gate
+        run: uv run poe pylint_struct
+
+      - name: Architecture gate
+        run: uv run poe arch
+
       - name: Type check (host platform)
         run: uv run poe type
 
@@ -61,11 +91,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: uv run mypy --platform=win32 src/
 
+      - name: Rule lint
+        run: uv run poe test_lint
+
       - name: Unit tests
         run: uv run poe test_unit
 
-      - name: Integration tests
-        run: uv run poe test_integration
+      - name: Integration tests (incl. slow install/self-update path)
+        run: uv run poe test_integration_all
+
+      # Hermetic: no network. AILS_SERVER_URL points nowhere and
+      # AILS_MODEL_OFFLINE skips the model fetch — these scenarios guard
+      # discovery, classification, and formatter shape, none of which need
+      # the diagnostics server or the model.
+      - name: Behavioral tests
+        env:
+          AILS_SERVER_URL: "http://127.0.0.1:9"
+          AILS_MODEL_OFFLINE: "1"
+        run: uv run poe test_behave
 
       # Smoke tests intentionally not gated in CI yet — environment-dependent.
       # Re-enable once the smoke suite is hermetic.
@@ -84,16 +127,38 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Fetch bundled ONNX model
-        run: uv run poe fetch_bundled_model
-
+      # The wheel is lean: the model set is not bundled, so the build needs no
+      # model fetch. Users fetch the set on first run.
       - name: Build package
         run: |
-          # Build wheel directly from source tree (not via sdist) so the
-          # gitignored ONNX model is picked up by the build hook.
           uv build --wheel
-          # sdist separately for PyPI (model not included — source-only)
           uv build --sdist
+
+      - name: No direct-URL dependencies (wheel + sdist)
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          import re, tarfile, zipfile
+
+          def metadata_text(path):
+              if path.suffix == '.whl':
+                  with zipfile.ZipFile(path) as z:
+                      meta = [n for n in z.namelist() if n.endswith('/METADATA')][0]
+                      return z.read(meta).decode()
+              with tarfile.open(path) as t:
+                  meta = [n for n in t.getnames() if n.endswith('/PKG-INFO')][0]
+                  extracted = t.extractfile(meta)
+                  assert extracted is not None, f'{path.name}: PKG-INFO has no content'
+                  return extracted.read().decode()
+
+          bad = []
+          for path in [*Path('dist').glob('*.whl'), *Path('dist').glob('*.tar.gz')]:
+              text = metadata_text(path)
+              for direct in re.findall(r'^Requires-Dist:.*@\s*https?://.*$', text, re.MULTILINE):
+                  bad.append(f'{path.name}: {direct.strip()}')
+          assert not bad, 'Direct URL dependencies found — PyPI rejects these: ' + '; '.join(bad)
+          print('No direct URL dependencies in the wheel or the sdist metadata')
+          PY
 
       - uses: actions/upload-artifact@v4
         with:
@@ -132,7 +197,10 @@ jobs:
           "
         shell: bash
 
-      - name: Smoke check + ONNX model present
+      # `ensure_models_available()` below runs the real first-run download into
+      # the user cache — the path a fresh install takes. A failed download fails
+      # the release here, before publish.
+      - name: Smoke check + first-run model fetch + charge model present
         run: |
           python -c "
           import subprocess, sys
@@ -143,11 +211,88 @@ jobs:
           subprocess.run([str(ails), 'version'], check=True)
           subprocess.run([str(ails), 'check', '--help'], check=True, stdout=subprocess.DEVNULL)
           subprocess.run([str(py), '-c',
-              'from reporails_cli.bundled import get_models_path;'
-              'onnx = get_models_path() / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
+              'from reporails_cli.bundled import ensure_models_available;'
+              'onnx = ensure_models_available() / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
               'assert onnx.exists(), f\"ONNX missing: {onnx}\";'
               'print(f\"ONNX OK: {onnx.stat().st_size // 1024 // 1024} MB\")'
           ], check=True)
+          # A model set that omits the classifier files leaves the instruction
+          # classifier inert at runtime. Fail the release rather than publish
+          # one. Asserts the runtime capability predicate so it survives
+          # model-file renames.
+          subprocess.run([str(py), '-c',
+              'from reporails_cli.core.mapper import bio_tagger as b;'
+              'm = b.multislot_available();'
+              'print(f\"classifier available: {m}\");'
+              'assert m, \"the instruction classifier files are missing from the fetched model set\";'
+              'print(\"classifier OK\")'
+          ], check=True)
+          "
+        shell: bash
+
+      # A release that installs, fetches its model set, and still never
+      # produces a client-side finding would ship a check that silently does
+      # nothing. This is local-only (no server contacted).
+      - name: Verify content checks produce findings
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys, tempfile
+          from pathlib import Path
+          venv = Path('venv-verify')
+          ails = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('ails.exe' if sys.platform == 'win32' else 'ails')
+          fixture = Path(tempfile.mkdtemp()) / 'fixture-project'
+          fixture.mkdir()
+          (fixture / 'CLAUDE.md').write_text(
+              '# My Project\n\nUse `npm run build` to build the project.\n\nNEVER commit secrets or API keys.\n',
+              encoding='utf-8',
+          )
+          result = subprocess.run(
+              [str(ails), 'check', str(fixture), '-f', 'json'],
+              check=True, capture_output=True, text=True,
+              env={**__import__('os').environ, 'AILS_SERVER_URL': 'http://127.0.0.1:9'},
+          )
+          data = json.loads(result.stdout)
+          count = data.get('stats', {}).get('client_check_count', 0)
+          assert count > 0, f'client_check_count={count} (expected > 0) — content checks are not running'
+          print(f'client_check_count={count}')
+          PY
+        shell: bash
+
+      - name: Artifact hygiene (lean wheel, license parity, no dev cache)
+        run: |
+          python -c "
+          import glob, subprocess, sys, zipfile
+          from pathlib import Path
+          whl = glob.glob('dist/*.whl')[0]
+          with zipfile.ZipFile(whl) as z:
+              names = z.namelist()
+              # Lean wheel: model files are fetched on first run, never shipped.
+              heavy = [n for n in names if n.endswith('.onnx')]
+              assert not heavy, f'model files in the lean wheel: {heavy}'
+              print('lean wheel OK: no model files')
+              # One license source per file: the wheel-metadata copy and the copy
+              # fetched next to the weights must be byte-identical, so a licensee
+              # is never handed two conflicting grants.
+              wheel_lic = {}
+              for name in ('LICENSE-weights', 'NOTICE', 'LICENSE-APACHE-2.0'):
+                  found = sorted(n for n in names if n.endswith('/licenses/' + name))
+                  assert len(found) == 1, f'expected 1 {name} copy in the wheel, got {found}'
+                  wheel_lic[name] = (found[0], z.read(found[0]))
+              # Local build-machine caches must never ship: they carry absolute
+              # paths and file digests from whoever built the wheel.
+              stowaways = [n for n in names if n.endswith('fingerprint.json') or '.cache/' in n]
+              assert not stowaways, f'build-machine cache artifacts in wheel: {stowaways}'
+              print('no build-machine cache artifacts in wheel')
+          venv = Path('venv-verify')
+          py = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('python.exe' if sys.platform == 'win32' else 'python')
+          fetched_dir = subprocess.run([str(py), '-c',
+              'from reporails_cli.core.mapper.model_fetch import cache_models_dir;'
+              'print(cache_models_dir())'
+          ], check=True, capture_output=True, text=True).stdout.strip()
+          for name, (member, data) in wheel_lic.items():
+              fetched = Path(fetched_dir) / name
+              assert fetched.read_bytes() == data, f'{name} diverges: wheel {member} vs fetched {fetched}'
+              print(f'{name} parity OK ({len(data)} bytes): {member} == {fetched}')
           "
         shell: bash
 
@@ -165,7 +310,10 @@ jobs:
           path: dist
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0
+        with:
+          # A re-run after a partial failure (npm/tag) must not fail on "file already exists".
+          skip-existing: true
 
   npm:
     name: Publish to npm
@@ -192,7 +340,17 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          # Idempotent on re-run: a retry after a partial failure downstream of
+          # this step (e.g. `tag`) must not fail on "you cannot publish over
+          # the previously published version" — the PyPI publish above already
+          # tolerates this via `skip-existing`.
+          if npm view "@reporails/cli@$VERSION" version >/dev/null 2>&1; then
+            echo "@reporails/cli@$VERSION already on npm — skipping publish"
+          else
+            npm publish --access public --provenance
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -205,6 +363,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Stamp the Action's default version
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          # `action/action.yml`'s `version` input defaults to '' (latest PyPI)
+          # so a caller can still pin explicitly. At tag time only, stamp that
+          # default to this release, so `uses: .../action@$VERSION` with no
+          # `version:` input runs the tagged release, not whatever happens to
+          # be newest on PyPI when the workflow runs. This commit is never
+          # pushed to a branch — it exists only in the tag created below, so
+          # `main` keeps '' for continued development.
+          sed -i "/^  version:\$/,+2 s/default: ''/default: '$VERSION'/" action/action.yml
+          grep -q "default: '$VERSION'" action/action.yml || {
+            echo "::error::failed to stamp action/action.yml's version default"
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Stamp action version default: $VERSION"
+
       - name: Create tag and GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,3 +392,28 @@ jobs:
           gh release create "$VERSION" \
             --title "v$VERSION" \
             --generate-notes
+
+  release-guard:
+    name: Guard against a silent no-op release
+    needs: [check-release, tag]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail loudly if a due release did not complete
+        env:
+          IS_RELEASE: ${{ needs.check-release.outputs.is_release }}
+          VERSION: ${{ needs.check-release.outputs.version }}
+          TAG_RESULT: ${{ needs.tag.result }}
+        run: |
+          # `needs.tag.result` is one of success/failure/cancelled/skipped. A job
+          # whose `needs` resolve to a skipped upstream is itself skipped, not
+          # failed — so a detection regression (or any future gate misconfigured
+          # to skip instead of fail) would otherwise leave every job downstream of
+          # `check-release` grey, and a grey/skipped run does not turn the workflow
+          # red. This is the explicit, unconditional check that closes that gap:
+          # if a release was due, `tag` must show `success`, or the run fails loud.
+          if [ "$IS_RELEASE" = "true" ] && [ "$TAG_RESULT" != "success" ]; then
+            echo "::error::Release $VERSION was due (pyproject.toml version has no tag) but the release pipeline did not complete successfully (tag job result: $TAG_RESULT). This must not report green — investigate the failing/skipped job above."
+            exit 1
+          fi
+          echo "Release guard OK (is_release=$IS_RELEASE, version=$VERSION, tag job result=$TAG_RESULT)."
