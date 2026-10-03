@@ -4,7 +4,7 @@ slug: domain-terminology-used
 title: Domain Terminology Used
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, developer-context-cursor-study, dometrain-claude-md-guide,
   sewell-agents-md-tips, spec-writing-for-agents]
 match: {type: main}
@@ -15,7 +15,7 @@ Instruction files must include a section with a heading matching "Terminology", 
 
 ## Antipatterns
 
-- **Using domain terms without defining them** like referencing "backbone" or "atom" throughout the file without a glossary section — the check looks for a heading that signals term definitions, not inline usage.
+- **Using domain terms without defining them** like referencing "tenant" or "webhook" throughout the file without a glossary section — the check looks for a heading that signals term definitions, not inline usage.
 - **Generic heading that skips the keywords** like `## Definitions` or `## Vocabulary` — the check matches only "Terminology", "Glossary", "Terms", or "Domain" in headings.
 - **Terms defined in a separate file** with no matching heading in the instruction file — the content query scans only the matched file.
 
@@ -25,17 +25,17 @@ Instruction files must include a section with a heading matching "Terminology", 
 
 ~~~~markdown
 ## Terminology
-- **atom**: a single parsed instruction sentence
-- **backbone**: the project topology file
-- **charge**: directive (+1) or constraint (-1) classification
+- **tenant**: an isolated customer workspace
+- **ledger**: the append-only transaction log
+- **webhook**: an outbound event notification
 ~~~~
 
 ### Fail
 
 ~~~~markdown
 ## Conventions
-Use atoms when building rulesets.
-Reference the backbone for project structure.
+Use tenants when scoping a request.
+Reference the ledger for transaction history.
 ~~~~
 
 ## Limitations

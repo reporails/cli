@@ -15,12 +15,12 @@ match: {type: main}
 
 # Directory Layout Documented
 
-The main instruction file must include a section documenting the project's directory layout using a heading like "Structure", "Architecture", "Layout", or "Directory" and containing a tree listing or path references. Without a visible directory map, the agent cannot reliably locate or place files.
+The main instruction file must document the project's directory layout. This is satisfied by either a heading such as "Structure", "Architecture", "Layout", or "Directory", or a visible tree listing / path references (`src/`, `tests/`, tree-drawing characters). Without a visible directory map, the agent cannot reliably locate or place files.
 
 ## Antipatterns
 
-- **Heading without content** like `## Structure` followed by prose that says "see the repo" — the heading matches but the deterministic pattern requires tree characters or path references underneath.
-- **Describing layout in prose only** like "Source code lives in the src directory and tests are in tests" — the check requires structural markers (`/`, tree characters) not just prose mentions.
+- **Describing layout in prose only** like "Source code lives in the src directory and tests are in tests" — the check needs a recognized heading or a structural marker (a path with `/`, tree-drawing characters), not just prose mentions.
+- **No layout section or tree anywhere** — a main file with neither a Structure/Architecture/Layout/Directory heading nor any tree/path listing.
 - **Layout in a separate file** with no reference in the main file — the check targets `type: main`, so the layout must appear in `CLAUDE.md` or equivalent.
 
 ## Pass / Fail
@@ -47,4 +47,4 @@ See the repository for the full structure.
 
 ## Limitations
 
-Checks for a heading containing "Directory", "Layout", "Structure", or "Tree". Does not verify the section contains an actual directory tree or file listing.
+Satisfied by any of: a heading matching Structure, Architecture, Layout, or Directory; tree-drawing characters; or a `src/` or `tests/` path reference. A single such marker passes — the check does not verify that a matching heading is actually followed by a real directory tree, nor that a tree lists every top-level directory.

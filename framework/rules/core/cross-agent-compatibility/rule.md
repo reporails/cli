@@ -43,4 +43,4 @@ Claude users should check `CLAUDE.md` for details.
 
 ## Limitations
 
-Checks for agent-specific filenames (CLAUDE.md, .cursorrules, copilot-instructions.md) referenced in content. Does not detect agent-specific terminology or conventions that don't mention filenames.
+Checks the main instruction file several agents share, such as `AGENTS.md`. Claude's `CLAUDE.md` and Copilot's `.github/copilot-instructions.md` are not checked: each is read by one agent and may name the files that agent reads. Checks for agent-specific filenames (CLAUDE.md, .cursorrules, copilot-instructions.md) referenced in content. Does not detect agent-specific terminology or conventions that don't mention filenames.

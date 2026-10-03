@@ -4,7 +4,7 @@ slug: coding-conventions
 title: Coding Conventions
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
   awesome-copilot-meta-instructions, claude-md-guide, claude-md-optimization-study,
   developer-context-cursor-study, dometrain-claude-md-guide, enterprise-claude-usage,

@@ -5,26 +5,22 @@ title: "Content Dilution"
 category: coherence
 type: mechanical
 execution: server
-severity: high
+severity: low
 match: {}
-fix: |
-  Consolidate uncharged content into the parent instruction, or separate
-  it into a distinct section. Sub-bullets and reference lists around
-  instructions dilute their attention share — the model splits focus
-  across descriptions and the directive itself. Move support material
-  to a dedicated `## References` or `## Notes` section.
 ---
 
 # Content Dilution
 
-Descriptive prose on the same topic as your instructions competes for attention. Small amounts of context help, but large amounts dilute the instruction's effect. Off-topic content is harmless regardless of volume.
+Same-topic prose can compete with your instruction on that topic: prose and directive share the attention that topic draws, so descriptive same-topic content can pull attention away from the directive. A little context costs little; large volumes can pull enough away to blunt the instruction.
 
-Vague instructions are especially vulnerable — instructions that name specific constructs resist prose competition much better.
+Off-topic content is not free either. A single off-topic span is nearly invisible, but off-topic volume accumulates — on a large file the piled-up off-topic mass can crowd the whole surface and thin every instruction's share of attention. Small off-topic context is harmless; large off-topic volume is not.
+
+Vague instructions are especially vulnerable — instructions that name specific constructs resist this competition much better.
 
 ## Antipatterns
 
-- Writing a paragraph of background context directly before or after an instruction on the same topic. On-topic prose competes for attention and dilutes the instruction's effect.
-- Embedding a single directive inside a long explanatory section. The instruction drowns in surrounding prose even if the prose is accurate and helpful.
+- Writing a paragraph of background context directly before or after an instruction on the same topic. On-topic prose can compete for attention and can dilute the instruction's effect.
+- Embedding a single directive inside a long explanatory section. The instruction can drown in surrounding prose even if the prose is accurate and helpful.
 - Adding extensive rationale after every instruction. One to three sentences of rationale is fine; multiple paragraphs shifts the balance from directive to descriptive.
 
 ## Pass / Fail
@@ -36,7 +32,7 @@ Vague instructions are especially vulnerable — instructions that name specific
 
 Use `ruff` for all formatting. The project enforces
 consistent style across `src/` and `tests/`.
-NEVER run `black` or manual formatting.
+Never run a formatter other than `ruff`.
 ~~~~
 
 ### Fail
@@ -51,10 +47,8 @@ Each has tradeoffs in speed, configurability, and
 community adoption. Use `ruff` for formatting.
 ~~~~
 
-## Fix
-
-Separate instructions from on-topic prose. Move descriptions, context, and explanations to separate sections or files. Keep the area around instructions clean — 1-3 sentences of rationale, not paragraphs of background.
-
 ## Limitations
 
 Detects prose volume relative to instruction density within topic clusters. Cannot evaluate whether the prose is genuinely helpful context or unnecessary padding.
+
+How much same-topic prose weakens an instruction depends on the model. Treat the finding as a prompt to review the prose, not as an instruction to delete it.

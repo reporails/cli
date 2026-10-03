@@ -3,6 +3,7 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.C.0033.content_check
+  convention: true
   type: content_query
   query: has_heading_matching
   args:

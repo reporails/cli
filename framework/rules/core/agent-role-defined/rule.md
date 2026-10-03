@@ -4,7 +4,7 @@ slug: agent-role-defined
 title: Agent Role Defined
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, developer-context-cursor-study, fowler-pushing-ai-autonomy,
   microsoft-awesome-copilot-blog, openai-community-agents-md-optimization, osmani-ai-coding-workflow,
   spec-writing-for-agents]
@@ -44,4 +44,4 @@ against mechanical and deterministic rules.
 
 ## Limitations
 
-Checks for a role definition atom (explicit role assignment or "you are" pattern). Does not evaluate whether the defined role is appropriate for the project.
+Checks for an explicit role statement (a role assignment or a "you are" pattern). Does not evaluate whether the defined role is appropriate for the project.
