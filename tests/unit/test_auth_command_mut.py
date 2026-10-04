@@ -221,7 +221,7 @@ def test_exchange_free_key_gets_the_upgrade_line(
     monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "free"})
     output = capsys.readouterr().out
-    assert "Pro adds fix text" in output
+    assert "Pro adds the remedies" in output
     assert "Fixes are in the JSON output" not in output
 
 
@@ -236,7 +236,7 @@ def test_exchange_pro_key_gets_no_upgrade_pitch(
     monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "pro"})
     output = capsys.readouterr().out
-    assert "Pro adds fix text" not in output
+    assert "Pro adds the remedies" not in output
     assert "Upgrade to Pro" not in output
     assert "Fixes are in the JSON output" in output
 
@@ -251,7 +251,7 @@ def test_exchange_team_key_gets_no_upgrade_pitch(
     monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "team"})
     output = capsys.readouterr().out
-    assert "Pro adds fix text" not in output
+    assert "Pro adds the remedies" not in output
 
 
 # --- login option/URL handling ---------------------------------------------

@@ -248,11 +248,11 @@ def _handle_exchange_response(payload: dict[str, str]) -> None:
         # tier-aware line `ails check` itself shows a Pro run.
         console.print("  [dim]Fixes are in the JSON output (--format json) and the MCP tools.[/dim]\n")
     else:
-        # Unpaid tiers get no server fix text; this one line replaces it,
+        # Unpaid tiers get no remedies; this one line replaces it,
         # matching the line an unpaid `ails check` run shows.
         from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
 
-        console.print("  Pro adds fix text for the remaining findings and the order to apply them.")
+        console.print("  Pro adds the remedies — what to change, where, and how — and the order to apply them.")
         console.print(f"  → [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]\n")
 
 

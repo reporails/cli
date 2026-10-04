@@ -43,7 +43,7 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
     if rule_data.get("severity"):
         lines.append(f"Severity: {rule_data['severity']}")
     if rule_data.get("execution") == "server":
-        lines.append("Execution: server (needs a server connection; fix text is part of Pro)")
+        lines.append("Execution: server (needs a server connection; the remedies are part of Pro)")
     match = rule_data.get("match") or {}
     if match:
         # Single-sourced from `_serialize_match` (the same dict `ails rules list` emits) so a

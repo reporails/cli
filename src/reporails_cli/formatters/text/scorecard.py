@@ -570,18 +570,18 @@ def print_scorecard(
 
     _visible_findings, _pro_total = _render_results_summary(result, hint_errors, hint_warnings, project_root)
 
-    # One line per run for an unpaid tier, in place of any per-finding fix text
+    # One line per run for an unpaid tier, in place of any per-finding remedy
     # (the reply carries none for an anonymous or free run) — keyed on whether a
     # key is held, not on the reported tier: a signed-in free user told to run
     # `ails auth login` is sent to a dead end. Never claims a fix for every
-    # finding — only that Pro adds fix text and an order to apply it.
+    # finding — only that Pro adds the remedies and the order to apply them.
     refused = getattr(result, "server_error", None) is not None
     if tier == "free" and not refused:
         from reporails_cli.core.platform.adapters.api_client import has_api_key
         from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
 
         console.print()
-        console.print("  Pro adds fix text and the order to apply it for the findings above.")
+        console.print("  Pro adds the remedies — what to change, where, and how — and the order to apply them.")
         if has_api_key():
             console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
         else:

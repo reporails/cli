@@ -423,9 +423,9 @@ class TestFreeTierCta:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_never_promises_a_fix_for_every_finding(self, monkeypatch) -> None:
-        """The upgrade line may promise the remaining findings, fix text for
+        """The upgrade line may promise the remaining findings, the remedies for
         them, and an order to apply them — it must never claim a fix for
-        EVERY finding (some Pro findings carry no fix text either)."""
+        EVERY finding (some Pro findings carry no remedy either)."""
         from reporails_cli.formatters.text import scorecard
 
         monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
@@ -433,7 +433,9 @@ class TestFreeTierCta:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get().lower()
         assert "a fix for every finding" not in out
-        assert "fix text and the order to apply it" in out
+        assert "a remedy for every finding" not in out
+        assert "pro adds the remedies" in out
+        assert "the order to apply them" in " ".join(out.split())
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -551,4 +553,4 @@ class TestRefusedRunTerminal:
         err = FunnelError(error=error, tier=tier, status=status)
         out = _capture(print_scorecard, _Result(server_error=err), False, tier="free")
         assert "Upgrade to Pro" not in out
-        assert "Pro adds fix text" not in out
+        assert "Pro adds the remedies" not in out
