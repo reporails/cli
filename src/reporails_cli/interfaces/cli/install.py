@@ -12,8 +12,7 @@ from pathlib import Path
 
 import typer
 
-from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
-from reporails_cli.interfaces.cli.auth_command import _read_credentials
+from reporails_cli.interfaces.cli.auth_command import effective_tier
 from reporails_cli.interfaces.cli.helpers import app, console
 
 logger = logging.getLogger(__name__)
@@ -94,8 +93,26 @@ def _install_to_path() -> bool:
 
 
 def _plugin_source() -> str:
-    """Marketplace source for the plugin: `AILS_PLUGIN_SOURCE`, else the public repo."""
-    return os.environ.get(_PLUGIN_SOURCE_ENV, "").strip() or _PLUGIN_REPO
+    """Marketplace source for the plugin: `AILS_PLUGIN_SOURCE`, else the public repo.
+
+    A path is made absolute so every command resolves it to the same folder.
+    """
+    value = os.environ.get(_PLUGIN_SOURCE_ENV, "").strip() or _PLUGIN_REPO
+    if value.startswith(("/", "~", ".")):
+        return os.path.abspath(os.path.expanduser(value))
+    return value
+
+
+def _git_root(start: Path) -> Path:
+    """Nearest ancestor of `start` (itself included) with a `.git` entry; `start` when none."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
+def _codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser().resolve()
 
 
 def _engine_spec(version: str) -> str:
@@ -192,11 +209,17 @@ def _inspect(agent: str, exe: str, source: str, root: Path | None) -> tuple[str,
 
     The marketplace state is "absent", "current", "stale" (another source) or
     "broken" (Codex cannot list it). A project install reads the project's own
-    settings for the marketplace instead of listing.
+    settings for the marketplace, and lists to confirm this machine has it.
     """
     market = "absent"
     if agent == "claude" and root is not None:
         market = _project_marketplace(root, source)
+        if market == "current":
+            # Declared in the committed settings; this machine may not have added it yet.
+            listed = _run([exe, "plugin", "marketplace", "list"], root)
+            names = _claude_marketplaces(listed.stdout or "") if listed and listed.returncode == 0 else {}
+            if _MARKETPLACE not in names:
+                market = "absent"
     else:
         listed = _run([exe, "plugin", "marketplace", "list"], root)
         if agent == "codex" and not (listed and listed.returncode == 0):
@@ -205,8 +228,12 @@ def _inspect(agent: str, exe: str, source: str, root: Path | None) -> tuple[str,
             found = (_claude_marketplaces if agent == "claude" else _codex_marketplaces)(listed.stdout or "")
             if _MARKETPLACE in found:
                 is_path = source.startswith(("/", "~", "."))
-                comparable = agent == "claude" or is_path
-                same = _same_source(found[_MARKETPLACE], source) if comparable else True
+                if agent == "claude" or is_path:
+                    same = _same_source(found[_MARKETPLACE], source)
+                else:
+                    # Codex lists a Git marketplace by its snapshot folder under the Codex home;
+                    # a root elsewhere is a local folder.
+                    same = Path(os.path.realpath(found[_MARKETPLACE])).is_relative_to(_codex_home())
                 market = "current" if same else "stale"
     plugins = _run([exe, "plugin", "list"], root)
     out = (plugins.stdout or "") if plugins and plugins.returncode == 0 else ""
@@ -253,7 +280,8 @@ def _claude_steps(
     else:
         steps.append(([*market, "add", source, *(["--scope", scope] if scope else [])], True))
     for target in sorted(scopes) if refresh else [scope or ""]:
-        present = bool(scopes) if not target and not refresh else target in scopes
+        # An unscoped install targets the user scope.
+        present = bool(scopes & {"user", ""}) if not target and not refresh else target in scopes
         verb = "update" if present and not replaced else "install"
         steps.append(([*plugin, verb, _PLUGIN_ID, *(["--scope", target] if target else [])], True))
     return steps
@@ -291,6 +319,11 @@ def _run_steps(
     return True
 
 
+def _note_replaced(label: str, source: str, market_state: str) -> None:
+    if market_state in ("stale", "broken"):
+        console.print(f"  [dim]Replacing the {label} reporails marketplace's old source with {source}.[/dim]")
+
+
 def _install_agent_plugin(agent: str, project: bool = False) -> bool:
     """Install the plugin into one agent through its own CLI; True when it is in place.
 
@@ -303,13 +336,12 @@ def _install_agent_plugin(agent: str, project: bool = False) -> bool:
         console.print(f"  [dim]Run by hand: {manual}[/dim]")
         return False
     scoped = project and agent == "claude"
-    root = _find_project_root(Path.cwd()) if scoped else None
+    root = _git_root(Path.cwd()) if scoped else None
     where = f" for this project ({root})" if root else ""
     console.print(f"  Installing the plugin into {label}{where}...")
     source = _plugin_source()
     state = _inspect(agent, exe, source, root)
-    if state[0] in ("stale", "broken"):
-        console.print(f"  [dim]Replacing the {label} reporails marketplace's old source with {source}.[/dim]")
+    _note_replaced(label, source, state[0])
     steps = _agent_steps(agent, exe, source, state, "project" if scoped else None)
     if not _run_steps(label, steps, manual, "install", root):
         return False
@@ -328,6 +360,7 @@ def refresh_agent_plugins() -> None:
         if not state[1]:
             console.print(f"  {label}: plugin not installed — run [bold]ails install[/bold]")
             continue
+        _note_replaced(label, source, state[0])
         steps = _agent_steps(agent, exe, source, state, refresh=True)
         if _run_steps(label, steps, manual, "refresh"):
             console.print(f"  [green]{label} plugin refreshed[/green]")
@@ -398,9 +431,11 @@ def install(
     if not in_place["claude"]:
         console.print("\n[green]Done.[/green] Claude Code's plugin steps are printed above.")
         return
-    from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS
+    from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
 
-    entitled = signed_in and str(_read_credentials().get("tier") or "") in ENTITLED_TIERS
+    # A tier of neither kind is unknown, which reads as entitled.
+    tier = effective_tier() if signed_in else ""
+    entitled = bool(tier) and tier not in UNENTITLED_TIERS
     heal = "[bold]/reporails:ails heal[/bold]" + ("" if entitled else " (Pro)")
     console.print(
         f"\n[green]Done.[/green] In Claude Code, run {heal}. In a Claude Code session that "

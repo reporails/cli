@@ -28,12 +28,12 @@ _CLAUDE_MARKETS_OK = (
 _CLAUDE_MARKETS_STALE = (
     "Configured marketplaces:\n\n  \u276f claude-plugins-official\n"
     "    Source: GitHub (anthropics/claude-plugins-official)\n\n"
-    "  \u276f reporails\n    Source: Directory (/home/u/Projects/ai/reporails/skills)\n\n"
-    "  \u276f reporails-arcade\n    Source: GitHub (reporails/arcade)\n"
+    "  \u276f reporails\n    Source: Directory (/tmp/old-plugin-checkout)\n\n"
+    "  \u276f other-market\n    Source: GitHub (someone/other-market)\n"
 )
 _CLAUDE_MARKETS_LOOKALIKE = (
-    "Configured marketplaces:\n\n  \u276f reporails-arcade\n    Source: GitHub (reporails/arcade)\n\n"
-    "  \u276f mine\n    Source: Directory (/home/u/reporails/skills)\n"
+    "Configured marketplaces:\n\n  \u276f other-market\n    Source: GitHub (someone/other-market)\n\n"
+    "  \u276f mine\n    Source: Directory (/tmp/reporails-checkout)\n"
 )
 _CODEX_MARKETS_OK = "MARKETPLACE  ROOT\nreporails    /home/u/.codex/.tmp/marketplaces/reporails\n"
 
@@ -155,6 +155,7 @@ def _runner_invoke() -> Any:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_install_refreshes_what_is_already_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODEX_HOME", "/home/u/.codex")
     runner = _Runner(
         listing={
             "claude plugin marketplace list": _CLAUDE_MARKETS_OK,
@@ -376,7 +377,7 @@ def _plain(result: Any) -> str:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_marketplace_name_match_is_exact(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """`reporails-arcade` and a Source path containing "reporails" are not the `reporails` marketplace."""
+    """`other-market` and a Source path containing "reporails" are not the `reporails` marketplace."""
     runner = _Runner(listing={"claude plugin marketplace list": _CLAUDE_MARKETS_LOOKALIKE})
     _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
 
@@ -483,7 +484,7 @@ def test_project_rerun_updates_a_declared_project_marketplace(monkeypatch: pytes
         '{"extraKnownMarketplaces": {"reporails": {"source": {"source": "github", "repo": "reporails/plugin"}}}}',
         encoding="utf-8",
     )
-    runner = _Runner(listing={"plugin list": _CLAUDE_LIST_BOTH})
+    runner = _Runner(listing={"plugin list": _CLAUDE_LIST_BOTH, "plugin marketplace list": _CLAUDE_MARKETS_OK})
     _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
 
     _runner.invoke(app, ["install", "--project"])
@@ -491,7 +492,6 @@ def test_project_rerun_updates_a_declared_project_marketplace(monkeypatch: pytes
     cmds = runner.commands()
     assert "claude plugin marketplace update reporails" in cmds
     assert not any(c.startswith("claude plugin marketplace add") for c in cmds)
-    assert "claude plugin marketplace list" not in cmds
 
 
 @pytest.mark.unit
@@ -544,3 +544,145 @@ def test_project_install_runs_from_the_repository_root(monkeypatch: pytest.Monke
     claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
     assert claude_cwds == {tmp_path}
     assert str(tmp_path) in result.stdout.replace("\n", "")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_user_install_does_not_count_a_project_scope_plugin_as_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    listing = "Installed plugins:\n\n  \u276f reporails@reporails\n    Scope: project\n"
+    runner = _Runner(listing={"plugin list": listing})
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install"])
+
+    cmds = runner.commands()
+    assert "claude plugin install reporails@reporails" in cmds
+    assert not any(c.startswith("claude plugin update") for c in cmds)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_project_install_adds_a_declared_marketplace_the_machine_has_not_added(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(
+        '{"extraKnownMarketplaces": {"reporails": {"source": {"source": "github", "repo": "reporails/plugin"}}}}',
+        encoding="utf-8",
+    )
+    runner = _Runner(listing={"claude plugin marketplace list": "Configured marketplaces:\n\n  No marketplaces\n"})
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install", "--project"])
+
+    cmds = runner.commands()
+    assert "claude plugin marketplace add reporails/plugin --scope project" in cmds
+    assert not any(c.startswith("claude plugin marketplace update") for c in cmds)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_project_install_uses_the_nearest_git_root_in_a_nested_repository(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "backbone.yml").write_text("{}\n", encoding="utf-8")
+    inner = tmp_path / "inner"
+    (inner / "src").mkdir(parents=True)
+    (inner / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=inner / "src")
+
+    _runner.invoke(app, ["install", "--project"])
+
+    claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
+    assert claude_cwds == {inner}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_codex_marketplace_on_a_local_folder_is_replaced_by_the_github_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    listing = "MARKETPLACE  ROOT\nreporails    /tmp/old-plugin-checkout\n"
+    runner = _Runner(listing={"codex plugin marketplace list": listing})
+    _setup(monkeypatch, runner, {"codex"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install"])
+
+    cmds = runner.commands()
+    assert cmds.index("codex plugin marketplace remove reporails") < cmds.index(
+        "codex plugin marketplace add reporails/plugin"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_codex_git_marketplace_inside_the_codex_home_is_current(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    listing = f"MARKETPLACE  ROOT\nreporails    {home}/.tmp/marketplaces/reporails\n"
+    runner = _Runner(listing={"codex plugin marketplace list": listing})
+    _setup(monkeypatch, runner, {"codex"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install"])
+
+    cmds = runner.commands()
+    assert "codex plugin marketplace upgrade reporails" in cmds
+    assert not any("marketplace remove" in c for c in cmds)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_update_says_when_it_replaces_a_stale_marketplace(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _Runner(
+        listing={"claude plugin marketplace list": _CLAUDE_MARKETS_STALE, "claude plugin list": _CLAUDE_LIST_USER}
+    )
+    _update_setup(monkeypatch, runner, {"claude"})
+
+    result = _runner.invoke(app, ["update"])
+
+    assert "old source" in _plain(result)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("stored_tier", "env_key", "needs_pro"),
+    [("pro", "other-key", True), ("weird", "", False), ("pro", "", False), ("free", "", True)],
+)
+def test_closing_line_reads_the_tier_of_the_key_in_effect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stored_tier: str, env_key: str, needs_pro: bool
+) -> None:
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, key=True, tmp_path=tmp_path)
+    home = tmp_path / "home"
+    (home / ".reporails").mkdir(parents=True)
+    (home / ".reporails" / "credentials.yml").write_text(f"api_key: k\ntier: '{stored_tier}'\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("AILS_API_KEY", raising=False)
+    if env_key:
+        monkeypatch.setenv("AILS_API_KEY", env_key)
+
+    result = _runner.invoke(app, ["install"])
+
+    assert ("/reporails:ails heal (Pro)" in _plain(result)) is needs_pro
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_relative_plugin_source_becomes_an_absolute_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    sub = tmp_path / "repo" / "sub"
+    sub.mkdir(parents=True)
+    monkeypatch.chdir(sub)
+    monkeypatch.setenv("AILS_PLUGIN_SOURCE", "../plugin")
+
+    assert install_module._plugin_source() == str(tmp_path / "repo" / "plugin")
+    monkeypatch.setenv("AILS_PLUGIN_SOURCE", "owner/repo")
+    assert install_module._plugin_source() == "owner/repo"

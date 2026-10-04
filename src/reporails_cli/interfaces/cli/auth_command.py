@@ -387,6 +387,22 @@ def _tier_phrase(tier: str) -> str:
     return f" ({tier} tier)" if tier in _DISPLAYABLE_TIERS else ""
 
 
+def _identity_and_tier(creds: dict[str, str], api_key: str) -> tuple[bool, str]:
+    """(stored identity matches the key in effect, stored tier for that key or "").
+
+    The stored login and tier are only meaningful when the key in effect IS the
+    locally cached one — an env-provided key may not match anything on disk.
+    """
+    known_identity = bool(creds.get("api_key")) and creds.get("api_key") == api_key
+    return known_identity, creds.get("tier", "") if known_identity else ""
+
+
+def effective_tier() -> str:
+    """Stored tier for the API key in effect ("" when unknown or the key is not the stored one)."""
+    creds = _read_credentials()
+    return _identity_and_tier(creds, _env_api_key() or creds.get("api_key", ""))[1]
+
+
 @auth_app.command("status")
 def status() -> None:
     """Show current authentication status."""
@@ -402,10 +418,7 @@ def status() -> None:
     prefix = api_key[:16] + "..." if len(api_key) > 16 else api_key
     source = "env AILS_API_KEY" if env_key else str(credentials_path())
 
-    # The stored github_login/tier are only meaningful when the effective key IS the
-    # locally cached one — an env-provided key may not match anything on disk at all.
-    known_identity = bool(creds.get("api_key")) and creds.get("api_key") == api_key
-    stored_tier = creds.get("tier", "") if known_identity else ""
+    known_identity, stored_tier = _identity_and_tier(creds, api_key)
     tier_line = stored_tier if stored_tier in _DISPLAYABLE_TIERS else _TIER_UNKNOWN_MSG
 
     console.print()
