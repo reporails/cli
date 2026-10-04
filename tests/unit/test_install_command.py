@@ -686,3 +686,99 @@ def test_relative_plugin_source_becomes_an_absolute_path(monkeypatch: pytest.Mon
     assert install_module._plugin_source() == str(tmp_path / "repo" / "plugin")
     monkeypatch.setenv("AILS_PLUGIN_SOURCE", "owner/repo")
     assert install_module._plugin_source() == "owner/repo"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_git_root_never_accepts_the_home_folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A dotfiles repository at home is not a project root; the start folder is."""
+    home = tmp_path / "home"
+    nested = home / "work" / "proj" / "sub"
+    nested.mkdir(parents=True)
+    (home / ".git").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    assert install_module._git_root(nested) == nested
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_git_root_still_finds_a_repository_below_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    repo = home / "work" / "proj"
+    nested = repo / "sub"
+    nested.mkdir(parents=True)
+    (home / ".git").mkdir()
+    (repo / ".git").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    assert install_module._git_root(nested) == repo
+
+
+def _path_install(
+    monkeypatch: pytest.MonkeyPatch, ails: str, uv: str | None, cache_dir: str | None
+) -> tuple[bool, list[list[str]]]:
+    """Run `_install_to_path` with `ails` on PATH, uv reporting `cache_dir` (None: the command fails)."""
+    found = {"ails": ails, "uv": uv}
+    monkeypatch.setattr(install_module.shutil, "which", lambda cmd: found.get(cmd))
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        calls.append(cmd)
+        result = MagicMock()
+        ok = cmd[1:3] != ["cache", "dir"] or cache_dir is not None
+        result.returncode = 0 if ok else 1
+        result.stdout = f"{cache_dir}\n" if cmd[1:3] == ["cache", "dir"] else ""
+        result.stderr = ""
+        return result
+
+    monkeypatch.setattr(install_module.subprocess, "run", fake_run)
+    return install_module._install_to_path(), calls
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_install_to_path_installs_when_ails_is_in_uvs_reported_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cache = tmp_path / "uvcache"
+    temp_ails = cache / "archive-v0" / "abc" / "bin" / "ails"
+    temp_ails.parent.mkdir(parents=True)
+    temp_ails.write_text("", encoding="utf-8")
+
+    _, calls = _path_install(monkeypatch, str(temp_ails), "/usr/bin/uv", str(cache))
+    assert any(c[1:3] == ["tool", "install"] for c in calls)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_install_to_path_keeps_an_ails_outside_uvs_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ails = tmp_path / "bin" / "ails"
+    ails.parent.mkdir()
+    ails.write_text("", encoding="utf-8")
+
+    _, calls = _path_install(monkeypatch, str(ails), "/usr/bin/uv", str(tmp_path / "uvcache"))
+
+    assert not any(c[1:3] == ["tool", "install"] for c in calls)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("uv", "cache_dir", "ails", "installs"),
+    [
+        (None, None, "/home/u/.cache/uv/archive-v0/x/bin/ails", False),
+        (None, None, "/home/u/.local/bin/ails", False),
+        ("/usr/bin/uv", None, "/home/u/.cache/uv/archive-v0/x/bin/ails", True),
+        ("/usr/bin/uv", None, "/home/u/.local/bin/ails", False),
+    ],
+)
+def test_install_to_path_falls_back_to_the_default_cache_folder(
+    monkeypatch: pytest.MonkeyPatch, uv: str | None, cache_dir: str | None, ails: str, installs: bool
+) -> None:
+    """Without uv's answer, an `ails` under `/.cache/uv/` is the temporary one."""
+    result, calls = _path_install(monkeypatch, ails, uv, cache_dir)
+
+    assert any(c[1:3] == ["tool", "install"] for c in calls) is installs
+    if uv is None and "/.cache/uv/" in ails:
+        assert result is False

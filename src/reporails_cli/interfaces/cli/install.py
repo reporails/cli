@@ -51,15 +51,32 @@ _SESSION_ENV = (
 )
 
 
+def _uv_cache_dir(uv: str) -> str | None:
+    """uv's cache folder as uv reports it; None when uv cannot say."""
+    try:
+        result = subprocess.run([uv, "cache", "dir"], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
+def _is_temporary_ails(ails_path: str, uv: str | None) -> bool:
+    """True when `ails_path` sits in uv's cache, i.e. a one-shot `uvx` environment."""
+    cache = _uv_cache_dir(uv) if uv else None
+    if cache:
+        return Path(os.path.realpath(ails_path)).is_relative_to(os.path.realpath(cache))
+    return "/.cache/uv/" in ails_path
+
+
 def _install_to_path() -> bool:
     """Install ails to PATH via uv tool install. Returns True on success."""
+    uv = shutil.which("uv")
     # Already on PATH as a real install (not uvx one-shot)?
     ails_path = shutil.which("ails")
-    if ails_path and "/.cache/uv/" not in (ails_path or ""):
+    if ails_path and not _is_temporary_ails(ails_path, uv):
         console.print(f"  [dim]ails already on PATH: {ails_path}[/dim]")
         return True
 
-    uv = shutil.which("uv")
     if not uv:
         console.print("  [yellow]uv not found — skipping PATH install.[/yellow]")
         console.print("  [dim]Install uv (https://docs.astral.sh/uv/) then run: uv tool install reporails-cli[/dim]")
@@ -104,8 +121,15 @@ def _plugin_source() -> str:
 
 
 def _git_root(start: Path) -> Path:
-    """Nearest ancestor of `start` (itself included) with a `.git` entry; `start` when none."""
+    """Nearest ancestor of `start` (itself included) with a `.git` entry, below home; `start` when none."""
+    try:
+        home: Path | None = Path.home().resolve()
+    except (RuntimeError, OSError):
+        home = None
     for candidate in (start, *start.parents):
+        # The home folder, or a folder above it, is never a project root.
+        if home and (candidate == home or home.is_relative_to(candidate)):
+            break
         if (candidate / ".git").exists():
             return candidate
     return start
