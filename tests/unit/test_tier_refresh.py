@@ -13,7 +13,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from reporails_cli.core.platform.adapters.api_client import AilsClient
+from reporails_cli.core.platform.adapters.api_client import DEFAULT_SERVER_URL, AilsClient
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.interfaces.cli.auth_command import auth_app
 from tests.unit.test_api_client import _make_map, _payload_with_file
@@ -54,10 +54,20 @@ class _Refused:
         raise httpx.HTTPStatusError("429", request=None, response=self)  # type: ignore[arg-type]
 
 
-def _lint(monkeypatch: pytest.MonkeyPatch, home: Path, reply: Any, env_key: str | None = None) -> Any:
+def _lint(
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+    reply: Any,
+    env_key: str | None = None,
+    base_url: str = DEFAULT_SERVER_URL,
+    dev_mode: bool = False,
+) -> Any:
     monkeypatch.setattr(Path, "home", lambda: home)
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
+    if dev_mode:
+        monkeypatch.setenv("AILS_DEV_MODE", "1")
+    else:
+        monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)
     else:
@@ -66,7 +76,7 @@ def _lint(monkeypatch: pytest.MonkeyPatch, home: Path, reply: Any, env_key: str 
         patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
         patch("httpx.post", return_value=reply),
     ):
-        return AilsClient(base_url="https://example.test").lint(_make_map(), root=_ROOT)
+        return AilsClient(base_url=base_url).lint(_make_map(), root=_ROOT)
 
 
 def _stored(path: Path) -> dict[str, str]:
@@ -134,3 +144,58 @@ def test_unwritable_credentials_never_break_a_check(monkeypatch: pytest.MonkeyPa
         response = _lint(monkeypatch, tmp_path, _Ok("pro"))
     assert response.result is not None
     assert response.result.tier == "pro"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_non_default_server_leaves_file_alone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = _seed(tmp_path, "free")
+    before = path.read_text(encoding="utf-8")
+    _lint(monkeypatch, tmp_path, _Ok("pro"), base_url="http://localhost:8001")
+    assert path.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_dev_mode_leaves_file_alone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = _seed(tmp_path, "free")
+    before = path.read_text(encoding="utf-8")
+    _lint(monkeypatch, tmp_path, _Ok("pro"), dev_mode=True)
+    assert path.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_refresh_replaces_the_file_in_one_step(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import os
+
+    path = _seed(tmp_path, "free")
+    replaced: list[tuple[str, str]] = []
+    real = os.replace
+    monkeypatch.setattr(os, "replace", lambda a, b: (replaced.append((str(a), str(b))), real(a, b))[1])
+    _lint(monkeypatch, tmp_path, _Ok("pro"))
+    assert [dst for _, dst in replaced] == [str(path)]
+    assert _stored(path)["tier"] == "pro"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert [p.name for p in path.parent.iterdir()] == ["credentials.yml"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_refresh_never_overwrites_a_concurrent_sign_in(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from reporails_cli.core.platform.config import credentials as owner
+
+    path = _seed(tmp_path, "free")
+    real = owner.yaml.safe_load
+    calls = {"n": 0}
+
+    def _login_lands_between_reads(text: str) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:  # the re-read just before the replace
+            return {"api_key": "rr_new", "github_login": "other", "tier": "free"}
+        return real(text)
+
+    monkeypatch.setattr(owner.yaml, "safe_load", _login_lands_between_reads)
+    owner.refresh_stored_tier("rr_stored", "pro", path)
+    assert _stored(path)["tier"] == "free"
+    assert [p.name for p in path.parent.iterdir()] == ["credentials.yml"]

@@ -243,9 +243,14 @@ class AilsClient:
         logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", status)
         return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
 
+    def _sent_stored_key(self) -> bool:
+        """True only for a request to the real service that carried the key as its Authorization header."""
+        dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
+        return bool(self.api_key) and not dev_mode and self.base_url.rstrip("/") == DEFAULT_SERVER_URL.rstrip("/")
+
     def _remember_tier(self, tier: str) -> None:
         """Keep the stored tier in step with the tier a server reply named (stored key only)."""
-        if self.api_key:
+        if self._sent_stored_key():
             from reporails_cli.core.platform.config.credentials import refresh_stored_tier
 
             refresh_stored_tier(self.api_key, tier)

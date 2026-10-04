@@ -18,29 +18,55 @@ def credentials_path() -> Path:
     return Path.home() / ".reporails" / "credentials.yml"
 
 
-def write_credentials_file(path: Path, record: dict[str, str]) -> None:
-    """Store credentials owner-only from the first byte.
+def _stored_key(path: Path) -> str:
+    """The api_key currently in the file, or "" when absent or unreadable."""
+    try:
+        data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return ""
+    return str(data.get("api_key") or "") if isinstance(data, dict) else ""
 
-    On NTFS (no POSIX mode bits) the guarantee does not apply, so Windows keeps
-    the filesystem default and only warns. On POSIX, `os.open` with an explicit
-    0600 mode creates the file without group/other bits, so no umask can widen
-    it; `fchmod` then forces 0600 on a file that already existed at a wider mode.
+
+def write_credentials_file(path: Path, record: dict[str, str], *, expect_key: str | None = None) -> bool:
+    """Replace the credentials file in one step, owner-only from the first byte.
+
+    The record goes to a temp file in the same directory and `os.replace` swaps
+    it in, so a parallel reader sees the old or the new file, never an empty one.
+    On POSIX the temp file is created by `os.open` at 0600 (no umask can widen
+    it). On NTFS (no POSIX mode bits) that guarantee does not apply, so Windows
+    keeps the filesystem default and only warns.
+
+    With `expect_key`, the file is re-read just before the swap and left alone
+    (returns False) when its api_key is no longer that key, so a concurrent
+    sign-in is never overwritten with the old key.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     data = yaml.dump(record, default_flow_style=False)
-    if sys.platform == "win32":
-        path.write_text(data, encoding="utf-8")
-        logger.warning("File permissions not enforced on Windows — secure %s manually", path)
-        return
-    path.parent.chmod(0o700)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    windows = sys.platform == "win32"
+    if not windows:
+        path.parent.chmod(0o700)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        os.fchmod(fd, 0o600)
-    except BaseException:
-        os.close(fd)
-        raise
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(data)
+        if windows:
+            tmp.write_text(data, encoding="utf-8")
+        else:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.fchmod(fd, 0o600)
+            except BaseException:
+                os.close(fd)
+                raise
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(data)
+        if expect_key is not None and _stored_key(path) != expect_key:
+            logger.debug("Credentials changed during the write — left as they are")
+            return False
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    if windows:
+        logger.warning("File permissions not enforced on Windows — secure %s manually", path)
+    return True
 
 
 def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> None:
@@ -61,6 +87,6 @@ def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> No
             return
         record = {str(k): str(v) for k, v in data.items()}
         record["tier"] = tier
-        write_credentials_file(target, record)
+        write_credentials_file(target, record, expect_key=api_key)
     except Exception as exc:
         logger.debug("Could not refresh the stored tier: %s", exc)
