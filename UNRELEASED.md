@@ -3,9 +3,9 @@
 ### Added
 
 - Pro: `ails auth login` and the `ails check` footer now say where rewriting runs: `ails install` adds the reporails plugin, then `/reporails:ails heal` in Claude Code (in other agents, ask your agent to run the reporails heal). `ails check --heal` is described as applying formatting fixes. The README, tiers, getting-started and FAQ pages say the same.
-- Install: `ails install` now installs the reporails plugin into Claude Code and Codex when they are on this machine, gets its first start ready, and ends with the sign-in step; Cursor, GitHub Copilot and Antigravity get their install steps printed.
-- Install: `ails install --project` installs the plugin for the current repository only, shared with collaborators through its Claude Code settings; Codex installs for your user.
-- Update: `ails update` also refreshes the reporails plugin in each agent that has it, and points to `ails install` for an agent without it.
+- Install: `ails install` now installs the reporails plugin into Claude Code and Codex when they are on this machine, gets its first start ready, and ends with the sign-in step; Cursor, GitHub Copilot and Antigravity get their install steps printed, as do Claude Code and Codex when their command is not on this machine or a step fails. A `reporails` marketplace that points at another source is replaced, and the last line names heal as a Pro command unless your account is on Pro.
+- Install: `ails install --project` installs the plugin for the repository you are in (its root, also from a subfolder) only, shared with collaborators through its Claude Code settings; Codex installs for your user.
+- Update: `ails update` also refreshes the reporails plugin in each agent that has it, in each scope it is installed in, and points to `ails install` for an agent without it.
 - Check: a skill, rule or agent whose frontmatter is not valid YAML is reported as a finding on `CORE:S:0040`, `CORE:S:0006` or `CORE:S:0057`, with the problem and its line.
 - Check: a skill's supporting markdown files (`reference.md`, `examples/*.md`) are discovered, checked with the skill and seen by the MCP change check; the skill-only frontmatter and length rules do not report on them.
 - Rules: a check in `checks.yml` can declare `project_scope: once` to report a project-wide fact once per project, also on a run that names a file or folder (`project_scope: aggregate`, formerly `true`, keeps a check off a narrowed run), and `convention: true` to mark a missing-documentation finding.

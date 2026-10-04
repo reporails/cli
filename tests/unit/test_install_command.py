@@ -4,6 +4,7 @@ plugin commands it prints.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -15,6 +16,26 @@ from reporails_cli.interfaces.cli import install as install_module
 from reporails_cli.interfaces.cli.main import app
 
 _runner = CliRunner()
+
+_CLAUDE_LIST_USER = "Installed plugins:\n\n  \u276f reporails@reporails\n    Version: 0.6.0\n    Scope: user\n"
+_CLAUDE_LIST_BOTH = _CLAUDE_LIST_USER + "\n  \u276f reporails@reporails\n    Version: 0.6.0\n    Scope: project\n"
+_CODEX_LIST = "PLUGIN  STATUS  VERSION\nreporails@reporails  installed, enabled  0.6.0\n"
+_CLAUDE_MARKETS_OK = (
+    "Configured marketplaces:\n\n  \u276f claude-plugins-official\n"
+    "    Source: GitHub (anthropics/claude-plugins-official)\n\n"
+    "  \u276f reporails\n    Source: GitHub (reporails/plugin)\n"
+)
+_CLAUDE_MARKETS_STALE = (
+    "Configured marketplaces:\n\n  \u276f claude-plugins-official\n"
+    "    Source: GitHub (anthropics/claude-plugins-official)\n\n"
+    "  \u276f reporails\n    Source: Directory (/home/u/Projects/ai/reporails/skills)\n\n"
+    "  \u276f reporails-arcade\n    Source: GitHub (reporails/arcade)\n"
+)
+_CLAUDE_MARKETS_LOOKALIKE = (
+    "Configured marketplaces:\n\n  \u276f reporails-arcade\n    Source: GitHub (reporails/arcade)\n\n"
+    "  \u276f mine\n    Source: Directory (/home/u/reporails/skills)\n"
+)
+_CODEX_MARKETS_OK = "MARKETPLACE  ROOT\nreporails    /home/u/.codex/.tmp/marketplaces/reporails\n"
 
 
 @pytest.mark.unit
@@ -51,19 +72,22 @@ class _Runner:
 
     def __init__(self, listing: dict[str, str] | None = None, fail: tuple[str, ...] = ()) -> None:
         self.calls: list[list[str]] = []
+        self.kwargs: list[dict[str, Any]] = []
         self.listing = listing or {}
         self.fail = fail
 
     def __call__(self, cmd: list[str], **kwargs: Any) -> MagicMock:
         self.calls.append(cmd)
+        self.kwargs.append(kwargs)
         result = MagicMock()
         result.returncode = 0
         result.stdout = ""
         result.stderr = ""
         joined = " ".join(cmd[1:])
+        named = f"{cmd[0].rsplit('/', 1)[-1]} {joined}"
         if joined.endswith("list"):
-            result.stdout = self.listing.get(joined, "")
-        if any(joined.startswith(f) for f in self.fail):
+            result.stdout = self.listing.get(named, self.listing.get(joined, ""))
+        if any(joined.startswith(f) or named.startswith(f) for f in self.fail):
             result.returncode = 1
             result.stderr = "boom"
         return result
@@ -72,12 +96,20 @@ class _Runner:
         return [" ".join([c[0].rsplit("/", 1)[-1], *c[1:]]) for c in self.calls]
 
 
-def _setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set[str], key: bool = False) -> None:
+def _setup(
+    monkeypatch: pytest.MonkeyPatch,
+    runner: _Runner,
+    present: set[str],
+    key: bool = False,
+    tmp_path: Path | None = None,
+) -> None:
     monkeypatch.setattr(install_module, "_install_to_path", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(install_module.subprocess, "run", runner)
     monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: key)
     monkeypatch.delenv("AILS_PLUGIN_SOURCE", raising=False)
+    if tmp_path is not None:
+        monkeypatch.chdir(tmp_path)
 
 
 @pytest.mark.unit
@@ -125,8 +157,10 @@ def _runner_invoke() -> Any:
 def test_install_refreshes_what_is_already_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = _Runner(
         listing={
-            "plugin marketplace list": "reporails",
-            "plugin list": "reporails@reporails",
+            "claude plugin marketplace list": _CLAUDE_MARKETS_OK,
+            "codex plugin marketplace list": _CODEX_MARKETS_OK,
+            "claude plugin list": _CLAUDE_LIST_USER,
+            "codex plugin list": _CODEX_LIST,
         }
     )
     _setup(monkeypatch, runner, {"claude", "codex"})
@@ -155,7 +189,8 @@ def test_install_failure_prints_manual_command_and_continues(monkeypatch: pytest
     out = " ".join(result.stdout.split())
     assert "Run by hand: /plugin marketplace add reporails/plugin" in out
     assert "Run by hand: codex plugin marketplace add" in out
-    assert "/reporails:ails heal" in out
+    assert "/reporails:ails heal" not in out
+    assert "plugin steps are printed above" in out
     assert not any(c.startswith("claude plugin install") for c in runner.commands())
 
 
@@ -224,10 +259,6 @@ def test_install_help_promises_the_plugin_commands() -> None:
     assert "add the plugin to Claude Code and Codex" in normalized
 
 
-_CLAUDE_LIST_USER = "Installed plugins:\n\n  \u276f reporails@reporails\n    Version: 0.6.0\n    Scope: user\n"
-_CODEX_LIST = "PLUGIN  STATUS  VERSION\nreporails@reporails  installed, enabled  0.6.0\n"
-
-
 def _update_setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set[str]) -> None:
     import reporails_cli.interfaces.cli.commands as commands_module
 
@@ -242,8 +273,10 @@ def _update_setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set
 def test_update_refreshes_agents_that_have_the_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = _Runner(
         listing={
-            "plugin marketplace list": "reporails",
-            "plugin list": _CLAUDE_LIST_USER + _CODEX_LIST,
+            "claude plugin marketplace list": _CLAUDE_MARKETS_OK,
+            "codex plugin marketplace list": _CODEX_MARKETS_OK,
+            "claude plugin list": _CLAUDE_LIST_USER,
+            "codex plugin list": _CODEX_LIST,
         }
     )
     _update_setup(monkeypatch, runner, {"claude", "codex"})
@@ -252,7 +285,7 @@ def test_update_refreshes_agents_that_have_the_plugin(monkeypatch: pytest.Monkey
 
     assert result.exit_code == 0
     cmds = runner.commands()
-    assert "claude plugin update reporails@reporails" in cmds
+    assert "claude plugin update reporails@reporails --scope user" in cmds
     assert "codex plugin add reporails@reporails" in cmds
     assert not any(c.startswith("claude plugin install") for c in cmds)
     assert "Claude Code plugin refreshed" in result.stdout
@@ -280,7 +313,7 @@ def test_update_skips_absent_agents_and_reports_not_installed(monkeypatch: pytes
 @pytest.mark.subsys_cli_ux
 def test_update_refresh_failure_prints_manual_command(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = _Runner(
-        listing={"plugin marketplace list": "reporails", "plugin list": _CLAUDE_LIST_USER},
+        listing={"plugin marketplace list": _CLAUDE_MARKETS_OK, "plugin list": _CLAUDE_LIST_USER},
         fail=("plugin update",),
     )
     _update_setup(monkeypatch, runner, {"claude"})
@@ -334,3 +367,180 @@ def test_install_project_installs_when_only_user_scope_has_the_plugin(monkeypatc
     _runner.invoke(app, ["install", "--project"])
 
     assert "claude plugin install reporails@reporails --scope project" in runner.commands()
+
+
+def _plain(result: Any) -> str:
+    return " ".join(result.stdout.split())
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_marketplace_name_match_is_exact(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`reporails-arcade` and a Source path containing "reporails" are not the `reporails` marketplace."""
+    runner = _Runner(listing={"claude plugin marketplace list": _CLAUDE_MARKETS_LOOKALIKE})
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install"])
+
+    cmds = runner.commands()
+    assert "claude plugin marketplace add reporails/plugin" in cmds
+    assert not any("marketplace update" in c or "marketplace remove" in c for c in cmds)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_stale_marketplace_source_is_replaced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    runner = _Runner(
+        listing={"claude plugin marketplace list": _CLAUDE_MARKETS_STALE, "claude plugin list": _CLAUDE_LIST_USER}
+    )
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
+
+    result = _runner.invoke(app, ["install"])
+
+    cmds = runner.commands()
+    removed = cmds.index("claude plugin marketplace remove reporails --scope user")
+    added = cmds.index("claude plugin marketplace add reporails/plugin")
+    assert removed < added < cmds.index("claude plugin install reporails@reporails")
+    assert not any(c.startswith("claude plugin marketplace update") for c in cmds)
+    assert "old source" in _plain(result)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_broken_codex_marketplace_is_removed_then_added(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    runner = _Runner(fail=("codex plugin marketplace list", "codex plugin list"))
+    _setup(monkeypatch, runner, {"codex"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install"])
+
+    cmds = runner.commands()
+    assert cmds.index("codex plugin marketplace remove reporails") < cmds.index(
+        "codex plugin marketplace add reporails/plugin"
+    )
+    assert "codex plugin add reporails@reporails" in cmds
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_missing_agent_binary_prints_manual_command_and_skips_closing_heal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"codex", "uvx"}, tmp_path=tmp_path)
+
+    result = _runner.invoke(app, ["install"])
+
+    out = _plain(result)
+    assert "Run by hand: /plugin marketplace add reporails/plugin" in out
+    assert "In Claude Code, run" not in out
+    assert "Claude Code's plugin steps are printed above" in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("tier", "needs_pro"),
+    [("pro", False), ("free", True), ("", True)],
+)
+def test_closing_line_names_pro_unless_the_stored_tier_is_entitled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, tier: str, needs_pro: bool
+) -> None:
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, key=True, tmp_path=tmp_path)
+    home = tmp_path / "home"
+    (home / ".reporails").mkdir(parents=True)
+    (home / ".reporails" / "credentials.yml").write_text(f"api_key: k\ntier: '{tier}'\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    result = _runner.invoke(app, ["install"])
+
+    out = _plain(result)
+    assert "/reporails:ails heal" in out
+    assert ("/reporails:ails heal (Pro)" in out) is needs_pro
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_update_refreshes_every_scope_with_one_listing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    runner = _Runner(
+        listing={"claude plugin marketplace list": _CLAUDE_MARKETS_OK, "claude plugin list": _CLAUDE_LIST_BOTH}
+    )
+    _update_setup(monkeypatch, runner, {"claude"})
+
+    _runner.invoke(app, ["update"])
+
+    cmds = runner.commands()
+    assert "claude plugin update reporails@reporails --scope user" in cmds
+    assert "claude plugin update reporails@reporails --scope project" in cmds
+    assert cmds.count("claude plugin list") == 1
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_project_rerun_updates_a_declared_project_marketplace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(
+        '{"extraKnownMarketplaces": {"reporails": {"source": {"source": "github", "repo": "reporails/plugin"}}}}',
+        encoding="utf-8",
+    )
+    runner = _Runner(listing={"plugin list": _CLAUDE_LIST_BOTH})
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install", "--project"])
+
+    cmds = runner.commands()
+    assert "claude plugin marketplace update reporails" in cmds
+    assert not any(c.startswith("claude plugin marketplace add") for c in cmds)
+    assert "claude plugin marketplace list" not in cmds
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_warm_only_when_a_plugin_is_in_place_and_uv_missing_is_said(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = _Runner(fail=("plugin marketplace add",))
+    _setup(monkeypatch, runner, {"claude", "uvx"}, tmp_path=tmp_path)
+    _runner.invoke(app, ["install"])
+    assert not any("uvx" in c[0] for c in runner.calls)
+
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=tmp_path)
+    result = _runner.invoke(app, ["install"])
+    assert "needs uv" in _plain(result)
+    assert "https://docs.astral.sh/uv/" in _plain(result)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_agent_commands_do_not_inherit_the_agent_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    for name in install_module._SESSION_ENV:
+        monkeypatch.setenv(name, "1")
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude", "codex"}, tmp_path=tmp_path)
+
+    _runner.invoke(app, ["install"])
+
+    agent_calls = [
+        kw for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] in ("/bin/claude", "/bin/codex")
+    ]
+    assert agent_calls
+    for kw in agent_calls:
+        assert "env" in kw
+        assert not set(install_module._SESSION_ENV) & set(kw["env"])
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_project_install_runs_from_the_repository_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    sub = tmp_path / "pkg" / "sub"
+    sub.mkdir(parents=True)
+    runner = _Runner()
+    _setup(monkeypatch, runner, {"claude"}, tmp_path=sub)
+
+    result = _runner.invoke(app, ["install", "--project"])
+
+    claude_cwds = {kw.get("cwd") for c, kw in zip(runner.calls, runner.kwargs, strict=True) if c[0] == "/bin/claude"}
+    assert claude_cwds == {tmp_path}
+    assert str(tmp_path) in result.stdout.replace("\n", "")

@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 import typer
 
+from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
+from reporails_cli.interfaces.cli.auth_command import _read_credentials
 from reporails_cli.interfaces.cli.helpers import app, console
 
 logger = logging.getLogger(__name__)
@@ -26,13 +30,26 @@ _WARM_TIMEOUT = 300
 # `ails` skill and the `reporails` MCP server. Claude Code and Codex install it
 # through their own plugin commands, which `ails install` runs; the other agents
 # install it by hand, from the steps below.
-_PLUGIN_INSTALL: list[tuple[str, str]] = [
-    ("Claude Code", f"/plugin marketplace add {_PLUGIN_REPO}  then  /plugin install {_PLUGIN_ID}"),
-    ("Codex", f"codex plugin marketplace add {_PLUGIN_REPO}  then  codex plugin add {_PLUGIN_ID}"),
-    ("Cursor", "copy plugin/plugins/reporails/ into ~/.cursor/plugins/local/reporails/, then restart Cursor"),
-    ("GitHub Copilot", "VS Code -> 'Install Plugin From Source' -> the plugin/plugins/reporails/ folder"),
-    ("Antigravity", "agy plugin install plugin/plugins/reporails"),
-]
+_AUTO_AGENTS: dict[str, tuple[str, str]] = {
+    "claude": ("Claude Code", f"/plugin marketplace add {_PLUGIN_REPO}  then  /plugin install {_PLUGIN_ID}"),
+    "codex": ("Codex", f"codex plugin marketplace add {_PLUGIN_REPO}  then  codex plugin add {_PLUGIN_ID}"),
+}
+_MANUAL_AGENTS: dict[str, str] = {
+    "Cursor": "copy plugin/plugins/reporails/ into ~/.cursor/plugins/local/reporails/, then restart Cursor",
+    "GitHub Copilot": "VS Code -> 'Install Plugin From Source' -> the plugin/plugins/reporails/ folder",
+    "Antigravity": "agy plugin install plugin/plugins/reporails",
+}
+
+# Variables an agent sets for its own session; a child agent command that
+# inherits them can mistake itself for a nested session.
+_SESSION_ENV = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_EXECPATH",
+    "AI_AGENT",
+)
 
 
 def _install_to_path() -> bool:
@@ -90,29 +107,60 @@ def _engine_spec(version: str) -> str:
     return f"reporails-cli>={major}.{minor}.0,<{major}.{minor + 1}"
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """Run one command; None on OSError or timeout."""
+def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
+    """Run one agent command without the agent-session variables; None on OSError or timeout."""
+    env = {k: v for k, v in os.environ.items() if k not in _SESSION_ENV}
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=_STEP_TIMEOUT, check=False)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=_STEP_TIMEOUT, check=False, env=env, cwd=cwd)
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("%s failed: %s", cmd[0], exc)
         return None
 
 
-def _lists(cmd: list[str], name: str) -> bool:
-    """True when `cmd` succeeds and its output names `name`."""
-    result = _run(cmd)
-    return bool(result and result.returncode == 0 and name in (result.stdout or ""))
+def _normalize_source(value: str) -> str:
+    """Comparable form of a marketplace source: a real path, or `owner/repo` for a GitHub URL."""
+    value = value.strip().rstrip("/")
+    if value.startswith(("/", "~", ".")):
+        return os.path.realpath(os.path.expanduser(value))
+    value = re.sub(r"^(https://|git@)github\.com[/:]", "", value)
+    return value.removesuffix(".git")
 
 
-def _claude_scopes(exe: str) -> set[str]:
-    """Scopes in which `claude plugin list` shows the reporails plugin ("" when no scope is printed)."""
-    result = _run([exe, "plugin", "list"])
-    if not result or result.returncode != 0:
-        return set()
+def _same_source(found: str, intended: str) -> bool:
+    return _normalize_source(found) == _normalize_source(intended)
+
+
+def _claude_marketplaces(text: str) -> dict[str, str]:
+    """Marketplace name -> source from `claude plugin marketplace list` output."""
+    found: dict[str, str] = {}
+    current = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("\u276f"):
+            current = line.lstrip("\u276f").strip()
+            found[current] = ""
+        elif current and line.lower().startswith("source:"):
+            detail = line.split(":", 1)[1].strip()
+            match = re.search(r"\((.*)\)\s*$", detail)
+            found[current] = match.group(1) if match else detail
+    return found
+
+
+def _codex_marketplaces(text: str) -> dict[str, str]:
+    """Marketplace name -> root from `codex plugin marketplace list` output."""
+    found: dict[str, str] = {}
+    for raw in text.splitlines():
+        parts = raw.split(None, 1)
+        if len(parts) == 2 and parts[0] != "MARKETPLACE" and not raw.startswith(("WARNING", " ")):
+            found[parts[0]] = parts[1].strip()
+    return found
+
+
+def _claude_scopes(text: str) -> set[str]:
+    """Scopes in which `claude plugin list` output shows the reporails plugin ("" when no scope is printed)."""
     scopes: set[str] = set()
     current = ""
-    for raw in (result.stdout or "").splitlines():
+    for raw in text.splitlines():
         line = raw.strip().lstrip("\u276f").strip()
         if line.endswith(_PLUGIN_ID):
             current = _PLUGIN_ID
@@ -121,47 +169,117 @@ def _claude_scopes(exe: str) -> set[str]:
             current = line
         elif current == _PLUGIN_ID and line.lower().startswith("scope:"):
             scopes.add(line.split(":", 1)[1].strip())
+    if len(scopes) > 1:
+        scopes.discard("")
     return scopes
 
 
-def _plugin_installed(agent: str, exe: str, scope: str | None = None) -> bool:
-    """True when the reporails plugin is installed in `agent` (in `scope`, for Claude Code)."""
+def _project_marketplace(root: Path, source: str) -> str:
+    """State of the reporails marketplace declared in `root`'s project settings."""
+    try:
+        data = json.loads((root / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        declared = data["extraKnownMarketplaces"][_MARKETPLACE]["source"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return "absent"
+    if not isinstance(declared, dict):
+        return "absent"
+    found = str(declared.get("path") or declared.get("repo") or declared.get("url") or "")
+    return "current" if _same_source(found, source) else "stale"
+
+
+def _inspect(agent: str, exe: str, source: str, root: Path | None) -> tuple[str, set[str]]:
+    """(marketplace state, scopes holding the plugin); lists each thing once.
+
+    The marketplace state is "absent", "current", "stale" (another source) or
+    "broken" (Codex cannot list it). A project install reads the project's own
+    settings for the marketplace instead of listing.
+    """
+    market = "absent"
+    if agent == "claude" and root is not None:
+        market = _project_marketplace(root, source)
+    else:
+        listed = _run([exe, "plugin", "marketplace", "list"], root)
+        if agent == "codex" and not (listed and listed.returncode == 0):
+            market = "broken"
+        elif listed and listed.returncode == 0:
+            found = (_claude_marketplaces if agent == "claude" else _codex_marketplaces)(listed.stdout or "")
+            if _MARKETPLACE in found:
+                is_path = source.startswith(("/", "~", "."))
+                comparable = agent == "claude" or is_path
+                same = _same_source(found[_MARKETPLACE], source) if comparable else True
+                market = "current" if same else "stale"
+    plugins = _run([exe, "plugin", "list"], root)
+    out = (plugins.stdout or "") if plugins and plugins.returncode == 0 else ""
     if agent == "claude":
-        scopes = _claude_scopes(exe)
-        return bool(scopes) if scope is None else scope in scopes
-    result = _run([exe, "plugin", "list"])
-    out = (result.stdout or "") if result and result.returncode == 0 else ""
-    return re.search(rf"{re.escape(_PLUGIN_ID)}\s+installed", out) is not None
+        return market, _claude_scopes(out)
+    installed = re.search(rf"{re.escape(_PLUGIN_ID)}\s+installed", out) is not None
+    return market, {""} if installed else set()
 
 
-def _agent_steps(agent: str, exe: str, source: str, scope: str | None = None) -> list[tuple[list[str], bool]]:
+def _agent_steps(
+    agent: str,
+    exe: str,
+    source: str,
+    state: tuple[str, set[str]],
+    scope: str | None = None,
+    refresh: bool = False,
+) -> list[tuple[list[str], bool]]:
     """Plugin commands for one agent as (command, required) pairs.
 
     A marketplace or plugin already present is refreshed instead of re-added,
-    so a re-run leaves the current plugin installed. Refresh steps marked not
-    required may fail without counting against the install. `scope` applies to
-    Claude Code only.
+    so a re-run leaves the current plugin installed; a marketplace of another
+    source is removed and added again. Steps marked not required may fail
+    without counting against the install. `scope` applies to Claude Code only;
+    `refresh` updates the plugin in every scope it is installed in.
     """
+    if agent == "claude":
+        return _claude_steps(exe, source, state, scope, refresh)
+    return _codex_steps(exe, source, state[0])
+
+
+def _claude_steps(
+    exe: str, source: str, state: tuple[str, set[str]], scope: str | None, refresh: bool
+) -> list[tuple[list[str], bool]]:
+    """Claude Code's marketplace and plugin commands, scoped when `scope` is set."""
+    market_state, scopes = state
     plugin = [exe, "plugin"]
     market = [*plugin, "marketplace"]
-    flag = ["--scope", scope] if scope and agent == "claude" else []
-    market_present = _lists([*market, "list"], _MARKETPLACE) and not flag
-    if agent == "claude":
-        plugin_present = _plugin_installed(agent, exe, scope)
-        steps: list[tuple[list[str], bool]] = (
-            [([*market, "update", _MARKETPLACE], True)] if market_present else [([*market, "add", source, *flag], True)]
-        )
-        steps.append(([*plugin, "update" if plugin_present else "install", _PLUGIN_ID, *flag], True))
-        return steps
-    steps = [([*market, "upgrade", _MARKETPLACE], False)] if market_present else [([*market, "add", source], True)]
+    replaced = market_state in ("stale", "broken")
+    steps: list[tuple[list[str], bool]] = []
+    if replaced:
+        steps.append(([*market, "remove", _MARKETPLACE, "--scope", scope or "user"], False))
+    if market_state == "current":
+        steps.append(([*market, "update", _MARKETPLACE], True))
+    else:
+        steps.append(([*market, "add", source, *(["--scope", scope] if scope else [])], True))
+    for target in sorted(scopes) if refresh else [scope or ""]:
+        present = bool(scopes) if not target and not refresh else target in scopes
+        verb = "update" if present and not replaced else "install"
+        steps.append(([*plugin, verb, _PLUGIN_ID, *(["--scope", target] if target else [])], True))
+    return steps
+
+
+def _codex_steps(exe: str, source: str, market_state: str) -> list[tuple[list[str], bool]]:
+    """Codex's marketplace and plugin commands; Codex installs for the user only."""
+    plugin = [exe, "plugin"]
+    market = [*plugin, "marketplace"]
+    steps: list[tuple[list[str], bool]] = []
+    if market_state in ("stale", "broken"):
+        steps.append(([*market, "remove", _MARKETPLACE], False))
+    if market_state == "current":
+        steps.append(([*market, "upgrade", _MARKETPLACE], False))
+    else:
+        steps.append(([*market, "add", source], True))
     steps.append(([*plugin, "add", _PLUGIN_ID], True))
     return steps
 
 
-def _run_steps(label: str, steps: list[tuple[list[str], bool]], manual: str, verb: str) -> bool:
+def _run_steps(
+    label: str, steps: list[tuple[list[str], bool]], manual: str, verb: str, cwd: Path | None = None
+) -> bool:
     """Run the plugin steps; print `manual` and return False when a required one fails."""
     for cmd, required in steps:
-        result = _run(cmd)
+        result = _run(cmd, cwd)
         if result is not None and result.returncode == 0:
             continue
         if not required:
@@ -173,29 +291,45 @@ def _run_steps(label: str, steps: list[tuple[list[str], bool]], manual: str, ver
     return True
 
 
-def _install_agent_plugin(label: str, agent: str, manual: str, project: bool = False) -> None:
-    """Install the plugin into one agent through its own CLI; print `manual` on any failure."""
+def _install_agent_plugin(agent: str, project: bool = False) -> bool:
+    """Install the plugin into one agent through its own CLI; True when it is in place.
+
+    Prints the manual command when the agent is not on PATH or a step fails.
+    """
+    label, manual = _AUTO_AGENTS[agent]
     exe = shutil.which(agent)
     if not exe:
-        return
-    scope = "project" if project and agent == "claude" else None
-    where = " for this project" if scope else ""
+        console.print(f"  [yellow]{label}: `{agent}` not found on PATH.[/yellow]")
+        console.print(f"  [dim]Run by hand: {manual}[/dim]")
+        return False
+    scoped = project and agent == "claude"
+    root = _find_project_root(Path.cwd()) if scoped else None
+    where = f" for this project ({root})" if root else ""
     console.print(f"  Installing the plugin into {label}{where}...")
-    if _run_steps(label, _agent_steps(agent, exe, _plugin_source(), scope), manual, "install"):
-        console.print(f"  [green]{label} plugin installed{where}[/green]")
+    source = _plugin_source()
+    state = _inspect(agent, exe, source, root)
+    if state[0] in ("stale", "broken"):
+        console.print(f"  [dim]Replacing the {label} reporails marketplace's old source with {source}.[/dim]")
+    steps = _agent_steps(agent, exe, source, state, "project" if scoped else None)
+    if not _run_steps(label, steps, manual, "install", root):
+        return False
+    console.print(f"  [green]{label} plugin installed{where}[/green]")
+    return True
 
 
 def refresh_agent_plugins() -> None:
     """Refresh the reporails plugin in each agent that has it; one line per agent."""
-    for label, agent in (("Claude Code", "claude"), ("Codex", "codex")):
+    for agent, (label, manual) in _AUTO_AGENTS.items():
         exe = shutil.which(agent)
         if not exe:
             continue
-        if not _plugin_installed(agent, exe):
+        source = _plugin_source()
+        state = _inspect(agent, exe, source, None)
+        if not state[1]:
             console.print(f"  {label}: plugin not installed — run [bold]ails install[/bold]")
             continue
-        steps = _agent_steps(agent, exe, _plugin_source())
-        if _run_steps(label, steps, dict(_PLUGIN_INSTALL)[label], "refresh"):
+        steps = _agent_steps(agent, exe, source, state, refresh=True)
+        if _run_steps(label, steps, manual, "refresh"):
             console.print(f"  [green]{label} plugin refreshed[/green]")
 
 
@@ -203,6 +337,7 @@ def _warm_engine() -> None:
     """Fetch the plugin's engine now so the agent's first MCP start is fast."""
     uvx = shutil.which("uvx")
     if not uvx:
+        console.print("  [yellow]The plugin's server needs uv (https://docs.astral.sh/uv/).[/yellow]")
         return
     from reporails_cli import __version__
 
@@ -243,24 +378,31 @@ def install(
     _install_to_path()
 
     console.print("\n[bold]Adding the reporails plugin to your agent...[/bold]")
-    for label, agent in (("Claude Code", "claude"), ("Codex", "codex")):
-        manual = dict(_PLUGIN_INSTALL)[label]
-        _install_agent_plugin(label, agent, manual, project)
+    in_place = {agent: _install_agent_plugin(agent, project) for agent in _AUTO_AGENTS}
     if project and shutil.which("codex"):
         console.print("  [dim]Codex installs the plugin for your user, not per project.[/dim]")
-    _warm_engine()
+    if any(in_place.values()):
+        _warm_engine()
 
     console.print(
         "\n[dim]Cursor, GitHub Copilot and Antigravity install the plugin by hand, and heal has so far "
         "been run on Claude Code only:[/dim]"
     )
-    for agent, command in _PLUGIN_INSTALL[2:]:
+    for agent, command in _MANUAL_AGENTS.items():
         console.print(f"  [cyan]{agent}[/cyan]: {command}")
     console.print(f"[dim]These steps use a local copy: {_PLUGIN_CLONE}[/dim]")
 
-    if not has_api_key():
+    signed_in = has_api_key()
+    if not signed_in:
         console.print("\nSign in with [bold]ails auth login[/bold] to use heal (Pro).")
+    if not in_place["claude"]:
+        console.print("\n[green]Done.[/green] Claude Code's plugin steps are printed above.")
+        return
+    from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS
+
+    entitled = signed_in and str(_read_credentials().get("tier") or "") in ENTITLED_TIERS
+    heal = "[bold]/reporails:ails heal[/bold]" + ("" if entitled else " (Pro)")
     console.print(
-        "\n[green]Done.[/green] In Claude Code, run [bold]/reporails:ails heal[/bold]. In a Claude Code session that "
+        f"\n[green]Done.[/green] In Claude Code, run {heal}. In a Claude Code session that "
         "was already open, run [bold]/reload-plugins[/bold] first or start a new session."
     )
