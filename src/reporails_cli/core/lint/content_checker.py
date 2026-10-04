@@ -5,7 +5,8 @@ Each rule with type=content_query checks is dispatched to the
 corresponding query function in content_queries.py.
 
 Queries run against files matching the rule's `match` field.
-A finding is emitted once per rule, not per file.
+A check that requires something emits one finding per rule; a check that forbids something emits
+one per place it finds it.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import logging
 from typing import Any
 
 from reporails_cli.core.lint.content_queries import QUERY_REGISTRY
+from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, LocalFinding, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
@@ -31,15 +33,18 @@ def _matching_files(
     if match is None:
         return sorted(rm_paths)
 
-    from reporails_cli.core.classify import file_matches
+    from reporails_cli.core.platform.policy.matching import file_matches, is_wildcard_match
 
     matched = [str(cf.path) for cf in classified if file_matches(cf, match) and str(cf.path) in rm_paths]
-    # Don't fall back to all files when a specific match type is set —
-    # a config rule shouldn't fire on memory files just because no config exists.
     if matched:
         return sorted(matched)
-    if match.type is not None:
-        return []  # No files of this type — skip, don't fall back
+    # Don't fall back to all files when the match names ANY criterion — a config
+    # rule shouldn't fire on memory files just because no config exists, and a
+    # `match: {format: freeform}` prose rule must not score a `schema_validated`
+    # JSON/TOML surface just because the project has no freeform file in the
+    # scope. Only a fully-wildcard `match: {}` falls back to every mapped file.
+    if not is_wildcard_match(match):
+        return []
     return sorted(rm_paths)
 
 
@@ -48,35 +53,46 @@ def _evaluate_check(
     check: Any,
     rule: Rule,
     classified: list[ClassifiedFile],
-    primary_file: str,
-) -> LocalFinding | None:
-    """Evaluate a single content_query check. Returns a finding if failed."""
+) -> list[LocalFinding]:
+    """Evaluate a single content_query check. Returns its findings: one for a check that requires
+    something and finds it missing, one per match for a check that forbids something."""
     query_fn = QUERY_REGISTRY.get(check.query)
     if query_fn is None:
         logger.warning("Unknown content query: %s (check %s)", check.query, check.id)
-        return None
+        return []
 
     check_args: dict[str, Any] = dict(check.args or {})
     target_files = _matching_files(ruleset_map, classified, rule.match)
     if not target_files:
-        return None
+        return []
 
-    found = any(query_fn(ruleset_map, fp, **check_args).found for fp in target_files)
-    passed = found if check.expect == "present" else not found
-    if passed:
-        return None
+    results = [r for r in (query_fn(ruleset_map, fp, **check_args) for fp in target_files) if r.found]
+    if check.expect == "present" and results:
+        return []
+    if check.expect != "present" and not results:
+        return []
 
     message = check_args.get("message", "")
     if not message:
         message = f"Content check failed: {check.query} (expect={check.expect})"
 
-    display_path = _relative_path(target_files[0] if target_files else primary_file)
-    from reporails_cli.core.lint.rule_runner import _to_display_severity
+    # A check that forbids something reports each place the query found it; a check that requires
+    # something has nothing to point at, so it reports the file.
+    if check.expect == "present":
+        return [_finding(rule, check, message, target_files[0], 1)]
+    return [
+        _finding(rule, check, message.replace("{text}", hit.evidence), hit.file or target_files[0], hit.line or 1)
+        for result in results
+        for hit in (result.matches or (result,))
+    ]
 
+
+def _finding(rule: Rule, check: Any, message: str, file: str, line: int) -> LocalFinding:
+    """A rule's content-check finding at `file`:`line`."""
     return LocalFinding(
-        file=display_path,
-        line=1,
-        severity=_to_display_severity(rule.severity.value),
+        file=_relative_path(file),
+        line=line,
+        severity=display_severity(rule.severity.value),
         rule=rule.id,
         message=message,
         fix=rule.fix,
@@ -93,21 +109,18 @@ def run_content_checks(
     """Run content-quality checks against RulesetMap atoms.
 
     Each content_query check tests whether the matched files have the
-    required content. One finding per rule failure.
+    required content.
     """
     if classified is None:
         classified = []
 
-    primary_file = ruleset_map.files[0].path if ruleset_map.files else ""
     findings: list[LocalFinding] = []
 
     for rule in rules.values():
         for check in rule.checks:
             if check.type != "content_query" or not check.query:
                 continue
-            finding = _evaluate_check(ruleset_map, check, rule, classified, primary_file)
-            if finding is not None:
-                findings.append(finding)
+            findings.extend(_evaluate_check(ruleset_map, check, rule, classified))
 
     return findings
 

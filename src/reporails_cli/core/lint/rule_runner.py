@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.platform.dto.models import LocalFinding, Rule, RuleType
 
 logger = logging.getLogger(__name__)
@@ -22,37 +24,23 @@ logger = logging.getLogger(__name__)
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
-def _to_display_severity(raw: str) -> str:
-    """Normalize a Severity enum value to the display vocabulary.
-
-    `Rule.severity` and `Check.severity` carry the SARIF-adjacent
-    `critical`/`high`/`medium`/`low`/`info` vocabulary; the merger and
-    text formatters only count `error`/`warning`/`info`. Mirrors the
-    translation already applied to deterministic regex findings in
-    `core/lint/regex/compiler.py`.
-    """
-    if raw in ("error", "critical", "high"):
-        return "error"
-    if raw == "info":
-        return "info"
-    return "warning"
-
-
 def _collect_mechanical_findings(
     rules: dict[str, Rule],
     project_dir: Path,
     classified: list[Any],
     scoped: bool = False,
+    project_checks: str = "all",
 ) -> list[LocalFinding]:
     """Run mechanical checks and convert Violations to LocalFinding."""
     from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
     from reporails_cli.core.platform.dto.models import Execution
 
-    mechanical_rules = {
-        k: v for k, v in rules.items() if v.type == RuleType.MECHANICAL and v.execution == Execution.LOCAL
-    }
+    # A rule of any type may hold a mechanical check; the runner runs only those checks.
+    mechanical_rules = {k: v for k, v in rules.items() if v.execution == Execution.LOCAL}
     findings: list[LocalFinding] = []
-    for v in run_mechanical_checks(mechanical_rules, project_dir, classified, scoped=scoped):
+    for v in run_mechanical_checks(
+        mechanical_rules, project_dir, classified, scoped=scoped, project_checks=project_checks
+    ):
         file_path = v.location.rsplit(":", 1)[0] if ":" in v.location else v.location
         line = 0
         if ":" in v.location:
@@ -62,7 +50,7 @@ def _collect_mechanical_findings(
             LocalFinding(
                 file=file_path,
                 line=line,
-                severity=_to_display_severity(v.severity.value),
+                severity=display_severity(v.severity.value),
                 rule=v.rule_id,
                 message=v.message,
                 fix=v.fix,
@@ -90,9 +78,9 @@ def _collect_deterministic_findings(
     scopes, formats, or other properties get the correct file set.
     Rules of any type are included if they contain deterministic checks.
     """
-    from reporails_cli.core.classify import match_files
     from reporails_cli.core.lint.regex import run_checks
     from reporails_cli.core.platform.config.config import get_project_config
+    from reporails_cli.core.platform.policy.matching import match_files
 
     try:
         project_config = get_project_config(project_dir)
@@ -166,33 +154,20 @@ def _drop_excluded(
         return classified
     from reporails_cli.core.platform.utils.utils import matches_any_glob
 
-    keep_resolved = {p.resolve() for p in keep} if keep else set()
+    keep_resolved = {safe_resolve(p) for p in keep} if keep else set()
     return [
         cf
         for cf in classified
-        if cf.path.resolve() in keep_resolved or not matches_any_glob(cf.path, exclude_files, project_dir)
+        if safe_resolve(cf.path) in keep_resolved or not matches_any_glob(cf.path, exclude_files, project_dir)
     ]
 
 
-def run_m_probes(
-    project_dir: Path,
-    instruction_files: list[Path],
-    agent: str = "",
-    scoped: bool = False,
-) -> list[LocalFinding]:
-    """Run M-probe checks (mechanical + deterministic) against instruction files.
-
-    When `scoped` is True (targeted check — capability/path/file scope),
-    project-aggregate mechanical checks are skipped so they cannot misfire
-    against a narrowed subset.
-    """
+def _classify_agent_files(project_dir: Path, instruction_files: list[Path], agent: str) -> tuple[list[Any], bool]:
+    """Classify `instruction_files` with `agent`'s file types; also return whether generic scanning is on."""
     from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.platform.adapters.registry import load_rules
     from reporails_cli.core.platform.config.config import get_project_config
 
-    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
-    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
-    file_types = load_file_types(agent or "generic")
+    file_types = load_file_types(agent or "generic", project_root=project_dir)
     try:
         _config = get_project_config(project_dir)
         generic_scanning = _config.generic_scanning
@@ -201,14 +176,92 @@ def run_m_probes(
         generic_scanning = False
         exclude_files = None
     classified = classify_files(project_dir, instruction_files, file_types, generic_scanning=generic_scanning)
-    classified = _drop_excluded(classified, exclude_files, project_dir, keep=instruction_files)
+    return _drop_excluded(classified, exclude_files, project_dir, keep=instruction_files), generic_scanning
+
+
+def run_m_probes(
+    project_dir: Path,
+    instruction_files: list[Path],
+    agent: str = "",
+    scoped: bool = False,
+    project_checks: str = "all",
+) -> list[LocalFinding]:
+    """Run M-probe checks (mechanical + deterministic) against instruction files.
+
+    When `scoped` is True (targeted check — capability/path/file scope),
+    project-aggregate mechanical checks are skipped so they cannot misfire
+    against a narrowed subset. `project_checks` is ``"defer"`` for a per-agent pass
+    whose project-wide core checks run later over every file, and ``"only"`` for that
+    later pass (project-wide checks alone).
+    """
+    from reporails_cli.core.platform.adapters.registry import load_rules
+
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
+    classified, generic_scanning = _classify_agent_files(project_dir, instruction_files, agent)
     effective_files = _extend_with_generic(instruction_files, classified, generic_scanning)
 
     findings: list[LocalFinding] = []
-    findings.extend(_collect_mechanical_findings(rules, project_dir, classified, scoped=scoped))
-    findings.extend(_collect_deterministic_findings(rules, project_dir, effective_files, classified))
+    findings.extend(
+        _collect_mechanical_findings(rules, project_dir, classified, scoped=scoped, project_checks=project_checks)
+    )
+    if project_checks != "only":
+        findings.extend(_collect_deterministic_findings(rules, project_dir, effective_files, classified))
 
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 9), f.line))
+    return findings
+
+
+def _project_wide_findings(
+    project_dir: Path, pairs: list[tuple[str, list[Path]]], scoped: bool = False
+) -> list[LocalFinding]:
+    """The core rules' project-wide checks over every pair's files, each classified by its own agent.
+
+    A core rule that an agent's own rule replaces does not judge that agent's files: the
+    agent's pass already reports them under the agent's rule.
+    """
+    from reporails_cli.core.platform.adapters.registry import load_rules
+
+    scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
+    rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent="")
+    seen: dict[Path, tuple[str, Any]] = {}
+    replaced_by: dict[str, set[str]] = {}
+    for agent_id, agent_files in pairs:
+        for cf in _classify_agent_files(project_dir, agent_files, agent_id)[0]:
+            seen.setdefault(cf.path, (agent_id, cf))
+        if agent_id:
+            for rule in load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent_id).values():
+                if rule.supersedes in rules:
+                    replaced_by.setdefault(rule.supersedes, set()).add(agent_id)
+    groups: dict[frozenset[str], dict[str, Rule]] = {}
+    for rule_id, rule in rules.items():
+        groups.setdefault(frozenset(replaced_by.get(rule_id, ())), {})[rule_id] = rule
+    findings: list[LocalFinding] = []
+    for skipped_agents, group in groups.items():
+        files = [cf for owner, cf in seen.values() if owner not in skipped_agents]
+        findings.extend(_collect_mechanical_findings(group, project_dir, files, scoped=scoped, project_checks="only"))
+    return findings
+
+
+def run_m_probes_over_pairs(
+    project_dir: Path,
+    pairs: list[tuple[str, list[Path]]],
+    scoped: bool = False,
+) -> list[LocalFinding]:
+    """Run the M-probes once per ``(agent, its files)`` pair, with project-wide checks once.
+
+    A check that judges the project as a whole (total size, file count) must see every
+    in-scope file, so when several agents own files those core checks are held back from
+    each agent's pass and run once over the union. Checks that judge one agent's own files,
+    and agent-specific rules, stay in that agent's pass.
+    """
+    several = len(pairs) > 1
+    mode = "defer" if several else "all"
+    findings: list[LocalFinding] = []
+    for agent_id, agent_files in pairs:
+        findings.extend(run_m_probes(project_dir, agent_files, agent=agent_id, scoped=scoped, project_checks=mode))
+    if several:
+        findings.extend(_project_wide_findings(project_dir, pairs, scoped=scoped))
     return findings
 
 
@@ -238,7 +291,7 @@ def run_content_quality_checks(
     # Classify files so content_checker can respect rule.match targeting
     classified = []
     if instruction_files:
-        file_types = load_file_types(agent or "generic")
+        file_types = load_file_types(agent or "generic", project_root=project_dir)
         try:
             _config = get_project_config(project_dir)
             generic_scanning = _config.generic_scanning
