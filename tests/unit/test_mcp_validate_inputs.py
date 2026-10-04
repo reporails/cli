@@ -322,8 +322,8 @@ def test_signed_in_free_reply_is_not_reused_after_an_upgrade(
     free = {"files": {}, "stats": {}, "tier": "free"}
     pro = {"files": {}, "stats": {}, "tier": "pro", "workflow": {"locations": []}}
     pipeline_replies.extend([free, pro])
-    assert "workflow" not in _call(project, full=True)
-    second = _call(project, full=True)
+    assert "workflow" not in _call(project)
+    second = _call(project)
     assert second.get("error") is None
     assert second.get("tier") == "pro"
     assert "workflow" in second
@@ -331,10 +331,23 @@ def test_signed_in_free_reply_is_not_reused_after_an_upgrade(
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_signed_in_free_replies_do_not_trip_the_circuit_breaker(
+def test_signed_in_free_replies_trip_the_circuit_breaker_on_the_usual_call(
     project: Path, pipeline_replies: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AILS_API_KEY", "synthetic-key-value")
-    pipeline_replies.extend({"files": {}, "stats": {}, "tier": "free"} for _ in range(4))
-    for _ in range(4):
-        assert _call(project).get("error") is None
+    pipeline_replies.extend({"files": {}, "stats": {}, "tier": "free"} for _ in range(3))
+    assert _call(project).get("error") is None
+    assert _call(project).get("error") is None
+    assert _call(project).get("error") == "circuit_breaker"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_full_follow_up_to_a_free_reply_makes_no_second_run(
+    project: Path, pipeline_replies: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AILS_API_KEY", "synthetic-key-value")
+    pipeline_replies.append({"files": {}, "stats": {}, "tier": "free"})
+    assert _call(project).get("error") is None
+    assert _call(project, full=True).get("error") is None
+    assert pipeline_replies == []

@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, FunnelError
+from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS, FunnelError
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def active_cooldown(base_url: str, api_key: str, now: float | None = None) -> Fu
         return None
     if remaining <= 0:
         return None
-    if api_key and str(entry.get("tier", "")) not in ENTITLED_TIERS:
+    if api_key and str(entry.get("tier", "")) in UNENTITLED_TIERS:
         return None
     return FunnelError(
         error=RATE_LIMIT_ERROR,
@@ -100,6 +100,8 @@ def record_cooldown(base_url: str, api_key: str, err: FunnelError, now: float | 
     """Persist a rate-limit error's window; a no-op for any other error or a missing `reset_in`."""
     if err.error != RATE_LIMIT_ERROR or err.reset_in <= 0:
         return
+    if api_key and err.tier in UNENTITLED_TIERS:
+        return  # never read back: a keyed free user is not held
     now = time.time() if now is None else now
     entries = {
         key: entry

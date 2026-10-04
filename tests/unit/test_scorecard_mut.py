@@ -70,6 +70,7 @@ class _Result:
     cross_file: tuple = ()
     cross_file_coordinates: tuple = ()
     per_file_analysis: tuple = ()
+    server_error: object = None
 
 
 def _capture(fn, *args, **kwargs) -> str:
@@ -521,3 +522,33 @@ class TestSurfaceHealthWidth:
         lines = [ln for ln in out.splitlines() if ln.strip()]
         assert len(lines) == 3, out
         assert lines[0].count("):") == 2, out
+
+
+class TestRefusedRunTerminal:
+    """A refused run prints the funnel CTA alone, never the tier lines beneath it."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_pro_banner_with_payload_too_large_has_no_fix_location_line(self) -> None:
+        from reporails_cli.core.platform.dto.diagnostics import FunnelError
+
+        err = FunnelError(error="payload_too_large", tier="pro", status=413)
+        out = _capture(print_scorecard, _Result(server_error=err), False, tier="Pro")
+        assert "Fixes are in the JSON output" not in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.parametrize(
+        ("error", "tier", "status"),
+        [("rate_limit_exceeded", "free", 429), ("invalid_api_key", "anonymous", 401)],
+    )
+    def test_refused_free_run_has_no_second_upgrade_prompt(
+        self, monkeypatch, error: str, tier: str, status: int
+    ) -> None:
+        from reporails_cli.core.platform.dto.diagnostics import FunnelError
+
+        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+        err = FunnelError(error=error, tier=tier, status=status)
+        out = _capture(print_scorecard, _Result(server_error=err), False, tier="free")
+        assert "Upgrade to Pro" not in out
+        assert "Pro adds fix text" not in out

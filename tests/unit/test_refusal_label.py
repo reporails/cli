@@ -34,7 +34,7 @@ def test_too_large_refusal_shows_reason(tmp_path, capsys) -> None:
     err = FunnelError(error="payload_too_large", tier="free", limit=100, size=200, status=413)
     out = _render(err, tmp_path, capsys)
     assert "offline" not in out
-    assert "n/a (project over the size cap)" in out
+    assert "n/a (project over your plan's size cap)" in out
 
 
 @pytest.mark.unit

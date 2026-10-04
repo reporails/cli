@@ -575,7 +575,8 @@ def print_scorecard(
     # key is held, not on the reported tier: a signed-in free user told to run
     # `ails auth login` is sent to a dead end. Never claims a fix for every
     # finding — only that Pro adds fix text and an order to apply it.
-    if tier == "free":
+    refused = getattr(result, "server_error", None) is not None
+    if tier == "free" and not refused:
         from reporails_cli.core.platform.adapters.api_client import has_api_key
         from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
 
@@ -585,7 +586,7 @@ def print_scorecard(
             console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
         else:
             console.print("  \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro")
-    elif tier == "Pro":
+    elif tier == "Pro" and not refused:
         console.print()
         console.print("  [dim]Fixes are in the JSON output (--format json) and the MCP tools.[/dim]")
 

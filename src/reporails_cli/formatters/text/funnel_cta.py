@@ -30,7 +30,7 @@ _FREE_SUBSCRIBE_ERRORS = {"rate_limit_exceeded", "payload_too_large"}
 # unreachable or broken, so the score is simply unavailable.
 _REFUSAL_REASONS = {
     "rate_limit_exceeded": "hourly limit reached",
-    "payload_too_large": "project over the size cap",
+    "payload_too_large": "project over your plan's size cap",
     "atom_cap_exceeded": "project over the size cap",
     "file_cap_exceeded": "project over the size cap",
 }

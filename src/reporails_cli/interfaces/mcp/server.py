@@ -348,11 +348,13 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     # after this rebuilds; parts of an untouched location build once again.
     state.remedy_brief_cache.clear()
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
-    if not unchanged or state.unpaid_reply:
+    if not unchanged:
         state.full_payload = None
         state.consecutive_unchanged = 0
     elif not full:
         state.consecutive_unchanged += 1
+        if state.unpaid_reply:
+            state.full_payload = None
     state.last_mtime_hash = mtime_hash
     state.call_count += 1
     _validate_states[path_key] = state

@@ -835,6 +835,28 @@ class TestRateLimitCooldown:
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
+    @pytest.mark.parametrize("tier", ["", "business"])
+    def test_keyed_user_with_empty_or_unknown_tier_is_held(self, tier: str) -> None:
+        body = self._BODY_429.replace('"anonymous"', f'"{tier}"')
+        self._lint(self._fake_post(429, body), api_key="rr_odd_key")
+        _, calls = self._lint(self._fake_post(200, "{}"), api_key="rr_odd_key")
+        assert calls == 0
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_keyed_free_429_writes_no_cooldown_entry(self) -> None:
+        import json
+
+        from reporails_cli.core.platform.adapters import rate_cooldown
+        from reporails_cli.core.platform.dto.diagnostics import FunnelError
+
+        err = FunnelError(error="rate_limit_exceeded", tier="free", reset_in=600)
+        rate_cooldown.record_cooldown("https://example.test", "rr_key", err, now=0.0)
+        path = rate_cooldown._cooldown_path()
+        assert not path.exists() or json.loads(path.read_text(encoding="utf-8")) == {}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_request_resumes_after_window_ends(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import time
 
