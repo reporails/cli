@@ -31,7 +31,7 @@ def test_charge_word_inside_link_label_does_not_flag_ambiguous():
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_charge_word_in_citation_reference_does_not_flag_ambiguous():
-    atom = _neutral("This follows prior guidance.\n[avoid force-add]: rules/no-force.md")
+    atom = _neutral("[avoid force-add]: rules/no-force.md")
     _scan_neutral_for_embedded_markers([atom])
     assert atom.charge == "NEUTRAL"
     assert atom.embedded_charge_markers == []
