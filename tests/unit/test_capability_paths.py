@@ -228,3 +228,46 @@ def test_main_fold_includes_override_when_present(tmp_path: Path) -> None:
     rels = sorted(p.relative_to(tmp_path).as_posix() for p in targets)
     assert "CLAUDE.md" in rels
     assert "CLAUDE.local.md" in rels
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_capability_targets_skip_vendored_folders(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("# Root\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "CLAUDE.md").write_text("# Sub\n", encoding="utf-8")
+    vendored = tmp_path / "node_modules" / "pkg"
+    vendored.mkdir(parents=True)
+    (vendored / "CLAUDE.md").write_text("Never touch this vendored file.\n", encoding="utf-8")
+    nested = list_capability_targets("claude", "child_instruction", tmp_path)
+    assert [p.relative_to(tmp_path).as_posix() for p in nested] == ["sub/CLAUDE.md"]
+    everything = list_capability_targets("claude", "main", tmp_path)
+    assert all("node_modules" not in p.parts for p in everything)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_symlinked_declared_folder_is_listed(tmp_path: Path) -> None:
+    (tmp_path / ".agents" / "skills" / "foo").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "foo" / "SKILL.md").write_text("# foo\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "skills").symlink_to("../.agents/skills", target_is_directory=True)
+    targets = list_capability_targets("claude", "skills", tmp_path)
+    assert [t.relative_to(tmp_path).as_posix() for t in targets] == [".claude/skills/foo/SKILL.md"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_literal_pattern_is_found_without_a_walk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.core.discovery import walk
+
+    (tmp_path / "CLAUDE.md").write_text("# x\n")
+    (tmp_path / "big" / "deep").mkdir(parents=True)
+    (tmp_path / "big" / "deep" / "f.md").write_text("x\n")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "AGENTS.md").write_text("x\n")
+    monkeypatch.setattr(walk, "_walk", lambda *a, **k: pytest.fail("walked"))
+    skip = frozenset({"node_modules"})
+    assert list(walk.walk_glob_matches(tmp_path, "/CLAUDE.md", skip)) == [tmp_path / "CLAUDE.md"]
+    assert list(walk.walk_glob_matches(tmp_path, "node_modules/AGENTS.md", skip)) == []
+    assert list(walk.walk_glob_matches(tmp_path, "missing.md", skip)) == []
