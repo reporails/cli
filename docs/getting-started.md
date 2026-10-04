@@ -80,7 +80,7 @@ Per-repo settings, rule thresholds, and rule disables live in `.ails/config.yml`
 
 ## Authenticate (optional, free)
 
-The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription) and `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail (per-finding fix text and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
+The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription) and `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail (fix text on each finding that has a remedy, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
 
 ```bash
 ails auth login    # browser-based GitHub Device Flow

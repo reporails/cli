@@ -57,7 +57,7 @@ Findings are sorted by severity; on a Pro run, findings of the same severity are
 
 In supporting terminals the rule IDs in the text output are clickable links to their docs page.
 
-Anonymous runs show summary findings and cross-file repetition and topic-overlap counts — enough to see whether your instructions are working. Pro adds the exact location of each cross-file repetition and overlap, and hands your coding agent the full per-finding fix set. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
+Anonymous runs show summary findings and cross-file repetition and topic-overlap counts — enough to see whether your instructions are working. Pro adds the exact location of each cross-file repetition and overlap, and hands your coding agent the server's fix text on each finding that has a remedy. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
 
 ## How findings are ordered by score effect
 

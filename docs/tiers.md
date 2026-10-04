@@ -69,7 +69,7 @@ Free output shows the score, a card per file with its first findings, a count of
   → sign in with ails auth login, then upgrade to Pro
 ```
 
-Pro output folds a topic-overlap finding back into the per-file list with its line and its full message (`-v` shown here to avoid truncation); a cross-file *repetition* stays a summary count on both tiers — only the JSON `cross_file[]` carries its two lines. The per-finding fix and the ordered remediation workflow go to your coding agent through the MCP `validate` tool (`-f json` carries them too); the terminal output lists findings, not fixes:
+Pro output folds a topic-overlap finding back into the per-file list with its line and its full message (`-v` shown here to avoid truncation); a cross-file *repetition* stays a summary count on both tiers — only the JSON `cross_file[]` carries its two lines. The server's fix text (on each finding that has a remedy) and the ordered remediation workflow go to your coding agent through the MCP `validate` tool (`-f json` carries them too); the terminal output lists findings, not fixes:
 
 ```
   ┌─ Main (1)  2 directive / 2 constraint · 33% prose
@@ -124,7 +124,7 @@ Then add it to your CI provider's secret store and pass it as `AILS_API_KEY` (en
 
 ## Why sign in, and why upgrade?
 
-You can run `ails check` anonymously with no setup — the score, every local finding with its line, and per-file counts for the interaction findings are free, forever. Signing in with a free account keeps your usage under your identity, enables `ails check --heal`, and is the step before subscribing; it does not raise any limit or add server fix text. Upgrading to Pro raises the request rate and payload cap and unlocks the full per-finding remedy set plus the ordered remediation workflow — the fixes your coding agent applies end to end.
+You can run `ails check` anonymously with no setup — the score, every local finding with its line, and per-file counts for the interaction findings are free, forever. Signing in with a free account keeps your usage under your identity, enables `ails check --heal`, and is the step before subscribing; it does not raise any limit or add server fix text. Upgrading to Pro raises the request rate and payload cap and unlocks the server's fix text on each finding that has a remedy, plus the ordered remediation workflow — the fixes your coding agent applies end to end.
 
 ---
 

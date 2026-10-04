@@ -86,7 +86,7 @@ Puts `ails` on your PATH and prints the install command for the reporails plugin
 
 ## Free vs Pro
 
-Anonymous mode needs no account, and signing in is free. Anonymous and signed-in free accounts share the same rate and payload caps and the same full diagnosis — every finding, the score, and the local deterministic fixes — and signing in additionally lets you apply fixes with `ails check --heal`. Pro is the paid subscription: it raises the rate and payload caps and unlocks the full per-finding fix text, the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
+Anonymous mode needs no account, and signing in is free. Anonymous and signed-in free accounts share the same rate and payload caps and the same full diagnosis — every finding, the score, and the local deterministic fixes — and signing in additionally lets you apply fixes with `ails check --heal`. Pro is the paid subscription: it raises the rate and payload caps and unlocks the server's fix text on each finding that has a remedy, the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
 
 ```bash
 # GitHub Device Flow - authorize in browser
