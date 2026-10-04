@@ -581,7 +581,7 @@ def print_scorecard(
         from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
 
         console.print()
-        console.print("  Pro adds the remedies — what to change, where, and how — and the order to apply them.")
+        console.print("  Pro adds the remedies and the order to apply them.")
         if has_api_key():
             console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
         else:

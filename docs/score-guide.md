@@ -57,13 +57,13 @@ Findings are sorted by severity; on a Pro run, findings of the same severity are
 
 In supporting terminals the rule IDs in the text output are clickable links to their docs page.
 
-Anonymous runs show summary findings and cross-file repetition and topic-overlap counts — enough to see whether your instructions are working. Pro adds the exact location of each cross-file repetition and overlap, and hands your coding agent the server's fix text on each finding that has a remedy. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
+Anonymous runs show summary findings and cross-file repetition and topic-overlap counts — enough to see whether your instructions are working. Pro adds the exact location of each cross-file repetition and overlap, and hands your coding agent the remedies: what to change, where, and how. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
 
 ## How findings are ordered by score effect
 
 The score is the analysis service's single quality verdict. The Summary beneath it reads in three lines: `Quality` (your state), `Fix now` (the error count and the rule to start with), and `Findings` (one total).
 
-On a Pro run, inside each file card the findings that carry the most weight for that file stay as lines; the rest collapse into a single `+N more · -v to list` line. Run `ails check -v` to expand them. A free, signed-out or offline run does not rank findings, so its file cards have no such line. The terminal output lists findings, not fixes: the fix text reaches your coding agent through the MCP `validate` tool and appears per finding in `-f json`, and on Pro both also carry the ordered remediation workflow.
+On a Pro run, inside each file card the findings that carry the most weight for that file stay as lines; the rest collapse into a single `+N more · -v to list` line. Run `ails check -v` to expand them. A free, signed-out or offline run does not rank findings, so its file cards have no such line. The terminal output lists findings, not fixes: on Pro the remedies and the ordered remediation workflow reach your coding agent through the MCP `validate` tool and `-f json`.
 
 The JSON output carries a per-finding `leverage` value on a paid run, measured per file by how much clearing the finding is predicted to raise that file's score. An unpaid or offline run carries no `leverage` value and its file cards list findings without collapsing any. See [Configuration → Output format](configuration.md#output-format). It is a worklist aid, not a re-weighting of the score: the score is a single quality verdict, not a severity-weighted tally of findings.
 

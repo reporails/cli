@@ -399,7 +399,7 @@ What differs by tier — measured on the same two-file fixture (one `CLAUDE.md`,
 
 | Field                                          | Anonymous | Free (signed in) | Pro |
 |-------------------------------------------------|-----------|-------------------|-----|
-| `files.<path>.findings[].fix`                    | present only on findings a local deterministic check can fix on its own (3 of 39 findings on the fixture) — the server sends no remedy text to an unpaid tier | same as anonymous (3 of 39) | present on each finding that has a server remedy (25 of 45 on the fixture) — not every finding carries one |
+| `files.<path>.findings[].fix`                    | present only on findings a local deterministic check can fix on its own (3 of 39 findings on the fixture) — the server sends no remedy text to an unpaid tier | same as anonymous (3 of 39) | present on each finding that has a remedy (25 of 45 on the fixture) — not every finding carries one |
 | `pro{}` (upgrade-hint summary: `count`, `errors`, `warnings`) | present when the run has hints | present when the run has hints | omitted — Pro receives the findings themselves, so there is nothing to hint at |
 | `workflow{}` (ordered remediation plan: `summary`, `escape`, `locations[]`, `listed[]`) | omitted | omitted | present when the server returned one |
 | `cross_file_coordinates[]` (which files, how many, no line numbers) | present when the run has cross-file findings | present when the run has cross-file findings | omitted |
