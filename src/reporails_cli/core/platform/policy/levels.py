@@ -161,7 +161,7 @@ LEVEL_CAPS: dict[str, list[str]] = {
 FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
     # L1 — Primer: one main file present
     "instruction_file": lambda f: f.has_instruction_file,
-    # L2 — Composite: multiple main files (project + user-scope defaults)
+    # L2 — Composite: multiple main files in the project (user-scope files do not count)
     "multiple_files": lambda f: f.has_multiple_instruction_files,
     # L3 — Scoped: path-conditional rule loading
     "path_scoping": lambda f: f.has_path_scoped_rules,

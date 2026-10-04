@@ -72,7 +72,7 @@ def check(
     exclude_dirs: list[str] | None = typer.Option(None, "--exclude-dirs", help="Directories to exclude"),  # noqa: B008
     exclude_files: list[str] | None = typer.Option(None, "--exclude-files", help="File globs to exclude"),  # noqa: B008
     ascii: bool = typer.Option(False, "--ascii", "-a", help="ASCII characters only"),
-    strict: bool = typer.Option(False, "--strict", help="Exit code 1 if violations found"),
+    strict: bool = typer.Option(False, "--strict", help="Exit code 1 if any finding is reported"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show details"),
     heal: bool = typer.Option(
         False,

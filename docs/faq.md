@@ -78,7 +78,7 @@ See the [GitHub Actions section in the README](https://github.com/reporails/cli#
 
 ## Does every CI run download the model again?
 
-No, as long as the model is cached. A CI job starts on a fresh machine, so without a cache each run downloads the ~264 MB model again. The `reporails/cli/action` GitHub Action caches it for you: the first run downloads it, and later runs restore it from the repository's Actions cache, even when the check fails. If you run `ails` directly in a workflow, add the cache step from [Configuration → Caching the model in CI](configuration.md#caching-the-model-in-ci). That section also lists the few cases where a cached setup still downloads once, such as the first run after a CLI update that brings a new model.
+No, as long as the model is cached. A CI job starts on a fresh machine, so without a cache each run downloads the ~275 MB model again. The `reporails/cli/action` GitHub Action caches it for you: the first run downloads it, and later runs restore it from the repository's Actions cache, even when the check fails. If you run `ails` directly in a workflow, add the cache step from [Configuration → Caching the model in CI](configuration.md#caching-the-model-in-ci). That section also lists the few cases where a cached setup still downloads once, such as the first run after a CLI update that brings a new model.
 
 ## Is the rule set the same for every agent?
 

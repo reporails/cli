@@ -64,7 +64,7 @@ For a single-value setting the project value wins. So if global says `default_ag
 
 ## Model cache
 
-Reporails analyzes your instructions with a bundled model that is **not** shipped inside the package — it is downloaded once, on the first run that needs it, into `~/.reporails/cache/models/`. Because the cache lives in your home directory (not the ephemeral `npx` package cache), the ~264 MB download happens once per machine and survives every `npx` cold start; a fresh `npx` re-pulls only the small package. Every run after the first is silent and offline.
+Reporails analyzes your instructions with a bundled model that is **not** shipped inside the package — it is downloaded once, on the first run that needs it, into `~/.reporails/cache/models/`. Because the cache lives in your home directory (not the ephemeral `npx` package cache), the ~275 MB download happens once per machine and survives every `npx` cold start; a fresh `npx` re-pulls only the small package. Every run after the first is silent and offline.
 
 The first run needs network access. If it cannot reach the download host, `ails check` stops with a clear error and exit code 2 and leaves nothing half-downloaded behind. `ails check` starts the download only when there are instruction files to check (the MCP server starts it when it launches), and a slow connection is not cut off by the check's time limit. Checks started at the same time download the model once. Every downloaded file is verified before it is used. If a model file later goes missing, the next run restores it and downloads only what it needs. The cache keeps the current and the previous model version. To fetch from your own mirror or an internal cache, point the download at it:
 
@@ -78,7 +78,7 @@ To never download, set `AILS_MODEL_OFFLINE=1`. Reporails then uses a model alrea
 
 ### Caching the model in CI
 
-A CI job starts on a fresh machine with an empty home directory, so without a cache every run downloads the model again (~264 MB). With a cache, later runs restore the model from your CI's cache storage and do not contact the Reporails download host at all.
+A CI job starts on a fresh machine with an empty home directory, so without a cache every run downloads the model again (~275 MB). With a cache, later runs restore the model from your CI's cache storage and do not contact the Reporails download host at all.
 
 **With the [GitHub Action](#github-action)** there is nothing to set up. The action:
 

@@ -17,7 +17,7 @@ npx @reporails/cli check
 uvx --from reporails-cli ails check
 ```
 
-> **First run downloads the model once (~264 MB).** The package itself is small; on the first `check` that needs it, Reporails downloads its analysis model into `~/.reporails/cache/` and prints a `Downloading reporails model…` banner followed by one line per file fetched. The download lives in your home cache, not the package cache, so it happens once per machine and every later run — including a fresh `npx` — is silent and offline. A first run needs network access; see [Configuration](configuration.md#model-cache) to point the download at a mirror. A CI job starts on a fresh machine every time; see [Caching the model in CI](configuration.md#caching-the-model-in-ci) so that only the first run downloads it.
+> **First run downloads the model once (~275 MB).** The package itself is small; on the first `check` that needs it, Reporails downloads its analysis model into `~/.reporails/cache/` and prints a `Downloading reporails model…` banner followed by one line per file fetched. The download lives in your home cache, not the package cache, so it happens once per machine and every later run — including a fresh `npx` — is silent and offline. A first run needs network access; see [Configuration](configuration.md#model-cache) to point the download at a mirror. A CI job starts on a fresh machine every time; see [Caching the model in CI](configuration.md#caching-the-model-in-ci) so that only the first run downloads it.
 
 You'll see something like this:
 

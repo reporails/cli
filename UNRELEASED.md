@@ -336,6 +336,8 @@
 - Rewrite check: a rewrite that drops one of an instruction's conditions ("If the build fails, run `make clean` before running `make build` again." to "Run `make clean` before running `make build` again."), drops one of two conditions joined by "and" or "or", or changes a condition ("if the build fails" to "if the build passes") is reported as a dropped condition; a condition restated with another marker, another form of its words ("before committing" to "before you commit") or a pronoun still passes.
 - Sign-in and limits: after upgrading to Pro, the next check uses the Pro limit straight away instead of repeating the free-limit message for up to an hour.
 - Agent session: heal sees a Pro upgrade on its next run instead of repeating that Pro is needed.
+- First run: the model download is given as about 275 MB, its real size, in the download message, the README and the docs.
+- Check: `ails check --help` says `--strict` exits 1 on any reported finding, info level included.
 
 ### Removed
 

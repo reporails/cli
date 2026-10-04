@@ -109,7 +109,7 @@ Run on every PR so instruction-quality regressions (vague or buried instructions
 
 Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
 
-The action keeps the analysis model (~264 MB) in the repository's Actions cache: the first run downloads it, and later runs restore it instead of downloading it again, even when the check fails. Running `ails` directly in a workflow? See [Configuration → Caching the model in CI](https://github.com/reporails/cli/blob/main/docs/configuration.md#caching-the-model-in-ci).
+The action keeps the analysis model (~275 MB) in the repository's Actions cache: the first run downloads it, and later runs restore it instead of downloading it again, even when the check fails. Running `ails` directly in a workflow? See [Configuration → Caching the model in CI](https://github.com/reporails/cli/blob/main/docs/configuration.md#caching-the-model-in-ci).
 
 ## Documentation
 

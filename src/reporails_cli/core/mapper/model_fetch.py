@@ -53,7 +53,7 @@ _ENV_URL = "AILS_MODEL_URL"
 _ENV_OFFLINE = "AILS_MODEL_OFFLINE"
 
 # Approximate total size of the fetched set, shown once in the first-run banner.
-_APPROX_TOTAL_MB = 264
+_APPROX_TOTAL_MB = 275
 
 # Streamed download chunk size.
 _CHUNK = 1 << 20

@@ -152,7 +152,7 @@ def model_not_ready_error() -> dict[str, Any] | None:
     if model_fetch.download_in_progress():
         return {
             "error": "model_downloading",
-            "message": "The reporails model (~264 MB) is downloading for first use. Call validate again shortly.",
+            "message": "The reporails model (~275 MB) is downloading for first use. Call validate again shortly.",
         }
     try:
         ensure_models_available()
