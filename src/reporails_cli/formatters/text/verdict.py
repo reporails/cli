@@ -18,6 +18,7 @@ from reporails_cli.formatters.text.display_constants import (
     get_term_width,
     rule_docs_url,
 )
+from reporails_cli.formatters.text.funnel_cta import no_score_reason
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.triage import split_conventions
 
@@ -96,7 +97,8 @@ def _render_verdict_block(
         # is `None`, not a fabricated floor) — never raise, render the n/a line.
         console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (no scorable content)[/dim]{elapsed_s}")
     else:
-        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (server diagnostics unavailable)[/dim]{elapsed_s}")
+        reason = no_score_reason(getattr(result, "server_error", None))
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a ({reason})[/dim]{elapsed_s}")
 
     findings = list(result.findings or [])
     visible_errors = [f for f in findings if f.severity == "error"]

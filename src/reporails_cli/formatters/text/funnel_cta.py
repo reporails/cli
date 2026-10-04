@@ -26,6 +26,23 @@ _SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
 _FREE_SUBSCRIBE_ERRORS = {"rate_limit_exceeded", "payload_too_large"}
 
 
+# Why a refused run carries no score, by error code. Any other error means the server was
+# unreachable or broken, so the score is simply unavailable.
+_REFUSAL_REASONS = {
+    "rate_limit_exceeded": "hourly limit reached",
+    "payload_too_large": "project over the size cap",
+    "atom_cap_exceeded": "project over the size cap",
+    "file_cap_exceeded": "project over the size cap",
+}
+
+
+def no_score_reason(err: object) -> str:
+    """The few words after `n/a` on the Quality line when a run has no score."""
+    if isinstance(err, FunnelError):
+        return _REFUSAL_REASONS.get(err.error, "server diagnostics unavailable")
+    return "server diagnostics unavailable"
+
+
 def _has_key() -> bool:
     """True when this CLI holds an API key (env override or stored credentials)."""
     from reporails_cli.core.platform.adapters.api_client import has_api_key

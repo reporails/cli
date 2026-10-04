@@ -248,9 +248,13 @@ def _detect_tier(result: Any, has_quality: bool) -> str:
     """
     from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
 
-    if result.offline:
+    refusal = getattr(result, "server_error", None)
+    # Only a refusal the server sent (it carries an HTTP status) names a real tier; a local
+    # preflight refusal's tier is a guess.
+    refused_tier = getattr(refusal, "tier", "") if getattr(refusal, "status", None) else ""
+    wire_tier = getattr(result, "tier", "") or refused_tier or ""
+    if result.offline and not wire_tier:
         return "offline"
-    wire_tier = getattr(result, "tier", "") or ""
     if wire_tier:
         return "free" if wire_tier in UNENTITLED_TIERS else "Pro"
     if result.hints:

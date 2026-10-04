@@ -366,8 +366,8 @@ class TestDetectTier:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_offline_yields_offline_regardless_of_tier(self) -> None:
-        result = SimpleNamespace(offline=True, hints=(), tier="pro")
+    def test_offline_without_a_named_tier_yields_offline(self) -> None:
+        result = SimpleNamespace(offline=True, hints=(), tier="")
         assert _detect_tier(result, has_quality=True) == "offline"
 
     @pytest.mark.unit

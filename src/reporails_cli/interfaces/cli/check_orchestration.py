@@ -357,11 +357,10 @@ def _dispatch_output(
 ) -> None:
     """Route formatted output to JSON / GitHub / text.
 
-    JSON and github consume `funnel_error` by attaching it onto the `CombinedResult` as
+    Every format consumes `funnel_error` by attaching it onto the `CombinedResult` as
     `server_error` before formatting — a server rejection, timeout, or network failure
-    otherwise reads identically to a designed-offline run in machine output (`offline: true`
-    with no reason). Text renders `funnel_error` directly via its own long-standing CTA path
-    (`print_text_result` -> `_render_funnel_cta`) and is unaffected by this attachment.
+    otherwise reads identically to a designed-offline run (`offline: true` with no reason).
+    Text also renders `funnel_error` directly via its CTA path (`_render_funnel_cta`).
     """
     from dataclasses import replace
 
@@ -403,7 +402,7 @@ def _dispatch_output(
         )
         return
     print_text_result(
-        display_result,
+        result_for_output,
         elapsed_ms,
         ascii_mode,
         verbose,

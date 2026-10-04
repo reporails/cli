@@ -338,6 +338,7 @@
 - Agent session: heal sees a Pro upgrade on its next run instead of repeating that Pro is needed.
 - First run: the model download is given as about 275 MB, its real size, in the download message, the README and the docs.
 - Check: `ails check --help` says `--strict` exits 1 on any reported finding, info level included.
+- Check: a run refused by the service, such as one over the hourly limit, names your plan and says why it has no score instead of reporting the service as offline.
 
 ### Removed
 
