@@ -1,6 +1,6 @@
 """Mapper daemon — single global background process keeping models loaded.
 
-Serves map requests over a Unix domain socket. The sentence-transformers
+Serves map requests over a Unix domain socket. The embedding
 model stays in memory between invocations, eliminating the 5-10s model
 load time on subsequent runs. One daemon serves all projects on the machine.
 
@@ -11,6 +11,8 @@ Protocol: JSON-line over Unix domain socket (one JSON object per line).
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import json
 import logging
 import os
@@ -19,6 +21,7 @@ import socket
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +111,46 @@ def stop_daemon() -> bool:
     _pid_path().unlink(missing_ok=True)
     _socket_path().unlink(missing_ok=True)
     return True
+
+
+def daemon_pid() -> int | None:
+    """The pid the daemon files name, or None when no daemon holds them."""
+    try:
+        return int(_pid_path().read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def retire_daemon(pid: Any, timeout: float = 5.0) -> bool:
+    """Shut down the daemon running as `pid` and wait for it to exit. True once it is gone.
+
+    Only a daemon that still owns the daemon files is asked, and it removes its own files
+    as it exits, so a daemon started in the meantime is never touched. A daemon too busy to
+    answer, or one that has not exited within `timeout`, is not waited for: it stops once its
+    current request is done.
+    """
+    if sys.platform == "win32" or not isinstance(pid, int):
+        return False
+    if daemon_pid() != pid:
+        return False
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect(str(_socket_path()))
+            sock.sendall(json.dumps({"cmd": "shutdown"}).encode() + b"\n")
+            sock.recv(4096)
+    except OSError:
+        return False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        time.sleep(0.05)
+    return False
 
 
 def _become_daemon() -> None:
@@ -225,14 +268,7 @@ def _init_daemon_process() -> None:
         signal.signal(signal.SIGALRM, signal.SIG_DFL)
     _pid_path().write_text(str(os.getpid()))
 
-    import logging as _logging
-
-    os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
-    for lib in ("sentence_transformers", "transformers", "huggingface_hub"):
-        _logging.getLogger(lib).setLevel(_logging.ERROR)
 
 
 def _start_model_warmup() -> tuple[Any, threading.Event]:
@@ -354,20 +390,47 @@ def _handle_connection(
         conn.sendall(json.dumps({"ok": False, "error": "invalid JSON"}).encode() + b"\n")
         return
 
-    response = _dispatch(request, models, warmup_done)
+    def _send_progress(msg: str) -> None:
+        # Stream a per-element progress line to the client mid-map. A closed/
+        # half-open client connection raises here; swallow it — a progress write
+        # failure must never crash the daemon or abort the map.
+        with contextlib.suppress(OSError):
+            conn.sendall(json.dumps({"type": "progress", "msg": msg}, separators=(",", ":")).encode() + b"\n")
+
+    response = _dispatch(request, models, warmup_done, _send_progress)
     conn.sendall(json.dumps(response, separators=(",", ":")).encode() + b"\n")
+
+
+@functools.cache
+def code_identity() -> str:
+    """The code this process maps with: the installed package version and the map-cache
+    version, which changes whenever the mapper's output does."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    from reporails_cli.core.cache.map_cache import _CACHE_VERSION
+
+    try:
+        package = version("reporails-cli")
+    except PackageNotFoundError:
+        package = "unknown"
+    return f"{package}+map{_CACHE_VERSION}"
 
 
 def _dispatch(
     request: dict[str, Any],
     models: Any,
     warmup_done: threading.Event,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Dispatch a request to the appropriate handler."""
+    """Dispatch a request to the appropriate handler.
+
+    ``progress`` (map_ruleset only) streams per-element progress lines back to
+    the client before the result line; ping/shutdown stay single-response.
+    """
     cmd = request.get("cmd", "")
 
     if cmd == "ping":
-        return {"ok": True, "pid": os.getpid(), "warm": warmup_done.is_set()}
+        return {"ok": True, "pid": os.getpid(), "warm": warmup_done.is_set(), "code": code_identity()}
 
     if cmd == "shutdown":
         os.kill(os.getpid(), signal.SIGTERM)
@@ -375,35 +438,58 @@ def _dispatch(
 
     if cmd == "map_ruleset":
         warmup_done.wait(timeout=120)
-        return _handle_map_ruleset(request, models)
+        return _handle_map_ruleset(request, models, progress)
 
     return {"ok": False, "error": f"unknown command: {cmd}"}
 
 
-def _handle_map_ruleset(request: dict[str, Any], models: Any) -> dict[str, Any]:
-    """Handle map_ruleset request — build RulesetMap from paths."""
+def _resolve_segmentation(root: Path | None) -> str:
+    """Read the project's segmentation mode from `.ails/config.yml` at `root`."""
+    if root is None:
+        return "legacy"
+    from reporails_cli.core.platform.config.config import get_project_config
+
+    return get_project_config(root).mapper.segmentation
+
+
+def _ruleset_map_to_dict(ruleset_map: Any) -> dict[str, Any]:
+    """Serialize a RulesetMap to a JSON-compatible dict via a temp round-trip."""
+    import tempfile
+
+    from reporails_cli.core.mapper.serialize import save_ruleset_map
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        save_ruleset_map(ruleset_map, Path(f.name))
+        tmp_path = f.name
+    result_json = Path(tmp_path).read_text()
+    Path(tmp_path).unlink()
+    data: dict[str, Any] = json.loads(result_json)
+    return data
+
+
+def _handle_map_ruleset(
+    request: dict[str, Any], models: Any, progress: Callable[[str], None] | None = None
+) -> dict[str, Any]:
+    """Handle map_ruleset request — build RulesetMap from paths.
+
+    ``progress`` streams per-element mapping messages back to the client, so the
+    daemon path shows the same per-harness-element counter as the in-process path.
+    """
     from reporails_cli.core.mapper import map_ruleset
     from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
-    paths_str = request.get("paths", [])
-    paths = [Path(p) for p in paths_str]
+    paths = [Path(p) for p in request.get("paths", [])]
     root = Path(request["root"]) if "root" in request else None
-    cache_dir = get_global_cache_dir()
 
     try:
-        ruleset_map = map_ruleset(paths, models=models, root=root, cache_dir=cache_dir)
-        # Serialize to JSON-compatible dict
-        import tempfile
-
-        from reporails_cli.core.mapper.serialize import save_ruleset_map
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            save_ruleset_map(ruleset_map, Path(f.name))
-            tmp_path = f.name
-
-        result_json = Path(tmp_path).read_text()
-        Path(tmp_path).unlink()
-
-        return {"ok": True, "ruleset_map": json.loads(result_json)}
+        ruleset_map = map_ruleset(
+            paths,
+            models=models,
+            root=root,
+            cache_dir=get_global_cache_dir(),
+            segmentation=_resolve_segmentation(root),
+            progress=progress,
+        )
+        return {"ok": True, "ruleset_map": _ruleset_map_to_dict(ruleset_map), "code": code_identity()}
     except Exception as e:  # daemon returns error dict, must not crash
         return {"ok": False, "error": str(e)}
