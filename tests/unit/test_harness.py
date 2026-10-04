@@ -6,9 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.dto.models import Check, FileTypeDeclaration
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _c(d: dict) -> Check:
+    """Wrap a scaffold-test check dict as a Check (id is required but unused by scaffolding)."""
+    return Check.model_validate({"id": "CORE.S.0001.check", **d})
 
 
 def _ft(
@@ -30,13 +35,13 @@ def _fts_claude() -> list[FileTypeDeclaration]:
     """Return a minimal Claude-like file type set for testing."""
     return [
         _ft("main", ("**/CLAUDE.md",), required=True),
-        _ft("scoped_rule", (".claude/rules/**/*.md",)),
+        _ft("rules", (".claude/rules/**/*.md",)),
     ]
 
 
 def _fts_with_skills() -> list[FileTypeDeclaration]:
     """Return file types including skills."""
-    return [*_fts_claude(), _ft("skill", (".claude/skills/**/*.md",))]
+    return [*_fts_claude(), _ft("skills", (".claude/skills/**/*.md",))]
 
 
 def _make_rule_dir(tmp_path: Path, slug: str, frontmatter: str, body: str = "") -> Path:
@@ -564,43 +569,6 @@ class TestFixtureDiscovery:
         assert result.status == HarnessStatus.PASSED
 
 
-# ── Check name fallback tests ──────────────────────────────────────
-
-
-class TestCheckNameFallback:
-    """Tests for mechanical check name fallback (P4a)."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_falls_back_to_name_field(self, tmp_path: Path) -> None:
-        """When 'check' key is absent, use 'name' for dispatch."""
-        from reporails_cli.core.lint.harness import _run_mechanical_check
-
-        (tmp_path / "CLAUDE.md").write_text("# Test\n")
-        classified = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main", properties={})]
-        result = _run_mechanical_check(
-            {"name": "file_exists", "args": {"path": "**/*.md"}},
-            tmp_path,
-            classified,
-        )
-        assert result.passed
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_check_key_takes_precedence(self, tmp_path: Path) -> None:
-        """When both 'check' and 'name' are present, 'check' wins."""
-        from reporails_cli.core.lint.harness import _run_mechanical_check
-
-        (tmp_path / "CLAUDE.md").write_text("# Test\n")
-        classified = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main", properties={})]
-        result = _run_mechanical_check(
-            {"check": "file_exists", "name": "something_else", "args": {"path": "**/*.md"}},
-            tmp_path,
-            classified,
-        )
-        assert result.passed
-
-
 # ── Check aliases tests ────────────────────────────────────────────
 
 
@@ -758,21 +726,21 @@ class TestGlobToConcrete:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_double_star_md(self) -> None:
-        from reporails_cli.core.lint.harness import _glob_to_concrete
+        from reporails_cli.core.lint.rule_scaffold import _glob_to_concrete
 
         assert _glob_to_concrete("**/*.md") == "scaffold.md"
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_nested_glob(self) -> None:
-        from reporails_cli.core.lint.harness import _glob_to_concrete
+        from reporails_cli.core.lint.rule_scaffold import _glob_to_concrete
 
         assert _glob_to_concrete(".claude/rules/**/*.md") == ".claude/rules/scaffold.md"
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_plain_path_preserved(self) -> None:
-        from reporails_cli.core.lint.harness import _glob_to_concrete
+        from reporails_cli.core.lint.rule_scaffold import _glob_to_concrete
 
         assert _glob_to_concrete(".claude/settings.json") == ".claude/settings.json"
 
@@ -783,13 +751,13 @@ class TestScaffoldFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_scaffolds_file_for_file_exists(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
         (fixture_dir / "CLAUDE.md").write_text("# Existing\n")
 
-        checks = [{"type": "mechanical", "check": "file_exists", "args": {"path": ".claude/skills/**/*.md"}}]
+        checks = [_c({"type": "mechanical", "check": "file_exists", "args": {"path": ".claude/skills/**/*.md"}})]
         result = _scaffold_fixture(fixture_dir, checks, _fts_with_skills())
 
         assert result is not None
@@ -804,12 +772,12 @@ class TestScaffoldFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_scaffolds_git_marker(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "mechanical", "check": "git_tracked"}]
+        checks = [_c({"type": "mechanical", "check": "git_tracked"})]
         result = _scaffold_fixture(fixture_dir, checks, [])
 
         assert result is not None
@@ -821,12 +789,12 @@ class TestScaffoldFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_scaffolds_directory(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "mechanical", "check": "directory_exists", "args": {"path": ".claude/memory"}}]
+        checks = [_c({"type": "mechanical", "check": "directory_exists", "args": {"path": ".claude/memory"}})]
         result = _scaffold_fixture(fixture_dir, checks, [])
 
         assert result is not None
@@ -838,24 +806,24 @@ class TestScaffoldFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_scaffold_for_deterministic_only(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "deterministic", "id": "test", "severity": "medium"}]
+        checks = [_c({"type": "deterministic", "id": "test", "severity": "medium"})]
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_scaffold_for_semantic_only(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "semantic", "id": "test"}]
+        checks = [_c({"type": "semantic", "id": "test"})]
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
@@ -863,13 +831,13 @@ class TestScaffoldFixture:
     @pytest.mark.subsys_lint
     def test_scaffolds_file_removal_for_file_absent(self, tmp_path: Path) -> None:
         """Pass scaffold removes the forbidden file for file_absent checks."""
-        from reporails_cli.core.lint.harness import _scaffold_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
         (fixture_dir / "README.md").write_text("# README")
 
-        checks = [{"type": "mechanical", "check": "file_absent", "args": {"pattern": "README.md"}}]
+        checks = [_c({"type": "mechanical", "check": "file_absent", "args": {"pattern": "README.md"}})]
         result = _scaffold_fixture(fixture_dir, checks, [])
 
         assert result is not None
@@ -888,18 +856,20 @@ class TestScaffoldFailFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_filename_mismatch_renames_file(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fail_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fail_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
         (fixture_dir / "CLAUDE.md").write_text("# Test")
 
         checks = [
-            {
-                "type": "mechanical",
-                "check": "filename_matches_pattern",
-                "args": {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$", "path": "**/*.md"},
-            }
+            _c(
+                {
+                    "type": "mechanical",
+                    "check": "filename_matches_pattern",
+                    "args": {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$", "path": "**/*.md"},
+                }
+            )
         ]
         result = _scaffold_fail_fixture(fixture_dir, checks, _fts_claude())
 
@@ -913,14 +883,14 @@ class TestScaffoldFailFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_glob_count_deficit_reduces_files(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fail_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fail_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
         (fixture_dir / "a.md").write_text("a")
         (fixture_dir / "b.md").write_text("b")
 
-        checks = [{"type": "mechanical", "check": "glob_count", "args": {"pattern": "**/*.md", "min": 2}}]
+        checks = [_c({"type": "mechanical", "check": "glob_count", "args": {"pattern": "**/*.md", "min": 2}})]
         result = _scaffold_fail_fixture(fixture_dir, checks, [])
 
         assert result is not None
@@ -933,12 +903,12 @@ class TestScaffoldFailFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_present_creates_forbidden_file(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fail_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fail_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "mechanical", "check": "file_absent", "args": {"pattern": "README.md"}}]
+        checks = [_c({"type": "mechanical", "check": "file_absent", "args": {"pattern": "README.md"}})]
         result = _scaffold_fail_fixture(fixture_dir, checks, [])
 
         assert result is not None
@@ -950,12 +920,12 @@ class TestScaffoldFailFixture:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_scaffold_for_unsupported_checks(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import _scaffold_fail_fixture
+        from reporails_cli.core.lint.rule_scaffold import _scaffold_fail_fixture
 
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [{"type": "mechanical", "check": "file_exists", "args": {"path": "**/*.md"}}]
+        checks = [_c({"type": "mechanical", "check": "file_exists", "args": {"path": "**/*.md"}})]
         result = _scaffold_fail_fixture(fixture_dir, checks, [])
         assert result is None
 
@@ -1052,3 +1022,67 @@ class TestFailScaffoldIntegration:
 
         result = run_rule(info, [])
         assert result.status == HarnessStatus.PASSED
+
+
+class TestEnforcementPartnerGap:
+    """SEAM tests for the enforcement-partner lint (check 5): a rule declaring
+    `enforcement_required: true` must name an `enforcement_mechanism`. Reddens if the gap
+    check stops firing on an unnamed mechanism or over-fires on a well-declared rule."""
+
+    @staticmethod
+    def _info(rule_dir: Path, rule_id: str = "CORE:G:0099") -> object:
+        from reporails_cli.core.lint.harness import RuleInfo
+
+        return RuleInfo(
+            rule_id=rule_id,
+            slug="x",
+            title="X",
+            category="governance",
+            rule_type="mechanical",
+            match={},
+            checks=[],
+            rule_dir=rule_dir,
+            checks_yml=rule_dir / "checks.yml",
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_required_without_mechanism_flagged(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness_quality import lint_rules
+
+        rule_dir = _make_rule_dir(
+            tmp_path,
+            "gap",
+            "id: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\n"
+            "severity: high\nenforcement_required: true\nmatch: {}",
+        )
+        errors = lint_rules([self._info(rule_dir)])
+        assert any(e.check_name == "enforcement_partner" for e in errors)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_required_with_mechanism_passes(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness_quality import lint_rules
+
+        rule_dir = _make_rule_dir(
+            tmp_path,
+            "declared",
+            "id: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\n"
+            "severity: high\nenforcement_required: true\nenforcement_mechanism: hook\nmatch: {}",
+        )
+        errors = lint_rules([self._info(rule_dir)])
+        assert not any(e.check_name == "enforcement_partner" for e in errors)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_not_required_passes(self, tmp_path: Path) -> None:
+        # A rule that does not declare enforcement_required needs no mechanism.
+        from reporails_cli.core.lint.harness_quality import lint_rules
+
+        rule_dir = _make_rule_dir(
+            tmp_path,
+            "plain",
+            "id: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\nseverity: high\nmatch: {}",
+        )
+        errors = lint_rules([self._info(rule_dir)])
+        assert not any(e.check_name == "enforcement_partner" for e in errors)
