@@ -47,6 +47,7 @@ from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
     _resolve_scan_target,
     model_not_ready_error,
     run_pipeline_for_path,
+    unpaid_signed_in_reply,
 )
 from reporails_cli.interfaces.mcp.validate_targets import (  # noqa: E402
     keep_target_locations,
@@ -110,6 +111,9 @@ class _CircuitState:
     # this call) is served from here instead of re-running the pipeline, and does not count
     # as an unchanged repeat — only a re-run after a content change counts.
     full_payload: dict[str, Any] | None = None
+    # The last fresh reply came to a signed-in user on a non-paid tier: it is never reused, since
+    # the user may have upgraded since (the sign-in on disk still names the old tier).
+    unpaid_reply: bool = False
     # The scan root the last validate resolved `path` against — what `remedy_brief` resolves
     # a location's (project-relative / `~/…`) file paths back to absolute against.
     scan_root: Path | None = None
@@ -277,6 +281,7 @@ async def _fresh_validate_payload(
         payload = keep_target_locations(payload, *selection, scan_root, tokens)
     if "files" in payload:
         state.full_payload = payload
+        state.unpaid_reply = unpaid_signed_in_reply(payload)
         state.scan_root = scan_root
         state.last_ruleset_map = ruleset_map
         state.last_score = score
@@ -343,7 +348,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     # after this rebuilds; parts of an untouched location build once again.
     state.remedy_brief_cache.clear()
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
-    if not unchanged:
+    if not unchanged or state.unpaid_reply:
         state.full_payload = None
         state.consecutive_unchanged = 0
     elif not full:

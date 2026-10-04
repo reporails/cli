@@ -302,3 +302,39 @@ def test_a_run_that_maps_more_files_does_not_read_as_a_change_on_the_next_call(
     _call_path(project)
     assert len(runs) == 2
     assert next(iter(server._validate_states.values())).consecutive_unchanged == 1
+
+
+@pytest.fixture
+def pipeline_replies(project: Path, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """The real `_fresh_validate_payload`, fed by a pipeline stub that answers from a queue."""
+    replies: list[dict[str, Any]] = []
+    monkeypatch.setattr(server, "run_pipeline_for_path", lambda path, full: (replies.pop(0), None, 0.0))
+    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    return replies
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_signed_in_free_reply_is_not_reused_after_an_upgrade(
+    project: Path, pipeline_replies: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AILS_API_KEY", "synthetic-key-value")
+    free = {"files": {}, "stats": {}, "tier": "free"}
+    pro = {"files": {}, "stats": {}, "tier": "pro", "workflow": {"locations": []}}
+    pipeline_replies.extend([free, pro])
+    assert "workflow" not in _call(project, full=True)
+    second = _call(project, full=True)
+    assert second.get("error") is None
+    assert second.get("tier") == "pro"
+    assert "workflow" in second
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_signed_in_free_replies_do_not_trip_the_circuit_breaker(
+    project: Path, pipeline_replies: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AILS_API_KEY", "synthetic-key-value")
+    pipeline_replies.extend({"files": {}, "stats": {}, "tier": "free"} for _ in range(4))
+    for _ in range(4):
+        assert _call(project).get("error") is None

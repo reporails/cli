@@ -429,6 +429,19 @@ def _attach_funnel(payload: dict[str, Any], funnel_error: Any) -> dict[str, Any]
     return payload
 
 
+def unpaid_signed_in_reply(payload: dict[str, Any]) -> bool:
+    """True when a signed-in user's reply carries a non-paid tier (reported, or named by a funnel
+    rejection). Anonymous replies and paid replies are False."""
+    from reporails_cli.core.platform.adapters.api_client import has_api_key
+    from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, UNENTITLED_TIERS
+
+    if not has_api_key():
+        return False
+    funnel = payload.get("funnel")
+    tiers = {payload.get("tier"), funnel.get("tier") if isinstance(funnel, dict) else None}
+    return bool(tiers & UNENTITLED_TIERS) and not tiers & ENTITLED_TIERS
+
+
 def _rules_missing_payload() -> dict[str, Any]:
     """The reply when the rules folder is missing or has no `core` rules: the rules ship inside
     the package, so this means a broken install or a `framework_path` setting that points at a

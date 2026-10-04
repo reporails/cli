@@ -800,6 +800,41 @@ class TestRateLimitCooldown:
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
+    def test_free_signed_in_user_reaches_the_server_after_upgrading(self) -> None:
+        body = self._BODY_429.replace('"anonymous"', '"free"')
+        first, calls = self._lint(self._fake_post(429, body), api_key="rr_same_key")
+        assert calls == 1
+        assert first.funnel_error is not None and first.funnel_error.tier == "free"
+
+        _, calls = self._lint(self._fake_post(429, body), api_key="rr_same_key")
+        assert calls == 1  # a free window is not held: the server decides again
+
+        class _Ok:
+            status_code = 200
+            text = ""
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, str]:
+                return {"tier": "pro"}
+
+        third, calls = self._lint(lambda *args, **kwargs: _Ok(), api_key="rr_same_key")
+        assert calls == 1
+        assert third.funnel_error is None
+        assert third.result is not None and third.result.tier == "pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_pro_signed_in_user_over_its_cap_is_still_held(self) -> None:
+        body = self._BODY_429.replace('"anonymous"', '"pro"')
+        self._lint(self._fake_post(429, body), api_key="rr_pro_key")
+        second, calls = self._lint(self._fake_post(200, "{}"), api_key="rr_pro_key")
+        assert calls == 0
+        assert second.funnel_error is not None and second.funnel_error.tier == "pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
     def test_request_resumes_after_window_ends(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import time
 

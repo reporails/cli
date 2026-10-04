@@ -334,6 +334,8 @@
 - Check: a code span written with a double backtick, an escaped backtick or an empty backtick pair is read the way markdown reads it when naming code and splitting instructions.
 - Paid remedy: the rewrite brief's line fixes read code the way markdown does (a double-backtick span, an escaped or unmatched backtick), so a fix is not proposed for text that is already code.
 - Rewrite check: a rewrite that drops one of an instruction's conditions ("If the build fails, run `make clean` before running `make build` again." to "Run `make clean` before running `make build` again."), drops one of two conditions joined by "and" or "or", or changes a condition ("if the build fails" to "if the build passes") is reported as a dropped condition; a condition restated with another marker, another form of its words ("before committing" to "before you commit") or a pronoun still passes.
+- Sign-in and limits: after upgrading to Pro, the next check uses the Pro limit straight away instead of repeating the free-limit message for up to an hour.
+- Agent session: heal sees a Pro upgrade on its next run instead of repeating that Pro is needed.
 
 ### Removed
 

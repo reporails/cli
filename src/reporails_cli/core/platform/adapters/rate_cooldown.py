@@ -4,7 +4,10 @@ A `rate_limit_exceeded` response carries `reset_in`. The window end is persisted
 in `~/.reporails/rate_limit.json` so every run inside that window returns the same
 rate-limit error without a round-trip, with `reset_in` counted down to the
 remaining seconds. Entries are keyed by endpoint + credential, so signing in,
-switching keys, or pointing at another server starts clean.
+switching keys, or pointing at another server starts clean. A signed-in user on
+a free plan is never held: upgrading keeps the same key, so the next run asks the
+server, which refuses again while the user is still on the free plan and serves
+the run once they are on a paid one.
 
 Every failure here (unreadable, corrupt, or unwritable file) degrades to "no
 cooldown" — the worst case is one extra request, never a blocked run.
@@ -20,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.platform.dto.diagnostics import FunnelError
+from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, FunnelError
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,8 @@ def active_cooldown(base_url: str, api_key: str, now: float | None = None) -> Fu
     except (KeyError, TypeError, ValueError):
         return None
     if remaining <= 0:
+        return None
+    if api_key and str(entry.get("tier", "")) not in ENTITLED_TIERS:
         return None
     return FunnelError(
         error=RATE_LIMIT_ERROR,
