@@ -120,6 +120,38 @@ def _get_platform_url() -> str:
     return os.environ.get("AILS_PLATFORM_URL", DEFAULT_PLATFORM_URL).rstrip("/")
 
 
+class SignInRefusedError(PlatformUnavailableError):
+    """The website answered a sign-in step with a non-2xx status; the message says what to do."""
+
+
+_REFUSAL_MESSAGES = {
+    "user_creation_failed": (
+        "Reporails could not create an account for this GitHub login, usually because a "
+        "Reporails account already uses this email. Sign in with that account's password at "
+        "reporails.com/user/login (or reset it at reporails.com/user/password), then on "
+        "reporails.com/account use Regenerate and set the key as AILS_API_KEY. "
+        "Otherwise contact us at reporails.com/contact."
+    ),
+    "invalid_github_token": "GitHub did not accept the sign-in. Run `ails auth login` again.",
+    "github_oauth_not_configured": "Sign-in is not available right now. Contact us at reporails.com/contact.",
+}
+
+
+def _refusal_message(status_code: int, body_text: str) -> str:
+    """One actionable line for a non-2xx sign-in reply; tolerates a non-JSON body."""
+    import json
+
+    try:
+        body = json.loads(body_text)
+    except (ValueError, TypeError):
+        body = None
+    code = str(body.get("error", "")) if isinstance(body, dict) else ""
+    if code in _REFUSAL_MESSAGES:
+        return _REFUSAL_MESSAGES[code]
+    detail = f"HTTP {status_code}: {code}" if code else f"HTTP {status_code}"
+    return f"The sign-in was refused ({detail}). Contact us at reporails.com/contact."
+
+
 def _resolve_client_id(base_url: str) -> str:
     """Resolve the GitHub OAuth client ID, trying embedded constant then platform.
 
@@ -143,10 +175,7 @@ def _resolve_client_id(base_url: str) -> str:
 
     if resp.status_code != 200:
         logger.warning("Platform returned HTTP %s for client-id", resp.status_code)
-        raise PlatformUnavailableError(
-            f"Reporails platform returned HTTP {resp.status_code} for the client-id endpoint — "
-            "likely a transient network or edge issue. Retry shortly or contact support@reporails.com.",
-        )
+        raise SignInRefusedError(_refusal_message(resp.status_code, resp.text))
 
     try:
         return str(resp.json().get("client_id", ""))
@@ -154,7 +183,7 @@ def _resolve_client_id(base_url: str) -> str:
         logger.warning("Platform returned non-JSON for client-id: %s", resp.text[:200])
         raise PlatformUnavailableError(
             "Reporails platform returned an unexpected (non-JSON) response for the client-id endpoint — "
-            "likely a transient network or edge issue. Retry shortly or contact support@reporails.com.",
+            "likely a transient network or edge issue. Retry shortly or contact us at reporails.com/contact.",
         ) from exc
 
 
@@ -243,6 +272,37 @@ def _handle_exchange_response(payload: dict[str, str]) -> None:
         console.print(f"  → [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]\n")
 
 
+def _exchange_github_token(base_url: str, github_token: str) -> dict[str, str]:
+    """POST the GitHub token to the platform; exit 1 with one line on any failure."""
+    import httpx
+
+    try:
+        exchange = httpx.post(
+            f"{base_url}/api/auth/cli-exchange",
+            json={"github_token": github_token},
+            headers={"Accept": "application/json", "User-Agent": _user_agent()},
+            timeout=10.0,
+        )
+        if not 200 <= exchange.status_code < 300:
+            console.print(f"  [red]{_refusal_message(exchange.status_code, exchange.text)}[/]")
+            raise typer.Exit(1)
+        payload = exchange.json()
+    except ValueError as exc:
+        logger.warning(
+            "Platform returned non-JSON for cli-exchange: %s",
+            exchange.text[:200],
+        )
+        console.print(
+            "  [red]Platform returned an unexpected (non-JSON) response[/] — likely a transient "
+            "network or edge issue. Retry shortly or contact us at reporails.com/contact.",
+        )
+        raise typer.Exit(1) from exc
+    except (httpx.HTTPError, OSError) as exc:
+        console.print(f"  [red]Failed to exchange token:[/] {exc}")
+        raise typer.Exit(1) from exc
+    return dict(payload)
+
+
 @auth_app.command("login")
 def login(
     platform_url: str = typer.Option(
@@ -258,6 +318,9 @@ def login(
     base_url = platform_url or _get_platform_url()
     try:
         client_id = _resolve_client_id(base_url)
+    except SignInRefusedError as exc:
+        console.print(f"  [red]{exc}[/]")
+        raise typer.Exit(1) from exc
     except PlatformUnavailableError as exc:
         console.print(f"  [red]Reporails platform unavailable:[/] {exc}")
         raise typer.Exit(1) from exc
@@ -308,29 +371,7 @@ def login(
         raise typer.Exit(1)
 
     # Step 3: Exchange GitHub token for Reporails API key
-    try:
-        exchange = httpx.post(
-            f"{base_url}/api/auth/cli-exchange",
-            json={"github_token": github_token},
-            headers={"Accept": "application/json", "User-Agent": _user_agent()},
-            timeout=10.0,
-        )
-        exchange.raise_for_status()
-        payload = exchange.json()
-    except ValueError as exc:
-        logger.warning(
-            "Platform returned non-JSON for cli-exchange: %s",
-            exchange.text[:200],
-        )
-        console.print(
-            "  [red]Platform returned an unexpected (non-JSON) response[/] — likely a transient "
-            "network or edge issue. Retry shortly or contact support@reporails.com.",
-        )
-        raise typer.Exit(1) from exc
-    except (httpx.HTTPError, OSError) as exc:
-        console.print(f"  [red]Failed to exchange token:[/] {exc}")
-        raise typer.Exit(1) from exc
-
+    payload = _exchange_github_token(base_url, github_token)
     _handle_exchange_response(payload)
 
 

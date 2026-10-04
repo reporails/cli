@@ -339,6 +339,7 @@
 - First run: the model download is given as about 275 MB, its real size, in the download message, the README and the docs.
 - Check: `ails check --help` says `--strict` exits 1 on any reported finding, info level included.
 - Check: a run refused by the service, such as one over the hourly limit, names your plan and says why it has no score instead of reporting the service as offline.
+- Sign-in: when the website refuses `ails auth login`, the CLI says why and what to do, instead of a raw HTTP error.
 
 ### Removed
 
