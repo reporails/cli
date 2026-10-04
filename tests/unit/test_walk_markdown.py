@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.agents import DEFAULT_EXCLUDE_DIRS
 from reporails_cli.core.discovery.walk import walk_files, walk_markdown
 
 
@@ -27,7 +28,7 @@ def test_walk_markdown_yields_files_inside_symlinked_directory(tmp_path: Path) -
     skills_dir.mkdir(parents=True)
     os.symlink(str(canonical), str(skills_dir / "orient"))
 
-    found = list(walk_markdown(skills_dir))
+    found = list(walk_markdown(skills_dir, DEFAULT_EXCLUDE_DIRS))
     rels = {p.relative_to(project).as_posix() for p in found}
     assert ".claude/skills/orient/SKILL.md" in rels
 
@@ -45,7 +46,7 @@ def test_walk_markdown_breaks_symlink_cycle(tmp_path: Path) -> None:
     os.symlink(str(b), str(a / "loop"))
     os.symlink(str(a), str(b / "loop"))
 
-    found = list(walk_markdown(root))
+    found = list(walk_markdown(root, DEFAULT_EXCLUDE_DIRS))
     assert len(found) == 1
     assert found[0].name == "SKILL.md"
 
@@ -63,7 +64,7 @@ def test_walk_markdown_dedupes_two_symlinks_to_same_target(tmp_path: Path) -> No
     os.symlink(str(canonical), str(project / "via_a"))
     os.symlink(str(canonical), str(project / "via_b"))
 
-    found = list(walk_markdown(project))
+    found = list(walk_markdown(project, DEFAULT_EXCLUDE_DIRS))
     assert len(found) == 1
 
 
@@ -72,7 +73,7 @@ def test_walk_markdown_dedupes_two_symlinks_to_same_target(tmp_path: Path) -> No
 def test_walk_markdown_ignores_non_markdown(tmp_path: Path) -> None:
     (tmp_path / "keep.md").write_text("# keep\n", encoding="utf-8")
     (tmp_path / "skip.txt").write_text("nope\n", encoding="utf-8")
-    found = {p.name for p in walk_markdown(tmp_path)}
+    found = {p.name for p in walk_markdown(tmp_path, DEFAULT_EXCLUDE_DIRS)}
     assert found == {"keep.md"}
 
 
@@ -81,7 +82,7 @@ def test_walk_markdown_ignores_non_markdown(tmp_path: Path) -> None:
 def test_walk_files_applies_predicate(tmp_path: Path) -> None:
     (tmp_path / "match.txt").write_text("yes\n", encoding="utf-8")
     (tmp_path / "skip.bin").write_bytes(b"\x00\x01\x02")
-    found = {p.name for p in walk_files(tmp_path, lambda p: p.suffix == ".txt")}
+    found = {p.name for p in walk_files(tmp_path, DEFAULT_EXCLUDE_DIRS, lambda p: p.suffix == ".txt")}
     assert found == {"match.txt"}
 
 
@@ -94,5 +95,5 @@ def test_walk_files_follows_symlinked_subdir(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     os.symlink(str(canonical), str(project / "via"))
-    found = {p.name for p in walk_files(project)}
+    found = {p.name for p in walk_files(project, DEFAULT_EXCLUDE_DIRS)}
     assert "inner.md" in found

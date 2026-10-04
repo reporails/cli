@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name
 from reporails_cli.core.discovery.agents import (
     DetectedAgent,
     clear_agent_cache,
@@ -233,6 +234,53 @@ class TestProjectRootVsScanRoot:
         files = get_all_scannable_files(tmp_path)
         assert len(files) >= 1
         assert any(f.name == "CLAUDE.md" for f in files)
+
+
+class TestResolveProjectRootForFile:
+    """`resolve_project_root_for_file` -- the MCP single-file entry point's project-root
+    resolution, mirroring what the CLI resolves via the invoking terminal's `cwd`
+    (MCP `validate(".claude/rules/style.md")` rooted at
+    `.claude/rules` via `resolve_project_root`'s `target.parent`, instead of the real
+    project root a CLI run from the repo root would use)."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_nested_file_under_backbone_resolves_to_the_backbone_root(self, tmp_path: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (tmp_path / ".ails").mkdir()
+        (tmp_path / ".ails" / "backbone.yml").write_text("modules: []\n")
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        target = rules_dir / "style.md"
+        target.write_text("# Style\n")
+
+        assert resolve_project_root_for_file(target) == tmp_path
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_nested_file_under_git_root_resolves_to_the_git_root(self, tmp_path: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (tmp_path / ".git").mkdir()
+        rules_dir = tmp_path / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        target = rules_dir / "style.md"
+        target.write_text("# Style\n")
+
+        assert resolve_project_root_for_file(target) == tmp_path
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_no_marker_anywhere_falls_back_to_the_file_s_own_directory(self, tmp_path: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        rules_dir = tmp_path / "some" / "nested" / "dir"
+        rules_dir.mkdir(parents=True)
+        target = rules_dir / "style.md"
+        target.write_text("# Style\n")
+
+        assert resolve_project_root_for_file(target) == rules_dir
 
 
 class TestPreDetectedAgentsBypass:
@@ -541,14 +589,10 @@ class TestProjectConfigSurfaceAdjustments:
     def test_codex_fallback_filenames_surface(self, tmp_path: Path) -> None:
         """`agents.codex.fallback_filenames` adds candidate main files for codex.
 
-        `.codex/config.toml` is required to make codex unambiguously detected —
-        without it, the codex/generic disambiguation drops codex (per the
-        `_disambiguate_codex_generic` heuristic) and the fallback patterns
-        attached to the codex agent never fire. The fixture mirrors a real
-        Codex-using project.
+        Codex reads a fallback name only in a directory with no `AGENTS.md`, so
+        the fixture holds the fallback file alone beside the `.codex/` marker.
         """
         (tmp_path / ".git").mkdir()
-        (tmp_path / "AGENTS.md").write_text("# main")
         (tmp_path / "TEAM_GUIDE.md").write_text("# fallback")
         codex_dir = tmp_path / ".codex"
         codex_dir.mkdir()
@@ -562,7 +606,6 @@ class TestProjectConfigSurfaceAdjustments:
         file_types = load_file_types("codex", project_root=tmp_path)
         files = get_all_instruction_files(tmp_path)
         types = {cf.path.name: cf.file_type for cf in classify_files(tmp_path, files, file_types)}
-        assert types.get("AGENTS.md") == "main"
         assert types.get("TEAM_GUIDE.md") == "main", "fallback filename must classify as main"
 
     @pytest.mark.unit
@@ -735,9 +778,9 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         repo.mkdir()
         (repo / "CLAUDE.md").write_text("# root\n", encoding="utf-8")
 
-        # Auto-memory lives at ~/.claude/projects/<slug>/memory/, slug = resolved path, / -> -.
+        # Auto-memory lives at ~/.claude/projects/<slug>/memory/, slug = resolved path, every non-alphanumeric -> -.
         home = Path(os.environ["HOME"])
-        slug = str(repo.resolve()).replace("/", "-")
+        slug = claude_project_folder_name(repo)
         mem_dir = home / ".claude" / "projects" / slug / "memory"
         mem_dir.mkdir(parents=True)
         (mem_dir / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
@@ -775,3 +818,137 @@ class TestRepoScopedDiscoveryIgnoresHomeConfig:
         instructions, _rules, _configs = result
         names = {p.as_posix() for p in instructions}
         assert (foreign_mem / "MEMORY.md").as_posix() not in names, "another project's auto-memory must not leak in"
+
+
+# ── Copilot/Cursor's `.vscode/` config surfaces ────
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_vscode_config_surfaces_are_discovered(tmp_path: Path) -> None:
+    """`.vscode/mcp.json` and `.vscode/settings.json` are Copilot's own declared MCP/config
+    surfaces (framework/rules/copilot/config.yml), but the blanket IDE-noise default exclude
+    used to drop the whole `.vscode/` directory before any agent-declared pattern got a look
+    -- so a default whole-project run never saw them. Removing `.vscode` from
+    `_DEFAULT_EXCLUDE_DIRS` lets the declared patterns match."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".github").mkdir()
+    (repo / ".github" / "copilot-instructions.md").write_text("# copilot\n", encoding="utf-8")
+    (repo / ".vscode").mkdir()
+    (repo / ".vscode" / "mcp.json").write_text("{}", encoding="utf-8")
+    (repo / ".vscode" / "settings.json").write_text("{}", encoding="utf-8")
+
+    clear_agent_cache()
+    detected = detect_agents(repo)
+    copilot = next((a for a in detected if a.agent_type.id == "copilot"), None)
+    assert copilot is not None, "copilot should be detected from its own main file"
+    config_names = {p.name for p in copilot.config_files}
+    assert "mcp.json" in config_names
+    assert "settings.json" in config_names
+
+
+class TestEditorFolderAtHomeIsNoProjectRoot:
+    """An editor or host folder in the home directory (or above it) does not make the home
+    directory a file's project; folders below home still do."""
+
+    @pytest.fixture
+    def home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        return home
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.parametrize("marker", [".vscode", ".idea", ".github"])
+    def test_marker_at_home_is_ignored(self, home: Path, marker: str) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (home / marker).mkdir()
+        proj = home / "work" / "proj"
+        proj.mkdir(parents=True)
+        target = proj / "CLAUDE.md"
+        target.write_text("# Proj\n")
+
+        assert resolve_project_root_for_file(target) == proj
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_marker_at_home_is_ignored_and_agent_folder_still_roots(self, home: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (home / ".vscode").mkdir()
+        rules = home / "work" / "proj" / ".claude" / "rules"
+        rules.mkdir(parents=True)
+        target = rules / "style.md"
+        target.write_text("# Style\n")
+
+        assert resolve_project_root_for_file(target) == home / "work" / "proj"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_marker_above_home_is_ignored(self, home: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (home.parent / ".vscode").mkdir()
+        proj = home / "work" / "proj"
+        proj.mkdir(parents=True)
+        target = proj / "CLAUDE.md"
+        target.write_text("# Proj\n")
+
+        assert resolve_project_root_for_file(target) == proj
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_marker_below_home_still_anchors_the_project(self, home: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (home / ".vscode").mkdir()
+        proj = home / "work" / "proj2"
+        (proj / ".vscode").mkdir(parents=True)
+        (proj / "sub").mkdir()
+        target = proj / "sub" / "CLAUDE.md"
+        target.write_text("# Proj\n")
+
+        assert resolve_project_root_for_file(target) == proj
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_git_at_home_still_anchors(self, home: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (home / ".git").mkdir()
+        proj = home / "work" / "proj"
+        proj.mkdir(parents=True)
+        target = proj / "CLAUDE.md"
+        target.write_text("# Proj\n")
+
+        assert resolve_project_root_for_file(target) == home
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_project_config_at_home_still_anchors(self, home: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        (home / ".ails").mkdir()
+        (home / ".ails" / "backbone.yml").write_text("modules: []\n")
+        proj = home / "work" / "proj"
+        proj.mkdir(parents=True)
+        target = proj / "CLAUDE.md"
+        target.write_text("# Proj\n")
+
+        assert resolve_project_root_for_file(target) == home
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_file_outside_home_keeps_marker_anchoring(self, home: Path, tmp_path: Path) -> None:
+        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+
+        proj = tmp_path / "elsewhere" / "proj"
+        (proj / ".github").mkdir(parents=True)
+        (proj / "sub").mkdir()
+        target = proj / "sub" / "CLAUDE.md"
+        target.write_text("# Proj\n")
+
+        assert resolve_project_root_for_file(target) == proj
