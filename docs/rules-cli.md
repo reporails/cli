@@ -1,8 +1,8 @@
 ---
 title: "Rules CLI"
 description: "Browse the framework rule registry and assemble preflight rule sets for authoring"
-version: "0.5.11"
-last_updated: 2026-06-17
+version: "0.6.0"
+last_updated: 2026-09-20
 ---
 
 # Rules CLI
@@ -49,7 +49,7 @@ Within each category, rules are sorted by severity (critical → high → medium
 
 ### `ails rules agents`
 
-Enumerate known agents (`claude`, `codex`, `copilot`, `cursor`, `gemini`, ...).
+Enumerate known agents (`antigravity`, `claude`, `codex`, `copilot`, `cursor`, ...).
 
 ```bash
 ails rules agents
@@ -69,23 +69,32 @@ ails rules capabilities --agent=claude -f json
 For each capability the text output shows the resolved path glob it scans and the number of matching targets in the current project, so you can see at a glance what `ails check <capability>` would actually pick up:
 
 ```
-Capabilities for claude (5):
-  skills  .claude/skills/**/SKILL.md  10 found
-  agents  .claude/agents/**/*.md      3 found
+Capabilities for claude (17):
+  agents             .claude/agents/**/*.md                 14 found
+  child_instruction  **/CLAUDE.md                           90 found
+  commands           .claude/commands/*.md                  0 found
   ...
+  skills             .claude/skills/**/SKILL.md             15 found
+  worktree_include   .worktreeinclude                       0 found
 ```
+
+The list is per-agent and covers every surface that agent declares, so the count is higher than the handful you target day to day. The `...` above stands in for the rows this page omits — the command prints all 17.
 
 The JSON form keeps the flat `capabilities` name list and adds a `resolution` array alongside it — one entry per capability with `name`, `resolves_to` (the path glob), and `found` (the count of matching targets):
 
 ```json
 {
   "agent": "claude",
-  "capabilities": ["agents", "main", "rules", "skills"],
+  "capabilities": ["agents", "child_instruction", "commands", "config", "hooks", "keybindings", "main", "mcp",
+                   "memory", "output_styles", "override", "plugins", "rules", "scheduled_tasks", "skills",
+                   "subagent_memory", "worktree_include"],
   "resolution": [
-    { "name": "skills", "resolves_to": ".claude/skills/**/SKILL.md", "found": 10 }
+    { "name": "skills", "resolves_to": ".claude/skills/**/SKILL.md", "found": 15 }
   ]
 }
 ```
+
+The `resolution` array carries one entry per capability; the sample shows a single entry for brevity.
 
 ### `ails explain <id-or-slug>`
 

@@ -1,13 +1,13 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.5.11"
-last_updated: 2026-06-17
+version: "0.6.0"
+last_updated: 2026-09-20
 ---
 
 # Configuration
 
-Reporails *provides* two configuration surfaces: global (per-user) and project (per-repo). Project config wins where both define the same key — global supplies the defaults, project overrides per-repo.
+Reporails *provides* two configuration surfaces: global (per-user) and project (per-repo). Global supplies the defaults and project overrides them per-repo: a single-value setting takes the project value, and a list setting combines both files.
 
 ## Project config — `.ails/config.yml`
 
@@ -17,9 +17,6 @@ Lives at the root of your repo.
 default_agent: claude              # Which agent's rules to run by default
 exclude_dirs: [examples]           # Extra directory names to skip during discovery (added to the built-in defaults below)
 disabled_rules: [CORE:C:0010]      # Rule IDs to disable entirely
-overrides:                         # Per-rule severity overrides
-  CORE:S:0005:                     # Identity Fields In Frontmatter
-    severity: low                  # Downgrade from default
 ```
 
 Set values from the command line instead of editing the file:
@@ -53,19 +50,70 @@ Applies to every project.
 
 ```yaml
 default_agent: claude
-auto_update_check: true
 ```
 
-The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `exclude_files`, `overrides`, `rule_thresholds`, `generic_scanning`, and more) — project values win per-key where the two overlap.
+The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `exclude_files`, `rule_thresholds`, `generic_scanning`, and more) — the two files are combined, and the project file wins where both set the same thing. List settings (`disabled_rules`, `exclude_dirs`, `exclude_files`, `packages`) are combined: a global file that disables one rule and a project file that disables another disable both. Settings that hold a single value (`default_agent`, `generic_scanning`) take the project value when the project sets one. Keyed settings (`rule_thresholds`, `agents`, `surfaces`) are merged key by key, with the project value replacing the global one for the same key.
 
 Set values from the command line:
 
 ```bash
 ails config set --global default_agent claude
-ails config set --global auto_update_check false
 ```
 
-Project config wins where it overlaps with global. So if global says `default_agent: claude` and the repo's `.ails/config.yml` says `default_agent: cursor`, that repo runs the Cursor rule set.
+For a single-value setting the project value wins. So if global says `default_agent: claude` and the repo's `.ails/config.yml` says `default_agent: cursor`, that repo runs the Cursor rule set.
+
+## Model cache
+
+Reporails analyzes your instructions with a bundled model that is **not** shipped inside the package — it is downloaded once, on the first run that needs it, into `~/.reporails/cache/models/`. Because the cache lives in your home directory (not the ephemeral `npx` package cache), the ~264 MB download happens once per machine and survives every `npx` cold start; a fresh `npx` re-pulls only the small package. Every run after the first is silent and offline.
+
+The first run needs network access. If it cannot reach the download host, `ails check` stops with a clear error and exit code 2 and leaves nothing half-downloaded behind. `ails check` starts the download only when there are instruction files to check (the MCP server starts it when it launches), and a slow connection is not cut off by the check's time limit. Checks started at the same time download the model once. Every downloaded file is verified before it is used. If a model file later goes missing, the next run restores it and downloads only what it needs. The cache keeps the current and the previous model version. To fetch from your own mirror or an internal cache, point the download at it:
+
+```bash
+export AILS_MODEL_URL="https://mirror.example.com/reporails-model"
+```
+
+`AILS_MODEL_URL` is the base URL; Reporails appends each model file's name to it, flattening any `/` in the file's own path to `__`, so a mirror serves one flat directory. To build one, run a check once on a machine that can reach the default host, then copy every file under `~/.reporails/cache/models/<version>/` to the mirror, naming each file by its path inside that folder with every `/` replaced by `__`. Unset, the model downloads from `https://models.reporails.com` — allow that host through a firewall or proxy for the first run. When you are signed in (`ails auth login` or `AILS_API_KEY`), that download carries your API key; the key is never sent to an `AILS_MODEL_URL` host.
+
+To never download, set `AILS_MODEL_OFFLINE=1`. Reporails then uses a model already on disk and, without one, runs without the content checks.
+
+### Caching the model in CI
+
+A CI job starts on a fresh machine with an empty home directory, so without a cache every run downloads the model again (~264 MB). With a cache, later runs restore the model from your CI's cache storage and do not contact the Reporails download host at all.
+
+**With the [GitHub Action](#github-action)** there is nothing to set up. The action:
+
+- downloads the model on the first run and saves it in the repository's Actions cache;
+- restores it on every later run on the same runner OS, until a CLI update brings a new model;
+- saves it even when the check fails, for example on `strict` findings;
+- keeps it apart from the per-file analysis, so editing instruction files never saves the model again.
+
+**The model still downloads**, even with a cache, on:
+
+- the first run in a repository, and the first run after a CLI update that brings a new model;
+- jobs that start together before any of them has saved the model — each downloads once;
+- a run after GitHub has dropped the cached copy. GitHub removes an entry that has not been used for a week, and a run can only use entries saved on its own branch, its pull request's base branch, or the default branch, so a new branch downloads once unless the model is already saved on one of those.
+
+**In a workflow that runs `ails` directly**, cache `~/.reporails/cache/models` yourself. Pin the CLI version and use it in the cache key: the model changes only when a new CLI release brings a new model version, so most version bumps restore the same cached model and an occasional one downloads it once and caches it again.
+
+```yaml
+env:
+  REPORAILS_VERSION: "0.6.0"
+steps:
+  - uses: actions/checkout@v4
+  - uses: actions/setup-python@v5
+    with:
+      python-version: "3.12"
+  - run: pip install "reporails-cli==${{ env.REPORAILS_VERSION }}"
+  - uses: actions/cache@v4
+    with:
+      path: ~/.reporails/cache/models
+      key: reporails-model-${{ runner.os }}-${{ env.REPORAILS_VERSION }}
+  - run: ails check
+```
+
+Install a pinned version as shown (or `uvx --from "reporails-cli==<version>" ails check` where `uv` is set up). `npx @reporails/cli` always runs the latest CLI whatever version you give it, so it cannot be pinned for this key. `actions/cache` saves only when the job succeeds: a job that fails on `ails check --strict` findings saves nothing, and the next run downloads the model again. The GitHub Action keeps the model even when the check fails.
+
+When `ails` downloads the model inside GitHub Actions, it prints a line pointing to this section.
 
 ## Disabling rules
 
@@ -78,7 +126,7 @@ disabled_rules:
   - CORE:S:0005   # Identity Fields In Frontmatter
 ```
 
-Browse the full rule reference at [reporails.com/rules](https://reporails.com/rules) to look up each rule's body and pass / fail examples before disabling — sometimes the rule's intent fits your project but the surface form doesn't, and a severity override (below) reads better than a disable. `ails explain CORE:C:0010` shows the rule body inline from the CLI when you already know the ID.
+Browse the full rule reference at [reporails.com/rules](https://reporails.com/rules) to look up each rule's body and pass / fail examples before disabling — disabling is the right call when the rule's intent doesn't fit your project; complying is the right call when the intent matches but you weren't reaching it. `ails explain CORE:C:0010` shows the rule body inline from the CLI when you already know the ID.
 
 ## Suppressing one finding on one line
 
@@ -121,9 +169,9 @@ ails check --exclude-dirs examples --exclude-dirs third_party
 ```yaml
 # PROJECT_ROOT/.ails/config.yml
 exclude_files:
-  - .claude/agents/lead.md   # that exact file
+  - .claude/agents/reviewer.md # that exact file
   - .claude/skills/*/SKILL.md # each skill's SKILL.md (one level down)
-  - "**/lead.md"             # any lead.md, anywhere
+  - "**/reviewer.md"         # any reviewer.md, anywhere
 ```
 
 The common case is a project that symlinks coding-agent harness artifacts (skills, agents, rules) in from another repo. Those files are authored and linted where they live, so scoring them here just adds noise — list their paths under `exclude_files` to drop them. Selection is by path, not by "is a symlink", because symlinks are also used legitimately (e.g. `CLAUDE.md → AGENTS.md`).
@@ -135,10 +183,10 @@ A bare `**` or `**/*` matches *every* file in the project — it drops all instr
 For one-off runs, pass `--exclude-files`:
 
 ```bash
-ails check --exclude-files ".claude/skills/**/*" --exclude-files ".claude/agents/lead.md"
+ails check --exclude-files ".claude/skills/**/*" --exclude-files ".claude/agents/reviewer.md"
 ```
 
-Explicitly targeting an excluded file still scans it — `ails check ./.claude/agents/lead.md` overrides the exclusion, since exclusion only applies to discovery.
+Explicitly targeting an excluded file still scans it — `ails check ./.claude/agents/reviewer.md` overrides the exclusion, since exclusion only applies to discovery.
 
 ## Per-surface include / exclude
 
@@ -173,7 +221,7 @@ agents:
     fallback_filenames: ["TEAM_GUIDE.md", ".agents.md"]
 ```
 
-These filenames are added as `**/<filename>` to Codex's `main` surface — they classify the same way `AGENTS.md` does and pick up the same rules.
+A fallback file is checked where Codex reads it: in a directory that has no `AGENTS.md` (and no `AGENTS.override.md`), at the project root or in a subfolder. There it classifies the same way an `AGENTS.md` in that directory would and picks up the same rules. A fallback file that sits beside an `AGENTS.md` is not read by Codex, so it is not checked.
 
 ## Local overrides — `.ails/config.local.yml`
 
@@ -200,16 +248,13 @@ config.local.yml
 
 ## Per-rule thresholds
 
-Some rules ship with a built-in `min_lines` gate so small files do not get flagged for issues that only matter at scale. For example, `CORE:S:0013 scope-fields-in-frontmatter` ships with `min_lines: 30` — a 5-line rule file won't fail it. You can raise or lower the threshold per project under `overrides.rule_thresholds`:
+Some rules ship with a built-in `min_lines` gate so small files do not get flagged for issues that only matter at scale. For example, `CORE:S:0013 scope-fields-in-frontmatter` ships with `min_lines: 30` — a 5-line rule file won't fail it. You can raise or lower the threshold per project under `rule_thresholds`:
 
 ```yaml
 # .ails/config.yml
-overrides:
-  rule_thresholds:
-    CORE:S:0013:
-      min_lines: 50          # require 50+ lines before this rule fires
-    CORE:C:0034:
-      min_lines: 0           # always fire, even on tiny files
+rule_thresholds:
+  CORE:S:0013:
+    min_lines: 50            # require 50+ lines before this rule fires
 ```
 
 Any deterministic check that declares a `min_lines:` entry in its `checks.yml` can be tuned this way — see `ails explain <rule_id>` for which rules expose the gate.
@@ -228,21 +273,7 @@ When on, the discovery walker follows links out of classified files (bounded dep
 - **`@`-import-reached** files (`file_type: generic`) — pulled in by an `@`-import directive. The agent eagerly auto-loads these, so Reporails does too: they are scored and shown under an `Imported` surface that counts toward the Quality score.
 - **Markdown-link-reached** files (`[text](path)`, `file_type: referenced`) — discoverable but not loaded. The agent only reads them if it chooses to follow the link, so Reporails surfaces them in a labeled `Referenced` findings panel only: no score bar, and not counted in the headline.
 
-Structural and formatting rules (charge ordering, direction imbalance, formatting hygiene) still fire on both kinds; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
-
-## Severity overrides
-
-Severity is what makes a finding "critical" vs "info". Default severity comes from the rule itself; you can override it per project:
-
-```yaml
-overrides:
-  CORE:S:0005:                     # Identity Fields In Frontmatter
-    severity: info                  # I don't care about this one — keep it visible but don't weight it
-  CORE:G:0001:                     # Vcs Tracked
-    severity: critical             # I really care about this one — escalate
-```
-
-Valid severity values: `critical`, `high`, `medium`, `low`, `info`.
+Structural and formatting rules still fire on both kinds; main-shape rules (tech stack, MCP docs) do not. Default is off so anonymous tryouts against third-party repos stay quiet.
 
 ## Strict mode and minimum score
 
@@ -255,7 +286,7 @@ ails check --strict
 The CLI does not have a built-in `--min-score` flag. To gate on a minimum score, use the GitHub Action's `min-score` input — it parses the score from the JSON output and runs a post-step gate:
 
 ```yaml
-- uses: reporails/cli/action
+- uses: reporails/cli/action@0.6.0
   with:
     strict: "true"            # exit 1 if any rule fires
     min-score: "7.0"          # exit 1 if score < 7.0
@@ -263,13 +294,15 @@ The CLI does not have a built-in `--min-score` flag. To gate on a minimum score,
 
 Outside the action, use `--strict` for a pass/fail gate; for score-based gating, the GitHub Action's `min-score` input is the supported path.
 
+When `min-score` is set, the gate fails CLOSED if the diagnostics server rejected the run, timed out, or was unreachable — `::error::Quality gate cannot run: diagnostics server unavailable (<reason>)`, exit 1 — rather than silently skipping the check on a missing score. It only prints the offline-run warning and exits 0 when there genuinely was no score to gate on (no server call was made at all) and `min-score` was not configured.
+
 ## Authentication
 
-The anonymous tier requires no account. To raise rate / payload caps and unlock the full diagnostic detail, sign in:
+The anonymous tier requires no account, and signing in is free. A free account does not raise your rate or payload caps — anonymous and signed-in free accounts share the same limits. Signing in gives you an identity (so you can subscribe and manage the subscription) and enables `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
 
 ```bash
 ails auth login        # browser-based GitHub Device Flow
-ails auth status       # show current tier and a redacted key prefix
+ails auth status       # show whether you're signed in, the key source, and a redacted key prefix (the tier is shown for a stored sign-in; for a key held in `AILS_API_KEY` it reads `Tier: (resolved at check time)`)
 ails auth token        # print the full API key (for CI export)
 ails auth logout       # remove stored credentials
 ```
@@ -277,6 +310,44 @@ ails auth logout       # remove stored credentials
 Credentials are stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually).
 
 For CI, capture the API key with `ails auth token` and add it to your CI provider's secret store as `AILS_API_KEY` (or pass it via the GitHub Action's `api-key` input — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme)).
+
+## GitHub Action
+
+`reporails/cli/action` is a composite action that installs the CLI, runs `ails check --format github` (which emits inline annotations plus the same JSON document as `-f json` on its trailing line), and exposes the result. It keeps the analysis model and the per-file analysis between runs, so a later run does not download the model again and re-analyzes only the instruction files that changed. The model is kept even when the check fails, for example on `strict` findings. Every input it accepts:
+
+| Input          | Default | What it does                                                                                      |
+|----------------|---------|---------------------------------------------------------------------------------------------------|
+| `path`         | `.`     | Path to validate — point it at a subdirectory to scan only that tree.                             |
+| `strict`       | `false` | Fail the step on any finding.                                                                     |
+| `min-score`    | (empty) | Minimum score (0–10). Fails the step when the run scores below it.                                |
+| `agent`        | (empty) | Agent to score against (`claude`, `cursor`, …). Empty resolves from project config, then a generic fallback. |
+| `exclude-dir`  | (empty) | Comma-separated directory *names* to skip (e.g. `vendor,dist`), added to the built-in excludes.   |
+| `version`      | (empty) | CLI version to install (e.g. `0.6.0`). Empty installs the latest release.                         |
+| `from-source`  | `false` | Internal — installs the CLI from a local checkout so the action can test itself. Leave it `false`. |
+| `api-key`      | (empty) | Your API key, normally `${{ secrets.REPORAILS_API_KEY }}`. Empty runs anonymously.                |
+| `server-url`   | (empty) | Overrides the diagnostic endpoint. Empty uses production — set it only for a staging deployment.  |
+
+And every output:
+
+| Output       | What it carries                                                                 |
+|--------------|-----------------------------------------------------------------------------------|
+| `score`      | The Quality score (0–10).                                                        |
+| `level`      | The maturity level on the `L0`–`L7` ladder — see [Capability Levels](capability-levels.md). |
+| `violations` | Number of findings.                                                              |
+| `result`     | The full JSON result, in the shape documented under [Output format](#output-format). |
+| `server-status` | `ok` or `server-unavailable` — whether the diagnostics server actually answered this run. A `min-score` gate fails closed when `server-unavailable`, instead of silently passing on a missing score. |
+| `server-error`  | The rejection/outage reason token (e.g. `rate_limit_exceeded`, `timeout`, `network_error`) when `server-status` is `server-unavailable`. Empty otherwise. |
+
+```yaml
+- uses: reporails/cli/action@0.6.0
+  id: reporails
+  with:
+    path: ./packages/api
+    api-key: ${{ secrets.REPORAILS_API_KEY }}
+    exclude-dir: "vendor,dist"
+    min-score: "7.0"
+- run: echo "level=${{ steps.reporails.outputs.level }}"
+```
 
 ## Output format
 
@@ -293,48 +364,64 @@ JSON output is one object per run, grouping findings under `files` keyed by path
 ```json
 {
   "offline": false,
+  "server_error": null,
+  "tier": "free",
+  "quality": 3.2,
+  "level": "L3",
+  "elapsed_ms": 593.5,
   "files": {
     "CLAUDE.md": {
       "findings": [
         {
-          "line": 18,
-          "severity": "warning",
-          "rule": "CORE:C:0034",
-          "category": "coherence",
+          "line": 0,
+          "severity": "error",
+          "rule": "CORE:S:0024",
+          "category": "structure",
           "leverage": "conditional",
-          "message": "Missing tech stack declaration"
+          "message": "Unresolved imports: docs/setup.md"
         }
       ],
-      "count": 5,
-      "regime": { "named": "...", "within_capacity": true, "confidence": 0.87 }
+      "count": 29,
+      "regime": { "triage_tier": "..." }
     }
   },
-  "stats": { "total_findings": 21, "errors": 0, "warnings": 16, "infos": 5, "cross_file_conflicts": 0, "cross_file_repetitions": 0 }
+  "stats": { "total_findings": 39, "errors": 2, "warnings": 35, "infos": 2, "cross_file_repetitions": 1, "cross_file_overlaps": 0 },
+  "pro": { "count": 6, "errors": 2, "warnings": 3 },
+  "cross_file_coordinates": [
+    { "file_1": ".claude/rules/git.md", "file_2": "CLAUDE.md", "type": "repetition", "count": 1 }
+  ]
 }
 ```
 
-What differs by tier:
+The `severity` values the run *emits* are `error`, `warning`, and `info` — the same vocabulary `stats` aggregates as `errors` / `warnings` / `infos`. A CI filter on the JSON output matches `error` / `warning` / `info`.
 
-| Field                                              | Anonymous | Signed in                           |
-|----------------------------------------------------|-----------|-------------------------------------|
-| `files.<path>.findings[].fix`                      | omitted   | included when the rule has fix text |
-| `cross_file[]` (full detail, line / type per pair) | omitted   | included                            |
-| `cross_file_coordinates[]` (counts per file pair)  | included  | omitted                             |
-| `pro{}` (summary of hints)                         | omitted   | included when present               |
+What differs by tier — measured on the same two-file fixture (one `CLAUDE.md`, one `.claude/rules/git.md`) at each tier:
 
-Always present, regardless of tier: `offline`, `files{}`, `stats`, `tier`, `top_rules`. `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map.
+| Field                                          | Anonymous | Free (signed in) | Pro |
+|-------------------------------------------------|-----------|-------------------|-----|
+| `files.<path>.findings[].fix`                    | present only on findings a local deterministic check can fix on its own (3 of 39 findings on the fixture) — the server sends no remedy text to an unpaid tier | same as anonymous (3 of 39) | present on most findings — the full server remedy set (25 of 45) |
+| `pro{}` (upgrade-hint summary: `count`, `errors`, `warnings`) | present when the run has hints | present when the run has hints | omitted — Pro receives the findings themselves, so there is nothing to hint at |
+| `workflow{}` (ordered remediation plan: `summary`, `escape`, `locations[]`, `listed[]`) | omitted | omitted | present when the server returned one |
+| `cross_file_coordinates[]` (which files, how many, no line numbers) | present when the run has cross-file findings | present when the run has cross-file findings | omitted |
+| `cross_file[]` (the same pairs, with each finding's line in both files) | omitted | omitted | present when the run has cross-file findings |
+
+Do not key a "is this a paid run?" check off `pro{}` — it is the *upgrade hint* for unpaid runs and is absent on Pro. Read `tier` (`anonymous` / `free` / `pro`; empty (`""`) when the service gave no reply, as on an offline run) instead; `workflow{}` is the paid-only payload. `workflow.locations[]` orders the project's kinds of files to rewrite (each entry carries `order`, `element`, `kind`, `loading`, `files`, `importance`, and its own `findings[]` with `remedy` text); `workflow.listed[]` names every other firing rule and why it needs no rewrite; there is no `workflow.steps[]`.
+
+Always present, regardless of tier: `offline`, `server_error`, `tier`, `quality`, `level`, `files{}`, `stats`, `top_rules`, `elapsed_ms`. `quality` is `null` when no score was computed (an offline run). `server_error` is `null` when the server answered; when the request was rejected, timed out, or failed it carries `{status, error, message, upgrade_url, tier}` — so a designed offline run and a real outage are distinguishable rather than both reading as "no score". `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map. An entry's `type` is `repetition` (one instruction repeated nearly verbatim in two files) or `overlap` (one same-topic line pair of two files that can load together). `stats.cross_file_overlaps` counts the overlapping file pairs. `cross_file[]` and `cross_file_coordinates[]` are tier-exclusive (see the table above) and both are absent when the run has no cross-file findings.
 
 Two additive fields enrich the output when the analysis service has data for the run. Both are **additive and backward-compatible** — existing JSON consumers and CI baselines that ignore them keep working unchanged:
 
-- **Per-file `regime`** — a `files.<path>.regime` object with `named`, `within_capacity`, and `confidence`. It is a structural read of the file; it is absent on offline runs (no analysis service).
-- **Per-finding `leverage`** — a `files.<path>.findings[].leverage` tier of `gate_mover`, `conditional`, or `cosmetic`, indicating how much fixing the finding is likely to move the score. The raw `severity` field is unchanged. See [Score Guide → How findings are triaged by leverage](score-guide.md#how-findings-are-triaged-by-leverage).
+- **Per-file `regime`** — a `files.<path>.regime` object with the per-file `triage_tier` token. It is a structural read of the file; it is absent on offline runs (no analysis service).
+- **Per-finding `leverage`** (paid runs only) — a `files.<path>.findings[].leverage` value of `gate_mover`, `conditional`, or `cosmetic`, stating how likely clearing the finding is to raise the score: likely, maybe, or unlikely. On a Pro run the value is measured per file: `gate_mover` findings are the ones whose clearing is predicted to move that file's score most, `cosmetic` ones barely move it, and `conditional` ones sit in between. An unpaid or offline run omits the key. The raw `severity` field is unchanged. See [Score Guide → How findings are ordered by score effect](score-guide.md#how-findings-are-ordered-by-score-effect).
 
 GitHub annotations format emits one workflow command per finding so warnings appear inline on the diff in pull requests:
 
 ```
-::warning file=CLAUDE.md,line=18,col=1::Missing tech stack declaration (CORE:C:0034)
-::warning file=CLAUDE.md,line=42,col=1::Missing MCP documentation (CORE:C:0027)
+::warning file=CLAUDE.md,line=18,title=[CORE%3AC%3A0034]::Missing tech stack declaration — list languages, frameworks, and runtimes
+::warning file=CLAUDE.md,line=42,title=[CORE%3AC%3A0027]::Missing MCP documentation — describe MCP server configuration if applicable
 ```
+
+The rule ID rides in `title` (URL-encoded), not in trailing parentheses, and there is no `col`. A file-level finding (one that applies to the whole file, not one line) carries no `line` key at all.
 
 ---
 
