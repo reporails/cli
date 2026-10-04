@@ -10,7 +10,7 @@ last_updated: 2026-09-20
 Reporails has two tiers: **Free** and **Pro**.
 
 - **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both share identical limits and identical diagnostic detail: the score, every local finding with its line, per-file counts for the interaction findings, and the local deterministic fixes. Signing in does not raise your limits; it gives you an account (for managing your subscription, and it enables `ails check --heal`) and changes the call-to-action from "sign in" to "upgrade".
-- **Pro** is an active paid subscription. It raises the request rate and payload cap and unlocks the full per-finding remedy set and the ordered remediation workflow. The server sends no remedy text to an anonymous or free caller at all — Free's fixes are limited to what runs locally and needs no server round-trip.
+- **Pro** is an active paid subscription. It raises the request rate and payload cap and unlocks the server's fix text on each finding that has a remedy, and the ordered remediation workflow. The server sends no remedy text to an anonymous or free caller at all — Free's fixes are limited to what runs locally and needs no server round-trip.
 
 The CLI sends your API key (if you have one) with each request; the diagnostic backend resolves your tier from your subscription state and applies the corresponding limits.
 
@@ -24,15 +24,15 @@ The CLI sends your API key (if you have one) with each request; the diagnostic b
 | Mechanical and structural rule findings   | Full detail                   | Full detail                               |
 | Per-finding rule body and pass / fail     | Full detail                   | Full detail                               |
 | Overall score and per-surface scores      | Full detail                   | Full detail                               |
-| Per-finding fix text                      | None from the server — only the local deterministic fixes (e.g. wrapping a bare name in backticks) | Full per-finding remedy set               |
+| Per-finding fix text                      | None from the server — only the local deterministic fixes (e.g. wrapping a bare name in backticks) | Fix text on each finding that has a remedy (not every finding carries one) |
 | Ranking findings by impact                | — (findings listed without a grade) | Yes — findings carry an impact grade; inline-formatting findings (backticks, bold, italics) are listed without one |
 | Remediation workflow                      | —                             | Ordered, step-by-step fix plan            |
 | Cross-file / interaction findings         | Which files + counts          | Full detail (file, line, what to change)  |
 | Apply fixes (`ails check --heal`)         | Account required — anonymous gets the diagnosis, no writes | Yes            |
 
-Free gives you the diagnosis: the score, every local finding with its line, per-file counts for the interaction findings, with the local deterministic fixes a check can make without a server round-trip. Pro adds the full per-finding remedy set and the composable remediation workflow — the ordered procedure your coding agent runs to fix the files.
+Free gives you the diagnosis: the score, every local finding with its line, per-file counts for the interaction findings, with the local deterministic fixes a check can make without a server round-trip. Pro adds the server's fix text on each finding that has a remedy, and the composable remediation workflow — the ordered procedure your coding agent runs to fix the files.
 
-On either tier the fix text (and, on Pro, the workflow) reaches your coding agent through the MCP `validate` tool and appears per finding in `ails check -f json`. The terminal output lists findings, not fixes.
+Whatever fix text a run carries — on Free only the local deterministic fixes, on Pro the server's fix text as well — reaches your coding agent through the MCP `validate` tool (on Pro together with the workflow) and appears on its finding in `ails check -f json`. The terminal output lists findings, not fixes.
 
 ## What the limits mean in practice
 
@@ -42,7 +42,7 @@ After a `429`, the CLI waits for your limit to reset before contacting the serve
 
 **Per-request payload cap.** The cap is the size of the analysis payload sent to the diagnostic backend (embeddings, structural metadata, file paths) — not the size of your instruction files on disk. A typical project sends well under 1 MB. Multi-MB payloads usually mean a very large root instruction file that should be split — see [FAQ → polyglot monorepo](faq.md#i-run-a-polyglot-monorepo-should-i-have-one-claudemd-or-many).
 
-**Diagnostic detail.** The mechanical and structural checks return full detail on both tiers, including the finding's line. The difference is the *fix* depth and *cross-file* detail: Free gets no server fix text (only the local deterministic fixes), and shows which files a cross-file repetition or topic overlap touches and how many, not the lines; Pro adds the per-finding fix, the ordered remediation workflow, and the exact line each cross-file finding names.
+**Diagnostic detail.** The mechanical and structural checks return full detail on both tiers, including the finding's line. The difference is the *fix* depth and *cross-file* detail: Free gets no server fix text (only the local deterministic fixes), and shows which files a cross-file repetition or topic overlap touches and how many, not the lines; Pro adds the server's fix text on each finding that has a remedy, the ordered remediation workflow, and the exact line each cross-file finding names.
 
 Free output shows the score, a card per file with its first findings, a count of the rest and a one-line tally of their kinds (`-v` lists every finding with its line), a marketing line in place of any server fix text, and a separate cross-file section that counts the repetitions and topic overlaps per pair of files, without their lines:
 
