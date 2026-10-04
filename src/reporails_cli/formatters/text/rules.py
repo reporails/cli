@@ -40,6 +40,18 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         lines.append(f"Category: {rule_data['category']}")
     if rule_data.get("type"):
         lines.append(f"Type: {rule_data['type']}")
+    if rule_data.get("severity"):
+        lines.append(f"Severity: {rule_data['severity']}")
+    if rule_data.get("execution") == "server":
+        lines.append("Execution: server (needs a server connection; fix text is part of Pro)")
+    match = rule_data.get("match") or {}
+    if match:
+        # Single-sourced from `_serialize_match` (the same dict `ails rules list` emits) so a
+        # rule author who sets e.g. `content_format` / `loading_verb` / `link_source_type` sees
+        # it here too, not only in the JSON listing.
+        lines.append(
+            "Match: " + ", ".join(f"{k}: {', '.join(v) if isinstance(v, list) else v}" for k, v in match.items())
+        )
     lines.append("")
 
     if rule_data.get("description"):
@@ -57,7 +69,10 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         for check in checks:
             label = check.get("name") or check.get("type", "unknown")
             lines.append(f"  - {check.get('id', '?')}: {label} [{check.get('type', '?')}]")
-            lines.append(f"    Severity: {check.get('severity', 'medium')}")
+            # A check's own severity overrides the rule's; an unset check severity
+            # inherits the rule's, never a hard-coded default.
+            severity = check.get("severity") or rule_data.get("severity") or "medium"
+            lines.append(f"    Severity: {severity}")
         lines.append("")
 
     see_also = rule_data.get("see_also", [])

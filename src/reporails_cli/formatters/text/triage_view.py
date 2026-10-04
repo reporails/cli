@@ -1,28 +1,31 @@
 """File-card rendering with leverage-based finding triage.
 
 Renders one file's card. When a confident per-file read is available, the
-high-leverage findings stay as lines and the low-leverage tail collapses into
-a single `+N lower-priority` row (re-keyed by leverage). Verbose and
-low-confidence runs fall back to the full per-line view.
+findings that carry the most weight stay as lines and the rest collapse into
+a single `+N more` row. Verbose and low-confidence runs fall back to the full
+per-line view.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
-from reporails_cli.core.platform.policy.leverage import Regime, TriageFinding, triage
+from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.lint.client_checks import PACKED_SENTENCE_RULE
 from reporails_cli.formatters.text.display_constants import (
     AGG_ORDER,
+    AGGREGATE_KEY,
     AGGREGATE_LABELS,
     AGGREGATE_RULES,
     HINT_SEV_ORDER,
     HINT_TYPE_LABELS,
     SEV_WEIGHT,
-    classify_file,
+    conventions_phrase,
     friendly_name,
     get_term_width,
     linked_rule_id,
@@ -30,6 +33,7 @@ from reporails_cli.formatters.text.display_constants import (
     short_path,
     truncate,
 )
+from reporails_cli.formatters.triage import Regime, TriageFinding, is_triaged, split_conventions, triage
 
 console = Console()
 
@@ -56,15 +60,54 @@ def _print_inline_hints(file_hints: list[Any], border: str) -> None:
     console.print(f"  [dim]{border}     ⊕ {pro_total} Pro diagnostics{err_str}{cat_str}[/dim]")
 
 
+# ── Packed sentences ──────────────────────────────────────────────────
+
+# A nested line sits this many columns right of its sentence's row.
+_NEST_INDENT = 4
+
+
+def _packed_children(findings: list[Any]) -> dict[int, list[Any]]:
+    """Per line holding a packed-sentence finding, the instruction findings that print under it.
+
+    The first packed-sentence finding of a line holds the line's findings that address an
+    instruction (`pi` set); later ones hold nothing. Line 0 and 1 carry whole-file findings,
+    so a packed sentence there holds nothing.
+    """
+    lines = {f.line for f in findings if f.rule == PACKED_SENTENCE_RULE and f.line > 1}
+    out: dict[int, list[Any]] = {line: [] for line in lines}
+    for f in findings:
+        if f.rule != PACKED_SENTENCE_RULE and f.pi is not None and f.line in out:
+            out[f.line].append(f)
+    return out
+
+
+def _print_nested(
+    children: list[tuple[str, str, str, int]],
+    sev_icons: dict[str, str],
+    border: str,
+    msg_width: int,
+) -> None:
+    """Print `(severity, message, rule, count)` rows indented beneath their sentence's row."""
+    pad = " " * _NEST_INDENT
+    for sev, msg, rule, count in children:
+        suffix = f" (\u00d7{count})" if count > 1 else ""
+        text = truncate(f"{msg}{suffix}", msg_width - _NEST_INDENT).replace("[", "\\[")
+        console.print(
+            f"  [dim]{border}[/dim]   {pad}{sev_icons.get(sev, ' ')} {text}  [dim]{linked_rule_id(rule)}[/dim]"
+        )
+
+
+def _group_plain(findings: list[Any]) -> list[tuple[str, str, str, int]]:
+    """Order plain findings by severity and fold identical `(rule, message)` repeats into counts."""
+    counts: dict[tuple[str, str, str], int] = {}
+    for f in sorted(findings, key=lambda f: (SEV_WEIGHT.get(f.severity, 9), f.rule)):
+        msg = f.message or AGGREGATE_LABELS.get(f.rule, f.rule)
+        key = (f.severity, msg, f.rule)
+        counts[key] = counts.get(key, 0) + 1
+    return [(sev, msg, rule, n) for (sev, msg, rule), n in counts.items()]
+
+
 # ── Neutral (non-triaged) renderers ───────────────────────────────────
-
-
-def _print_action(fix: str, border: str, msg_width: int) -> None:
-    """Render a finding's server action text as an indented `→` line (skipped when empty)."""
-    if not fix:
-        return
-    action = truncate(" ".join(fix.split()), msg_width).replace("[", "\\[")
-    console.print(f"  [dim]{border}       → {action}[/dim]")
 
 
 def _render_structural_findings(
@@ -84,7 +127,6 @@ def _render_structural_findings(
         line_ref = f"L{f.line:<4d} " if f.line > 1 else "      "
         rule_id = linked_rule_id(f.rule)
         console.print(f"  [dim]{border}[/dim]   {icon} {line_ref}{msg}  [dim]{rule_id}[/dim]")
-        _print_action(getattr(f, "fix", ""), border, msg_width)
     if len(structural) > limit:
         console.print(f"  [dim]{border}     ... and {len(structural) - limit} more[/dim]")
 
@@ -93,8 +135,14 @@ def _render_quality_verbose(
     findings: list[Any],
     border: str,
     msg_width: int,
+    nested: dict[int, list[Any]] | None = None,
+    sev_icons: dict[str, str] | None = None,
 ) -> None:
-    """Render quality findings in verbose mode (deduped per-line detail)."""
+    """Render quality findings in verbose mode (deduped per-line detail).
+
+    The findings in `nested` (by line) print indented beneath their line's packed-sentence row.
+    """
+    nested = dict(nested or {})
     quality_findings = [f for f in findings if f.rule in AGGREGATE_RULES]
     quality_findings.sort(key=lambda f: (f.line, f.rule))
     seen_q: dict[tuple[int, str, str], int] = {}
@@ -108,6 +156,8 @@ def _render_quality_verbose(
         console.print(
             f"  [dim]{border}     {line_ref}{truncate(f'{msg}{suffix}', msg_width)}  {linked_rule_id(rule)}[/dim]"
         )
+        if rule == PACKED_SENTENCE_RULE and nested.get(line):
+            _print_nested(_group_plain(nested.pop(line)), sev_icons or {}, border, msg_width)
 
 
 def _render_quality_compact(
@@ -125,56 +175,105 @@ def _render_quality_compact(
 # ── Triaged renderer ──────────────────────────────────────────────────
 
 
+# One finding's own length, e.g. `(6 words)`: wrong for every other line in a grouped row.
+_WORD_COUNT_RE = re.compile(r"\s*\(\d+ words?\)")
+
+
 def _generalize_message(message: str, rule: str) -> str:
     """Strip instance-specific detail so same-rule findings dedup to one line.
 
     `Buried instruction at position 12 of 79 \u2014 vague` -> `Buried instruction`;
-    `Vague instruction \u2014 doesn't name...` -> `Vague instruction`. Falls back to
-    the aggregate label, then the rule id, when no message survives.
+    `Vague instruction \u2014 doesn't name...` -> `Vague instruction`;
+    `Too brief (6 words) \u2014 ...` -> `Too brief`. Falls back to the aggregate label,
+    then the rule id, when no message survives.
     """
-    head = message.split(" at position")[0].split(" \u2014 ")[0].split(". ")[0].strip()
+    head = message.split(" at position")[0].split(" \u2014 ")[0].split(". ")[0]
+    head = _WORD_COUNT_RE.sub("", head).strip()
     return head or AGGREGATE_LABELS.get(rule, rule)
 
 
-def _group_shown(shown: tuple[TriageFinding, ...]) -> list[tuple[str, str, str, int, str]]:
+def _group_shown(shown: tuple[TriageFinding, ...]) -> list[tuple[str, str, str, int]]:
     """Order shown findings by display severity, dedup same-rule repeats to counts.
 
-    Returns `(severity, message, rule, count, fix)` rows. A single occurrence
+    Returns `(severity, message, rule, count)` rows. A single occurrence
     keeps its full message; repeats collapse to a generalized message + `(xN)`.
-    `fix` is the server's per-finding action text (first occurrence in the group).
     """
     ordered = sorted(shown, key=lambda tf: (SEV_WEIGHT.get(tf.display_severity, 9), tf.finding.rule, tf.finding.line))
     by_rule: dict[tuple[str, str], list[TriageFinding]] = {}
     for tf in ordered:
         by_rule.setdefault((tf.display_severity, tf.finding.rule), []).append(tf)
-    rows: list[tuple[str, str, str, int, str]] = []
+    rows: list[tuple[str, str, str, int]] = []
     for (sev, rule), tfs in by_rule.items():
         msgs = [tf.finding.message or AGGREGATE_LABELS.get(tf.finding.rule, tf.finding.rule) for tf in tfs]
         message = msgs[0] if len(msgs) == 1 else _generalize_message(msgs[0], rule)
-        fix = getattr(tfs[0].finding, "fix", "") or ""
-        rows.append((sev, message, rule, len(tfs), fix))
+        rows.append((sev, message, rule, len(tfs)))
     return rows
+
+
+def _triaged_entries(shown: tuple[TriageFinding, ...]) -> list[tuple[str, Any]]:
+    """The shown findings as display entries in severity order.
+
+    A `("row", row)` entry is a grouped `(severity, message, rule, count)` row; a
+    `("packed", (head, children))` entry is a packed-sentence finding with the other shown
+    findings of its line.
+    """
+    heads = sorted(
+        (tf for tf in shown if tf.finding.rule == PACKED_SENTENCE_RULE and tf.finding.line > 1),
+        key=lambda tf: tf.finding.line,
+    )
+    held = _packed_children([tf.finding for tf in shown])
+    owner_by_line: dict[int, TriageFinding] = {}
+    for tf in heads:
+        owner_by_line.setdefault(tf.finding.line, tf)
+    child_ids = {id(f) for fs in held.values() for f in fs}
+    children = [tf for tf in shown if id(tf.finding) in child_ids]
+    claimed = {id(tf) for tf in (*heads, *children)}
+    rest = tuple(tf for tf in shown if id(tf) not in claimed)
+    entries: list[tuple[int, str, Any]] = [(SEV_WEIGHT.get(row[0], 9), "row", row) for row in _group_shown(rest)]
+    for tf in heads:
+        owns = owner_by_line[tf.finding.line] is tf
+        kids = tuple(c for c in children if c.finding.line == tf.finding.line) if owns else ()
+        entries.append((SEV_WEIGHT.get(tf.display_severity, 9), "packed", (tf, kids)))
+    entries.sort(key=lambda e: e[0])
+    return [(kind, payload) for _w, kind, payload in entries]
+
+
+def _print_row(
+    row: tuple[str, str, str, int],
+    sev_icons: dict[str, str],
+    border: str,
+    msg_width: int,
+    line_ref: str = "",
+) -> None:
+    """Print one `(severity, message, rule, count)` row of the triaged view."""
+    sev, msg, rule, count = row
+    suffix = f" (\u00d7{count})" if count > 1 else ""
+    text = truncate(f"{msg}{suffix}", msg_width - len(line_ref)).replace("[", "\\[")
+    console.print(
+        f"  [dim]{border}[/dim]   {sev_icons.get(sev, ' ')} {line_ref}{text}  [dim]{linked_rule_id(rule)}[/dim]"
+    )
 
 
 def _render_triaged(
     findings: list[Any],
-    regime: Regime,
     sev_icons: dict[str, str],
     border: str,
     msg_width: int,
 ) -> None:
-    """Render high-leverage findings as lines, collapse the low-leverage tail."""
-    result = triage(findings, regime, verbose=False)
-    for sev, msg, rule, count, fix in _group_shown(result.shown):
-        icon = sev_icons.get(sev, " ")
-        suffix = f" (\u00d7{count})" if count > 1 else ""
-        text = truncate(f"{msg}{suffix}", msg_width).replace("[", "\\[")
-        rule_id = linked_rule_id(rule)
-        console.print(f"  [dim]{border}[/dim]   {icon} {text}  [dim]{rule_id}[/dim]")
-        _print_action(fix, border, msg_width)
+    """Render graded findings that matter as lines, collapse the rest."""
+    result = triage(findings, verbose=False)
+    for kind, payload in _triaged_entries(result.shown):
+        if kind == "row":
+            _print_row(payload, sev_icons, border, msg_width)
+            continue
+        head, children = payload
+        message = head.finding.message or AGGREGATE_LABELS.get(PACKED_SENTENCE_RULE, PACKED_SENTENCE_RULE)
+        row = (head.display_severity, message, PACKED_SENTENCE_RULE, 1)
+        _print_row(row, sev_icons, border, msg_width, f"L{head.finding.line} ")
+        _print_nested(_group_shown(children), sev_icons, border, msg_width)
     if result.collapsed:
         n = len(result.collapsed)
-        console.print(f"  [dim]{border}     ◦ +{n} lower-priority · -v to list[/dim]")
+        console.print(f"  [dim]{border}     ◦ +{n} more · -v to list[/dim]")
 
 
 def _render_card_body(
@@ -185,16 +284,20 @@ def _render_card_body(
     border: str,
     msg_width: int,
 ) -> None:
-    """Render the finding body: triaged when a confident regime is present, else neutral."""
-    if not verbose and regime is not None and regime.confident:
-        _render_triaged(findings, regime, sev_icons, border, msg_width)
+    """Render the finding body: triaged when the file's token asks for it and a finding is graded, else neutral."""
+    if not verbose and is_triaged(findings, regime):
+        _render_triaged(findings, sev_icons, border, msg_width)
         return
-    structural = [f for f in findings if f.rule not in AGGREGATE_RULES]
+    nested = _packed_children(findings) if verbose else {}
+    nested_ids = {id(f) for fs in nested.values() for f in fs}
+    structural = [f for f in findings if f.rule not in AGGREGATE_RULES and id(f) not in nested_ids]
     _render_structural_findings(structural, sev_icons, verbose, border, msg_width)
     if verbose:
-        _render_quality_verbose(findings, border, msg_width)
+        _render_quality_verbose([f for f in findings if id(f) not in nested_ids], border, msg_width, nested, sev_icons)
     else:
-        quality_counts: Counter[str] = Counter(f.rule for f in findings if f.rule in AGGREGATE_RULES)
+        quality_counts: Counter[str] = Counter(
+            AGGREGATE_KEY.get(f.rule, f.rule) for f in findings if f.rule in AGGREGATE_RULES
+        )
         _render_quality_compact(quality_counts, border, msg_width + 35)
 
 
@@ -252,7 +355,10 @@ def print_file_card(
         if short != name:
             console.print(f"  [dim]{border}   {short}[/dim]")
 
+    findings, conventions = split_conventions(findings, verbose)
     _render_card_body(findings, sev_icons, verbose, regime, border, msg_width)
+    if conventions:
+        console.print(f"  [dim]{border}     \u25e6 {conventions_phrase(len(conventions))} \u00b7 -v to list[/dim]")
 
     if file_hints:
         _print_inline_hints(file_hints, border)

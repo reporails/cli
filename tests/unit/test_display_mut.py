@@ -1,0 +1,557 @@
+"""Mutation-killing behavioral tests for formatters/text/display.py.
+
+Each test pins a branch, count, or threshold that a mutation probe found
+uncovered — the assertion reddens the moment the injected bug returns. Cosmetic
+display constants (whose exact text carries no behavioral contract) are left to
+the equivalent-mutant bucket and not decorated here.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from reporails_cli.core.platform.dto.diagnostics import (
+    CrossFileFinding,
+    FileAnalysis,
+    QualityResult,
+)
+from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
+from reporails_cli.core.platform.runtime.merger import (
+    CombinedResult,
+    CombinedStats,
+    FindingItem,
+)
+from reporails_cli.formatters.text import display
+from reporails_cli.formatters.text.display import (
+    _build_file_groups,
+    _CardContext,
+    _count_atoms,
+    _detect_agent_name,
+    _detect_tier,
+    _filter_quality,
+    _print_header,
+    _render_cross_file_coordinates,
+    _render_one_group,
+    filter_result_to_paths,
+    filter_ruleset_map_to_paths,
+)
+from reporails_cli.formatters.text.display_constants import get_sev_icons
+
+
+def _rmap(*records: FileRecord, atoms: tuple[Atom, ...] = ()) -> RulesetMap:
+    return RulesetMap(
+        schema_version="1",
+        embedding_model="",
+        generated_at="2026-01-01T00:00:00Z",
+        files=records,
+        atoms=atoms,
+    )
+
+
+def _ratom(file_path: str) -> Atom:
+    return Atom(
+        line=1,
+        text="x",
+        kind="excitation",
+        charge="NEUTRAL",
+        charge_value=0,
+        modality="none",
+        specificity="abstract",
+        file_path=file_path,
+    )
+
+
+def _frec(path: str) -> FileRecord:
+    return FileRecord(path=path, content_hash=f"sha256:{path}")
+
+
+def _atom(charge: int, ambiguous: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(charge_value=charge, ambiguous=ambiguous)
+
+
+# ── _count_atoms: directive / constraint / prose counts (L184) ────────
+
+
+class TestCountAtoms:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_directive_charge_counted(self) -> None:
+        # 3 directives (+1), 1 constraint (-1), 2 neutral (0). Two neutrals give the
+        # constraint count asymmetry so `== -1 -> !=` (which would count the neutrals) is caught.
+        atoms = [_atom(+1), _atom(+1), _atom(+1), _atom(-1), _atom(0), _atom(0)]
+        scope = _count_atoms(atoms)
+        assert scope.n_dir == 3  # kills L184 `charge_value == +1 -> !=` (would count -1 and neutrals)
+        assert scope.n_con == 1  # kills L186 `charge_value == -1 -> !=` (would count the 2 neutrals -> 2)
+        assert scope.n_atoms == 6
+        assert scope.n_prose == 2  # 6 total - 3 dir - 1 con
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_ambiguous_counted(self) -> None:
+        atoms = [_atom(+1, ambiguous=True), _atom(-1)]
+        scope = _count_atoms(atoms)
+        assert scope.n_amb == 1
+
+
+# ── filter_result_to_paths: cross-file scoping + stat counts (L479/487/488) ──
+
+
+def _cff(f1: str, f2: str, ftype: str) -> CrossFileFinding:
+    return CrossFileFinding(file_1=f1, file_2=f2, line_1=1, line_2=1, finding_type=ftype)
+
+
+class TestFilterResultCrossFile:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_cross_file_scope_and_stat_counts(self, tmp_path) -> None:
+        a = tmp_path / "a.md"
+        b = tmp_path / "b.md"
+        z = tmp_path / "z.md"  # out of scope
+        # cf_ab: both in scope; cf_az: only file_1 in scope (exercises the OR);
+        # cf_rep: repetition in scope.
+        cross = (
+            _cff(str(a), str(b), "conflict"),
+            _cff(str(a), str(z), "conflict"),
+            _cff(str(a), str(b), "repetition"),
+        )
+        result = CombinedResult(findings=(), cross_file=cross, stats=CombinedStats())
+
+        filtered = filter_result_to_paths(result, {a, b}, tmp_path)
+
+        # All three have file_1=a in scope; with `or->and`, cf_az (file_2 out) is dropped.
+        assert len(filtered.cross_file) == 3  # kills the `or -> and` scoping mutant
+        # 1 repetition among the kept rows; a `== -> !=` would count the two
+        # non-repetition rows instead.
+        assert filtered.stats.cross_file_repetitions == 1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_overlap_pair_count_follows_the_narrowed_rows(self, tmp_path) -> None:
+        a, b, y, z = (tmp_path / n for n in ("a.md", "b.md", "y.md", "z.md"))
+        cross = (
+            _cff(str(a), str(b), "overlap"),
+            _cff(str(b), str(a), "overlap"),  # same pair, other orientation
+            _cff(str(y), str(z), "overlap"),  # out of scope
+        )
+        result = CombinedResult(findings=(), cross_file=cross, stats=CombinedStats(cross_file_overlaps=2))
+
+        filtered = filter_result_to_paths(result, {a, b}, tmp_path)
+
+        assert filtered.stats.cross_file_overlaps == 1
+
+
+# ── _filter_quality: None guard + mean fallback (L512/L525) ────────────
+
+
+class TestFilterQuality:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_none_quality_returns_none(self) -> None:
+        # per_file carries a band so a mutated `is not None` branch would proceed
+        # into dataclasses.replace(None, ...) and raise — either way the current
+        # contract (return None) is what must hold.
+        per_file = (FileAnalysis(file="a.md", display_score=8.0, stats={"atoms": 1}),)
+        assert _filter_quality(None, per_file) is None  # kills L512 `is -> is not`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_mean_none_falls_back_to_aggregate_score(self) -> None:
+        quality = QualityResult(display_score=7.0)
+        # per_file has atoms (not filtered out) but no per-file display score, so the
+        # mean is None and must fall back to the aggregate 7.0.
+        per_file = (FileAnalysis(file="a.md", display_score=None, stats={"atoms": 2}),)
+        out = _filter_quality(quality, per_file)
+        assert out is not None
+        assert out.display_score == 7.0  # kills L525 `is -> is not` (would keep None)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_all_unscored_subset_yields_none_when_aggregate_is_none(self) -> None:
+        # Whole project has no scorable content: the api's own aggregate is `None`
+        # (not a fabricated floor), and every file in the filtered subset is also
+        # unscored. The mean-fallback chain must land on `None`, not raise, so the
+        # text/json renderers can show "n/a" instead of crashing on `float(None)`.
+        quality = QualityResult(display_score=None)
+        per_file = (
+            FileAnalysis(file="a.md", display_score=None, stats={"atoms": 2}),
+            FileAnalysis(file="b.md", display_score=None, stats={"atoms": 2}),
+        )
+        out = _filter_quality(quality, per_file)
+        assert out is not None
+        assert out.display_score is None
+
+        # The renderer must still succeed end-to-end on this filtered quality.
+        from reporails_cli.formatters.text.scorecard import ScopeInfo, print_scorecard
+        from reporails_cli.formatters.text.scorecard import console as scorecard_console
+
+        combined = CombinedResult(
+            quality=out,
+            per_file_analysis=per_file,
+            stats=CombinedStats(total_findings=0),
+            offline=False,
+        )
+        with scorecard_console.capture() as cap:
+            print_scorecard(combined, has_quality=True, scope=ScopeInfo(type_str="2 files"))
+        assert "n/a" in cap.get()
+
+
+# ── filter_ruleset_map_to_paths: None/empty guard + filtering (L534) ───
+
+
+class TestFilterRulesetMap:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_filters_to_targeted_paths(self, tmp_path) -> None:
+        # Build the real Pydantic RulesetMap (not a dataclass stub): the filter uses
+        # model_copy, so a stub would false-green while production crashed.
+        rm = _rmap(_frec("a.md"), _frec("b.md"), atoms=(_ratom("a.md"), _ratom("b.md")))
+        out = filter_ruleset_map_to_paths(rm, {tmp_path / "a.md"}, tmp_path)
+        assert [f.path for f in out.files] == ["a.md"]  # kills `is -> is not` (would skip filtering)
+        assert [a.file_path for a in out.atoms] == ["a.md"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_empty_paths_returns_unchanged(self, tmp_path) -> None:
+        rm = _rmap(_frec("a.md"), _frec("b.md"))
+        out = filter_ruleset_map_to_paths(rm, set(), tmp_path)
+        # `None or not paths` short-circuits on empty paths -> unchanged; `or->and`
+        # would fall through and filter everything out.
+        assert out is rm  # kills `or -> and`
+
+
+# ── _render_one_group: card cap boundary (L97) ─────────────────────────
+
+
+class TestRenderOneGroupCap:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_overflow_summary_at_cap(self, tmp_path) -> None:
+        # 4 files, non-verbose cap is 3 -> the 4th collapses into a "... and 1 more" line.
+        group_files = [
+            (f"file{i}.md", [FindingItem(file=f"file{i}.md", line=1, severity="warning", rule="R", message="m")])
+            for i in range(4)
+        ]
+        ctx = _CardContext(sev_icons=get_sev_icons(True), verbose=False, project_root=tmp_path)
+        with display.console.capture() as cap:
+            _render_one_group("file", group_files, ctx)
+        out = cap.get()
+        # At i >= 3 the overflow line renders; `>= -> >` would render all 4 cards, no summary.
+        assert "and 1 more" in out  # kills L97 `>= -> >`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_no_overflow_under_cap(self, tmp_path) -> None:
+        group_files = [
+            (f"file{i}.md", [FindingItem(file=f"file{i}.md", line=1, severity="warning", rule="R", message="m")])
+            for i in range(3)
+        ]
+        ctx = _CardContext(sev_icons=get_sev_icons(True), verbose=False, project_root=tmp_path)
+        with display.console.capture() as cap:
+            _render_one_group("file", group_files, ctx)
+        assert "more" not in cap.get()
+
+
+# ── _render_cross_file_coordinates: pluralization branch (L136) ────────
+
+
+class TestCrossFileCoordinatesPlural:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_plural_suffix_when_count_not_one(self) -> None:
+        coord = SimpleNamespace(count=2, file_1="a.md", file_2="b.md", finding_type="repetition")
+        result = SimpleNamespace(cross_file_coordinates=(coord,))
+        with display.console.capture() as cap:
+            _render_cross_file_coordinates(result, get_sev_icons(True))
+        # count=2 -> "repetitions"; `!= -> ==` drops the plural to "repetition".
+        assert "repetitions" in cap.get()  # kills L136 `!= -> ==`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_singular_suffix_when_count_one(self) -> None:
+        coord = SimpleNamespace(count=1, file_1="a.md", file_2="b.md", finding_type="repetition")
+        result = SimpleNamespace(cross_file_coordinates=(coord,))
+        with display.console.capture() as cap:
+            _render_cross_file_coordinates(result, get_sev_icons(True))
+        out = cap.get()
+        assert "1 repetition" in out and "1 repetitions" not in out
+
+
+# ── _render_detail_cta: held-key branch ───────────────────────────────
+
+
+class TestDetailCta:
+    """A signed-in user must not be told to sign in — that CTA is a dead end."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_keyless_user_gets_the_login_cta(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "reporails_cli.core.platform.adapters.api_client.has_api_key",
+            lambda: False,
+        )
+        coord = SimpleNamespace(count=2, file_1="a.md", file_2="b.md", finding_type="repetition")
+        result = SimpleNamespace(cross_file_coordinates=(coord,))
+        with display.console.capture() as cap:
+            _render_cross_file_coordinates(result, get_sev_icons(True))
+        out = cap.get()
+        assert "ails auth login" in out
+        assert "reporails.com/account" not in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_keyed_user_gets_the_upgrade_cta(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "reporails_cli.core.platform.adapters.api_client.has_api_key",
+            lambda: True,
+        )
+        coord = SimpleNamespace(count=2, file_1="a.md", file_2="b.md", finding_type="repetition")
+        result = SimpleNamespace(cross_file_coordinates=(coord,))
+        with display.console.capture() as cap:
+            _render_cross_file_coordinates(result, get_sev_icons(True))
+        out = cap.get()
+        assert "Upgrade to Pro" in out
+        assert "reporails.com/account" in out
+        assert "ails auth login" not in out
+
+
+# ── _print_header: tier badge branch (L332) ────────────────────────────
+
+
+class TestPrintHeader:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_pro_tier_shows_badge(self) -> None:
+        with display.console.capture() as cap:
+            _print_header("Pro")
+        assert "Pro" in cap.get()  # kills L332 `!= -> ==` (would suppress the badge)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_free_tier_no_badge(self) -> None:
+        with display.console.capture() as cap:
+            _print_header("free")
+        # free renders no tier badge; `and -> or` would render "free" as a badge.
+        assert "free" not in cap.get()  # kills L332 `and -> or`
+
+
+# ── _detect_tier: derives from the wire tier, never local credentials ──
+
+
+class TestDetectTier:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_pro_wire_tier_yields_pro(self) -> None:
+        result = SimpleNamespace(offline=False, hints=(), tier="pro")
+        assert _detect_tier(result, has_quality=True) == "Pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_team_wire_tier_yields_pro(self) -> None:
+        result = SimpleNamespace(offline=False, hints=(), tier="team")
+        assert _detect_tier(result, has_quality=True) == "Pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_free_wire_tier_yields_free(self) -> None:
+        result = SimpleNamespace(offline=False, hints=(), tier="free")
+        assert _detect_tier(result, has_quality=False) == "free"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_anonymous_wire_tier_yields_free(self) -> None:
+        result = SimpleNamespace(offline=False, hints=(), tier="anonymous")
+        assert _detect_tier(result, has_quality=False) == "free"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_offline_yields_offline_regardless_of_tier(self) -> None:
+        result = SimpleNamespace(offline=True, hints=(), tier="pro")
+        assert _detect_tier(result, has_quality=True) == "offline"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_no_wire_tier_falls_back_to_hints(self) -> None:
+        """A result with no wire tier at all (e.g. pre-0.6.0 server) falls back
+        to the hints/has_quality heuristic."""
+        result = SimpleNamespace(offline=False, hints=({"x": 1},), tier="")
+        assert _detect_tier(result, has_quality=False) == "free"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_no_wire_tier_falls_back_to_has_quality(self) -> None:
+        result = SimpleNamespace(offline=False, hints=(), tier="")
+        assert _detect_tier(result, has_quality=True) == "Pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_response_lacking_a_tier_but_carrying_quality_reads_as_pro(self) -> None:
+        """The quality fallback has to stay REACHABLE.
+
+        A paid response whose envelope omits `tier` must not read as free. The
+        deserializer now forwards an empty tier for that case instead of inventing
+        `free`, and an empty tier is exactly what routes here.
+        """
+        result = SimpleNamespace(offline=False, hints=(), tier="")
+        assert _detect_tier(result, has_quality=True) == "Pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_unknown_non_empty_tier_reads_as_entitled(self) -> None:
+        """A tier name this build does not know is entitled, not unentitled.
+
+        Only the declared unentitled set downgrades the banner; a new paid plan the
+        server ships before the client knows about it must not silently render as free.
+        """
+        result = SimpleNamespace(offline=False, hints=({"x": 1},), tier="enterprise")
+        assert _detect_tier(result, has_quality=False) == "Pro"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_beta_credentials_file_never_influences_the_banner(self, monkeypatch) -> None:
+        """A legacy `beta` credentials file must NOT influence the banner — only the
+        wire tier does. `_read_credentials` is monkeypatched to prove it is never
+        consulted (and even if it were, `beta` is not a value the function accepts)."""
+        import reporails_cli.interfaces.cli.auth_command as auth
+
+        monkeypatch.setattr(auth, "_read_credentials", lambda: {"tier": "beta"})
+        result = SimpleNamespace(offline=False, hints=(), tier="anonymous")
+        assert _detect_tier(result, has_quality=False) == "free"
+        assert _detect_tier(result, has_quality=False) != "Pro (beta)"
+
+
+# ── _detect_agent_name: non-generic agent selection (L199) ─────────────
+
+
+class TestDetectAgentName:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_returns_most_common_non_generic_agent(self, tmp_path) -> None:
+        rmap = _rmap(
+            FileRecord(path="A.md", content_hash="sha256:a", agent="claude"),
+            FileRecord(path="B.md", content_hash="sha256:b", agent="claude"),
+            FileRecord(path="C.md", content_hash="sha256:c", agent="generic"),
+        )
+        # Current filters `agent != "generic"` -> claude; `!= -> ==` selects generic only.
+        assert _detect_agent_name(rmap) == "claude"  # kills L199 `!= -> ==`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_two_distinctive_agents_join_both_names(self, tmp_path) -> None:
+        """A union run: when two distinctive agents each run their own rules over their
+        own files (per `stamp_file_agents`), the scorecard names every agent whose rules
+        ran -- not just the most common one."""
+        rmap = _rmap(
+            FileRecord(path="CLAUDE.md", content_hash="sha256:a", agent="claude"),
+            FileRecord(path=".cursorrules", content_hash="sha256:b", agent="cursor"),
+        )
+        assert _detect_agent_name(rmap) == "claude + cursor"
+
+
+# ── _build_file_groups: root used for file-type routing (L241) ─────────
+
+
+class TestBuildFileGroupsRoot:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_generic_routes_to_imported_using_project_root(self, tmp_path) -> None:
+        abs_file = str(tmp_path / "x.md")
+        finding = FindingItem(file=abs_file, line=1, severity="warning", rule="R", message="m")
+        result = SimpleNamespace(findings=[finding])
+        # file_type keyed by the project-root-relative path; only resolvable when the
+        # normalization root is `project_root` (not cwd) -> routes into the "imported" group.
+        ft_by_path = {"x.md": "generic"}
+        groups = _build_file_groups(result, ft_by_path, tmp_path)
+        # `or -> and` makes root=cwd; the absolute path then normalizes off "x.md" and the
+        # generic routing is lost, so the file lands outside "imported".
+        assert "imported" in groups  # kills L241 `or -> and`
+        assert abs_file in [fp for fp, _ in groups["imported"]]
+
+
+# ── print_text_result: has_quality guard reached on no-findings path (L363) ──
+
+
+class TestPrintTextResultHasQuality:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_none_quality_no_findings_renders_cleanly(self) -> None:
+        # quality is None: current `is not None and bool(...)` short-circuits to False.
+        # `and -> or` would evaluate None.display_score and raise AttributeError.
+        result = CombinedResult(findings=(), quality=None)
+        with display.console.capture() as cap:
+            display.print_text_result(result, elapsed_ms=0, ascii_mode=True, verbose=False)
+        assert "No findings" in cap.get()  # kills L363 `and -> or`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_findings_render_reaches_scorecard(self, tmp_path) -> None:
+        # A finding drives the full findings+scorecard path. quality is None, so the
+        # `and -> or` mutation on has_quality (L401) evaluates bool(None.compliance_band)
+        # and raises; the scan root (L361) also flows into finding grouping here.
+        finding = FindingItem(
+            file=str(tmp_path / "CLAUDE.md"), line=2, severity="error", rule="CORE:S:0001", message="broken"
+        )
+        result = CombinedResult(findings=(finding,), quality=None)
+        with display.console.capture() as cap:
+            display.print_text_result(result, elapsed_ms=0, ascii_mode=True, verbose=False, project_root=tmp_path)
+        out = cap.get()
+        # The file-group block renders only after _render_findings_and_scorecard passes the
+        # L401 has_quality guard; `and -> or` there evaluates bool(None.compliance_band) and
+        # raises first, so no group header/footer would reach the console.
+        assert "1 findings" in out  # kills L401 `and -> or`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_generic_file_type_routes_to_imported_group(self, tmp_path) -> None:
+        # A generic-classified file routes into the "Imported" group. That routing needs
+        # both the scan root (L361: project_root, not cwd) to normalize the finding key AND
+        # the file_type_by_path map to reach _build_file_groups intact (L374: the map, not {}).
+        abs_file = str(tmp_path / "x.md")
+        finding = FindingItem(file=abs_file, line=1, severity="warning", rule="R", message="m")
+        result = CombinedResult(findings=(finding,), quality=None)
+        with display.console.capture() as cap:
+            display.print_text_result(
+                result,
+                elapsed_ms=0,
+                ascii_mode=True,
+                verbose=False,
+                project_root=tmp_path,
+                file_type_by_path={"x.md": "generic"},
+            )
+        out = cap.get()
+        # `or -> and` at L361 makes root=cwd (key mismatch); `or -> and` at L374 passes {}
+        # (routing lost). Either drops the file out of the Imported group.
+        assert "Imported" in out  # kills L361 `or -> and` and L374 `or -> and`
+
+
+# ── _render_findings_and_scorecard: item-health gating (L423) ──────────
+
+
+class TestItemHealthGating:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_single_surface_multifile_renders_per_item_bars(self, tmp_path) -> None:
+        # Two skill files -> exactly ONE surface ("skill") whose file_count is 2. That is
+        # the `len(surfaces) == 1 and surfaces[0].file_count > 1` case: item-health bars
+        # (one per file) render. `== -> !=` makes the guard False -> item_health None ->
+        # no per-item bars.
+        from reporails_cli.formatters.text import item_scorecard
+        from reporails_cli.formatters.text.scorecard import ScopeInfo
+
+        rmap = _rmap(
+            FileRecord(path=".claude/skills/alpha/SKILL.md", content_hash="sha256:a"),
+            FileRecord(path=".claude/skills/beta/SKILL.md", content_hash="sha256:b"),
+        )
+        per_file = (
+            FileAnalysis(file=".claude/skills/alpha/SKILL.md", display_score=8.0, stats={"atoms": 5}),
+            FileAnalysis(file=".claude/skills/beta/SKILL.md", display_score=4.0, stats={"atoms": 5}),
+        )
+        quality = QualityResult(display_score=6.0)
+        result = CombinedResult(findings=(), quality=quality, per_file_analysis=per_file)
+
+        with item_scorecard.console.capture() as cap:
+            display._render_findings_and_scorecard(result, rmap, True, False, ScopeInfo(), "free", 0, tmp_path, {})
+        out = cap.get()
+        # Both per-item rows render only when item_health is computed (the guard holds).
+        assert "alpha" in out and "beta" in out  # kills L423 `== -> !=`
