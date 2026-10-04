@@ -11,9 +11,9 @@ from reporails_cli.core.platform.dto.models import (
     Rule,
     RuleType,
     Severity,
-    ValidationResult,
     Violation,
 )
+from reporails_cli.core.platform.dto.results import ValidationResult
 
 __all__ = [
     "Category",
