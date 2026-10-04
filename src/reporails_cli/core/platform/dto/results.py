@@ -4,14 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from reporails_cli.core.platform.dto.models import Level, Violation
-
-if TYPE_CHECKING:
-    from reporails_cli.core.cache import AnalyticsEntry
-
-from reporails_cli.core.platform.dto.models import JudgmentRequest
+from reporails_cli.core.platform.dto.analytics import AnalyticsEntry
+from reporails_cli.core.platform.dto.models import JudgmentRequest, Level, Violation
 
 # =============================================================================
 # Feature Detection Models
@@ -19,7 +15,7 @@ from reporails_cli.core.platform.dto.models import JudgmentRequest
 
 
 @dataclass
-class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
+class DetectedFeatures:
     """Features detected in a project for capability-gate level detection.
 
     Used by determine_level_from_gates() for project level assignment,
@@ -46,15 +42,14 @@ class DetectedFeatures:  # pylint: disable=too-many-instance-attributes
     has_explicit_constraints: bool = False  # MUST/NEVER keywords in content
     has_imports: bool = False  # @import references in content
 
-    # L4 capabilities
-    has_path_scoped_rules: bool = False  # rules with path scope frontmatter
+    # L3 capabilities (Scoped)
+    has_path_scoped_rules: bool = False  # an agent's rule files (with or without `paths:`), or nested instruction files
 
     # L4 capabilities (Delegated)
     has_skills_dir: bool = False  # .claude/skills/ etc. with content
     # L5 capabilities (Abstracted)
     has_subagents: bool = False  # .claude/agents/ or sub-agent definitions
     # L6 capabilities (Governed)
-    has_mcp_config: bool = False  # .mcp.json or similar
     has_hooks: bool = False  # .claude/hooks/, .githooks/, or settings.json hooks
     # L7 capabilities (Adaptive)
     has_memory_dir: bool = False  # memory/state persistence directory
@@ -109,7 +104,18 @@ class AgentConfig:
 
 
 @dataclass
-class GlobalConfig:  # pylint: disable=too-many-instance-attributes
+class MapperConfig:
+    """Mapper atomizer tuning knob (default = shipped behavior).
+
+    Grouped on `ProjectConfig.mapper`. `segmentation` selects the atomizer
+    boundary policy.
+    """
+
+    segmentation: str = "legacy"  # "legacy" | "structure-aware"
+
+
+@dataclass
+class GlobalConfig:
     """Global user configuration (~/.reporails/config.yml).
 
     Shape parity with `ProjectConfig` lets `get_project_config` merge global
@@ -119,7 +125,6 @@ class GlobalConfig:  # pylint: disable=too-many-instance-attributes
     """
 
     framework_path: Path | None = None  # Local override (dev)
-    auto_update_check: bool = True
     default_agent: str = ""
     tier: str = ""  # "free" | "pro" — overridden by AILS_TIER env var
     # Project-parity defaults: merged under `ProjectConfig` when project config
@@ -127,22 +132,21 @@ class GlobalConfig:  # pylint: disable=too-many-instance-attributes
     disabled_rules: list[str] = field(default_factory=list)
     exclude_dirs: list[str] = field(default_factory=list)
     exclude_files: list[str] = field(default_factory=list)
-    overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     rule_thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
     generic_scanning: bool | None = None
     packages: list[str] = field(default_factory=list)
     agents: dict[str, dict[str, object]] = field(default_factory=dict)
     surfaces: dict[str, dict[str, object]] = field(default_factory=dict)
+    segmentation: str | None = None  # "legacy" | "structure-aware"; None = no global preference
 
 
 @dataclass
-class ProjectConfig:  # pylint: disable=too-many-instance-attributes
+class ProjectConfig:
     """Project-level configuration (.ails/config.yml + .ails/config.local.yml)."""
 
     framework_version: str | None = None  # Pin version
     packages: list[str] = field(default_factory=list)  # Project rule packages
     disabled_rules: list[str] = field(default_factory=list)
-    overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
     exclude_files: list[str] = field(default_factory=list)  # File path globs (rel. to root) to exclude
     default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
@@ -161,6 +165,9 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     # files in the project tree. Default off — anonymous tryout sees zero
     # generic findings.
     generic_scanning: bool = False
+    # Mapper atomizer tuning. `mapper.segmentation` picks the boundary policy
+    # ("legacy" | "structure-aware"), defaulting to the shipped behavior.
+    mapper: MapperConfig = field(default_factory=MapperConfig)
 
 
 # =============================================================================
@@ -230,7 +237,7 @@ class PendingSemantic:
 
 
 @dataclass(frozen=True)
-class ValidationResult:  # pylint: disable=too-many-instance-attributes
+class ValidationResult:
     """Complete validation output."""
 
     score: float  # 0.0-10.0 scale

@@ -160,10 +160,10 @@ class TestDetermineProjectLevel:
     @pytest.mark.subsys_gates
     def test_one_divergence_returns_l2(self, tmp_path: Path) -> None:
         """One property diverges → depth 1 → L2."""
-        classified = [_cf("scoped_rule", format="frontmatter")]
+        classified = [_cf("rules", format="frontmatter")]
         level, present = determine_project_level(tmp_path, [], classified)
         assert level == Level.L2
-        assert present == {"scoped_rule"}
+        assert present == {"rules"}
 
     @pytest.mark.unit
     @pytest.mark.subsys_gates
@@ -171,7 +171,7 @@ class TestDetermineProjectLevel:
         """Level is max depth across all present types + 1."""
         classified = [
             _cf("main"),  # depth 0
-            _cf("scoped_rule", format="frontmatter", scope="path_scoped", loading="on_demand"),  # depth 3
+            _cf("rules", format="frontmatter", scope="path_scoped", loading="on_demand"),  # depth 3
         ]
         level, _ = determine_project_level(tmp_path, [], classified)
         assert level == Level.L4  # max(0, 3) + 1 = 4
