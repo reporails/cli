@@ -10,18 +10,25 @@ from reporails_cli.interfaces.cli import auth_command
 from reporails_cli.interfaces.cli.auth_command import auth_app
 
 _SUPPORT = "us at reporails.com/contact"
+_RETRY = (
+    "The website did not answer the sign-in (HTTP {}). Run `ails auth login` again shortly; "
+    "if it keeps failing, contact us at reporails.com/contact."
+)
+
+
+_NOT_JSON = object()
 
 
 class _Reply:
-    def __init__(self, status_code: int, text: str, payload: dict | None = None) -> None:
+    def __init__(self, status_code: int, text: str, payload: object = _NOT_JSON) -> None:
         self.status_code = status_code
         self.text = text
         self._payload = payload
 
     def json(self) -> dict:
-        if self._payload is None:
+        if self._payload is _NOT_JSON:
             raise ValueError("not json")
-        return self._payload
+        return self._payload  # type: ignore[return-value]
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -67,12 +74,16 @@ def _run(
         ),
         (401, "invalid_github_token", "GitHub did not accept the sign-in. Run `ails auth login` again."),
         (400, "missing_token", "The sign-in was refused (HTTP 400: missing_token). Contact " + _SUPPORT),
-        (502, "", "The sign-in was refused (HTTP 502). Contact " + _SUPPORT),
+        (404, "", "The sign-in was refused (HTTP 404). Contact " + _SUPPORT),
+        (502, "", _RETRY.format(502)),
+        (503, "", _RETRY.format(503)),
+        (429, "", _RETRY.format(429)),
+        (500, "boom", _RETRY.format(500)),
     ],
 )
 def test_exchange_refusal_is_actionable(monkeypatch, tmp_path, status: int, code: str, expected: str) -> None:
     text = f'{{"error":"{code}"}}' if code else "<html>bad gateway</html>"
-    payload = {"error": code} if code else None
+    payload = {"error": code} if code else _NOT_JSON
     exit_code, out = _run(monkeypatch, tmp_path, _Reply(status, text, payload))
     assert exit_code == 1
     assert expected in out
@@ -88,3 +99,15 @@ def test_client_id_503_not_configured(monkeypatch, tmp_path) -> None:
     assert exit_code == 1
     assert "Sign-in is not available right now. Contact " + _SUPPORT in out
     assert "transient" not in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+@pytest.mark.parametrize("body", ["null", '"ok"', "[]"])
+def test_exchange_2xx_non_object_body_is_one_line(monkeypatch, tmp_path, body: str) -> None:
+    import json
+
+    exit_code, out = _run(monkeypatch, tmp_path, _Reply(200, body, json.loads(body)))
+    assert exit_code == 1
+    assert "unexpected (non-JSON) response" in out
+    assert "Traceback" not in out

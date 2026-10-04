@@ -148,6 +148,11 @@ def _refusal_message(status_code: int, body_text: str) -> str:
     code = str(body.get("error", "")) if isinstance(body, dict) else ""
     if code in _REFUSAL_MESSAGES:
         return _REFUSAL_MESSAGES[code]
+    if status_code >= 500 or status_code == 429:
+        return (
+            f"The website did not answer the sign-in (HTTP {status_code}). Run `ails auth login` "
+            "again shortly; if it keeps failing, contact us at reporails.com/contact."
+        )
     detail = f"HTTP {status_code}: {code}" if code else f"HTTP {status_code}"
     return f"The sign-in was refused ({detail}). Contact us at reporails.com/contact."
 
@@ -287,6 +292,8 @@ def _exchange_github_token(base_url: str, github_token: str) -> dict[str, str]:
             console.print(f"  [red]{_refusal_message(exchange.status_code, exchange.text)}[/]")
             raise typer.Exit(1)
         payload = exchange.json()
+        if not isinstance(payload, dict):
+            raise ValueError("cli-exchange reply is not a JSON object")
     except ValueError as exc:
         logger.warning(
             "Platform returned non-JSON for cli-exchange: %s",
