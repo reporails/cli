@@ -223,6 +223,8 @@ def test_exchange_free_key_gets_the_upgrade_line(
     output = capsys.readouterr().out
     assert "Pro adds the remedies" in output
     assert "Fixes are in the JSON output" not in output
+    assert "/reporails:ails heal" not in output
+    assert "formatting fixes" in output
 
 
 @pytest.mark.unit
@@ -238,7 +240,8 @@ def test_exchange_pro_key_gets_no_upgrade_pitch(
     output = capsys.readouterr().out
     assert "Pro adds the remedies" not in output
     assert "Upgrade to Pro" not in output
-    assert "Fixes are in the JSON output" in output
+    assert "/reporails:ails heal" in output
+    assert "ails install" in output
 
 
 @pytest.mark.unit

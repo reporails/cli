@@ -82,7 +82,7 @@ npx @reporails/cli install
 uvx --from reporails-cli ails install
 ```
 
-Puts `ails` on your PATH and prints the install command for the reporails plugin in each supported agent (also listed in [Agent Support](https://github.com/reporails/cli/blob/main/docs/agent-support.md#plugin-support)).
+Puts `ails` on your PATH, installs the reporails plugin into Claude Code and Codex when they are on your machine, and prints the install steps for the other supported agents (also listed in [Agent Support](https://github.com/reporails/cli/blob/main/docs/agent-support.md#plugin-support)). `ails install --project` installs the plugin for the current repository only, shared with collaborators through its Claude Code settings; Codex installs for your user. `ails update` upgrades `ails` and refreshes the plugin in each agent that has it. With Pro, the step after install is `/reporails:ails heal` in Claude Code, which rewrites your instruction files.
 
 ## Free vs Pro
 

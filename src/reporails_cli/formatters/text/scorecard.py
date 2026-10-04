@@ -588,6 +588,9 @@ def print_scorecard(
             console.print("  \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:
         console.print()
-        console.print("  [dim]Fixes are in the JSON output (--format json) and the MCP tools.[/dim]")
+        console.print("  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]")
+        console.print(
+            "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files.[/dim]"
+        )
 
     console.print()

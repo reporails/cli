@@ -66,7 +66,7 @@ npm install -g @reporails/cli
 
 `ails install` then ensures the binary is on PATH. After it runs, `ails check` works from anywhere without the `npx` / `uvx` prefix.
 
-**2. Add the reporails plugin to your agent.** The plugin carries the `ails` skill and the MCP server; installing it registers both in one step — no per-agent config editing. The per-agent install commands are listed in [Agent Support](agent-support.md#plugin-support); `ails install` prints them too. What the plugin needs to start is stated there. Without the plugin, `ails check` in your terminal scores and fixes your instruction files.
+**2. Add the reporails plugin to your agent.** The plugin carries the `ails` skill and the MCP server; installing it registers both in one step — no per-agent config editing. The per-agent install commands are listed in [Agent Support](agent-support.md#plugin-support); `ails install` runs them for Claude Code and Codex and prints the rest. Add `--project` to install the plugin for the current repository only, shared with collaborators (Codex installs for your user); `ails update` refreshes the plugin in each agent that has it. What the plugin needs to start is stated there. Without the plugin, `ails check` in your terminal scores your instruction files and applies formatting fixes; rewriting them needs the plugin and Pro (`/reporails:ails heal` in Claude Code).
 
 ## Configure (optional)
 

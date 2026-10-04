@@ -62,6 +62,12 @@ ails config set --global default_agent claude
 
 For a single-value setting the project value wins. So if global says `default_agent: claude` and the repo's `.ails/config.yml` says `default_agent: cursor`, that repo runs the Cursor rule set.
 
+## Environment variables
+
+| Variable             | What it does                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AILS_PLUGIN_SOURCE` | Where `ails install` adds the reporails plugin from, for Claude Code and Codex. A local folder or `owner/repo`; unset, it is `reporails/plugin`. |
+
 ## Model cache
 
 Reporails analyzes your instructions with a bundled model that is **not** shipped inside the package — it is downloaded once, on the first run that needs it, into `~/.reporails/cache/models/`. Because the cache lives in your home directory (not the ephemeral `npx` package cache), the ~275 MB download happens once per machine and survives every `npx` cold start; a fresh `npx` re-pulls only the small package. Every run after the first is silent and offline.

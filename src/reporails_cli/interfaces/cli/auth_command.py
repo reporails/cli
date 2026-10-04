@@ -242,12 +242,15 @@ def _handle_exchange_response(payload: dict[str, str]) -> None:
     _write_credentials(api_key, username, tier)
 
     console.print(f"  [green]Signed in as[/] [bold]@{username}[/]{_tier_phrase(tier)}.")
-    console.print("  Your diagnosis is unchanged; [bold]ails check --heal[/bold] is now enabled.")
     if tier in ENTITLED_TIERS:
         # Already paying — no upgrade pitch to a Pro/team key, matching the
         # tier-aware line `ails check` itself shows a Pro run.
-        console.print("  [dim]Fixes are in the JSON output (--format json) and the MCP tools.[/dim]\n")
+        console.print("  Rewriting your instruction files runs in your coding agent.")
+        console.print(
+            "  [bold]ails install[/bold] adds the plugin, then run [bold]/reporails:ails heal[/bold] in Claude Code.\n"
+        )
     else:
+        console.print("  Your diagnosis is unchanged; [bold]ails check --heal[/bold] now applies formatting fixes.")
         # Unpaid tiers get no remedies; this one line replaces it,
         # matching the line an unpaid `ails check` run shows.
         from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL

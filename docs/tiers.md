@@ -9,7 +9,7 @@ last_updated: 2026-09-20
 
 Reporails has two tiers: **Free** and **Pro**.
 
-- **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both share identical limits and identical diagnostic detail: the score, every local finding with its line, per-file counts for the interaction findings, and the local deterministic fixes. Signing in does not raise your limits; it gives you an account (for managing your subscription, and it enables `ails check --heal`) and changes the call-to-action from "sign in" to "upgrade".
+- **Free** is every user without an active Pro subscription — whether you are anonymous (no account) or signed in with a free account. Both share identical limits and identical diagnostic detail: the score, every local finding with its line, per-file counts for the interaction findings, and the local deterministic fixes. Signing in does not raise your limits; it gives you an account (for managing your subscription, and it enables `ails check --heal`, which applies formatting fixes) and changes the call-to-action from "sign in" to "upgrade".
 - **Pro** is an active paid subscription. It raises the request rate and payload cap and unlocks the remedies — what to change, where, and how — and the ordered remediation workflow. The server sends no remedy text to an anonymous or free caller at all — Free's fixes are limited to what runs locally and needs no server round-trip.
 
 The CLI sends your API key (if you have one) with each request; the diagnostic backend resolves your tier from your subscription state and applies the corresponding limits.
@@ -28,11 +28,12 @@ The CLI sends your API key (if you have one) with each request; the diagnostic b
 | Ranking findings by impact                | — (findings listed without a grade) | Yes — findings carry an impact grade; inline-formatting findings (backticks, bold, italics) are listed without one |
 | Remediation workflow                      | —                             | Ordered, step-by-step fix plan            |
 | Cross-file / interaction findings         | Which files + counts          | Full detail (file, line, what to change)  |
-| Apply fixes (`ails check --heal`)         | Account required — anonymous gets the diagnosis, no writes | Yes            |
+| Apply formatting fixes (`ails check --heal`) | Account required — anonymous gets the diagnosis, no writes | Yes         |
+| Rewrite instruction files in your agent (`/reporails:ails heal`) | —       | Yes                                       |
 
 Free gives you the diagnosis: the score, every local finding with its line, per-file counts for the interaction findings, with the local deterministic fixes a check can make without a server round-trip. Pro adds the remedies (what to change, where, and how) and the composable remediation workflow — the ordered procedure your coding agent runs to fix the files.
 
-On Free the local deterministic fixes, and on Pro the remedies and the workflow, reach your coding agent through the MCP `validate` tool and appear in `ails check -f json`. The terminal output lists findings, not fixes.
+On Free the local deterministic fixes, and on Pro the remedies and the workflow, reach your coding agent through the MCP `validate` tool and appear in `ails check -f json`. The terminal output lists findings, not fixes. Rewriting your instruction files runs in your coding agent: `ails install` adds the reporails plugin, then `/reporails:ails heal` in Claude Code (in other agents, ask your agent to run the reporails heal). `ails check --heal` in the terminal applies formatting fixes only.
 
 ## What the limits mean in practice
 
@@ -82,7 +83,8 @@ Pro output folds a topic-overlap finding back into the per-file list with its li
   │
   └─ 26 findings
   ...
-  Fixes are in the JSON output (--format json) and the MCP tools.
+  The remedies are in --format json. Run ails install, then
+  /reporails:ails heal in Claude Code to rewrite your instruction files.
 ```
 
 A finding about a single instruction inside one file — a vague, weak or too-brief instruction, say — renders with its line on both tiers; the interaction and cross-file findings are where the tiers differ, as above.

@@ -463,8 +463,8 @@ class TestProTierFixLocationLine:
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="Pro", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
-        assert "JSON output" in out
-        assert "MCP tools" in out
+        assert "--format json" in out
+        assert "/reporails:ails heal" in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -536,7 +536,7 @@ class TestRefusedRunTerminal:
 
         err = FunnelError(error="payload_too_large", tier="pro", status=413)
         out = _capture(print_scorecard, _Result(server_error=err), False, tier="Pro")
-        assert "Fixes are in the JSON output" not in out
+        assert "/reporails:ails heal" not in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

@@ -37,7 +37,7 @@ Install it in your agent:
 | GitHub Copilot (VS Code) | `git clone https://github.com/reporails/plugin`, then "Install Plugin From Source" and pick the `plugin/plugins/reporails/` folder |
 | Antigravity | `git clone https://github.com/reporails/plugin`, then `agy plugin install plugin/plugins/reporails` |
 
-`ails install` prints the same list. The plugin needs [`uv`](https://docs.astral.sh/uv/) on the machine: its first start downloads the CLI and the analysis model files (~275 MB, once per machine), so that first start needs network access.
+`ails install` runs the Claude Code and Codex steps and prints the rest; `ails install --project` installs for the current repository only, shared with collaborators (Claude Code; Codex installs for your user). `ails update` refreshes the plugin in each agent that has it. The plugin needs [`uv`](https://docs.astral.sh/uv/) on the machine: its first start downloads the CLI and the analysis model files (~275 MB, once per machine), so that first start needs network access.
 
 On a large project Codex can time out the first `validate` call or the server's first start: raise `startup_timeout_sec` (default 10 s) and `tool_timeout_sec` (default 60 s) under `[mcp_servers.reporails]` in `~/.codex/config.toml`, for example `tool_timeout_sec = 300`.
 
