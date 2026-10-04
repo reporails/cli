@@ -13,6 +13,11 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def credentials_path() -> Path:
+    """The credentials file, resolved from the home directory at call time."""
+    return Path.home() / ".reporails" / "credentials.yml"
+
+
 def write_credentials_file(path: Path, record: dict[str, str]) -> None:
     """Store credentials owner-only from the first byte.
 
@@ -48,7 +53,7 @@ def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> No
     if not api_key or not tier:
         return
     try:
-        target = path or Path.home() / ".reporails" / "credentials.yml"
+        target = path or credentials_path()
         if not target.exists():
             return
         data: Any = yaml.safe_load(target.read_text(encoding="utf-8"))

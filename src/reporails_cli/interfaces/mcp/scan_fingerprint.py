@@ -22,6 +22,7 @@ def scan_inputs_base(scan_root: Path) -> str:
     from reporails_cli.core.platform.adapters.api_client import has_api_key
     from reporails_cli.core.platform.config.bootstrap import get_global_config_path
     from reporails_cli.core.platform.config.config import get_global_config
+    from reporails_cli.core.platform.config.credentials import credentials_path
 
     # A long-running server keeps the detected-agent list between calls, so a file added or
     # removed (or an exclusion changed) would go unseen: detect afresh, and the run that
@@ -35,7 +36,7 @@ def scan_inputs_base(scan_root: Path) -> str:
         scan_root / ".ails" / "config.yml",
         scan_root / ".ails" / "config.local.yml",
         get_global_config_path(),
-        Path.home() / ".reporails" / "credentials.yml",
+        credentials_path(),
     ]
     parts = _stat_parts({*scanned, *config_files})
     try:

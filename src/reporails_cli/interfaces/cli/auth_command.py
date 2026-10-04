@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 
 import typer
 import yaml
 from rich.console import Console
 
+from reporails_cli.core.platform.config.credentials import credentials_path
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, UNENTITLED_TIERS
 
@@ -48,14 +48,9 @@ def _user_agent() -> str:
     return f"reporails-cli/{__version__} (auth)"
 
 
-def _credentials_path() -> Path:
-    """Path to credentials file."""
-    return Path.home() / ".reporails" / "credentials.yml"
-
-
 def _read_credentials() -> dict[str, str]:
     """Read stored credentials."""
-    path = _credentials_path()
+    path = credentials_path()
     if not path.exists():
         return {}
     try:
@@ -85,14 +80,14 @@ def _write_credentials(api_key: str, github_login: str, tier: str) -> None:
     from reporails_cli.core.platform.config.credentials import write_credentials_file
 
     write_credentials_file(
-        _credentials_path(),
+        credentials_path(),
         {"api_key": api_key, "github_login": github_login, "tier": tier},
     )
 
 
 def _clear_credentials() -> None:
     """Remove stored credentials."""
-    path = _credentials_path()
+    path = credentials_path()
     if path.exists():
         path.unlink()
 
@@ -402,7 +397,7 @@ def status() -> None:
 
     # Show prefix only, never the full key
     prefix = api_key[:16] + "..." if len(api_key) > 16 else api_key
-    source = "env AILS_API_KEY" if env_key else str(_credentials_path())
+    source = "env AILS_API_KEY" if env_key else str(credentials_path())
 
     # The stored github_login/tier are only meaningful when the effective key IS the
     # locally cached one — an env-provided key may not match anything on disk at all.

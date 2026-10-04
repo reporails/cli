@@ -84,7 +84,6 @@ def _api_key_from_credentials() -> str:
     Returns "" only for genuine absence (no file / no key). Raises
     CredentialsUnreadableError when the file exists but cannot be read or parsed.
     """
-    from pathlib import Path
 
     try:
         import yaml
@@ -92,7 +91,9 @@ def _api_key_from_credentials() -> str:
         logger.debug("PyYAML not installed — cannot read credentials")
         return ""
 
-    path = Path.home() / ".reporails" / "credentials.yml"
+    from reporails_cli.core.platform.config.credentials import credentials_path
+
+    path = credentials_path()
     if not path.exists():
         return ""
     try:
