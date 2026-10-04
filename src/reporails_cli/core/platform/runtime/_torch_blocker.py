@@ -3,21 +3,9 @@
 Why this exists
 ---------------
 
-Importing ``torch`` on CPU typically takes **15-25 seconds** because of the
-CUDA probe, the large C++ extension load, and the initialisation of many
-submodules. The ``reporails`` pipeline does not need torch at runtime (the
-ONNX Runtime embedder handles inference directly), but two transitive
-import paths drag it in anyway:
-
-1. ``sentence_transformers`` → ``transformers`` → ``torch`` — the obvious
-   path. We removed ``sentence-transformers`` from dependencies entirely.
-
-2. ``spacy`` → ``thinc`` → ``thinc/compat.py`` → ``try: import torch`` as a
-   side-effect to set a ``has_torch = True`` flag that spaCy itself never
-   uses in our code path. This is the silent killer: **every** ``import
-   spacy`` was costing 15-25 s of torch import.
-
-Installing a ``sys.meta_path`` finder that raises ``ImportError`` for any
+Importing ``torch`` on CPU is very slow, and the ``reporails`` pipeline does not
+need it at runtime, but some transitive import paths drag it in anyway. Installing
+a ``sys.meta_path`` finder that raises ``ImportError`` for any
 ``torch`` / ``torch.*`` module forces thinc's ``try: import torch`` into
 its ``except ImportError: has_torch = False`` branch. spaCy then loads
 cleanly in **<1 s** and torch never enters ``sys.modules``.
@@ -44,8 +32,8 @@ After ``install()`` returns:
 - ``"torch" not in sys.modules`` (any stale torch reference is cleared)
 - Any subsequent ``import torch`` raises ``ImportError`` with a clear
   reporails-flavoured message
-- spaCy / thinc / onnxruntime / tokenizers are unaffected — none of them
-  require torch at runtime on our code path
+- Packages the pipeline uses are unaffected — none of them require torch at
+  runtime on our code path
 """
 
 from __future__ import annotations
