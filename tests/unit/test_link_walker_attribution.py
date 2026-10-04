@@ -30,10 +30,10 @@ def test_emits_one_edge_per_source(tmp_path: Path) -> None:
     b.write_text("Read [C](C.md).\n", encoding="utf-8")
     c.write_text("# c\n", encoding="utf-8")
 
-    edges = walk_markdown_links({a: "main", b: "skill"}, tmp_path, {a, b})
+    edges = walk_markdown_links({a: "main", b: "skills"}, tmp_path, {a, b})
     c_edges = _edges_to(edges, c)
     assert {e.source for e in c_edges} == {a.resolve(), b.resolve()}
-    assert {e.source_type for e in c_edges} == {"main", "skill"}
+    assert {e.source_type for e in c_edges} == {"main", "skills"}
 
 
 @pytest.mark.unit
@@ -109,9 +109,9 @@ def test_source_type_propagates(tmp_path: Path) -> None:
     skill.write_text("[r](README.md)\n", encoding="utf-8")
     readme.write_text("# readme\n", encoding="utf-8")
 
-    edges = walk_markdown_links({skill: "skill"}, tmp_path, {skill})
+    edges = walk_markdown_links({skill: "skills"}, tmp_path, {skill})
     assert len(edges) == 1
-    assert edges[0].source_type == "skill"
+    assert edges[0].source_type == "skills"
 
 
 @pytest.mark.unit

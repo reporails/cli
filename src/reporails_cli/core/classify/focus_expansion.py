@@ -8,10 +8,9 @@ canonical paths, so focus mode renders the subagent and its preloaded
 skills together.
 
 The expansion is agent-aware: ``framework/capabilities_matrix.yml``
-declares which agents have both ``subagents`` and ``skills``
+declares which agents have both ``agents`` and ``skills``
 capabilities, and the cross-agent `skills:` frontmatter convention is
-shared across those agents (per the 2026-05-10
-``ails-check-targeted-scope`` seed).
+shared across those agents.
 """
 
 from __future__ import annotations
@@ -20,9 +19,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
 from reporails_cli.core.classify.capability_paths import resolve_capability
+from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -89,24 +87,8 @@ def _load_frontmatter_field(path: Path, key: str) -> object:
     except OSError as exc:
         logger.debug("expand_focus: cannot read %s: %s", path, exc)
         return None
-    frontmatter = _extract_frontmatter(text)
-    if frontmatter is None:
-        return None
-    try:
-        data = yaml.safe_load(frontmatter) or {}
-    except yaml.YAMLError as exc:
-        logger.debug("expand_focus: bad frontmatter in %s: %s", path, exc)
-        return None
-    if not isinstance(data, dict):
-        return None
+    read = read_frontmatter(text)
+    if read.problem is not None:
+        logger.debug("expand_focus: bad frontmatter in %s: %s", path, read.problem.message)
+    data = read.data or {}
     return data.get(key)
-
-
-def _extract_frontmatter(text: str) -> str | None:
-    """Return the YAML between the leading `---` fences, or None."""
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end == -1:
-        return None
-    return text[3:end].strip()

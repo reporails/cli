@@ -160,3 +160,15 @@ def test_classify_files_referenced_loading_is_discoverable_when_link_from_main(t
     # applies to link-only reach — only `@<path>` imports get session_start.
     assert arch.properties.get("loading") == "discoverable"
     assert arch.file_type == "referenced"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_classify_files_reaches_linked_files_with_non_ascii_and_spaced_names(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("Read [guide](útmutató.md) and [notes](<my notes.md>).\n", encoding="utf-8")
+    (tmp_path / "útmutató.md").write_text("# guide\n", encoding="utf-8")
+    (tmp_path / "my notes.md").write_text("# notes\n", encoding="utf-8")
+    classified = classify_files(tmp_path, [tmp_path / "CLAUDE.md"], load_file_types("claude"), generic_scanning=True)
+    types = {cf.path.name: cf.file_type for cf in classified}
+    assert types.get("útmutató.md") == "referenced"
+    assert types.get("my notes.md") == "referenced"
