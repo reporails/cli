@@ -216,6 +216,7 @@
 
 ### Fixed
 
+- A check the server refuses for a known reason (a rejected or malformed key, the hourly limit, the payload cap, the project limit) no longer asks you to report a bug; the bug-report link shows only for an error the CLI does not recognise.
 - Heal: a CRLF or mixed-ending file keeps each line's own ending, a file holding a form feed or a Unicode line separator has the right line fixed, a token inside an inline HTML tag (`<img src="logo.png">`) or an autolink is left alone so a second run changes nothing, and a file with hundreds of code tokens or bold constraints heals in under a second instead of over a minute.
 - Check: a link after a code span that runs onto the next line is reported on its own line, an `ails-disable-line` comment after a form feed or Unicode line separator silences the line it sits on, a rule's path filter with a `{a,b}` group matches the files its alternatives name, and a paragraph of thousands of nested bold or italic runs is read in seconds instead of minutes.
 - Check: `ails check <folder>` run from a folder above it checks that folder's own agent rules and skills, with paths relative to it, even when the folder has no `CLAUDE.md` or `AGENTS.md`; a line after a code span that runs onto the next line keeps its true line number, and a form feed or Unicode line separator inside a fenced block, or in the file text the MCP tools return, no longer shifts the lines after it; a bare URL in running text is read as the URL itself, so bold, italic or an escape around it no longer becomes part of the link.

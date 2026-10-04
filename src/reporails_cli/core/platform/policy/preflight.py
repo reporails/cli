@@ -15,6 +15,7 @@ from typing import Any
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
     ENTITLED_TIERS,
+    KNOWN_ERRORS,
     RETRYABLE_ERRORS,
     FunnelError,
 )
@@ -25,20 +26,6 @@ logger = logging.getLogger(__name__)
 UNIVERSAL_ATOM_CAP = 10_000
 WIRE_MAX_FILES = 500
 
-# Error tokens kept verbatim (with the body's own tier / limits / message).
-# Anything else collapses to `unknown_error`, which renders the bug-report link.
-# The 401 tokens are listed so an auth rejection renders its sign-in message.
-# `server_busy` and `scoring_timeout` are the 503/504 tokens: they read as "try again".
-_KNOWN_ERRORS = {
-    "rate_limit_exceeded",
-    "payload_too_large",
-    "atom_cap_exceeded",
-    "file_cap_exceeded",
-    "project_limit_reached",
-    "invalid_api_key",
-    "missing_or_invalid_api_key",
-    *RETRYABLE_ERRORS,
-}
 # A 5xx reply is parsed only when it names a failure that clears on its own.
 _RETRYABLE_STATUSES = (503, 504)
 
@@ -80,7 +67,7 @@ def parse_error_body(status_code: int, body_text: str, retry_after: str | None =
     error = body.get("error", "")
     if retryable_status and error not in RETRYABLE_ERRORS:
         return None
-    if error not in _KNOWN_ERRORS:
+    if error not in KNOWN_ERRORS:
         message = str(body.get("message", "")) or f"HTTP {status_code} ({error or 'unrecognized'})"
         return _unknown_error(status_code, message, str(body.get("tier", "")))
     reset_in = int(body.get("reset_in") or 0)

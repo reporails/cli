@@ -480,7 +480,7 @@ def _render_findings_and_scorecard(
 
 def _render_funnel_cta(funnel_error: object) -> None:
     """Render the conversion CTA + bug-report link when a FunnelError is present."""
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+    from reporails_cli.core.platform.dto.diagnostics import KNOWN_ERRORS, FunnelError
     from reporails_cli.formatters.text.funnel_cta import _short_url_label, format_bug_report_url, format_cta
 
     if not isinstance(funnel_error, FunnelError):
@@ -498,7 +498,9 @@ def _render_funnel_cta(funnel_error: object) -> None:
     console.print()
     console.print("  [yellow]⚠[/yellow]  Server diagnostics unavailable.")
     console.print(f"  {cta}")
-    console.print(f"  [dim]Did you see an error? Let us know: [link={bug_url}][bold]{bug_label}[/bold][/link][/dim]")
+    if funnel_error.error not in KNOWN_ERRORS:
+        link = f"[link={bug_url}][bold]{bug_label}[/bold][/link]"
+        console.print(f"  [dim]Did you see an error? Let us know: {link}[/dim]")
     console.print()
 
 

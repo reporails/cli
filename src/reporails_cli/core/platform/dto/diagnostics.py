@@ -25,6 +25,21 @@ UNENTITLED_TIERS = frozenset({"anonymous", "free"})
 # Failures that clear by themselves: a busy server, a request that took too long, and the
 # client's own timeout. They read as "try again", never as a bug.
 RETRYABLE_ERRORS = frozenset({"server_busy", "scoring_timeout", "timeout"})
+# Error tokens kept verbatim (with the body's own tier / limits / message). Anything else
+# collapses to `unknown_error`, which renders the bug-report link. The 401 tokens are listed
+# so an auth rejection renders its sign-in message.
+KNOWN_ERRORS = frozenset(
+    {
+        "rate_limit_exceeded",
+        "payload_too_large",
+        "atom_cap_exceeded",
+        "file_cap_exceeded",
+        "project_limit_reached",
+        "invalid_api_key",
+        "missing_or_invalid_api_key",
+        *RETRYABLE_ERRORS,
+    }
+)
 # Seconds to wait before retrying when the server names none.
 DEFAULT_RETRY_AFTER_S = 10
 

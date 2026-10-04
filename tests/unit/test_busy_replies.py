@@ -159,3 +159,32 @@ def test_a_busy_or_slow_reply_is_parsed_with_the_servers_wait(
 )
 def test_any_other_server_error_reply_is_not_parsed(status: int, body: str) -> None:
     assert parse_error_body(status, body, "5") is None
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (401, {"error": "invalid_api_key", "tier": "free", "message": "Your API key was revoked."}, "revoked"),
+        (401, {"error": "missing_or_invalid_api_key"}, "key"),
+        (429, {"error": "rate_limit_exceeded"}, "limit"),
+        (413, {"error": "payload_too_large"}, "large"),
+        (402, {"error": "project_limit_reached"}, "limit"),
+    ],
+)
+def test_a_known_refusal_does_not_ask_for_a_bug_report(status: int, body: dict[str, Any], expected: str) -> None:
+    err = parse_error_body(status, json.dumps(body))
+    assert err is not None
+    assert not err.retryable
+    out = _render(err)
+    assert "Did you see an error" not in out
+    assert expected in out.lower()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_an_unrecognised_4xx_keeps_the_bug_report_invitation() -> None:
+    err = parse_error_body(418, json.dumps({"error": "teapot"}))
+    assert err is not None
+    assert "Did you see an error" in _render(err)
