@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import glob as globmod
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.discovery.agent_discovery import is_excluded
+from reporails_cli.core.discovery.agents import load_project_exclude_dirs
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.utils.utils import read_frontmatter_file
 
 
 def _safe_float(value: Any, default: float = float("inf")) -> float:
@@ -18,18 +22,7 @@ def _safe_float(value: Any, default: float = float("inf")) -> float:
         return default
 
 
-@dataclass(frozen=True)
-class CheckResult:
-    """Result of a single mechanical check."""
-
-    passed: bool
-    message: str
-    annotations: dict[str, Any] | None = None  # D->M metadata (e.g., discovered_imports)
-    location: str | None = None  # Per-file location override (e.g., "SKILL.md:0")
-
-
 _glob_cache: dict[tuple[str, str], list[Path]] = {}
-_exclude_cache: dict[str, frozenset[str]] = {}
 
 
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
@@ -47,36 +40,10 @@ def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
         return cached
     resolved = str(root / pattern)
     matches = [Path(p) for p in globmod.glob(resolved, recursive=True, include_hidden=True)]
-    excl = _load_project_excludes(root)
-    result = [p for p in matches if not _is_under_excluded_dir(p, root, excl)]
+    excl = load_project_exclude_dirs(root)
+    result = [p for p in matches if not is_excluded(p, root, excl)]
     _glob_cache[key] = result
     return result
-
-
-def _load_project_excludes(root: Path) -> frozenset[str]:
-    """Load exclude_dirs from project config, cached per root."""
-    cached = _exclude_cache.get(str(root))
-    if cached is not None:
-        return cached
-    try:
-        from reporails_cli.core.platform.config.config import get_project_config
-
-        excl = frozenset(get_project_config(root).exclude_dirs or ())
-    except (OSError, ValueError, AttributeError):
-        excl = frozenset()
-    _exclude_cache[str(root)] = excl
-    return excl
-
-
-def _is_under_excluded_dir(path: Path, root: Path, excl: frozenset[str]) -> bool:
-    """True when any ancestor dir name (relative to root) is in `excl`."""
-    if not excl:
-        return False
-    try:
-        rel = path.relative_to(root)
-    except ValueError:
-        return False
-    return any(part in excl for part in rel.parts[:-1])
 
 
 def _get_target_files(
@@ -103,23 +70,22 @@ def _get_target_files(
             return glob_targets
         allowed: set[Path] = set()
         for cf in classified_files:
-            try:
-                allowed.add(cf.path.resolve())
-            except OSError:
-                allowed.add(cf.path)
+            allowed.add(safe_resolve(cf.path))
         narrowed: list[Path] = []
         for p in glob_targets:
-            try:
-                resolved = p.resolve()
-            except OSError:
-                resolved = p
+            resolved = safe_resolve(p)
             if resolved in allowed:
                 narrowed.append(p)
         return narrowed
 
     match_type = args.get("_match_type", "")
     if match_type and classified_files:
-        matched = [cf.path for cf in classified_files if cf.file_type == match_type]
+        # `match.type` may be a list (`{type: [config, hooks]}`) — compare through
+        # the shared matching predicate, never `==`, or a list-valued type matches
+        # nothing and the check reports "No matching files found" on a file it owns.
+        from reporails_cli.core.platform.policy.matching import _prop_matches
+
+        matched = [cf.path for cf in classified_files if _prop_matches(match_type, cf.file_type)]
         if matched:
             return matched
         # No files of this type — return empty, don't fall back to all files.
@@ -207,34 +173,57 @@ def git_tracked(
     return CheckResult(passed=False, message="Not a git repository")
 
 
+def _is_set(value: Any) -> bool:
+    """A frontmatter value that says something: not absent, null or blank text."""
+    return value is not None and (not isinstance(value, str) or bool(value.strip()))
+
+
+def _frontmatter_key_gap(path: Path, keys: list[str], args: dict[str, Any], label: str) -> str | None:
+    """Why `path` lacks every one of `keys` in its frontmatter block; None when one is defined.
+
+    A block that does not read as YAML is not a gap: `frontmatter_valid_yaml` reports it.
+    """
+    read = read_frontmatter_file(path, lenient=bool(args.get("lenient", False)))
+    if read is not None and read.problem is not None:
+        return None
+    if read is not None and read.data is not None and any(_is_set(read.data.get(k)) for k in keys):
+        return None
+    return f"Frontmatter key {label} not found"
+
+
 def frontmatter_key(
     root: Path,
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
-    """Check that files have a specific YAML frontmatter key."""
-    import yaml
+    """Check that every target file has a specific YAML frontmatter key.
 
+    Each file missing every listed key is its own occurrence, so one
+    compliant sibling in a multi-file match set (e.g. a second Copilot
+    `*.instructions.md`) does not hide another file's missing key.
+    """
     key = str(args.get("key", ""))
     alt_key = str(args.get("alt_key", ""))
     keys = [key] + ([alt_key] if alt_key else [])
-    for match in _get_target_files(args, classified_files, root):
-        if not match.is_file():
-            continue
-        try:
-            content = match.read_text(encoding="utf-8")
-            if content.startswith("---"):
-                end = content.find("---", 3)
-                if end > 0:
-                    fm = yaml.safe_load(content[3:end])
-                    if isinstance(fm, dict):
-                        for k in keys:
-                            if k in fm:
-                                return CheckResult(passed=True, message=f"Key '{k}' found")
-        except (OSError, ValueError):
-            continue
     label = " or ".join(f"'{k}'" for k in keys)
-    return CheckResult(passed=False, message=f"Frontmatter key {label} not found")
+    targets = [m for m in _get_target_files(args, classified_files, root) if m.is_file()]
+    if not targets:
+        return CheckResult(passed=False, message=f"Frontmatter key {label} not found")
+
+    missing: list[tuple[str, str]] = []
+    for match in targets:
+        gap = _frontmatter_key_gap(match, keys, args, label)
+        if gap is not None:
+            rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
+            missing.append((f"{rel}:0", gap))
+
+    if missing:
+        return CheckResult(
+            passed=False,
+            message=f"{len(missing)} file(s) missing frontmatter key {label}",
+            occurrences=missing,
+        )
+    return CheckResult(passed=True, message=f"Key {label} found in all target file(s)")
 
 
 def file_count(
@@ -265,7 +254,7 @@ def line_count(
             continue
         try:
             rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
-            count = len(match.read_text(encoding="utf-8").splitlines())
+            count = len(match.read_text(encoding="utf-8", errors="replace").splitlines())
             if count > max_lines:
                 return CheckResult(
                     passed=False,
@@ -303,7 +292,7 @@ def byte_size(
     return CheckResult(passed=True, message="File sizes within bounds")
 
 
-# Import advanced checks for re-export and registry registration
+# Import advanced checks for registry registration
 from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
     aggregate_byte_size,
     check_import_targets_exist,
@@ -317,6 +306,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
     file_absent,
     filename_matches_pattern,
     frontmatter_extra_keys,
+    frontmatter_matches_dirname,
     frontmatter_present,
     frontmatter_valid_glob,
     frontmatter_valid_yaml,
@@ -325,6 +315,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
     skill_entrypoint_present,
     valid_markdown,
 )
+from reporails_cli.core.lint.mechanical.hook_handlers import hook_handlers  # noqa: E402
 
 # Registry of mechanical checks
 MECHANICAL_CHECKS: dict[str, Any] = {
@@ -354,7 +345,9 @@ MECHANICAL_CHECKS: dict[str, Any] = {
     "file_absent": file_absent,
     "filename_matches_pattern": filename_matches_pattern,
     "frontmatter_extra_keys": frontmatter_extra_keys,
+    "frontmatter_matches_dirname": frontmatter_matches_dirname,
     "skill_entrypoint_present": skill_entrypoint_present,
+    "hook_handlers": hook_handlers,
     # Aliases for signal catalog naming
     "glob_match": file_exists,
     "max_line_count": line_count,

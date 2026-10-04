@@ -1,9 +1,8 @@
 """Unit tests for the 0.5.10 lint-pipeline scope correctness fixes.
 
 Covers:
-- `_strip_code_spans` in `core/lint/mechanical/checks_advanced.py` and the
-  mirror in `core/classify/link_walker.py` — `[text](path)` inside backticks
-  must not surface as a real link.
+- `extract_markdown_links` in `core/lint/mechanical/checks_advanced.py` —
+  `[text](path)` inside backticks must not surface as a real link.
 - `_resolve_glob_targets` in `core/lint/mechanical/checks.py` — `args.path`
   globs must honor `.ails/config.yml: exclude_dirs`.
 - `_relativize` in `core/lint/mechanical/runner.py` — paths under root
@@ -23,17 +22,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify.link_walker import (
-    _strip_code_spans as link_walker_strip,
-)
 from reporails_cli.core.lint.mechanical.checks import (
-    _exclude_cache,
     _get_target_files,
     _glob_cache,
     _resolve_glob_targets,
-)
-from reporails_cli.core.lint.mechanical.checks_advanced import (
-    _strip_code_spans as checks_advanced_strip,
 )
 from reporails_cli.core.lint.mechanical.checks_advanced import (
     extract_markdown_links,
@@ -45,40 +37,11 @@ from reporails_cli.core.lint.mechanical.runner import (
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
-# ── _strip_code_spans ─────────────────────────────────────────────────
+# ── links inside code ─────────────────────────────────────────────────
 
 
-class TestStripCodeSpans:
-    """Both extractors strip code spans so `[x](y)` inside backticks isn't a link."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_inline_code_removed(self) -> None:
-        text = "Outside `[skip](this)` outside."
-        out = checks_advanced_strip(text)
-        assert "[skip](this)" not in out
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_fenced_code_removed(self) -> None:
-        text = "Before\n```\n[skip](inside.md)\n```\nAfter"
-        out = checks_advanced_strip(text)
-        assert "[skip](inside.md)" not in out
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_plain_link_preserved(self) -> None:
-        text = "See [real](target.md) for details."
-        out = checks_advanced_strip(text)
-        assert "[real](target.md)" in out
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_link_walker_mirror_behaves_identically(self) -> None:
-        text = "Outside `[skip](this)` and a real [keep](here.md)."
-        a = checks_advanced_strip(text)
-        b = link_walker_strip(text)
-        assert a == b
+class TestLinksInsideCode:
+    """`[x](y)` inside backticks isn't a link."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -92,7 +55,7 @@ class TestStripCodeSpans:
         assert result.passed
         ann = (result.annotations or {}).get("discovered_markdown_links", [])
         # Only the real link survives; the in-backtick example is gone.
-        targets = [a.split("::", 1)[1] for a in ann]
+        targets = [a.split("::")[1] for a in ann]
         assert "path" not in targets
         assert "exists.md" in targets
 
@@ -117,7 +80,6 @@ class TestResolveGlobExcludeDirs:
 
         # Clear caches between tmp_path runs (cache key is per-root)
         _glob_cache.clear()
-        _exclude_cache.clear()
 
         results = _resolve_glob_targets("**/*.md", tmp_path)
         names = {p.name for p in results}
@@ -134,7 +96,6 @@ class TestResolveGlobExcludeDirs:
         (sub / "nested.md").write_text("# nested\n")
 
         _glob_cache.clear()
-        _exclude_cache.clear()
 
         results = _resolve_glob_targets("**/*.md", tmp_path)
         names = {p.name for p in results}
@@ -161,7 +122,6 @@ class TestGetTargetFilesNarrowing:
         other.write_text("# other\n")
 
         _glob_cache.clear()
-        _exclude_cache.clear()
 
         # Caller narrowed classified_files to other.md only — CLAUDE.md must
         # drop out of the glob result even though the `**/*.md` pattern matches it.
@@ -181,9 +141,8 @@ class TestGetTargetFilesNarrowing:
         lead.write_text("# clean lead\n")
 
         _glob_cache.clear()
-        _exclude_cache.clear()
 
-        cf = ClassifiedFile(path=lead, file_type="subagent", properties={})
+        cf = ClassifiedFile(path=lead, file_type="agents", properties={})
         result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
         assert result == [lead]
         assert tmp_path / "CLAUDE.md" not in result
@@ -196,7 +155,6 @@ class TestGetTargetFilesNarrowing:
         (tmp_path / "other.md").write_text("# other\n")
 
         _glob_cache.clear()
-        _exclude_cache.clear()
 
         result = _get_target_files({"path": "**/*.md"}, [], tmp_path)
         names = {p.name for p in result}
@@ -214,7 +172,6 @@ class TestGetTargetFilesNarrowing:
         notes.write_text("# notes\n")
 
         _glob_cache.clear()
-        _exclude_cache.clear()
 
         # Only CLAUDE.md is an instruction file; docs/notes.md isn't classified.
         cf = ClassifiedFile(path=claude_md, file_type="main", properties={})
@@ -328,8 +285,21 @@ class TestFirstClassifiedPath:
     def test_no_match_returns_none(self, tmp_path: Path) -> None:
         cf = ClassifiedFile(
             path=tmp_path / "x.md",
-            file_type="skill",
+            file_type="skills",
             properties={},
         )
         result = _first_classified_path([cf], tmp_path, "main")
         assert result is None
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_glob_targets_skip_the_built_in_excludes_and_local_config_excludes(tmp_path: Path) -> None:
+    for folder in ("build", "drafts", "docs"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "note.md").write_text("# note\n")
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.local.yml").write_text("exclude_dirs:\n  - drafts\n")
+    _glob_cache.clear()
+    found = {p.relative_to(tmp_path).as_posix() for p in _resolve_glob_targets("**/*.md", tmp_path)}
+    assert found == {"docs/note.md"}
