@@ -7,7 +7,6 @@ The API key is stored in ~/.reporails/credentials.yml (not in the project).
 from __future__ import annotations
 
 import logging
-import sys
 import time
 from pathlib import Path
 
@@ -83,27 +82,12 @@ def _write_credentials(api_key: str, github_login: str, tier: str) -> None:
     a fresh key is written. `fchmod` after opening forces 0600 either way,
     new file or existing.
     """
-    import os
+    from reporails_cli.core.platform.config.credentials import write_credentials_file
 
-    path = _credentials_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = yaml.dump(
+    write_credentials_file(
+        _credentials_path(),
         {"api_key": api_key, "github_login": github_login, "tier": tier},
-        default_flow_style=False,
     )
-    if sys.platform == "win32":
-        path.write_text(data, encoding="utf-8")
-        logger.warning("File permissions not enforced on Windows — secure %s manually", path)
-        return
-    path.parent.chmod(0o700)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.fchmod(fd, 0o600)  # the mode above only took effect if this call created the file
-    except BaseException:
-        os.close(fd)
-        raise
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(data)
 
 
 def _clear_credentials() -> None:
@@ -437,7 +421,8 @@ def status() -> None:
         # plainly instead of `@?` or a promise of a later resolution (only the
         # tier below is genuinely resolved later, by the server, on a check).
         console.print("  Authenticated with an API key [dim](no local identity on record)[/dim]")
-    console.print(f"  Tier: [bold]{tier_line}[/]")
+    suffix = " [dim](as of your last check or sign-in)[/dim]" if stored_tier in _DISPLAYABLE_TIERS else ""
+    console.print(f"  Tier: [bold]{tier_line}[/]{suffix}")
     console.print(f"  Key:  {prefix}")
     console.print(f"  Source: {source}\n")
 

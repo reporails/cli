@@ -229,6 +229,7 @@ class AilsClient:
         retry_after = getattr(response, "headers", {}).get("Retry-After")
         funnel_err = parse_error_body(status, response.text, retry_after)
         if funnel_err is not None:
+            self._remember_tier(funnel_err.tier)
             logger.log(
                 logging.WARNING if funnel_err.retryable else logging.DEBUG,
                 "Server returned %d %s for tier=%s",
@@ -240,6 +241,13 @@ class AilsClient:
             return funnel_err
         logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", status)
         return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
+
+    def _remember_tier(self, tier: str) -> None:
+        """Keep the stored tier in step with the tier a server reply named (stored key only)."""
+        if self.api_key:
+            from reporails_cli.core.platform.config.credentials import refresh_stored_tier
+
+            refresh_stored_tier(self.api_key, tier)
 
     def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
@@ -261,7 +269,9 @@ class AilsClient:
         try:
             resp = httpx.post(url, content=body, headers=headers, timeout=self.timeout)
             resp.raise_for_status()
-            return LintResponse(result=_deserialize_lint_result(resp.json()))
+            result = _deserialize_lint_result(resp.json())
+            self._remember_tier(result.tier)
+            return LintResponse(result=result)
         except httpx.TimeoutException:
             logger.warning("Remote diagnostic request timed out after %.1fs", self.timeout)
             return LintResponse(funnel_error=FunnelError(error="timeout", reset_in=DEFAULT_RETRY_AFTER_S))
