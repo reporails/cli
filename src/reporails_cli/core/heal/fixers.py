@@ -1,189 +1,201 @@
-"""Auto-fixers for deterministic violations.
+"""Section suggesters for missing-section findings.
 
-Each fixer appends a missing section to an instruction file.
-All fixers are idempotent — they check for the section before adding it.
+Each suggester turns an already-fired finding (constraints, commands, testing,
+headings, directory layout) into a `Suggestion` describing where the missing
+section belongs and what the rule asks it to hold. The finding that reaches a
+suggester already established the section is missing — via the deterministic
+pattern check or the content-query atom check that produced it — so a suggester
+does not re-derive that from the file text; it only names the fix. Nothing is
+written to disk — suggest, don't write.
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from reporails_cli.core.platform.dto.models import Violation
+from reporails_cli.core.discovery.walk import is_under
+from reporails_cli.core.platform.dto.models import ClassifiedFile, Rule, Violation
 
 
 @dataclass(frozen=True)
-class FixResult:
-    """Outcome of a successful auto-fix."""
+class Suggestion:
+    """A missing section a file's finding points at — not written."""
 
     rule_id: str
     file_path: str
+    section: str
     description: str
 
 
-# Type alias for fixer functions
-FixerFn = Callable[[Violation, Path], FixResult | None]
+# Type alias for suggester functions
+SuggesterFn = Callable[
+    [Violation, Path, "list[ClassifiedFile] | None", "dict[str, Rule] | None"],
+    "Suggestion | None",
+]
 
 
-def _resolve_file(violation: Violation, scan_root: Path) -> Path | None:
-    """Extract and resolve the file path from a violation location."""
-    loc = violation.location
-    file_part = loc.rsplit(":", 1)[0] if ":" in loc else loc
-    path = Path(file_part)
-    if path.is_absolute():
-        return path if path.is_file() else None
-    resolved = scan_root / path
-    return resolved if resolved.is_file() else None
+def _target_file_for_rule(
+    rule_id: str,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None,
+    rules: dict[str, Rule] | None,
+) -> Path | None:
+    """Resolve the file the rule's own `match.type` is about.
+
+    A missing-section suggestion names the file a human would actually add the
+    section to — the project's file of the rule's declared type. A rule with no
+    type restriction (a project-wide content rule) is a section rule too, so it
+    defaults to the project's main instruction file, same as an explicit
+    `match: {type: main}` rule. Returns None when the project has no file of
+    that type — the caller reports the absence instead of naming an unrelated
+    file the finding happened to be pinned to.
+    """
+    if not classified_files or not rules:
+        return None
+    rule = rules.get(rule_id)
+    match_type = rule.match.type if rule and rule.match else None
+    type_names = match_type if isinstance(match_type, list) else [match_type or "main"]
+    for type_name in type_names:
+        for cf in classified_files:
+            if cf.file_type != type_name:
+                continue
+            try:
+                if is_under(cf.path, scan_root):
+                    return cf.path
+            except (OSError, ValueError):
+                continue
+    return None
 
 
-def _ensure_trailing_newline(content: str) -> str:
-    """Ensure content ends with exactly one newline before appending."""
-    return content.rstrip("\n") + "\n\n"
+def _absent_target_label(rule_id: str, rules: dict[str, Rule] | None) -> str:
+    """Describe the missing target file instead of naming an unrelated one."""
+    match_type = None
+    if rules is not None:
+        rule = rules.get(rule_id)
+        match_type = rule.match.type if rule and rule.match else None
+    if isinstance(match_type, list):
+        match_type = match_type[0] if match_type else None
+    label = "main instruction file" if not match_type or match_type == "main" else f"{match_type} file"
+    return f"(no {label} in this project)"
 
 
 # ---------------------------------------------------------------------------
-# Fixer: CORE:C:0010 — Has Constraints and Pitfalls
+# Suggester: CORE:C:0019 — Explicit Prohibitions
 # ---------------------------------------------------------------------------
 
 
-def fix_add_constraints(violation: Violation, scan_root: Path) -> FixResult | None:
-    """Add a ## Constraints section if missing."""
-    fpath = _resolve_file(violation, scan_root)
-    if fpath is None:
-        return None
+def suggest_constraints(
+    violation: Violation,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> Suggestion | None:
+    """Suggest a ## Constraints section for a fired Explicit Prohibitions finding."""
+    fpath = _target_file_for_rule(violation.rule_id, scan_root, classified_files, rules)
+    file_path = _rel_path(fpath, scan_root) if fpath else _absent_target_label(violation.rule_id, rules)
 
-    content = fpath.read_text(encoding="utf-8")
-    if re.search(r"(?i)^## (constraint|pitfall|caveat|gotcha)", content, re.MULTILINE):
-        return None
-
-    fpath.write_text(
-        _ensure_trailing_newline(content) + "## Constraints\n\n- TODO: Add project constraints\n",
-        encoding="utf-8",
-    )
-    rel = _rel_path(fpath, scan_root)
-    return FixResult(
+    return Suggestion(
         rule_id=violation.rule_id,
-        file_path=rel,
-        description=f"Added ## Constraints section to {rel}",
+        file_path=file_path,
+        section="## Constraints",
+        description="State at least one explicit prohibition — a sentence telling the agent what not to do.",
     )
 
 
 # ---------------------------------------------------------------------------
-# Fixer: CORE:C:0003 — Has Commands
+# Suggester: CORE:C:0010 — Build And Test Commands
 # ---------------------------------------------------------------------------
 
 
-def fix_add_commands(violation: Violation, scan_root: Path) -> FixResult | None:
-    """Add a ## Commands section with placeholder if missing."""
-    fpath = _resolve_file(violation, scan_root)
-    if fpath is None:
-        return None
+def suggest_commands(
+    violation: Violation,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> Suggestion | None:
+    """Suggest a ## Commands section for a fired Build And Test Commands finding."""
+    fpath = _target_file_for_rule(violation.rule_id, scan_root, classified_files, rules)
+    file_path = _rel_path(fpath, scan_root) if fpath else _absent_target_label(violation.rule_id, rules)
 
-    content = fpath.read_text(encoding="utf-8")
-    # Rule passes if inline code command or shell prompt exists
-    if re.search(r"`[a-z]+ .+`", content) or re.search(r"\$ [a-z]+", content):
-        return None
-
-    section = "## Commands\n\n```bash\n# TODO: Add project commands\n```\n"
-    fpath.write_text(
-        _ensure_trailing_newline(content) + section,
-        encoding="utf-8",
-    )
-    rel = _rel_path(fpath, scan_root)
-    return FixResult(
+    return Suggestion(
         rule_id=violation.rule_id,
-        file_path=rel,
-        description=f"Added ## Commands section to {rel}",
+        file_path=file_path,
+        section="## Commands",
+        description="List the build and test commands the agent can run to verify its own changes.",
     )
 
 
 # ---------------------------------------------------------------------------
-# Fixer: CORE:C:0004 — Has Testing Conventions
+# Suggester: CORE:C:0005 — Testing Framework Documented
 # ---------------------------------------------------------------------------
 
 
-def fix_add_testing(violation: Violation, scan_root: Path) -> FixResult | None:
-    """Add a ## Testing section if missing."""
-    fpath = _resolve_file(violation, scan_root)
-    if fpath is None:
-        return None
+def suggest_testing(
+    violation: Violation,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> Suggestion | None:
+    """Suggest a ## Testing section for a fired Testing Framework Documented finding."""
+    fpath = _target_file_for_rule(violation.rule_id, scan_root, classified_files, rules)
+    file_path = _rel_path(fpath, scan_root) if fpath else _absent_target_label(violation.rule_id, rules)
 
-    content = fpath.read_text(encoding="utf-8")
-    if re.search(r"(?i)^## test", content, re.MULTILINE):
-        return None
-    if re.search(r"(?i)(pytest|jest|vitest|mocha|unittest|rspec)", content):
-        return None
-
-    fpath.write_text(
-        _ensure_trailing_newline(content) + "## Testing\n\n- TODO: Add test commands and conventions\n",
-        encoding="utf-8",
-    )
-    rel = _rel_path(fpath, scan_root)
-    return FixResult(
+    return Suggestion(
         rule_id=violation.rule_id,
-        file_path=rel,
-        description=f"Added ## Testing section to {rel}",
+        file_path=file_path,
+        section="## Testing",
+        description="Document the testing framework — which tool to use, where tests live, and how to run them.",
     )
 
 
 # ---------------------------------------------------------------------------
-# Fixer: CORE:C:0015 — Structured Sections
+# Suggester: CORE:S:0016 — Layered Content Structure
 # ---------------------------------------------------------------------------
 
 
-def fix_add_sections(violation: Violation, scan_root: Path) -> FixResult | None:
-    """Add basic ## headings if the file has zero level-2 headings."""
-    fpath = _resolve_file(violation, scan_root)
-    if fpath is None:
-        return None
+def suggest_sections(
+    violation: Violation,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> Suggestion | None:
+    """Suggest top-level headings for a fired Layered Content Structure finding."""
+    fpath = _target_file_for_rule(violation.rule_id, scan_root, classified_files, rules)
+    file_path = _rel_path(fpath, scan_root) if fpath else _absent_target_label(violation.rule_id, rules)
 
-    content = fpath.read_text(encoding="utf-8")
-    if re.search(r"^## ", content, re.MULTILINE):
-        return None
-
-    fpath.write_text(
-        _ensure_trailing_newline(content) + "## Overview\n\n## Getting Started\n",
-        encoding="utf-8",
-    )
-    rel = _rel_path(fpath, scan_root)
-    return FixResult(
+    return Suggestion(
         rule_id=violation.rule_id,
-        file_path=rel,
-        description=f"Added ## Overview and ## Getting Started sections to {rel}",
+        file_path=file_path,
+        section="Top-level headings (e.g. ## Overview, ## Getting Started)",
+        description=(
+            "Split the content under at least two top-level headings for its major topics, "
+            "so the agent can find a section instead of scanning a flat wall of text."
+        ),
     )
 
 
 # ---------------------------------------------------------------------------
-# Fixer: CORE:C:0002 — Has Project Structure
+# Suggester: CORE:C:0035 — Directory Layout Documented
 # ---------------------------------------------------------------------------
 
 
-def fix_add_structure(violation: Violation, scan_root: Path) -> FixResult | None:
-    """Add a ## Project Structure section if missing."""
-    fpath = _resolve_file(violation, scan_root)
-    if fpath is None:
-        return None
+def suggest_structure(
+    violation: Violation,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> Suggestion | None:
+    """Suggest a ## Project Structure section for a fired Directory Layout Documented finding."""
+    fpath = _target_file_for_rule(violation.rule_id, scan_root, classified_files, rules)
+    file_path = _rel_path(fpath, scan_root) if fpath else _absent_target_label(violation.rule_id, rules)
 
-    content = fpath.read_text(encoding="utf-8")
-    if re.search(r"(?i)^## (project )?structure", content, re.MULTILINE):
-        return None
-    if re.search(r"(?i)^## director", content, re.MULTILINE):
-        return None
-    if re.search(r"src/|tests/|docs/", content):
-        return None
-
-    section = "## Project Structure\n\n```\n# TODO: Add project directory layout\n```\n"
-    fpath.write_text(
-        _ensure_trailing_newline(content) + section,
-        encoding="utf-8",
-    )
-    rel = _rel_path(fpath, scan_root)
-    return FixResult(
+    return Suggestion(
         rule_id=violation.rule_id,
-        file_path=rel,
-        description=f"Added ## Project Structure section to {rel}",
+        file_path=file_path,
+        section="## Project Structure",
+        description="Show a directory tree or path references (e.g. src/, tests/) so the agent can place files.",
     )
 
 
@@ -191,43 +203,53 @@ def fix_add_structure(violation: Violation, scan_root: Path) -> FixResult | None
 # Registry
 # ---------------------------------------------------------------------------
 
-FIXERS: dict[str, FixerFn] = {
-    "CORE:C:0010": fix_add_constraints,
-    "CORE:C:0003": fix_add_commands,
-    "CORE:C:0004": fix_add_testing,
-    "CORE:C:0015": fix_add_sections,
-    "CORE:C:0002": fix_add_structure,
+SECTION_SUGGESTERS: dict[str, SuggesterFn] = {
+    "CORE:C:0019": suggest_constraints,  # Explicit Prohibitions
+    "CORE:C:0010": suggest_commands,  # Build And Test Commands
+    "CORE:C:0005": suggest_testing,  # Testing Framework Documented
+    "CORE:S:0016": suggest_sections,  # Layered Content Structure
+    "CORE:C:0035": suggest_structure,  # Directory Layout Documented
 }
 
 
-def apply_auto_fixes(violations: list[Violation], scan_root: Path) -> list[FixResult]:
-    """Apply all available auto-fixes. Returns list of successful fixes."""
-    results: list[FixResult] = []
+def suggest_missing_sections(
+    violations: list[Violation],
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> list[Suggestion]:
+    """Collect all available section suggestions. Returns list of suggestions found."""
+    results: list[Suggestion] = []
     for v in violations:
-        fix = apply_single_fix(v, scan_root)
-        if fix is not None:
-            results.append(fix)
+        suggestion = suggest_single_section(v, scan_root, classified_files, rules)
+        if suggestion is not None:
+            results.append(suggestion)
     return results
 
 
-def apply_single_fix(violation: Violation, scan_root: Path) -> FixResult | None:
-    """Apply a single fixer for one violation. Returns None if no fixer or fix failed."""
-    fixer = FIXERS.get(violation.rule_id)
-    if fixer is None:
+def suggest_single_section(
+    violation: Violation,
+    scan_root: Path,
+    classified_files: list[ClassifiedFile] | None = None,
+    rules: dict[str, Rule] | None = None,
+) -> Suggestion | None:
+    """Run a single suggester for one violation. Returns None if no suggester is keyed on the rule."""
+    suggester = SECTION_SUGGESTERS.get(violation.rule_id)
+    if suggester is None:
         return None
-    return fixer(violation, scan_root)
+    return suggester(violation, scan_root, classified_files, rules)
 
 
 def partition_violations(violations: list[Violation]) -> tuple[list[Violation], list[Violation]]:
-    """Split violations into (fixable, non_fixable) based on FIXERS registry."""
-    fixable: list[Violation] = []
-    non_fixable: list[Violation] = []
+    """Split violations into (suggestible, non_suggestible) based on SECTION_SUGGESTERS registry."""
+    suggestible: list[Violation] = []
+    non_suggestible: list[Violation] = []
     for v in violations:
-        if v.rule_id in FIXERS:
-            fixable.append(v)
+        if v.rule_id in SECTION_SUGGESTERS:
+            suggestible.append(v)
         else:
-            non_fixable.append(v)
-    return fixable, non_fixable
+            non_suggestible.append(v)
+    return suggestible, non_suggestible
 
 
 # ---------------------------------------------------------------------------
