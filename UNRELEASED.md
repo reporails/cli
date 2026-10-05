@@ -14,3 +14,4 @@
 
 - The new agent-detection tests pass on a machine with no model files.
 - The source type-checks for Windows again: the step that restricts the sign-in file's permissions is skipped where Windows has no such call.
+- The smoke suite passes on a runner without the model files: JSON output is parsed from stdout alone, and the two multi-target scan-count tests are skipped without the model.

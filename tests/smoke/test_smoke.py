@@ -128,7 +128,7 @@ def _check_json(path: Path, agent: str = "") -> dict:
         args.extend(["--agent", agent])
     result = runner.invoke(app, args)
     assert result.exit_code == 0, f"check failed (exit {result.exit_code}):\n{result.output}"
-    return json.loads(result.output)
+    return json.loads(result.stdout)
 
 
 def _check_text(path: Path, agent: str = "") -> str:
@@ -1234,7 +1234,7 @@ class TestHealCommand:
 
         result = runner.invoke(app, ["check", str(project), "--heal", "-f", "json"])
         assert result.exit_code in (0, None), f"heal json failed:\n{result.output}"
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert "auto_fixed" in data
         assert "summary" in data
 
@@ -1364,7 +1364,7 @@ class TestCheckFlags:
             ["check", str(project), "-f", "json", "--exclude-dirs", "vendor"],
         )
         assert result_excluded.exit_code == 0
-        excluded_data = json.loads(result_excluded.output)
+        excluded_data = json.loads(result_excluded.stdout)
         excluded_files = _finding_files(excluded_data)
         assert not any("vendor" in f for f in excluded_files), f"vendor dir not excluded: {excluded_files}"
 
@@ -1559,7 +1559,7 @@ class TestHealDryRun:
 
         result = runner.invoke(app, ["check", str(project), "--heal", "--dry-run", "-f", "json", "--agent", "claude"])
         assert result.exit_code in (0, None), f"dry-run heal json failed:\n{result.output}"
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert len(data.get("auto_fixed", [])) > 0, "dry-run should still list the fixes it would make"
 
     @pytest.mark.e2e
@@ -1576,7 +1576,7 @@ class TestHealDryRun:
         dry.mkdir()
         (dry / "CLAUDE.md").write_text(_HEALABLE)
         dry_result = runner.invoke(app, ["check", str(dry), "--heal", "--dry-run", "-f", "json", "--agent", "claude"])
-        dry_data = json.loads(dry_result.output)
+        dry_data = json.loads(dry_result.stdout)
         assert (dry / "CLAUDE.md").read_text() == _HEALABLE, "dry-run mutated the file"
 
         # Real project — must change and apply the same fixes.
@@ -1584,7 +1584,7 @@ class TestHealDryRun:
         real.mkdir()
         (real / "CLAUDE.md").write_text(_HEALABLE)
         real_result = runner.invoke(app, ["check", str(real), "--heal", "-f", "json", "--agent", "claude"])
-        real_data = json.loads(real_result.output)
+        real_data = json.loads(real_result.stdout)
         assert (real / "CLAUDE.md").read_text() != _HEALABLE, "real heal should mutate the file"
         assert len(dry_data.get("auto_fixed", [])) == len(real_data.get("auto_fixed", [])), (
             "dry-run preview count must match the real applied count"
@@ -1646,6 +1646,7 @@ class TestVariadicTargets:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
+    @requires_model
     def test_two_targets_both_scanned(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Two explicit file targets must both be scanned, with or without findings."""
         project = tmp_path / "project"
@@ -1656,12 +1657,13 @@ class TestVariadicTargets:
 
         result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
         assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
-        scanned = _scanned_file_count(json.loads(result.output))
+        scanned = _scanned_file_count(json.loads(result.stdout))
         assert scanned == 2, f"both explicit targets must be scanned, scanned {scanned}"
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
+    @requires_model
     def test_multi_target_excludes_untargeted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A third, discoverable-but-untargeted file must not appear when two targets are named."""
         project = tmp_path / "project"
@@ -1676,7 +1678,7 @@ class TestVariadicTargets:
 
         result = runner.invoke(app, ["check", "CLAUDE.md", "docs/CLAUDE.md", "-f", "json", "--agent", "claude"])
         assert result.exit_code == 0, f"variadic check failed:\n{result.output}"
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         files = _finding_files(data)
         assert not any("extra/CLAUDE.md" in f for f in files), f"untargeted file leaked in: {files}"
         scanned = _scanned_file_count(data)
