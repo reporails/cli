@@ -107,7 +107,7 @@ def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
         console.print(f"  {ns}: {', '.join(ids[:5])}{tail}")
 
 
-def _print_no_instruction_files(effective_agent: str, con: Console) -> None:
+def _print_no_instruction_files(effective_agent: str, con: Console, detected_agents: list[Any] | None = None) -> None:
     """Print the human message for a run that found nothing to check.
 
     Text surface only. The machine surfaces (`json` / `github`) render the same
@@ -120,6 +120,17 @@ def _print_no_instruction_files(effective_agent: str, con: Console) -> None:
     from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
 
     at = get_known_agents().get(effective_agent)
+    others = sorted(
+        {a.agent_type.id for a in detected_agents or () if a.agent_type.id not in (effective_agent, "generic")}
+    )
+    if others:
+        names = ", ".join(others)
+        con.print(
+            f"No instruction files found for {effective_agent}.\nLevel: L0 {LEVEL_LABELS[Level.L0]}\n\n"
+            f"[dim]This project has files for: {names}. "
+            f"Run with --agent {others[0]}, or: ails config set default_agent {others[0]}[/dim]"
+        )
+        return
     hint = at.instruction_patterns[0] if at else "AGENTS.md"
     article = "an" if hint[:1].upper() in "AEIOU" else "a"
     con.print(

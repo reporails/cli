@@ -238,7 +238,7 @@ def _emit_empty_run(state: CheckState) -> None:
             None,
         )
         return
-    _print_no_instruction_files(state.scope.effective_agent, console)
+    _print_no_instruction_files(state.scope.effective_agent, console, state.scope.detected)
 
 
 def _resolve_scope_at_target(state: CheckState) -> None:

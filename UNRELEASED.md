@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Check: a run pinned to one agent that finds none of its files now names the other agents the project has files for and how to check them, instead of asking for that agent's file.
+
 ### Removed
 
 ### Internal
