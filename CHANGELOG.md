@@ -363,7 +363,7 @@
 - Sign-in: when the website refuses `ails auth login`, the CLI says why and what to do, and when the website does not answer it says to try again, instead of a raw HTTP error or a traceback. When GitHub sign-in cannot create an account because the email is already in use, `ails auth login` points you to reporails.com/contact.
 - Sign-in: `ails auth status` shows the plan your last check saw, so a new Pro subscription (or a cancellation) shows there after your next check, rather than the plan you had when you signed in.
 - Check: a project whose only instructions are Antigravity rules in `.agents/rules/` is found and checked, with or without `--agent`.
-- Check: a run pinned to one agent that finds none of its files now names the other agents the project has files for and how to check them, instead of asking for that agent's file.
+- Check: a whole-project run set to one agent (with `--agent` or `default_agent`) that finds none of that agent's files now names the other agents the project has files for and how to check them, instead of asking for that agent's file; a check of an empty folder keeps its usual message.
 
 ### Removed
 
@@ -392,6 +392,7 @@
 - `ails test` passes on a fresh clone: the source files three path-scope rule fixtures need are tracked.
 - The unit suite ends without failures on a machine with no model files: the tests that need no model run without it.
 - The tests that need the model files pass where the models are installed: the two-agent check test and the heal smoke fixture follow the current behaviour.
+- The test suites pass on a machine without the model files and skip exactly the tests that need it, as on CI; the source type-checks for Windows again.
 - The source archive carries tracked source only: no cache, project-settings or scratch folders. The GitHub Action's `version` input says what an empty value installs, and the Action's own test asserts that a minimum-score gate fails when the diagnostics service is unreachable.
 
 - Code structure, module layout, docstrings and comments tidied and unused code removed; tests, test tooling, build, CI and release checks expanded and tightened; maintainer tooling for development checkouts; the published package and source archive no longer include build-machine leftovers, local-only test data or maintainer scripts. No change in behavior or output. Comments and docstrings in the source, the tests, the workflows and the scripts describe what the code does.
