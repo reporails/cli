@@ -289,7 +289,6 @@ def run_content_quality_checks(
     project_dir: Path,
     instruction_files: list[Path] | None = None,
     agent: str = "",
-    skills: Mapping[str, str] | None = None,
 ) -> list[LocalFinding]:
     """Run content-quality checks (type=content_query) against RulesetMap atoms.
 
@@ -298,6 +297,7 @@ def run_content_quality_checks(
     """
     from reporails_cli.core.classify import classify_files, load_file_types
     from reporails_cli.core.lint.content_checker import run_content_checks
+    from reporails_cli.core.mapper.skills import skill_membership
     from reporails_cli.core.platform.adapters.registry import load_rules
     from reporails_cli.core.platform.config.config import get_project_config
     from reporails_cli.core.platform.dto.ruleset import RulesetMap as _RulesetMap
@@ -320,7 +320,11 @@ def run_content_quality_checks(
             generic_scanning = False
             exclude_files = None
         classified = classify_files(
-            project_dir, instruction_files, file_types, generic_scanning=generic_scanning, skills=skills
+            project_dir,
+            instruction_files,
+            file_types,
+            generic_scanning=generic_scanning,
+            skills=skill_membership(ruleset_map),
         )
         classified = _drop_excluded(classified, exclude_files, project_dir, keep=instruction_files)
 

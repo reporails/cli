@@ -23,6 +23,7 @@ from reporails_cli.core.discovery.read_gates import apply_read_gate
 from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
+from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 
 def available_capabilities(agent: str, project_root: Path | None = None) -> list[str]:
@@ -430,22 +431,12 @@ def _decl_location_matches(
     in_ancestor_chain = parent == project_root
 
     if scope == "global" and loading == "session_start":
-        if _is_loose_leaf_pattern(matched_pattern):
+        if is_loose_leaf_pattern(matched_pattern):
             return in_ancestor_chain
         return True
     if scope == "nested":
         return not in_ancestor_chain
     return True
-
-
-def _is_loose_leaf_pattern(pattern: str) -> bool:
-    """Pattern that can match a file at any directory depth.
-
-    Mirrors `core.classify._is_loose_leaf_pattern`.
-    """
-    if pattern.startswith("**/"):
-        return True
-    return "/" not in pattern and "**" not in pattern
 
 
 def _name_extractor_for(capability: str) -> Callable[[Path], str]:

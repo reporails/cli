@@ -34,6 +34,12 @@ file_types:
         precedence: project
         vcs: committed
         maintainer: human
+      user:
+        # https://code.visualstudio.com/docs/copilot/customization/custom-instructions#instructions-file-locations: "Use `~/.copilot/copilot-instructions.md`."
+        patterns: ["~/.copilot/copilot-instructions.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
 
   agents_md:
     # AGENTS.md cross-agent read — directory tree walking, nearest ancestor wins.
@@ -91,6 +97,13 @@ file_types:
         precedence: user
         vcs: external
         maintainer: human
+      user_copilot:
+        # https://code.visualstudio.com/docs/copilot/customization/custom-instructions#instructions-file-locations: "Agent Host user, Copilot format: `~/.copilot/instructions`" (files follow the `.instructions.md` naming)
+        # Same page: "VS Code searches these folders recursively".
+        patterns: ["~/.copilot/instructions/**/*.instructions.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
 
   skills:
     # Custom skill discovery paths configurable via chat.agentSkillsLocations.
@@ -109,8 +122,9 @@ file_types:
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.copilot/skills/**/*.md", "~/.agents/skills/**/*.md"]
-        entry_patterns: ["~/.copilot/skills/*/SKILL.md", "~/.agents/skills/*/SKILL.md"]
+        # https://code.visualstudio.com/docs/copilot/customization/agent-skills#create-a-skill: "`~/.copilot/skills/`, `~/.claude/skills/`, `~/.agents/skills/`"
+        patterns: ["~/.copilot/skills/**/*.md", "~/.claude/skills/**/*.md", "~/.agents/skills/**/*.md"]
+        entry_patterns: ["~/.copilot/skills/*/SKILL.md", "~/.claude/skills/*/SKILL.md", "~/.agents/skills/*/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human
@@ -124,12 +138,47 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".github/agents/*.agent.md", ".claude/agents/*.md"]
+        # https://code.visualstudio.com/docs/copilot/customization/custom-agents#custom-agent-file-locations: "VS Code detects any `.md` files in the `.github/agents` folder of your workspace as custom agents."
+        patterns: [".github/agents/*.agent.md", ".github/agents/*.md", ".claude/agents/*.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.copilot/agents/*.agent.md"]
+        # https://code.visualstudio.com/docs/copilot/customization/custom-agents#custom-agent-file-locations: "User: `~/.copilot/agents` or `~/.claude/agents`" (`.md` for the Claude format)
+        patterns: ["~/.copilot/agents/*.agent.md", "~/.claude/agents/*.md"]
+        precedence: user
+        vcs: external
+        maintainer: human
+
+  config:
+    # VS Code settings (chat.* and github.copilot.* namespaces), plus the Copilot
+    # settings files that carry a top-level `hooks` field. Declared before `hooks`:
+    # the classifier takes the first matching declaration, and the settings file is a
+    # config surface (see claude/config.yml).
+    source: https://code.visualstudio.com/docs/copilot/reference/copilot-settings
+    format: schema_validated
+    scope: global
+    cardinality: singleton
+    lifecycle: static
+    loading: session_start
+    scopes:
+      project:
+        patterns: [".vscode/settings.json", ".github/copilot/settings.json"]
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "the hooks field at the top level of .github/copilot/settings.json (Git committed)"
+        precedence: project
+        vcs: committed
+        maintainer: human
+      local:
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "the hooks field at the top level of .github/copilot/settings.local.json"
+        patterns: [".github/copilot/settings.local.json"]
+        precedence: user
+        vcs: gitignored
+        maintainer: human
+        cardinality: optional
+        lifecycle: mutable
+      user:
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "the hooks field at the top level of ~/.copilot/settings.json"
+        patterns: ["~/.copilot/settings.json"]
         precedence: user
         vcs: external
         maintainer: human
@@ -148,6 +197,18 @@ file_types:
         precedence: project
         vcs: committed
         maintainer: human
+      user:
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "*.json files in the user-level hooks directory. By default this is ~/.copilot/hooks/"
+        patterns: ["~/.copilot/hooks/*.json"]
+        precedence: user
+        vcs: external
+        maintainer: human
+      managed:
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#policy-hooks: "Linux/macOS: /etc/github-copilot/policy.d/*.json"
+        patterns: ["/etc/github-copilot/policy.d/*.json"]
+        precedence: managed
+        vcs: external
+        maintainer: system
 
   prompts:
     # Reusable prompt templates — manually invoked, not auto-applied.
@@ -174,21 +235,6 @@ file_types:
     scopes:
       project:
         patterns: [".vscode/mcp.json"]
-        precedence: project
-        vcs: committed
-        maintainer: human
-
-  config:
-    # VS Code settings (chat.* and github.copilot.* namespaces)
-    source: https://code.visualstudio.com/docs/copilot/reference/copilot-settings
-    format: schema_validated
-    scope: global
-    cardinality: singleton
-    lifecycle: static
-    loading: session_start
-    scopes:
-      project:
-        patterns: [".vscode/settings.json"]
         precedence: project
         vcs: committed
         maintainer: human

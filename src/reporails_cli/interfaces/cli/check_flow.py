@@ -447,12 +447,11 @@ def _run_content_checks(state: CheckState) -> None:
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks
 
-    skills = skill_membership(state.pipeline.ruleset_map)
     state.pipeline.content_findings = [
         finding
         for agent_id, files in _agent_file_pairs(state)
         for finding in run_content_quality_checks(
-            state.pipeline.ruleset_map, state.targets.target, files, agent=agent_id, skills=skills
+            state.pipeline.ruleset_map, state.targets.target, files, agent=agent_id
         )
     ]
     state.pipeline.client_findings = run_client_checks(state.pipeline.ruleset_map)

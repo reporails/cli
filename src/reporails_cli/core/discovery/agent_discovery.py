@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from reporails_cli.core.discovery.walk import list_dir, walk_glob, walk_markdown
+from reporails_cli.core.platform.utils.utils import config_pattern_matches
 from reporails_cli.core.platform.utils.utils import matches_any_glob as _matches_any_glob
 
 if TYPE_CHECKING:
@@ -463,25 +464,12 @@ def is_memory_recall_entry(file_type: str, filename: str) -> bool:
     return file_type in MEMORY_SURFACES and filename != MEMORY_INDEX_FILENAME
 
 
-def expand_home_pattern(pattern: str) -> str:
-    """A `~`-rooted glob pattern with `~` resolved to the user's home directory.
-
-    The same `Path.expanduser()` this module already uses to resolve a
-    `~`-rooted file_type pattern on disk (`_glob_external`,
-    `_glob_directory_entries`) applied to a pattern a *matcher* compares
-    against an already-discovered file's path, so a file outside the scan
-    root — whose relative path falls back to its absolute path string —
-    still matches the `~`-rooted pattern that found it. A pattern with no
-    leading `~` is returned unchanged.
-    """
-    return str(Path(pattern).expanduser()) if pattern.startswith("~") else pattern
-
-
 def _run_descendant_recursive(target: Path, pattern: str, nested: bool, exclude_dirs: frozenset[str]) -> list[Path]:
     """Descendant walk for **/<leaf> patterns.
 
     `nested` (scope: nested) excludes cwd itself — those files belong to the
-    eager file_type (main) discovered via ancestor walk.
+    eager file_type (main) discovered via ancestor walk. The walk finds the leaf name;
+    only files whose path matches the whole pattern are kept.
     """
     parts = Path(pattern).parts
     filename = parts[-1] if parts else ""
@@ -496,7 +484,12 @@ def _run_descendant_recursive(target: Path, pattern: str, nested: bool, exclude_
     results = walk_glob(walk_root, filename, exclude_dirs)
     if nested:
         results = [m for m in results if m.parent != target]
-    return [m for m in results if not is_excluded(m, target, exclude_dirs)]
+    return [
+        m
+        for m in results
+        if not is_excluded(m, target, exclude_dirs)
+        and config_pattern_matches(m.relative_to(target).as_posix(), pattern)
+    ]
 
 
 def glob_file_type_patterns(

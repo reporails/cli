@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import ListedEntry, list_dir
+from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 PLUGIN_SCOPE = "plugin"
 
@@ -142,3 +143,14 @@ def matches_plugin_pattern(path: Path, scan_root: Path, pattern: str, match: Any
         return False
     relative = plugin_relative_path(path, scan_root, marker)
     return relative is not None and bool(match(relative, rest))
+
+
+def config_pattern_hits(file_path: Path, rel: str, pattern: str, scan_root: Path) -> bool:
+    """Whether a declared config pattern matches the file at `rel`; a plugin component pattern
+    instead matches the file's path from the plugin root it sits under."""
+
+    def match(subject: str, pat: str) -> bool:
+        return config_pattern_matches(subject, pat, full_path=file_path.as_posix())
+
+    plugin_hit = matches_plugin_pattern(file_path, scan_root, pattern, match)
+    return match(rel, pattern) if plugin_hit is None else plugin_hit

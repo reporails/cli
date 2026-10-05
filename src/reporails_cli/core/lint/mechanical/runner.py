@@ -11,11 +11,40 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import is_under
-from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, _get_target_files
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
+
+
+def run_mechanical_check(
+    check: Check,
+    root: Path,
+    classified_files: list[ClassifiedFile],
+    extra_args: dict[str, Any] | None = None,
+    match_type: str | list[str] | None = None,
+) -> CheckResult | None:
+    """Run one mechanical check; the single owner of arg assembly and check lookup.
+
+    Args are `extra_args` (upstream annotations) under the check's own `args`, so a
+    check.yml entry always wins. `match_type` is the rule's match type, injected so the
+    check scopes to the rule's file targets unless `_targets` is given.
+
+    Returns None when the check is `entry_only` and no skill entry file is in scope:
+    it has nothing to judge, so it is not applicable. Raises KeyError for an unknown check.
+    """
+    fn = MECHANICAL_CHECKS[check.check or ""]
+    args: dict[str, Any] = {}
+    if extra_args:
+        args.update(extra_args)
+    args.update(check.args or {})
+    if match_type and "_targets" not in args:
+        args["_match_type"] = match_type
+    if args.get("entry_only") and not _get_target_files(args, classified_files, root):
+        return None
+    result: CheckResult = fn(root, args, classified_files)
+    return result
 
 
 def dispatch_single_check(
@@ -45,24 +74,16 @@ def dispatch_single_check(
     if not check.check:
         return None, None
 
-    fn = MECHANICAL_CHECKS.get(check.check)
-    if fn is None:
+    match_type = rule.match.type if rule.match is not None else None
+    try:
+        result = run_mechanical_check(check, root, classified_files, extra_args, match_type)
+    except KeyError:
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
-
-    args: dict[str, Any] = {}
-    if extra_args:
-        args.update(extra_args)
-    args.update(check.args or {})
-
-    # Inject rule match type so checks can scope to the rule's file targets.
-    if rule.match is not None and rule.match.type and "_targets" not in args:
-        args["_match_type"] = rule.match.type
-
-    try:
-        result = fn(root, args, classified_files)
     except Exception:  # mechanical checks are plugin-like; any failure caught and logged
         logger.exception("Mechanical check %s failed for rule %s", check.check, rule.id)
+        return None, None
+    if result is None:
         return None, None
 
     passed = result.passed if check.expect == "present" else not result.passed

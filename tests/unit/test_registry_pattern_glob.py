@@ -9,28 +9,28 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.classify.file_tags import classify_file
-from reporails_cli.core.mapper.inspect import _pattern_matches
+from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_star_does_not_cross_a_directory_boundary() -> None:
-    assert _pattern_matches(".claude/rules/a.md", ".claude/rules/*.md")
-    assert not _pattern_matches(".claude/rules/sub/a.md", ".claude/rules/*.md")
+    assert config_pattern_matches(".claude/rules/a.md", ".claude/rules/*.md", ignore_case=True)
+    assert not config_pattern_matches(".claude/rules/sub/a.md", ".claude/rules/*.md", ignore_case=True)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_directory_pattern_names_markdown_files_at_any_depth_under_it() -> None:
-    assert _pattern_matches(".claude/agent-memory/bot/notes.md", ".claude/agent-memory/*/")
-    assert _pattern_matches(".claude/agent-memory/bot/deep/notes.md", ".claude/agent-memory/*/")
-    assert not _pattern_matches(".claude/agent-memory/bot/notes.txt", ".claude/agent-memory/*/")
+    assert config_pattern_matches(".claude/agent-memory/bot/notes.md", ".claude/agent-memory/*/", ignore_case=True)
+    assert config_pattern_matches(".claude/agent-memory/bot/deep/notes.md", ".claude/agent-memory/*/", ignore_case=True)
+    assert not config_pattern_matches(".claude/agent-memory/bot/notes.txt", ".claude/agent-memory/*/", ignore_case=True)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_match_ignores_case() -> None:
-    assert _pattern_matches("Docs/CLAUDE.MD", "**/claude.md")
+    assert config_pattern_matches("Docs/CLAUDE.MD", "**/claude.md", ignore_case=True)
 
 
 @pytest.mark.unit
@@ -41,7 +41,8 @@ def test_match_ignores_case() -> None:
         (".gemini/extensions/tool/readme.md", "config"),
         ("pkg/.GEMINI/Extensions/x/y.md", "config"),
         ("/abs/proj/.claude/settings.json", "config"),
-        ("pkg/agents/openai.yaml", "config"),
+        ("pkg/.agents/skills/foo/agents/openai.yaml", "config"),
+        ("docs/agents/openai.yaml", "file"),
         ("docs/readme.md", "file"),
     ],
 )

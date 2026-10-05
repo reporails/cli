@@ -202,10 +202,10 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
     type, and stays `skills` only when it sits at or below a recorded skill folder.
     """
     from reporails_cli.core.mapper.inspect import file_type_of
-    from reporails_cli.core.mapper.skills import outermost_folder
+    from reporails_cli.core.mapper.skills import skill_type
 
     ruleset_files = inp.ruleset_map.files if inp.ruleset_map is not None else ()
-    skill_folders = {Path(f.skill) for f in ruleset_files if f.skill}
+    skill_folders = {safe_resolve(Path(f.skill)) for f in ruleset_files if f.skill}
     type_by_path: dict[Path, str] = {safe_resolve(Path(f.path)): f.type for f in ruleset_files}
 
     def _typed(path: str) -> str:
@@ -213,10 +213,7 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
         mapped = type_by_path.get(safe_resolve(p))
         if mapped is not None:
             return str(mapped)
-        base = file_type_of(p, inp.scan_root, registry)
-        if base == "skills" and outermost_folder(p, skill_folders) is None:
-            return "generic"
-        return base
+        return skill_type(file_type_of(p, inp.scan_root, registry), safe_resolve(p), skill_folders)
 
     return _typed
 

@@ -94,9 +94,10 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".agents/skills/**/*.md"]
+        # https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills: "Current working directory: where you launch Codex."
+        patterns: [".agents/skills/**/*.md", "**/.agents/skills/**/*.md"]
         # Codex documents only <skills root>/<skill-name>/SKILL.md (one level).
-        entry_patterns: [".agents/skills/*/SKILL.md"]
+        entry_patterns: [".agents/skills/*/SKILL.md", "**/.agents/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -118,7 +119,7 @@ file_types:
         maintainer: system
 
   skill_metadata:
-    # Per-skill optional: zero or one openai.yaml per skill
+    # Per-skill optional: zero or one openai.yaml per skill, inside the skill folder
     source: https://learn.chatgpt.com/docs/build-skills
     format: schema_validated
     scope: task_scoped
@@ -127,10 +128,23 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: ["**/agents/openai.yaml"]
+        # https://learn.chatgpt.com/docs/build-skills#optional-metadata: "`agents/openai.yaml` Optional: appearance and dependencies"
+        patterns: [".agents/skills/*/agents/openai.yaml", "**/.agents/skills/*/agents/openai.yaml"]
         precedence: project
         vcs: committed
         maintainer: human
+      user:
+        patterns: ["~/.agents/skills/*/agents/openai.yaml", "~/.codex/skills/*/agents/openai.yaml"]
+        precedence: user
+        vcs: external
+        maintainer: human
+      system:
+        patterns:
+          - "/etc/codex/skills/*/agents/openai.yaml"
+          - "C:/ProgramData/OpenAI/Codex/skills/*/agents/openai.yaml"
+        precedence: managed
+        vcs: external
+        maintainer: system
 
   agents:
     source: https://learn.chatgpt.com/docs/agent-configuration/subagents
@@ -219,6 +233,12 @@ file_types:
         vcs: external
         maintainer: human
         cardinality: singleton
+      system:
+        # https://learn.chatgpt.com/docs/enterprise/managed-configuration#locations: "Linux/macOS (Unix): `/etc/codex/managed_config.toml`"
+        patterns: ["/etc/codex/managed_config.toml"]
+        precedence: managed
+        vcs: external
+        maintainer: system
 
   mcp:
     # MCP servers in [mcp_servers.<id>] tables. Both user and project config.toml

@@ -15,10 +15,10 @@ import yaml
 
 from reporails_cli.core.classify.content_format import detect_content_format
 from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
-from reporails_cli.core.discovery.plugin_roots import matches_plugin_pattern
+from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 from reporails_cli.core.platform.policy.matching import match_files
-from reporails_cli.core.platform.utils.utils import glob_matches, load_yaml_file
+from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_loose_leaf_pattern, load_yaml_file
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +143,7 @@ def _parse_file_types(data: dict[str, object]) -> list[FileTypeDeclaration]:
                 patterns=tuple(str(p) for p in patterns),
                 required=spec.get("required", False),
                 properties=props,
+                entry_patterns=tuple(str(p) for p in _extract_patterns(spec, "entry_patterns")),
             )
         )
     return declarations
@@ -183,26 +184,6 @@ def _compute_ancestor_chain(scan_root: Path) -> set[Path]:
     return chain
 
 
-def _is_loose_leaf_pattern(pattern: str) -> bool:
-    """Pattern that can match a file at ANY directory depth.
-
-    A "loose" pattern is either a bare filename (e.g. `CLAUDE.md`) or starts
-    with `**/` (e.g. `**/CLAUDE.md`). Such patterns are location-ambiguous —
-    the same file matches them whether it lives at cwd, an ancestor, or a
-    descendant. These need ancestor-chain disambiguation to distinguish
-    `main` (eager) from `nested_context` (on-demand).
-
-    Path-prefixed patterns (e.g. `.github/copilot-instructions.md`,
-    `.claude/rules/**/*.md`) are NOT loose — the path prefix already
-    constrains where the file lives, so no further disambiguation is
-    needed.
-    """
-    if pattern.startswith("**/"):
-        return True
-    # Bare leaf with no path separators
-    return "/" not in pattern and "**" not in pattern
-
-
 def _location_matches_mode(
     file_path: Path,
     ft: FileTypeDeclaration,
@@ -233,25 +214,12 @@ def _location_matches_mode(
     if scope == "global" and loading == "session_start":
         # Only enforce ancestor-chain for loose leaf patterns; path-prefixed
         # patterns already pin the file's location via the pattern itself.
-        if _is_loose_leaf_pattern(matched_pattern):
+        if is_loose_leaf_pattern(matched_pattern):
             return in_ancestor_chain
         return True
     if scope == "nested":
         return not in_ancestor_chain
     return True
-
-
-def _pattern_hits(file_path: Path, rel: str, pattern: str, scan_root: Path) -> bool:
-    """`_pattern_matches_one` for `rel`; a plugin component pattern instead matches the
-    file's path from the plugin root it sits under (see `core.discovery.plugin_roots`)."""
-    plugin_hit = matches_plugin_pattern(file_path, scan_root, pattern, _pattern_matches_one)
-    if plugin_hit is not None:
-        return plugin_hit
-    if pattern.startswith("~"):
-        # A user-level pattern names a place under the home directory, so it matches the
-        # file's full path even when the scan root is that user-level folder itself.
-        return _pattern_matches_one(file_path.as_posix(), pattern)
-    return _pattern_matches_one(rel, pattern)
 
 
 def _with_skill_folder(
@@ -261,6 +229,7 @@ def _with_skill_folder(
     props = dict(ft.properties)
     if ft.name == "skills" and skills is not None:
         props["skill"] = skills[str(file_path)]
+        props["skill_entry_patterns"] = list(ft.entry_patterns)
     return props
 
 
@@ -286,7 +255,7 @@ def _classify_one(
             (
                 pattern
                 for pattern in ft.patterns
-                if _pattern_hits(file_path, rel, pattern, scan_root)
+                if config_pattern_hits(file_path, rel, pattern, scan_root)
                 and _location_matches_mode(file_path, ft, ancestor_chain, pattern)
             ),
             None,
@@ -438,34 +407,8 @@ def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | N
 
     Used by `_matches_any_pattern` and by callers that only need "does any
     pattern match", with no location-mode disambiguation. `classify_files`
-    itself calls `_pattern_matches_one` directly so a pattern that matches
+    itself calls `config_pattern_matches` directly so a pattern that matches
     but fails the location check does not block a later pattern of the
     same file_type from getting a turn.
     """
-    return next((pattern for pattern in patterns if _pattern_matches_one(rel_path, pattern)), None)
-
-
-def _pattern_matches_one(rel_path: str, pattern: str) -> bool:
-    """Whether `pattern` matches `rel_path`.
-
-    Trailing-slash patterns (`.claude/agent-memory/*/`) name a directory
-    glob whose contents are the file_type's instances; they expand to
-    `<dir>**/*.md` for match purposes so memory entry files inside the
-    directory tag with the capability's file_type.
-
-    A `~`-rooted pattern (`~/.claude/CLAUDE.md`, `~/.claude/projects/*/memory/`)
-    is resolved to an absolute path before matching — `rel_path` for a file
-    outside the scan root is already its absolute path string, so the raw
-    `~` component never matches it without expansion.
-
-    A location-pinned pattern (one that names a path, i.e. is not a loose
-    leaf — see `_is_loose_leaf_pattern`) is anchored at the scan root: it
-    must match `rel_path` in full, never just its trailing components, so
-    `.claude/CLAUDE.md` does not match a deeper file like `pkg/.claude/CLAUDE.md`.
-    An already-absolute pattern (a resolved `~`-pattern) always matches the whole path.
-    """
-    from reporails_cli.core.discovery.agent_discovery import expand_home_pattern
-
-    clean = pattern.removeprefix("./")
-    expanded = expand_home_pattern(clean + "**/*.md" if clean.endswith("/") else clean)
-    return glob_matches(rel_path, expanded, anchored=not _is_loose_leaf_pattern(clean))
+    return next((pattern for pattern in patterns if config_pattern_matches(rel_path, pattern)), None)

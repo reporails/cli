@@ -108,6 +108,7 @@ class FileTypeDeclaration(BaseModel):
     patterns: tuple[str, ...]  # glob patterns
     required: bool = False
     properties: dict[str, str | list[str]] = Field(default_factory=dict)
+    entry_patterns: tuple[str, ...] = ()  # where an instance's entry file sits (a skill's SKILL.md)
 
 
 class ClassifiedFile(BaseModel):

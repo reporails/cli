@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.platform.utils.utils import glob_matches, load_yaml_file, read_frontmatter_file
+from reporails_cli.core.platform.utils.utils import config_pattern_matches, load_yaml_file, read_frontmatter_file
 
 logger = logging.getLogger(__name__)
 
@@ -127,15 +127,8 @@ def _file_type_patterns_and_props(ft: Any) -> tuple[list[str], dict[str, Any]]:
     return _extract_patterns(ft), props
 
 
-def _pattern_matches(rel: str, pattern: str) -> bool:
-    """Whether a registry pattern matches a relative path, ignoring case. A directory
-    pattern (`.claude/agent-memory/*/`) names the `.md` files inside the directories it matches.
-    A `~`-rooted pattern (`~/.claude/CLAUDE.md`) is resolved to an absolute path before matching —
-    `rel` for a file outside `root` is already its absolute path."""
-    from reporails_cli.core.discovery.agent_discovery import expand_home_pattern
-
-    expanded = expand_home_pattern(pattern + "**/*.md" if pattern.endswith("/") else pattern)
-    return glob_matches(rel.lower(), expanded.lower(), anchored=True)
+def _match_lower(rel: str, pattern: str) -> bool:
+    return config_pattern_matches(rel, pattern, ignore_case=True, anchor_loose_leaf=True)
 
 
 def _plugin_match_specificity(patterns: list[str], path: Path | None, root: Path | None) -> int | None:
@@ -148,7 +141,7 @@ def _plugin_match_specificity(patterns: list[str], path: Path | None, root: Path
     best: int | None = None
     for pat in patterns:
         split = split_plugin_pattern(pat)
-        if split is None or not matches_plugin_pattern(path, root, pat, _pattern_matches):
+        if split is None or not matches_plugin_pattern(path, root, pat, _match_lower):
             continue
         specificity = len(split[1].split("*")[0])
         best = specificity if best is None else max(best, specificity)
@@ -208,7 +201,13 @@ def _find_best_registry_match(
                 pat_lower = pat.lower()
                 if pat_lower.startswith("**/") and not below_root and _is_nested(props):
                     continue
-                if not _pattern_matches(rel_lower, pat):
+                if not config_pattern_matches(
+                    rel_lower,
+                    pat,
+                    full_path=path.as_posix() if path is not None else None,
+                    ignore_case=True,
+                    anchor_loose_leaf=True,
+                ):
                     continue
                 specificity = len(pat_lower.split("*")[0])
                 if pat_lower.startswith("**/") and below_root and _is_eager_global(props):

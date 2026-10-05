@@ -182,3 +182,31 @@ def test_agents_in_an_excluded_folder_are_dropped() -> None:
     kept = filter_agents_by_exclude_dirs([agent], root, frozenset({"scratch"}))
     assert [a.instruction_files for a in kept] == [[root / "CLAUDE.md"]]
     assert filter_agents_by_exclude_dirs([agent], root, frozenset()) == [agent]
+
+
+# --- glob_file_type_patterns path-pinned ** patterns ------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_pinned_recursive_patterns_match_the_whole_pattern(tmp_path: Path) -> None:
+    """`**/<dir>/.../<file>` keeps only files whose path matches the whole pattern, while a
+    bare `**/<leaf>` still finds the leaf anywhere."""
+    for rel in (
+        "docs/agents/openai.yaml",
+        ".agents/skills/foo/agents/openai.yaml",
+        "apps/web/.cursor/BUGBOT.md",
+        "docs/BUGBOT.md",
+        "pkg/CLAUDE.md",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x")
+    nested = {"scope": "nested"}
+
+    def found(pattern: str) -> set[str]:
+        res = ad.glob_file_type_patterns(tmp_path, [pattern], nested, DEFAULT_EXCLUDE_DIRS)
+        return {p.relative_to(tmp_path).as_posix() for p in res}
+
+    assert found("**/.agents/skills/*/agents/openai.yaml") == {".agents/skills/foo/agents/openai.yaml"}
+    assert found("**/.cursor/BUGBOT.md") == {"apps/web/.cursor/BUGBOT.md"}
+    assert found("**/CLAUDE.md") == {"pkg/CLAUDE.md"}

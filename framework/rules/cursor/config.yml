@@ -62,6 +62,7 @@ file_types:
     # alwaysApply (always loaded), intelligent (agent decides), globs (file-scoped),
     # manual (@-mention only). globs frontmatter makes this path_scoped — the
     # path filter is in-file, not just at the surface level.
+    # https://cursor.com/docs/rules#project-rules: "A plain `.md` file in `.cursor/rules` is ignored by the rules system"
     source: https://cursor.com/docs/rules
     format: [frontmatter, freeform]
     scope: path_scoped
@@ -72,7 +73,7 @@ file_types:
     loading: on_demand
     scopes:
       project:
-        patterns: [".cursor/rules/**/*.mdc", ".cursor/rules/**/*.md"]
+        patterns: [".cursor/rules/**/*.mdc"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -96,6 +97,8 @@ file_types:
   skills:
     # Primary directories per docs: .agents/skills and .cursor/skills. .claude/skills
     # and .codex/skills are cross-agent legacy compatibility paths.
+    # https://cursor.com/docs/skills: "including nested project subdirectories such as `apps/web/.cursor/skills/` in a monorepo"
+    # The nested sentence names `.agents/skills` and `.cursor/skills` only; the Claude and Codex roots are not stated nested.
     source: https://cursor.com/docs/skills
     format: [frontmatter, freeform]
     scope: task_scoped
@@ -104,10 +107,10 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".agents/skills/**/*.md", ".cursor/skills/**/*.md", ".claude/skills/**/*.md", ".codex/skills/**/*.md"]
+        patterns: [".agents/skills/**/*.md", ".cursor/skills/**/*.md", ".claude/skills/**/*.md", ".codex/skills/**/*.md", "**/.agents/skills/**/*.md", "**/.cursor/skills/**/*.md"]
         # Cursor walks its skills roots recursively, so a SKILL.md at any depth below a skill folder
         # is a skill; a SKILL.md directly in a skills root is no skill.
-        entry_patterns: [".agents/skills/*/**/SKILL.md", ".cursor/skills/*/**/SKILL.md", ".claude/skills/*/**/SKILL.md", ".codex/skills/*/**/SKILL.md"]
+        entry_patterns: [".agents/skills/*/**/SKILL.md", ".cursor/skills/*/**/SKILL.md", ".claude/skills/*/**/SKILL.md", ".codex/skills/*/**/SKILL.md", "**/.agents/skills/*/**/SKILL.md", "**/.cursor/skills/*/**/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -264,6 +267,22 @@ file_types:
     scopes:
       project:
         patterns: [".cursor/BUGBOT.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
+  nested_bugbot:
+    # Bugbot also reads BUGBOT.md files found upward from changed files, so a nested one applies to its subtree.
+    # https://cursor.com/docs/bugbot#project-rules: "Bugbot always includes the root `.cursor/BUGBOT.md` file and any additional files found while traversing upward from changed files."
+    source: https://cursor.com/docs/bugbot
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/.cursor/BUGBOT.md"]
         precedence: project
         vcs: committed
         maintainer: human

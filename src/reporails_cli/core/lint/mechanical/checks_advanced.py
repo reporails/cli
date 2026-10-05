@@ -21,6 +21,7 @@ from reporails_cli.core.lint.mechanical.checks import (
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.inspect import path_filter_key, split_top_level_commas
 from reporails_cli.core.mapper.parse import parse_blocks
+from reporails_cli.core.mapper.skills import one_level_skills_roots
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
@@ -326,17 +327,18 @@ def directory_file_types(
 def skill_entrypoint_present(
     root: Path,
     args: dict[str, Any],
-    _classified_files: list[ClassifiedFile],
+    classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Flag skill directories that lack a SKILL.md entry point.
 
-    Skills-root directories are located by globbing for existing entry
-    files (agent-agnostic); every immediate subdirectory of a skills root
-    must then contain the entry file. Project-aggregate: enumerates whole
+    Skills roots come from the run's skill entry patterns (the folders that hold the
+    recorded skills), never from where a `SKILL.md` happens to sit; every immediate
+    subdirectory of such a root must contain the entry file. A root whose pattern lets a
+    skill sit deeper (a category folder) is not checked. Project-aggregate: enumerates whole
     skills roots, so its check entry is marked `project_scope: aggregate` to skip under scoped runs.
     """
     entry = str(args.get("entry", "SKILL.md"))
-    roots = {f.parent.parent for f in _resolve_glob_targets(f"**/{entry}", root) if f.is_file()}
+    roots = one_level_skills_roots(classified_files, root)
     missing: list[str] = []
     for skills_root in sorted(roots):
         if not skills_root.is_dir():

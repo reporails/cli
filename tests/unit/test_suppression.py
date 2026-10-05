@@ -257,7 +257,7 @@ class TestSurfaceMutations:
         # calls `config`; these three were tagged `file`, so prose-quality rules fired on
         # machine config.
         assert finding_surface(".codex/rules/style.rules") == "config"
-        assert finding_surface("packages/api/agents/openai.yaml") == "config"
+        assert finding_surface("packages/api/.agents/skills/foo/agents/openai.yaml") == "config"
         assert finding_surface(".gemini/extensions/acme/manifest.md") == "config"
 
     @pytest.mark.unit

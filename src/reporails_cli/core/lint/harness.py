@@ -38,7 +38,7 @@ from reporails_cli.core.lint.harness_models import (
     HarnessStatus,
     RuleInfo,
 )
-from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+from reporails_cli.core.lint.mechanical.runner import run_mechanical_check
 from reporails_cli.core.lint.regex import run_validation as run_regex_validation
 from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_fail_fixture,
@@ -69,23 +69,18 @@ def _run_mechanical_check(
     Merged below the check's own declared args so checks.yml entries
     always win over upstream annotations.
     """
-    check_name = check.check or ""
-    args: dict[str, Any] = {}
-    if extra_args:
-        args.update(extra_args)
-    args.update(check.args or {})
-
-    fn = MECHANICAL_CHECKS.get(check_name)
-    if fn is None:
-        logger.warning("Unknown mechanical check: %s", check_name)
-        return CheckResult(passed=False, message=f"Unknown mechanical check: {check_name}")
-
-    result = fn(fixture_root, args, classified_files)
+    try:
+        result = run_mechanical_check(check, fixture_root, classified_files, extra_args)
+    except KeyError:
+        logger.warning("Unknown mechanical check: %s", check.check)
+        return CheckResult(passed=False, message=f"Unknown mechanical check: {check.check}")
+    if result is None:
+        return CheckResult(passed=True, message="No skill entry file in scope")
 
     if check.expect == "absent":
         result = CheckResult(passed=not result.passed, message=result.message, annotations=result.annotations)
 
-    return result  # type: ignore[no-any-return]
+    return result
 
 
 def _run_deterministic_check(

@@ -11,12 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify.capability_paths import (
-    _decl_location_matches,
-    _is_loose_leaf_pattern,
-)
+from reporails_cli.core.classify.capability_paths import _decl_location_matches
 from reporails_cli.core.discovery.agent_discovery import is_excluded
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
+from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 
 def _decl(scope: str, loading: str = "session_start") -> FileTypeDeclaration:
@@ -62,7 +60,7 @@ class TestDeclLocationMatches:
         assert _decl_location_matches(root_file, _decl("nested"), "**/CLAUDE.md", tmp_path) is False
 
 
-# ── _is_loose_leaf_pattern (L305) ────────────────────────────────────
+# ── is_loose_leaf_pattern (L305) ────────────────────────────────────
 
 
 class TestLooseLeafPattern:
@@ -72,9 +70,9 @@ class TestLooseLeafPattern:
         # A pattern with a directory separator is anchored, not loose-leaf.
         # Kills L305 `and -> or`: `or` returns True because "**" is absent even
         # though "/" is present.
-        assert _is_loose_leaf_pattern("dir/foo.md") is False
+        assert is_loose_leaf_pattern("dir/foo.md") is False
         # Anchoring the positive side keeps the contract honest.
-        assert _is_loose_leaf_pattern("CLAUDE.md") is True
+        assert is_loose_leaf_pattern("CLAUDE.md") is True
 
 
 # ── is_excluded out-of-tree path (L315) ───────────────────

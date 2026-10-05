@@ -60,7 +60,7 @@ See the [privacy notice](https://reporails.com/privacy-policy).
 
 ## I run a polyglot monorepo. Should I have one `CLAUDE.md` or many?
 
-Different agents handle this differently — see [Agent Support](agent-support.md) for the per-agent layout. For Claude, use one root `CLAUDE.md` for project-wide identity and constraints, and per-directory child `CLAUDE.md` files for path-specific guidance — Claude Code loads them automatically when you cd into the directory. For Cursor, use `.cursor/rules/*.mdc` for per-directory guidance. Codex and Antigravity read a single root file (`AGENTS.md` or `GEMINI.md`).
+Different agents handle this differently — see [Agent Support](agent-support.md) for the per-agent layout. For Claude, use one root `CLAUDE.md` for project-wide identity and constraints, and per-directory child `CLAUDE.md` files for path-specific guidance — Claude Code loads them automatically when you cd into the directory. For Cursor, use `.cursor/rules/*.mdc` for per-directory guidance. Codex reads `AGENTS.md` in each directory from the root down; Antigravity reads `AGENTS.md`, `GEMINI.md` and `.agents/rules/` in any subdirectory.
 
 If you only have a root file but a large repo, you'll likely trip `CORE:E:0002` (Instruction File Size Limit) and / or `CORE:E:0001` (Total Instruction Size Limit). Split the content into the agent's native child-file mechanism, listed per-agent on [Agent Support](agent-support.md).
 

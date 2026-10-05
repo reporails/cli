@@ -8,4 +8,5 @@ checks:
   - pattern-regex: '\A---\n(?:(?!\n---\n)[\s\S])*?disable-model-invocation[ \t]*:[ \t]*true(?:(?!\n---\n)[\s\S])*\n---\n'
   - pattern-regex: '\A---\n(?:(?!\n---\n)[\s\S])*?user-invocable[ \t]*:[ \t]*false(?:(?!\n---\n)[\s\S])*\n---\n'
   expect: absent
+  entry_only: true
   message: "Skill sets both disable-model-invocation:true and user-invocable:false — neither the model nor the user can invoke it; keep at most one gate closed"

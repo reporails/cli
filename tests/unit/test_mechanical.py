@@ -396,6 +396,11 @@ class TestSkillEntrypointPresent:
         (d / entry).write_text("# skill\n")
         return d / entry
 
+    def _classified_alpha(self, root: Path) -> list[ClassifiedFile]:
+        alpha = root / ".claude" / "skills" / "alpha"
+        props: dict[str, str | list[str]] = {"skill": str(alpha), "skill_entry_patterns": [".claude/skills/*/SKILL.md"]}
+        return [ClassifiedFile(path=alpha / "SKILL.md", file_type="skills", properties=props)]
+
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_all_dirs_have_entrypoint_passes(self, tmp_path: Path) -> None:
@@ -413,7 +418,7 @@ class TestSkillEntrypointPresent:
         broken.mkdir(parents=True)
         (broken / "notes.md").write_text("no entry point here\n")
         # Only the real skill is discovered/classified; the broken sibling is found by enumeration.
-        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skills")
+        classified = self._classified_alpha(tmp_path)
         result = skill_entrypoint_present(tmp_path, {}, classified)
         assert not result.passed
         assert ".claude/skills/broken" in result.message
@@ -449,7 +454,7 @@ class TestSkillEntrypointPresent:
                 )
             ],
         )
-        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skills")
+        classified = self._classified_alpha(tmp_path)
         rules = {"CORE:S:0015": rule}
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0

@@ -320,6 +320,50 @@ def glob_matches(path: str, pattern: str, *, anchored: bool = False) -> bool:
     return False
 
 
+def expand_home_pattern(pattern: str) -> str:
+    """A `~`-rooted glob pattern with `~` resolved to the user's home directory.
+
+    Reads only the home directory. Lets a matcher compare the pattern against a file outside the scan root,
+    whose relative path falls back to its absolute path string. A pattern with no leading
+    `~` is returned unchanged.
+    """
+    return str(Path(pattern).expanduser()) if pattern.startswith("~") else pattern
+
+
+def is_loose_leaf_pattern(pattern: str) -> bool:
+    """Whether a pattern can match a file at any directory depth.
+
+    Pure function. True for a bare filename (`CLAUDE.md`) or a `**/`-prefixed glob; a
+    path-prefixed pattern (`.claude/rules/**/*.md`) pins the file's location and is not loose.
+    """
+    return pattern.startswith("**/") or ("/" not in pattern and "**" not in pattern)
+
+
+def config_pattern_matches(
+    rel: str,
+    pattern: str,
+    *,
+    full_path: str | None = None,
+    ignore_case: bool = False,
+    anchor_loose_leaf: bool = False,
+) -> bool:
+    """Whether a pattern declared in an agent config matches a file.
+
+    Built on `glob_matches`; reads only the home directory. A leading `./` is dropped; a trailing-slash directory
+    pattern (`.claude/agent-memory/*/`) matches the `.md` files inside the directories it
+    matches; a `~` pattern is resolved to the home directory and matched against `full_path`
+    (a file outside the scan root has no useful relative path) when given. The pattern is
+    anchored at the scan root unless it is a loose leaf and `anchor_loose_leaf` is False.
+    `ignore_case` lower-cases both sides.
+    """
+    clean = pattern.removeprefix("./")
+    expanded = expand_home_pattern(clean + "**/*.md" if clean.endswith("/") else clean)
+    subject = full_path if full_path is not None and clean.startswith("~") else rel
+    if ignore_case:
+        subject, expanded = subject.lower(), expanded.lower()
+    return glob_matches(subject, expanded, anchored=anchor_loose_leaf or not is_loose_leaf_pattern(clean))
+
+
 def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
     """Check whether path matches any glob pattern relative to target.
 

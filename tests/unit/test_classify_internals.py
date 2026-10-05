@@ -8,7 +8,7 @@ boundary), never decorate shape.
 
 Killed survivors (module line → mutation):
   - L166  `spec.get("required", False)`        False→True
-  - L223  `_is_loose_leaf_pattern` `**/` arm   True→False
+  - L223  `is_loose_leaf_pattern` `**/` arm   True→False
   - L225  bare-leaf `and`                       and→or
   - L255  `scope == "global" and loading ...`   ==→!= (x2), and→or
   - L260  path-prefixed early return            True→False
@@ -24,16 +24,16 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import (
-    _is_loose_leaf_pattern,
     _location_matches_mode,
     _parse_file_types,
     resolve_match_to_paths,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 from reporails_cli.core.platform.policy.matching import _prop_matches, file_matches
+from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 # ═══════════════════════════════════════════════════════════════════════
-# _is_loose_leaf_pattern — location-ambiguous glob detection (L223, L225)
+# is_loose_leaf_pattern — location-ambiguous glob detection (L223, L225)
 # ═══════════════════════════════════════════════════════════════════════
 
 
@@ -53,7 +53,7 @@ class TestIsLooseLeafPattern:
     )
     def test_loose_leaf_classification(self, pattern: str, expected: bool) -> None:
         """A pattern is loose only when it can match at any depth (`**/X` or bare `X`)."""
-        assert _is_loose_leaf_pattern(pattern) is expected
+        assert is_loose_leaf_pattern(pattern) is expected
 
 
 # ═══════════════════════════════════════════════════════════════════════

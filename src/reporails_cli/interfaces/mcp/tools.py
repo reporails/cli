@@ -318,9 +318,7 @@ def _checks_over_pairs(
     content_findings: list[Any] = []
     for agent_id, agent_files in pairs:
         if ruleset_map:
-            content_findings.extend(
-                run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id, skills=skills)
-            )
+            content_findings.extend(run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id))
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
     return m_findings, content_findings, client_findings
 

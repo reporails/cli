@@ -5,5 +5,5 @@ checks:
 - id: CORE.S.0036.name_matches_dir
   type: mechanical
   check: frontmatter_matches_dirname
-  args: {field: name}
+  args: {field: name, entry_only: true}
   message: Skill frontmatter name must match the containing directory

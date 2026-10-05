@@ -47,6 +47,12 @@
 
 ### Changed
 
+- Check: each agent's files are found where that agent's own documentation says it loads them.
+  - Claude Code: commands in subfolders of `.claude/commands/` (`/frontend:component`); rules, skills, subagents and output styles in `.claude/` folders below the project root; `CLAUDE.local.md` in subfolders; managed skills, subagents and output styles in `.claude/` inside the managed settings folder, Windows included; a plugin's `hooks/hooks.json` and `.mcp.json`.
+  - Cursor: skills in `.cursor/skills/` and `.agents/skills/` below the project root, and `BUGBOT.md` in subfolders. A plain `.md` file in `.cursor/rules/` is no longer checked as a rule, since Cursor ignores it.
+  - Codex: skills in `.agents/skills/` in any project folder; skill metadata (`agents/openai.yaml`) only inside a skill folder; the managed `/etc/codex/managed_config.toml`.
+  - GitHub Copilot: `.md` subagents in `.github/agents/`; user skills and subagents in `~/.claude/`; `~/.copilot/copilot-instructions.md` and `~/.copilot/instructions/`; hook files in `~/.copilot/hooks/` and `/etc/github-copilot/policy.d/`, and the Copilot settings files that carry hooks.
+  - Antigravity: rules in `.agents/rules/` in any folder and in `~/.gemini/config/rules/`, whose file names Descriptive Filenames (`CORE:S:0014`) now checks; its global instruction files, skills, subagents, plugins, settings, keybindings and hooks in `~/.gemini/config/` and `~/.gemini/antigravity-cli/`.
 - Check: the Level line shows the richest capability a project uses — skills (Delegated), sub-agents (Abstracted), hooks (Governed) or memory (Adaptive) set it on their own, with no path-scoped rules needed below them; an MCP config on its own no longer reads as Governed; a plain git hooks folder adds no level, and one agent's hooks or memory never raise the level of a check run for another agent.
 - Heal: the bold-to-italic fix changes exactly the bold the bold check reports on an instruction: a title label and a negation phrase such as "don't" are left as they are, `not` and `No` are changed, and `__bold__` is changed too.
 - Check: a bold label that opens a line (`**Rule:** …`, `**Term** — …`, `__Rule__: …`) is read from the markdown parse, and a heading or sentence that opens with a number ("2026 roadmap") keeps its number when its wording is classified.
@@ -220,6 +226,7 @@
 
 ### Fixed
 
+- Check: Skill Entry Point Present (`CORE:S:0015`) looks only at the folders an agent loads skills from, so a folder beside a skills folder (such as `.cursor/rules`) is no longer reported as a skill missing its `SKILL.md`, and a Cursor category folder that groups skills is not flagged.
 - A check the server refuses for a known reason (a rejected or malformed key, the hourly limit, the payload cap, the project limit) no longer asks you to report a bug; the bug-report link shows only for an error the CLI does not recognise.
 - Heal: a CRLF or mixed-ending file keeps each line's own ending, a file holding a form feed or a Unicode line separator has the right line fixed, a token inside an inline HTML tag (`<img src="logo.png">`) or an autolink is left alone so a second run changes nothing, and a file with hundreds of code tokens or bold constraints heals in under a second instead of over a minute.
 - Check: a link after a code span that runs onto the next line is reported on its own line, an `ails-disable-line` comment after a form feed or Unicode line separator silences the line it sits on, a rule's path filter with a `{a,b}` group matches the files its alternatives name, and a paragraph of thousands of nested bold or italic runs is read in seconds instead of minutes.
