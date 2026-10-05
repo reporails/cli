@@ -542,3 +542,57 @@ class TestEntryOnlyRegexCheck:
     def test_without_recorded_skills_every_skill_md_is_checked(self, tmp_path: Path) -> None:
         files = {".claude/skills/a/SKILL.md": "Bad_Name", ".claude/skills/a/b/SKILL.md": "Bad_Name"}
         assert self._run(tmp_path, files, recorded=False) == set(files)
+
+
+class TestSkillSlotFolders:
+    """A direct subfolder of a one-level skills root is a slot a skill should fill."""
+
+    @staticmethod
+    def _tree(root: Path) -> RulesetMap:
+        (root / ".claude/skills/good").mkdir(parents=True)
+        (root / ".claude/skills/broken").mkdir()
+        (root / ".claude/skills/.hidden").mkdir()
+        (root / ".claude/skills/good/SKILL.md").write_text("x")
+        (root / ".claude/skills/broken/notes.md").write_text("x")
+        return _map(root, *_skill(root, ".claude/skills/good"), _rec(root, ".claude/skills/broken/notes.md"))
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    def test_slot_folder_names_itself_in_membership(self, tmp_path: Path) -> None:
+        from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders
+
+        rmap = self._tree(tmp_path)
+        broken = tmp_path / ".claude/skills/broken"
+        assert skill_slot_folders(rmap, tmp_path) == {broken}
+        members = skill_membership(rmap, tmp_path) or {}
+        assert members[str(broken)] == str(broken)
+        assert str(broken / "notes.md") not in members
+        assert str(broken) not in (skill_membership(rmap) or {})
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    def test_slot_folder_is_typed_skills_while_its_file_stays_generic(self, tmp_path: Path) -> None:
+        from reporails_cli.core.mapper.skills import skill_membership, skill_type
+
+        rmap = self._tree(tmp_path)
+        folders = {Path(f) for f in (skill_membership(rmap, tmp_path) or {}).values()}
+        assert skill_type("generic", tmp_path / ".claude/skills/broken", folders) == "skills"
+        assert _state(rmap, tmp_path)[".claude/skills/broken/notes.md"] == ("generic", "")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    def test_slot_folder_reaches_the_skills_surface(self, tmp_path: Path) -> None:
+        rmap = self._tree(tmp_path)
+        skill_of = skill_lookup(rmap, tmp_path)
+        assert skill_of is not None
+        assert _surface_key(".claude/skills/broken", {}, skill_of) == "skills"
+        assert _surface_key(".claude/skills/broken/notes.md", {}, skill_of) != "skills"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    def test_no_slots_without_a_one_level_skills_root(self, tmp_path: Path) -> None:
+        from reporails_cli.core.mapper.skills import skill_slot_folders
+
+        (tmp_path / "docs/other").mkdir(parents=True)
+        rmap = _map(tmp_path, _rec(tmp_path, "docs/other/a.md", type_="generic"))
+        assert skill_slot_folders(rmap, tmp_path) == set()

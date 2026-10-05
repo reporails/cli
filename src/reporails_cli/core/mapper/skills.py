@@ -157,11 +157,50 @@ def _has_file(folder: Path, name: str) -> bool:
     return any(e.name == name and not e.is_dir for e in listed or ())
 
 
-def skill_membership(ruleset_map: Any) -> dict[str, str] | None:
-    """`FileRecord.path` -> its recorded skill folder, for every record in a skill; None without a map."""
+def skill_membership(
+    ruleset_map: Any, root: Path | None = None, registry: dict[str, dict[str, Any]] | None = None
+) -> dict[str, str] | None:
+    """`FileRecord.path` -> its recorded skill folder, for every record in a skill; None without a map.
+
+    With a project `root`, each slot folder (see `skill_slot_folders`) also maps to itself."""
     if ruleset_map is None:
         return None
-    return {rec.path: rec.skill for rec in getattr(ruleset_map, "files", ()) if rec.skill}
+    members = {rec.path: rec.skill for rec in getattr(ruleset_map, "files", ()) if rec.skill}
+    if root is not None:
+        members.update({str(slot): str(slot) for slot in skill_slot_folders(ruleset_map, root, registry)})
+    return members
+
+
+def skill_slot_folders(ruleset_map: Any, root: Path, registry: dict[str, dict[str, Any]] | None = None) -> set[Path]:
+    """Direct subfolders of a one-level skills root that are not a recorded skill folder: the slots
+    a skill should fill but does not. A root is the parent of a recorded skill folder whose entry file matches an
+    entry pattern of its agent or the core agent that names no `**` below the skills folder."""
+    from reporails_cli.core.mapper.inspect import _load_registry
+
+    reg = _load_registry() if registry is None else registry
+    core = [a for a, cfg in reg.items() if cfg.get("core")]
+    entries = [
+        (Path(rec.path), [p for a in (rec.agent, *core) for p in _entry_patterns(reg, a)])
+        for rec in getattr(ruleset_map, "files", ())
+        if rec.skill and Path(rec.path).name == "SKILL.md" and Path(rec.path).parent == Path(rec.skill)
+    ]
+    slots: set[Path] = set()
+    filled = {Path(rec.skill) for rec in getattr(ruleset_map, "files", ()) if rec.skill}
+    for skills_root in skills_roots(entries, root):
+        slots.update(set(slot_subfolders(skills_root)) - filled)
+    return slots
+
+
+def slot_subfolders(skills_root: Path) -> list[Path]:
+    """The non-hidden subfolders directly in `skills_root`, sorted."""
+    from reporails_cli.core.discovery.walk import list_dir
+
+    return sorted(Path(e.path) for e in list_dir(str(skills_root)) or () if e.is_dir and not e.name.startswith("."))
+
+
+def _one_level(pattern: str) -> bool:
+    """Whether an entry pattern names no `**` below the skills folder: a skill sits one level deep."""
+    return "**" not in pattern.removeprefix("**/")
 
 
 def skill_entry_paths(classified_files: Iterable[Any]) -> set[Path] | None:
@@ -180,16 +219,25 @@ def skill_entry_paths(classified_files: Iterable[Any]) -> set[Path] | None:
     return entries if recorded else None
 
 
-def one_level_skills_roots(classified_files: Iterable[Any], root: Path) -> set[Path]:
-    """Folders whose every direct subfolder is meant to be a skill: the parent of each classified
-    skill folder whose entry file matches an entry pattern that names no `**` below the skills
-    folder (an any-depth pattern lets a subfolder be a category holding skills, so it has no such root)."""
+def skills_roots(entries: Iterable[tuple[Path, list[str]]], root: Path) -> set[Path]:
+    """Folders whose every direct subfolder is meant to be a skill: the parent of each skill folder
+    whose entry file (path, entry patterns) matches an entry pattern that names no `**` below the
+    skills folder (an any-depth pattern lets a subfolder be a category holding skills, so it has no such root)."""
     roots: set[Path] = set()
-    for cf in classified_files:
-        folder, patterns = skill_entry_folder(cf), cf.properties.get("skill_entry_patterns")
-        if folder is None or not isinstance(patterns, list):
-            continue
-        hit = entry_pattern(Path(cf.path), root, patterns)
-        if hit is not None and "**" not in hit.removeprefix("**/"):
-            roots.add(folder.parent)
+    for path, patterns in entries:
+        hit = entry_pattern(path, root, patterns)
+        if hit is not None and _one_level(hit):
+            roots.add(path.parent.parent)
     return roots
+
+
+def one_level_skills_roots(classified_files: Iterable[Any], root: Path) -> set[Path]:
+    """`skills_roots` of the classified skill entry files and their `skill_entry_patterns`."""
+    return skills_roots(
+        (
+            (Path(cf.path), cf.properties["skill_entry_patterns"])
+            for cf in classified_files
+            if skill_entry_folder(cf) is not None and isinstance(cf.properties.get("skill_entry_patterns"), list)
+        ),
+        root,
+    )

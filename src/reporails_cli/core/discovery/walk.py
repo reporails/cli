@@ -149,19 +149,40 @@ def _descend_real(
     return real
 
 
+def answers_to_name(path: Path, documented: str) -> bool:
+    """Whether the agent would open `path` by the documented file name `documented`.
+
+    True when the listed name equals `documented` exactly, or differs from it only in case and
+    the filesystem resolves `documented` in the same folder to that same file (a case-insensitive
+    filesystem). On a case-sensitive filesystem a differently-cased file is a different file.
+    """
+    if path.name == documented:
+        return True
+    if path.name.lower() != documented.lower():
+        return False
+    return _same_file(path.parent / documented, path)
+
+
+def _same_file(documented_path: Path, listed_path: Path) -> bool:
+    """Whether two paths resolve to one existing file."""
+    try:
+        return documented_path.samefile(listed_path)
+    except OSError:
+        return False
+
+
 def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[Path]:
-    """Every regular file under root named `filename`, skipping excluded dirs.
+    """Every regular file under root that answers to the documented name `filename`, skipping
+    excluded dirs.
 
     Much faster than Path.glob("**/name") because it prunes excluded
     subtrees during traversal instead of filtering afterwards.
 
-    Match is case-INSENSITIVE (`agents.md` == `AGENTS.md`). Repos in the wild
-    use mixed casing and the agent specs do not mandate exact case (the
-    AGENTS.md spec is silent on casing), so a lowercase copy is a real
-    instruction file.
+    A file is found by its exact name, or by a differently-cased name only when the filesystem
+    resolves `filename` in that folder to the same file (see `answers_to_name`); on a
+    case-sensitive filesystem a lowercase `agents.md` is not `AGENTS.md`.
     """
-    filename_lower = filename.lower()
-    return list(_walk(root, exclude_dirs, lambda path: path.name.lower() == filename_lower))
+    return list(_walk(root, exclude_dirs, lambda path: answers_to_name(path, filename)))
 
 
 def walk_markdown(root: Path, exclude_dirs: frozenset[str]) -> Iterator[Path]:

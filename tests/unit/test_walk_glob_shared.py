@@ -40,7 +40,7 @@ def test_walks_in_one_pass_read_each_directory_once(tmp_path: Path, scans: list[
     _tree(tmp_path)
     with ad.shared_dir_listings():
         found = [ad.walk_glob(tmp_path, name, DEFAULT_EXCLUDE_DIRS) for name in ("CLAUDE.md", "AGENTS.md", "SKILL.md")]
-    assert [len(f) for f in found] == [1, 1, 2]
+    assert [len(f) for f in found] == [1, 1, 1]
     assert len(scans) == len(set(scans)) == 6
 
 
@@ -72,9 +72,9 @@ def test_shared_and_unshared_walks_find_the_same_files_in_the_same_order(tmp_pat
     _tree(tmp_path)
     (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
     (tmp_path / "e" / "link").symlink_to(tmp_path / "a" / "b", target_is_directory=True)
-    plain = [ad.walk_glob(tmp_path, n, frozenset({"d"})) for n in ("agents.md", "skill.md")]
+    plain = [ad.walk_glob(tmp_path, n, frozenset({"d"})) for n in ("AGENTS.md", "SKILL.md")]
     with ad.shared_dir_listings():
-        shared = [ad.walk_glob(tmp_path, n, frozenset({"d"})) for n in ("agents.md", "skill.md")]
+        shared = [ad.walk_glob(tmp_path, n, frozenset({"d"})) for n in ("AGENTS.md", "SKILL.md")]
     assert plain == shared
     assert all(plain)
 
@@ -85,7 +85,7 @@ def test_a_symlink_to_an_ancestor_is_entered_once(tmp_path: Path) -> None:
     _tree(tmp_path)
     (tmp_path / "a" / "b" / "up").symlink_to(tmp_path / "a", target_is_directory=True)
     found = ad.walk_glob(tmp_path, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
-    assert sorted(p.relative_to(tmp_path).as_posix() for p in found) == ["a/b/c/SKILL.md", "e/skill.md"]
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in found) == ["a/b/c/SKILL.md"]
 
 
 @pytest.mark.unit

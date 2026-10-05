@@ -16,7 +16,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
-from reporails_cli.core.heal.preservation.words import STOPWORDS, WORD_RE, content_words, prose_text, prose_words
+from reporails_cli.core.heal.preservation.words import (
+    STOPWORDS,
+    WORD_RE,
+    blank_named,
+    content_words,
+    prose_text,
+    prose_words,
+)
 from reporails_cli.core.mapper.classify import (
     CONDITION_CONJUNCTIONS,
     CONDITION_OPENERS,
@@ -172,10 +179,8 @@ def _known_words(old_by_line: ByLine, line: int) -> set[str]:
     is one plain word (`except`); a path, a dotted name or a multi-word token adds none."""
     known: set[str] = set()
     for atom in old_by_line.get(line, ()):
-        text: str = atom.plain_text
-        for token in atom.named_tokens:
-            if not _PLAIN_WORD_RE.fullmatch(token.strip("`")):
-                text = text.replace(token.strip("`"), " ")
+        blanked = [t for t in atom.named_tokens if not _PLAIN_WORD_RE.fullmatch(t.strip("`"))]
+        text = blank_named(atom.plain_text, blanked)
         known.update(w.lower() for w in WORD_RE.findall(text))
     return known
 

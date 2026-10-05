@@ -125,15 +125,20 @@ def named_key(token: str) -> str:
     return token.strip("`").lower()
 
 
+def blank_named(text: str, tokens: Any) -> str:
+    """`text` with each named token (backticks stripped) blanked, the longest first so a token
+    inside a longer one (`reporails` in `reporails__explain`) leaves none of the longer one behind."""
+    for token in sorted((t.strip("`") for t in tokens), key=len, reverse=True):
+        if token:
+            text = text.replace(token, " ")
+    return text
+
+
 def prose_text(atom: Any, *, named: bool = False) -> str:
     """`atom`'s plain text with its named constructs (backticked in the source) blanked out, or
     kept when `named` (a word reads the same backticked or not)."""
     text: str = atom.plain_text
-    if named:
-        return text
-    for token in atom.named_tokens:
-        text = text.replace(token.strip("`"), " ")
-    return text
+    return text if named else blank_named(text, atom.named_tokens)
 
 
 def prose_words(atom: Any, *, named: bool = False) -> list[str]:

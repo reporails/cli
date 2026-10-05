@@ -224,6 +224,17 @@ def test_a_name_in_backticks_or_a_named_object_never_changes_a_condition(
         ("Run all tests except integration tests.", "Run all tests except slow integration tests.", False),
         ("Wrap file reads in `try`/`except`.", "Wrap file reads in try/except.", True),
         ("Only run unit tests.", "Run unit tests.", False),
+        (
+            "Check the tool list for the `reporails` MCP `explain` tool first (its name ends in `reporails__explain`).",
+            "Check the tool list for the `reporails` MCP `explain` tool first (its name ends in `reporails__explain`).",
+            True,
+        ),
+        (
+            "Check the tool list for the `reporails` MCP `explain` tool first (its name ends in `reporails__explain`).",
+            "Check the tool list for the `reporails` MCP `explain` tool first"
+            " (its name ends in `reporails__explain`) in `src/`.",
+            False,
+        ),
     ],
 )
 def test_condition_verdicts_on_the_real_mapper(tmp_path, original: str, rewrite: str, ok: bool) -> None:

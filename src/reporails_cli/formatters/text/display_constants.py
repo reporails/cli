@@ -305,13 +305,14 @@ def short_path(file_path: str) -> str:
 def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
     """Project-relative path of each file in a skill -> its skill folder (project-relative).
 
-    Reads the skill each file record carries; a file with none is a plain file. `None` when
-    there is no ruleset map (the path-based tags then decide); empty when the map carries no skills.
+    Reads the skill each file record carries, and each slot folder of a one-level skills root as
+    its own skill; a file with none is a plain file. `None` when there is no ruleset map (the
+    path-based tags then decide); empty when the map carries no skills.
     """
     from reporails_cli.core.mapper.skills import skill_membership
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    membership = skill_membership(ruleset_map)
+    membership = skill_membership(ruleset_map, project_root)
     if membership is None:
         return None
     return {

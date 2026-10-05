@@ -411,4 +411,4 @@ def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | N
     but fails the location check does not block a later pattern of the
     same file_type from getting a turn.
     """
-    return next((pattern for pattern in patterns if config_pattern_matches(rel_path, pattern)), None)
+    return next((pattern for pattern in patterns if config_pattern_matches(rel_path, pattern, ignore_case=True)), None)

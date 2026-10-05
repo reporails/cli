@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from reporails_cli.core.discovery.walk import list_dir, walk_glob, walk_markdown
+from reporails_cli.core.discovery.walk import answers_to_name, list_dir, walk_glob, walk_markdown
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 from reporails_cli.core.platform.utils.utils import matches_any_glob as _matches_any_glob
 
@@ -212,15 +212,14 @@ def partition_by_native_owner(detected_agents: list[Any], target: Path) -> dict[
 def walk_ancestors(start: Path, filename: str, stop: Path) -> list[Path]:
     """Walk up from start, collecting filename matches at each ancestor.
 
-    Returns paths in walked order (closest first). Match is case-INSENSITIVE
-    (`claude.md` == `CLAUDE.md`) — see walk_glob docstring for rationale.
+    Returns paths in walked order (closest first). A file matches by the rule
+    of `answers_to_name`.
     """
-    filename_lower = filename.lower()
     results: list[Path] = []
     current = start if start.is_dir() else start.parent
     while True:
         for entry in list_dir(str(current)) or ():
-            if entry.name.lower() == filename_lower and entry.is_file:
+            if entry.is_file and answers_to_name(Path(entry.path), filename):
                 results.append(Path(entry.path))
                 break
         if current == stop or current == current.parent:

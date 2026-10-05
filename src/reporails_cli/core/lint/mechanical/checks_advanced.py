@@ -21,7 +21,7 @@ from reporails_cli.core.lint.mechanical.checks import (
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.inspect import path_filter_key, split_top_level_commas
 from reporails_cli.core.mapper.parse import parse_blocks
-from reporails_cli.core.mapper.skills import one_level_skills_roots
+from reporails_cli.core.mapper.skills import one_level_skills_roots, slot_subfolders
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
@@ -341,9 +341,7 @@ def skill_entrypoint_present(
     roots = one_level_skills_roots(classified_files, root)
     missing: list[str] = []
     for skills_root in sorted(roots):
-        if not skills_root.is_dir():
-            continue
-        for sub in sorted(p for p in skills_root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        for sub in slot_subfolders(skills_root):
             if not (sub / entry).is_file():
                 rel = sub.relative_to(root).as_posix() if sub.is_relative_to(root) else sub.name
                 missing.append(rel)

@@ -54,15 +54,10 @@ def test_walk_glob_skips_always_skip_dirs(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_walk_glob_matches_filename_case_insensitively(tmp_path: Path) -> None:
-    """A lowercase `claude.md` matches the `CLAUDE.md` pattern.
-
-    Repos in the wild use both conventions and the agent specs do not mandate
-    exact case, so a lowercase copy is a real instruction file.
-    """
+def test_walk_glob_skips_a_wrong_case_name_on_a_case_sensitive_filesystem(tmp_path: Path) -> None:
+    """A lowercase `claude.md` is not the documented `CLAUDE.md` where the filesystem tells them apart."""
     (tmp_path / "claude.md").write_text("y")
-    results = walk.walk_glob(tmp_path, "CLAUDE.md", DEFAULT_EXCLUDE_DIRS)
-    assert set(results) == {tmp_path / "claude.md"}
+    assert walk.walk_glob(tmp_path, "CLAUDE.md", DEFAULT_EXCLUDE_DIRS) == []
 
 
 @pytest.mark.unit
@@ -214,10 +209,10 @@ def test_pinned_recursive_patterns_match_the_whole_pattern(tmp_path: Path) -> No
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_recursive_pattern_filter_ignores_filename_case(tmp_path: Path) -> None:
-    """`**/AGENTS.md` finds a lowercase `agents.md`, as the walk does."""
+def test_recursive_pattern_filter_keeps_only_the_documented_filename_case(tmp_path: Path) -> None:
+    """`**/AGENTS.md` skips a lowercase `agents.md` on a case-sensitive filesystem."""
     for rel in ("AGENTS.md", "svc/AGENTS.md", "pkg/agents.md"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x")
     res = ad.glob_file_type_patterns(tmp_path, ["**/AGENTS.md"], {"scope": "nested"}, DEFAULT_EXCLUDE_DIRS)
-    assert "pkg/agents.md" in {p.relative_to(tmp_path).as_posix() for p in res}
+    assert "pkg/agents.md" not in {p.relative_to(tmp_path).as_posix() for p in res}
