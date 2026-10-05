@@ -1508,7 +1508,7 @@ _HEALABLE = (
     "## Setup\n\n"
     "You must run npm install before starting the app.\n\n"
     "## Constraints\n\n"
-    "- **Never** commit secrets to the repository.\n"
+    "Never skip the **IMPORTANT** checks before a commit.\n"
 )
 
 
