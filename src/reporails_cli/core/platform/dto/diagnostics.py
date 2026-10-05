@@ -34,6 +34,7 @@ KNOWN_ERRORS = frozenset(
         "payload_too_large",
         "atom_cap_exceeded",
         "file_cap_exceeded",
+        "scoring_limit_exceeded",
         "project_limit_reached",
         "invalid_api_key",
         "missing_or_invalid_api_key",

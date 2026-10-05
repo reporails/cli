@@ -189,6 +189,26 @@ class TestParseErrorBody:
 
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
+    @pytest.mark.parametrize(
+        "body",
+        [
+            '{"error":"scoring_limit_exceeded","tier":"free"}',
+            '{"error":"scoring_limit_exceeded"}',
+            '{"error":"scoring_limit_exceeded","tier":"pro","limit":100,"size":200}',
+        ],
+    )
+    def test_scoring_limit_exceeded_is_a_known_error(self, body: str) -> None:
+        """A deliberate size limit parses as itself and renders without the bug-report link."""
+        err = parse_error_body(413, body)
+        assert err is not None
+        assert err.error == "scoring_limit_exceeded"
+        text = plain_cta(err)
+        assert text.startswith("Project too large to score in one request.")
+        assert "ails check <path>" in text
+        assert "bug" not in text.lower()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_funnel
     def test_unknown_error_returns_unknown_error(self) -> None:
         body = json.dumps({"error": "some_other_thing", "tier": "pro"})
         err = parse_error_body(400, body)

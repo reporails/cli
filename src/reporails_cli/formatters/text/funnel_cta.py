@@ -33,6 +33,7 @@ _REFUSAL_REASONS = {
     "payload_too_large": "project over your plan's size cap",
     "atom_cap_exceeded": "project over the size cap",
     "file_cap_exceeded": "project over the size cap",
+    "scoring_limit_exceeded": "project too large to score",
 }
 
 
@@ -229,6 +230,10 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
     ("project_limit_reached", "*"): "Project limit reached — file an issue with your use case so we can raise it",
     ("file_cap_exceeded", "*"): (
         "Project has {err.files:,} files, over the {err.limit:,}-file cap — the same cap on every plan"
+    ),
+    ("scoring_limit_exceeded", "*"): (
+        "Project too large to score in one request. "
+        "Check a smaller part with `ails check <path>`, or file an issue with your use case"
     ),
     ("preflight_oversized", "*"): "Payload exceeds local cap before transmission",
 }

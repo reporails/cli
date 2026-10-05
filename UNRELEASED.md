@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Check: when a project is too large for the server to score in one request, the message says so and suggests checking a smaller part, instead of asking for a bug report.
+
 ### Fixed
 
 ### Removed
