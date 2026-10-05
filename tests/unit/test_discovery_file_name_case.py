@@ -87,9 +87,27 @@ def test_wrong_case_copy_is_discovered_and_typed_on_a_case_insensitive_filesyste
     found = _files(tmp_path, "claude")
     typed = {
         cf.path.relative_to(tmp_path).as_posix(): cf.file_type
-        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "claude.md"], "claude")[0]
+        for cf in _classify_agent_files(tmp_path, [tmp_path / "docs" / "CLAUDE.md"], "claude")[0]
     }
 
-    assert "docs/claude.md" in found
+    assert "docs/CLAUDE.md" in found
+    assert "docs/claude.md" not in found
     assert list(typed.values()) == list(exact_types.values()) != []
     assert _level(tmp_path) == exact_level
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_lowercase_claude_md_rules_file_stays_a_rules_file_on_a_case_sensitive_filesystem(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path, "CLAUDE.md")
+    _write(tmp_path, ".claude/rules/claude.md")
+
+    typed = {
+        cf.path.relative_to(tmp_path).as_posix(): cf.file_type
+        for cf in _classify_agent_files(
+            tmp_path, [tmp_path / "CLAUDE.md", tmp_path / ".claude/rules/claude.md"], "claude"
+        )[0]
+    }
+
+    assert typed[".claude/rules/claude.md"] == "rules"

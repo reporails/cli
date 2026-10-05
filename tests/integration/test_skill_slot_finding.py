@@ -45,6 +45,8 @@ def test_slot_finding_wire_type_is_skills_and_its_file_is_generic(tmp_path: Path
     typed = _local_finding_type_resolver(SimpleNamespace(ruleset_map=rmap, scan_root=tmp_path), _load_registry())  # type: ignore[arg-type]
     assert typed(str(tmp_path / ".claude/skills/broken")) == "skills"
     assert typed(str(tmp_path / ".claude/skills/broken/notes.md")) == "generic"
+    assert typed(str(tmp_path / ".claude/skills/broken/README.md")) == "generic"  # unmapped, in a slot: a plain file
+    assert typed(str(tmp_path / ".claude/skills/good/extra/README.md")) == "skills"  # below a recorded skill
     assert typed(str(tmp_path / "CLAUDE.md")) == "main"
 
 

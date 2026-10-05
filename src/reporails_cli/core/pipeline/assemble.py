@@ -199,13 +199,15 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
 
     The ruleset map's own records carry each path's type (a skill's supporting file included),
     so a mapped path keeps its record's type. A path the map does not carry takes its file
-    type, and stays `skills` only when it sits at or below a recorded skill folder or is a skill slot folder.
+    type, and stays `skills` only when it sits at or below a recorded skill folder or is exactly a skill slot folder
+    (a folder with no `SKILL.md`; its other files stay plain).
     """
     from reporails_cli.core.mapper.inspect import file_type_of
-    from reporails_cli.core.mapper.skills import skill_membership, skill_type
+    from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders, skill_type
 
     ruleset_files = inp.ruleset_map.files if inp.ruleset_map is not None else ()
-    skill_folders = {Path(f) for f in (skill_membership(inp.ruleset_map, inp.scan_root) or {}).values()}
+    skill_folders = {Path(f) for f in (skill_membership(inp.ruleset_map) or {}).values()}
+    slot_folders = skill_slot_folders(inp.ruleset_map, inp.scan_root) if inp.ruleset_map is not None else set()
     type_by_path: dict[Path, str] = {safe_resolve(Path(f.path)): f.type for f in ruleset_files}
 
     def _typed(path: str) -> str:
@@ -213,6 +215,8 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
         mapped = type_by_path.get(safe_resolve(p))
         if mapped is not None:
             return str(mapped)
+        if p in slot_folders:
+            return "skills"
         return skill_type(file_type_of(p, inp.scan_root, registry), p, skill_folders)
 
     return _typed

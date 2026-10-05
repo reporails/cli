@@ -149,18 +149,20 @@ def _descend_real(
     return real
 
 
-def answers_to_name(path: Path, documented: str) -> bool:
-    """Whether the agent would open `path` by the documented file name `documented`.
+def documented_path(path: Path, documented: str) -> Path | None:
+    """The path to report for `path` when the agent would open it by the documented name `documented`.
 
-    True when the listed name equals `documented` exactly, or differs from it only in case and
-    the filesystem resolves `documented` in the same folder to that same file (a case-insensitive
-    filesystem). On a case-sensitive filesystem a differently-cased file is a different file.
+    The listed path when its name equals `documented` exactly. The documented spelling in the
+    same folder when the listed name differs only in case and the filesystem resolves
+    `documented` there to that same file (a case-insensitive filesystem). None otherwise: on a
+    case-sensitive filesystem a differently-cased file is a different file.
     """
     if path.name == documented:
-        return True
+        return path
     if path.name.lower() != documented.lower():
-        return False
-    return _same_file(path.parent / documented, path)
+        return None
+    named = path.parent / documented
+    return named if _same_file(named, path) else None
 
 
 def _same_file(documented_path: Path, listed_path: Path) -> bool:
@@ -179,10 +181,12 @@ def walk_glob(root: Path, filename: str, exclude_dirs: frozenset[str]) -> list[P
     subtrees during traversal instead of filtering afterwards.
 
     A file is found by its exact name, or by a differently-cased name only when the filesystem
-    resolves `filename` in that folder to the same file (see `answers_to_name`); on a
-    case-sensitive filesystem a lowercase `agents.md` is not `AGENTS.md`.
+    resolves `filename` in that folder to the same file (see `documented_path`), reported under
+    the documented spelling; on a case-sensitive filesystem a lowercase `agents.md` is not
+    `AGENTS.md`.
     """
-    return list(_walk(root, exclude_dirs, lambda path: answers_to_name(path, filename)))
+    found = _walk(root, exclude_dirs, lambda path: documented_path(path, filename) is not None)
+    return [named for path in found if (named := documented_path(path, filename)) is not None]
 
 
 def walk_markdown(root: Path, exclude_dirs: frozenset[str]) -> Iterator[Path]:

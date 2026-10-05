@@ -150,7 +150,7 @@ def config_pattern_hits(file_path: Path, rel: str, pattern: str, scan_root: Path
     instead matches the file's path from the plugin root it sits under."""
 
     def match(subject: str, pat: str) -> bool:
-        return config_pattern_matches(subject, pat, full_path=file_path.as_posix(), ignore_case=True)
+        return config_pattern_matches(subject, pat, full_path=file_path.as_posix())
 
     plugin_hit = matches_plugin_pattern(file_path, scan_root, pattern, match)
     return match(rel, pattern) if plugin_hit is None else plugin_hit

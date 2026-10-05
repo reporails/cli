@@ -375,6 +375,13 @@ class TestSkillFolderCounting:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
+    def test_a_path_equal_to_its_skill_folder_is_named_like_the_skill(self) -> None:
+        from reporails_cli.formatters.text.display_constants import friendly_name
+
+        assert friendly_name(".claude/skills/broken", "skills:broken", ".claude/skills/broken") == "broken"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_a_skill_md_inside_a_skill_folder_is_named_by_its_path_not_as_the_skill(self, tmp_path: Path) -> None:
         rmap = _map(tmp_path, *_skill(tmp_path, ".claude/skills/tool"), *_skill(tmp_path, ".claude/skills/tool/inner"))
         skill_of = skill_lookup(rmap, tmp_path)

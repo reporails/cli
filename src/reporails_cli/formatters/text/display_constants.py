@@ -265,7 +265,7 @@ def friendly_name(filepath: str, tag: str, skill_dir: str | None = None) -> str:
             inside = PurePosixPath(filepath).relative_to(skill_dir).as_posix()
         except ValueError:
             inside = ""
-        if inside and inside != "SKILL.md":
+        if inside not in ("", ".", "SKILL.md"):
             return f"{PurePosixPath(skill_dir).name}/{inside}"
     if ":" in tag:
         return tag.split(":", 1)[1]

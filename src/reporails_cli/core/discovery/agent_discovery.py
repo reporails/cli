@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from reporails_cli.core.discovery.walk import answers_to_name, list_dir, walk_glob, walk_markdown
+from reporails_cli.core.discovery.walk import documented_path, list_dir, walk_glob, walk_markdown
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 from reporails_cli.core.platform.utils.utils import matches_any_glob as _matches_any_glob
 
@@ -213,14 +213,15 @@ def walk_ancestors(start: Path, filename: str, stop: Path) -> list[Path]:
     """Walk up from start, collecting filename matches at each ancestor.
 
     Returns paths in walked order (closest first). A file matches by the rule
-    of `answers_to_name`.
+    of `documented_path`.
     """
     results: list[Path] = []
     current = start if start.is_dir() else start.parent
     while True:
         for entry in list_dir(str(current)) or ():
-            if entry.is_file and answers_to_name(Path(entry.path), filename):
-                results.append(Path(entry.path))
+            named = documented_path(Path(entry.path), filename) if entry.is_file else None
+            if named is not None:
+                results.append(named)
                 break
         if current == stop or current == current.parent:
             break
