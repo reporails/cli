@@ -174,3 +174,13 @@ def test_real_embedder_flags_two_topic_atom() -> None:
     assert atom.over_merged is True
     assert atom.min_clause_cosine is not None
     assert atom.min_clause_cosine < 0.5
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_wholly_quoted_atom_is_skipped() -> None:
+    atom = _atom('"Use the real service; formatting lives in the style guide."')
+    flagged = audit_over_merged([atom], _StubEncoder({}))
+    assert flagged == 0
+    assert atom.over_merged is False
+    assert atom.min_clause_cosine is None

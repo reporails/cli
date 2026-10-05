@@ -75,6 +75,13 @@ logger = logging.getLogger(__name__)
 # goes on — `"Dry run" is a flag; pass it early` — is running text
 # and keeps whatever charge it carries.
 _QUOTED_LINE_RE = re.compile(r'^["\u201c\u201e][^"\u201c\u201d\u201e]*["\u201c\u201d]\s*[.,;:!?]*\s*$')
+
+
+def is_quoted_line(text: str) -> bool:
+    """True when the whole line is one quotation (a sample, not an instruction)."""
+    return _QUOTED_LINE_RE.match(text) is not None
+
+
 # What may follow a bold definition label (`**Term**: …`, `**Term** — …`, `**Term** (…)`, `**Term** / …`).
 _DEFN_LABEL_TAIL_RE = re.compile(r"\s*[:\u2014\u2013(/-]\s?")
 
@@ -227,7 +234,7 @@ def _is_structural(md_text: str, fmt: str = "prose") -> bool:
     # reference or a question however it is phrased. A bare label that opens with a command
     # verb (`Audit these files:`) is not one of these — it commands the list or line after it.
     if (
-        _QUOTED_LINE_RE.match(md_text)
+        is_quoted_line(md_text)
         or _opens_with_version(md_text)
         or (_LABEL_ONLY_RE.match(md_text) and not _label_only_opens_command(md_text))
         or _META_LABEL_RE.match(md_text)

@@ -285,3 +285,22 @@ def test_a_code_token_never_opens_a_condition_or_narrows(
     pair = Pair(old, new, original, rewrite)
     assert bool(dropped_conditions([pair])) is dropped
     assert bool(narrowed_instructions([pair], by_line([old]))) is narrowed
+
+
+@pytest.mark.subsys_map
+@pytest.mark.integration
+@_requires_model
+def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
+    from reporails_cli.core.mapper.models import get_models
+    from reporails_cli.core.mapper.pipeline import map_ruleset
+
+    quote = (
+        '"Keep every instruction: each keeps its polarity. Keep every table row, list item, heading; '
+        'delete one only when a relation names it. Add no filler and invent nothing."'
+    )
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(f"# T\n\n## Contract\n\n{quote}\n\nRun `pytest` before every commit in this repository.\n")
+    mapped = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
+    on_line = [a for a in mapped.atoms if a.line == 5]
+    assert len(on_line) == 1
+    assert on_line[0].charge_value == 0

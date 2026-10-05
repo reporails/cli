@@ -36,7 +36,6 @@ from reporails_cli.core.mapper.multislot_frames import (
     _heading_tuple_from_decoded,
 )
 from reporails_cli.core.mapper.parse import (
-    _QUOTED_LINE_RE,
     TABLE_HEADER_RULE,
     _apply_deontic_floor,
     _apply_hedged_should_floor,
@@ -45,6 +44,7 @@ from reporails_cli.core.mapper.parse import (
     _atom_from_sentence,
     inline_plain_text,
     is_fence_block,
+    is_quoted_line,
     keep_lead_in_on_last,
     reindex_positions,
 )
@@ -69,7 +69,7 @@ def _head_eligible(atom: Atom) -> bool:
         atom.kind != "heading"
         and atom.format in _HEAD_FORMATS
         and atom.rule != TABLE_HEADER_RULE
-        and _QUOTED_LINE_RE.match(atom.text) is None
+        and not is_quoted_line(atom.text)
     )
 
 

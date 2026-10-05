@@ -23,7 +23,13 @@ from typing import Any
 from reporails_cli.core.mapper.embed import _embed_atoms_deduped
 from reporails_cli.core.mapper.lexical import split_clauses
 from reporails_cli.core.mapper.markers import reformat_spans
-from reporails_cli.core.mapper.parse import TABLE_HEADER_RULE, build_split_atom, keep_lead_in_on_last, reindex_positions
+from reporails_cli.core.mapper.parse import (
+    TABLE_HEADER_RULE,
+    build_split_atom,
+    is_quoted_line,
+    keep_lead_in_on_last,
+    reindex_positions,
+)
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 
@@ -54,12 +60,14 @@ def split_over_merged_atoms(
         # can charge a fragment of its own label text (`rule == TABLE_HEADER_RULE`). A fenced
         # line was already classified once, as one line, by the fence cascade (`parse.py`'s
         # own "classify each line ONCE" contract) — re-cutting it here re-opens that verdict
-        # on a fragment of the same line, so it is excluded too.
+        # on a fragment of the same line, so it is excluded too. A line that is wholly a quotation
+        # stays one neutral sample atom, so it is never cut.
         eligible = (
             atom.over_merged
             and atom.stage != "multislot"
             and atom.rule != TABLE_HEADER_RULE
             and atom.format != "code_block"
+            and not is_quoted_line(atom.text)
         )
         clauses = split_clauses(atom.plain_text or atom.text) if eligible else []
         if len(clauses) < 2:

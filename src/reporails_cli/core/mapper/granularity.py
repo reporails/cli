@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from reporails_cli.core.mapper.lexical import split_clauses
+from reporails_cli.core.mapper.parse import is_quoted_line
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Clauses of one atom sitting below this similarity count as distinct topics.
@@ -22,9 +23,15 @@ def _audit_eligible(atom: Atom) -> bool:
     A unit the classifier already segmented is excluded —
     its subordinate clause is a scope slot, not a lexical over-merge, and
     `split_topic.py` skips it for the same reason: the audit should only flag
-    atoms the split can actually act on, or its flags reach no consumer.
+    atoms the split can actually act on, or its flags reach no consumer. A line that is wholly a
+    quotation stays one sample atom and is excluded as well.
     """
-    return atom.kind != "heading" and atom.stage != "multislot" and bool((atom.plain_text or atom.text).strip())
+    return (
+        atom.kind != "heading"
+        and atom.stage != "multislot"
+        and bool((atom.plain_text or atom.text).strip())
+        and not is_quoted_line(atom.text)
+    )
 
 
 def _min_pairwise_cosine(vecs: Any) -> float:

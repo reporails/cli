@@ -122,3 +122,15 @@ def test_reclassifies_subatom_charge_independently() -> None:
     charges = {a.text: a.charge_value for a in result}
     assert charges["Use the real service"] == 1
     assert charges["never mock the database"] == -1
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_wholly_quoted_over_merged_atom_is_not_split() -> None:
+    atom = _atom(
+        '"Keep every instruction: each keeps its polarity; add no filler and invent nothing."', over_merged=True
+    )
+    result, n_split = split_over_merged_atoms([atom], _StubEncoder(), recharge=None)
+
+    assert n_split == 0
+    assert result == [atom]
