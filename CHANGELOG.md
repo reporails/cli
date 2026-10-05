@@ -227,6 +227,7 @@
 
 - Check: `.claude/settings.json` and `.gemini/settings.json` are read as config files, so the rules that target the config surface — every hook rule and per-agent hook overlay, plus the permission, MCP-server and settings-scope rules — no longer stay silent on the main settings file. Hook rules also target a dedicated hooks file (`.cursor/hooks.json`, `.codex/hooks.json`, `.github/hooks/*.json`), covering 25 rules across all five supported agents. Machine-config surfaces that are neither JSON nor TOML (`.codex/rules/*.rules`, `agents/openai.yaml`, `.gemini/extensions/**`) are recognised as config, so prose-quality rules no longer fire on them.
 - Check: the summary's topic-overlap lines name each side as its element — `name (skill)`, `name (agent)`, `name (rule)`, `/name (command)`, `name (memory)` or a short path — one aligned line per element with up to three partners, and count element pairs; two that share a name are told apart by location, and overlap between files of one skill is not counted as a pair. Each file shows its topic overlaps once under its name, one row per partner (`38% topic overlap with audit-agent (skill)`), instead of under a line number.
+- Check: when a project is too large for the server to score in one request, the message says so and suggests checking a smaller part, instead of asking for a bug report.
 
 ### Fixed
 
@@ -361,6 +362,8 @@
 - Check: a run refused by the service, such as one over the hourly limit, names your plan and says why it has no score instead of reporting the service as offline.
 - Sign-in: when the website refuses `ails auth login`, the CLI says why and what to do, and when the website does not answer it says to try again, instead of a raw HTTP error or a traceback. When GitHub sign-in cannot create an account because the email is already in use, `ails auth login` points you to reporails.com/contact.
 - Sign-in: `ails auth status` shows the plan your last check saw, so a new Pro subscription (or a cancellation) shows there after your next check, rather than the plan you had when you signed in.
+- Check: a project whose only instructions are Antigravity rules in `.agents/rules/` is found and checked, with or without `--agent`.
+- Check: a run pinned to one agent that finds none of its files now names the other agents the project has files for and how to check them, instead of asking for that agent's file.
 
 ### Removed
 
@@ -388,6 +391,7 @@
 - Test names, docstrings and sample inputs in the test suite say what is tested in plain words.
 - `ails test` passes on a fresh clone: the source files three path-scope rule fixtures need are tracked.
 - The unit suite ends without failures on a machine with no model files: the tests that need no model run without it.
+- The tests that need the model files pass where the models are installed: the two-agent check test and the heal smoke fixture follow the current behaviour.
 - The source archive carries tracked source only: no cache, project-settings or scratch folders. The GitHub Action's `version` input says what an empty value installs, and the Action's own test asserts that a minimum-score gate fails when the diagnostics service is unreachable.
 
 - Code structure, module layout, docstrings and comments tidied and unused code removed; tests, test tooling, build, CI and release checks expanded and tightened; maintainer tooling for development checkouts; the published package and source archive no longer include build-machine leftovers, local-only test data or maintainer scripts. No change in behavior or output. Comments and docstrings in the source, the tests, the workflows and the scripts describe what the code does.
