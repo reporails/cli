@@ -61,3 +61,60 @@ def test_pinned_agent_with_no_files_points_at_the_agent_the_project_has(
     assert "No instruction files found for claude" in result.output
     assert "cursor" in result.output
     assert "Create a CLAUDE.md" not in result.output
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+def test_unpinned_check_of_an_empty_folder_keeps_the_usual_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _cursor_project(tmp_path, claude=True)
+    (project / "docs").mkdir()
+    (project / "docs" / "readme.txt").write_text("hello\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        lambda: tmp_path / "home" / "config.yml",
+    )
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["check", "docs"])
+    assert "No instruction files found." in result.output
+    assert "for generic" not in result.output
+    assert "--agent" not in result.output
+    assert "default_agent" not in result.output
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+def test_pinned_check_of_an_empty_folder_keeps_the_usual_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _cursor_project(tmp_path)
+    (project / "docs").mkdir()
+    (project / "docs" / "readme.txt").write_text("hello\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        lambda: tmp_path / "home" / "config.yml",
+    )
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["check", "docs", "--agent", "claude"])
+    assert "No instruction files found." in result.output
+    assert "This project has files for" not in result.output
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+def test_agent_set_in_config_with_no_files_points_at_the_agent_the_project_has(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".reporails").mkdir(parents=True)
+    (home / ".reporails" / "config.yml").write_text("default_agent: claude\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        lambda: home / ".reporails" / "config.yml",
+    )
+    project = _cursor_project(tmp_path)
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["check", "."])
+    assert "No instruction files found for claude" in result.output
+    assert "This project has files for: cursor" in result.output

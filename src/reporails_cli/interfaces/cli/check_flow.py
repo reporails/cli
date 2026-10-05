@@ -208,6 +208,15 @@ def _flow_targets(state: CheckState) -> None:
         raise typer.Exit(2)
 
 
+def _agent_is_pinned(state: CheckState) -> bool:
+    """True when the run is set to one agent: ``--agent`` or the configured ``default_agent``."""
+    if state.inputs.agent:
+        return True
+    from reporails_cli.core.platform.config.config import get_project_config
+
+    return bool(get_project_config(state.targets.target).default_agent)
+
+
 def _emit_empty_run(state: CheckState) -> None:
     """Render a run with nothing in scope — through the SAME surfaces a normal run uses.
 
@@ -238,7 +247,11 @@ def _emit_empty_run(state: CheckState) -> None:
             None,
         )
         return
-    _print_no_instruction_files(state.scope.effective_agent, console, state.scope.detected)
+    whole_project = not state.targets.capability_specs and all(
+        t == state.inputs.project_root for t in state.targets.path_targets
+    )
+    others = state.scope.detected if whole_project and _agent_is_pinned(state) else None
+    _print_no_instruction_files(state.scope.effective_agent, console, others)
 
 
 def _resolve_scope_at_target(state: CheckState) -> None:
@@ -356,11 +369,7 @@ def _agent_file_pairs(state: CheckState) -> list[tuple[str, list[Path]]]:
     for the same tree."""
     from reporails_cli.core.pipeline.mapping import agent_file_pairs
 
-    explicit = bool(state.inputs.agent)
-    if not explicit:
-        from reporails_cli.core.platform.config.config import get_project_config
-
-        explicit = bool(get_project_config(state.targets.target).default_agent)
+    explicit = _agent_is_pinned(state)
     return agent_file_pairs(
         state.scope.instruction_files,
         state.scope.filtered,
