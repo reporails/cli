@@ -13,11 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import multislot_available, tag_atom_multislot
-
-requires_charge_model = pytest.mark.skipif(
-    not multislot_available(), reason="Bundled charge-model graphs not available"
-)
+from reporails_cli.core.mapper.bio_tagger import tag_atom_multislot
 
 # (sentence, expected signed charge, expected modality) — hand-labelled, then
 # confirmed against the real decode. Each row is an independent semantic
@@ -40,7 +36,7 @@ _MODALITY_VALUES = {"imperative", "direct", "absolute", "hedged", "none"}
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(("text", "charge", "modality"), _CASES)
 def test_charge_modality_parity(text: str, charge: int, modality: str) -> None:
     """Real decode reproduces the hand-labelled charge sign + modality class."""
@@ -51,7 +47,7 @@ def test_charge_modality_parity(text: str, charge: int, modality: str) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(("text", "charge", "modality"), _CASES)
 def test_charge_modality_invariants(text: str, charge: int, modality: str) -> None:
     """The charge↔modality invariant holds: a neutral atom carries `none`, a charged one never does."""
@@ -92,7 +88,7 @@ _SHIPPED_PATH_CASES: list[tuple[str, int, str]] = [
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(("text", "charge", "modality"), _SHIPPED_PATH_CASES)
 def test_shipped_path_charge(text: str, charge: int, modality: str) -> None:
     from reporails_cli.core.mapper.bio_pipeline import apply_multislot

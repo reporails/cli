@@ -140,7 +140,7 @@ def test_a_lead_in_that_introduces_no_list_of_things_is_left_alone(atoms: list[A
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_an_unhyphenated_lead_in_is_still_an_instruction_and_folds_its_list() -> None:
     """UNRELEASED's own documented example, verbatim, with no hyphen in the lead-in.
 
@@ -159,7 +159,7 @@ def test_an_unhyphenated_lead_in_is_still_an_instruction_and_folds_its_list() ->
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_the_charge_stage_reads_a_lead_in_and_its_list_as_one_instruction() -> None:
     text = (
         "Audit these instruction-file surfaces:\n"

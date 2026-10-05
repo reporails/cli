@@ -10,8 +10,6 @@ from reporails_cli.core.mapper.instructions import instruction_count, instructio
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
-_needs_model = pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
-
 
 def _pieces(sentence: str) -> list[str]:
     return instruction_texts(sentence)
@@ -126,7 +124,7 @@ def test_a_sentence_is_cut_where_each_instruction_starts(sentence: str, pieces: 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_a_sentence_giving_two_instructions_maps_to_two_instructions() -> None:
     atoms = _mapped("# Rules\n\nValidate the input and sanitize the output.\n")
     assert _charged(atoms) == ["Validate the input", "and sanitize the output."]
@@ -134,7 +132,7 @@ def test_a_sentence_giving_two_instructions_maps_to_two_instructions() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_a_condition_maps_with_the_instruction_it_leads_into() -> None:
     atoms = _mapped("# Rules\n\nRun the tests; if they fail, fix them.\n")
     assert [a.text for a in atoms] == ["Run the tests;", "if they fail, fix them."]
@@ -142,7 +140,7 @@ def test_a_condition_maps_with_the_instruction_it_leads_into() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_what_a_prohibition_lists_stays_prohibited() -> None:
     atoms = _mapped("# Rules\n\nDo not commit secrets, push credentials, or share tokens.\n")
     assert [(a.text, a.charge_value) for a in atoms] == [
@@ -152,7 +150,7 @@ def test_what_a_prohibition_lists_stays_prohibited() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_a_comma_inside_a_code_span_does_not_cut_the_sentence() -> None:
     atoms = _mapped("# Rules\n\nRun `make build, make test` before merging.\n")
     assert [a.text for a in atoms] == ["Run `make build, make test` before merging."]
@@ -160,7 +158,7 @@ def test_a_comma_inside_a_code_span_does_not_cut_the_sentence() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_a_list_item_giving_two_instructions_maps_to_two_instructions() -> None:
     atoms = _mapped("# Rules\n\n- Pull the latest `main`, then run `uv run pytest`.\n")
     assert _charged(atoms) == ["Pull the latest `main`,", "then run `uv run pytest`."]
@@ -168,7 +166,7 @@ def test_a_list_item_giving_two_instructions_maps_to_two_instructions() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_joined_instructions_map_to_as_many_instructions_as_their_split_form() -> None:
     joined = _mapped(
         "# Testing\n\nDo not mock the database; exercise the real ProductCache in the test, "
@@ -183,7 +181,7 @@ def test_joined_instructions_map_to_as_many_instructions_as_their_split_form() -
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_the_mapped_sentence_is_reported_once_naming_its_instructions() -> None:
     atoms = _mapped("# Rules\n\nValidate the input and sanitize the output.\n")
     ruleset = RulesetMap(

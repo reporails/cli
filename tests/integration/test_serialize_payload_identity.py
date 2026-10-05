@@ -21,10 +21,6 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import multislot_available
-
-requires_charge_model = pytest.mark.skipif(not multislot_available(), reason="Bundled multi-slot graphs not available")
-
 _FILE_A = """# Rules
 
 Never push directly to main.
@@ -43,7 +39,7 @@ Avoid using bare except clauses in production code.
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_daemon_style_round_trip_preserves_the_v4_payload(tmp_path: Path) -> None:
     """Cold in-process map, projected+encoded, must byte-match the same map
     after a save_ruleset_map/load_ruleset_map JSON round-trip (the shape both

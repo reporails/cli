@@ -157,7 +157,7 @@ def test_multislot_unformatted_code_excludes_backticked_tokens(monkeypatch: pyte
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_structural_neutral_floor_survives_the_charge_head() -> None:
     # REGRESSION: a deterministically-determined NEUTRAL (a structural non-instruction)
     # must not be re-charged to ±1 by the argmax head — `_apply_structural_neutral_floor`
@@ -179,7 +179,7 @@ def test_structural_neutral_floor_survives_the_charge_head() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_structural_neutral_floor_keeps_a_riding_instruction() -> None:
     # REGRESSION: a label/narration opener must not zero the WHOLE atom
     # when a genuine instruction rides along after it on the production
@@ -201,7 +201,7 @@ def test_structural_neutral_floor_keeps_a_riding_instruction() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_structural_floor_runs_before_deontic_floor() -> None:
     # The structural-NEUTRAL floor must run BEFORE the deontic
     # floor. A bare-negative item (`No mocks.`) matches both, and under `## Don'ts` the deontic
@@ -291,7 +291,7 @@ def test_a_run_with_no_action_stays_apart_from_an_opposite_sign_or_alone(runs: l
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     ("line", "instruction"),
     [
@@ -318,7 +318,7 @@ def test_a_subject_or_joining_word_is_not_an_instruction_of_its_own(line: str, i
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_a_quoted_sample_line_stays_one_neutral_quotation() -> None:
     quote = (
         '"Official docs recommend X. However, we found Y works better (confirmed in 3 builds). Consider both options."'
@@ -329,7 +329,7 @@ def test_a_quoted_sample_line_stays_one_neutral_quotation() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_table_cell_edge_cut_becomes_one_atom() -> None:
     md = "| Step | Rule |\n| --- | --- |\n| Deploy | Never deploy on Friday |\n"
     atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
@@ -341,7 +341,7 @@ def test_table_cell_edge_cut_becomes_one_atom() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_table_row_two_independent_sentences_still_yields_two_atoms() -> None:
     md = "| Cell | Rule |\n| --- | --- |\n| A | Always run it. Do not skip it. |\n"
     atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
@@ -365,7 +365,7 @@ def test_table_header_row_is_a_label_row_not_an_instruction() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_table_header_row_stays_neutral_through_the_charge_head() -> None:
     md = "| Leverage tier | Severity floor | Reading |\n| --- | --- | --- |\n| Deploy | Never deploy on Friday |\n"
     atoms = bio_pipeline.apply_multislot(list(tokenize(md)))
@@ -376,7 +376,7 @@ def test_table_header_row_stays_neutral_through_the_charge_head() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     "header",
     [
@@ -403,7 +403,7 @@ def test_a_table_header_with_charge_words_stays_a_neutral_label(header: str, seg
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_multislot_marks_a_conditional_frame_scope_conditional() -> None:
     for text in [
         "If the tests fail, do not push.",
@@ -420,7 +420,7 @@ def test_multislot_marks_a_conditional_frame_scope_conditional() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_multislot_leaves_an_unconditional_sentence_unconditional() -> None:
     for text in [
         "Always run the linter.",
@@ -440,7 +440,7 @@ def test_multislot_leaves_an_unconditional_sentence_unconditional() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_multislot_leaves_a_frame_word_heading_unconditional() -> None:
     # `## When to use` is a section label, not a condition on anything.
     atoms = bio_pipeline.apply_multislot(list(tokenize("## When to use\n\nRun the linter.\n")))
@@ -458,7 +458,7 @@ def test_multislot_leaves_a_frame_word_heading_unconditional() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_complemented_no_prohibition_charges_constraint() -> None:
     for text in [
         "No blank lines between sections.",
@@ -477,7 +477,7 @@ def test_complemented_no_prohibition_charges_constraint() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_terse_no_prohibition_without_a_complement_charges_constraint() -> None:
     # A `No <thing>` line names what is forbidden; the scope complement is optional.
     for text in ["No console.log", "No hardcoded secrets", "No blank lines"]:
@@ -490,7 +490,7 @@ def test_terse_no_prohibition_without_a_complement_charges_constraint() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_described_absence_is_not_a_prohibition() -> None:
     # `for`/`of` name what is absent, not where a rule binds; a status adverb reports.
     # (The floor only declines to PROMOTE — a charge the head itself decoded stands.)
@@ -504,7 +504,7 @@ def test_described_absence_is_not_a_prohibition() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_bare_no_status_line_stays_neutral() -> None:
     for text in [
         "No regressions.",
@@ -526,7 +526,7 @@ def test_bare_no_status_line_stays_neutral() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_labelled_see_reference_stays_neutral() -> None:
     for text in [
         "Knowledge: see docs/architecture/map.md",
@@ -542,7 +542,7 @@ def test_labelled_see_reference_stays_neutral() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_labelled_see_reference_keeps_a_riding_prohibition() -> None:
     text = "Knowledge: see the runbook, and never commit a credential."
     atoms = bio_pipeline.apply_multislot(list(tokenize(text)))
@@ -551,7 +551,7 @@ def test_labelled_see_reference_keeps_a_riding_prohibition() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_instruction_fronting_a_see_pointer_keeps_its_charge() -> None:
     # The label of a `<Label>: see ...` pointer is a bare noun, not a clause.
     for text in [
@@ -565,7 +565,7 @@ def test_instruction_fronting_a_see_pointer_keeps_its_charge() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
+@pytest.mark.requires_model
 def test_pointer_title_carrying_and_is_still_a_pointer() -> None:
     # `and` inside a reference title does not break the pointer into a second clause.
     text = "Knowledge: see the build and deploy guide"

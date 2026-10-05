@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.interfaces.mcp import remedy_brief
-from tests.unit.test_preservation import _compare_edit, _requires_model
+from tests.unit.test_preservation import _compare_edit
 from tests.unit.test_remedy_brief import _main_location, requires_model, requires_rules
 
 _NEVER = "# Service\n\n## Never Push Directly to Main\n\nOpen a pull request from a feature branch.\n"
@@ -24,7 +24,7 @@ def _doc(heading: str, items: tuple[str, ...]) -> str:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_prohibition_heading_with_nothing_moved_into_the_body_is_not_ok(tmp_path) -> None:
     after = _NEVER.replace("Never Push Directly to Main", "Branching")
     result = _compare_edit(tmp_path, _NEVER, after)
@@ -34,7 +34,7 @@ def test_a_renamed_prohibition_heading_with_nothing_moved_into_the_body_is_not_o
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_prohibition_heading_whose_body_gains_the_directive_is_not_ok(tmp_path) -> None:
     after = _NEVER.replace("Never Push Directly to Main", "Branching") + "\nPush directly to main.\n"
     result = _compare_edit(tmp_path, _NEVER, after)
@@ -44,7 +44,7 @@ def test_a_renamed_prohibition_heading_whose_body_gains_the_directive_is_not_ok(
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_prohibition_heading_whose_body_gains_the_prohibition_is_ok(tmp_path) -> None:
     after = _NEVER.replace("Never Push Directly to Main", "Branching") + "\nNever push directly to main.\n"
     result = _compare_edit(tmp_path, _NEVER, after)
@@ -54,7 +54,7 @@ def test_a_renamed_prohibition_heading_whose_body_gains_the_prohibition_is_ok(tm
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_an_unchanged_prohibition_heading_is_ok(tmp_path) -> None:
     result = _compare_edit(tmp_path, _NEVER, _NEVER)
     assert result["ok"] is True
@@ -63,7 +63,7 @@ def test_an_unchanged_prohibition_heading_is_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_directive_heading_with_nothing_moved_into_the_body_is_not_ok(tmp_path) -> None:
     after = _ALWAYS.replace("Always Run Tests Before Pushing", "Pushing")
     result = _compare_edit(tmp_path, _ALWAYS, after)
@@ -73,7 +73,7 @@ def test_a_renamed_directive_heading_with_nothing_moved_into_the_body_is_not_ok(
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_directive_heading_whose_body_gains_the_directive_is_ok(tmp_path) -> None:
     after = _ALWAYS.replace("Always Run Tests Before Pushing", "Pushing") + "\nAlways run tests before pushing.\n"
     assert _compare_edit(tmp_path, _ALWAYS, after)["ok"] is True
@@ -81,14 +81,14 @@ def test_a_renamed_directive_heading_whose_body_gains_the_directive_is_ok(tmp_pa
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_an_unchanged_directive_heading_is_ok(tmp_path) -> None:
     assert _compare_edit(tmp_path, _ALWAYS, _ALWAYS)["ok"] is True
 
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_an_unchanged_procedure_step_title_is_ok(tmp_path) -> None:
     result = _compare_edit(tmp_path, _STEP, _STEP)
     assert result["ok"] is True
@@ -97,14 +97,14 @@ def test_an_unchanged_procedure_step_title_is_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_topic_heading_stays_ok(tmp_path) -> None:
     assert _compare_edit(tmp_path, _TOPIC, _TOPIC.replace("Deployment", "Releases"))["ok"] is True
 
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_setext_negative_heading_renamed_over_negated_items_is_not_ok(tmp_path) -> None:
     before = _doc("Don'ts\n------", _DOUBLES)
     result = _compare_edit(tmp_path, before, _doc("Test doubles\n------------", _NEGATED))
@@ -114,7 +114,7 @@ def test_a_setext_negative_heading_renamed_over_negated_items_is_not_ok(tmp_path
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_blockquoted_negative_heading_renamed_over_negated_items_is_not_ok(tmp_path) -> None:
     result = _compare_edit(tmp_path, _doc("> ## Never", _DOUBLES), _doc("> ## Doubles", _NEGATED))
     assert result["ok"] is False
@@ -123,7 +123,7 @@ def test_a_blockquoted_negative_heading_renamed_over_negated_items_is_not_ok(tmp
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_negative_heading_restyled_as_setext_with_the_same_label_is_ok(tmp_path) -> None:
     result = _compare_edit(tmp_path, _doc("## Don'ts", _DOUBLES), _doc("Don'ts\n------", _DOUBLES))
     assert result["relabelled_negative_headings"] == []
@@ -132,7 +132,7 @@ def test_a_negative_heading_restyled_as_setext_with_the_same_label_is_ok(tmp_pat
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_closed_negative_heading_renamed_over_negated_items_is_not_ok(tmp_path) -> None:
     result = _compare_edit(tmp_path, _doc("## Forbidden ##", _DOUBLES), _doc("## Doubles ##", _NEGATED))
     assert result["ok"] is False

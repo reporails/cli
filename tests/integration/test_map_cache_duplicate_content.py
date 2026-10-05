@@ -15,10 +15,6 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import multislot_available
-
-requires_charge_model = pytest.mark.skipif(not multislot_available(), reason="Bundled multi-slot graphs not available")
-
 _SHARED_CONTENT = "# Rule\n\nAlways validate user input before use.\n"
 
 
@@ -33,7 +29,7 @@ def _atom_shape(ruleset, file_path: Path) -> list[tuple[str, int, str, str, bool
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_duplicate_content_files_charge_identically_in_one_cold_run(tmp_path: Path) -> None:
     """Two content-identical files, mapped together in one cold run, must come
     out of the charge stage with identical (charge, charge_value, modality,
@@ -63,7 +59,7 @@ def test_duplicate_content_files_charge_identically_in_one_cold_run(tmp_path: Pa
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_cold_and_warm_payload_bytes_match_for_duplicate_content(tmp_path: Path) -> None:
     """A cold run's projected+encoded payload must byte-match a subsequent warm
     run's, for a project made entirely of content-identical files."""

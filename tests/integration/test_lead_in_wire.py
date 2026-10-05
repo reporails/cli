@@ -11,10 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import multislot_available
-
-requires_charge_model = pytest.mark.skipif(not multislot_available(), reason="Bundled multi-slot graphs not available")
-
 
 def _wire(tmp_path: Path, markdown: str) -> list[tuple[int, bool]]:
     """(line, carries `li`) for each atom the file sends."""
@@ -30,7 +26,7 @@ def _wire(tmp_path: Path, markdown: str) -> list[tuple[int, bool]]:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     "markdown",
     [
@@ -49,7 +45,7 @@ def test_a_colon_line_above_a_list_a_code_block_or_a_table_rides_the_wire_as_a_l
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     "markdown",
     [
@@ -64,7 +60,7 @@ def test_a_line_without_a_colon_or_without_a_block_after_it_is_no_lead_in(tmp_pa
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_a_line_cut_into_pieces_marks_only_its_last_piece(tmp_path: Path) -> None:
     markdown = "Read the docs first. Never edit these files:\n\n- the lockfile\n- the generated schema\n"
     wire = _wire(tmp_path, markdown)
@@ -75,7 +71,7 @@ def test_a_line_cut_into_pieces_marks_only_its_last_piece(tmp_path: Path) -> Non
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_a_lead_in_whose_list_is_its_object_still_rides_the_wire_and_the_items_do_not(tmp_path: Path) -> None:
     wire = _wire(tmp_path, "Audit these files:\n\n- `CLAUDE.md`\n- `AGENTS.md`\n\nNever skip the version check.\n")
     assert wire[0] == (1, True)

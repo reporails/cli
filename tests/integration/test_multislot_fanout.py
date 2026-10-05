@@ -17,13 +17,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper.bio_pipeline import _decode_plan
-from reporails_cli.core.mapper.bio_tagger import multislot_available
 from reporails_cli.core.mapper.multislot_frames import tag_atom_multislot_frames
 from reporails_cli.core.mapper.parse import tokenize
-
-requires_charge_model = pytest.mark.skipif(
-    not multislot_available(), reason="Bundled charge-model graphs not available"
-)
 
 _CONSTRAINT = "Never push to main."
 _DIRECTIVE = "Add backtick-wrapped names to your instructions."
@@ -31,7 +26,7 @@ _DIRECTIVE = "Add backtick-wrapped names to your instructions."
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_atom_charge_is_per_run_from_the_charge_bio() -> None:
     """Each atom's charge is its charge-run class — a constraint is -1, a directive +1."""
     (con,) = tag_atom_multislot_frames(_CONSTRAINT)
@@ -42,7 +37,7 @@ def test_atom_charge_is_per_run_from_the_charge_bio() -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_span_offsets_index_the_atom_own_text() -> None:
     """Every non-empty span offset indexes into the atom's OWN text, not the sentence.
 
@@ -74,7 +69,7 @@ def test_span_offsets_index_the_atom_own_text() -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     "text",
     [
@@ -92,7 +87,7 @@ def test_charge_run_atoms_cover_the_full_unit(text: str) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_two_run_sentence_partitions_with_no_gap() -> None:
     """A sentence the head splits into two charge runs: the atoms tile the unit with no gap."""
     text = "Broken imports create gaps in the agent's context — the agent silently skips missing files without warning."
@@ -103,7 +98,7 @@ def test_two_run_sentence_partitions_with_no_gap() -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_corpus_sample_drops_no_words() -> None:
     """Property test over a sample of this repo's own instruction files: zero dropped words.
 
@@ -150,7 +145,7 @@ def test_corpus_sample_drops_no_words() -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_charge_model
+@pytest.mark.requires_model
 def test_truncated_tail_prohibition_is_not_swallowed_as_directive() -> None:
     filler = " ".join(f"word{i}" for i in range(150))
     text = f"Always run the tests before committing and {filler} but never delete the production database."

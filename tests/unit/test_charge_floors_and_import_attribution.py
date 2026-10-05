@@ -32,8 +32,6 @@ from reporails_cli.core.platform.dto.ruleset import (
     RulesetSummary,
 )
 
-requires_charge_files = pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="charge files not bundled")
-
 _CHARGE = {-1: "CONSTRAINT", 0: "NEUTRAL", 1: "DIRECTIVE"}
 
 
@@ -93,7 +91,7 @@ def test_a_terse_no_prohibition_heading_keeps_its_charge_without_a_verb() -> Non
     assert heading.charge_value == -1
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_step_heading_naming_a_topic_reads_neutral_end_to_end() -> None:
@@ -118,7 +116,7 @@ def test_a_charged_heading_takes_its_place_in_document_order() -> None:
     assert [a.position_index for a in atoms] == [0, 0, 1, 2, -1, 3]
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_charged_heading_holds_a_place_end_to_end() -> None:
@@ -166,7 +164,7 @@ def test_a_dash_set_bold_label_draws_no_local_bold_finding() -> None:
     assert _check_bold_patterns([atom], "SKILL.md") == []
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_prohibition_behind_a_bold_label_carries_no_bold() -> None:
@@ -179,7 +177,7 @@ def test_a_prohibition_behind_a_bold_label_carries_no_bold() -> None:
 # ── fenced lines ────────────────────────────────────────────────────────────
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_fenced_never_line_is_charged_like_running_text() -> None:
@@ -193,7 +191,7 @@ def test_a_fenced_never_line_is_charged_like_running_text() -> None:
     assert never.bold_tokens == [] and never.italic_tokens == []
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_fenced_line_that_reads_as_no_instruction_stays_neutral() -> None:
@@ -202,7 +200,7 @@ def test_a_fenced_line_that_reads_as_no_instruction_stays_neutral() -> None:
     assert (option.format, option.charge_value, option.stage) == ("code_block", 0, "")
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_code_fence_kept_whole_stays_one_neutral_block() -> None:
@@ -280,7 +278,7 @@ def test_the_hedge_floor_reads_a_lead_hedge_on_a_charged_atom() -> None:
     assert (neutral.charge_value, neutral.modality) == (0, "none")
 
 
-@requires_charge_files
+@pytest.mark.requires_model
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_a_should_instruction_reads_hedged_end_to_end() -> None:

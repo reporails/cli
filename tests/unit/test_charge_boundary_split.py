@@ -9,8 +9,6 @@ from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.classify import classify_charge
 from reporails_cli.core.mapper.parse import tokenize
 
-_needs_model = pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
-
 
 def _mapped(text: str) -> list:
     return [a for a in bio_pipeline.apply_multislot(list(tokenize(text))) if a.kind != "heading"]
@@ -41,7 +39,7 @@ _WHOLE_CASES = [
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize("text", _SPLIT_CASES)
 def test_directive_prohibition_compound_splits(text: str) -> None:
     signs = _signs(text)
@@ -50,7 +48,7 @@ def test_directive_prohibition_compound_splits(text: str) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize("text", _WHOLE_CASES)
 def test_same_charge_or_declarative_stays_whole(text: str) -> None:
     atoms = _mapped(text)
@@ -59,7 +57,7 @@ def test_same_charge_or_declarative_stays_whole(text: str) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_parenthetical_negation_is_not_a_boundary() -> None:
     # A prohibition marker inside parentheses is an inline example, not a cut.
     md = "Only FILE a research observation (never a solo re-implementation) if a gap survives"
@@ -198,7 +196,7 @@ def test_classify_charge_reads_a_terse_prohibition_constraint(text: str) -> None
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_colon_label_is_not_a_charge_boundary() -> None:
     # A colon after a label is structural: the label stays with its instruction, the prohibition is its own.
     md = "**How to apply:** always verify claims, never speculate"

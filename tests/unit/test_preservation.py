@@ -1329,17 +1329,10 @@ def test_an_unsnapshotted_file_has_no_snapshot(tmp_path) -> None:
 # Integration: the real mapper, not synthetic atoms.
 # ---------------------------------------------------------------------------
 
-try:
-    from reporails_cli.core.mapper.bio_tagger import multislot_available
-
-    _requires_model = pytest.mark.skipif(not multislot_available(), reason="Bundled charge-model graphs not available")
-except ImportError:  # pragma: no cover - mapper extras not installed
-    _requires_model = pytest.mark.skip(reason="mapper extras not installed")
-
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_compare_against_the_real_mapper(tmp_path) -> None:
     from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
@@ -1432,7 +1425,7 @@ def _compare_edit(tmp_path, before_text: str, after_text: str) -> dict[str, Any]
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_genuine_no_op_on_the_attack_base_is_ok(tmp_path) -> None:
     result = _compare_edit(tmp_path, _ATTACK_BASE, _ATTACK_BASE)
     assert result["ok"] is True
@@ -1440,7 +1433,7 @@ def test_a_genuine_no_op_on_the_attack_base_is_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_deleted_prose_prohibition_sharing_a_named_token_is_lost_not_masked(tmp_path) -> None:
     """In PROSE (no list structure to fall back on) deleting one of two prohibitions that share
     a named token (`main`) must not read as kept just because a differently-worded surviving
@@ -1453,7 +1446,7 @@ def test_a_deleted_prose_prohibition_sharing_a_named_token_is_lost_not_masked(tm
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prohibition_rewritten_as_a_directive_the_model_reads_as_flipped_is_a_flip(tmp_path) -> None:
     """A prohibition rewritten so the real charge model reads it as a directive (not every
     rephrasing flips polarity under the bundled model — "only through" stays a prohibition, so
@@ -1476,7 +1469,7 @@ def test_a_prohibition_rewritten_as_a_directive_the_model_reads_as_flipped_is_a_
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_deleted_factual_prose_is_lost_context(tmp_path) -> None:
     """A neutral (charge 0) prose fact the rewrite silently drops is not an "instruction", but
     the drop must still be reported and `ok` must be `False`."""
@@ -1490,7 +1483,7 @@ def test_deleted_factual_prose_is_lost_context(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_constraint_split_into_the_next_bullet_stays_ok(tmp_path) -> None:
     """The packed bullet "Run `pytest` before every commit. *Do not skip `ruff`...*" split
     into two CONSECUTIVE bullets is not detached — its prohibition lands in the block right
@@ -1506,7 +1499,7 @@ def test_a_constraint_split_into_the_next_bullet_stays_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_constraint_moved_to_the_end_of_the_file_stays_detached(tmp_path) -> None:
     """A constraint moved far away (not the block right after its
     directive) is still detached."""
@@ -1520,7 +1513,7 @@ def test_a_constraint_moved_to_the_end_of_the_file_stays_detached(tmp_path) -> N
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_named_token_extended_is_not_lost(tmp_path) -> None:
     """`` `pytest` `` renamed to `` `pytest -q` `` still contains the
     word `pytest` at a word boundary (backtick, not a word character, closes it either side),
@@ -1541,7 +1534,7 @@ If the concern remains after the fix, log it as a followup.*
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_flip(tmp_path) -> None:
     """ "Face it directly — don't dodge." states its instruction once positively and once
     negatively in the same sentence, with no leading prohibition marker on either side; the
@@ -1561,7 +1554,7 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     ("before_text", "after_text", "expect_flip"),
     [
@@ -1631,7 +1624,7 @@ it. Replace any existing `## Status` section with the new one.
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prohibition_silently_appended_to_an_already_kept_instruction_is_added(tmp_path) -> None:
     """The false negative this check closes: a rewrite that keeps the existing instruction word
     for word and tacks on a brand new prohibition the original never had. The appended
@@ -1681,7 +1674,7 @@ Maybe run the tests before you push, and never skip the linter.
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_hedged_packed_sentence_split_into_a_directive_and_a_prohibition_stays_ok(tmp_path) -> None:
     """The hedge "maybe" and the vague "tests"/
     "linter" nouns the rewrite replaces with named constructs must not count against split
@@ -1704,7 +1697,7 @@ def test_a_hedged_packed_sentence_split_into_a_directive_and_a_prohibition_stays
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_heading_renamed_to_a_topic_stays_ok(tmp_path) -> None:
     after = _SPLIT_BASE.replace("## Releases", "## Release tagging")
     result = _compare_edit(tmp_path, _SPLIT_BASE, after)
@@ -1713,7 +1706,7 @@ def test_a_heading_renamed_to_a_topic_stays_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_g2b_a_heading_added_over_a_previously_unheaded_instruction_stays_ok(tmp_path) -> None:
     """A new `## Hygiene` heading placed over the previously unheaded, unchanged directive is
     not read as `added_instructions` — the heading itself is never a charged atom
@@ -1730,7 +1723,7 @@ def test_g2b_a_heading_added_over_a_previously_unheaded_instruction_stays_ok(tmp
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_prose_reworded_with_facts_kept_stays_ok(tmp_path) -> None:
     after = _SPLIT_BASE.replace(
         "The build uses a cache under `.cache/` that survives restarts.",
@@ -1742,7 +1735,7 @@ def test_prose_reworded_with_facts_kept_stays_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prohibition_given_a_reason_stays_ok(tmp_path) -> None:
     after = _SPLIT_BASE.replace(
         "- Do not publish from a fork.", "- Do not publish from a fork, because forks lack the signing key."
@@ -1753,7 +1746,7 @@ def test_a_prohibition_given_a_reason_stays_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prohibition_merged_away_into_a_directive_is_not_ok(tmp_path) -> None:
     after = _SPLIT_BASE.replace(
         "- Tag releases from `main` only.\n- Do not publish from a fork.\n",
@@ -1765,7 +1758,7 @@ def test_a_prohibition_merged_away_into_a_directive_is_not_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_fact_replaced_by_a_different_fact_is_not_ok(tmp_path) -> None:
     after = _SPLIT_BASE.replace("The build uses a cache under `.cache/` that survives restarts.", "The build is fast.")
     result = _compare_edit(tmp_path, _SPLIT_BASE, after)
@@ -1774,7 +1767,7 @@ def test_a_fact_replaced_by_a_different_fact_is_not_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_negation_dropped_in_place_is_not_ok(tmp_path) -> None:
     after = _SPLIT_BASE.replace("never skip the linter", "skip the linter when rushed")
     result = _compare_edit(tmp_path, _SPLIT_BASE, after)
@@ -1901,7 +1894,7 @@ _ORIENT_WIDEN_AFTER = (
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_the_orient_skill_widened_prohibition_is_not_ok(tmp_path) -> None:
     """The `orient/SKILL.md:89` before/after pair from a real rewrite. A rewrite widened "never
     walk the whole corpus" into a prohibition naming `Glob`/`Grep` as forbidden means —
@@ -1916,7 +1909,7 @@ def test_the_orient_skill_widened_prohibition_is_not_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_mirrored_narrowing_drops_a_listed_forbidden_object_is_not_ok(tmp_path) -> None:
     """Mirrors the widening case above in the opposite direction: a prohibition already naming
     two forbidden means (the `Glob`/`Grep` pair from the rewrite above) drops one — the ban on
@@ -1932,7 +1925,7 @@ def test_mirrored_narrowing_drops_a_listed_forbidden_object_is_not_ok(tmp_path) 
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prohibition_rephrased_keeping_its_objects_stays_ok(tmp_path) -> None:
     """Guard against over-fire: a pure rephrase of the prohibition's own named objects and
     conditions must still pass."""
@@ -1945,7 +1938,7 @@ def test_a_prohibition_rephrased_keeping_its_objects_stays_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prohibition_s_mechanical_formatting_change_stays_ok(tmp_path) -> None:
     """Guard against over-fire: backticking a word the prohibition already said in plain text is
     formatting, not a new forbidden object."""
@@ -1966,7 +1959,7 @@ def test_a_prohibition_s_mechanical_formatting_change_stays_ok(tmp_path) -> None
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_condition_silently_added_before_a_restriction_is_not_ok(tmp_path) -> None:
     """An unconditional "only modify `X`, `Y`, `Z`" restriction gains a
     `During `/refine-rule`,` prefix — outside that command the rewrite no longer restricts
@@ -1984,7 +1977,7 @@ def test_a_condition_silently_added_before_a_restriction_is_not_ok(tmp_path) -> 
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_test_fixtures_narrowed_to_two_named_directories_is_not_ok(tmp_path) -> None:
     """`tighten-language/SKILL.md:46`: "test fixtures" (unqualified) narrows to only fixtures
     under two named directories. Regression pin: an earlier version of the
@@ -2003,7 +1996,7 @@ def test_test_fixtures_narrowed_to_two_named_directories_is_not_ok(tmp_path) -> 
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_an_exclusion_narrowed_to_one_named_location_is_not_ok(tmp_path) -> None:
     """`update-public-docs/SKILL.md:76`: an unqualified "EXCLUDE" narrows to excluding only from
     one named location — elsewhere, documenting the same categories is now silently allowed."""
@@ -2017,7 +2010,7 @@ def test_an_exclusion_narrowed_to_one_named_location_is_not_ok(tmp_path) -> None
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_an_illustrative_such_as_example_stays_ok(tmp_path) -> None:
     """ "do not write production code" gains "such as `X`", naming one instance of the SAME
     already-forbidden category, not a new one."""
@@ -2035,7 +2028,7 @@ def test_an_illustrative_such_as_example_stays_ok(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_like_the_x_example_below_pointer_stays_ok(tmp_path) -> None:
     """`fastapi/SKILL.md:395` — an over-fire fix: a prohibition gains a "like the `X` example
     below" pointer to an illustration, not a new forbidden object. An earlier version of this
@@ -2366,7 +2359,7 @@ def test_an_instruction_reworded_with_no_condition_is_not_listed() -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_renamed_bare_negative_heading_over_negated_items_is_not_ok_on_the_real_mapper(tmp_path) -> None:
     after = (
         "## Test doubles\n\n- Do not use mock objects in tests.\n"
@@ -2379,7 +2372,7 @@ def test_a_renamed_bare_negative_heading_over_negated_items_is_not_ok_on_the_rea
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_condition_added_to_a_directive_is_not_ok_on_the_real_mapper(tmp_path) -> None:
     after = _DONTS_BEFORE.replace(
         "Use real objects in tests.", "Use real objects in tests whenever a test touches the database."

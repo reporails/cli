@@ -16,7 +16,7 @@ from reporails_cli.core.heal.preservation.conditions import (
 )
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
-from tests.unit.test_preservation import _atom, _requires_model
+from tests.unit.test_preservation import _atom
 
 
 def _listed(original_line: list[SnapshotAtom], rewrite_text: str, *, index: int = 0) -> bool:
@@ -97,7 +97,7 @@ _ROWS = [
 
 @pytest.mark.subsys_server
 @pytest.mark.integration
-@_requires_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(("name", "original", "rewrite", "listed"), _ROWS, ids=[r[0] for r in _ROWS])
 def test_added_conditions_on_the_real_mapper(tmp_path, name: str, original: str, rewrite: str, listed: bool) -> None:
     from reporails_cli.core.mapper.models import get_models
@@ -205,7 +205,7 @@ def test_a_name_in_backticks_or_a_named_object_never_changes_a_condition(
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(
     ("original", "rewrite", "ok"),
     [
@@ -289,7 +289,7 @@ def test_a_code_token_never_opens_a_condition_or_narrows(
 
 @pytest.mark.subsys_map
 @pytest.mark.integration
-@_requires_model
+@pytest.mark.requires_model
 def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
     from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
@@ -336,7 +336,7 @@ def test_quotation_followed_by_text_still_splits_under_structure_aware() -> None
 
 @pytest.mark.subsys_map
 @pytest.mark.integration
-@_requires_model
+@pytest.mark.requires_model
 def test_whole_line_quotation_maps_as_one_neutral_atom_structure_aware(tmp_path) -> None:
     from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset

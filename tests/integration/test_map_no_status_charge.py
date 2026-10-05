@@ -14,10 +14,6 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import multislot_available
-
-requires_model = pytest.mark.skipif(not multislot_available(), reason="Bundled charge-model graphs not available")
-
 _FIXTURE = """# Project rules
 
 - No console.log
@@ -40,7 +36,7 @@ _EXPECTED = {
 
 @pytest.mark.integration
 @pytest.mark.subsys_map
-@requires_model
+@pytest.mark.requires_model
 def test_map_ruleset_separates_terse_prohibition_from_status_report(tmp_path: Path) -> None:
     from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset

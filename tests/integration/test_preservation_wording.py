@@ -10,10 +10,7 @@ from typing import Any
 import pytest
 
 from reporails_cli.core.heal.preservation import Snapshot, compare, take_snapshot
-from reporails_cli.core.mapper.bio_tagger import multislot_available
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
-
-requires_model = pytest.mark.skipif(not multislot_available(), reason="Bundled charge-model graphs not available")
 
 
 def _verdict(tmp_path, original: str, rewrite: str) -> dict[str, Any]:
@@ -202,7 +199,7 @@ _ROWS = [
 
 @pytest.mark.subsys_server
 @pytest.mark.integration
-@requires_model
+@pytest.mark.requires_model
 @pytest.mark.parametrize(("name", "original", "rewrite", "ok", "direct"), _ROWS, ids=[r[0] for r in _ROWS])
 def test_word_level_checks_on_the_real_mapper(
     tmp_path, name: str, original: str, rewrite: str, ok: bool, direct: int
@@ -215,7 +212,7 @@ def test_word_level_checks_on_the_real_mapper(
 
 @pytest.mark.subsys_server
 @pytest.mark.integration
-@requires_model
+@pytest.mark.requires_model
 def test_a_hedge_made_direct_never_fails_the_rewrite_by_itself(tmp_path) -> None:
     result = _verdict(tmp_path, "Consider avoiding global state.", "Avoid global state.")
     assert result["lost_instructions"] == []

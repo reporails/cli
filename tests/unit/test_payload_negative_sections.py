@@ -9,13 +9,6 @@ import pytest
 
 from reporails_cli.core.platform.adapters.payload import project_payload
 
-try:
-    from reporails_cli.core.mapper.bio_tagger import multislot_available
-
-    _requires_model = pytest.mark.skipif(not multislot_available(), reason="Bundled charge-model graphs not available")
-except ImportError:  # pragma: no cover - mapper extras not installed
-    _requires_model = pytest.mark.skip(reason="mapper extras not installed")
-
 _ITEMS = "- Use mock objects in tests.\n- Use test doubles in the suite.\n"
 
 
@@ -43,7 +36,7 @@ def _flags(rows: list[tuple[str, bool]], *texts: str) -> list[bool]:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_an_atx_negative_heading_and_its_list_items_carry_ns(tmp_path) -> None:
     rows = _projected(tmp_path, f"# Project\n\n## Don'ts\n\n{_ITEMS}")
     assert _flags(rows, "Project", "Don'ts") == [False, True]
@@ -52,7 +45,7 @@ def test_an_atx_negative_heading_and_its_list_items_carry_ns(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_setext_negative_heading_and_its_list_items_carry_ns(tmp_path) -> None:
     rows = _projected(tmp_path, f"Project\n=======\n\nDon'ts\n------\n\n{_ITEMS}")
     assert _flags(rows, "Don'ts") == [True]
@@ -61,7 +54,7 @@ def test_a_setext_negative_heading_and_its_list_items_carry_ns(tmp_path) -> None
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_blockquoted_negative_heading_and_its_list_items_carry_ns(tmp_path) -> None:
     quoted = "".join(f"> {line}\n" for line in _ITEMS.splitlines())
     rows = _projected(tmp_path, f"# Project\n\n> ## Never\n>\n{quoted}")
@@ -71,7 +64,7 @@ def test_a_blockquoted_negative_heading_and_its_list_items_carry_ns(tmp_path) ->
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_numbered_list_under_a_negative_heading_carries_ns(tmp_path) -> None:
     rows = _projected(
         tmp_path,
@@ -82,7 +75,7 @@ def test_a_numbered_list_under_a_negative_heading_carries_ns(tmp_path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_nested_list_item_under_a_negative_heading_carries_ns(tmp_path) -> None:
     rows = _projected(
         tmp_path,
@@ -98,7 +91,7 @@ def test_a_nested_list_item_under_a_negative_heading_carries_ns(tmp_path) -> Non
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_prose_line_between_the_heading_and_the_list_has_no_ns_but_the_list_keeps_it(tmp_path) -> None:
     rows = _projected(
         tmp_path,
@@ -110,7 +103,7 @@ def test_a_prose_line_between_the_heading_and_the_list_has_no_ns_but_the_list_ke
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_list_item_under_a_sub_heading_inside_the_section_has_no_ns(tmp_path) -> None:
     rows = _projected(tmp_path, f"# Project\n\n## Don'ts\n\n### Testing\n\n{_ITEMS}")
     assert _flags(rows, "Don'ts", "Testing") == [True, False]
@@ -119,7 +112,7 @@ def test_a_list_item_under_a_sub_heading_inside_the_section_has_no_ns(tmp_path) 
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_list_item_in_an_imported_file_under_a_negative_heading_carries_ns(tmp_path) -> None:
     rows = _projected(
         tmp_path,
@@ -132,7 +125,7 @@ def test_a_list_item_in_an_imported_file_under_a_negative_heading_carries_ns(tmp
 
 @pytest.mark.integration
 @pytest.mark.subsys_server
-@_requires_model
+@pytest.mark.requires_model
 def test_a_full_sentence_heading_and_its_list_items_have_no_ns(tmp_path) -> None:
     rows = _projected(tmp_path, f"# Project\n\n## Do not use mock objects in tests\n\n{_ITEMS}")
     assert _flags(rows, "Do not use mock objects in tests") == [False]

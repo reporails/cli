@@ -11,8 +11,6 @@ import pytest
 from reporails_cli.core.mapper import bio_pipeline
 from reporails_cli.core.mapper.parse import tokenize
 
-_needs_model = pytest.mark.skipif(not bio_pipeline.multislot_available(), reason="multislot model not bundled")
-
 
 def _texts(atoms, fmt: str) -> list[str]:
     return [a.text for a in atoms if a.format == fmt and a.kind != "heading"]
@@ -53,7 +51,7 @@ def test_list_items_kept_whole() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_list_item_splits_at_charge_flip() -> None:
     # A list item packing a prohibition and a directive reads as the two instructions it gives,
     # so the +1 "always check…" is not swallowed by the -1 lead prohibition.
@@ -83,7 +81,7 @@ def test_legacy_is_the_default_mode() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@_needs_model
+@pytest.mark.requires_model
 def test_charge_flip_recovered_in_both_modes() -> None:
     # Both modes read a sentence giving two instructions as two, so the prohibition is never swallowed.
     md = "Read the whole file, do not skim it."
