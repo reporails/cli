@@ -95,11 +95,14 @@ file_types:
     scopes:
       project:
         patterns: [".agents/skills/**/*.md"]
+        # Codex documents only <skills root>/<skill-name>/SKILL.md (one level).
+        entry_patterns: [".agents/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns: ["~/.agents/skills/**/*.md", "~/.codex/skills/**/*.md"]
+        entry_patterns: ["~/.agents/skills/*/SKILL.md", "~/.codex/skills/*/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human
@@ -107,6 +110,9 @@ file_types:
         patterns:
           - "/etc/codex/skills/**/*.md"
           - "C:/ProgramData/OpenAI/Codex/skills/**/*.md"
+        entry_patterns:
+          - "/etc/codex/skills/*/SKILL.md"
+          - "C:/ProgramData/OpenAI/Codex/skills/*/SKILL.md"
         precedence: managed
         vcs: external
         maintainer: system

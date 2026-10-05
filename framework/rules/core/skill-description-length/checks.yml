@@ -8,6 +8,7 @@ checks:
   args:
     path: "**/SKILL.md"
     key: description
+    entry_only: true
   message: Skill SKILL.md missing description field in frontmatter
 - id: CORE.S.0040.frontmatter_reads
   type: mechanical

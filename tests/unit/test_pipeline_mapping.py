@@ -731,3 +731,26 @@ def test_daemon_status_help_carries_no_undocumented_path_argument() -> None:
     assert result.exit_code == 0
     assert "[PATH]" not in result.output
     assert "[OPTIONS]" in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_the_cache_holds_the_map_as_mapped_before_membership_is_applied(monkeypatch, tmp_path):
+    """The whole-map cache is written before skill membership is recorded, so a later run with
+    other agents decides again from the map as mapped."""
+    from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
+
+    rec = FileRecord(path=(tmp_path / ".claude/skills/group/x/SKILL.md").as_posix(), content_hash="h", type="skills")
+    rmap = RulesetMap(schema_version="1", embedding_model="", generated_at="t", files=(rec,), atoms=())
+    _patch_config_and_cache(monkeypatch, cache_hit=None)
+    seen: list[tuple[str, str]] = []
+    fake = _FakeFullMapCache(Path("/x"))
+    fake.put = lambda _k, value: seen.append((value.files[0].type, value.files[0].skill))  # type: ignore[method-assign]
+    monkeypatch.setattr("reporails_cli.core.cache.full_map_cache.FullMapCache", lambda _d: fake)
+    monkeypatch.setattr("reporails_cli.core.mapper.daemon.is_daemon_running", lambda: False)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping._map_in_process", lambda *_a, **_k: rmap)
+
+    result = mapping.map_instruction_files(tmp_path, [Path(rec.path)], spawn_daemon=False)
+
+    assert seen == [("skills", "")]  # cached as mapped
+    assert (result.files[0].type, result.files[0].skill) == ("generic", "")  # then decided for this run

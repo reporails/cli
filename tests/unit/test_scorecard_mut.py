@@ -136,7 +136,7 @@ class TestRenderSurfaceHealth:
     def test_single_surface_renders_nothing(self) -> None:
         # A lone surface is suppressed (the top Score covers it). `<= -> <` would
         # render the single bar.
-        one = [SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0)]
+        one = [SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0, item_count=1)]
         assert _capture(_render_surface_health, one) == ""  # kills L307 <= -> <
 
 
@@ -315,8 +315,8 @@ class TestPrintScorecardGating:
         # Surface set with NO Imported surface -> the "Imported files" caption must
         # not render; `== -> !=` on the any() would print it.
         surfaces = [
-            SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0),
-            SurfaceHealth(name="Nested", score=7.0, file_count=1, finding_count=0),
+            SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0, item_count=1),
+            SurfaceHealth(name="Nested", score=7.0, file_count=1, finding_count=0, item_count=1),
         ]
         out = _capture(
             print_scorecard,
@@ -334,8 +334,8 @@ class TestPrintScorecardGating:
         # The `and -> or` mutation on multi_surface would flip it True and suppress
         # the capabilities line.
         surfaces = [
-            SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0),
-            SurfaceHealth(name="Nested", score=7.0, file_count=1, finding_count=0),
+            SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0, item_count=1),
+            SurfaceHealth(name="Nested", score=7.0, file_count=1, finding_count=0, item_count=1),
         ]
         out = _capture(
             print_scorecard,
@@ -356,8 +356,8 @@ class TestPrintScorecardGating:
         # suppressed. `_render_scope(has_surface_health=multi_surface or has_items)`
         # with `or -> and` would recompute False and show the capabilities line.
         surfaces = [
-            SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0),
-            SurfaceHealth(name="Nested", score=7.0, file_count=1, finding_count=0),
+            SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=0, item_count=1),
+            SurfaceHealth(name="Nested", score=7.0, file_count=1, finding_count=0, item_count=1),
         ]
         out = _capture(
             print_scorecard,
@@ -378,8 +378,8 @@ class TestPrintScorecardGating:
         from reporails_cli.formatters.text import item_scorecard
 
         items = [
-            SurfaceHealth(name="itemalpha", score=8.0, file_count=1, finding_count=0),
-            SurfaceHealth(name="itembeta", score=7.0, file_count=1, finding_count=0),
+            SurfaceHealth(name="itemalpha", score=8.0, file_count=1, finding_count=0, item_count=1),
+            SurfaceHealth(name="itembeta", score=7.0, file_count=1, finding_count=0, item_count=1),
         ]
         with item_scorecard.console.capture() as icap:
             print_scorecard(
@@ -491,7 +491,7 @@ class TestSurfaceHealthWidth:
             ("Memory", 7.0, 29, 164, 87, 76, 12),
         ]
         return [
-            SurfaceHealth(name=n, score=sc, file_count=fc, finding_count=fi, errors=e)
+            SurfaceHealth(name=n, score=sc, file_count=fc, finding_count=fi, item_count=fc, errors=e)
             for n, sc, fc, fi, _m, _c, e in rows
         ]
 

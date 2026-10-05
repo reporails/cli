@@ -153,7 +153,11 @@ class TestSurfaceAndItemRows:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_surface_row_reads_findings_then_errors(self) -> None:
-        cell = _plain(_surface_cell(SurfaceHealth(name="Main", score=3.4, file_count=1, finding_count=27, errors=10)))
+        cell = _plain(
+            _surface_cell(
+                SurfaceHealth(name="Main", score=3.4, file_count=1, finding_count=27, item_count=1, errors=10)
+            )
+        )
         assert "27 findings · 10 errors" in cell
         for word in ("move", "cosmetic"):
             assert word not in cell, word
@@ -162,9 +166,13 @@ class TestSurfaceAndItemRows:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_surface_row_singular_and_error_free(self) -> None:
-        one = _plain(_surface_cell(SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=1, errors=1)))
+        one = _plain(
+            _surface_cell(SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=1, item_count=1, errors=1))
+        )
         assert "1 finding · 1 error" in one
-        clean = _plain(_surface_cell(SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=5)))
+        clean = _plain(
+            _surface_cell(SurfaceHealth(name="Main", score=8.0, file_count=1, finding_count=5, item_count=1))
+        )
         assert "5 findings" in clean
         assert "error" not in clean
 
@@ -172,7 +180,9 @@ class TestSurfaceAndItemRows:
     @pytest.mark.subsys_cli_ux
     def test_item_row_reads_findings_then_errors_without_parentheses(self) -> None:
         cell = _plain(
-            item_scorecard._item_cell(SurfaceHealth(name="qa", score=5.4, file_count=1, finding_count=35, errors=2), 8)
+            item_scorecard._item_cell(
+                SurfaceHealth(name="qa", score=5.4, file_count=1, finding_count=35, item_count=1, errors=2), 8
+            )
         )
         assert "35 findings · 2 errors" in cell
         assert "(" not in cell
@@ -197,7 +207,8 @@ class TestFitsTerminal:
             ("Memory", 7.0, 29, 204, 12),
         ]
         surfaces = [
-            SurfaceHealth(name=n, score=s, file_count=fc, finding_count=fi, errors=e) for n, s, fc, fi, e in rows
+            SurfaceHealth(name=n, score=s, file_count=fc, finding_count=fi, item_count=fc, errors=e)
+            for n, s, fc, fi, e in rows
         ]
         monkeypatch.setattr(scorecard, "get_term_width", lambda: width)
         scorecard.console.width = width
@@ -219,7 +230,7 @@ class TestFitsTerminal:
     @pytest.mark.subsys_cli_ux
     def test_surface_rows_pair_only_when_a_pair_fits(self, monkeypatch: pytest.MonkeyPatch, width: int) -> None:
         surfaces = [
-            SurfaceHealth(name=n, score=7.0, file_count=15, finding_count=502, errors=15)
+            SurfaceHealth(name=n, score=7.0, file_count=15, finding_count=502, item_count=15, errors=15)
             for n in ("Main", "Nested", "Skills", "Agents", "Memory")
         ]
         monkeypatch.setattr(scorecard, "get_term_width", lambda: width)

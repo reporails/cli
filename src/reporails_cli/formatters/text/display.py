@@ -14,7 +14,6 @@ from typing import Any
 
 from rich.console import Console
 
-from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
@@ -23,7 +22,9 @@ from reporails_cli.formatters.text.display_constants import (
     get_group_atoms,
     get_sev_icons,
     group_stats_line,
+    path_tag,
     short_path,
+    skill_lookup,
 )
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
@@ -58,12 +59,17 @@ def _render_group_header(
     ruleset_map: Any,
     project_root: Path,
     atoms_by_path: dict[str, list[Any]] | None = None,
+    skill_of: dict[str, str] | None = None,
 ) -> None:
     """Print group header with optional atom stats."""
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
     group_atoms = get_group_atoms(gkey, group_files, ruleset_map, project_root, atoms_by_path)
     stats = f"  [dim]{group_stats_line(group_atoms)}[/dim]" if group_atoms else ""
     label = _GROUP_LABELS.get(gkey, gkey.title())
-    console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({len(group_files)})[/dim]{stats}")
+    norms = [normalize_finding_path(fp, project_root) for fp, _ in group_files]
+    n_items = len({(skill_of or {}).get(norm, norm) for norm in norms})
+    console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({n_items})[/dim]{stats}")
 
 
 @dataclass(frozen=True)
@@ -78,13 +84,14 @@ class _CardContext:
     aliases_by_file: dict[str, list[str]] = field(default_factory=dict)
     regime_by_file: dict[str, Any] = field(default_factory=dict)
     atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
+    skill_of: dict[str, str] | None = None
 
 
 def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: _CardContext) -> None:
     """Render a single file group: header, file cards, footer."""
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root, ctx.atoms_by_path)
+    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root, ctx.atoms_by_path, ctx.skill_of)
     max_cards = 3 if not ctx.verbose else 999
 
     for i, (filepath, findings) in enumerate(group_files):
@@ -103,6 +110,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             aliases_by_file=ctx.aliases_by_file,
             project_root=ctx.project_root,
             atoms_by_path=ctx.atoms_by_path,
+            skill_of=ctx.skill_of,
         )
 
     shown = sum(len(split_conventions(fs, ctx.verbose)[0]) for _, fs in group_files)
@@ -264,19 +272,34 @@ def _detect_tier(result: Any, has_quality: bool) -> str:
     return "free"
 
 
+def _group_key(filepath: str, ft: dict[str, str], root: Path, skill_of: dict[str, str] | None) -> str:
+    """File-group key for a path: `skills` for a file inside a skill folder first, then `imported` /
+    `referenced` by classifier type, else the path-based tag (a `SKILL.md` outside every skill
+    folder is a plain file whenever a skill lookup exists)."""
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    norm = normalize_finding_path(filepath, root)
+    if skill_of is not None and norm in skill_of:
+        return "skills"
+    file_type = ft.get(norm, "")
+    if file_type in ("generic", "referenced"):
+        return "imported" if file_type == "generic" else "referenced"
+    return path_tag(filepath, skill_of, norm).split(":")[0]
+
+
 def _build_file_groups(
     result: Any,
     file_type_by_path: dict[str, str] | None = None,
     project_root: Path | None = None,
+    skill_of: dict[str, str] | None = None,
 ) -> dict[str, list[tuple[str, list[Any]]]]:
     """Group findings by file type, sorted worst-first within each group.
 
     Generic-scanned files route by classifier `file_type`: `@`-import (`generic`) → the
     `imported` group, markdown-link (`referenced`) → the `referenced` group. Everything else
-    falls back to the path-based `classify_file` tag.
+    falls back to the path-based `classify_file` tag; a file inside a skill folder (`skill_of`)
+    goes to the `skills` group.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
     ft = file_type_by_path or {}
     root = project_root or Path.cwd()
     by_file: dict[str, list[Any]] = {}
@@ -287,13 +310,7 @@ def _build_file_groups(
     for filepath, findings in by_file.items():
         if filepath in (".", ".:0"):
             continue
-        file_type = ft.get(normalize_finding_path(filepath, root), "")
-        if file_type == "generic":
-            group_key = "imported"
-        elif file_type == "referenced":
-            group_key = "referenced"
-        else:
-            group_key = classify_file(filepath).split(":")[0]
+        group_key = _group_key(filepath, ft, root, skill_of)
         groups.setdefault(group_key, []).append((filepath, findings))
 
     for group_files in groups.values():
@@ -402,7 +419,8 @@ def print_text_result(
     all_files, scope = _collect_files_and_scope(result, ruleset_map, root)
     has_quality = result.quality is not None
     tier = _detect_tier(result, has_quality)
-    scope.type_str = file_type_summary(all_files) if all_files else "0 files"
+    skill_of = skill_lookup(ruleset_map, root)
+    scope.type_str = file_type_summary(all_files, skill_of) if all_files else "0 files"
 
     _print_header(tier)
     if not result.findings:
@@ -411,7 +429,7 @@ def print_text_result(
         return
 
     _render_findings_and_scorecard(
-        result, ruleset_map, ascii_mode, verbose, scope, tier, elapsed_ms, root, file_type_by_path or {}
+        result, ruleset_map, ascii_mode, verbose, scope, tier, elapsed_ms, root, file_type_by_path or {}, skill_of
     )
     _render_funnel_cta(funnel_error)
 
@@ -426,13 +444,14 @@ def _render_findings_and_scorecard(
     elapsed_ms: float,
     project_root: Path,
     file_type_by_path: dict[str, str],
+    skill_of: dict[str, str] | None = None,
 ) -> None:
     """Render file groups, cross-file coordinates, and the bottom scorecard.
 
     Scorecard health-bars: multi-surface runs show per-surface; a
-    single-surface run with multiple files shows per-item bars (so
-    `ails check skills` lists each skill with its own score);
-    single-file runs show neither — the top `Score:` covers it.
+    single-surface run with several items (a skill folder is one item) shows per-item
+    bars (so `ails check skills` lists each skill with its own score);
+    a single item shows neither — the top `Score:` covers it.
     """
     from reporails_cli.formatters.text.display_constants import index_atoms_by_norm_path
     from reporails_cli.formatters.text.item_scorecard import compute_item_scores
@@ -440,6 +459,7 @@ def _render_findings_and_scorecard(
 
     has_quality = result.quality is not None
     sev_icons = get_sev_icons(ascii_mode)
+    skill_of = skill_lookup(ruleset_map, project_root) if skill_of is None else skill_of
     atoms_by_path = (
         index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
     )
@@ -452,16 +472,21 @@ def _render_findings_and_scorecard(
         aliases_by_file=_build_aliases_by_file(project_root, result),
         regime_by_file=_build_regime_by_file(result, project_root),
         atoms_by_path=atoms_by_path,
+        skill_of=skill_of,
     )
-    _render_file_groups(_build_file_groups(result, file_type_by_path, project_root), ctx)
+    _render_file_groups(_build_file_groups(result, file_type_by_path, project_root, skill_of), ctx)
     _render_cross_file_coordinates(result, sev_icons)
 
     surfaces = compute_surface_scores(
-        result, ruleset_map=ruleset_map, project_root=project_root, file_type_by_path=file_type_by_path
+        result,
+        ruleset_map=ruleset_map,
+        project_root=project_root,
+        file_type_by_path=file_type_by_path,
+        skill_of=skill_of,
     )
     item_health = None
-    if len(surfaces) == 1 and surfaces[0].file_count > 1:
-        item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=project_root)
+    if len(surfaces) == 1 and surfaces[0].item_count > 1:
+        item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=project_root, skill_of=skill_of)
 
     print_scorecard(
         result,

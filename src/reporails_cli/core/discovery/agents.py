@@ -29,15 +29,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _extract_patterns(spec: dict[str, Any]) -> list[str]:
-    """Extract all file patterns from a file type spec.
+def _extract_patterns(spec: dict[str, Any], key: str = "patterns") -> list[str]:
+    """Extract all file patterns from a file type spec (`key` names the pattern list: `patterns`, or
+    `entry_patterns` for where an instance's entry file sits).
 
     Supports both v0.3.0 (patterns at top level) and v0.5.0 (patterns
     inside scopes). Returns a flat list of all patterns across all scopes; a `plugin`
     scope's patterns come back as `<marker>/pattern` (see `plugin_roots`).
     """
     # v0.3.0: patterns at top level
-    patterns = spec.get("patterns", [])
+    patterns = spec.get(key, [])
     if isinstance(patterns, str):
         patterns = [patterns]
     if patterns:
@@ -52,9 +53,9 @@ def _extract_patterns(spec: dict[str, Any]) -> list[str]:
         if not isinstance(scope_spec, dict):
             continue
         if scope_name == _plugin_roots.PLUGIN_SCOPE:
-            all_patterns.extend(_plugin_roots.plugin_scope_patterns(scope_spec))
+            all_patterns.extend(_plugin_roots.plugin_scope_patterns(scope_spec, key))
             continue
-        scope_patterns = scope_spec.get("patterns", [])
+        scope_patterns = scope_spec.get(key, [])
         if isinstance(scope_patterns, str):
             scope_patterns = [scope_patterns]
         all_patterns.extend(scope_patterns)

@@ -19,7 +19,6 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.utils.utils import glob_matches, load_yaml_file, read_frontmatter_file
 
 logger = logging.getLogger(__name__)
@@ -286,42 +285,3 @@ def file_type_of(path: Path, root: Path, registry: dict[str, dict[str, Any]]) ->
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
     match = _find_best_registry_match(rel.lower(), registry, path, root)
     return match[1] if match is not None else "generic"
-
-
-def skill_dirs_by_owner(skill_records: Any) -> dict[Path, Any]:
-    """Resolved skill directory -> its owning `skills`-typed `SKILL.md` record, for every such
-    record in `skill_records`. A caller checking many candidate paths against the same skill
-    set builds this dict once, so the skill directories are resolved once per call site
-    instead of once per candidate path. `skill_records` is any iterable of objects carrying
-    `.path` / `.type` (a `FileRecord`, or the ruleset map's own `files`)."""
-    dirs: dict[Path, Any] = {}
-    for rec in skill_records:
-        if getattr(rec, "type", None) != "skills" or Path(getattr(rec, "path", "")).name != "SKILL.md":
-            continue
-        dirs[safe_resolve(Path(rec.path)).parent] = rec
-    return dirs
-
-
-def skill_typed_file_type(path: Path, current_type: str, skill_dirs: dict[Path, Any]) -> tuple[str, Any | None]:
-    """`(current_type, None)`, unless it is `generic` and `path` sits inside one of
-    `skill_dirs`' directories (at any depth below it) — a skill is its directory, so a file
-    with no config type of its own that lives inside a skill's directory (`intake-flow.md`,
-    `references/x.md`) takes that skill's type too, instead of becoming a `generic` location
-    on its own. When `path` sits inside more than one skill's directory (a nested skill), the
-    deepest (longest) directory owns it. Then returns `("skills", owner)`, `owner` being that
-    directory's owning `SKILL.md` record — a caller retyping the file can inherit the owner's
-    other load-classification fields (`loading`, `scope`, `globs`, `agent`) the same way.
-    `skill_dirs` maps each already-resolved skill directory to its owning record, built once
-    per call site via `skill_dirs_by_owner`."""
-    if current_type != "generic":
-        return current_type, None
-    resolved = safe_resolve(path)
-    containing = [
-        (skill_dir, owner)
-        for skill_dir, owner in skill_dirs.items()
-        if resolved != skill_dir and resolved.is_relative_to(skill_dir)
-    ]
-    if not containing:
-        return current_type, None
-    _deepest_dir, deepest_owner = max(containing, key=lambda pair: len(pair[0].parts))
-    return "skills", deepest_owner

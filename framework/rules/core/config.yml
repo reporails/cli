@@ -63,11 +63,14 @@ file_types:
     scopes:
       project:
         patterns: [".agents/skills/**/*.md"]
+        # The Agent Skills spec documents only <skills root>/<skill-name>/SKILL.md (one level).
+        entry_patterns: [".agents/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns: ["~/.agents/skills/**/*.md"]
+        entry_patterns: ["~/.agents/skills/*/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human

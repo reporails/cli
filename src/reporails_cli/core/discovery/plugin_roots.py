@@ -24,10 +24,10 @@ PLUGIN_SCOPE = "plugin"
 _MAX_ROOT_DEPTH = 4
 
 
-def plugin_scope_patterns(scope_spec: dict[str, Any]) -> list[str]:
-    """A `plugin` scope's patterns in `<marker>/pattern` form (empty without a marker)."""
+def plugin_scope_patterns(scope_spec: dict[str, Any], key: str = "patterns") -> list[str]:
+    """A `plugin` scope's patterns (under `key`) in `<marker>/pattern` form (empty without a marker)."""
     marker = scope_spec.get("root_marker")
-    patterns = scope_spec.get("patterns", [])
+    patterns = scope_spec.get(key, [])
     if isinstance(patterns, str):
         patterns = [patterns]
     if not isinstance(marker, str) or not marker:

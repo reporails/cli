@@ -140,11 +140,14 @@ file_types:
     scopes:
       project:
         patterns: [".claude/skills/**/*.md"]
+        # Claude Code discovers exactly <skills root>/<skill-name>/SKILL.md (one level; a deeper SKILL.md is ignored).
+        entry_patterns: [".claude/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns: ["~/.claude/skills/**/*.md"]
+        entry_patterns: ["~/.claude/skills/*/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human
@@ -152,6 +155,9 @@ file_types:
         patterns:
           - "/etc/claude-code/skills/**/*.md"
           - "/Library/Application Support/ClaudeCode/skills/**/*.md"
+        entry_patterns:
+          - "/etc/claude-code/skills/*/SKILL.md"
+          - "/Library/Application Support/ClaudeCode/skills/*/SKILL.md"
         precedence: managed
         vcs: external
         maintainer: system
@@ -160,6 +166,7 @@ file_types:
         # holding .claude-plugin/plugin.json (code.claude.com/docs/en/plugins-reference#standard-layout).
         root_marker: .claude-plugin/plugin.json
         patterns: ["skills/**/*.md"]
+        entry_patterns: ["skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human

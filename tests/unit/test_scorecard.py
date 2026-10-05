@@ -13,6 +13,7 @@ from reporails_cli.formatters.text.scorecard import compute_surface_scores
 @dataclass
 class _FileRecord:
     path: str
+    skill: str = ""
 
 
 @dataclass

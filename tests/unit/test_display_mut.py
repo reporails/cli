@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileFinding,
     FileAnalysis,
@@ -532,17 +533,18 @@ class TestItemHealthGating:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_single_surface_multifile_renders_per_item_bars(self, tmp_path) -> None:
-        # Two skill files -> exactly ONE surface ("skill") whose file_count is 2. That is
-        # the `len(surfaces) == 1 and surfaces[0].file_count > 1` case: item-health bars
-        # (one per file) render. `== -> !=` makes the guard False -> item_health None ->
+        # Two skills -> exactly ONE surface ("skill") whose item_count is 2. That is
+        # the `len(surfaces) == 1 and surfaces[0].item_count > 1` case: item-health bars
+        # (one per skill) render. `== -> !=` makes the guard False -> item_health None ->
         # no per-item bars.
         from reporails_cli.formatters.text import item_scorecard
         from reporails_cli.formatters.text.scorecard import ScopeInfo
 
         rmap = _rmap(
-            FileRecord(path=".claude/skills/alpha/SKILL.md", content_hash="sha256:a"),
-            FileRecord(path=".claude/skills/beta/SKILL.md", content_hash="sha256:b"),
+            FileRecord(path=".claude/skills/alpha/SKILL.md", content_hash="sha256:a", type="skills", agent="claude"),
+            FileRecord(path=".claude/skills/beta/SKILL.md", content_hash="sha256:b", type="skills", agent="claude"),
         )
+        record_skills(rmap, ["claude"], tmp_path)
         per_file = (
             FileAnalysis(file=".claude/skills/alpha/SKILL.md", display_score=8.0, stats={"atoms": 5}),
             FileAnalysis(file=".claude/skills/beta/SKILL.md", display_score=4.0, stats={"atoms": 5}),

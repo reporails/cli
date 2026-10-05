@@ -27,6 +27,7 @@ from reporails_cli.formatters.text.scorecard import SurfaceHealth, _count_tag
 @dataclass
 class _FileRecord:
     path: str
+    skill: str = ""
 
 
 @dataclass
@@ -129,8 +130,8 @@ class TestBreakdownGate:
     def test_breakdown_present_only_with_findings(self) -> None:
         # Kills `== -> !=`: findings==0 returns ""; findings>0 renders the
         # `N findings` tag. The mutant inverts both.
-        with_findings = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=3)
-        without = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=0)
+        with_findings = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=3, item_count=1)
+        without = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=0, item_count=1)
 
         assert "3 findings" in _count_tag(with_findings)
         assert _count_tag(without) == ""
@@ -160,8 +161,8 @@ class TestBandSeparation:
         # "unscored" band, dropping the separator) and L149 `!= -> ==` (blank
         # would print on same-band, not on a band change).
         items = [
-            SurfaceHealth(name="alpha", score=2.0, file_count=1, finding_count=0),  # red
-            SurfaceHealth(name="beta", score=8.0, file_count=1, finding_count=0),  # green
+            SurfaceHealth(name="alpha", score=2.0, file_count=1, finding_count=0, item_count=1),  # red
+            SurfaceHealth(name="beta", score=8.0, file_count=1, finding_count=0, item_count=1),  # green
         ]
         lines = _render(monkeypatch, items)
         assert _blank_between(lines, "alpha", "beta")
@@ -172,8 +173,8 @@ class TestBandSeparation:
         # Kills L149 `and -> or`: `or` inserts a spurious separator between two
         # items that share a band (and before the first item).
         items = [
-            SurfaceHealth(name="alpha", score=8.0, file_count=1, finding_count=0),  # green
-            SurfaceHealth(name="beta", score=9.0, file_count=1, finding_count=0),  # green
+            SurfaceHealth(name="alpha", score=8.0, file_count=1, finding_count=0, item_count=1),  # green
+            SurfaceHealth(name="beta", score=9.0, file_count=1, finding_count=0, item_count=1),  # green
         ]
         lines = _render(monkeypatch, items)
         assert not _blank_between(lines, "alpha", "beta")

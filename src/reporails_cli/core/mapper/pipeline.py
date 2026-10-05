@@ -22,8 +22,6 @@ from reporails_cli.core.mapper.inspect import (
     _detect_file_loading,
     _load_registry,
     _parse_frontmatter_description,
-    skill_dirs_by_owner,
-    skill_typed_file_type,
 )
 from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.parse import tokenize
@@ -247,38 +245,7 @@ def _classify_all_files(
             _classify_one_file(path, root, map_cache, registry, all_atoms, atoms_needing_embed, segmentation)
         )
 
-    return _retype_skill_supporting_files(file_records), all_atoms, atoms_needing_embed
-
-
-def _retype_skill_supporting_files(file_records: list[FileRecord]) -> list[FileRecord]:
-    """A skill is its directory: a `generic` record whose path sits inside a `skills`-typed
-    `SKILL.md` record's directory (at any depth below it) is re-typed `skills` too, so a
-    skill's supporting file (`intake-flow.md`, `references/x.md`) belongs to the skill's
-    location instead of becoming a `generic` location on its own. It also inherits the owning
-    `SKILL.md` record's `loading`, `scope`, `globs`, and `agent`, so it loads the way its
-    skill does."""
-    skill_records = [r for r in file_records if r.type == "skills"]
-    if not skill_records:
-        return file_records
-    skill_dirs = skill_dirs_by_owner(skill_records)
-    out: list[FileRecord] = []
-    for r in file_records:
-        new_type, owner = skill_typed_file_type(Path(r.path), r.type, skill_dirs)
-        if new_type == r.type or owner is None:
-            out.append(r)
-            continue
-        out.append(
-            r.model_copy(
-                update={
-                    "type": new_type,
-                    "loading": owner.loading,
-                    "scope": owner.scope,
-                    "globs": owner.globs,
-                    "agent": owner.agent,
-                }
-            )
-        )
-    return out
+    return file_records, all_atoms, atoms_needing_embed
 
 
 def _classify_one_file(

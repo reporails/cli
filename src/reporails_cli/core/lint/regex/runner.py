@@ -515,8 +515,12 @@ def _emit_expect_findings(
     scanned_files: list[str],
     scan_root: Path | None = None,
     fix_by_rule: dict[str, str] | None = None,
+    skill_entries: set[Path] | None = None,
 ) -> list[LocalFinding]:
     """Convert expect/match results to LocalFinding list.
+
+    A check with `entry_only` reports on a skill's entry file alone when `skill_entries` (the
+    resolved entry files of the run) is given; without it the check applies to every file it names.
 
     A check that declares `paths.include` only reports on the files those filters name: a
     file outside them is neither failing nor passing it.
@@ -540,10 +544,11 @@ def _emit_expect_findings(
         severity = check.severity
         msg = check.message
         fix_text = fix_by_rule.get(rule_id, "")
+        scanned = [f for f in scanned_files if _entry_ok(check, f, scan_root, skill_entries)]
         if check.every_match:
             # A match can sit in a file the scan did not list: the text an `@path` import splices in.
             imported = sorted(fp for cid, fp in matched_pairs if cid == check_id and fp not in scanned_files)
-            for file_path in [*scanned_files, *imported]:
+            for file_path in [*scanned, *imported]:
                 for line, match_msg, snippet in match_details.get((check_id, file_path), ()):
                     findings.append(
                         LocalFinding(
@@ -570,12 +575,19 @@ def _emit_expect_findings(
                     source="m_probe",
                     check_id=check_id,
                 )
-                for file_path in scanned_files
+                for file_path in scanned
                 if (check_id, file_path) not in matched_pairs
                 and _file_matches_path_filter(file_path, check.path_includes)
                 and not _file_below_min_lines(file_path, check.min_lines, scan_root)
             )
     return findings
+
+
+def _entry_ok(check: CompiledCheck, rel_path: str, scan_root: Path | None, entries: set[Path] | None) -> bool:
+    """Whether `check` applies to `rel_path`: an `entry_only` check skips a file that is no skill's entry file."""
+    if not check.entry_only or entries is None:
+        return True
+    return safe_resolve((scan_root or Path()) / rel_path) in entries
 
 
 def _file_below_min_lines(rel_path: str, min_lines: int, scan_root: Path | None) -> bool:
@@ -598,12 +610,15 @@ def run_checks(
     target: Path,
     instruction_files: list[Path] | None = None,
     exclude_dirs: frozenset[str] = frozenset(),
-    body_only_paths: set[Path] | None = None,
     min_lines_overrides: dict[str, int] | None = None,
     fix_by_rule: dict[str, str] | None = None,
     exclude_files: list[str] | None = None,
+    skill_entries: set[Path] | None = None,
 ) -> list[LocalFinding]:
     """Execute regex validation and return LocalFinding list.
+
+    `skill_entries` holds the resolved skill entry files of the run (None when it records no
+    skills); an `entry_only` check reports on those alone.
 
     `min_lines_overrides` maps full rule IDs (e.g. `CORE:S:0013`) to
     integer minimum line counts; values override defaults declared in the
@@ -615,16 +630,21 @@ def run_checks(
     registry; propagates to `LocalFinding.fix` so MCP / JSON consumers
     can render the per-finding suggested edit.
     """
-    ruleset = _compile_ruleset(yml_paths, body_only_paths)
+    ruleset = _compile_ruleset(yml_paths, None)
     checks = _apply_min_lines_overrides(ruleset.checks, min_lines_overrides) if min_lines_overrides else ruleset.checks
     sarif = _scan_ruleset(
         ruleset, target, instruction_files=instruction_files, exclude_dirs=exclude_dirs, exclude_files=exclude_files
     )
     matched_pairs, match_details = _collect_sarif_matches(sarif)
     scanned_files = _resolve_scanned_files(target, instruction_files, exclude_dirs, exclude_files)
-    scan_root = target if target.is_dir() else target.parent
     return _emit_expect_findings(
-        checks, matched_pairs, match_details, scanned_files, scan_root=scan_root, fix_by_rule=fix_by_rule
+        checks,
+        matched_pairs,
+        match_details,
+        scanned_files,
+        scan_root=target if target.is_dir() else target.parent,
+        fix_by_rule=fix_by_rule,
+        skill_entries=skill_entries,
     )
 
 

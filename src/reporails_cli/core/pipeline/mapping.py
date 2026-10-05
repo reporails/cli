@@ -211,6 +211,15 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
             record.agent = owner
 
 
+def _apply_run_context(ruleset_map: Any, filtered_agents: list[Any] | None, target: Path) -> None:
+    """Record skill membership for the run's agents, then stamp each file's owning agent."""
+    from reporails_cli.core.mapper.skills import record_skills
+
+    agents = [a.agent_type.id for a in filtered_agents or () if a.agent_type.id != "generic"]
+    record_skills(ruleset_map, agents, target)
+    stamp_file_agents(ruleset_map, filtered_agents, target)
+
+
 def map_instruction_files(
     target: Path,
     instruction_files: list[Path],
@@ -254,7 +263,7 @@ def map_instruction_files(
     )
     cached = full_cache.get(identity)
     if cached is not None:
-        stamp_file_agents(cached, filtered_agents, target)
+        _apply_run_context(cached, filtered_agents, target)
         return cached
 
     daemon_status = _resolve_daemon(emit, spawn_daemon=spawn_daemon)
@@ -263,8 +272,8 @@ def map_instruction_files(
         daemon_status, list(instruction_files), target, get_project_config(target).mapper, emit
     )
     if ruleset_map is not None:
-        stamp_file_agents(ruleset_map, filtered_agents, target)
-        full_cache.put(identity, ruleset_map)
+        full_cache.put(identity, ruleset_map)  # the map as mapped; a later run with other agents decides again
+        _apply_run_context(ruleset_map, filtered_agents, target)
     return ruleset_map
 
 

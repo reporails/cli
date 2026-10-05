@@ -8,6 +8,7 @@ classification engine resolves files to types and matches rules to files.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 
 import yaml
@@ -253,11 +254,72 @@ def _pattern_hits(file_path: Path, rel: str, pattern: str, scan_root: Path) -> b
     return _pattern_matches_one(rel, pattern)
 
 
+def _with_skill_folder(
+    ft: FileTypeDeclaration, file_path: Path, skills: Mapping[str, str] | None
+) -> dict[str, str | list[str]]:
+    """The declaration's properties; a `skills` file also carries its skill folder as `skill`."""
+    props = dict(ft.properties)
+    if ft.name == "skills" and skills is not None:
+        props["skill"] = skills[str(file_path)]
+    return props
+
+
+def _classify_one(
+    file_path: Path,
+    scan_root: Path,
+    file_types: list[FileTypeDeclaration],
+    ancestor_chain: set[Path],
+    skills: Mapping[str, str] | None,
+) -> ClassifiedFile | None:
+    """The first file type `file_path` matches as a ClassifiedFile, None when it matches none."""
+    try:
+        rel = file_path.relative_to(scan_root).as_posix()
+    except ValueError:
+        rel = str(file_path)
+
+    for ft in file_types:
+        # A pattern that matches but fails the location check (e.g. a shared
+        # loose leaf like `**/CLAUDE.md`) does not block a later, more
+        # specific pattern of the SAME file_type (e.g. `~/.claude/CLAUDE.md`)
+        # from getting a turn — each matching pattern is tried in order.
+        matched_pattern = next(
+            (
+                pattern
+                for pattern in ft.patterns
+                if _pattern_hits(file_path, rel, pattern, scan_root)
+                and _location_matches_mode(file_path, ft, ancestor_chain, pattern)
+            ),
+            None,
+        )
+        if matched_pattern is None:
+            continue
+        if ft.name == "skills" and skills is not None and str(file_path) not in skills:
+            continue
+        props = _with_skill_folder(ft, file_path, skills)
+        # Per-entry memory loading: only MEMORY.md is the eager index;
+        # sibling entries are recalled on-demand.
+        if is_memory_recall_entry(ft.name, file_path.name):
+            props["loading"] = "on_demand"
+        # Detect content_format for freeform files
+        fmt = props.get("format")
+        is_freeform = fmt == "freeform" or (isinstance(fmt, list) and "freeform" in fmt)
+        if is_freeform and "content_format" not in props:
+            try:
+                cf = detect_content_format(file_path.read_text(encoding="utf-8", errors="replace"))
+                if cf:
+                    props["content_format"] = cf
+            except OSError:
+                pass
+        return ClassifiedFile(path=file_path, file_type=ft.name, properties=props)  # first valid match wins
+    return None
+
+
 def classify_files(
     scan_root: Path,
     files: list[Path],
     file_types: list[FileTypeDeclaration],
     generic_scanning: bool = False,
+    skills: Mapping[str, str] | None = None,
 ) -> list[ClassifiedFile]:
     """Classify files against type declarations. First pattern match wins.
 
@@ -280,6 +342,9 @@ def classify_files(
         files: Files to classify
         file_types: Type declarations from agent config
         generic_scanning: When True, extend with link-reachability pass
+        skills: Skill folder of each file that sits in a skill, keyed by file path.
+            When given, a file is typed `skills` only if it is a key, and carries its
+            folder as the `skill` property. None leaves the `skills` type to the pattern.
 
     Returns:
         List of ClassifiedFile for matched files
@@ -294,51 +359,9 @@ def classify_files(
 
     classified: list[ClassifiedFile] = []
     for file_path in files:
-        try:
-            rel = file_path.relative_to(scan_root).as_posix()
-        except ValueError:
-            rel = str(file_path)
-
-        for ft in file_types:
-            # A pattern that matches but fails the location check (e.g. a shared
-            # loose leaf like `**/CLAUDE.md`) does not block a later, more
-            # specific pattern of the SAME file_type (e.g. `~/.claude/CLAUDE.md`)
-            # from getting a turn — each matching pattern is tried in order.
-            matched_pattern = next(
-                (
-                    pattern
-                    for pattern in ft.patterns
-                    if _pattern_hits(file_path, rel, pattern, scan_root)
-                    and _location_matches_mode(file_path, ft, ancestor_chain, pattern)
-                ),
-                None,
-            )
-            if matched_pattern is None:
-                continue
-            props = dict(ft.properties)
-            # Per-entry memory loading: only MEMORY.md is the eager index;
-            # sibling entries are recalled on-demand.
-            if is_memory_recall_entry(ft.name, file_path.name):
-                props["loading"] = "on_demand"
-            # Detect content_format for freeform files
-            fmt = props.get("format")
-            is_freeform = fmt == "freeform" or (isinstance(fmt, list) and "freeform" in fmt)
-            if is_freeform and "content_format" not in props:
-                try:
-                    text = file_path.read_text(encoding="utf-8", errors="replace")
-                    cf = detect_content_format(text)
-                    if cf:
-                        props["content_format"] = cf
-                except OSError:
-                    pass
-            classified.append(
-                ClassifiedFile(
-                    path=file_path,
-                    file_type=ft.name,
-                    properties=props,
-                )
-            )
-            break  # First valid match wins
+        cf = _classify_one(file_path, scan_root, file_types, ancestor_chain, skills)
+        if cf is not None:
+            classified.append(cf)
 
     if generic_scanning:
         classified.extend(_classify_generic_via_links(scan_root, classified))

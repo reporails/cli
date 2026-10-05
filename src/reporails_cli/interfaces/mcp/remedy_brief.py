@@ -254,8 +254,8 @@ def _build_files(
 ) -> tuple[list[dict[str, Any]], set[str], list[_PendingSnapshot]] | dict[str, Any]:
     """Every real file's brief entry, its agent, and its (not-yet-committed) snapshot args — or
     the structured `brief_unavailable` error naming the file, when any of the location's real
-    files yields no map. A `files[]` entry that names a directory — a skill folder that
-    nests sub-skills but carries no `SKILL.md` of its own — has no pipeline of its own to run: it
+    files yields no map. A `files[]` entry that names a directory — a folder that only
+    groups skills and has no `SKILL.md` of its own — has no pipeline of its own to run: it
     is skipped here rather than run through the single-file pipeline (which only ever reports
     "nothing here" for a bare directory), so the location's real files still brief. The
     directory's own cause, if any, already lives in the location's `findings`, untouched. When

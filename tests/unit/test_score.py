@@ -27,6 +27,7 @@ def _finding(rule: str, severity: str = "warning", impact_tier: str = "") -> Fin
 @dataclass
 class _FileRecord:
     path: str
+    skill: str = ""
 
 
 @dataclass
@@ -189,7 +190,9 @@ class TestUnscoredFiles:
         from reporails_cli.formatters.text.item_scorecard import _item_cell
         from reporails_cli.formatters.text.scorecard import SurfaceHealth
 
-        cell = _item_cell(SurfaceHealth(name="cursorignore", score=None, file_count=1, finding_count=0), label_w=14)
+        cell = _item_cell(
+            SurfaceHealth(name="cursorignore", score=None, file_count=1, finding_count=0, item_count=1), label_w=14
+        )
         assert "not scored" in cell
 
 

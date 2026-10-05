@@ -15,6 +15,8 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.mapper import pipeline as pl
+from reporails_cli.core.mapper.inspect import _load_registry
+from reporails_cli.core.mapper.skills import record_skills
 
 # --- L121/L123/L125: _validate_and_log severity routing ---
 
@@ -237,7 +239,11 @@ def test_a_skills_supporting_file_takes_the_skill_s_type(monkeypatch, tmp_path):
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
-    records, _atoms, _embed = pl._classify_all_files([skill_md, intake, nested, other], tmp_path, None, {}, "legacy")
+    records, _atoms, _embed = pl._classify_all_files(
+        [skill_md, intake, nested, other], tmp_path, None, _load_registry(), "legacy"
+    )
+    assert {r.path: r.type for r in records}[str(intake)] == "generic"  # mapped as the file type says
+    record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
 
     types = {r.path: r.type for r in records}
     assert types[str(skill_md)] == "skills"
@@ -270,7 +276,10 @@ def test_a_retyped_skill_supporting_file_inherits_the_skill_s_loading_and_scope(
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
-    records, _atoms, _embed = pl._classify_all_files([skill_md, reference, other], tmp_path, None, {}, "legacy")
+    records, _atoms, _embed = pl._classify_all_files(
+        [skill_md, reference, other], tmp_path, None, _load_registry(), "legacy"
+    )
+    record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
 
     by_path = {r.path: r for r in records}
     skill_rec = by_path[str(skill_md)]

@@ -77,9 +77,8 @@ def test_a_suppressed_finding_is_not_sent(tmp_path: Path, dev_rules_dir: Path) -
 def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
     tmp_path: Path, dev_rules_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A local finding on a file inside a `skills`-typed `SKILL.md`'s directory takes the
-    `skills` type too, the same as a mapped file — it is part of the skill's location, not a
-    `generic` location of its own."""
+    """A local finding on an unmapped file typed `skills` inside a recorded skill folder keeps
+    the `skills` type."""
     skill_dir = tmp_path / ".claude" / "skills" / "digest"
     skill_dir.mkdir(parents=True)
     skill_md = skill_dir / "SKILL.md"
@@ -91,7 +90,7 @@ def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
         schema_version="1",
         embedding_model="m",
         generated_at="2026-01-01T00:00:00Z",
-        files=(FileRecord(path=str(skill_md), content_hash="sha256:x", type="skills"),),
+        files=(FileRecord(path=str(skill_md), content_hash="sha256:x", type="skills", skill=str(skill_dir)),),
         atoms=(),
     )
     finding = SimpleNamespace(rule="CORE:S:0056", file=str(supporting), line=1, severity="error")

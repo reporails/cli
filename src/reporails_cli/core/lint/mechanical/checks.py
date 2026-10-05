@@ -9,6 +9,7 @@ from typing import Any
 from reporails_cli.core.discovery.agent_discovery import is_excluded
 from reporails_cli.core.discovery.agents import load_project_exclude_dirs
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
@@ -47,6 +48,26 @@ def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
 
 
 def _get_target_files(
+    args: dict[str, Any],
+    classified_files: list[ClassifiedFile],
+    root: Path,
+) -> list[Path]:
+    """Get targets (see `_select_targets`); `entry_only` then keeps a skill's entry files."""
+    targets = _select_targets(args, classified_files, root)
+    if args.get("entry_only"):
+        return _keep_skill_entries(targets, classified_files)
+    return targets
+
+
+def _keep_skill_entries(targets: list[Path], classified_files: list[ClassifiedFile]) -> list[Path]:
+    """Keep the targets that are a skill's entry file; all of them when no classified file records a skill."""
+    entries = skill_entry_paths(classified_files)
+    if entries is None:
+        return targets
+    return [p for p in targets if safe_resolve(p) in entries]
+
+
+def _select_targets(
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
     root: Path,

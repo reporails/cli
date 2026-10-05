@@ -13,15 +13,16 @@ from typing import Any
 
 from rich.text import Text
 
-from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.features import agent_main_literal_paths, agent_rule_surface_markers
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     display_rule_id,
     get_term_width,
+    path_tag,
     rule_docs_url,
     rule_title,
     short_path,
+    skill_lookup,
 )
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.verdict import (
@@ -65,21 +66,25 @@ _SURFACE_NAMES = {
 _SURFACE_ORDER = ["main", "nested", "rules", "skills", "agents", "memory", "imported"]
 
 
-def _surface_key(rel: str, ft_by_path: dict[str, str]) -> str:
+def _surface_key(rel: str, ft_by_path: dict[str, str], skill_of: dict[str, str] | None) -> str:
     """Surface tag for a path.
 
-    `@`-import-reached files (`file_type == "generic"`, eager) map to the Imported surface;
-    everything else falls back to the path-based `classify_file` tag, corrected for two
-    shapes a path-only, Claude-shaped classifier cannot see on its own: an agent whose
-    main file sits one fixed directory deep (Copilot) reads as `nested`, and a
-    path-scoped rule surface named or extended differently from Claude's own
-    (`.github/instructions/*.instructions.md`, Cursor's `.mdc`) matches nothing at all
-    and falls back to the generic `file` tag. Both are re-keyed here from every agent's
+    A file inside a skill folder is on the Skills surface first, whatever else marks it. With a
+    skill lookup (a ruleset map is present) membership alone decides Skills, so a `SKILL.md`
+    outside every skill folder is a plain file; without one the path-based tag decides.
+    `@`-import-reached files (`file_type == "generic"`, eager) map to the Imported surface; every
+    other path takes the `path_tag` tag, corrected for two shapes a path-only, Claude-shaped
+    classifier cannot see on its own: an agent whose main file sits one fixed directory deep
+    (Copilot) reads as `nested`, and a path-scoped rule surface named or extended differently
+    from Claude's own (`.github/instructions/*.instructions.md`, Cursor's `.mdc`) matches nothing
+    at all and falls back to the generic `file` tag. Both are re-keyed here from every agent's
     own bundled config.
     """
+    if skill_of is not None and rel in skill_of:
+        return "skills"
     if ft_by_path.get(rel, "") == "generic":
         return "imported"
-    tag = classify_file(rel).split(":")[0]
+    tag = path_tag(rel, skill_of).split(":")[0]
     if tag in ("nested", "file") and rel.lstrip("/") in agent_main_literal_paths():
         return "main"
     if tag == "file":
@@ -101,6 +106,8 @@ class SurfaceHealth:
     score: float | None
     file_count: int
     finding_count: int
+    # Items beside the type name: a skill folder counts once, every other file once.
+    item_count: int
     errors: int = 0
     warnings: int = 0
     infos: int = 0
@@ -117,6 +124,7 @@ def compute_surface_scores(
     ruleset_map: Any = None,
     project_root: Any = None,
     file_type_by_path: dict[str, str] | None = None,
+    skill_of: dict[str, str] | None = None,
 ) -> list[SurfaceHealth]:
     """Compute per-surface health scores from combined result.
 
@@ -129,8 +137,6 @@ def compute_surface_scores(
     on relative paths. `result.findings` and `result.per_file_analysis`
     already carry relative paths; `ruleset_map.files` does not.
     """
-    from pathlib import Path
-
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     root = Path(project_root) if project_root is not None else Path.cwd()
@@ -138,35 +144,32 @@ def compute_surface_scores(
     # Per-path classifier file_type (computed at the composition root for generic-scanned
     # files) routes `@`-import-reached files to the Imported surface.
     ft_by_path = file_type_by_path or {}
+    skill_of = skill_lookup(ruleset_map, root) if skill_of is None else skill_of
 
-    # Count files per surface from ruleset_map (authoritative file list)
-    surface_file_counts: dict[str, int] = {}
+    # Files per surface from ruleset_map (authoritative file list)
+    surface_paths: dict[str, set[str]] = {}
     if ruleset_map is not None:
         try:
             for fr in ruleset_map.files:
-                key = _surface_key(normalize_finding_path(fr.path, root), ft_by_path)
-                surface_file_counts[key] = surface_file_counts.get(key, 0) + 1
+                rel = normalize_finding_path(fr.path, root)
+                surface_paths.setdefault(_surface_key(rel, ft_by_path, skill_of), set()).add(rel)
         except (AttributeError, TypeError):
             pass
 
-    # Group findings by surface. Re-normalize defensively (cheap, ~#findings) rather
-    # than trust the unenforced "FindingItem.file already normalized" invariant.
-    surface_findings: dict[str, list[Any]] = {}
-    for f in result.findings:
-        key = _surface_key(normalize_finding_path(f.file, root), ft_by_path)
-        surface_findings.setdefault(key, []).append(f)
+    # Group findings and per-file analysis by surface, re-normalizing defensively. Server
+    # per-file paths are absolute, but `main` keys on root-level path depth, so normalize to
+    # the project-relative form first or every absolute path falls out of `main`.
+    def by_surface(items: Any) -> dict[str, list[Any]]:
+        grouped: dict[str, list[Any]] = {}
+        for it in items:
+            key = _surface_key(normalize_finding_path(it.file, root), ft_by_path, skill_of)
+            grouped.setdefault(key, []).append(it)
+        return grouped
 
-    # Group per-file analysis by surface. Server per-file paths are absolute, but
-    # `classify_file` keys `main` on root-level path depth — so normalize to the
-    # project-relative form first (as `result.findings` already are), or every
-    # absolute path falls out of the `main` surface and its score reads 0.0.
-    surface_analysis: dict[str, list[Any]] = {}
-    for fa in result.per_file_analysis:
-        key = _surface_key(normalize_finding_path(fa.file, root), ft_by_path)
-        surface_analysis.setdefault(key, []).append(fa)
+    surface_findings, surface_analysis = by_surface(result.findings), by_surface(result.per_file_analysis)
 
     # Collect all surfaces from any source
-    all_keys = set(surface_findings) | set(surface_analysis) | set(surface_file_counts)
+    all_keys = set(surface_findings) | set(surface_analysis) | set(surface_paths)
 
     surfaces = []
     for key in _SURFACE_ORDER:
@@ -176,24 +179,23 @@ def compute_surface_scores(
         findings = surface_findings.get(key, [])
         analyses = surface_analysis.get(key, [])
 
-        n_errors = sum(1 for f in findings if f.severity == "error")
-        n_warnings = sum(1 for f in findings if f.severity == "warning")
-        n_infos = sum(1 for f in findings if f.severity == "info")
-        # File count: prefer mapper discovery, fall back to findings/analysis
-        n_files = surface_file_counts.get(key, max(len(analyses), len({f.file for f in findings})))
-
-        # Score: mean of the reported per-file display scores over the surface's files.
-        score = _mean_display_score(analyses)
+        by_severity = Counter(f.severity for f in findings)
+        # Files: prefer mapper discovery, fall back to the files findings/analysis name.
+        paths = surface_paths.get(key) or {
+            normalize_finding_path(p, root) for p in [*(f.file for f in findings), *(a.file for a in analyses)]
+        }
 
         surfaces.append(
             SurfaceHealth(
                 name=display_name,
-                score=score,
-                file_count=n_files,
+                # Mean of the reported per-file display scores over the surface's files.
+                score=_mean_display_score(analyses),
+                file_count=len(paths),
+                item_count=len({(skill_of or {}).get(p, p) for p in paths}),
                 finding_count=len(findings),
-                errors=n_errors,
-                warnings=n_warnings,
-                infos=n_infos,
+                errors=by_severity["error"],
+                warnings=by_severity["warning"],
+                infos=by_severity["info"],
                 category_breakdown=_count_categories(findings),
             )
         )
@@ -252,7 +254,7 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13, 
     columns stay aligned when a long name carries a 2-digit count; count_width
     right-aligns the finding counts the same way.
     """
-    label = f"{s.name} ({s.file_count}):"
+    label = f"{s.name} ({s.item_count}):"
     tag = _count_tag(s, count_width)
     if s.score is None:
         empty = "░" * bar_width
@@ -286,7 +288,7 @@ def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
     """
     if len(surfaces) <= 1:
         return
-    label_width = max(len(f"{s.name} ({s.file_count}):") for s in surfaces)
+    label_width = max(len(f"{s.name} ({s.item_count}):") for s in surfaces)
     count_width = max(len(f"{s.finding_count:,}") for s in surfaces)
     cells = [_surface_cell(s, label_width=label_width, count_width=count_width) for s in surfaces]
     # Pair two cells per row only when the widest pair fits the terminal; a pair

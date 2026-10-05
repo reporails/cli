@@ -103,11 +103,14 @@ file_types:
     scopes:
       project:
         patterns: [".github/skills/**/*.md", ".claude/skills/**/*.md", ".agents/skills/**/*.md"]
+        # Copilot documents only <skills root>/<skill-name>/SKILL.md (one level).
+        entry_patterns: [".github/skills/*/SKILL.md", ".claude/skills/*/SKILL.md", ".agents/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns: ["~/.copilot/skills/**/*.md", "~/.agents/skills/**/*.md"]
+        entry_patterns: ["~/.copilot/skills/*/SKILL.md", "~/.agents/skills/*/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human

@@ -69,11 +69,14 @@ def _collect_section_suggestions(
     """
     from reporails_cli.core.heal.fixers import suggest_missing_sections
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
+    from reporails_cli.core.mapper.skills import skill_membership
 
     if show_progress:
         console.print("[bold]Checking for missing sections...[/bold]")
-    findings = run_m_probes(target, instruction_files, agent=effective_agent)
-    findings += run_content_quality_checks(ruleset_map, target, instruction_files, agent=effective_agent)
+    findings = run_m_probes(target, instruction_files, agent=effective_agent, skills=skill_membership(ruleset_map))
+    findings += run_content_quality_checks(
+        ruleset_map, target, instruction_files, agent=effective_agent, skills=skill_membership(ruleset_map)
+    )
     findings = _drop_suppressed(findings, target)
 
     violations = _findings_to_violations(findings)

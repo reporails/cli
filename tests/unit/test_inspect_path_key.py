@@ -16,8 +16,6 @@ import pytest
 from reporails_cli.core.mapper.inspect import (
     _detect_file_loading,
     _load_registry,
-    skill_dirs_by_owner,
-    skill_typed_file_type,
 )
 from reporails_cli.core.platform.adapters.payload import MAX_FILE_GLOBS, project_payload
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap, RulesetSummary
@@ -189,24 +187,20 @@ def test_nested_instruction_files_load_on_demand(tmp_path, rel, expected):
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.parametrize("order", ["outer_first", "inner_first"], ids=["outer_first", "inner_first"])
-def test_skill_typed_file_type_picks_the_deepest_owning_skill(tmp_path, order):
-    """`.claude/skills/foo/SKILL.md` and `.claude/skills/foo/sub/SKILL.md` both contain
-    `foo/sub/ref.md` -- the deepest (longest) skill directory must own it, not whichever
-    directory the dict happens to iterate to first."""
-    outer = _write(tmp_path, ".claude/skills/foo/SKILL.md", "# Foo\n")
-    inner = _write(tmp_path, ".claude/skills/foo/sub/SKILL.md", "# Sub\n")
-    outer_record = FileRecord(path=str(outer), content_hash="h1", type="skills")
-    inner_record = FileRecord(path=str(inner), content_hash="h2", type="skills")
-    records = [outer_record, inner_record] if order == "outer_first" else [inner_record, outer_record]
+def test_every_agent_declares_where_a_skills_entry_file_sits():
+    """Each agent's `skills` scopes name the entry file's place: one level below the skills
+    folder, except Cursor, which walks its skills folders recursively."""
+    from reporails_cli.core.discovery.agents import _extract_patterns
 
-    skill_dirs = skill_dirs_by_owner(records)
-    ref_path = tmp_path / ".claude" / "skills" / "foo" / "sub" / "ref.md"
-
-    new_type, owner = skill_typed_file_type(ref_path, "generic", skill_dirs)
-
-    assert new_type == "skills"
-    assert owner is inner_record
+    for agent, config in _load_registry().items():
+        skills = (config.get("file_types") or {}).get("skills")
+        if skills is None:
+            continue
+        for scope, spec in skills["scopes"].items():
+            entry = _extract_patterns({"scopes": {scope: spec}}, "entry_patterns")
+            assert entry, f"{agent}/{scope} declares no entry_patterns"
+            wanted = "*/**/SKILL.md" if agent == "cursor" else "*/SKILL.md"
+            assert all(p.endswith("/skills/" + wanted) or p == "skills/" + wanted for p in entry), (agent, entry)
 
 
 @pytest.mark.unit

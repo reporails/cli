@@ -32,6 +32,7 @@ class CompiledCheck:
     body_only: bool = False  # True → strip frontmatter before matching
     every_match: bool = False  # True → report every matching line, not the first (a check that forbids something)
     follow_imports: bool = False  # True → also read the text an `@path` import splices in, reporting at its source
+    entry_only: bool = False  # True → only a skill's entry file is checked, once the run records skills
     min_lines: int = 0  # > 0 → a file shorter than this many lines is neither failing nor passing the check
 
 
@@ -83,7 +84,8 @@ def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
     """Compile a single YAML rule entry into a CompiledCheck, with its reporting flags.
 
     A check that forbids something (`expect: absent`) reports every match; `follow_imports: true`
-    makes a check read imported text as well; `min_lines` gates it to files of at least that length.
+    makes a check read imported text as well; `min_lines` gates it to files of at least that length;
+    `entry_only: true` limits it to a skill's entry file.
     Returns None if the rule uses unsupported operators.
     """
     check = _compile_operator(rule_entry)
@@ -94,6 +96,7 @@ def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
         every_match=rule_entry.get("expect") == "absent",
         follow_imports=rule_entry.get("follow_imports") is True,
         min_lines=_min_lines(rule_entry),
+        entry_only=rule_entry.get("entry_only") is True,
     )
 
 

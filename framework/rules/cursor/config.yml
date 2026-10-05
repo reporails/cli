@@ -105,11 +105,15 @@ file_types:
     scopes:
       project:
         patterns: [".agents/skills/**/*.md", ".cursor/skills/**/*.md", ".claude/skills/**/*.md", ".codex/skills/**/*.md"]
+        # Cursor walks its skills roots recursively, so a SKILL.md at any depth below a skill folder
+        # is a skill; a SKILL.md directly in a skills root is no skill.
+        entry_patterns: [".agents/skills/*/**/SKILL.md", ".cursor/skills/*/**/SKILL.md", ".claude/skills/*/**/SKILL.md", ".codex/skills/*/**/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns: ["~/.agents/skills/**/*.md", "~/.cursor/skills/**/*.md", "~/.claude/skills/**/*.md", "~/.codex/skills/**/*.md"]
+        entry_patterns: ["~/.agents/skills/*/**/SKILL.md", "~/.cursor/skills/*/**/SKILL.md", "~/.claude/skills/*/**/SKILL.md", "~/.codex/skills/*/**/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human

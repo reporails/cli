@@ -344,6 +344,7 @@ class TestCombinedAnnotationsServerError:
 @dataclass(frozen=True)
 class _FileRecord:
     path: str
+    skill: str = ""
 
 
 @dataclass(frozen=True)

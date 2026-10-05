@@ -25,6 +25,7 @@ from typing import Any
 import typer
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.mapping import discover_scope
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_heal_auth_required,
@@ -418,7 +419,10 @@ def _flow_pipeline(state: CheckState) -> None:
         progress("Checking rules...")
         pairs = _agent_file_pairs(state)
         state.pipeline.rule_agents = tuple(dict.fromkeys(agent_id for agent_id, _ in pairs))
-        state.pipeline.m_findings = run_m_probes_over_pairs(state.targets.target, pairs, scoped=state.scope.is_targeted)
+        skills = skill_membership(state.pipeline.ruleset_map)
+        state.pipeline.m_findings = run_m_probes_over_pairs(
+            state.targets.target, pairs, scoped=state.scope.is_targeted, skills=skills
+        )
         state.pipeline.stage_timer.mark("m_probe")
 
         if state.pipeline.ruleset_map is not None:
@@ -443,16 +447,14 @@ def _run_content_checks(state: CheckState) -> None:
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks
 
-    state.pipeline.content_findings = []
-    for agent_id, agent_files in _agent_file_pairs(state):
-        state.pipeline.content_findings.extend(
-            run_content_quality_checks(
-                state.pipeline.ruleset_map,
-                state.targets.target,
-                agent_files,
-                agent=agent_id,
-            )
+    skills = skill_membership(state.pipeline.ruleset_map)
+    state.pipeline.content_findings = [
+        finding
+        for agent_id, files in _agent_file_pairs(state)
+        for finding in run_content_quality_checks(
+            state.pipeline.ruleset_map, state.targets.target, files, agent=agent_id, skills=skills
         )
+    ]
     state.pipeline.client_findings = run_client_checks(state.pipeline.ruleset_map)
 
 

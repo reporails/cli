@@ -113,6 +113,11 @@ fields:
                 type: array
                 items: { type: string }
                 description: "Glob patterns for file discovery in this scope"
+              entry_patterns:
+                required: false
+                type: array
+                items: { type: string }
+                description: "Globs, anchored like `patterns`, naming where an instance's entry file sits (a skill's SKILL.md). A folder whose entry file matches is one instance, and every file below it belongs to it."
               precedence:
                 required: true
                 type: enum

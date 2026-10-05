@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from collections import Counter
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from reporails_cli.core.classify.file_tags import classify_file
@@ -249,17 +249,26 @@ def truncate(text: str, max_len: int) -> str:
     return text[: max_len - 1] + "\u2026"
 
 
-def friendly_name(filepath: str, tag: str) -> str:
+def friendly_name(filepath: str, tag: str, skill_dir: str | None = None) -> str:
     """Extract a friendly display name from the tag. Falls back to filename.
 
     For `nested` files (subdirectory copies of CLAUDE.md / AGENTS.md /
     GEMINI.md), return the FULL relative path so users can locate the file
     — `web/CLAUDE.md` alone is ambiguous when the file actually lives at
-    `packages/web/CLAUDE.md`.
+    `packages/web/CLAUDE.md`. A skill's own `SKILL.md` is named for the skill; every other
+    file in it (`skill_dir` is the skill's directory), a deeper `SKILL.md` included, shows
+    its path inside the skill folder (`ails/workflows/heal.md`).
     """
+    p = Path(filepath)
+    if skill_dir:
+        try:
+            inside = PurePosixPath(filepath).relative_to(skill_dir).as_posix()
+        except ValueError:
+            inside = ""
+        if inside and inside != "SKILL.md":
+            return f"{PurePosixPath(skill_dir).name}/{inside}"
     if ":" in tag:
         return tag.split(":", 1)[1]
-    p = Path(filepath)
     if tag == "nested" and not p.is_absolute():
         # Show the full relative path for nested files so the user can find them
         return p.as_posix()
@@ -293,13 +302,50 @@ def short_path(file_path: str) -> str:
     return p.name
 
 
-def file_type_summary(filepaths: set[str]) -> str:
-    """Build a compact type breakdown like '1 main, 8 rules, 3 skills'."""
+def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
+    """Project-relative path of each file in a skill -> its skill folder (project-relative).
+
+    Reads the skill each file record carries; a file with none is a plain file. `None` when
+    there is no ruleset map (the path-based tags then decide); empty when the map carries no skills.
+    """
+    from reporails_cli.core.mapper.skills import skill_membership
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    membership = skill_membership(ruleset_map)
+    if membership is None:
+        return None
+    return {
+        normalize_finding_path(path, project_root): normalize_finding_path(folder, project_root)
+        for path, folder in membership.items()
+    }
+
+
+def path_tag(filepath: str, skill_of: dict[str, str] | None, norm: str | None = None) -> str:
+    """Tag of a path: `skills:<name>` for a file in a skill folder, else the path-based tag.
+
+    With a skill lookup (a ruleset map is present) membership alone decides what is a skill: a
+    `SKILL.md` outside every skill folder is a plain `file`. Without one (`None`), the path-based
+    tag decides. `norm` is the project-relative form of `filepath` the lookup is keyed by.
+    """
+    if skill_of is None:
+        return classify_file(filepath)
+    skill_dir = skill_of.get(filepath if norm is None else norm)
+    if skill_dir is not None:
+        return f"skills:{PurePosixPath(skill_dir).name}"
+    tag = classify_file(filepath)
+    return "file" if tag.split(":")[0] == "skills" else tag
+
+
+def file_type_summary(filepaths: set[str], skill_of: dict[str, str] | None = None) -> str:
+    """Build a compact type breakdown like '1 main, 8 rules, 3 skills'; a skill folder counts once."""
     type_counts: Counter[str] = Counter()
+    seen: set[str] = set()
     for fp in filepaths:
-        tag = classify_file(fp)
-        base = tag.split(":")[0]
-        type_counts[base] += 1
+        key = (skill_of or {}).get(fp, fp)
+        if key in seen:
+            continue
+        seen.add(key)
+        type_counts[path_tag(fp, skill_of).split(":")[0]] += 1
 
     parts = []
     for t in _TYPE_ORDER:

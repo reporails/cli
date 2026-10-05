@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from rich.console import Console
 
-from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.lint.client_checks import PACKED_SENTENCE_RULE
 from reporails_cli.formatters.text.display_constants import (
     AGG_ORDER,
@@ -29,6 +28,7 @@ from reporails_cli.formatters.text.display_constants import (
     friendly_name,
     get_term_width,
     linked_rule_id,
+    path_tag,
     per_file_stats,
     short_path,
     truncate,
@@ -340,9 +340,20 @@ def print_file_card(
     aliases_by_file: dict[str, list[str]] | None = None,
     project_root: Path | None = None,
     atoms_by_path: dict[str, list[Any]] | None = None,
+    skill_of: dict[str, str] | None = None,
 ) -> None:
-    """Print one file's card: name, stats, triaged findings (or neutral fallback)."""
-    name = friendly_name(filepath, classify_file(filepath))
+    """Print one file's card: name, stats, triaged findings (or neutral fallback). `skill_of` is the
+    skill-folder lookup; a file in a skill folder is named inside it."""
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    norm = normalize_finding_path(filepath, project_root or Path.cwd())
+    skill_dir = (skill_of or {}).get(norm)
+    if skill_dir:
+        name = friendly_name(norm, path_tag(filepath, skill_of, norm), skill_dir)
+    elif skill_of is not None and PurePosixPath(norm).name == "SKILL.md":
+        name = norm  # a SKILL.md in no skill is a plain file, named by its path
+    else:
+        name = friendly_name(filepath, path_tag(filepath, skill_of, norm))
     alias_list = (aliases_by_file or {}).get(filepath, [])
     name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
     stats = per_file_stats(filepath, ruleset_map, project_root or Path.cwd(), atoms_by_path)

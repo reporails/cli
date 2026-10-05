@@ -197,16 +197,15 @@ def reported_local_findings(inp: AssembleInputs) -> tuple[Any, ...]:
 def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) -> Callable[[str], str]:
     """A `path -> type` lookup for `lint_request_local`'s local findings.
 
-    The ruleset map's own records already carry each path's retyped type (a skill's
-    supporting file included), so this reads from there when the finding's path is one of
-    them — instead of recomputing `file_type_of` + the skill retype (an O(files x skills)
-    `resolve()` walk) for every local finding — falling back to that recompute only for a
-    path the map does not carry.
+    The ruleset map's own records carry each path's type (a skill's supporting file included),
+    so a mapped path keeps its record's type. A path the map does not carry takes its file
+    type, and stays `skills` only when it sits at or below a recorded skill folder.
     """
-    from reporails_cli.core.mapper.inspect import file_type_of, skill_dirs_by_owner, skill_typed_file_type
+    from reporails_cli.core.mapper.inspect import file_type_of
+    from reporails_cli.core.mapper.skills import outermost_folder
 
     ruleset_files = inp.ruleset_map.files if inp.ruleset_map is not None else ()
-    skill_dirs = skill_dirs_by_owner([f for f in ruleset_files if f.type == "skills"])
+    skill_folders = {Path(f.skill) for f in ruleset_files if f.skill}
     type_by_path: dict[Path, str] = {safe_resolve(Path(f.path)): f.type for f in ruleset_files}
 
     def _typed(path: str) -> str:
@@ -215,7 +214,9 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
         if mapped is not None:
             return str(mapped)
         base = file_type_of(p, inp.scan_root, registry)
-        return skill_typed_file_type(p, base, skill_dirs)[0]
+        if base == "skills" and outermost_folder(p, skill_folders) is None:
+            return "generic"
+        return base
 
     return _typed
 

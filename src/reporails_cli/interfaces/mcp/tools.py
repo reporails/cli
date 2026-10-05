@@ -311,12 +311,16 @@ def _checks_over_pairs(
     """
     from reporails_cli.core.lint.client_checks import run_client_checks
     from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
+    from reporails_cli.core.mapper.skills import skill_membership
 
-    m_findings = run_m_probes_over_pairs(scan_root, pairs, scoped=scoped)
+    skills = skill_membership(ruleset_map)
+    m_findings = run_m_probes_over_pairs(scan_root, pairs, scoped=scoped, skills=skills)
     content_findings: list[Any] = []
     for agent_id, agent_files in pairs:
         if ruleset_map:
-            content_findings.extend(run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id))
+            content_findings.extend(
+                run_content_quality_checks(ruleset_map, scan_root, agent_files, agent=agent_id, skills=skills)
+            )
     client_findings = run_client_checks(ruleset_map) if ruleset_map else []
     return m_findings, content_findings, client_findings
 

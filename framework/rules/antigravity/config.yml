@@ -106,6 +106,8 @@ file_types:
     scopes:
       project:
         patterns: [".agents/skills/**/*.md"]
+        # Antigravity documents only <skills root>/<skill-name>/SKILL.md (one level).
+        entry_patterns: [".agents/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -113,6 +115,9 @@ file_types:
         patterns:
           - "~/.agents/skills/**/*.md"
           - "~/.gemini/antigravity-cli/skills/**/*.md"
+        entry_patterns:
+          - "~/.agents/skills/*/SKILL.md"
+          - "~/.gemini/antigravity-cli/skills/*/SKILL.md"
         precedence: user
         vcs: external
         maintainer: human
