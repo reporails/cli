@@ -7,9 +7,16 @@ and the real `ails` binary scans) torn down after. No state leaks between scenar
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
+
+
+def before_all(context) -> None:
+    # A CI runner's variables flip the default output to JSON; scenarios assert text.
+    for var in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI"):
+        os.environ.pop(var, None)
 
 
 def before_scenario(context, scenario) -> None:

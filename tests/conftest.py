@@ -21,6 +21,9 @@ os.environ.setdefault("AILS_MODEL_OFFLINE", "1")
 os.environ.setdefault("AILS_SERVER_URL", "http://127.0.0.1:9")
 
 
+CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  # mirrors helpers._is_ci
+
+
 @pytest.fixture(autouse=True)
 def _isolate_home(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
@@ -46,6 +49,9 @@ def _isolate_home(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    # A CI runner's variables flip the default output to JSON; tests that care set them.
+    for var in CI_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(bootstrap, "REPORAILS_HOME", home / ".reporails")
     yield
     try:
