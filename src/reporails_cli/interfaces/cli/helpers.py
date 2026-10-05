@@ -113,7 +113,7 @@ def _print_no_instruction_files(effective_agent: str, con: Console, detected_age
     Text surface only. The machine surfaces (`json` / `github`) render the same
     outcome as an ordinary empty result through their normal formatter, so a
     consumer reads one envelope shape whether or not anything was in scope —
-    see `check_flow._emit_empty_run`.
+    see `check_notices._emit_empty_run`.
     """
     from reporails_cli.core.discovery.agents import get_known_agents
     from reporails_cli.core.platform.dto.models import Level

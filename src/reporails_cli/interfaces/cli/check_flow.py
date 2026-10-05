@@ -28,6 +28,8 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.skills import skill_membership
 from reporails_cli.core.pipeline.mapping import discover_scope
 from reporails_cli.interfaces.cli.check_notices import (
+    _agent_is_pinned,
+    _emit_empty_run,
     _emit_heal_auth_required,
     _emit_heal_scope_refusal,
     _notify_heal_scope_skips,
@@ -53,7 +55,6 @@ from reporails_cli.interfaces.cli.check_support import (
 )
 from reporails_cli.interfaces.cli.helpers import (
     _default_format,
-    _print_no_instruction_files,
     _show_agent_auto_detect_hint,
     _validate_agent,
     _warn_unresolved_skills,
@@ -206,52 +207,6 @@ def _flow_targets(state: CheckState) -> None:
     if state.inputs.heal and not state.inputs.dry_run and not state.inputs.cwd and whole_project_heal:
         _emit_heal_scope_refusal(state.targets.output_format)
         raise typer.Exit(2)
-
-
-def _agent_is_pinned(state: CheckState) -> bool:
-    """True when the run is set to one agent: ``--agent`` or the configured ``default_agent``."""
-    if state.inputs.agent:
-        return True
-    from reporails_cli.core.platform.config.config import get_project_config
-
-    return bool(get_project_config(state.targets.target).default_agent)
-
-
-def _emit_empty_run(state: CheckState) -> None:
-    """Render a run with nothing in scope — through the SAME surfaces a normal run uses.
-
-    A run that discovers no instruction files is an ordinary result over an empty
-    finding set, not a different contract. The machine surfaces therefore format an
-    empty ``CombinedResult`` with the normal dispatcher, so `json` keeps its one
-    top-level shape (``offline`` / ``tier`` / ``quality`` / ``level`` / ``files`` /
-    ``stats`` / ``server_error``) and `github` emits an empty annotation set. Emitting
-    a second, smaller envelope here instead forced every machine consumer — the
-    GitHub Action's ``parse_result.py``, a CI ``min-score`` gate, an agent reading
-    the JSON — to branch on two incompatible shapes, and made a scoped run that
-    silently matched nothing indistinguishable from a clean one. Text keeps its
-    human message, which says plainly that nothing was found.
-    """
-    if state.targets.output_format in ("json", "github"):
-        from reporails_cli.core.platform.runtime.merger import CombinedResult
-
-        _dispatch_output(
-            state.targets.output_format,
-            CombinedResult(),
-            None,
-            0.0,
-            set(),
-            state.targets.target,
-            state.inputs.ascii_mode,
-            state.inputs.verbose,
-            None,
-            None,
-        )
-        return
-    whole_project = not state.targets.capability_specs and all(
-        t == state.inputs.project_root for t in state.targets.path_targets
-    )
-    others = state.scope.detected if whole_project and _agent_is_pinned(state) else None
-    _print_no_instruction_files(state.scope.effective_agent, console, others)
 
 
 def _resolve_scope_at_target(state: CheckState) -> None:
