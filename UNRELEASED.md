@@ -379,7 +379,7 @@
 - The test suite no longer sends the checks it runs to the hosted diagnostics service, and passes in development mode. This now also holds for the end-to-end smoke tests.
 - The pre-release check stays on the machine when no server address is given, and a release workflow step no longer runs a command that appears inside its test fixture.
 - The unit and integration test suites skip the tests that need the model files on a machine that has none, instead of failing.
-- Comments and docstrings in the source, and the messages of the release workflow and the pre-release check, say what the code does in plain words.
+- Comments, docstrings and class names in the source, and the messages of the release workflow and the pre-release check, say what the code does in plain words.
 - Test names, docstrings and sample inputs in the test suite say what is tested in plain words.
 - `ails test` passes on a fresh clone: the source files three path-scope rule fixtures need are tracked.
 - The unit suite ends without failures on a machine with no model files: the tests that need no model run without it.

@@ -21,7 +21,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.mapper.onnx_session import _MiniLMOnnxSession
+from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
 
 if TYPE_CHECKING:
     import numpy as np
@@ -33,7 +33,7 @@ _BUCKET_SIZE = 16  # atoms encoded together
 _DEFAULT_MODEL_SUBDIR = "minilm-l6-v2"
 
 
-class OnnxEmbedder(_MiniLMOnnxSession):
+class OnnxEmbedder(_OnnxEncoderSession):
     """Embeds texts with the bundled ONNX model.
 
     ``encode(texts: list[str]) -> np.ndarray`` returns L2-normalised float32

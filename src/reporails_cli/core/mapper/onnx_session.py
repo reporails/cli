@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-class _MiniLMOnnxSession:
+class _OnnxEncoderSession:
     """ONNX Runtime session + tokenizer over a bundled ONNX graph.
 
     Subclasses resolve and existence-check their own graph + tokenizer paths, then

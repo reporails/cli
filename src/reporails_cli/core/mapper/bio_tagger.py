@@ -21,7 +21,7 @@ from reporails_cli.core.mapper.bio_graphs import (
     _head_a_path,
     _head_b_path,
 )
-from reporails_cli.core.mapper.onnx_session import _MiniLMOnnxSession
+from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
 
 _MAX_LENGTH = 128
 _HIDDEN = 384
@@ -110,7 +110,7 @@ def multislot_fingerprint() -> str:
     return "|".join(parts)
 
 
-class _BioEncoder(_MiniLMOnnxSession):
+class _BioEncoder(_OnnxEncoderSession):
     """Bundled ONNX encoder returning per-token last-hidden-state + char offsets."""
 
     def __init__(self, onnx_path: Path) -> None:
