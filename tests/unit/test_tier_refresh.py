@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from pathlib import Path
 from typing import Any, ClassVar
 from unittest.mock import patch
@@ -89,7 +90,8 @@ def test_free_to_pro_refreshes_stored_tier_and_status(monkeypatch: pytest.Monkey
     path = _seed(tmp_path, "free")
     _lint(monkeypatch, tmp_path, _Ok("pro"))
     assert _stored(path) == {"api_key": "rr_stored", "github_login": "octocat", "tier": "pro"}
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if sys.platform != "win32":  # POSIX mode bits are not enforced on Windows
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     out = runner.invoke(auth_app, ["status"]).output
     assert "Tier: pro" in out
     assert "as of your last check or sign-in" in out
@@ -176,7 +178,8 @@ def test_refresh_replaces_the_file_in_one_step(monkeypatch: pytest.MonkeyPatch, 
     _lint(monkeypatch, tmp_path, _Ok("pro"))
     assert [dst for _, dst in replaced] == [str(path)]
     assert _stored(path)["tier"] == "pro"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if sys.platform != "win32":  # POSIX mode bits are not enforced on Windows
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert [p.name for p in path.parent.iterdir()] == ["credentials.yml"]
 
 

@@ -8,6 +8,7 @@ Targets survivors in `frontmatter_key`
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,10 @@ def test_line_count_below_min_fails(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file-permission read errors")
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="needs POSIX file modes; root bypasses file-permission read errors",
+)
 def test_line_count_read_error_fails(tmp_path: Path) -> None:
     # Kills L282 `passed=False -> True`: an unreadable file yields a failing read-error result.
     target = tmp_path / "CLAUDE.md"

@@ -10,6 +10,7 @@ at the project root or below it (a marketplace's `plugins/<name>/`). A top-level
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -163,7 +164,10 @@ def test_a_top_level_skills_folder_without_a_manifest_is_not_claudes(tmp_path: P
 
 @pytest.mark.unit
 @pytest.mark.subsys_classify
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory, so nothing is unreadable")
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="needs POSIX directory modes; root reads every directory, so nothing is unreadable",
+)
 def test_an_unreadable_folder_is_skipped_and_the_plugin_beside_it_is_found(tmp_path: Path) -> None:
     """A folder the user cannot read (another user's volume, a locked build dir) is not
     searched; discovery neither fails on it nor misses a plugin in a readable sibling."""

@@ -32,6 +32,7 @@ def scratch_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     (home / "other-a" / "src").mkdir(parents=True)
     (home / "other-a" / "CLAUDE.md").write_text(_MAIN_TEXT, encoding="utf-8")
     locked = home / "other-b" / "locked"
