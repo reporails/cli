@@ -293,27 +293,36 @@ def _is_file_overlap(f: Any) -> bool:
 _OVERLAP_PARTNER = re.compile(r"(\d+)% of the instructions in this file and `([^`]+)`")
 
 
+def _overlap_partner(full: str, filepath: str, element_of: Callable[[str], Element]) -> Element:
+    """The element an overlap names; a sibling file of the card's own element is named by its path inside it."""
+    partner = element_of(full)
+    if partner.key != element_of(filepath).key:
+        return partner
+    inside = full
+    with contextlib.suppress(ValueError):
+        inside = str(PurePosixPath(full).relative_to(partner.where))
+    return Element(full, inside, "same skill", full)
+
+
 def _render_file_overlaps(
-    findings: list[Any], border: str, msg_width: int, element_of: Callable[[str], Element] | None, filepath: str = ""
+    findings: list[Any],
+    border: str,
+    msg_width: int,
+    element_of: Callable[[str], Element] | None,
+    filepath: str = "",
+    resolve: Callable[[str, str], str] | None = None,
 ) -> None:
     """Print the file-pair overlap findings once each, unanchored, right under the file's header.
 
     Each partner element gets one row, `NN% topic overlap with <partner element>` at its highest
     percentage, highest first; a message that does not parse prints as sent, after them."""
     element_of = element_of or element_namer(None, None)
-    own = element_of(filepath).key if filepath else None
     best: dict[Element, int] = {}
     unparsed: list[str] = []
     for f in findings:
-        m = _OVERLAP_PARTNER.search(f.message or "")
-        if m:
-            partner = element_of(m.group(2))
-            if partner.key == own:  # a sibling file of the same element: name the file inside it
-                inside = m.group(2)
-                with contextlib.suppress(ValueError):
-                    inside = str(PurePosixPath(inside).relative_to(partner.where))
-                partner = Element(m.group(2), f"{partner.label}'s {inside}", m.group(2))
-            best[partner] = max(best.get(partner, -1), int(m.group(1)))
+        if m := _OVERLAP_PARTNER.search(f.message or ""):
+            partner = _overlap_partner(resolve(filepath, m[2]) if resolve else m[2], filepath, element_of)
+            best[partner] = max(best.get(partner, -1), int(m[1]))
         elif (text := truncate(f.message, msg_width)) not in unparsed:
             unparsed.append(text)
     label = element_labels(best)
@@ -331,12 +340,8 @@ def _render_card_body(
     regime: Regime | None,
     border: str,
     msg_width: int,
-    element_of: Callable[[str], Element] | None = None,
-    filepath: str = "",
 ) -> None:
     """Render the finding body: triaged when the file's token asks for it and a finding is graded, else neutral."""
-    _render_file_overlaps([f for f in findings if _is_file_overlap(f)], border, msg_width, element_of, filepath)
-    findings = [f for f in findings if not _is_file_overlap(f)]
     if not verbose and is_triaged(findings, regime):
         _render_triaged(findings, sev_icons, border, msg_width)
         return
@@ -394,6 +399,7 @@ def print_file_card(
     atoms_by_path: dict[str, list[Any]] | None = None,
     skill_of: dict[str, str] | None = None,
     element_of: Callable[[str], Element] | None = None,
+    partner_of: Callable[[str, str], str] | None = None,
 ) -> None:
     """Print one file's card: name, stats, triaged findings (or neutral fallback). `skill_of` is the
     skill-folder lookup; a file in a skill folder is named inside it."""
@@ -420,7 +426,9 @@ def print_file_card(
             console.print(f"  [dim]{border}   {short}[/dim]")
 
     findings, conventions = split_conventions(findings, verbose)
-    _render_card_body(findings, sev_icons, verbose, regime, border, msg_width, element_of, filepath)
+    overlaps = [f for f in findings if _is_file_overlap(f)]
+    _render_file_overlaps(overlaps, border, msg_width, element_of, filepath, partner_of)
+    _render_card_body([f for f in findings if f not in overlaps], sev_icons, verbose, regime, border, msg_width)
     if conventions:
         console.print(f"  [dim]{border}     \u25e6 {conventions_phrase(len(conventions))} \u00b7 -v to list[/dim]")
 

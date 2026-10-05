@@ -425,7 +425,7 @@ class TestFileLevelOverlap:
             element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "topic overlap with" in r]
-        assert "62% topic overlap with the `x` skill" in rows[0] and "CORE:C:0044" in rows[0]
+        assert "62% topic overlap with x (skill)" in rows[0] and "CORE:C:0044" in rows[0]
         assert "30% topic overlap with AGENTS.md" in rows[1]
         assert not any("of the instructions in this file" in r for r in lines)
 
@@ -468,7 +468,7 @@ class TestFileLevelOverlap:
         )
         rows = [r for r in lines if "topic overlap with" in r]
         assert len(rows) == 1
-        assert "30% topic overlap with the `bootstrap` skill" in rows[0]
+        assert "30% topic overlap with bootstrap (skill)" in rows[0]
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -499,8 +499,8 @@ class TestFileLevelOverlap:
         )
         rows = [r for r in lines if "topic overlap with" in r]
         assert len(rows) == 2
-        assert "40% topic overlap with the `foo` skill (.claude/skills/foo)" in rows[0]
-        assert "30% topic overlap with the `foo` skill (.agents/skills/foo)" in rows[1]
+        assert "40% topic overlap with foo (skill, .claude/skills/foo)" in rows[0]
+        assert "30% topic overlap with foo (skill, .agents/skills/foo)" in rows[1]
 
     _MSG = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
 
@@ -566,4 +566,76 @@ class TestFileLevelOverlap:
             monkeypatch, findings, False, tmp_path, rmap, ".claude/skills/bootstrap/references/bootstrap-workflow.md"
         )
         rows = [r for r in lines if "topic overlap with" in r]
-        assert "62% topic overlap with the `bootstrap` skill's SKILL.md" in rows[0]
+        assert "62% topic overlap with SKILL.md (same skill)" in rows[0]
+
+    @staticmethod
+    def _skill_map(tmp_path, *folders, files=("SKILL.md",)):
+        from types import SimpleNamespace
+
+        recs = tuple(
+            SimpleNamespace(path=str(tmp_path / f / n), type="skills", skill=str(tmp_path / f), agent="claude")
+            for f in folders
+            for n in files
+        )
+        return SimpleNamespace(files=recs, atoms=())
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_shortened_server_names_resolve_to_the_full_partner_path(self, monkeypatch, tmp_path) -> None:
+        from types import SimpleNamespace
+
+        from reporails_cli.formatters.text.display_constants import partner_resolver
+
+        rmap = self._skill_map(tmp_path, "skills/foo", "skills/bar", files=("SKILL.md", "ref.md"))
+        cross = SimpleNamespace(
+            cross_file=(
+                SimpleNamespace(finding_type="overlap", file_1="skills/foo/SKILL.md", file_2="skills/foo/ref.md"),
+                SimpleNamespace(finding_type="overlap", file_1="skills/foo/SKILL.md", file_2="skills/bar/SKILL.md"),
+            ),
+            cross_file_coordinates=(),
+        )
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        findings = [
+            _finding("CORE:C:0044", "warning", self._MSG.format(62, "ref.md"), line=3),
+            _finding("CORE:C:0044", "warning", self._MSG.format(40, "bar/SKILL.md"), line=4),
+        ]
+        triage_view.print_file_card(
+            "skills/foo/SKILL.md",
+            findings,
+            {},
+            True,
+            classify_regime({}),
+            project_root=tmp_path,
+            element_of=element_namer(rmap, tmp_path),
+            partner_of=partner_resolver(cross, tmp_path),
+        )
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert "62% topic overlap with ref.md (same skill)" in rows[0]
+        assert "40% topic overlap with bar (skill)" in rows[1]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_memory_partner_is_named_by_stem_and_outside_files_by_the_header_path(self, monkeypatch, tmp_path) -> None:
+        from types import SimpleNamespace
+
+        mem = str(tmp_path / "memory" / "feedback_surface_progress_on_background_work.md")
+        rmap = SimpleNamespace(files=(SimpleNamespace(path=mem, type="memory", skill="", agent="claude"),), atoms=())
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        findings = [
+            _finding("CORE:C:0044", "warning", self._MSG.format(42, mem), line=3),
+            _finding("CORE:C:0044", "warning", self._MSG.format(20, "/etc/elsewhere/memory/other.md"), line=4),
+        ]
+        triage_view.print_file_card(
+            "CLAUDE.md",
+            findings,
+            {},
+            True,
+            classify_regime({}),
+            project_root=tmp_path,
+            element_of=element_namer(rmap, tmp_path),
+        )
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert "42% topic overlap with feedback_surface_progress_on_background_work (memory)" in rows[0]
+        assert "20% topic overlap with memory/other.md" in rows[1]

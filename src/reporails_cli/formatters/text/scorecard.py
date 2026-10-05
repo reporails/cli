@@ -22,6 +22,7 @@ from reporails_cli.formatters.text.display_constants import (
     element_namer,
     get_term_width,
     group_element_pairs,
+    partner_list,
     path_tag,
     rule_docs_url,
     rule_title,
@@ -339,7 +340,7 @@ def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
             console.print(f"                  {extra}")
 
 
-_NAMED_OVERLAP_PAIRS = 3  # element groups the scorecard names; the rest are counted
+_NAMED_OVERLAP_PAIRS = 3  # element lines the scorecard names; the rest are counted
 
 
 def _render_cross_file_counts(
@@ -347,8 +348,7 @@ def _render_cross_file_counts(
 ) -> None:
     """Render the cross-file repetition and topic-overlap counts.
 
-    With detailed rows the overlap headline counts the element pairs named below; otherwise the
-    `stats` count stands (an aggregate-only run lists its pairs in the Cross-file section).
+    With detailed rows the headline counts the element pairs named below; else the `stats` count stands.
     """
     from reporails_cli.core.platform.runtime.merger import overlapping_pairs
 
@@ -358,9 +358,8 @@ def _render_cross_file_counts(
     n_pairs = getattr(result.stats, "cross_file_overlaps", 0)
     if not n_pairs:
         return
-    pairs = overlapping_pairs(result.cross_file)  # detailed rows only; see the docstring
     groups: list[tuple[str, list[str]]] = []
-    if pairs:
+    if pairs := overlapping_pairs(result.cross_file):
         element_of = element_of or element_namer(None, project_root)
         groups = group_element_pairs([(element_of(file_1), element_of(file_2)) for file_1, file_2 in pairs])
         n_pairs = sum(len(partners) for _head, partners in groups)
@@ -368,10 +367,11 @@ def _render_cross_file_counts(
             return
     noun = "pair overlaps" if n_pairs == 1 else "pairs overlap"
     console.print(f"  {n_pairs} element {noun} in topic \u2014 keep each topic in one file")
+    width = max((len(head) for head, _ in groups[:_NAMED_OVERLAP_PAIRS]), default=0)
     for head, partners in groups[:_NAMED_OVERLAP_PAIRS]:
-        console.print(f"    [dim]{head} \u2194 {', '.join(partners)}[/dim]")
+        console.print(f"    [dim]{head:<{width}} \u2194 {partner_list(partners)}[/dim]")
     if hidden := sum(len(partners) for _head, partners in groups[_NAMED_OVERLAP_PAIRS:]):
-        console.print(f"    [dim]+{hidden} more[/dim]")
+        console.print(f"    [dim]+{hidden} more pairs \u00b7 ails check -v shows each file's overlaps[/dim]")
 
 
 _RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}

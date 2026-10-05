@@ -25,6 +25,7 @@ from reporails_cli.formatters.text.display_constants import (
     get_group_atoms,
     get_sev_icons,
     group_stats_line,
+    partner_resolver,
     path_tag,
     short_path,
     skill_lookup,
@@ -89,6 +90,7 @@ class _CardContext:
     atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
     skill_of: dict[str, str] | None = None
     element_of: Callable[[str], Element] | None = None
+    partner_of: Callable[[str, str], str] | None = None
 
 
 def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: _CardContext) -> None:
@@ -116,6 +118,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             atoms_by_path=ctx.atoms_by_path,
             skill_of=ctx.skill_of,
             element_of=ctx.element_of,
+            partner_of=ctx.partner_of,
         )
 
     shown = sum(len(split_conventions(fs, ctx.verbose)[0]) for _, fs in group_files)
@@ -465,8 +468,12 @@ def _render_findings_and_scorecard(
     has_quality = result.quality is not None
     sev_icons = get_sev_icons(ascii_mode)
     skill_of = skill_lookup(ruleset_map, project_root) if skill_of is None else skill_of
-    # Built once per run, and only when an overlap line or a verbose overlap row will name an element.
-    element_of = element_namer(ruleset_map, project_root) if result.cross_file or verbose else None
+    # Built once per run, and only when an overlap line or a per-file overlap row will name an element.
+    names_elements = bool(
+        result.cross_file or result.cross_file_coordinates or any(f.rule == "CORE:C:0044" for f in result.findings)
+    )
+    element_of = element_namer(ruleset_map, project_root) if names_elements else None
+    partner_of = partner_resolver(result, project_root) if names_elements else None
     atoms_by_path = (
         index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
     )
@@ -481,6 +488,7 @@ def _render_findings_and_scorecard(
         atoms_by_path=atoms_by_path,
         skill_of=skill_of,
         element_of=element_of,
+        partner_of=partner_of,
     )
     _render_file_groups(_build_file_groups(result, file_type_by_path, project_root, skill_of), ctx)
     _render_cross_file_coordinates(result, sev_icons)

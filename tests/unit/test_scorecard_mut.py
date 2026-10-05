@@ -272,7 +272,8 @@ class TestCrossFileCounts:
         out = _capture(_render_cross_file_counts, _Result(stats=_Stats(cross_file_overlaps=5), cross_file=rows))
         assert out == (
             "5 element pairs overlap in topic \u2014 keep each topic in one file "
-            "c.md \u2194 d.md e.md \u2194 f.md g.md \u2194 h.md +2 more"
+            "c.md \u2194 d.md e.md \u2194 f.md g.md \u2194 h.md "
+            "+2 more pairs \u00b7 ails check -v shows each file's overlaps"
         )
 
     @pytest.mark.unit
@@ -308,9 +309,10 @@ class TestCrossFileCounts:
         out = _capture(_render_cross_file_counts, result, tmp_path, element_namer(_Map(files), tmp_path))
         assert out == (
             "6 element pairs overlap in topic \u2014 keep each topic in one file "
-            "the `audit-checks` skill \u2194 the `tighten-language` skill, the `write-rule` skill, the `lead` agent "
-            "the `tighten-language` skill \u2194 the `write-rule` skill "
-            "the `lead` agent \u2194 CLAUDE.md +1 more"
+            "audit-checks (skill) \u2194 tighten-language, write-rule, lead (agent) "
+            "tighten-language (skill) \u2194 write-rule "
+            "lead (agent) \u2194 CLAUDE.md "
+            "+1 more pairs \u00b7 ails check -v shows each file's overlaps"
         )
 
     @pytest.mark.unit
@@ -629,5 +631,32 @@ class TestElementIdentity:
         out = _capture(_render_cross_file_counts, result, tmp_path, element_namer(rmap, tmp_path))
         assert out == (
             "1 element pair overlaps in topic \u2014 keep each topic in one file "
-            "the `foo` skill (.agents/skills/foo) \u2194 the `foo` skill (.claude/skills/foo)"
+            "foo (skill, .agents/skills/foo) \u2194 foo (skill, .claude/skills/foo)"
         )
+
+
+class TestSummaryLineShape:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_partners_cap_at_three_with_a_remainder_and_heads_pad(self, tmp_path) -> None:
+        folders = ["a", "bb", "c", "d", "e", "f"]
+        rmap = _Map(
+            tuple(_FileRec(str(tmp_path / f"s/{f}/SKILL.md"), "skills", str(tmp_path / f"s/{f}")) for f in folders)
+        )
+        rows = tuple(
+            _Cross("overlap", str(tmp_path / "s/a/SKILL.md"), str(tmp_path / f"s/{f}/SKILL.md")) for f in folders[1:]
+        )
+        result = _Result(stats=_Stats(cross_file_overlaps=5), cross_file=rows)
+        with console.capture() as cap:
+            _render_cross_file_counts(result, tmp_path, element_namer(rmap, tmp_path))
+        assert cap.get().splitlines()[1] == "    a (skill) \u2194 bb, c, d, +2 more"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_summary_line_names_memory_files_by_stem_and_drops_the_kind_for_same_kind_partners(self, tmp_path) -> None:
+        mem = [str(tmp_path / "memory" / n) for n in ("feedback_a.md", "feedback_b.md", "MEMORY.md")]
+        rmap = _Map(tuple(_FileRec(m, "memory") for m in mem))
+        rows = (_Cross("overlap", mem[0], mem[1]), _Cross("overlap", mem[0], mem[2]))
+        result = _Result(stats=_Stats(cross_file_overlaps=2), cross_file=rows)
+        out = _capture(_render_cross_file_counts, result, tmp_path, element_namer(rmap, tmp_path))
+        assert out.endswith("MEMORY.md (memory index) \u2194 feedback_a (memory) feedback_a (memory) \u2194 feedback_b")

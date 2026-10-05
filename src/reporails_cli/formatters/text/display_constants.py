@@ -323,12 +323,22 @@ def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
 
 
 class Element(NamedTuple):
-    """A harness element a file belongs to: `key` is its identity (the skill folder, else the file), `label`
-    its display name, `where` its project-relative location."""
+    """A harness element a file belongs to: `key` is its identity (the skill folder, else the file), `name` its
+    display name, `kind` skill / agent / rule / command (empty for any other file), `where` its location."""
 
     key: str
-    label: str
+    name: str
+    kind: str
     where: str
+
+    @property
+    def base(self) -> str:
+        """The name as written: a command carries its slash."""
+        return f"/{self.name}" if self.kind == "command" else self.name
+
+    @property
+    def label(self) -> str:
+        return f"{self.base} ({self.kind})" if self.kind else self.base
 
 
 def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str], Element]:
@@ -343,28 +353,70 @@ def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str]
     root = project_root if project_root is not None else Path.cwd()
     skill_of = skill_lookup(ruleset_map, root) or {}
     type_by_path = {normalize_finding_path(fr.path, root): fr.type for fr in getattr(ruleset_map, "files", ())}
+    kinds = {"agents": "agent", "rules": "rule", "commands": "command"}
+    from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
 
     def element(path: str) -> Element:
         norm = normalize_finding_path(path, root)
         folder = skill_of.get(norm)
         if folder:
-            return Element(folder, f"the `{PurePosixPath(folder).name}` skill", folder)
-        stem = PurePosixPath(norm).stem
-        label = {
-            "agents": f"the `{stem}` agent",
-            "rules": f"the `{stem}` rule",
-            "commands": f"the `/{stem}` command",
-        }.get(type_by_path.get(norm, ""))
-        return Element(norm, label or (norm if project_root is not None else short_path(path)), norm)
+            return Element(folder, PurePosixPath(folder).name, "skill", folder)
+        ftype = type_by_path.get(norm, "")
+        if ftype in MEMORY_SURFACES:
+            index = PurePosixPath(norm).name == MEMORY_INDEX_FILENAME
+            return Element(
+                norm,
+                MEMORY_INDEX_FILENAME if index else PurePosixPath(norm).stem,
+                "memory index" if index else "memory",
+                norm,
+            )
+        if kind := kinds.get(ftype):
+            return Element(norm, PurePosixPath(norm).stem, kind, norm)
+        outside = PurePosixPath(norm).is_absolute() or project_root is None
+        return Element(norm, short_path(path) if outside else norm, "", norm)
 
     return element
+
+
+def partner_list(partners: list[str], limit: int = 3) -> str:
+    """A summary line's partners, the first `limit` named and the rest counted."""
+    more = [f"+{len(partners) - limit} more"] if len(partners) > limit else []
+    return ", ".join([*partners[:limit], *more])
+
+
+def partner_resolver(result: Any, project_root: Path) -> Callable[[str, str], str]:
+    """Resolve the shortened file name a server overlap message carries to the partner's full path.
+
+    The name is looked up among the overlap pairs that include the card's file; exactly one path equal to
+    the name, or ending in `/<name>`, resolves it; anything else leaves the name as sent.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
+
+    partners: dict[str, set[str]] = {}
+    for left, right in overlapping_pairs(result.cross_file, getattr(result, "cross_file_coordinates", ())):
+        l_norm, r_norm = normalize_finding_path(left, project_root), normalize_finding_path(right, project_root)
+        partners.setdefault(l_norm, set()).add(r_norm)
+        partners.setdefault(r_norm, set()).add(l_norm)
+
+    def resolve(filepath: str, name: str) -> str:
+        found = {
+            p
+            for p in partners.get(normalize_finding_path(filepath, project_root), ())
+            if p == name or p.endswith("/" + name)
+        }
+        return found.pop() if len(found) == 1 else name
+
+    return resolve
 
 
 def element_labels(elements: Iterable[Element]) -> dict[str, str]:
     """Display label per element identity; two identities sharing a label each add their location."""
     by_key = {e.key: e for e in elements}
     shared = Counter(e.label for e in by_key.values())
-    return {k: f"{e.label} ({e.where})" if shared[e.label] > 1 else e.label for k, e in by_key.items()}
+    return {
+        k: e.label if shared[e.label] == 1 else f"{e.base} ({e.kind + ', ' if e.kind else ''}{e.where})"
+        for k, e in by_key.items()
+    }
 
 
 def group_element_pairs(pairs: list[tuple[Element, Element]]) -> list[tuple[str, list[str]]]:
@@ -372,23 +424,25 @@ def group_element_pairs(pairs: list[tuple[Element, Element]]) -> list[tuple[str,
 
     Pairs are keyed on element identity; a pair inside one element is dropped. A pair joins the
     group of an element that already heads one; otherwise its first element heads a new group, so
-    no pair is listed twice.
+    no pair is listed twice. A partner of its head's kind drops the kind suffix.
     """
     label = element_labels(e for pair in pairs for e in pair)
     seen: set[frozenset[str]] = set()
-    groups: dict[str, list[str]] = {}
+    heads: dict[str, Element] = {}
+    groups: dict[str, list[Element]] = {}
     for left, right in pairs:
         key = frozenset((left.key, right.key))
         if len(key) < 2 or key in seen:
             continue
         seen.add(key)
-        if left.key in groups:
-            groups[left.key].append(label[right.key])
-        elif right.key in groups:
-            groups[right.key].append(label[left.key])
-        else:
-            groups[left.key] = [label[right.key]]
-    return [(label[k], partners) for k, partners in groups.items()]
+        head, partner = (right, left) if right.key in groups and left.key not in groups else (left, right)
+        heads[head.key] = head
+        groups.setdefault(head.key, []).append(partner)
+
+    def partner_text(head: Element, p: Element) -> str:
+        return p.base if p.kind == head.kind and label[p.key] == p.label else label[p.key]
+
+    return [(label[k], [partner_text(heads[k], p) for p in ps]) for k, ps in groups.items()]
 
 
 def path_tag(filepath: str, skill_of: dict[str, str] | None, norm: str | None = None) -> str:
