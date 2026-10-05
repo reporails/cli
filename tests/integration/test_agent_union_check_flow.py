@@ -14,6 +14,7 @@ file, and `generic` never ran at all.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -67,11 +68,14 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
         agent: str = "",
         scoped: bool = False,
         project_checks: str = "all",
+        skills: Mapping[str, str] | None = None,
     ):
         # The one whole-project pass (project-wide checks only) is not a per-agent pass.
         if project_checks != "only":
             m_probe_calls.append((agent, tuple(sorted(f.name for f in instruction_files))))
-        return real_m_probes(project_dir, instruction_files, agent=agent, scoped=scoped, project_checks=project_checks)
+        return real_m_probes(
+            project_dir, instruction_files, agent=agent, scoped=scoped, project_checks=project_checks, skills=skills
+        )
 
     def _spy_content_checks(
         ruleset_map: object, project_dir: Path, instruction_files: list[Path] | None = None, agent: str = ""
