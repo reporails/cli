@@ -226,6 +226,7 @@
 - Check: a rule that targets files by `loading_verb` or `link_source_type` applies to just those files (both were ignored, so such a rule matched every file), a content-quality rule whose `match` names any criterion no longer falls back to every mapped file when nothing matches, and a rule whose `match.type` is a list finds its files in mechanical checks too. Prose rules no longer score JSON and TOML, so `ails check .mcp.json` does not report missing section headers and `ails check hooks` on a real settings file reports only config-surface findings.
 
 - Check: `.claude/settings.json` and `.gemini/settings.json` are read as config files, so the rules that target the config surface — every hook rule and per-agent hook overlay, plus the permission, MCP-server and settings-scope rules — no longer stay silent on the main settings file. Hook rules also target a dedicated hooks file (`.cursor/hooks.json`, `.codex/hooks.json`, `.github/hooks/*.json`), covering 25 rules across all five supported agents. Machine-config surfaces that are neither JSON nor TOML (`.codex/rules/*.rules`, `agents/openai.yaml`, `.gemini/extensions/**`) are recognised as config, so prose-quality rules no longer fire on them.
+- Check: the summary's topic-overlap lines name each side as its skill, agent, rule or command, one line per element with its partners, and count element pairs; `ails check -v` shows a file's topic overlaps once under the file, one row per partner (`32% topic overlap with the \`refine-rule\` skill`), instead of under a line number.
 
 ### Fixed
 
@@ -372,6 +373,7 @@
 - Check: the cross-file "conflict" diagnosis no longer surfaces — `ails check` and the scorecard no longer show a "conflicts" count or the error-severity icon, and `stats.cross_file_conflicts` is gone from `-f json`; the `repetition` finding still surfaces.
 
 - Rules: the bundled rule files no longer carry `fix:` remediation text or a `## Fix` section. Fix guidance is delivered per finding by the diagnostic service (tier-gated); rule detection, severity, categories and every other field are unchanged.
+- Check: the summary's closing line "An error is worth fixing even when clearing it barely moves the score." is gone.
 
 ### Internal
 
