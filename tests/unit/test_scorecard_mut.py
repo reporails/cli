@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from reporails_cli.formatters.text.display_constants import element_namer
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
     SurfaceHealth,
@@ -304,7 +305,7 @@ class TestCrossFileCounts:
         ]
         rows = tuple(_Cross("overlap", str(tmp_path / x), str(tmp_path / y)) for x, y, n in pairs for _ in range(n))
         result = _Result(stats=_Stats(cross_file_overlaps=7), cross_file=rows)
-        out = _capture(_render_cross_file_counts, result, tmp_path, _Map(files))
+        out = _capture(_render_cross_file_counts, result, tmp_path, element_namer(_Map(files), tmp_path))
         assert out == (
             "6 element pairs overlap in topic \u2014 keep each topic in one file "
             "the `audit-checks` skill \u2194 the `tighten-language` skill, the `write-rule` skill, the `lead` agent "
@@ -592,3 +593,41 @@ class TestRefusedRunTerminal:
         out = _capture(print_scorecard, _Result(server_error=err), False, tier="free")
         assert "Upgrade to Pro" not in out
         assert "Pro adds the remedies" not in out
+
+
+class TestElementIdentity:
+    @staticmethod
+    def _skills(tmp_path, *folders):
+        files = tuple(_FileRec(str(tmp_path / f / "SKILL.md"), "skills", str(tmp_path / f)) for f in folders) + tuple(
+            _FileRec(str(tmp_path / f / "ref.md"), "skills", str(tmp_path / f)) for f in folders
+        )
+        return _Map(files)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_overlap_inside_one_skill_prints_no_headline(self, tmp_path) -> None:
+        rmap = self._skills(tmp_path, ".claude/skills/foo")
+        rows = (
+            _Cross(
+                "overlap", str(tmp_path / ".claude/skills/foo/SKILL.md"), str(tmp_path / ".claude/skills/foo/ref.md")
+            ),
+        )
+        result = _Result(stats=_Stats(cross_file_overlaps=1), cross_file=rows)
+        out = _capture(_render_cross_file_counts, result, tmp_path, element_namer(rmap, tmp_path))
+        assert out == ""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_same_named_skills_are_two_elements_and_disambiguated(self, tmp_path) -> None:
+        rmap = self._skills(tmp_path, ".claude/skills/foo", ".agents/skills/foo")
+        rows = (
+            _Cross(
+                "overlap", str(tmp_path / ".claude/skills/foo/SKILL.md"), str(tmp_path / ".agents/skills/foo/SKILL.md")
+            ),
+        )
+        result = _Result(stats=_Stats(cross_file_overlaps=1), cross_file=rows)
+        out = _capture(_render_cross_file_counts, result, tmp_path, element_namer(rmap, tmp_path))
+        assert out == (
+            "1 element pair overlaps in topic \u2014 keep each topic in one file "
+            "the `foo` skill (.agents/skills/foo) \u2194 the `foo` skill (.claude/skills/foo)"
+        )

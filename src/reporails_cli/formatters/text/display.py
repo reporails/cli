@@ -8,6 +8,7 @@ scorecard rendering lives in scorecard.py.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,8 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     SEV_WEIGHT,
+    Element,
+    element_namer,
     file_type_summary,
     get_group_atoms,
     get_sev_icons,
@@ -85,6 +88,7 @@ class _CardContext:
     regime_by_file: dict[str, Any] = field(default_factory=dict)
     atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
     skill_of: dict[str, str] | None = None
+    element_of: Callable[[str], Element] | None = None
 
 
 def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: _CardContext) -> None:
@@ -111,6 +115,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             project_root=ctx.project_root,
             atoms_by_path=ctx.atoms_by_path,
             skill_of=ctx.skill_of,
+            element_of=ctx.element_of,
         )
 
     shown = sum(len(split_conventions(fs, ctx.verbose)[0]) for _, fs in group_files)
@@ -460,6 +465,8 @@ def _render_findings_and_scorecard(
     has_quality = result.quality is not None
     sev_icons = get_sev_icons(ascii_mode)
     skill_of = skill_lookup(ruleset_map, project_root) if skill_of is None else skill_of
+    # Built once per run, and only when an overlap line or a verbose overlap row will name an element.
+    element_of = element_namer(ruleset_map, project_root) if result.cross_file or verbose else None
     atoms_by_path = (
         index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
     )
@@ -473,6 +480,7 @@ def _render_findings_and_scorecard(
         regime_by_file=_build_regime_by_file(result, project_root),
         atoms_by_path=atoms_by_path,
         skill_of=skill_of,
+        element_of=element_of,
     )
     _render_file_groups(_build_file_groups(result, file_type_by_path, project_root, skill_of), ctx)
     _render_cross_file_coordinates(result, sev_icons)
@@ -500,7 +508,7 @@ def _render_findings_and_scorecard(
         item_health=item_health,
         verbose=verbose,
         project_root=project_root,
-        ruleset_map=ruleset_map,
+        element_of=element_of,
     )
 
 

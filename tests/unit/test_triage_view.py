@@ -6,6 +6,7 @@ import pytest
 
 from reporails_cli.core.platform.runtime.merger import FindingItem
 from reporails_cli.formatters.text import triage_view
+from reporails_cli.formatters.text.display_constants import element_namer
 from reporails_cli.formatters.triage import classify_regime
 
 # The grade a paid reply carries for these rules in the fixtures below; any other rule is ungraded.
@@ -415,7 +416,13 @@ class TestFileLevelOverlap:
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
         triage_view.print_file_card(
-            "CLAUDE.md", findings, {}, True, classify_regime({}), ruleset_map=rmap, project_root=tmp_path
+            "CLAUDE.md",
+            findings,
+            {},
+            True,
+            classify_regime({}),
+            project_root=tmp_path,
+            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "topic overlap with" in r]
         assert "62% topic overlap with the `x` skill" in rows[0] and "CORE:C:0044" in rows[0]
@@ -451,8 +458,112 @@ class TestFileLevelOverlap:
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
         triage_view.print_file_card(
-            "CLAUDE.md", findings, {}, True, classify_regime({}), ruleset_map=rmap, project_root=tmp_path
+            "CLAUDE.md",
+            findings,
+            {},
+            True,
+            classify_regime({}),
+            project_root=tmp_path,
+            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "topic overlap with" in r]
         assert len(rows) == 1
         assert "30% topic overlap with the `bootstrap` skill" in rows[0]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_same_named_partner_skills_are_disambiguated(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        from types import SimpleNamespace
+
+        def rec(folder: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                path=str(tmp_path / folder / "SKILL.md"), type="skills", skill=str(tmp_path / folder), agent="claude"
+            )
+
+        rmap = SimpleNamespace(files=(rec(".claude/skills/foo"), rec(".agents/skills/foo")), atoms=())
+        msg = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
+        findings = [
+            _finding("CORE:C:0044", "warning", msg.format(40, ".claude/skills/foo/SKILL.md"), line=4),
+            _finding("CORE:C:0044", "warning", msg.format(30, ".agents/skills/foo/SKILL.md"), line=5),
+        ]
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        triage_view.print_file_card(
+            "CLAUDE.md",
+            findings,
+            {},
+            True,
+            classify_regime({}),
+            project_root=tmp_path,
+            element_of=element_namer(rmap, tmp_path),
+        )
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert len(rows) == 2
+        assert "40% topic overlap with the `foo` skill (.claude/skills/foo)" in rows[0]
+        assert "30% topic overlap with the `foo` skill (.agents/skills/foo)" in rows[1]
+
+    _MSG = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
+
+    def _card(self, monkeypatch, findings, verbose, tmp_path, rmap=None, path="CLAUDE.md"):
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        triage_view.print_file_card(
+            path,
+            findings,
+            {"warning": "!"},
+            verbose,
+            classify_regime({"triage_tier": "partial"}),
+            project_root=tmp_path,
+            element_of=element_namer(rmap, tmp_path) if rmap is not None else None,
+        )
+        return lines
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_default_view_renders_overlap_as_file_level_rows(self, monkeypatch, tmp_path) -> None:
+        findings = [
+            *[
+                _finding("CORE:C:0044", "warning", self._MSG.format(62, "AGENTS.md"), line=i, impact_tier="gate_mover")
+                for i in range(5)
+            ],
+            _finding("CORE:C:0042", "warning", "Vague instruction", line=9),
+        ]
+        lines = self._card(monkeypatch, findings, False, tmp_path)
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert len(rows) == 1 and "62% topic overlap with AGENTS.md" in rows[0] and "CORE:C:0044" in rows[0]
+        assert not any("of the instructions in this file" in r or "\u00d75" in r for r in lines)
+        assert any("Vague instruction" in r for r in lines)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    @pytest.mark.parametrize("verbose", [False, True])
+    def test_overlap_member_is_pulled_out_of_its_packed_sentence_owner(self, monkeypatch, tmp_path, verbose) -> None:
+        findings = [
+            _finding("CORE:C:0058", "warning", "This sentence holds 2 instructions", line=24),
+            _finding(
+                "CORE:C:0044", "warning", self._MSG.format(38, "AGENTS.md"), line=24, pi=3, impact_tier="gate_mover"
+            ),
+            _finding("CORE:E:0004", "warning", "Too brief", line=24, pi=4, impact_tier="conditional"),
+        ]
+        lines = self._card(monkeypatch, findings, verbose, tmp_path)
+        overlap = [r for r in lines if "topic overlap with AGENTS.md" in r]
+        assert len(overlap) == 1 and "L24" not in overlap[0]
+        assert any("This sentence holds 2 instructions" in r for r in lines)
+        assert any("Too brief" in r for r in lines)  # the owner keeps its other members
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_partner_inside_the_same_skill_is_named_by_its_path_in_the_skill(self, monkeypatch, tmp_path) -> None:
+        from types import SimpleNamespace
+
+        folder = str(tmp_path / ".claude/skills/bootstrap")
+        rec = lambda rel: SimpleNamespace(path=f"{folder}/{rel}", type="skills", skill=folder, agent="claude")  # noqa: E731
+        rmap = SimpleNamespace(files=(rec("SKILL.md"), rec("references/bootstrap-workflow.md")), atoms=())
+        findings = [
+            _finding("CORE:C:0044", "warning", self._MSG.format(62, ".claude/skills/bootstrap/SKILL.md"), line=3)
+        ]
+        lines = self._card(
+            monkeypatch, findings, False, tmp_path, rmap, ".claude/skills/bootstrap/references/bootstrap-workflow.md"
+        )
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert "62% topic overlap with the `bootstrap` skill's SKILL.md" in rows[0]

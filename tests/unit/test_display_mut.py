@@ -557,3 +557,37 @@ class TestItemHealthGating:
         out = cap.get()
         # Both per-item rows render only when item_health is computed (the guard holds).
         assert "alpha" in out and "beta" in out  # kills L423 `== -> !=`
+
+
+class TestElementNamerBuiltOnce:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_one_namer_serves_every_file_card(self, monkeypatch, tmp_path) -> None:
+        calls: list[object] = []
+        real = display.element_namer
+        monkeypatch.setattr(display, "element_namer", lambda *a: calls.append(a) or real(*a))
+        msg = "40% of the instructions in this file and `B.md` cover the same topics \u2014 the copies can drift apart."
+        findings = tuple(
+            FindingItem(file=str(tmp_path / name), line=3, severity="warning", rule="CORE:C:0044", message=msg)
+            for name in ("A.md", "C.md", "D.md")
+        )
+        result = CombinedResult(findings=findings, quality=None)
+        with display.console.capture():
+            display.print_text_result(result, elapsed_ms=0, ascii_mode=True, verbose=True, project_root=tmp_path)
+        assert len(calls) == 1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_no_namer_when_nothing_names_an_element(self, monkeypatch, tmp_path) -> None:
+        calls: list[object] = []
+        monkeypatch.setattr(display, "element_namer", lambda *a: calls.append(a))
+        finding = FindingItem(file=str(tmp_path / "A.md"), line=3, severity="warning", rule="R", message="m")
+        with display.console.capture():
+            display.print_text_result(
+                CombinedResult(findings=(finding,), quality=None),
+                elapsed_ms=0,
+                ascii_mode=True,
+                verbose=False,
+                project_root=tmp_path,
+            )
+        assert calls == []
