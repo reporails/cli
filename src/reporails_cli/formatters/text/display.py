@@ -500,6 +500,7 @@ def _render_findings_and_scorecard(
         item_health=item_health,
         verbose=verbose,
         project_root=project_root,
+        ruleset_map=ruleset_map,
     )
 
 

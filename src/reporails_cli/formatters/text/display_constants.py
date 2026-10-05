@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 from collections import Counter
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -319,6 +320,59 @@ def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
         normalize_finding_path(path, project_root): normalize_finding_path(folder, project_root)
         for path, folder in membership.items()
     }
+
+
+def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str], str]:
+    """Name a file by the harness element it belongs to.
+
+    A file in a skill folder is that skill (every file of the folder is one element); an agent
+    definition, rule file and command are named by their file stem, by the type the ruleset map
+    records for the file. Any other file keeps its project-relative path.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    root = project_root if project_root is not None else Path.cwd()
+    skill_of = skill_lookup(ruleset_map, root) or {}
+    type_by_path = {normalize_finding_path(fr.path, root): fr.type for fr in getattr(ruleset_map, "files", ())}
+
+    def name(path: str) -> str:
+        norm = normalize_finding_path(path, root)
+        folder = skill_of.get(norm)
+        if folder:
+            return f"the `{PurePosixPath(folder).name}` skill"
+        stem = PurePosixPath(norm).stem
+        match type_by_path.get(norm):
+            case "agents":
+                return f"the `{stem}` agent"
+            case "rules":
+                return f"the `{stem}` rule"
+            case "commands":
+                return f"the `/{stem}` command"
+        return norm if project_root is not None else short_path(path)
+
+    return name
+
+
+def group_element_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, list[str]]]:
+    """Collapse element pairs (heaviest first) and group them: one `(head, partners)` per element.
+
+    A pair joins the group of an element that already heads one; otherwise its first element
+    heads a new group, so no pair is listed twice.
+    """
+    seen: set[frozenset[str]] = set()
+    groups: dict[str, list[str]] = {}
+    for left, right in pairs:
+        key = frozenset((left, right))
+        if left == right or key in seen:
+            continue
+        seen.add(key)
+        if left in groups:
+            groups[left].append(right)
+        elif right in groups:
+            groups[right].append(left)
+        else:
+            groups[left] = [right]
+    return list(groups.items())
 
 
 def path_tag(filepath: str, skill_of: dict[str, str] | None, norm: str | None = None) -> str:

@@ -156,41 +156,6 @@ class _VerdictResult:
     findings: tuple = ()
 
 
-class TestVerdictCaption:
-    """The 'worth fixing' caption must point at an error list that actually rendered."""
-
-    def _capture(self, result: object) -> str:
-        from reporails_cli.formatters.text.scorecard import _render_verdict_block, console
-
-        with console.capture() as cap:
-            _render_verdict_block(result, has_quality=True, n_atoms=0, elapsed_ms=0)
-        # Collapse Rich soft-wrap newlines so the caption is matchable as one string.
-        return " ".join(cap.get().split())
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_caption_shown_when_error_findings_listed(self) -> None:
-        """A visible error finding -> the reconciling caption renders, whatever the score."""
-        result = _VerdictResult(
-            quality=_Quality(display_score=8.5),
-            stats=_Stats(errors=2),
-            findings=(_Finding(severity="error"),),
-        )
-        assert "An error is worth fixing" in self._capture(result)
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_caption_suppressed_when_no_error_findings_listed(self) -> None:
-        """Anon/free: stats count errors but they are gated out of the list -> no caption."""
-        result = _VerdictResult(
-            quality=_Quality(display_score=8.5),
-            stats=_Stats(errors=2),  # stats count gated errors
-            findings=(),  # but nothing rendered in the worklist below
-        )
-        out = self._capture(result)
-        assert "worth fixing" not in out
-
-
 class TestConventionsInFindingsLine:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic

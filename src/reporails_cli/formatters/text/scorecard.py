@@ -17,11 +17,12 @@ from reporails_cli.core.discovery.features import agent_main_literal_paths, agen
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     display_rule_id,
+    element_namer,
     get_term_width,
+    group_element_pairs,
     path_tag,
     rule_docs_url,
     rule_title,
-    short_path,
     skill_lookup,
 )
 from reporails_cli.formatters.text.score import score_color
@@ -340,20 +341,14 @@ def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
 _NAMED_OVERLAP_PAIRS = 3
 
 
-def _render_cross_file_counts(result: Any, project_root: Path | None = None) -> None:
-    """Render the cross-file repetition and topic-overlap counts in the scorecard.
+def _render_cross_file_counts(result: Any, project_root: Path | None = None, ruleset_map: Any = None) -> None:
+    """Render the cross-file repetition and topic-overlap counts.
 
-    Reads each count straight off `stats`, the one place it is computed
-    (`merger.count_cross_file_repetitions` / `count_cross_file_overlaps`), so
-    these lines and the JSON envelope's `stats` can never disagree \u2014 whether
-    the run carries the detailed rows or only the aggregate coordinates. With
-    detailed rows, the overlap line also names the pairs sharing the most
-    instructions, project-relative when `project_root` is known; an aggregate-only
-    run already lists every pair in its Cross-file section.
-
-    `merge_results` drops `conflict` entries, so there is no conflicts line.
+    Counts come off `stats`, matching the JSON envelope; with a ruleset map and detailed rows the
+    overlap headline counts the element pairs named below, grouped by element (an aggregate-only
+    run already lists its pairs in the Cross-file section). `merge_results` drops `conflict` entries.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
+    from reporails_cli.core.platform.runtime.merger import overlapping_pairs
 
     n_reps = getattr(result.stats, "cross_file_repetitions", 0)
     if n_reps:
@@ -361,19 +356,20 @@ def _render_cross_file_counts(result: Any, project_root: Path | None = None) -> 
     n_pairs = getattr(result.stats, "cross_file_overlaps", 0)
     if not n_pairs:
         return
+    pairs = overlapping_pairs(result.cross_file)  # detailed rows only; see the docstring
+    groups: list[tuple[str, list[str]]] = []
+    if pairs:
+        name_of = element_namer(ruleset_map, project_root)
+        groups = group_element_pairs([(name_of(file_1), name_of(file_2)) for file_1, file_2 in pairs])
+        if ruleset_map is not None:
+            n_pairs = sum(len(partners) for _head, partners in groups)
     noun = "pair overlaps" if n_pairs == 1 else "pairs overlap"
     console.print(f"  {n_pairs} element {noun} in topic \u2014 keep each topic in one file")
-    pairs = overlapping_pairs(result.cross_file)  # detailed rows only; see the docstring
-    if not pairs:
-        return
-
-    def _name(path: str) -> str:
-        return normalize_finding_path(path, project_root) if project_root is not None else short_path(path)
-
-    for file_1, file_2 in pairs[:_NAMED_OVERLAP_PAIRS]:
-        console.print(f"    [dim]{_name(file_1)} \u2194 {_name(file_2)}[/dim]")
-    if n_pairs > _NAMED_OVERLAP_PAIRS:
-        console.print(f"    [dim]+{n_pairs - _NAMED_OVERLAP_PAIRS} more[/dim]")
+    for head, partners in groups[:_NAMED_OVERLAP_PAIRS]:
+        console.print(f"    [dim]{head} \u2194 {', '.join(partners)}[/dim]")
+    hidden = sum(len(partners) for _head, partners in groups[_NAMED_OVERLAP_PAIRS:])
+    if hidden:
+        console.print(f"    [dim]+{hidden} more[/dim]")
 
 
 _RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
@@ -483,6 +479,7 @@ def _render_results_summary(
     hint_errors: int,
     hint_warnings: int,
     project_root: Path | None = None,
+    ruleset_map: Any = None,
 ) -> tuple[int, int]:
     """Render pro diagnostics + cross-file counts. Returns (visible_findings, pro_total).
 
@@ -503,7 +500,7 @@ def _render_results_summary(
         pro_detail = f" ({' \u00b7 '.join(pro_parts)})" if pro_parts else ""
         console.print(f"  [dim]+ {pro_total} Pro diagnostics{pro_detail}[/dim]")
 
-    _render_cross_file_counts(result, project_root)
+    _render_cross_file_counts(result, project_root, ruleset_map)
 
     return visible_findings, pro_total
 
@@ -523,6 +520,7 @@ def print_scorecard(
     item_health: list[SurfaceHealth] | None = None,
     verbose: bool = False,
     project_root: Path | None = None,
+    ruleset_map: Any = None,
 ) -> None:
     """Print the bottom scorecard — the payoff users scroll to.
 
@@ -570,7 +568,9 @@ def print_scorecard(
 
     _render_top_rules(result, verbose)
 
-    _visible_findings, _pro_total = _render_results_summary(result, hint_errors, hint_warnings, project_root)
+    _visible_findings, _pro_total = _render_results_summary(
+        result, hint_errors, hint_warnings, project_root, ruleset_map
+    )
 
     # One line per run for an unpaid tier, in place of any per-finding remedy
     # (the reply carries none for an anonymous or free run) — keyed on whether a

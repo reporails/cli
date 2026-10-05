@@ -62,6 +62,19 @@ class _Cross:
 
 
 @dataclass
+class _FileRec:
+    path: str
+    type: str = "generic"
+    skill: str = ""
+    agent: str = "claude"
+
+
+@dataclass
+class _Map:
+    files: tuple = ()
+
+
+@dataclass
 class _Result:
     quality: _Quality | None = None
     stats: _Stats = field(default_factory=_Stats)
@@ -166,19 +179,6 @@ class TestVerdictBlock:
         assert "no scorable content" in out
         assert "server diagnostics unavailable" not in out
 
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_caption_shows_on_a_low_score_with_a_visible_error(self) -> None:
-        # The caption keys on a listed error alone, whatever the score: a score-gated
-        # mutant would withhold it from the low-score run that needs it most.
-        result = _Result(
-            quality=_Quality(display_score=3.4),
-            stats=_Stats(errors=1),
-            findings=(_Finding(severity="error"),),
-        )
-        out = _capture(_render_verdict_block, result, True, 0, 0.0)
-        assert "An error is worth fixing" in out
-
 
 # ── _render_scope ─────────────────────────────────────────────────────
 
@@ -272,6 +272,44 @@ class TestCrossFileCounts:
         assert out == (
             "5 element pairs overlap in topic \u2014 keep each topic in one file "
             "c.md \u2194 d.md e.md \u2194 f.md g.md \u2194 h.md +2 more"
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_pairs_name_harness_elements_collapse_and_group(self, tmp_path) -> None:
+        def rec(path, type_, skill=""):
+            return _FileRec(str(tmp_path / path), type_, str(tmp_path / skill) if skill else "")
+
+        files = (
+            rec(".claude/skills/audit-checks/SKILL.md", "skills", ".claude/skills/audit-checks"),
+            rec(".claude/skills/audit-checks/ref.md", "skills", ".claude/skills/audit-checks"),
+            rec(".claude/skills/tighten-language/SKILL.md", "skills", ".claude/skills/tighten-language"),
+            rec(".claude/skills/write-rule/SKILL.md", "skills", ".claude/skills/write-rule"),
+            rec(".claude/agents/lead.md", "agents"),
+            rec("CLAUDE.md", "main"),
+            rec("AGENTS.md", "main"),
+            rec("docs/x.md", "generic"),
+        )
+        a1, a2 = ".claude/skills/audit-checks/SKILL.md", ".claude/skills/audit-checks/ref.md"
+        tl, wr = ".claude/skills/tighten-language/SKILL.md", ".claude/skills/write-rule/SKILL.md"
+        ag = ".claude/agents/lead.md"
+        pairs = [
+            (a1, tl, 4),
+            (a2, tl, 3),
+            (a1, wr, 2),
+            (tl, wr, 2),
+            (ag, "CLAUDE.md", 1),
+            (ag, a1, 1),
+            ("AGENTS.md", "docs/x.md", 1),
+        ]
+        rows = tuple(_Cross("overlap", str(tmp_path / x), str(tmp_path / y)) for x, y, n in pairs for _ in range(n))
+        result = _Result(stats=_Stats(cross_file_overlaps=7), cross_file=rows)
+        out = _capture(_render_cross_file_counts, result, tmp_path, _Map(files))
+        assert out == (
+            "6 element pairs overlap in topic \u2014 keep each topic in one file "
+            "the `audit-checks` skill \u2194 the `tighten-language` skill, the `write-rule` skill, the `lead` agent "
+            "the `tighten-language` skill \u2194 the `write-rule` skill "
+            "the `lead` agent \u2194 CLAUDE.md +1 more"
         )
 
     @pytest.mark.unit

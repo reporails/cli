@@ -107,13 +107,6 @@ def _render_verdict_block(
     listed, conventions = split_conventions(findings, verbose)
     _render_findings_line(len(listed), verbose, len(conventions))
 
-    # Reconcile a low score with a must-fix list whenever errors are listed: an error
-    # can move the score little and still be a must-fix. Gate on visible error findings
-    # (the list actually rendered), not the stats count — anon / free tier gates its
-    # errors into Pro hints, leaving no list to point at.
-    if visible_errors:
-        console.print("  [dim]An error is worth fixing even when clearing it barely moves the score.[/dim]")
-
 
 def _top_error_rule(errors: list[Any]) -> tuple[str, int]:
     """The rule id with the most error findings and its count; ties break on rule id."""

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -25,6 +26,7 @@ from reporails_cli.formatters.text.display_constants import (
     HINT_TYPE_LABELS,
     SEV_WEIGHT,
     conventions_phrase,
+    element_namer,
     friendly_name,
     get_term_width,
     linked_rule_id,
@@ -276,6 +278,39 @@ def _render_triaged(
         console.print(f"  [dim]{border}     ◦ +{n} more · -v to list[/dim]")
 
 
+_FILE_OVERLAP_RULE = "CORE:C:0044"
+_FILE_OVERLAP_MESSAGE = re.compile(r"\d+% of the instructions in this file and ")
+
+
+def _is_file_overlap(f: Any) -> bool:
+    """Whether a finding is the file-pair topic overlap: it concerns the whole file, whatever line it is pinned to."""
+    return f.rule == _FILE_OVERLAP_RULE and bool(_FILE_OVERLAP_MESSAGE.match(f.message or ""))
+
+
+_OVERLAP_PARTNER = re.compile(r"(\d+)% of the instructions in this file and `([^`]+)`")
+
+
+def _render_file_overlaps(findings: list[Any], border: str, msg_width: int, name_of: Callable[[str], str]) -> None:
+    """Print the file-pair overlap findings once each, unanchored, right under the file's header.
+
+    Each partner element gets one row, `NN% topic overlap with <partner element>` at its highest
+    percentage, highest first; a message that does not parse prints as sent, after them."""
+    best: dict[str, int] = {}
+    unparsed: list[str] = []
+    for f in findings:
+        m = _OVERLAP_PARTNER.search(f.message or "")
+        if m:
+            partner = name_of(m.group(2))
+            best[partner] = max(best.get(partner, -1), int(m.group(1)))
+        elif (text := truncate(f.message, msg_width)) not in unparsed:
+            unparsed.append(text)
+    parsed = [f"{pct}% topic overlap with {p}" for p, pct in sorted(best.items(), key=lambda kv: -kv[1])]
+    for text in (*parsed, *unparsed):
+        console.print(
+            f"  [dim]{border}     {text.replace('[', chr(92) + '[')}  {linked_rule_id(_FILE_OVERLAP_RULE)}[/dim]"
+        )
+
+
 def _render_card_body(
     findings: list[Any],
     sev_icons: dict[str, str],
@@ -283,11 +318,16 @@ def _render_card_body(
     regime: Regime | None,
     border: str,
     msg_width: int,
+    name_of: Callable[[str], str] = str,
 ) -> None:
     """Render the finding body: triaged when the file's token asks for it and a finding is graded, else neutral."""
     if not verbose and is_triaged(findings, regime):
         _render_triaged(findings, sev_icons, border, msg_width)
         return
+    if verbose:
+        overlaps = [f for f in findings if _is_file_overlap(f)]
+        _render_file_overlaps(overlaps, border, msg_width, name_of)
+        findings = [f for f in findings if not _is_file_overlap(f)]
     nested = _packed_children(findings) if verbose else {}
     nested_ids = {id(f) for fs in nested.values() for f in fs}
     structural = [f for f in findings if f.rule not in AGGREGATE_RULES and id(f) not in nested_ids]
@@ -367,7 +407,7 @@ def print_file_card(
             console.print(f"  [dim]{border}   {short}[/dim]")
 
     findings, conventions = split_conventions(findings, verbose)
-    _render_card_body(findings, sev_icons, verbose, regime, border, msg_width)
+    _render_card_body(findings, sev_icons, verbose, regime, border, msg_width, element_namer(ruleset_map, project_root))
     if conventions:
         console.print(f"  [dim]{border}     \u25e6 {conventions_phrase(len(conventions))} \u00b7 -v to list[/dim]")
 

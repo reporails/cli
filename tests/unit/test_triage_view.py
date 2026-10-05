@@ -354,3 +354,105 @@ class TestDocumentationConventions:
         out = _render(monkeypatch, findings, None, verbose=True)
         assert "Missing topic" in out
         assert "documentation convention" not in out
+
+
+class TestFileLevelOverlap:
+    _OVERLAP = (
+        "62% of the instructions in this file and `AGENTS.md` cover the same topics \u2014 the copies can drift apart."
+    )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_verbose_file_pair_overlap_renders_at_file_level_not_under_its_line(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        findings = [
+            _finding("CORE:C:0044", "warning", self._OVERLAP, line=11),
+            _finding("CORE:C:0042", "warning", "Vague instruction", line=11),
+        ]
+        out = _render(monkeypatch, findings, classify_regime({}), verbose=True)
+        overlap_row = next(r for r in out.splitlines() if "topic overlap with AGENTS.md" in r)
+        vague_row = next(r for r in out.splitlines() if "Vague instruction" in r)
+        assert "L11" not in overlap_row
+        assert "CORE:C:0044" in overlap_row
+        assert "L11" in vague_row
+        # right under the file header: before the line-anchored finding
+        assert out.index("topic overlap with AGENTS.md") < out.index("Vague instruction")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_other_overlap_findings_keep_their_line(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        findings = [_finding("CORE:C:0044", "warning", "Overlaps another instruction", line=11)]
+        out = _render(monkeypatch, findings, classify_regime({}), verbose=True)
+        row = next(r for r in out.splitlines() if "Overlaps another instruction" in r)
+        assert "L11" in row
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_overlap_rows_name_the_partner_element_and_order_by_percentage(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        from dataclasses import dataclass
+
+        @dataclass
+        class Rec:
+            path: str
+            type: str = "skills"
+            skill: str = ""
+            agent: str = "claude"
+
+        @dataclass
+        class Map:
+            files: tuple = ()
+            atoms: tuple = ()
+
+        rmap = Map((Rec(str(tmp_path / ".claude/skills/x/SKILL.md"), "skills", str(tmp_path / ".claude/skills/x")),))
+        msg = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
+        findings = [
+            _finding("CORE:C:0044", "warning", msg.format(30, "AGENTS.md"), line=4),
+            _finding("CORE:C:0044", "warning", msg.format(62, ".claude/skills/x/SKILL.md"), line=11),
+        ]
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        triage_view.print_file_card(
+            "CLAUDE.md", findings, {}, True, classify_regime({}), ruleset_map=rmap, project_root=tmp_path
+        )
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert "62% topic overlap with the `x` skill" in rows[0] and "CORE:C:0044" in rows[0]
+        assert "30% topic overlap with AGENTS.md" in rows[1]
+        assert not any("of the instructions in this file" in r for r in lines)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_one_row_per_partner_element_keeps_the_highest_percentage(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        from dataclasses import dataclass
+
+        @dataclass
+        class Rec:
+            path: str
+            type: str = "skills"
+            skill: str = ""
+            agent: str = "claude"
+
+        @dataclass
+        class Map:
+            files: tuple = ()
+            atoms: tuple = ()
+
+        folder = str(tmp_path / ".claude/skills/bootstrap")
+        rmap = Map((Rec(folder + "/SKILL.md", "skills", folder), Rec(folder + "/ref.md", "skills", folder)))
+        msg = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
+        findings = [
+            _finding("CORE:C:0044", "warning", msg.format(27, ".claude/skills/bootstrap/ref.md"), line=4),
+            _finding("CORE:C:0044", "warning", msg.format(30, ".claude/skills/bootstrap/SKILL.md"), line=11),
+        ]
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        triage_view.print_file_card(
+            "CLAUDE.md", findings, {}, True, classify_regime({}), ruleset_map=rmap, project_root=tmp_path
+        )
+        rows = [r for r in lines if "topic overlap with" in r]
+        assert len(rows) == 1
+        assert "30% topic overlap with the `bootstrap` skill" in rows[0]

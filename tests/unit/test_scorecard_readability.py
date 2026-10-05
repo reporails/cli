@@ -137,15 +137,9 @@ class TestFixNowLine:
 class TestCaption:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_caption_shows_whenever_errors_are_listed(self) -> None:
-        """The low-score run is exactly where 'errors still matter' needs saying."""
+    def test_no_closing_caption_after_the_findings_line(self) -> None:
         out = _verdict(_result(_MIXED, score=3.4))
-        assert "An error is worth fixing even when clearing it barely moves the score." in out
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_caption_absent_without_listed_errors(self) -> None:
-        out = _verdict(_result([_f("CORE:C:0042", "warning", "gate_mover")]))
+        assert "barely moves the score" not in out
         assert "worth fixing" not in out
 
 
