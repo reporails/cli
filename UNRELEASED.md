@@ -43,7 +43,7 @@
 
 - Check: a Claude Code check includes your `AGENTS.md` exactly when Claude Code reads it — when no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` sits in the project or a folder above it, or when your Claude Code settings (`instructionFiles: claude-md-and-agents-md` under the built-in `agents-md` plugin) ask for both; with `claude-md` or `managed-only`, or with that plugin turned off, it stays out. A subfolder's `AGENTS.md` is checked as loading when work reaches that subfolder, unless the subfolder has its own `CLAUDE.md`. An `AGENTS.md` that Codex, Cursor or Copilot reads as its own main file stays with that agent, and a project whose only Copilot file is a root `AGENTS.md` that another detected agent also reads is no longer reported as a Copilot project. A Claude Code plugin's own skills, agents, commands and output styles — at the repository root or in a marketplace's `plugins/<name>/`, marked by `.claude-plugin/plugin.json` — are found and checked as Claude files; a folder you cannot read is skipped.
 
-- Check: set `segmentation: structure-aware` in `.ails/config.yml` to analyze each whole sentence, or each whole list or numbered item, as one unit instead of splitting prose at inline commas, colons or dashes. The default (`legacy`) is unchanged, so behaviour only shifts when you opt in.
+- Check: set `segmentation: structure-aware` in `.ails/config.yml` to analyze each whole sentence, or each whole list or numbered item, as one unit instead of splitting prose at inline commas, colons or dashes. The default (`legacy`) is unchanged, so behaviour only shifts when you opt in. A line that is wholly a quotation stays one unit in this mode too.
 
 ### Changed
 

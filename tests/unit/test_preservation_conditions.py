@@ -304,3 +304,49 @@ def test_whole_line_quotation_maps_as_one_neutral_atom(tmp_path) -> None:
     on_line = [a for a in mapped.atoms if a.line == 5]
     assert len(on_line) == 1
     assert on_line[0].charge_value == 0
+
+
+_QUOTE_LINE = (
+    '"Keep every instruction: each keeps its polarity. Keep every table row, list item, heading; '
+    'delete one only when a relation names it. Add no filler and invent nothing."'
+)
+
+
+@pytest.mark.subsys_map
+@pytest.mark.unit
+def test_whole_line_quotation_stays_one_atom_under_structure_aware_tokenize() -> None:
+    from reporails_cli.core.mapper.parse import tokenize
+    from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
+
+    text = f"# T\n\n## Contract\n\n{_QUOTE_LINE}\n\nRun `pytest` before every commit in this repository.\n"
+    on_line = [a for a in tokenize(text, SEGMENTATION_STRUCTURE_AWARE) if a.line == 5]
+    assert len(on_line) == 1
+    assert on_line[0].charge_value == 0
+
+
+@pytest.mark.subsys_map
+@pytest.mark.unit
+def test_quotation_followed_by_text_still_splits_under_structure_aware() -> None:
+    from reporails_cli.core.mapper.parse import tokenize
+    from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
+
+    text = '# T\n\n"Use the cache." Then run the tests.\n'
+    assert len([a for a in tokenize(text, SEGMENTATION_STRUCTURE_AWARE) if a.line == 3]) > 1
+
+
+@pytest.mark.subsys_map
+@pytest.mark.integration
+@_requires_model
+def test_whole_line_quotation_maps_as_one_neutral_atom_structure_aware(tmp_path) -> None:
+    from reporails_cli.core.mapper.models import get_models
+    from reporails_cli.core.mapper.pipeline import map_ruleset
+    from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
+
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(f"# T\n\n## Contract\n\n{_QUOTE_LINE}\n\nRun `pytest` before every commit in this repository.\n")
+    mapped = map_ruleset(
+        [target], models=get_models(), root=tmp_path, cache_dir=None, segmentation=SEGMENTATION_STRUCTURE_AWARE
+    )
+    on_line = [a for a in mapped.atoms if a.line == 5]
+    assert len(on_line) == 1
+    assert on_line[0].charge_value == 0

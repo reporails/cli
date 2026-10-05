@@ -1356,8 +1356,8 @@ def _segment_structure_aware(atoms: list[Atom]) -> list[Atom]:
     Reads each atom's `format` (never overwriting it) and routes by structural
     unit: prose and table rows split into whole sentences (rule-based, no
     clause/comma/colon fragments); list/numbered/code/blockquote items and
-    headings stay whole. Positions are re-indexed in document order
-    (:func:`reindex_positions`).
+    headings stay whole, as does a line that is wholly a quotation. Positions
+    are re-indexed in document order (:func:`reindex_positions`).
 
     A table row runs the ordinary sentence rule over its joined cells, so two
     sentences in one row become two units while one sentence spanning three
@@ -1370,7 +1370,12 @@ def _segment_structure_aware(atoms: list[Atom]) -> list[Atom]:
     """
     result: list[Atom] = []
     for atom in atoms:
-        if atom.kind != "heading" and atom.format in _SENTENCE_SPLIT_FORMATS and atom.rule != TABLE_HEADER_RULE:
+        if (
+            atom.kind != "heading"
+            and atom.format in _SENTENCE_SPLIT_FORMATS
+            and atom.rule != TABLE_HEADER_RULE
+            and not is_quoted_line(atom.text)
+        ):
             result.extend(_split_prose_atom(atom))
         else:
             result.append(atom)
