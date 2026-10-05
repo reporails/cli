@@ -98,13 +98,13 @@ def test_unmapped_file_in_a_skill_folder_is_a_skill_file(tmp_path: Path) -> None
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-def test_unmapped_file_is_judged_through_symlinked_skill_folder(tmp_path: Path) -> None:
-    real = tmp_path / "real/a"
-    real.mkdir(parents=True)
-    link = tmp_path / "linked"
-    link.symlink_to(tmp_path / "real")
-    typed = _resolver(tmp_path, link / "a")
-    assert typed(str(real / "data.json")) == "skills"
+def test_unmapped_file_under_a_symlinked_subfolder_of_a_skill_is_a_skill_file(tmp_path: Path) -> None:
+    skill = tmp_path / ".claude/skills/a"
+    (tmp_path / "shared").mkdir()
+    skill.mkdir(parents=True)
+    (skill / "linked").symlink_to(tmp_path / "shared")
+    typed = _resolver(tmp_path, skill)
+    assert typed(str(skill / "linked" / "data.json")) == "skills"
 
 
 def _write(root: Path, rel: str) -> None:

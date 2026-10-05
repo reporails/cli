@@ -205,7 +205,7 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
     from reporails_cli.core.mapper.skills import skill_type
 
     ruleset_files = inp.ruleset_map.files if inp.ruleset_map is not None else ()
-    skill_folders = {safe_resolve(Path(f.skill)) for f in ruleset_files if f.skill}
+    skill_folders = {Path(f.skill) for f in ruleset_files if f.skill}
     type_by_path: dict[Path, str] = {safe_resolve(Path(f.path)): f.type for f in ruleset_files}
 
     def _typed(path: str) -> str:
@@ -213,7 +213,7 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
         mapped = type_by_path.get(safe_resolve(p))
         if mapped is not None:
             return str(mapped)
-        return skill_type(file_type_of(p, inp.scan_root, registry), safe_resolve(p), skill_folders)
+        return skill_type(file_type_of(p, inp.scan_root, registry), p, skill_folders)
 
     return _typed
 

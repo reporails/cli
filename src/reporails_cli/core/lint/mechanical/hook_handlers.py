@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.lint.mechanical.checks import _get_target_files, _resolve_glob_targets
+from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets, get_target_files
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
@@ -219,7 +219,7 @@ def _failing_lines(path: Path, args: dict[str, Any]) -> list[int]:
 def _target_files(root: Path, args: dict[str, Any], classified_files: list[ClassifiedFile]) -> list[Path]:
     """The files to read: the rule's own files, or every JSON / TOML file under ``root`` when none is classified."""
     if classified_files or args.get("path"):
-        return _get_target_files(args, classified_files, root)
+        return get_target_files(args, classified_files, root)
     found = {path for pattern in ("**/*.json", "**/*.toml") for path in _resolve_glob_targets(pattern, root)}
     return sorted(path for path in found if path.is_file())
 

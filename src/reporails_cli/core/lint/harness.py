@@ -38,7 +38,7 @@ from reporails_cli.core.lint.harness_models import (
     HarnessStatus,
     RuleInfo,
 )
-from reporails_cli.core.lint.mechanical.runner import run_mechanical_check
+from reporails_cli.core.lint.mechanical.runner import UnknownCheckError, run_mechanical_check
 from reporails_cli.core.lint.regex import run_validation as run_regex_validation
 from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_fail_fixture,
@@ -71,7 +71,7 @@ def _run_mechanical_check(
     """
     try:
         result = run_mechanical_check(check, fixture_root, classified_files, extra_args)
-    except KeyError:
+    except UnknownCheckError:
         logger.warning("Unknown mechanical check: %s", check.check)
         return CheckResult(passed=False, message=f"Unknown mechanical check: {check.check}")
     if result is None:

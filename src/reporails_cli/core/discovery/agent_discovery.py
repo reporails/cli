@@ -488,7 +488,7 @@ def _run_descendant_recursive(target: Path, pattern: str, nested: bool, exclude_
         m
         for m in results
         if not is_excluded(m, target, exclude_dirs)
-        and config_pattern_matches(m.relative_to(target).as_posix(), pattern)
+        and config_pattern_matches(m.relative_to(target).as_posix(), pattern, ignore_case=True)
     ]
 
 

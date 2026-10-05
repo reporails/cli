@@ -14,9 +14,9 @@ from reporails_cli.core.discovery.agents import load_project_exclude_dirs
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_glob_matches
 from reporails_cli.core.lint.mechanical.checks import (
     _get_counted_files,
-    _get_target_files,
     _resolve_glob_targets,
     _safe_float,
+    get_target_files,
 )
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.inspect import path_filter_key, split_top_level_commas
@@ -43,7 +43,7 @@ def frontmatter_present(
     compliant sibling in a multi-file match set does not hide another
     file's missing block.
     """
-    targets = [m for m in _get_target_files(args, classified_files, root) if m.is_file()]
+    targets = [m for m in get_target_files(args, classified_files, root) if m.is_file()]
     if not targets:
         return CheckResult(passed=False, message="No frontmatter block found")
 
@@ -83,7 +83,7 @@ def frontmatter_matches_dirname(
     resolves correctly, unlike a project-root glob.
     """
     field = str(args.get("field", "name"))
-    for target in _get_target_files(args, classified_files, root):
+    for target in get_target_files(args, classified_files, root):
         if not target.is_file():
             continue
         directory = target.parent.name
@@ -114,7 +114,7 @@ def frontmatter_valid_yaml(
     a block that reads once its one-line values are quoted passes, as a path filter is read.
     """
     broken: list[tuple[str, str]] = []
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         read = read_frontmatter_file(match, lenient=bool(args.get("lenient", False))) if match.is_file() else None
         if read is not None and read.problem is not None:
             rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
@@ -155,7 +155,7 @@ def valid_markdown(
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check for structural markdown issues in target files."""
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
@@ -179,7 +179,7 @@ def path_resolves(
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that target paths exist."""
-    files = _get_target_files(args, classified_files, root)
+    files = get_target_files(args, classified_files, root)
     if files:
         return CheckResult(passed=True, message="Target paths exist")
     return CheckResult(passed=False, message="No matching paths found")
@@ -198,7 +198,7 @@ def extract_imports(
     package), an email and a non-path `@token` are not imports.
     """
     imports_found: list[str] = []
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
@@ -295,7 +295,7 @@ def import_depth(
                 max_d = max(max_d, follow(target, visited, depth + 1))
         return max_d
 
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         deepest = follow(match, set(), 0)
@@ -543,7 +543,7 @@ def extract_markdown_links(
     generic-class classifier uses, so the two disagree on no link.
     """
     annotations: list[str] = []
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
@@ -627,7 +627,7 @@ def filename_matches_pattern(
     except re.error as e:
         return CheckResult(passed=False, message=f"filename_matches_pattern: invalid regex: {e}")
     bad: list[tuple[str, str]] = []
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         if not compiled.search(match.name):
@@ -740,7 +740,7 @@ def content_absent(
         compiled = re.compile(pattern)
     except re.error as e:
         return CheckResult(passed=False, message=f"content_absent: invalid regex: {e}")
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
@@ -768,7 +768,7 @@ def frontmatter_extra_keys(
     allowed = set(args.get("allowed", []))
     if not allowed:
         return CheckResult(passed=False, message="frontmatter_extra_keys: no allowed keys specified")
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         read = read_frontmatter_file(match, lenient=bool(args.get("lenient", False))) if match.is_file() else None
         if read is None or read.data is None:
             continue

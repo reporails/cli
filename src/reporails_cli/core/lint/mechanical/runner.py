@@ -11,11 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import is_under
-from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, _get_target_files
+from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, get_target_files
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
+
+
+class UnknownCheckError(LookupError):
+    """A check name that no mechanical check is registered under."""
 
 
 def run_mechanical_check(
@@ -25,23 +29,26 @@ def run_mechanical_check(
     extra_args: dict[str, Any] | None = None,
     match_type: str | list[str] | None = None,
 ) -> CheckResult | None:
-    """Run one mechanical check; the single owner of arg assembly and check lookup.
+    """Run one mechanical check.
 
-    Args are `extra_args` (upstream annotations) under the check's own `args`, so a
-    check.yml entry always wins. `match_type` is the rule's match type, injected so the
-    check scopes to the rule's file targets unless `_targets` is given.
+    `extra_args` (upstream annotations) sit under the check's own `args`, so a check.yml entry
+    always wins. `match_type` is the rule's match type; the check scopes to the rule's file
+    targets unless `_targets` is given.
 
-    Returns None when the check is `entry_only` and no skill entry file is in scope:
-    it has nothing to judge, so it is not applicable. Raises KeyError for an unknown check.
+    Returns None when the check is `entry_only` and no skill entry file is in scope (nothing to
+    judge). Raises `UnknownCheckError` for a check name that is not registered; any exception
+    the check itself raises propagates unchanged.
     """
-    fn = MECHANICAL_CHECKS[check.check or ""]
+    fn = MECHANICAL_CHECKS.get(check.check or "")
+    if fn is None:
+        raise UnknownCheckError(check.check)
     args: dict[str, Any] = {}
     if extra_args:
         args.update(extra_args)
     args.update(check.args or {})
     if match_type and "_targets" not in args:
         args["_match_type"] = match_type
-    if args.get("entry_only") and not _get_target_files(args, classified_files, root):
+    if args.get("entry_only") and not get_target_files(args, classified_files, root):
         return None
     result: CheckResult = fn(root, args, classified_files)
     return result
@@ -77,7 +84,7 @@ def dispatch_single_check(
     match_type = rule.match.type if rule.match is not None else None
     try:
         result = run_mechanical_check(check, root, classified_files, extra_args, match_type)
-    except KeyError:
+    except UnknownCheckError:
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
     except Exception:  # mechanical checks are plugin-like; any failure caught and logged

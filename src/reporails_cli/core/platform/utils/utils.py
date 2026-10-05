@@ -323,9 +323,8 @@ def glob_matches(path: str, pattern: str, *, anchored: bool = False) -> bool:
 def expand_home_pattern(pattern: str) -> str:
     """A `~`-rooted glob pattern with `~` resolved to the user's home directory.
 
-    Reads only the home directory. Lets a matcher compare the pattern against a file outside the scan root,
-    whose relative path falls back to its absolute path string. A pattern with no leading
-    `~` is returned unchanged.
+    Lets a pattern be compared against a file outside the scan root, whose relative path falls
+    back to its absolute path string. A pattern with no leading `~` is returned unchanged.
     """
     return str(Path(pattern).expanduser()) if pattern.startswith("~") else pattern
 
@@ -349,7 +348,7 @@ def config_pattern_matches(
 ) -> bool:
     """Whether a pattern declared in an agent config matches a file.
 
-    Built on `glob_matches`; reads only the home directory. A leading `./` is dropped; a trailing-slash directory
+    A leading `./` is dropped; a trailing-slash directory
     pattern (`.claude/agent-memory/*/`) matches the `.md` files inside the directories it
     matches; a `~` pattern is resolved to the home directory and matched against `full_path`
     (a file outside the scan root has no useful relative path) when given. The pattern is

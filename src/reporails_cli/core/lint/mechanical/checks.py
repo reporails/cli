@@ -31,7 +31,7 @@ def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
 
     Uses `include_hidden=True` (Python 3.11+) so `**/*.md` matches files under
     dot-prefixed directories such as `.claude/`, `.github/`, `.cursor/`. The
-    intersection with `classified_files` in `_get_target_files` bounds the
+    intersection with `classified_files` in `get_target_files` bounds the
     result back to in-scope instruction files, so widening the glob can't
     over-scan; `exclude_dirs` still gates anything declared off-limits.
     """
@@ -47,7 +47,7 @@ def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
     return result
 
 
-def _get_target_files(
+def get_target_files(
     args: dict[str, Any],
     classified_files: list[ClassifiedFile],
     root: Path,
@@ -144,7 +144,7 @@ def file_exists(
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that at least one file matching the target pattern exists."""
-    files = _get_target_files(args, classified_files, root)
+    files = get_target_files(args, classified_files, root)
     if any(f.exists() for f in files):
         return CheckResult(passed=True, message="File found")
     return CheckResult(passed=False, message="No matching files found")
@@ -227,7 +227,7 @@ def frontmatter_key(
     alt_key = str(args.get("alt_key", ""))
     keys = [key] + ([alt_key] if alt_key else [])
     label = " or ".join(f"'{k}'" for k in keys)
-    targets = [m for m in _get_target_files(args, classified_files, root) if m.is_file()]
+    targets = [m for m in get_target_files(args, classified_files, root) if m.is_file()]
     if not targets:
         return CheckResult(passed=False, message=f"Frontmatter key {label} not found")
 
@@ -270,7 +270,7 @@ def line_count(
     """Check that file line count is within bounds."""
     max_lines = _safe_float(args.get("max"), float("inf"))
     min_lines = int(args.get("min", 0))
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         try:
@@ -301,7 +301,7 @@ def byte_size(
     """Check that file size is within bounds."""
     max_bytes = _safe_float(args.get("max"), float("inf"))
     min_bytes = int(_safe_float(args.get("min", 0), 0))
-    for match in _get_target_files(args, classified_files, root):
+    for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
         rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name

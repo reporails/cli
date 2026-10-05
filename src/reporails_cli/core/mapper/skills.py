@@ -40,18 +40,27 @@ def _entry_patterns(registry: dict[str, dict[str, Any]], agent: str) -> list[str
     return _extract_patterns(ft, "entry_patterns") if isinstance(ft, dict) else []
 
 
-def _matches_entry_pattern(path: Path, root: Path, patterns: list[str]) -> bool:
-    """Whether `path` matches any of `patterns`, anchored the way file-type `patterns` are."""
+def entry_pattern(path: Path, root: Path, patterns: list[str]) -> str | None:
+    """The first of `patterns` that `path` matches, anchored the way file-type `patterns` are; None when none does."""
     from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
-    return any(config_pattern_hits(path, rel, pattern, root) for pattern in patterns)
+    return next((p for p in patterns if config_pattern_hits(path, rel, p, root)), None)
+
+
+def skill_entry_folder(cf: Any) -> Path | None:
+    """The skill folder a classified file is the entry file of: it is a `SKILL.md` sitting directly in
+    the folder its `skill` property records. None for any other file."""
+    folder = cf.properties.get("skill")
+    if isinstance(folder, str) and Path(cf.path).name == "SKILL.md" and Path(cf.path).parent == Path(folder):
+        return Path(folder)
+    return None
 
 
 def skill_type(base: str, path: str | Path, folders: Iterable[Path] | dict[Path, Any]) -> str:
     """The type a file of type `base` takes given the recorded skill `folders`: a `skills` or
     `generic` file at or below one is `skills`, a `skills` file in none is `generic`, any other
-    type is unchanged."""
+    type is unchanged. Folder membership is lexical."""
     if base not in ("skills", "generic"):
         return base
     if outermost_folder(path, folders) is not None:
@@ -120,7 +129,7 @@ class _SkillFolders:
         for a in (*self.base, agent):
             if a not in self._patterns:
                 self._patterns[a] = _entry_patterns(self.registry, a)
-        return any(_matches_entry_pattern(path, self.root, self._patterns[a]) for a in (*self.base, agent))
+        return any(entry_pattern(path, self.root, self._patterns[a]) is not None for a in (*self.base, agent))
 
     def is_skill(self, folder: Path, agent: str) -> bool:
         """Whether `folder/SKILL.md` is a skill's entry file: the map's own verdict when it carries
@@ -163,11 +172,10 @@ def skill_entry_paths(classified_files: Iterable[Any]) -> set[Path] | None:
     entries: set[Path] = set()
     recorded = False
     for cf in classified_files:
-        folder = cf.properties.get("skill")
-        if not isinstance(folder, str):
+        if not isinstance(cf.properties.get("skill"), str):
             continue
         recorded = True
-        if str(Path(cf.path).parent) == folder and Path(cf.path).name == "SKILL.md":
+        if skill_entry_folder(cf) is not None:
             entries.add(safe_resolve(cf.path))
     return entries if recorded else None
 
@@ -176,16 +184,12 @@ def one_level_skills_roots(classified_files: Iterable[Any], root: Path) -> set[P
     """Folders whose every direct subfolder is meant to be a skill: the parent of each classified
     skill folder whose entry file matches an entry pattern that names no `**` below the skills
     folder (an any-depth pattern lets a subfolder be a category holding skills, so it has no such root)."""
-    from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
-
     roots: set[Path] = set()
     for cf in classified_files:
-        folder, patterns = cf.properties.get("skill"), cf.properties.get("skill_entry_patterns")
-        if not isinstance(folder, str) or not isinstance(patterns, list) or Path(cf.path).parent != Path(folder):
+        folder, patterns = skill_entry_folder(cf), cf.properties.get("skill_entry_patterns")
+        if folder is None or not isinstance(patterns, list):
             continue
-        entry = Path(cf.path)
-        rel = entry.relative_to(root).as_posix() if entry.is_relative_to(root) else str(entry)
-        hit = next((p for p in patterns if config_pattern_hits(entry, rel, p, root)), None)
+        hit = entry_pattern(Path(cf.path), root, patterns)
         if hit is not None and "**" not in hit.removeprefix("**/"):
-            roots.add(Path(folder).parent)
+            roots.add(folder.parent)
     return roots

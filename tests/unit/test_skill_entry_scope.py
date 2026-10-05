@@ -117,3 +117,25 @@ def test_entry_only_check_with_no_entry_in_scope_yields_no_violation(tmp_path: P
     violation, result = dispatch_single_check(check, rule, tmp_path, [cf], "loc")
     assert violation is None
     assert result is None
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_a_keyerror_inside_a_check_is_logged_as_a_crash_not_as_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import patch
+
+    from reporails_cli.core.lint.mechanical import runner
+    from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType
+
+    def boom(root: Path, args: dict, classified: list) -> None:
+        raise KeyError("inside")
+
+    monkeypatch.setitem(runner.MECHANICAL_CHECKS, "boom_check", boom)
+    check = Check(id="CORE:X:0001:boom", type="mechanical", check="boom_check", expect="present")
+    rule = Rule(id="CORE:X:0001", title="t", category=Category.STRUCTURE, type=RuleType.MECHANICAL, checks=[check])
+    with patch.object(runner.logger, "exception") as crashed, patch.object(runner.logger, "warning") as unknown:
+        assert runner.dispatch_single_check(check, rule, tmp_path, [], "loc") == (None, None)
+    crashed.assert_called_once()
+    unknown.assert_not_called()

@@ -210,3 +210,14 @@ def test_pinned_recursive_patterns_match_the_whole_pattern(tmp_path: Path) -> No
     assert found("**/.agents/skills/*/agents/openai.yaml") == {".agents/skills/foo/agents/openai.yaml"}
     assert found("**/.cursor/BUGBOT.md") == {"apps/web/.cursor/BUGBOT.md"}
     assert found("**/CLAUDE.md") == {"pkg/CLAUDE.md"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_recursive_pattern_filter_ignores_filename_case(tmp_path: Path) -> None:
+    """`**/AGENTS.md` finds a lowercase `agents.md`, as the walk does."""
+    for rel in ("AGENTS.md", "svc/AGENTS.md", "pkg/agents.md"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x")
+    res = ad.glob_file_type_patterns(tmp_path, ["**/AGENTS.md"], {"scope": "nested"}, DEFAULT_EXCLUDE_DIRS)
+    assert "pkg/agents.md" in {p.relative_to(tmp_path).as_posix() for p in res}

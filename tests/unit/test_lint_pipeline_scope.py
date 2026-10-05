@@ -23,9 +23,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.lint.mechanical.checks import (
-    _get_target_files,
     _glob_cache,
     _resolve_glob_targets,
+    get_target_files,
 )
 from reporails_cli.core.lint.mechanical.checks_advanced import (
     extract_markdown_links,
@@ -102,7 +102,7 @@ class TestResolveGlobExcludeDirs:
         assert {"CLAUDE.md", "nested.md"} <= names
 
 
-# ── _get_target_files intersection with classified_files ──────────────
+# ── get_target_files intersection with classified_files ──────────────
 
 
 class TestGetTargetFilesNarrowing:
@@ -126,7 +126,7 @@ class TestGetTargetFilesNarrowing:
         # Caller narrowed classified_files to other.md only — CLAUDE.md must
         # drop out of the glob result even though the `**/*.md` pattern matches it.
         cf = ClassifiedFile(path=other, file_type="generic", properties={})
-        result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
         assert result == [other]
 
     @pytest.mark.unit
@@ -143,7 +143,7 @@ class TestGetTargetFilesNarrowing:
         _glob_cache.clear()
 
         cf = ClassifiedFile(path=lead, file_type="agents", properties={})
-        result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
         assert result == [lead]
         assert tmp_path / "CLAUDE.md" not in result
 
@@ -156,7 +156,7 @@ class TestGetTargetFilesNarrowing:
 
         _glob_cache.clear()
 
-        result = _get_target_files({"path": "**/*.md"}, [], tmp_path)
+        result = get_target_files({"path": "**/*.md"}, [], tmp_path)
         names = {p.name for p in result}
         assert {"CLAUDE.md", "other.md"} <= names
 
@@ -175,7 +175,7 @@ class TestGetTargetFilesNarrowing:
 
         # Only CLAUDE.md is an instruction file; docs/notes.md isn't classified.
         cf = ClassifiedFile(path=claude_md, file_type="main", properties={})
-        result = _get_target_files({"path": "**/*.md"}, [cf], tmp_path)
+        result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
         assert result == [claude_md]
 
 

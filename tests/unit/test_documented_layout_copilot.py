@@ -75,3 +75,18 @@ def test_copilot_instructions_project_still_detects_copilot(tmp_path: Path) -> N
 def test_plain_claude_md_project_does_not_detect_copilot(tmp_path: Path) -> None:
     _touch(tmp_path / "CLAUDE.md")
     assert "copilot" not in _ids(tmp_path)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        ".github/copilot/settings.json",
+        ".github/copilot/settings.local.json",
+        "~/.copilot/settings.json",
+    ],
+)
+def test_settings_files_resolve_for_the_hooks_capability(pattern: str) -> None:
+    patterns = [p for ft in load_file_types("copilot") if ft.name == "hooks" for p in ft.patterns]
+    assert pattern in patterns

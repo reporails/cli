@@ -193,16 +193,25 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: [".github/hooks/*.json"]
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "the hooks field at the top level of .github/copilot/settings.json (Git committed)"
+        patterns: [".github/hooks/*.json", ".github/copilot/settings.json"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
         # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "*.json files in the user-level hooks directory. By default this is ~/.copilot/hooks/"
-        patterns: ["~/.copilot/hooks/*.json"]
+        patterns: ["~/.copilot/hooks/*.json", "~/.copilot/settings.json"]
         precedence: user
         vcs: external
         maintainer: human
+      local:
+        # https://docs.github.com/en/copilot/reference/hooks-configuration#hooks-locations: "the hooks field at the top level of .github/copilot/settings.local.json"
+        patterns: [".github/copilot/settings.local.json"]
+        precedence: user
+        vcs: gitignored
+        maintainer: human
+        cardinality: optional
+        lifecycle: mutable
       managed:
         # https://docs.github.com/en/copilot/reference/hooks-configuration#policy-hooks: "Linux/macOS: /etc/github-copilot/policy.d/*.json"
         patterns: ["/etc/github-copilot/policy.d/*.json"]
