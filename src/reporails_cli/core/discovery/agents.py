@@ -336,7 +336,7 @@ def detect_single_agent(
         return None
     instruction_files, rule_files, config_files = config_result
 
-    if not instruction_files:
+    if not (instruction_files or rule_files):
         return None
     return DetectedAgent(
         agent_type=agent_type,

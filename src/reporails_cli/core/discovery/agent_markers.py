@@ -40,18 +40,32 @@ def clue_patterns(agent_type: AgentType, registry: dict[str, AgentType]) -> list
 
     The core agent is the default, so every pattern it declares counts. For any other agent
     a pattern counts when it sits in the agent's own `home_dir`, or is a root file name the
-    core agent does not list in its `shared_names`.
+    core agent does not list in its `shared_names`, or is a rule path no other agent declares
+    (`.agents/rules/*.md` is Antigravity's alone, while `.agents/skills/**` is read by several).
     """
     patterns = (*agent_type.instruction_patterns, *agent_type.rule_patterns)
     if agent_type.core:
         return list(patterns)
     shared = {name.lower() for other in registry.values() if other.core for name in other.shared_names}
+    claimed_elsewhere = {
+        _bare(p)
+        for other in registry.values()
+        if other.id != agent_type.id
+        for p in (*other.instruction_patterns, *other.rule_patterns, *other.config_patterns)
+    }
+    own_rules = set(agent_type.rule_patterns)
     clues: list[str] = []
     for pattern in patterns:
         first, has_dir, _ = pattern.partition("/")
-        if (has_dir and first == agent_type.home_dir) or (not has_dir and pattern.lower() not in shared):
+        own_rule = has_dir and pattern in own_rules and _bare(pattern) not in claimed_elsewhere
+        if (has_dir and first == agent_type.home_dir) or (not has_dir and pattern.lower() not in shared) or own_rule:
             clues.append(pattern)
     return clues
+
+
+def _bare(pattern: str) -> str:
+    """A pattern without its any-depth prefix, so `**/.agents/rules/*.md` and `.agents/rules/*.md` compare equal."""
+    return pattern.lstrip("*/")
 
 
 def scan_marker_at(target: Path, agent_type: AgentType, registry: dict[str, AgentType]) -> bool:

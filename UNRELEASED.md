@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Check: a project whose only instructions are Antigravity rules in `.agents/rules/` is found and checked, with or without `--agent`.
 - Check: a run pinned to one agent that finds none of its files now names the other agents the project has files for and how to check them, instead of asking for that agent's file.
 
 ### Removed
