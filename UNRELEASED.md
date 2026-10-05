@@ -12,4 +12,5 @@
 
 ### Internal
 
+- The new agent-detection tests pass on a machine with no model files.
 - The source type-checks for Windows again: the step that restricts the sign-in file's permissions is skipped where Windows has no such call.

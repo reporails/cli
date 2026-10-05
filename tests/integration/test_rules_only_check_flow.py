@@ -47,13 +47,23 @@ def test_rules_only_project_is_checked(
     assert rel in data["files"]
 
 
+def _resolved_agent(project: Path) -> str:
+    from reporails_cli.core.discovery.agents import detect_agents
+    from reporails_cli.core.pipeline.mapping import resolve_agent_filters
+
+    detected = detect_agents(project)
+    agent, _assumed, _mixed, _filtered = resolve_agent_filters("", detected, project, None)
+    return agent
+
+
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 def test_agents_rules_file_points_at_antigravity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(_project(tmp_path, ".agents/rules/r.md"))
+    project = _project(tmp_path, ".agents/rules/r.md")
+    monkeypatch.chdir(project)
     result = runner.invoke(app, ["check", "."])
     assert "No instruction files found" not in result.output
-    assert "Antigravity" in result.output
+    assert _resolved_agent(project) == "antigravity"
 
 
 @pytest.mark.e2e
@@ -63,3 +73,4 @@ def test_shared_agents_skills_file_is_not_an_antigravity_clue(tmp_path: Path, mo
     monkeypatch.chdir(project)
     result = runner.invoke(app, ["check", "."])
     assert "Agent: Antigravity" not in result.output
+    assert _resolved_agent(project) != "antigravity"
