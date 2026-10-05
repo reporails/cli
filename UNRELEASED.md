@@ -355,7 +355,7 @@
 - First run: the model download is given as about 275 MB, its real size, in the download message, the README and the docs.
 - Check: `ails check --help` says `--strict` exits 1 on any reported finding, info level included.
 - Check: a run refused by the service, such as one over the hourly limit, names your plan and says why it has no score instead of reporting the service as offline.
-- Sign-in: when the website refuses `ails auth login`, the CLI says why and what to do, and when the website does not answer it says to try again, instead of a raw HTTP error or a traceback.
+- Sign-in: when the website refuses `ails auth login`, the CLI says why and what to do, and when the website does not answer it says to try again, instead of a raw HTTP error or a traceback. When GitHub sign-in cannot create an account because the email is already in use, `ails auth login` points you to reporails.com/contact.
 - Sign-in: `ails auth status` shows the plan your last check saw, so a new Pro subscription (or a cancellation) shows there after your next check, rather than the plan you had when you signed in.
 
 ### Removed

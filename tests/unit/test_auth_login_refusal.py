@@ -70,7 +70,7 @@ def _run(
         (
             500,
             "user_creation_failed",
-            "use Regenerate and set the key as AILS_API_KEY. Otherwise contact us at reporails.com/contact.",
+            "already uses this email. Contact us at reporails.com/contact.",
         ),
         (401, "invalid_github_token", "GitHub did not accept the sign-in. Run `ails auth login` again."),
         (400, "missing_token", "The sign-in was refused (HTTP 400: missing_token). Contact " + _SUPPORT),

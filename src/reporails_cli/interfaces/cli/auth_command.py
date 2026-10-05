@@ -106,10 +106,7 @@ class SignInRefusedError(PlatformUnavailableError):
 _REFUSAL_MESSAGES = {
     "user_creation_failed": (
         "Reporails could not create an account for this GitHub login, usually because a "
-        "Reporails account already uses this email. Sign in with that account's password at "
-        "reporails.com/user/login (or reset it at reporails.com/user/password), then on "
-        "reporails.com/account use Regenerate and set the key as AILS_API_KEY. "
-        "Otherwise contact us at reporails.com/contact."
+        "Reporails account already uses this email. Contact us at reporails.com/contact."
     ),
     "invalid_github_token": "GitHub did not accept the sign-in. Run `ails auth login` again.",
     "github_oauth_not_configured": "Sign-in is not available right now. Contact us at reporails.com/contact.",
