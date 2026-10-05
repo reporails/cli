@@ -52,7 +52,8 @@ def write_credentials_file(path: Path, record: dict[str, str], *, expect_key: st
         else:
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             try:
-                os.fchmod(fd, 0o600)
+                if sys.platform != "win32":  # no fchmod on Windows before Python 3.13
+                    os.fchmod(fd, 0o600)
             except BaseException:
                 os.close(fd)
                 raise
