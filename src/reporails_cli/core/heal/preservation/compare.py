@@ -70,8 +70,8 @@ def _run_checks(
         "lost_instructions": lost_instructions,
         "polarity_flips": polarity_flips,
         "added_instructions": added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for),
-        "lost_named": lost_named_tokens(snap_atoms, new_text),
-        "invented_named": invented_named(snapshot.text, new_atoms, *grounding),
+        "lost_named": lost_named_tokens(snap_atoms, new_text, new_atoms),
+        "invented_named": invented_named(snapshot.text, new_atoms, *grounding, snap_atoms),
         "repeated_named": repeated_named(
             snap_atoms, new_atoms, matched_new_for, split_covering_for, snapshot.text, new_text
         ),

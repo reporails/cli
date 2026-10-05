@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
@@ -22,14 +23,21 @@ def token_present(inner: str, text: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(inner)}(?!\w)", text) is not None
 
 
-def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str) -> list[str]:
-    """Every named token (backtick span) of any snapshot atom whose inner text no longer
-    occurs in the new file text as a whole token, once each, in first-seen order."""
+def _token_inners(atoms: Sequence[Any]) -> set[str]:
+    """The inner text (backticks stripped) of every named token of `atoms`."""
+    return {tok.strip("`") for a in atoms for tok in getattr(a, "named_tokens", None) or ()}
+
+
+def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: Sequence[Any] = ()) -> list[str]:
+    """Every named token (backtick span) of any snapshot atom whose inner text is present in
+    neither the new file text (as a whole token) nor the named tokens of any new atom, once
+    each, in first-seen order."""
+    new_inners = _token_inners(new_atoms)
     lost: list[str] = []
     for sa in snap_atoms:
         for tok in sa.named_tokens:
             inner = tok.strip("`")
-            if inner and not token_present(inner, new_text) and tok not in lost:
+            if inner and inner not in new_inners and not token_present(inner, new_text) and tok not in lost:
                 lost.append(tok)
     return lost
 
@@ -141,15 +149,18 @@ def invented_named(
     new_atoms: list[Any],
     environment: ProjectEnvironment | None,
     sibling_texts: tuple[str, ...] = (),
+    snap_atoms: Sequence[SnapshotAtom] = (),
 ) -> list[dict[str, Any]]:
     """Every named token (backtick span) of a NEW-file prose atom that names something neither
-    the snapshot nor a sibling file of the location ever named, that is not an existing path
+    the snapshot (its text or the named tokens of its atoms) nor a sibling file of the location
+    ever named, that is not an existing path
     (from the project root, the file's own directory, or `~`), and whose program the machine
     and the project's manifests do not know (both asked of `environment`; `None` confirms
     nothing) - a rewrite inventing a construct (a tool name that does not exist, e.g.). A code
     block's fence language is its label, never a name, so code blocks are skipped. Checked
     case-insensitively, backticks stripped, once per token text in first-seen (new-file) order."""
     grounding = (snapshot_text, *sibling_texts)
+    snap_inners = {i.lower() for i in _token_inners(snap_atoms)}
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
     for na in new_atoms:
@@ -158,7 +169,7 @@ def invented_named(
         for tok in getattr(na, "named_tokens", None) or ():
             inner = tok.strip("`")
             key = inner.lower()
-            if not inner or key in seen:
+            if not inner or key in seen or key in snap_inners:
                 continue
             if any(token_present_ci(inner, text) for text in grounding) or (
                 environment is not None

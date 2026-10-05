@@ -2417,3 +2417,33 @@ def test_sibling_texts_leave_out_a_project_that_shares_a_name_prefix(tmp_path: P
         assert snapshots.sibling_texts(snapshots._snapshots[snapshots._key(own)], tmp_path / "proj") == ("mine",)
     finally:
         snapshots.clear_snapshots()
+
+
+_ESCAPED_LINE = "Rewrite hedges as an imperative: `Use \\`ruff\\`` or `run \\`uv run ails check .\\``."
+_ESCAPED_NORMALIZED = "Rewrite hedges as an imperative: `Use \\\\`ruff`orrun `uv run ails check .``."
+_ESCAPED_TOKENS = ("Use \\\\", "orrun ")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_line_with_escaped_backticks_in_code_compares_ok_with_itself() -> None:
+    """The mapper normalizes escaped backticks inside a code span, so its named tokens never
+    occur in the raw text; the same text on both sides is still no loss and no invention."""
+    text = f"# Lint\n\n{_ESCAPED_LINE}\n"
+    snap = _snapshot(text, (_atom(3, _ESCAPED_NORMALIZED, 1, named=_ESCAPED_TOKENS),))
+    new_atoms = (_new_atom(3, 0, _ESCAPED_NORMALIZED, 1, named=_ESCAPED_TOKENS),)
+    result = compare(snap, _new_map(new_atoms), text, score_after=6.0)
+    assert result["lost_named"] == []
+    assert result["invented_named"] == []
+    assert result["ok"] is True
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_deleting_a_line_with_escaped_backticks_is_still_a_loss() -> None:
+    """Deleting the line is reported: its instruction is lost."""
+    before = f"# Lint\n\n{_ESCAPED_LINE}\n"
+    snap = _snapshot(before, (_atom(3, _ESCAPED_NORMALIZED, 1, named=_ESCAPED_TOKENS),))
+    result = compare(snap, _new_map(()), "# Lint\n", score_after=6.0)
+    assert result["ok"] is False
+    assert result["lost_instructions"]
