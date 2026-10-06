@@ -395,6 +395,12 @@ def _server_lint(inputs: Any) -> Any:
     return AilsClient().lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
 
 
+def is_retryable_reply(payload: dict[str, Any]) -> bool:
+    """True when the reply's server failure is a temporary one (`funnel.retryable`)."""
+    funnel = payload.get("funnel")
+    return isinstance(funnel, dict) and funnel.get("retryable") is True
+
+
 def _attach_funnel(payload: dict[str, Any], funnel_error: Any) -> dict[str, Any]:
     """Carry a server funnel rejection onto the payload as a top-level `funnel` object.
 
@@ -420,13 +426,16 @@ def _attach_funnel(payload: dict[str, Any], funnel_error: Any) -> dict[str, Any]
 
     if not isinstance(funnel_error, FunnelError):
         return payload
-    payload = {**payload, "server_error": format_server_error(funnel_error)}
+    server_error = format_server_error(funnel_error)
+    payload = {**payload, "server_error": server_error}
     payload["funnel"] = {
         "error": funnel_error.error,
         "message": plain_cta(funnel_error),
         "upgrade_url": funnel_error.upgrade_url,
         "status": funnel_error.status,
         "tier": funnel_error.tier,
+        "retryable": server_error["retryable"] if server_error else False,
+        "retry_after": server_error["retry_after"] if server_error else None,
     }
     return payload
 

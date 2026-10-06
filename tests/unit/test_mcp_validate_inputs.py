@@ -352,3 +352,55 @@ def test_full_follow_up_to_a_free_reply_makes_no_second_run(
     assert _call(project).get("error") is None
     assert _call(project, full=True).get("error") is None
     assert pipeline_replies == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_retryable_server_error_reply_can_be_retried_on_the_same_file(
+    project: Path, pipeline_replies: list[dict[str, Any]]
+) -> None:
+    busy = {"files": {}, "stats": {}, "funnel": {"error": "server_busy", "retryable": True, "retry_after": 10}}
+    ok = {"files": {}, "stats": {}, "tier": "pro"}
+    pipeline_replies.extend([busy, busy, busy, ok])
+    for _ in range(3):
+        reply = _call(project)
+        assert reply.get("error") is None
+        assert reply["funnel"]["retryable"] is True
+    state = next(iter(server._validate_states.values()))
+    assert state.call_count == 0
+    assert state.full_payload is None
+    final = _call(project)
+    assert final.get("error") is None
+    assert "funnel" not in final
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_retryable_error_leaves_the_breaker_counters_as_they_were(
+    project: Path, pipeline_replies: list[dict[str, Any]]
+) -> None:
+    ok = {"files": {}, "stats": {}, "tier": "pro"}
+    busy = {"files": {}, "stats": {}, "funnel": {"error": "timeout", "retryable": True, "retry_after": 10}}
+    pipeline_replies.extend([ok, busy])
+    assert _call(project).get("error") is None
+    state = next(iter(server._validate_states.values()))
+    before = (state.call_count, state.last_mtime_hash, state.consecutive_unchanged, state.full_payload)
+    _rewrite(project / "CLAUDE.md", "# changed\n")
+    assert _call(project)["funnel"]["retryable"] is True
+    state = next(iter(server._validate_states.values()))
+    assert (state.call_count, state.last_mtime_hash, state.consecutive_unchanged, state.full_payload) == before
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_funnel_envelope_names_retryable_and_retry_after() -> None:
+    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+    from reporails_cli.interfaces.mcp.tools import _attach_funnel
+
+    busy = _attach_funnel({}, FunnelError(error="server_busy", reset_in=7))
+    assert busy["funnel"]["retryable"] is True and busy["funnel"]["retry_after"] == 7
+    assert busy["server_error"]["retryable"] is True
+    bare = _attach_funnel({}, FunnelError(error="timeout"))
+    assert bare["funnel"]["retry_after"] == 10
+    limit = _attach_funnel({}, FunnelError(error="rate_limit_exceeded"))
+    assert limit["funnel"]["retryable"] is False and limit["funnel"]["retry_after"] is None

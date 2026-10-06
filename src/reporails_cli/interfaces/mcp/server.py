@@ -25,7 +25,7 @@ import threading  # noqa: E402
 import time  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
-from dataclasses import dataclass, field  # noqa: E402
+from dataclasses import dataclass, field, replace  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -45,6 +45,7 @@ from reporails_cli.interfaces.mcp.scan_fingerprint import (  # noqa: E402
 )
 from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
     _resolve_scan_target,
+    is_retryable_reply,
     model_not_ready_error,
     run_pipeline_for_path,
     unpaid_signed_in_reply,
@@ -347,6 +348,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     # file set means the locations it named may no longer even resolve. `part=1` requested
     # after this rebuilds; parts of an untouched location build once again.
     state.remedy_brief_cache.clear()
+    snapshot = replace(state)
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
     if not unchanged:
         state.full_payload = None
@@ -387,6 +389,9 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
         if isinstance(result, dict):
             return result
         payload, ruleset_map, score = result
+        if is_retryable_reply(payload):
+            _validate_states[path_key] = snapshot  # no real result: leave no trace in the breaker
+            return payload if full else bound_validate_payload(payload)
         # The run may have mapped other files than the last one did: store the fingerprint of
         # the list the next call will read, so the two compare like with like.
         state.last_mtime_hash = await asyncio.to_thread(

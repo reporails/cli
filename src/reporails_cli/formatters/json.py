@@ -344,7 +344,7 @@ def format_server_error(server_error: Any) -> dict[str, Any] | None:
     (`interfaces/mcp/tools.py::_attach_funnel`) — so a machine consumer never sees the
     terminal CTA's `[link=...][bold]...[/bold][/link]` tags.
     """
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+    from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, FunnelError
     from reporails_cli.formatters.text.funnel_cta import plain_cta
 
     if not isinstance(server_error, FunnelError):
@@ -355,6 +355,8 @@ def format_server_error(server_error: Any) -> dict[str, Any] | None:
         "message": plain_cta(server_error),
         "tier": server_error.tier,
         "upgrade_url": server_error.upgrade_url,
+        "retryable": server_error.retryable,
+        "retry_after": (server_error.reset_in or DEFAULT_RETRY_AFTER_S) if server_error.retryable else None,
     }
 
 

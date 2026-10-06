@@ -73,6 +73,8 @@ class TestServerErrorSection:
             "message": "API key not recognized",
             "tier": "",
             "upgrade_url": "",
+            "retryable": False,
+            "retry_after": None,
         }
 
     @pytest.mark.unit

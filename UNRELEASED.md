@@ -10,6 +10,7 @@
 - Python 3.13: a symlink loop in a project is skipped instead of being treated as a normal file.
 - Check: the summary names the agent you passed with --agent, also when the server cannot be reached.
 - GitHub Action: the min-score gate fails when content checks were skipped, instead of passing on a partial score.
+- MCP: a validate call that hit a busy or slow server can be retried on the same file instead of being refused as a repeat, and the reply says it is retryable and how long to wait.
 
 ### Removed
 
