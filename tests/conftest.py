@@ -90,6 +90,18 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip)
 
 
+def skip_if_case_insensitive_fs(root: Path) -> None:
+    """Skip the calling test when `root` sits on a case-insensitive filesystem (NTFS, default APFS)."""
+    probe = root / "CaseProbe.tmp"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        insensitive = (root / "caseprobe.tmp").exists()
+    finally:
+        probe.unlink()
+    if insensitive:
+        pytest.skip("filesystem is case-insensitive")
+
+
 @pytest.fixture
 def update_golden(request: pytest.FixtureRequest) -> bool:
     """Whether to update golden snapshot files instead of comparing."""

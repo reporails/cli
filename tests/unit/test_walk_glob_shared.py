@@ -9,6 +9,7 @@ import pytest
 
 from reporails_cli.core.discovery import walk as ad
 from reporails_cli.core.discovery.agents import DEFAULT_EXCLUDE_DIRS
+from tests.conftest import skip_if_case_insensitive_fs
 
 
 def _tree(root: Path) -> None:
@@ -37,6 +38,7 @@ def scans(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_walks_in_one_pass_read_each_directory_once(tmp_path: Path, scans: list[str]) -> None:
+    skip_if_case_insensitive_fs(tmp_path)
     _tree(tmp_path)
     with ad.shared_dir_listings():
         found = [ad.walk_glob(tmp_path, name, DEFAULT_EXCLUDE_DIRS) for name in ("CLAUDE.md", "AGENTS.md", "SKILL.md")]
@@ -82,6 +84,7 @@ def test_shared_and_unshared_walks_find_the_same_files_in_the_same_order(tmp_pat
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_a_symlink_to_an_ancestor_is_entered_once(tmp_path: Path) -> None:
+    skip_if_case_insensitive_fs(tmp_path)
     _tree(tmp_path)
     (tmp_path / "a" / "b" / "up").symlink_to(tmp_path / "a", target_is_directory=True)
     found = ad.walk_glob(tmp_path, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
