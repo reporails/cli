@@ -6,11 +6,14 @@ The sign-in is stored in ~/.reporails/credentials.yml (not in the project).
 from __future__ import annotations
 
 import logging
+import math
+import os
 import socket
 import sys
 import time
 import webbrowser
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import typer
 from rich.markup import escape
@@ -22,22 +25,27 @@ from reporails_cli.core.platform.config.credentials import (
     clear_credentials,
     credentials_path,
     env_api_key,
+    load_credentials_record,
     read_credentials,
+    signed_in_recently,
     write_credentials_file,
 )
 from reporails_cli.core.platform.config.endpoints import platform_url
-from reporails_cli.core.platform.contract.errors import PlatformError
-from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, Notice
+from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError, PlatformError, PlatformRefusedError
+from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_REACHING_MESSAGE, Notice, tier_label
 from reporails_cli.core.platform.dto.sign_in import SignedIn, SignInGrant
 from reporails_cli.formatters.text.funnel_cta import UNPAID_PITCH_LINE, upgrade_link_line
-from reporails_cli.formatters.text.notices import notice_lines
+from reporails_cli.formatters.text.notices import print_notices
 from reporails_cli.interfaces.cli.helpers import app, console
 
 logger = logging.getLogger(__name__)
 
 # Seconds added to the wait between asks when the website says they come too fast.
 _SLOW_DOWN_S = 5
-_TIER_LABELS = {"free": "Free", "pro": "Pro", "team": "Team"}
+# Seconds in a minute, and the wait named when the website sends none (ten minutes).
+_MINUTE_S = 60
+_DEFAULT_WAIT_S = 600
+_RATE_LIMITED = 429
 _EXPIRED_MSG = "The sign-in link expired. Run `ails login` again. Nothing was saved."
 _ENDED_MESSAGES = {
     "denied": "Sign-in was denied in the browser. Nothing was saved.",
@@ -47,7 +55,7 @@ _ENDED_MESSAGES = {
 
 def _tier_phrase(tier: str) -> str:
     """` (Pro)` for a tier the sign-in names (Free, Pro, Team); "" for anything else."""
-    return f" ({_TIER_LABELS[tier]})" if tier in _TIER_LABELS else ""
+    return f" ({tier_label(tier)})" if tier_label(tier) else ""
 
 
 def _signed_in_line(account: str, tier: str) -> str:
@@ -58,8 +66,7 @@ def _signed_in_line(account: str, tier: str) -> str:
 
 def _print_notices(notices: tuple[Notice, ...]) -> None:
     """The notices not yet shown today, as the server worded them."""
-    for line in notice_lines(due_notices(notices)):
-        console.print(line)
+    print_notices(console, due_notices(notices))
 
 
 def _note_env_override(saved_key: str) -> None:
@@ -85,13 +92,21 @@ def _print_tier_lines(tier: str) -> None:
     console.print(upgrade_link_line())
 
 
+def _note_rejected(stored_key: str) -> None:
+    """Say the stored sign-in ended; exit 0 instead when it was made moments ago and is still arriving."""
+    if signed_in_recently(stored_key):
+        console.print(f"  {STILL_REACHING_MESSAGE}")
+        raise typer.Exit(0)
+    console.print("  Your sign-in on this machine ended; signing in again.")
+
+
 def _confirm_stored_sign_in(record: dict[str, str]) -> None:
     """Check the stored sign-in with the server. Returns only when it was rejected; otherwise exits 0."""
     stored_key = record["api_key"]
     account = record.get("account", "")
     result = check_api_key(stored_key)
     if result.status == "rejected":
-        console.print("  Your sign-in on this machine ended; signing in again.")
+        _note_rejected(stored_key)
         return
     if result.status == "unavailable":
         console.print(f"{_signed_in_line(account, record.get('tier', ''))} (could not reach the server to confirm)")
@@ -102,20 +117,39 @@ def _confirm_stored_sign_in(record: dict[str, str]) -> None:
     raise typer.Exit(0)
 
 
+def _refusal_line(exc: PlatformRefusedError) -> str:
+    """One line for a start the website refused: the wait for a rate limit, the status otherwise."""
+    if exc.status == _RATE_LIMITED:
+        minutes = math.ceil((exc.retry_after or _DEFAULT_WAIT_S) / _MINUTE_S)
+        return f"Too many sign-in attempts from this network. Try again in {minutes} minutes."
+    return f"The website refused to start a sign-in (HTTP {exc.status}). Nothing was saved."
+
+
 def _start(site: str) -> SignInGrant:
-    """Start a sign-in; exit 1 with one line when the website cannot be reached."""
+    """Start a sign-in; exit 1 with one line when the website refuses or cannot be reached."""
     try:
         return start_sign_in(site, socket.gethostname())
-    except PlatformError as exc:
-        console.print("  Could not reach reporails.com — nothing was saved. Try again shortly.")
+    except PlatformRefusedError as exc:
+        console.print(f"  {_refusal_line(exc)}")
         raise typer.Exit(1) from exc
+    except PlatformError as exc:
+        host = escape(urlparse(site).hostname or site)
+        console.print(f"  Could not reach {host} — nothing was saved. Try again shortly.")
+        raise typer.Exit(1) from exc
+
+
+def _can_show_browser() -> bool:
+    """True when a person is at the terminal and a graphical session can show a page."""
+    if not sys.stdout.isatty():
+        return False
+    return not sys.platform.startswith("linux") or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 def _show_link(grant: SignInGrant) -> None:
     """Print the link and the code, and open the link when a person is at the terminal."""
     console.print(f"  Open this link to sign in: {escape(grant.verification_url)}", soft_wrap=True)
     console.print(f"  Code: [bold]{escape(grant.user_code)}[/bold], check it matches the page")
-    if not sys.stdout.isatty():
+    if not _can_show_browser():
         return
     try:
         webbrowser.open(grant.verification_url)
@@ -188,7 +222,13 @@ def login() -> None:
 @app.command("logout", rich_help_panel="Account & setup")
 def logout() -> None:
     """Sign this machine out."""
-    record = read_credentials()
+    try:
+        record = load_credentials_record()
+    except CredentialsUnreadableError:
+        clear_credentials()
+        console.print("  Logged out on this machine.")
+        _note_env_still_authenticates()
+        raise typer.Exit(0) from None
     token = record.get("api_key", "")
     if not token:
         console.print("  Not signed in on this machine.")

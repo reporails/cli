@@ -464,7 +464,6 @@ def _run_heal_pass(
 # `--strict` treats either as a hard failure regardless of local findings: a CI job
 # passing a revoked or malformed key must not read as a clean run just because
 # the tree it happened to check carries no findings of its own.
-_AUTH_REJECTED_ERRORS = frozenset({"invalid_api_key", "missing_or_invalid_api_key"})
 
 
 def _should_exit_strict(
@@ -476,9 +475,9 @@ def _should_exit_strict(
 ) -> bool:
     if not strict:
         return False
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+    from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 
-    if isinstance(funnel_error, FunnelError) and funnel_error.error in _AUTH_REJECTED_ERRORS:
+    if isinstance(funnel_error, FunnelError) and funnel_error.error in AUTH_REJECTED_ERRORS:
         return True
     if capability_paths:
         # Key the scope set with the SAME normalization the display filter uses

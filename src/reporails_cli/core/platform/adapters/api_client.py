@@ -24,6 +24,7 @@ from reporails_cli.core.platform.contract.errors import (
 )
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
+    STILL_REACHING_MESSAGE,
     CrossFileCoordinate,
     CrossFileFinding,
     Diagnostic,
@@ -45,10 +46,6 @@ logger = logging.getLogger(__name__)
 
 # The diagnostics server used when `AILS_SERVER_URL` is unset.
 DEFAULT_SERVER_URL = "https://api.reporails.com"
-
-
-# Shown instead of the server's own message when a key is rejected within moments of signing in.
-_STILL_REACHING_MESSAGE = "Your sign-in is still reaching the server — try again in a minute."
 
 
 def _reply_notices(response: Any) -> tuple[Notice, ...]:
@@ -242,14 +239,17 @@ class AilsClient:
         return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
 
     def _early_rejection(self, err: FunnelError) -> FunnelError:
-        """`err`, with a "still reaching the server" message when a key rejected right after sign-in is the cause."""
+        """`err`, with a "still reaching the server" message when a key rejected right after sign-in is the cause.
+
+        Applies only to `invalid_api_key`: a malformed header is not a delay in the key arriving.
+        """
         if err.error != "invalid_api_key" or not self.api_key:
             return err
         from reporails_cli.core.platform.config.credentials import signed_in_recently
 
         if not signed_in_recently(self.api_key):
             return err
-        return replace(err, message=_STILL_REACHING_MESSAGE)
+        return replace(err, message=STILL_REACHING_MESSAGE)
 
     def _sent_stored_key(self) -> bool:
         """True only for a request to the real service that carried the key as its Authorization header."""
@@ -263,23 +263,20 @@ class AilsClient:
 
             refresh_stored_tier(self.api_key, tier)
 
+    def diagnose_request(self, content_type: str) -> tuple[str, dict[str, str]]:
+        """The diagnose URL and request headers for this client, for a body of `content_type`."""
+        base = self.base_url.rstrip("/")
+        ua = _user_agent()
+        if os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1"):
+            return f"{base}/diagnose", {"X-Tier": self.tier, "Content-Type": content_type, "User-Agent": ua}
+        headers = {"Content-Type": content_type, "User-Agent": ua}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return f"{base}/v1/diagnose", headers
+
     def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
-        dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
-        ua = _user_agent()
-        if dev_mode:
-            url = f"{self.base_url.rstrip('/')}/diagnose"
-            headers: dict[str, str] = {
-                "X-Tier": self.tier,
-                "Content-Type": "application/msgpack",
-                "User-Agent": ua,
-            }
-        else:
-            url = f"{self.base_url.rstrip('/')}/v1/diagnose"
-            headers = {"Content-Type": "application/msgpack", "User-Agent": ua}
-            if self.api_key:
-                headers["Authorization"] = f"Bearer {self.api_key}"
-
+        url, headers = self.diagnose_request("application/msgpack")
         try:
             resp = httpx.post(url, content=body, headers=headers, timeout=self.timeout)
             resp.raise_for_status()

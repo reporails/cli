@@ -8,8 +8,7 @@ import json
 import httpx
 import pytest
 
-from reporails_cli.core.platform.adapters import key_check
-from reporails_cli.core.platform.adapters.key_check import check_api_key, key_check_server
+from reporails_cli.core.platform.adapters.key_check import check_api_key
 
 
 def _reply(status: int, body: object = None, *, text: str | None = None, headers: dict[str, str] | None = None):
@@ -29,7 +28,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch, reply: httpx.Response | Exception) -
             raise reply
         return reply
 
-    monkeypatch.setattr(key_check.httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "post", fake_post)
     return seen
 
 
@@ -41,7 +40,7 @@ def _header(notices: list[dict[str, str]]) -> dict[str, str]:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_request_is_an_empty_json_body_with_the_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AILS_DEV_MODE", "1")
+    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
     check_api_key("tok_1", base_url="http://srv/")
     assert seen["url"] == "http://srv/v1/diagnose"
@@ -106,7 +105,7 @@ def test_403_page_without_a_key_error_is_unavailable_not_rejected(monkeypatch: p
 def test_network_error_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, httpx.ConnectError("down"))
     result = check_api_key("tok_1", base_url="http://srv")
-    assert (result.status, result.reason) == ("unavailable", "could not reach http://srv")
+    assert (result.status, result.reason) == ("unavailable", "could not reach http://srv/v1/diagnose")
 
 
 @pytest.mark.unit
@@ -124,8 +123,14 @@ def test_other_replies_are_unavailable(monkeypatch: pytest.MonkeyPatch, reply: h
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_server_uses_env_or_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AILS_SERVER_URL", " http://localhost:8001/ ")
-    assert key_check_server() == "http://localhost:8001"
-    monkeypatch.delenv("AILS_SERVER_URL")
-    assert key_check_server() == "https://api.reporails.com"
+def test_probe_goes_where_the_client_goes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AILS_SERVER_URL", "http://localhost:8001/")
+    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
+    seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
+    check_api_key("tok_1")
+    assert seen["url"] == "http://localhost:8001/v1/diagnose"
+    monkeypatch.setenv("AILS_DEV_MODE", "1")
+    check_api_key("tok_1")
+    assert seen["url"] == "http://localhost:8001/diagnose"
+    assert seen["content"] == b"{}"
+    assert seen["headers"]["Content-Type"] == "application/json"

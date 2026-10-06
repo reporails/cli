@@ -172,3 +172,32 @@ def test_write_narrows_an_existing_wider_file(tmp_path: Path) -> None:
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert "NEWKEY" in path.read_text(encoding="utf-8")
     assert [p.name for p in path.parent.iterdir()] == ["credentials.yml"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_the_tier_refresh_and_the_stored_key_read_through_the_loader(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store(home, "api_key: rr_k\ntier: free\n")
+    path = credentials.credentials_path()
+    seen: list[Path | None] = []
+    real = credentials.load_credentials_record
+
+    def _spy(p: Path | None = None) -> dict:
+        seen.append(p)
+        return real(p)
+
+    monkeypatch.setattr(credentials, "load_credentials_record", _spy)
+    credentials.refresh_stored_tier("rr_k", "pro")
+    assert seen and all(p == path for p in seen)
+    assert real(path)["tier"] == "pro"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_an_unreadable_file_is_left_alone_and_reads_as_no_key(home: Path) -> None:
+    _store(home, "api_key: [unclosed")
+    credentials.refresh_stored_tier("rr_k", "pro")
+    assert credentials._stored_key(credentials.credentials_path()) == ""
+    assert credentials.credentials_path().read_text(encoding="utf-8") == "api_key: [unclosed"

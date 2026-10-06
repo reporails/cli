@@ -405,10 +405,9 @@ def _print_notices(notices: Any) -> None:
     """Print the notices under the header, then a blank line; nothing when there are none."""
     if not notices:
         return
-    from reporails_cli.formatters.text.notices import notice_lines
+    from reporails_cli.formatters.text.notices import print_notices
 
-    for line in notice_lines(notices):
-        console.print(line)
+    print_notices(console, notices)
     console.print()
 
 

@@ -21,6 +21,14 @@ from typing import Any
 # declines to echo it).
 ENTITLED_TIERS = frozenset({"pro", "team"})
 UNENTITLED_TIERS = frozenset({"anonymous", "free"})
+# The tiers an account can hold: what a sign-in or a key check may name.
+ACCOUNT_TIERS = (ENTITLED_TIERS | UNENTITLED_TIERS) - {"anonymous"}
+
+
+def tier_label(tier: str) -> str:
+    """`Pro` for an account tier (Free, Pro, Team); "" for anything else."""
+    return tier.capitalize() if tier in ACCOUNT_TIERS else ""
+
 
 # A short message for the user, as the server sends it. `level` is one of NOTICE_LEVELS;
 # `url` is "" when the notice links nowhere.
@@ -40,6 +48,10 @@ class Notice:
 # Failures that clear by themselves: a busy server, a request that took too long, and the
 # client's own timeout. They read as "try again", never as a bug.
 RETRYABLE_ERRORS = frozenset({"server_busy", "scoring_timeout", "timeout"})
+# The 401 tokens: the server did not accept the key it was sent.
+AUTH_REJECTED_ERRORS = frozenset({"invalid_api_key", "missing_or_invalid_api_key"})
+# Shown instead of "the sign-in ended" when a key made moments ago is rejected.
+STILL_REACHING_MESSAGE = "Your sign-in is still reaching the server — try again in a minute."
 # Error tokens kept verbatim (with the body's own tier / limits / message). Anything else
 # collapses to `unknown_error`, which renders the bug-report link. The 401 tokens are listed
 # so an auth rejection renders its sign-in message.
@@ -51,8 +63,7 @@ KNOWN_ERRORS = frozenset(
         "file_cap_exceeded",
         "scoring_limit_exceeded",
         "project_limit_reached",
-        "invalid_api_key",
-        "missing_or_invalid_api_key",
+        *AUTH_REJECTED_ERRORS,
         *RETRYABLE_ERRORS,
     }
 )

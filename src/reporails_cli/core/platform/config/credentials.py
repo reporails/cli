@@ -21,12 +21,12 @@ def credentials_path() -> Path:
     return Path.home() / ".reporails" / "credentials.yml"
 
 
-def load_credentials_record() -> dict[str, Any]:
-    """The stored credentials record; `{}` when there is no file or it is not a mapping.
+def load_credentials_record(path: Path | None = None) -> dict[str, Any]:
+    """The record in `path` (default: the user's file); `{}` when there is no file or it is not a mapping.
 
     Raises `CredentialsUnreadableError` when the file exists but cannot be read or parsed.
     """
-    path = credentials_path()
+    path = path or credentials_path()
     if not path.exists():
         return {}
     try:
@@ -94,10 +94,9 @@ def signed_in_recently(api_key: str, *, within_s: int = 120, now: datetime | Non
 def _stored_key(path: Path) -> str:
     """The api_key currently in the file, or "" when absent or unreadable."""
     try:
-        data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+        return str(load_credentials_record(path).get("api_key") or "")
+    except CredentialsUnreadableError:
         return ""
-    return str(data.get("api_key") or "") if isinstance(data, dict) else ""
 
 
 def write_credentials_file(path: Path, record: dict[str, str], *, expect_key: str | None = None) -> bool:
@@ -152,13 +151,15 @@ def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> No
     """
     if not api_key or not tier:
         return
+    target = path or credentials_path()
     try:
-        target = path or credentials_path()
-        if not target.exists():
-            return
-        data: Any = yaml.safe_load(target.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or data.get("api_key") != api_key or data.get("tier") == tier:
-            return
+        data = load_credentials_record(target)
+    except CredentialsUnreadableError as exc:
+        logger.debug("Could not refresh the stored tier: %s", exc)
+        return
+    if data.get("api_key") != api_key or data.get("tier") == tier:
+        return
+    try:
         record = {str(k): str(v) for k, v in data.items()}
         record["tier"] = tier
         write_credentials_file(target, record, expect_key=api_key)

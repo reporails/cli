@@ -1,14 +1,18 @@
-"""Rich-markup lines for the notices the server sends.
+"""Printing the notices the server sends, the one place both printers share.
 
 The text and the link come from outside the client, so both go through `escape`: a
-notice that contains `[bold]` prints those characters, never the style. No I/O.
+notice that contains `[bold]` prints those characters, never the style. Each notice
+prints indented two spaces, wrapped lines included.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
+from rich.console import Console, Group
 from rich.markup import escape
+from rich.padding import Padding
+from rich.text import Text
 
 from reporails_cli.core.platform.dto.diagnostics import Notice
 
@@ -23,14 +27,21 @@ def _link_target(url: str) -> str:
 def _notice_lines(notice: Notice) -> list[str]:
     """One notice as body lines: the text (yellow for a warning), then its link when it has one."""
     text = escape(notice.text)
-    lines = [f"  [yellow]{text}[/yellow]" if notice.level == "warn" else f"  {text}"]
+    lines = [f"[yellow]{text}[/yellow]" if notice.level == "warn" else text]
     if notice.url.startswith(_LINK_SCHEMES):
-        lines.append(f"  → [link={_link_target(notice.url)}]{escape(notice.url)}[/link]")
+        lines.append(f"→ [link={_link_target(notice.url)}]{escape(notice.url)}[/link]")
     elif notice.url:
-        lines.append(f"  → {escape(notice.url)}")
+        lines.append(f"→ {escape(notice.url)}")
     return lines
 
 
 def notice_lines(notices: Iterable[Notice]) -> list[str]:
-    """Rich-markup body lines for `notices`, in order."""
+    """Rich-markup body lines for `notices`, in order, without the indent."""
     return [line for notice in notices for line in _notice_lines(notice)]
+
+
+def print_notices(console: Console, notices: Iterable[Notice]) -> None:
+    """Print `notices` on `console`, each line indented two spaces, wrapped lines too."""
+    for notice in notices:
+        lines = Group(*(Text.from_markup(line) for line in _notice_lines(notice)))
+        console.print(Padding(lines, (0, 0, 0, 2)))

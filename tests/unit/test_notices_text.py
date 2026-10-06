@@ -8,14 +8,13 @@ import pytest
 from rich.console import Console
 
 from reporails_cli.core.platform.dto.diagnostics import Notice
-from reporails_cli.formatters.text.notices import notice_lines
+from reporails_cli.formatters.text.notices import notice_lines, print_notices
 
 
 def _printed(notices: list[Notice]) -> str:
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False, width=200, emoji=False, highlight=False)
-    for line in notice_lines(notices):
-        console.print(line)
+    print_notices(console, notices)
     return buf.getvalue()
 
 
@@ -32,8 +31,7 @@ def test_markup_in_text_prints_literally() -> None:
 def test_markup_in_text_carries_no_style_when_rendered() -> None:
     console = Console(force_terminal=True, color_system="standard", width=200, file=io.StringIO(), highlight=False)
     with console.capture() as cap:
-        for line in notice_lines([Notice("a", "info", "[bold]loud[/bold]")]):
-            console.print(line)
+        print_notices(console, [Notice("a", "info", "[bold]loud[/bold]")])
     assert "\x1b[1m" not in cap.get()
     assert "[bold]loud[/bold]" in cap.get()
 
@@ -42,15 +40,15 @@ def test_markup_in_text_carries_no_style_when_rendered() -> None:
 @pytest.mark.subsys_cli_ux
 def test_warn_is_yellow_and_info_is_plain() -> None:
     warn, info = (notice_lines([Notice("a", level, "msg")])[0] for level in ("warn", "info"))
-    assert warn == "  [yellow]msg[/yellow]"
-    assert info == "  msg"
+    assert warn == "[yellow]msg[/yellow]"
+    assert info == "msg"
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_https_url_renders_as_a_link_and_brackets_cannot_close_the_tag() -> None:
     lines = notice_lines([Notice("a", "info", "msg", "https://example.test/a[1]")])
-    assert lines[1].startswith("  → [link=https://example.test/a%5B1%5D]")
+    assert lines[1].startswith("→ [link=https://example.test/a%5B1%5D]")
     assert "https://example.test/a[1]" not in lines[1].split("]", 1)[0]
 
 
@@ -60,3 +58,16 @@ def test_non_web_url_is_text_not_a_link() -> None:
     lines = notice_lines([Notice("a", "info", "msg", "file:///etc/passwd")])
     assert "[link" not in lines[1]
     assert "file:///etc/passwd" in lines[1]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_long_notice_keeps_its_indent_on_every_wrapped_line() -> None:
+    console = Console(width=40, record=True, file=io.StringIO(), highlight=False)
+    long = Notice(
+        "a", "warn", "Your payment failed and the plan ends soon " * 3, "https://example.test/billing/" + "x" * 50
+    )
+    print_notices(console, [long])
+    lines = console.export_text().splitlines()
+    assert len(lines) > 4
+    assert all(line.startswith("  ") for line in lines)

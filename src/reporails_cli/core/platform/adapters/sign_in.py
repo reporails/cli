@@ -8,15 +8,16 @@ decides whether to ask again.
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-import httpx
+from typing import TYPE_CHECKING, Any
 
 from reporails_cli.core.platform.adapters.api_client import _user_agent
 from reporails_cli.core.platform.adapters.notices_wire import notices_from_list
-from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
 from reporails_cli.core.platform.dto.sign_in import PollOutcome, PollStatus, SignedIn, SignInGrant
 from reporails_cli.core.platform.utils.utils import json_object
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ def _headers() -> dict[str, str]:
 
 def _post(url: str, **kwargs: Any) -> httpx.Response:
     """One POST; a transport fault is raised as `PlatformUnavailableError`."""
+    import httpx
+
     try:
         return httpx.post(url, headers=_headers() | kwargs.pop("headers", {}), timeout=_TIMEOUT_S, **kwargs)
     except (httpx.HTTPError, OSError) as exc:
@@ -45,18 +48,29 @@ def _post(url: str, **kwargs: Any) -> httpx.Response:
         raise PlatformUnavailableError(f"Could not reach {url}: {exc}") from exc
 
 
+def _retry_after(resp: httpx.Response) -> int | None:
+    """The whole seconds in the reply's `Retry-After` header; None when absent or not a number."""
+    raw = resp.headers.get("Retry-After", "").strip()
+    return int(raw) if raw.isdigit() else None
+
+
 def start_sign_in(site: str, machine: str) -> SignInGrant:
     """Ask the website to start a sign-in for `machine`.
 
-    Raises `PlatformUnavailableError` when the website is unreachable, answers with a non-2xx
-    status, or answers without the fields a sign-in needs.
+    Raises `PlatformRefusedError` (status and wait) on a non-2xx answer, and
+    `PlatformUnavailableError` when the website is unreachable or answers without the fields a
+    sign-in needs.
     """
     resp = _post(
         f"{site}/oauth/device_authorization",
         data={"client_id": CLIENT_ID, "scope": "ails", "machine": machine},
     )
     if not 200 <= resp.status_code < 300:
-        raise PlatformUnavailableError(f"The website answered the sign-in start with HTTP {resp.status_code}")
+        raise PlatformRefusedError(
+            f"The website answered the sign-in start with HTTP {resp.status_code}",
+            status=resp.status_code,
+            retry_after=_retry_after(resp),
+        )
     body = json_object(resp.text)
     try:
         return SignInGrant(

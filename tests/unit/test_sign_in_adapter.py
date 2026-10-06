@@ -7,10 +7,9 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from reporails_cli.core.platform.adapters import sign_in
 from reporails_cli.core.platform.adapters.sign_in import poll_sign_in, revoke_sign_in, start_sign_in
 from reporails_cli.core.platform.config.endpoints import DEFAULT_PLATFORM_URL, platform_url
-from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
 
 _SITE = "http://site"
 _GRANT = {
@@ -34,7 +33,7 @@ def _serve(monkeypatch: pytest.MonkeyPatch, handler) -> list[httpx.Request]:
         return result
 
     client = httpx.Client(transport=httpx.MockTransport(_record))
-    monkeypatch.setattr(sign_in.httpx, "post", lambda url, **kw: client.post(url, **kw))
+    monkeypatch.setattr(httpx, "post", lambda url, **kw: client.post(url, **kw))
     return seen
 
 
@@ -176,3 +175,17 @@ def test_platform_url_uses_env_or_default(monkeypatch: pytest.MonkeyPatch) -> No
     assert platform_url() == "http://127.0.0.1:9000"
     monkeypatch.delenv("AILS_PLATFORM_URL")
     assert platform_url() == DEFAULT_PLATFORM_URL == "https://reporails.com"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+@pytest.mark.parametrize(
+    ("headers", "retry_after"), [({"Retry-After": "600"}, 600), ({}, None), ({"Retry-After": "soon"}, None)]
+)
+def test_a_refused_start_carries_the_status_and_the_wait(
+    monkeypatch: pytest.MonkeyPatch, headers: dict[str, str], retry_after: int | None
+) -> None:
+    _serve(monkeypatch, lambda r: httpx.Response(429, json={"error": "rate_limited"}, headers=headers))
+    with pytest.raises(PlatformRefusedError) as caught:
+        start_sign_in(_SITE, "laptop")
+    assert (caught.value.status, caught.value.retry_after) == (429, retry_after)

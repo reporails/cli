@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import stat
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,8 +13,8 @@ import yaml
 from typer.testing import CliRunner
 
 from reporails_cli.core.platform.config.credentials import credentials_path, read_credentials
-from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
-from reporails_cli.core.platform.dto.diagnostics import Notice
+from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
+from reporails_cli.core.platform.dto.diagnostics import STILL_REACHING_MESSAGE, Notice
 from reporails_cli.core.platform.dto.sign_in import KeyCheck, PollOutcome, SignedIn, SignInGrant
 from reporails_cli.interfaces.cli import login_command
 from reporails_cli.interfaces.cli.main import app
@@ -73,9 +74,11 @@ class _Site:
         return self.check
 
 
-def _terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make the command see a terminal on stdout (CliRunner's stream is not one)."""
-    monkeypatch.setattr(login_command, "sys", SimpleNamespace(stdout=SimpleNamespace(isatty=lambda: True)))
+def _terminal(monkeypatch: pytest.MonkeyPatch, platform: str = "darwin") -> None:
+    """Make the command see a terminal on stdout (CliRunner's stream is not one) on `platform`."""
+    monkeypatch.setattr(
+        login_command, "sys", SimpleNamespace(platform=platform, stdout=SimpleNamespace(isatty=lambda: True))
+    )
 
 
 @pytest.fixture
@@ -142,6 +145,33 @@ def test_login_opens_the_browser_only_on_a_terminal(site: _Site, monkeypatch: py
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("platform", "env", "opens"),
+    [
+        ("linux", {}, False),
+        ("linux", {"DISPLAY": ":0"}, True),
+        ("linux", {"WAYLAND_DISPLAY": "wayland-0"}, True),
+        ("darwin", {}, True),
+        ("win32", {}, True),
+    ],
+)
+def test_login_opens_the_browser_only_where_a_screen_can_show_it(
+    site: _Site, monkeypatch: pytest.MonkeyPatch, platform: str, env: dict[str, str], opens: bool
+) -> None:
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    _terminal(monkeypatch, platform)
+    site.polls = [_signed_in()]
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert _GRANT.verification_url in result.output
+    assert site.opened == ([_GRANT.verification_url] if opens else [])
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_login_ignores_a_browser_that_will_not_open(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
     def _fail(url: str) -> bool:
         raise login_command.webbrowser.Error("no browser")
@@ -190,6 +220,41 @@ def test_login_start_failure_names_what_to_do(site: _Site) -> None:
     assert "nothing was saved. Try again shortly." in result.output
     assert site.poll_calls == 0
     assert not credentials_path().exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("error", "line"),
+    [
+        (
+            PlatformRefusedError("x", status=429, retry_after=600),
+            "Too many sign-in attempts from this network. Try again in 10 minutes.",
+        ),
+        (PlatformRefusedError("x", status=429, retry_after=61), "Try again in 2 minutes."),
+        (PlatformRefusedError("x", status=429), "Try again in 10 minutes."),
+        (
+            PlatformRefusedError("x", status=503),
+            "The website refused to start a sign-in (HTTP 503). Nothing was saved.",
+        ),
+    ],
+)
+def test_login_start_refusal_says_why(site: _Site, error: PlatformRefusedError, line: str) -> None:
+    site.start_error = error
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 1
+    assert line in result.output
+    assert not credentials_path().exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_unreachable_names_the_overridden_website(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AILS_PLATFORM_URL", "http://127.0.0.1:9")
+    site.start_error = PlatformUnavailableError("down")
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 1
+    assert "Could not reach 127.0.0.1 — nothing was saved." in result.output
 
 
 @pytest.mark.unit
@@ -334,6 +399,19 @@ def test_login_when_the_stored_sign_in_was_rejected_signs_in_again(site: _Site) 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
+def test_login_when_a_new_sign_in_is_rejected_does_not_start_another(site: _Site) -> None:
+    just_now = {**_LOGIN_RECORD, "signed_in_at": datetime.now(UTC).isoformat()}
+    _store(just_now)
+    site.check = KeyCheck("rejected", error="invalid_api_key")
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert STILL_REACHING_MESSAGE in result.output
+    assert site.poll_calls == 0
+    assert read_credentials()["api_key"] == "tok-old"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
 def test_login_when_the_server_is_unreachable_keeps_the_stored_sign_in(site: _Site) -> None:
     _store(_LOGIN_RECORD)
     result = runner.invoke(app, ["login"])
@@ -380,6 +458,18 @@ def test_logout_with_the_server_down_still_deletes_the_file_and_says_so(site: _S
     assert not path.exists()
     assert "Logged out on this machine." in result.output
     assert "The sign-in could not be revoked on the server; revoke it on reporails.com/account." in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_logout_removes_a_file_that_cannot_be_read_without_asking_the_server(site: _Site) -> None:
+    path = _store(_LOGIN_RECORD)
+    path.write_text("api_key: [\n", encoding="utf-8")
+    result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0
+    assert "Logged out on this machine." in result.output
+    assert site.revoked == []
+    assert not path.exists()
 
 
 @pytest.mark.unit

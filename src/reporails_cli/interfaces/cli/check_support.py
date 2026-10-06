@@ -108,12 +108,11 @@ def _heal_authed(funnel_error: object) -> bool:
     present key authed, exactly as before.
     """
     from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
-    from reporails_cli.interfaces.cli.check_orchestration import _AUTH_REJECTED_ERRORS
+    from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 
     if not has_api_key():
         return False
-    return not (isinstance(funnel_error, FunnelError) and funnel_error.error in _AUTH_REJECTED_ERRORS)
+    return not (isinstance(funnel_error, FunnelError) and funnel_error.error in AUTH_REJECTED_ERRORS)
 
 
 def _resolve_rule_token(token: str) -> str:
