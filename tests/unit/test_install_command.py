@@ -108,7 +108,6 @@ def _setup(
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(install_module.subprocess, "run", runner)
     monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: key)
-    monkeypatch.delenv("AILS_PLUGIN_SOURCE", raising=False)
     if tmp_path is not None:
         monkeypatch.chdir(tmp_path)
 
@@ -131,7 +130,7 @@ def test_install_runs_both_agents_plugin_commands(monkeypatch: pytest.MonkeyPatc
     for agent in ("Cursor", "GitHub Copilot", "Antigravity"):
         assert agent in out
     assert "Claude Code only" in out
-    assert "ails auth login" in out
+    assert "ails login" in out
     assert "/reporails:ails heal" in out
     assert "/reload-plugins" in out
 
@@ -146,7 +145,7 @@ def test_install_skips_absent_agents_and_signed_in_note(monkeypatch: pytest.Monk
 
     assert result.exit_code == 0
     assert runner.calls == []
-    assert "ails auth login" not in result.stdout
+    assert "ails login" not in result.stdout
 
 
 def _runner_invoke() -> Any:
@@ -236,8 +235,11 @@ def test_install_plugin_source_override(monkeypatch: pytest.MonkeyPatch) -> None
     ("version", "spec"),
     [
         ("0.6.0", "reporails-cli>=0.6.0,<0.7"),
-        ("0.6.3", "reporails-cli>=0.6.0,<0.7"),
-        ("0.7.1", "reporails-cli>=0.7.0,<0.8"),
+        ("0.6.1", "reporails-cli>=0.6.1,<0.7"),
+        ("0.6.3", "reporails-cli>=0.6.3,<0.7"),
+        ("0.6.1rc1", "reporails-cli>=0.6.1,<0.7"),
+        ("0.6.2.dev3+gabc", "reporails-cli>=0.6.2,<0.7"),
+        ("0.7.1", "reporails-cli>=0.7.1,<0.8"),
         ("1.2.0", "reporails-cli>=1.2.0,<1.3"),
     ],
 )
@@ -268,7 +270,6 @@ def _update_setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set
     monkeypatch.setattr(commands_module, "_update_engine", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(install_module.subprocess, "run", runner)
-    monkeypatch.delenv("AILS_PLUGIN_SOURCE", raising=False)
 
 
 @pytest.mark.unit
@@ -670,7 +671,6 @@ def test_closing_line_reads_the_tier_of_the_key_in_effect(
     (home / ".reporails" / "credentials.yml").write_text(f"api_key: k\ntier: '{stored_tier}'\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.delenv("AILS_API_KEY", raising=False)
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)
 
@@ -786,3 +786,24 @@ def test_install_to_path_falls_back_to_the_default_cache_folder(
     assert any(c[1:3] == ["tool", "install"] for c in calls) is installs
     if uv is None and "/.cache/uv/" in ails:
         assert result is False
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_update_names_the_agents_that_update_by_hand(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _Runner(
+        listing={
+            "claude plugin marketplace list": _CLAUDE_MARKETS_OK,
+            "claude plugin list": _CLAUDE_LIST_USER,
+        }
+    )
+    _update_setup(monkeypatch, runner, {"claude"})
+
+    result = _runner.invoke(app, ["update"])
+
+    out = " ".join(result.stdout.split())
+    assert "Cursor" in out
+    assert "GitHub Copilot" in out
+    assert "Antigravity" in out
+    assert "git pull" in out
+    assert "ails install" in out

@@ -1,7 +1,7 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.6.0"
+version: "0.6.1"
 last_updated: 2026-09-20
 ---
 
@@ -78,7 +78,7 @@ The first run needs network access. If it cannot reach the download host, `ails 
 export AILS_MODEL_URL="https://mirror.example.com/reporails-model"
 ```
 
-`AILS_MODEL_URL` is the base URL; Reporails appends each model file's name to it, flattening any `/` in the file's own path to `__`, so a mirror serves one flat directory. To build one, run a check once on a machine that can reach the default host, then copy every file under `~/.reporails/cache/models/<version>/` to the mirror, naming each file by its path inside that folder with every `/` replaced by `__`. Unset, the model downloads from `https://models.reporails.com` — allow that host through a firewall or proxy for the first run. When you are signed in (`ails auth login` or `AILS_API_KEY`), that download carries your API key; the key is never sent to an `AILS_MODEL_URL` host.
+`AILS_MODEL_URL` is the base URL; Reporails appends each model file's name to it, flattening any `/` in the file's own path to `__`, so a mirror serves one flat directory. To build one, run a check once on a machine that can reach the default host, then copy every file under `~/.reporails/cache/models/<version>/` to the mirror, naming each file by its path inside that folder with every `/` replaced by `__`. Unset, the model downloads from `https://models.reporails.com` — allow that host through a firewall or proxy for the first run. When you are signed in (`ails login` or `AILS_API_KEY`), that download carries your API key; the key is never sent to an `AILS_MODEL_URL` host.
 
 To never download, set `AILS_MODEL_OFFLINE=1`. Reporails then uses a model already on disk and, without one, runs without the content checks.
 
@@ -103,7 +103,7 @@ A CI job starts on a fresh machine with an empty home directory, so without a ca
 
 ```yaml
 env:
-  REPORAILS_VERSION: "0.6.0"
+  REPORAILS_VERSION: "0.6.1"
 steps:
   - uses: actions/checkout@v4
   - uses: actions/setup-python@v5
@@ -292,7 +292,7 @@ ails check --strict
 The CLI does not have a built-in `--min-score` flag. To gate on a minimum score, use the GitHub Action's `min-score` input — it parses the score from the JSON output and runs a post-step gate:
 
 ```yaml
-- uses: reporails/cli/action@0.6.0
+- uses: reporails/cli/action@0.6.1
   with:
     strict: "true"            # exit 1 if any rule fires
     min-score: "7.0"          # exit 1 if score < 7.0
@@ -307,15 +307,17 @@ When `min-score` is set, the gate fails CLOSED if the diagnostics server rejecte
 The anonymous tier requires no account, and signing in is free. A free account does not raise your rate or payload caps — anonymous and signed-in free accounts share the same limits. Signing in gives you an identity (so you can subscribe and manage the subscription) and enables `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
 
 ```bash
-ails auth login        # browser-based GitHub Device Flow
-ails auth status       # show whether you're signed in, the key source, and a redacted key prefix (the tier is shown for a stored sign-in; for a key held in `AILS_API_KEY` it reads `Tier: (resolved at check time)`)
-ails auth token        # print the full API key (for CI export)
-ails auth logout       # remove stored credentials
+ails login        # sign this machine in through your browser
+ails logout       # sign this machine out
 ```
 
-Credentials are stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually).
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. One sign-in per machine; it lasts a year. Run again on a signed-in machine, it shows who is signed in and on which plan. `ails logout` signs out only this machine. Your plan (Free or Pro) comes from your account, not the machine.
 
-For CI, capture the API key with `ails auth token` and add it to your CI provider's secret store as `AILS_API_KEY` (or pass it via the GitHub Action's `api-key` input — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme)).
+The page also opens when your coding agent runs `ails login`, for example from the plugin's heal. When `BROWSER` is set, that is the browser it uses, which is how remote editors and containers open the page on your own machine. In CI it never opens.
+
+The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually). When `AILS_API_KEY` is set, it is used instead of the sign-in.
+
+For CI, create an API key on [reporails.com/account](https://reporails.com/account) and add it to your CI provider's secret store as `AILS_API_KEY` (or pass it via the GitHub Action's `api-key` input — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme)).
 
 ## GitHub Action
 
@@ -328,7 +330,7 @@ For CI, capture the API key with `ails auth token` and add it to your CI provide
 | `min-score`    | (empty) | Minimum score (0–10). Fails the step when the run scores below it.                                |
 | `agent`        | (empty) | Agent to score against (`claude`, `cursor`, …). Empty resolves from project config, then a generic fallback. |
 | `exclude-dir`  | (empty) | Comma-separated directory *names* to skip (e.g. `vendor,dist`), added to the built-in excludes.   |
-| `version`      | (empty) | CLI version to install (e.g. `0.6.0`). Empty installs the latest release.                         |
+| `version`      | (empty) | CLI version to install (e.g. `0.6.1`). Empty installs the latest release.                         |
 | `from-source`  | `false` | Internal — installs the CLI from a local checkout so the action can test itself. Leave it `false`. |
 | `api-key`      | (empty) | Your API key, normally `${{ secrets.REPORAILS_API_KEY }}`. Empty runs anonymously.                |
 | `server-url`   | (empty) | Overrides the diagnostic endpoint. Empty uses production — set it only for a staging deployment.  |
@@ -345,7 +347,7 @@ And every output:
 | `server-error`  | The rejection/outage reason token (e.g. `rate_limit_exceeded`, `timeout`, `network_error`) when `server-status` is `server-unavailable`. Empty otherwise. |
 
 ```yaml
-- uses: reporails/cli/action@0.6.0
+- uses: reporails/cli/action@0.6.1
   id: reporails
   with:
     path: ./packages/api
@@ -375,6 +377,7 @@ JSON output is one object per run, grouping findings under `files` keyed by path
   "quality": 3.2,
   "level": "L3",
   "elapsed_ms": 593.5,
+  "notices": [],
   "files": {
     "CLAUDE.md": {
       "findings": [
@@ -413,7 +416,9 @@ What differs by tier — measured on the same two-file fixture (one `CLAUDE.md`,
 
 Do not key a "is this a paid run?" check off `pro{}` — it is the *upgrade hint* for unpaid runs and is absent on Pro. Read `tier` (`anonymous` / `free` / `pro`; empty (`""`) when the service gave no reply, as on an offline run) instead; `workflow{}` is the paid-only payload. `workflow.locations[]` orders the project's kinds of files to rewrite (each entry carries `order`, `element`, `kind`, `loading`, `files`, `importance`, and its own `findings[]` with `remedy` text); `workflow.listed[]` names every other firing rule and why it needs no rewrite; there is no `workflow.steps[]`.
 
-Always present, regardless of tier: `offline`, `server_error`, `tier`, `quality`, `level`, `files{}`, `stats`, `top_rules`, `elapsed_ms`. `quality` is `null` when no score was computed (an offline run). `server_error` is `null` when the server answered; when the request was rejected, timed out, or failed it carries `{status, error, message, upgrade_url, tier}` — so a designed offline run and a real outage are distinguishable rather than both reading as "no score". `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map. An entry's `type` is `repetition` (one instruction repeated nearly verbatim in two files) or `overlap` (one same-topic line pair of two files that can load together). `stats.cross_file_overlaps` counts the overlapping file pairs. `cross_file[]` and `cross_file_coordinates[]` are tier-exclusive (see the table above) and both are absent when the run has no cross-file findings.
+Always present, regardless of tier: `offline`, `server_error`, `tier`, `quality`, `level`, `files{}`, `stats`, `top_rules`, `notices`, `elapsed_ms`. `quality` is `null` when no score was computed (an offline run). `server_error` is `null` when the server answered; when the request was rejected, timed out, or failed it carries `{status, error, message, upgrade_url, tier}` — so a designed offline run and a real outage are distinguishable rather than both reading as "no score". `surface_health[]` is added when surfaces are populated; each entry carries `name`, `score`, `file_count`, `finding_count`, and a per-category `category_breakdown` map. An entry's `type` is `repetition` (one instruction repeated nearly verbatim in two files) or `overlap` (one same-topic line pair of two files that can load together). `stats.cross_file_overlaps` counts the overlapping file pairs. `cross_file[]` and `cross_file_coordinates[]` are tier-exclusive (see the table above) and both are absent when the run has no cross-file findings.
+
+`notices` is a list of short messages about your account, such as a failed payment, Pro ending on a date, Pro having ended, or an announcement. Each entry is `{id, level, text, url}`: `level` is `info` or `warn`, and `url` is `""` when there is no link. The list is `[]` when there are no messages. Text output prints warnings on every run and other messages once a day; `--format json` and the MCP `validate` reply carry all of them. If you build on the JSON, show each notice to the user.
 
 Two additive fields enrich the output when the analysis service has data for the run. Both are **additive and backward-compatible** — existing JSON consumers and CI baselines that ignore them keep working unchanged:
 

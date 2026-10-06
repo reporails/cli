@@ -351,13 +351,13 @@ def _build_assemble_inputs(
     )
 
 
-def _server_lint_result(inputs: Any) -> tuple[Any, Any]:
-    """Run `_server_lint` and split its response into `(lint_result, funnel_error)` — `(None,
-    None)` when nothing was mapped (offline / no ruleset)."""
+def _server_lint_result(inputs: Any) -> tuple[Any, Any, tuple[Any, ...]]:
+    """Run `_server_lint` and split its response into `(lint_result, funnel_error, notices)` — `(None,
+    None, ())` when nothing was mapped (offline / no ruleset)."""
     response = _server_lint(inputs)
-    lint_result = response.result if response else None
-    funnel_error = response.funnel_error if response else None
-    return lint_result, funnel_error
+    if response is None:
+        return None, None, ()
+    return response.result, response.funnel_error, response.notices
 
 
 def _assemble_mcp_result(
@@ -374,8 +374,8 @@ def _assemble_mcp_result(
     from reporails_cli.core.pipeline.assemble import assemble_result
 
     inputs = _build_assemble_inputs(scan_root, effective_agent, filter_agents, ruleset_map, local, rule_agents)
-    lint_result, funnel_error = _server_lint_result(inputs)
-    result = assemble_result(replace(inputs, lint_result=lint_result))
+    lint_result, funnel_error, notices = _server_lint_result(inputs)
+    result = assemble_result(replace(inputs, lint_result=lint_result, notices=notices))
     return result, funnel_error
 
 

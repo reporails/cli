@@ -8,7 +8,6 @@ run in numpy, torch-free. Callers guard on :func:`multislot_available`.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -136,54 +135,11 @@ class _BioEncoder(_OnnxEncoderSession):
         last_hidden = self._session.run(["last_hidden_state"], feed)[0][0]  # (seq, hidden)
         return last_hidden, list(enc.offsets)
 
-    def _forward_batch(self, texts: list[str]) -> list[tuple[Any, list[tuple[int, int]]]]:
-        """One encoder forward over a padded batch → per-text ``(hidden, offsets)``."""
-        import numpy as np
-
-        encs = [self._tokenizer.encode(t) for t in texts]
-        lens = [len(e.ids) for e in encs]
-        max_len = max(lens)
-        ids = np.zeros((len(texts), max_len), dtype=np.int64)
-        masks = np.zeros((len(texts), max_len), dtype=np.int64)
-        for i, e in enumerate(encs):
-            ids[i, : lens[i]] = e.ids
-            masks[i, : lens[i]] = e.attention_mask
-        feed: dict[str, Any] = {"input_ids": ids, "attention_mask": masks}
-        if self._needs_token_type_ids:
-            feed["token_type_ids"] = np.zeros_like(ids)
-        hidden = self._session.run(["last_hidden_state"], feed)[0]  # (B, max_len, hidden)
-        return [(hidden[i, : lens[i]], list(encs[i].offsets)) for i in range(len(texts))]
-
-    def token_states_batch(self, texts: list[str], bucket: int = 32) -> list[tuple[Any, list[tuple[int, int]]]]:
-        """Batched :meth:`token_states` — length-sorted, bucketed encoder forwards.
-
-        Sorting by length and padding only within a bucket keeps short sentences off
-        the longest sentence's padded width (the same padding waste the sentence
-        embedder avoids). Attention-masked padding makes each text's real-token hidden
-        states bit-identical to the per-text forward. Returns per-text ``(hidden, offsets)``.
-        """
-        if not texts:
-            return []
-        from reporails_cli.core.mapper.encode_pool import run_buckets
-
-        order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
-        bucket_idxs = [order[k : k + bucket] for k in range(0, len(order), bucket)]
-
-        # Concurrent per-bucket forwards over the one warm session when
-        # the pool is on; run_buckets keeps submission order so the scatter is
-        # byte-identical to the serial loop.
-        def _bucket(ix: list[int]) -> Callable[[], list[tuple[Any, list[tuple[int, int]]]]]:
-            def run() -> list[tuple[Any, list[tuple[int, int]]]]:
-                return self._forward_batch([texts[i] for i in ix])
-
-            return run
-
-        bucket_outs = run_buckets([_bucket(ix) for ix in bucket_idxs])
-        results: list[Any] = [None] * len(texts)
-        for ix, res_list in zip(bucket_idxs, bucket_outs, strict=True):
-            for i, res in zip(ix, res_list, strict=True):
-                results[i] = res
-        return results
+    def forward_bucket(self, bucket: list[str]) -> list[tuple[Any, list[tuple[int, int]]]]:
+        """One forward over a bucket of texts → per-text ``(hidden [seq, hidden], offsets)``, padding trimmed."""
+        tokens = self._tokenize(bucket)
+        hidden = self._session.run(["last_hidden_state"], self._encode_feed(tokens))[0]  # (B, max_len, hidden)
+        return [(hidden[i, : len(t.ids)], t.offsets) for i, t in enumerate(tokens)]
 
 
 @lru_cache(maxsize=4)

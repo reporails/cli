@@ -16,6 +16,15 @@ class PlatformUnavailableError(PlatformError):
     """An external platform surface was unreachable or returned an unexpected response."""
 
 
+class PlatformRefusedError(PlatformUnavailableError):
+    """The website answered with a non-2xx status; carries the status and the seconds it asked to wait."""
+
+    def __init__(self, message: str, *, status: int, retry_after: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
 class CredentialsUnreadableError(PlatformError):
     """The credentials file exists but could not be read or parsed."""
 

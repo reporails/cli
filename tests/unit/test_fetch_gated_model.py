@@ -76,8 +76,6 @@ def test_credentials_are_environment_only(monkeypatch):
     Reddens if a source URL or token is ever written into the module: with the
     environment cleared, both accessors must resolve to empty.
     """
-    monkeypatch.delenv("AILS_MODEL_BUCKET_URL", raising=False)
-    monkeypatch.delenv("AILS_MODEL_AUTH_TOKEN", raising=False)
 
     assert fbm._bucket_url() == ""
     assert fbm._auth_token() == ""
@@ -86,9 +84,6 @@ def test_credentials_are_environment_only(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_gated_unset_bucket_fails_clearly(bundle, monkeypatch, capsys):
-    monkeypatch.delenv("AILS_MODEL_BUCKET_URL", raising=False)
-    monkeypatch.delenv("AILS_MODEL_AUTH_TOKEN", raising=False)
-
     rc = fbm._fetch_gated()
 
     assert rc == 1
@@ -190,8 +185,6 @@ def test_gated_idempotent_skip_when_present(bundle, monkeypatch):
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_bytes(b"already-here")
     # No bucket configured — must still succeed because everything is present.
-    monkeypatch.delenv("AILS_MODEL_BUCKET_URL", raising=False)
-    monkeypatch.delenv("AILS_MODEL_AUTH_TOKEN", raising=False)
 
     assert fbm._fetch_gated() == 0
     assert all((models / name).is_file() for name in fbm._BUNDLE_LICENSE_NAMES)

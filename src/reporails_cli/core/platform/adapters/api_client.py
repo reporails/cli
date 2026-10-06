@@ -10,19 +10,22 @@ import json
 import logging
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
+from reporails_cli.core.platform.config.credentials import env_api_key
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
-    CredentialsUnreadableError,
     PlatformError,
 )
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
+    STILL_REACHING_MESSAGE,
     CrossFileCoordinate,
     CrossFileFinding,
     Diagnostic,
@@ -32,6 +35,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     LintResponse,
     LintResult,
     LocalTier,
+    Notice,
     QualityResult,
     RulesetReport,
 )
@@ -43,6 +47,12 @@ logger = logging.getLogger(__name__)
 
 # The diagnostics server used when `AILS_SERVER_URL` is unset.
 DEFAULT_SERVER_URL = "https://api.reporails.com"
+
+
+def _reply_notices(response: Any) -> tuple[Notice, ...]:
+    """The notices a reply carries in its notices header; none when it has no headers or no header."""
+    headers = getattr(response, "headers", None) or {}
+    return notices_from_header(headers.get(NOTICES_HEADER))
 
 
 def _user_agent() -> str:
@@ -79,28 +89,14 @@ def _tier_from_config() -> str:
 
 
 def _api_key_from_credentials() -> str:
-    """Read API key from ~/.reporails/credentials.yml (set by `ails auth login`).
+    """Read API key from ~/.reporails/credentials.yml (set by `ails login`).
 
     Returns "" only for genuine absence (no file / no key). Raises
     CredentialsUnreadableError when the file exists but cannot be read or parsed.
     """
+    from reporails_cli.core.platform.config.credentials import load_credentials_record
 
-    try:
-        import yaml
-    except ImportError:
-        logger.debug("PyYAML not installed — cannot read credentials")
-        return ""
-
-    from reporails_cli.core.platform.config.credentials import credentials_path
-
-    path = credentials_path()
-    if not path.exists():
-        return ""
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as exc:
-        raise CredentialsUnreadableError(f"Could not read credentials file: {exc}") from exc
-    return data.get("api_key", "") if isinstance(data, dict) else ""
+    return str(load_credentials_record().get("api_key") or "")
 
 
 def _degrade_on_fault(reader: Callable[[], str], unit: str) -> str:
@@ -122,7 +118,7 @@ def resolve_api_key() -> str:
     Returns "" when neither holds a key; an unreadable credentials file drops
     to "" with a WARNING.
     """
-    return os.environ.get("AILS_API_KEY") or _degrade_on_fault(_api_key_from_credentials, "API key")
+    return env_api_key() or _degrade_on_fault(_api_key_from_credentials, "API key")
 
 
 def default_server_api_key() -> str:
@@ -239,9 +235,22 @@ class AilsClient:
                 funnel_err.tier,
             )
             record_cooldown(self.base_url, self.api_key, funnel_err)
-            return funnel_err
+            return self._early_rejection(funnel_err)
         logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", status)
         return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
+
+    def _early_rejection(self, err: FunnelError) -> FunnelError:
+        """`err`, with a "still reaching the server" message when a key rejected right after sign-in is the cause.
+
+        Applies only to `invalid_api_key`: a malformed header is not a delay in the key arriving.
+        """
+        if err.error != "invalid_api_key" or not self.api_key:
+            return err
+        from reporails_cli.core.platform.config.credentials import signed_in_recently
+
+        if not signed_in_recently(self.api_key):
+            return err
+        return replace(err, message=STILL_REACHING_MESSAGE)
 
     def _sent_stored_key(self) -> bool:
         """True only for a request to the real service that carried the key as its Authorization header."""
@@ -255,34 +264,31 @@ class AilsClient:
 
             refresh_stored_tier(self.api_key, tier)
 
+    def diagnose_request(self, content_type: str) -> tuple[str, dict[str, str]]:
+        """The diagnose URL and request headers for this client, for a body of `content_type`."""
+        base = self.base_url.rstrip("/")
+        ua = _user_agent()
+        if os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1"):
+            return f"{base}/diagnose", {"X-Tier": self.tier, "Content-Type": content_type, "User-Agent": ua}
+        headers = {"Content-Type": content_type, "User-Agent": ua}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return f"{base}/v1/diagnose", headers
+
     def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
-        dev_mode = os.environ.get("AILS_DEV_MODE", "").lower() in ("true", "1")
-        ua = _user_agent()
-        if dev_mode:
-            url = f"{self.base_url.rstrip('/')}/diagnose"
-            headers: dict[str, str] = {
-                "X-Tier": self.tier,
-                "Content-Type": "application/msgpack",
-                "User-Agent": ua,
-            }
-        else:
-            url = f"{self.base_url.rstrip('/')}/v1/diagnose"
-            headers = {"Content-Type": "application/msgpack", "User-Agent": ua}
-            if self.api_key:
-                headers["Authorization"] = f"Bearer {self.api_key}"
-
+        url, headers = self.diagnose_request("application/msgpack")
         try:
             resp = httpx.post(url, content=body, headers=headers, timeout=self.timeout)
             resp.raise_for_status()
             result = _deserialize_lint_result(resp.json())
             self._remember_tier(result.tier)
-            return LintResponse(result=result)
+            return LintResponse(result=result, notices=_reply_notices(resp))
         except httpx.TimeoutException:
             logger.warning("Remote diagnostic request timed out after %.1fs", self.timeout)
             return LintResponse(funnel_error=FunnelError(error="timeout", reset_in=DEFAULT_RETRY_AFTER_S))
         except httpx.HTTPStatusError as exc:
-            return LintResponse(funnel_error=self._status_error(exc.response))
+            return LintResponse(funnel_error=self._status_error(exc.response), notices=_reply_notices(exc.response))
         except httpx.HTTPError as exc:
             logger.warning("Remote diagnostic network error: %s", exc)
             return LintResponse(

@@ -133,27 +133,21 @@ def _render_file_groups(groups: dict[str, list[tuple[str, list[Any]]]], ctx: _Ca
             _render_one_group(gkey, group_files, ctx)
 
 
-# The upgrade surface for a signed-in user (the subscribe button lives there).
-_SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
-
-
 def _render_detail_cta() -> None:
     """Print the "how to get line-level detail" call to action.
 
     Keyed on whether a key is held locally, not on the reported tier: a
-    signed-in user told to run `ails auth login` is sent to a dead end, so
+    signed-in user told to run `ails login` is sent to a dead end, so
     they get the upgrade surface instead.
     """
     from reporails_cli.core.platform.adapters.api_client import has_api_key
+    from reporails_cli.formatters.text.funnel_cta import upgrade_link
 
     if has_api_key():
-        console.print(
-            "\n  [dim]Line-level detail \u2192 "
-            f"[link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link][/dim]"
-        )
+        console.print(f"\n  [dim]Line-level detail \u2192 {upgrade_link()}[/dim]")
     else:
         console.print(
-            "\n  [dim]Line-level detail \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro[/dim]"
+            "\n  [dim]Line-level detail \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro[/dim]"
         )
 
 
@@ -401,6 +395,16 @@ def _print_header(tier: str) -> None:
     console.print(f"\n[bold]Reporails[/bold] \u2014 Diagnostics{tier_badge}\n")
 
 
+def _print_notices(notices: Any) -> None:
+    """Print the notices under the header, then a blank line; nothing when there are none."""
+    if not notices:
+        return
+    from reporails_cli.formatters.text.notices import print_notices
+
+    print_notices(console, notices)
+    console.print()
+
+
 def print_text_result(
     result: object,
     elapsed_ms: float,
@@ -434,6 +438,7 @@ def print_text_result(
     scope.type_str = file_type_summary(all_files, skill_of) if all_files else "0 files"
 
     _print_header(tier)
+    _print_notices(result.notices)
     if not result.findings:
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
         _render_funnel_cta(funnel_error)

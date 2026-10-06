@@ -57,7 +57,6 @@ def test_has_api_key_false_when_anonymous(monkeypatch: pytest.MonkeyPatch) -> No
     """No env key + isolated HOME (no credentials) reads as anonymous — `--heal` is gated off."""
     from reporails_cli.core.platform.adapters.api_client import has_api_key
 
-    monkeypatch.delenv("AILS_API_KEY", raising=False)
     assert has_api_key() is False
 
 

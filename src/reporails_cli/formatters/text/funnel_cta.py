@@ -20,6 +20,30 @@ BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
 # the account page, where the subscribe action lives.
 _SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
 
+# The one line an unpaid run adds in place of per-finding remedies, and the link that follows it.
+UNPAID_PITCH_LINE = "  Pro adds the remedies and the order to apply them."
+
+# The Pro line that tells a user of any other coding agent how to run the rewrite.
+OTHER_AGENT_HEAL_TEXT = "in another coding agent, ask it to run the reporails heal."
+
+# The Pro footer under a check: where the remedies are, then how to run the rewrite in each agent.
+PRO_HEAL_FOOTER_LINES = (
+    "  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]",
+    "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files;[/dim]",
+    f"  [dim]{OTHER_AGENT_HEAL_TEXT}[/dim]",
+)
+
+
+def upgrade_link() -> str:
+    """The `Upgrade to Pro` link to the account page, as Rich markup."""
+    return f"[link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]"
+
+
+def upgrade_link_line() -> str:
+    """The `→ Upgrade to Pro` line pointing at the account page, as Rich markup."""
+    return f"  \u2192 {upgrade_link()}"
+
+
 # Free-tier rejections where subscribing genuinely lifts the cap, so the CTA
 # carries the subscribe link. The atom cap is universal (no tier moves it), so
 # it is deliberately excluded — its copy makes no subscribe promise.
@@ -157,6 +181,8 @@ def format_cta(err: FunnelError) -> str:
 
 def retry_text(err: FunnelError) -> str:
     """The plain line for a busy server, a request that took too long, or the client's own timeout."""
+    if err.still_reaching:
+        return err.message
     seconds = err.reset_in if err.reset_in > 0 else DEFAULT_RETRY_AFTER_S
     wait = f"{seconds} second{'' if seconds == 1 else 's'}"
     if err.error == "server_busy":
@@ -204,7 +230,7 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
         "anonymous",
     ): (
         "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}"
-        "Sign in with `ails auth login`, then upgrade to Pro to raise it to 1,200/hr"
+        "Sign in with `ails login`, then upgrade to Pro to raise it to 1,200/hr"
     ),
     ("rate_limit_exceeded", "free"): (
         "Hit the free limit ({err.limit}/hr). {err.reset_phrase}Upgrade to Pro to raise it to 1,200/hr"
@@ -214,7 +240,7 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
     ),
     ("payload_too_large", "anonymous"): (
         "Project too large for anonymous (2 MB cap). "
-        "Sign in with `ails auth login`, then upgrade to Pro to raise it to 20 MB"
+        "Sign in with `ails login`, then upgrade to Pro to raise it to 20 MB"
     ),
     ("payload_too_large", "free"): (
         "Project too large on the free tier (2 MB cap). Upgrade to Pro to raise it to 20 MB"

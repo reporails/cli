@@ -1,7 +1,7 @@
 ---
 title: "Rules CLI"
 description: "Browse the framework rule registry and assemble preflight rule sets for authoring"
-version: "0.6.0"
+version: "0.6.1"
 last_updated: 2026-09-20
 ---
 

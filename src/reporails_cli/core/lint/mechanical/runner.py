@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.discovery.walk import is_under
+from reporails_cli.core.discovery.walk import is_under, shared_dir_listings
 from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, get_target_files
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
@@ -139,6 +139,18 @@ def run_mechanical_checks(
     Returns:
         List of Violation objects for failed checks
     """
+    with shared_dir_listings():
+        return _run_mechanical_checks(rules, target, classified_files, scoped, project_checks)
+
+
+def _run_mechanical_checks(
+    rules: dict[str, Rule],
+    target: Path,
+    classified_files: list[ClassifiedFile],
+    scoped: bool,
+    project_checks: str,
+) -> list[Violation]:
+    """The check loop of `run_mechanical_checks`, run inside its shared directory listings."""
     from reporails_cli.core.platform.policy.matching import match_files
 
     violations: list[Violation] = []

@@ -130,6 +130,7 @@ class CheckPipeline:
     rule_agents: tuple[str, ...] = ()
     lint_result: Any = None
     funnel_error: Any = None
+    notices: tuple[Any, ...] = ()
 
 
 @dataclass
@@ -434,6 +435,7 @@ def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> N
         response = AilsClient().lint(state.pipeline.ruleset_map, local, structural_required, root=state.targets.target)
     state.pipeline.lint_result = response.result if response else None
     state.pipeline.funnel_error = response.funnel_error if response else None
+    state.pipeline.notices = response.notices if response else ()
     state.pipeline.stage_timer.mark("server")
 
 
@@ -453,6 +455,7 @@ def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
         lint_result=lint_result,
         alias_fn=rule_aliases,
         rule_agents=state.pipeline.rule_agents,
+        notices=state.pipeline.notices,
     )
 
 
@@ -521,6 +524,8 @@ def _flow_heal(state: CheckState) -> None:
     if not state.inputs.heal:
         return
     if not state.render.heal_authed:
+        if getattr(state.pipeline.funnel_error, "still_reaching", False):
+            return
         _emit_heal_auth_required(state.targets.output_format)
         return
     heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
@@ -538,6 +543,7 @@ def _flow_heal(state: CheckState) -> None:
         state.scope.effective_agent,
         state.inputs.dry_run,
         state.targets.output_format,
+        state.render.result.notices,
     )
 
 

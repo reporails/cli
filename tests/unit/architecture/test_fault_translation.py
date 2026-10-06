@@ -30,7 +30,6 @@ _FAIL_ON_VIOLATION = True
 _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
     # Legitimate dependency-missing degrades — optional package absent → genuine anonymous.
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_tier_from_config", "ImportError"),
-    ("src/reporails_cli/core/platform/adapters/api_client.py", "_api_key_from_credentials", "ImportError"),
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_lint_remote", "ImportError"),
     # Legitimate crash-firewall — PlatformError surfaced as a WARNING, session continues anonymous.
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_degrade_on_fault", "PlatformError"),

@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
-from reporails_cli.core.platform.utils.utils import glob_matches
+from reporails_cli.core.platform.utils.utils import brace_alternatives, glob_matches
 
 logger = logging.getLogger(__name__)
 
@@ -260,30 +260,94 @@ def _literal_folders(folders: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(out)
 
 
-def walk_glob_matches(root: Path, pattern: str, exclude_dirs: frozenset[str]) -> Iterator[Path]:
-    """Yield every regular file under `root` matching `pattern` anchored at `root` (a leading `/`
-    is dropped), walking only the pattern's literal prefix folder. A symlinked prefix folder is
-    entered; excluded folders are skipped below it. A pattern with no glob character is checked as
-    one path, without a walk."""
-    glob = pattern.lstrip("/")
-    if _blocked_prefix(glob, exclude_dirs):
-        return
-    if not _GLOB_CHARS & set(glob):
+def _folders_ignoring_case(root: Path, prefix: str) -> list[Path]:
+    """The folders under `root` whose names equal the `/`-separated `prefix` segments, compared
+    without regard to case (every differently-cased folder is kept)."""
+    folders = [root]
+    for segment in prefix.split("/") if prefix else ():
+        wanted = segment.lower()
+        folders = [
+            Path(entry.path)
+            for folder in folders
+            for entry in list_dir(str(folder)) or ()
+            if entry.is_dir and entry.name.lower() == wanted
+        ]
+    return folders
+
+
+def _literal_matches(root: Path, glob: str, ignore_case: bool) -> Iterator[Path]:
+    """The regular file a glob-free pattern names (every differently-cased spelling when
+    `ignore_case`), checked without a walk."""
+    if not ignore_case:
         literal = root / glob
         if literal.is_file():
             yield literal
         return
-    prefix = glob_prefix_dir(glob)
-    start = root / prefix if prefix else root
-    if not start.is_dir():
+    prefix, _, leaf = glob.rpartition("/")
+    for folder in _folders_ignoring_case(root, prefix):
+        for entry in list_dir(str(folder)) or ():
+            if entry.is_file and entry.name.lower() == leaf.lower():
+                yield Path(entry.path)
+
+
+def walk_glob_matches(
+    root: Path, pattern: str, exclude_dirs: frozenset[str], *, ignore_case: bool = False
+) -> Iterator[Path]:
+    """Yield every regular file under `root` matching `pattern` anchored at `root` (a leading `/`
+    is dropped), walking only the pattern's literal prefix folder. A symlinked prefix folder is
+    entered; excluded folders are skipped below it. A pattern with no glob character is checked as
+    one path, without a walk. With `ignore_case` the pattern matches names and prefix folders
+    without regard to case."""
+    glob = pattern.lstrip("/")
+    if _blocked_prefix(glob, exclude_dirs):
         return
-    for path in _walk(start, exclude_dirs, None):
-        if glob_matches(path.relative_to(root).as_posix(), glob, anchored=True):
-            yield path
+    if not _GLOB_CHARS & set(glob):
+        yield from _literal_matches(root, glob, ignore_case)
+        return
+    prefix = glob_prefix_dir(glob)
+    if ignore_case:
+        starts = _folders_ignoring_case(root, prefix)
+        glob = glob.lower()
+    else:
+        starts = [root / prefix if prefix else root]
+    leaves = _leaf_globs(glob)
+    for start in starts:
+        if not start.is_dir():
+            continue
+        start_prefix = str(start)
+        start_rel = os.path.relpath(start, root).replace(os.sep, "/")
+        base = "" if start_rel == "." else start_rel + "/"
+        for entry in _walk_files(start, exclude_dirs, report_loops=False):
+            name = entry.name.lower() if ignore_case else entry.name
+            if leaves is not None and not any(glob_matches(name, leaf, anchored=True) for leaf in leaves):
+                continue
+            rel = base + entry.path[len(start_prefix) :].lstrip(os.sep).replace(os.sep, "/")
+            if glob_matches(rel.lower() if ignore_case else rel, glob, anchored=True):
+                yield Path(entry.path)
+
+
+def _leaf_globs(glob: str) -> tuple[str, ...] | None:
+    """The last path segment of each brace alternative of `glob`: a file name must match one of
+    them. `None` when an alternative ends in `**`, which lets any name through."""
+    leaves = tuple(PurePosixPath(alt).name for alt in brace_alternatives(glob))
+    return None if "**" in leaves or "" in leaves else leaves
 
 
 def _walk(root: Path, exclude_dirs: frozenset[str], predicate: Callable[[Path], bool] | None) -> Iterator[Path]:
-    """Shared walker — top-down over listed directories with canonical-path cycle tracking."""
+    """Every regular file under `root` (see `_walk_files`), as a `Path` that passes `predicate`."""
+    for entry in _walk_files(root, exclude_dirs):
+        full_path = Path(entry.path)
+        if predicate is None or predicate(full_path):
+            yield full_path
+
+
+def _walk_files(root: Path, exclude_dirs: frozenset[str], *, report_loops: bool = True) -> Iterator[ListedEntry]:
+    """Shared walker — top-down over listed directories with canonical-path cycle tracking.
+
+    Yields each listed regular file. A plain file is taken from the listing as it stands; a
+    symlink is confirmed to resolve to a file, and a circular one is skipped (and logged unless
+    `report_loops` is False).
+    """
     try:
         root_real = os.path.realpath(root)
     except OSError:
@@ -298,12 +362,11 @@ def _walk(root: Path, exclude_dirs: frozenset[str], predicate: Callable[[Path], 
                 real = _descend_real(entry, exclude_dirs, visited_real, current_real)
                 if real is not None:
                     kept.append((entry.path, real))
-                continue
-            full_path = Path(entry.path)
-            if predicate is not None and not predicate(full_path):
-                continue
-            if full_path.is_file():
-                yield full_path
-            elif entry.is_symlink and has_symlink_loop(full_path):
-                logger.warning("Circular symlink detected: %s — file will be skipped", full_path)
+            elif not entry.is_symlink:
+                if entry.is_file:
+                    yield entry
+            elif Path(entry.path).is_file():
+                yield entry
+            elif report_loops and has_symlink_loop(Path(entry.path)):
+                logger.warning("Circular symlink detected: %s — file will be skipped", entry.path)
         stack.extend(reversed(kept))

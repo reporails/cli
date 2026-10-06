@@ -59,7 +59,7 @@ def step_rewrite_richer(context):
 def step_run(context, command):
     parts = command.split()
     assert parts[0] == "ails", f"scenario drives the ails binary, got {parts[0]!r}"
-    context.result = run_ails(context.project, *parts[1:])
+    context.result = run_ails(context.project, *parts[1:], home=context.home)
     if "json" in parts:
         if not hasattr(context, "runs") or context.runs is None:
             context.runs = []

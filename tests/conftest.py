@@ -11,17 +11,14 @@ from pathlib import Path
 
 import pytest
 
-# Tests never download the model set: a runner without the in-tree model (CI)
-# runs without it, as `ails check` does offline. Set at import so `ails`
-# subprocesses inherit it; a test of the download path unsets it.
-os.environ.setdefault("AILS_MODEL_OFFLINE", "1")
-# Tests never reach the hosted diagnostics service: with `AILS_SERVER_URL` unset, every
-# `ails check` a test runs would be sent there. A closed local port fails fast, so a check
-# runs its offline path; a test that needs a diagnostics endpoint sets its own.
-os.environ.setdefault("AILS_SERVER_URL", "http://127.0.0.1:9")
+from tests.suite_env import suite_env
 
-
-CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  # mirrors helpers._is_ci
+# Set at import so import-time reads and `ails` subprocesses see the suite environment too. The CI
+# markers stay: they are how pytest itself detects a CI run, and each test drops them below.
+_SUITE_ENV = suite_env(os.environ, drop_ci=False)
+for _name in set(os.environ) - set(_SUITE_ENV):
+    del os.environ[_name]
+os.environ.update(_SUITE_ENV)
 
 
 @pytest.fixture(autouse=True)
@@ -49,9 +46,9 @@ def _isolate_home(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    # A CI runner's variables flip the default output to JSON; tests that care set them.
-    for var in CI_ENV_VARS:
-        monkeypatch.delenv(var, raising=False)
+    # A CI runner's markers never decide a test result; a test that cares sets its own.
+    for name in set(os.environ) - set(suite_env(os.environ)):
+        monkeypatch.delenv(name)
     monkeypatch.setattr(bootstrap, "REPORAILS_HOME", home / ".reporails")
     yield
     try:

@@ -47,6 +47,12 @@ def _preflight_url(error: str, tier: str) -> str:
     return f"https://reporails.com/contact/{_CONTACT_SUFFIXES[error]}?utm_source=cli"
 
 
+def parse_retry_after(raw: str | None) -> int | None:
+    """The whole seconds in a `Retry-After` header value; None when absent or not a number."""
+    text = (raw or "").strip()
+    return int(text) if text.isdigit() else None
+
+
 def parse_error_body(status_code: int, body_text: str, retry_after: str | None = None) -> FunnelError | None:
     """Parse a 4xx body, or a 503/504 body naming a busy or slow server, into a FunnelError.
 
@@ -72,7 +78,7 @@ def parse_error_body(status_code: int, body_text: str, retry_after: str | None =
         return _unknown_error(status_code, message, str(body.get("tier", "")))
     reset_in = int(body.get("reset_in") or 0)
     if error in RETRYABLE_ERRORS:
-        header = int(retry_after) if retry_after and retry_after.strip().isdigit() else 0
+        header = parse_retry_after(retry_after) or 0
         reset_in = reset_in or header or DEFAULT_RETRY_AFTER_S
     return FunnelError(
         error=error,

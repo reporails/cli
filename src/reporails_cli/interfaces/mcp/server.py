@@ -22,19 +22,16 @@ _torch_blocker.install()
 import asyncio  # noqa: E402
 import json  # noqa: E402
 import threading  # noqa: E402
-import time  # noqa: E402
-from collections.abc import AsyncIterator  # noqa: E402
-from contextlib import asynccontextmanager  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
-from mcp.server.mcpserver import MCPServer  # noqa: E402
 from mcp.types import CallToolResult, TextContent, ToolAnnotations  # noqa: E402
 
 from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels  # noqa: E402
 from reporails_cli.interfaces.mcp import snapshots  # noqa: E402
 from reporails_cli.interfaces.mcp.feedback import file_feedback  # noqa: E402
+from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity  # noqa: E402
 from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief  # noqa: E402
 from reporails_cli.interfaces.mcp.remedy_brief_paging import page_reply  # noqa: E402
 from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool  # noqa: E402
@@ -58,48 +55,6 @@ from reporails_cli.interfaces.mcp.validate_targets import (  # noqa: E402
 # Circuit breaker: content-aware loop detection.
 _MAX_CALLS = 10
 _MAX_UNCHANGED = 2
-
-# Idle model release: the MCP server is long-lived and loads its models on the
-# first `validate`. Without a release path they stay resident (~GBs) for the
-# server's whole lifetime. After AILS_MCP_IDLE_S seconds (default 30 min; 0
-# disables) with no tool call, drop them; the next call lazy-reloads.
-_DEFAULT_MCP_IDLE_S = 1800
-_last_activity = time.monotonic()
-
-
-def _parse_mcp_idle_timeout() -> int | None:
-    from reporails_cli.core.platform.config.bootstrap import parse_idle_timeout_env
-
-    return parse_idle_timeout_env("AILS_MCP_IDLE_S", _DEFAULT_MCP_IDLE_S)
-
-
-async def _idle_watchdog() -> None:
-    """Unload resident models once after an idle window; re-arm on new activity."""
-    idle_s = _parse_mcp_idle_timeout()
-    if idle_s is None:
-        return
-    from reporails_cli.core.mapper.models import get_models
-
-    poll = min(60, idle_s)
-    unloaded = False
-    while True:
-        await asyncio.sleep(poll)
-        is_idle = time.monotonic() - _last_activity > idle_s
-        if is_idle and not unloaded:
-            get_models().unload()
-            unloaded = True
-        elif not is_idle:
-            unloaded = False
-
-
-@asynccontextmanager
-async def _lifespan(_server: MCPServer) -> AsyncIterator[None]:
-    """Run the idle-unload watchdog for the server's lifetime."""
-    watchdog = asyncio.create_task(_idle_watchdog())
-    try:
-        yield
-    finally:
-        watchdog.cancel()
 
 
 @dataclass
@@ -146,12 +101,6 @@ def _state_key(path: str, tokens: tuple[str, ...]) -> str:
     targeted `validate` and a whole-project one keep separate counters and workflows."""
     key = str(Path(path).resolve())
     return f"{key}|targets={','.join(tokens)}" if tokens else key
-
-
-def _touch_activity() -> None:
-    """Mark a tool call for the idle watchdog. Fires on every tool invocation."""
-    global _last_activity
-    _last_activity = time.monotonic()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -420,7 +369,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
 from reporails_cli import __version__ as _ails_version  # noqa: E402
 from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer  # noqa: E402
 
-server = StrictArgsMCPServer("ails", version=_ails_version, lifespan=_lifespan)
+server = StrictArgsMCPServer("ails", version=_ails_version, lifespan=lifespan)
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
@@ -463,13 +412,15 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
         " `preservation` block saying whether the rewrite kept everything the file had, and a"
         " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
         " introduced listed first."
+        " `notices`, when present, are messages for the user about their account (for example a"
+        " failed payment): show each one to the user."
         " Use when user asks to check, validate, or improve instruction files."
     ),
     annotations=_READ_ONLY,
 )
 async def validate(path: str = ".", full: bool = False, targets: list[str] | None = None) -> CallToolResult:
     """Validate instruction files; see the tool description for the response shape."""
-    _touch_activity()
+    touch_activity()
     return _result(await _run_validate(path, bool(full), targets))
 
 
@@ -494,7 +445,7 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
 )
 async def remedy_brief(path: str, location: int, targets: list[str] | None = None, part: int = 1) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
-    _touch_activity()
+    touch_activity()
     return _result(await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, int(part)))
 
 
@@ -513,7 +464,7 @@ async def remedy_brief(path: str, location: int, targets: list[str] | None = Non
 )
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
-    _touch_activity()
+    touch_activity()
     return _result(preflight_tool(capability, agent))
 
 
@@ -534,7 +485,7 @@ async def explain(rule_id: str) -> str:
     output mirror. The unknown-rule error is serialized to a JSON string so a
     caller still reads one shape.
     """
-    _touch_activity()
+    touch_activity()
     result = explain_tool(rule_id)
     return result if isinstance(result, str) else json.dumps(result)
 

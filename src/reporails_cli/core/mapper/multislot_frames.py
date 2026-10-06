@@ -17,6 +17,7 @@ shared decode primitives this module imports).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from reporails_cli.core.mapper.bio_graphs import _head_a_path, _head_b_path
@@ -38,9 +39,11 @@ from reporails_cli.core.mapper.bio_tagger import (
     _enc_b,
     _extract_pass,
     _extract_pass_from_states,
+    _head_session,
     _softmax_rows,
 )
 
+_BUCKET_SIZE = 32
 _CHARGE_OUT = ["logits_charge", "logits_modality"]
 _SPAN_OUT = ["logits_subject", "logits_target", "logits_action", "logits_scope"]
 
@@ -249,21 +252,47 @@ def _decode_logits(text: str) -> _Decoded | None:
     return (merged, word_spans, covered) if merged is not None else None
 
 
-def _decode_logits_batch(texts: list[str]) -> list[_Decoded | None]:
-    """Batched :func:`_decode_logits` — ONE encoder forward per encoder over the whole batch.
+def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] | None = None) -> list[_Decoded | None]:
+    """Batched :func:`_decode_logits`: each distinct text is decoded once, one pool task per bucket.
 
-    The encoder forwards run once over the padded batch instead of once per
-    sentence; the heads and the decode stay per-text. Bit-identical to the per-text path (padding is attention-masked).
+    ``progress(done, total)`` counts distinct texts and is called from the calling
+    thread. Results equal the per-text path for every input position.
     """
-    states_a = _enc_a().token_states_batch(texts)
-    states_b = _enc_b().token_states_batch(texts)
-    decoded: list[_Decoded | None] = []
-    for text, (ha, oa), (hb, ob) in zip(texts, states_a, states_b, strict=True):
-        out, word_spans, covered = _extract_pass_from_states(ha, oa, text, _head_a_path(), _CHARGE_OUT)
-        out_b, _, _ = _extract_pass_from_states(hb, ob, text, _head_b_path(), _SPAN_OUT)
-        merged = _merge(out, out_b)
-        decoded.append((merged, word_spans, covered) if merged is not None else None)
-    return decoded
+    if not texts:
+        return []
+    from reporails_cli.core.mapper.encode_pool import run_buckets
+
+    enc_a, enc_b = _enc_a(), _enc_b()
+    head_a, head_b = _head_a_path(), _head_b_path()
+    _head_session(str(head_a))
+    _head_session(str(head_b))
+    buckets, slot = enc_a.plan_buckets(texts, _BUCKET_SIZE)
+
+    def _task(bucket: list[str]) -> Callable[[], list[_Decoded | None]]:
+        def run() -> list[_Decoded | None]:
+            decoded: list[_Decoded | None] = []
+            for text, (ha, oa), (hb, ob) in zip(
+                bucket, enc_a.forward_bucket(bucket), enc_b.forward_bucket(bucket), strict=True
+            ):
+                out, word_spans, covered = _extract_pass_from_states(ha, oa, text, head_a, _CHARGE_OUT)
+                out_b, _, _ = _extract_pass_from_states(hb, ob, text, head_b, _SPAN_OUT)
+                merged = _merge(out, out_b)
+                decoded.append((merged, word_spans, covered) if merged is not None else None)
+            return decoded
+
+        return run
+
+    total = sum(len(b) for b in buckets)
+    finished = 0
+
+    def _done(i: int) -> None:
+        nonlocal finished
+        finished += len(buckets[i])
+        if progress is not None:
+            progress(finished, total)
+
+    flat = [d for part in run_buckets([_task(b) for b in buckets], _done) for d in part]
+    return [flat[i] for i in slot]
 
 
 def _frames_from_decoded(decoded: _Decoded | None, text: str) -> list[AtomTuple]:

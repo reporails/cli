@@ -577,24 +577,23 @@ def print_scorecard(
     # One line per run for an unpaid tier, in place of any per-finding remedy
     # (the reply carries none for an anonymous or free run) — keyed on whether a
     # key is held, not on the reported tier: a signed-in free user told to run
-    # `ails auth login` is sent to a dead end. Never claims a fix for every
+    # `ails login` is sent to a dead end. Never claims a fix for every
     # finding — only that Pro adds the remedies and the order to apply them.
     refused = getattr(result, "server_error", None) is not None
+    from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINES, UNPAID_PITCH_LINE, upgrade_link_line
+
     if tier == "free" and not refused:
         from reporails_cli.core.platform.adapters.api_client import has_api_key
-        from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
 
         console.print()
-        console.print("  Pro adds the remedies and the order to apply them.")
+        console.print(UNPAID_PITCH_LINE)
         if has_api_key():
-            console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
+            console.print(upgrade_link_line())
         else:
-            console.print("  \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro")
+            console.print("  \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:
         console.print()
-        console.print("  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]")
-        console.print(
-            "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files.[/dim]"
-        )
+        for line in PRO_HEAL_FOOTER_LINES:
+            console.print(line)
 
     console.print()

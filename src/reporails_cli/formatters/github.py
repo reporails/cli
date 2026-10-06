@@ -104,6 +104,15 @@ def format_result(
     return "\n".join(parts)
 
 
+def _notice_annotations(notices: Any) -> list[str]:
+    """One `::warning` (a `warn` notice) or `::notice` line per account notice."""
+    return [
+        f"::{'warning' if n.level == 'warn' else 'notice'} title=reporails::"
+        + _escape_workflow_data(f"{n.text} {n.url}".strip())
+        for n in notices
+    ]
+
+
 _FINDING_COMMANDS = {"error": "error", "info": "notice"}
 
 
@@ -159,6 +168,7 @@ def format_combined_annotations(
         title = _escape_workflow_property(f"reporails: server {server_error['error']}")
         message = _escape_workflow_data(server_error["message"])
         lines.append(f"::warning title={title}::{message}")
+    lines.extend(_notice_annotations(result.notices))
     for f in result.findings:
         command = _FINDING_COMMANDS.get(f.severity, "warning")
         # Canonical rule id, matching the trailing JSON summary's `rule` field.

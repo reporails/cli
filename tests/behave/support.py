@@ -10,16 +10,33 @@ every assertion is against the real binary's stdout / exit code / persisted stat
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import subprocess
 from pathlib import Path
 
+from tests.suite_env import suite_env
+
 # The real console script (`[project.scripts] ails = …:app`), installed in the
 # venv `uv run behave` runs in. None when not installed — a step asserts on it so
 # a missing binary fails loudly, never passes vacuously.
 AILS_BIN = shutil.which("ails")
+
+
+def scenario_home(tmpdir: Path, real_models: Path) -> Path:
+    """A home of the scenario's own, so the developer's sign-in and config never reach the binary.
+
+    The downloaded model set is shared into it when the machine has one, so no scenario downloads.
+    """
+    home = tmpdir / "home"
+    models = home / ".reporails" / "cache" / "models"
+    models.parent.mkdir(parents=True, exist_ok=True)
+    if real_models.is_dir():
+        with contextlib.suppress(OSError):  # no symlink privilege (Windows): the run works offline without the model
+            models.symlink_to(real_models, target_is_directory=True)
+    return home
 
 
 def build_project(root: Path) -> Path:
@@ -43,17 +60,28 @@ def write_claude(project: Path, content: str) -> Path:
     return target
 
 
-def run_ails(project: Path, *args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+def run_ails(
+    project: Path, *args: str, home: Path, timeout: int = 120, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run ``ails <args>`` with ``project`` as cwd; return the CompletedProcess.
 
     Runs from the project dir with no target so `ails` scans the whole project —
     the way a user invokes it in their repo. Forces a wide, color-free render so
     literal token assertions are not split by ANSI styling or column wrapping.
     Does NOT assert on the return code — a scenario testing `--strict` needs the
-    non-zero exit, so the exit-code assertion belongs in the step.
+    non-zero exit, so the exit-code assertion belongs in the step. `env` adds to the
+    environment the binary runs in. `home` is the scenario's own home: `HOME` and `USERPROFILE` always point there.
+    No ambient `AILS_*` setting reaches the binary: it starts from `suite_env`.
     """
     assert AILS_BIN is not None, "`ails` console script not on PATH (run via `uv run behave`)"
-    env = {**os.environ, "COLUMNS": "200", "NO_COLOR": "1"}
+    run_env = {
+        **suite_env(os.environ),
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "COLUMNS": "200",
+        "NO_COLOR": "1",
+        **(env or {}),
+    }
     return subprocess.run(
         [str(AILS_BIN), *args],
         cwd=str(project),
@@ -61,7 +89,7 @@ def run_ails(project: Path, *args: str, timeout: int = 120) -> subprocess.Comple
         text=True,
         encoding="utf-8",
         timeout=timeout,
-        env=env,
+        env=run_env,
     )
 
 

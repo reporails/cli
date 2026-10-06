@@ -19,4 +19,4 @@ def test_heal_auth_required_never_implies_a_paid_plan(capsys: pytest.CaptureFixt
     output = capsys.readouterr().out
     assert "applying fixes is not" not in output.lower()
     assert "free account is enough" in output.lower()
-    assert "ails auth login" in output.lower()
+    assert "ails login" in output.lower()

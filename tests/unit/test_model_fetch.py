@@ -245,7 +245,6 @@ def test_env_override_wins_over_default_host(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_default_host_used_when_no_override(monkeypatch):
-    monkeypatch.delenv("AILS_MODEL_URL", raising=False)
     # The dev script's variable does not redirect the runtime fetch.
     monkeypatch.setenv("AILS_MODEL_BUCKET_URL", "https://bucket.example/models")
     assert model_fetch._base_url("m9") == "https://models.reporails.com/m9"
@@ -267,7 +266,6 @@ def _fetch_headers(tmp_path, monkeypatch) -> dict | None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_api_key_sent_to_default_host(tmp_path, monkeypatch):
-    monkeypatch.delenv("AILS_MODEL_URL", raising=False)
     monkeypatch.delenv("AILS_SERVER_URL", raising=False)
     monkeypatch.setenv("AILS_API_KEY", "rr_test_key")
     assert _fetch_headers(tmp_path, monkeypatch) == {"Authorization": "Bearer rr_test_key"}
@@ -286,7 +284,6 @@ def test_api_key_never_sent_to_a_mirror(tmp_path, monkeypatch):
 @pytest.mark.subsys_map
 def test_key_for_another_server_not_sent(tmp_path, monkeypatch):
     # A key paired with a local/staging diagnostics server stays off the default model host.
-    monkeypatch.delenv("AILS_MODEL_URL", raising=False)
     monkeypatch.setenv("AILS_SERVER_URL", "http://localhost:8001")
     monkeypatch.setenv("AILS_API_KEY", "rr_dev_key")
     assert _fetch_headers(tmp_path, monkeypatch) == {}

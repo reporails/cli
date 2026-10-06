@@ -473,3 +473,21 @@ class TestTrailingJsonElapsedMs:
         output = github_formatter.format_combined_annotations(_combined_result())
         data = json.loads(output.strip().split("\n")[-1])
         assert "elapsed_ms" not in data
+
+
+class TestCombinedAnnotationsNotices:
+    """Account notices reach CI as workflow commands, every run."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_notices_are_workflow_commands(self) -> None:
+        from reporails_cli.core.platform.dto.diagnostics import Notice
+
+        notices = (
+            Notice("pay", "warn", "Payment failed\nfix it 100%", "https://example.test/pay"),
+            Notice("pro", "info", "Pro ends soon", ""),
+        )
+        output = github_formatter.format_combined_annotations(_combined_result(notices=notices))
+        lines = output.split("\n")
+        assert lines[0] == "::warning title=reporails::Payment failed%0Afix it 100%25 https://example.test/pay"
+        assert lines[1] == "::notice title=reporails::Pro ends soon"

@@ -19,7 +19,6 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
-    monkeypatch.delenv("AILS_API_KEY", raising=False)
     monkeypatch.setattr("reporails_cli.core.platform.config.bootstrap.REPORAILS_HOME", home / ".reporails")
     root = tmp_path / "proj"
     (root / ".claude").mkdir(parents=True)
@@ -439,3 +438,20 @@ def test_funnel_envelope_names_retryable_and_retry_after() -> None:
     assert bare["funnel"]["retry_after"] == 10
     limit = _attach_funnel({}, FunnelError(error="rate_limit_exceeded"))
     assert limit["funnel"]["retryable"] is False and limit["funnel"]["retry_after"] is None
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_still_reaching_reply_is_not_cached_and_never_trips_the_breaker(
+    project: Path, pipeline_replies: list[dict[str, Any]]
+) -> None:
+    from reporails_cli.core.platform.dto.diagnostics import STILL_REACHING_MESSAGE, FunnelError
+    from reporails_cli.interfaces.mcp.tools import _attach_funnel
+
+    err = FunnelError(error="invalid_api_key", status=401, message=STILL_REACHING_MESSAGE)
+    pipeline_replies.extend(_attach_funnel({"files": {}, "stats": {}}, err) for _ in range(3))
+    for _ in range(3):
+        reply = _call(project)
+        assert reply.get("error") is None
+        assert STILL_REACHING_MESSAGE in reply["funnel"]["message"]
+    assert pipeline_replies == []

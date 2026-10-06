@@ -401,8 +401,11 @@ def _dispatch_output(
             )
         )
         return
+    from reporails_cli.core.platform.adapters.notices_seen import due_notices
+
+    # Only the notices due today are shown; JSON above carries them all.
     print_text_result(
-        result_for_output,
+        replace(result_for_output, notices=due_notices(result_for_output.notices)),
         elapsed_ms,
         ascii_mode,
         verbose,
@@ -433,6 +436,7 @@ def _run_heal_pass(
     effective_agent: str,
     dry_run: bool,
     output_format: str,
+    notices: Any = (),
 ) -> None:
     """Apply mechanical fixes and collect section suggestions using the already-built map."""
     from reporails_cli.core.lint.suppression import suppressed_lines
@@ -454,14 +458,13 @@ def _run_heal_pass(
     mech = _apply_mechanical_fixes(ruleset_map, target, dry_run, show, console, instruction_files, suppressed)
     suggested = _collect_section_suggestions(target, instruction_files, ruleset_map, effective_agent, show, console)
     heal_ms = round((time.perf_counter() - heal_start) * 1000, 1)
-    _output_heal_results(mech, suggested, dry_run, heal_ms, output_format, console)
+    _output_heal_results(mech, suggested, dry_run, heal_ms, output_format, console, notices)
 
 
 # A key the server rejected, quoted back to the caller as `FunnelError.error`.
 # `--strict` treats either as a hard failure regardless of local findings: a CI job
 # passing a revoked or malformed key must not read as a clean run just because
 # the tree it happened to check carries no findings of its own.
-_AUTH_REJECTED_ERRORS = frozenset({"invalid_api_key", "missing_or_invalid_api_key"})
 
 
 def _should_exit_strict(
@@ -473,9 +476,9 @@ def _should_exit_strict(
 ) -> bool:
     if not strict:
         return False
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
+    from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 
-    if isinstance(funnel_error, FunnelError) and funnel_error.error in _AUTH_REJECTED_ERRORS:
+    if isinstance(funnel_error, FunnelError) and funnel_error.error in AUTH_REJECTED_ERRORS:
         return True
     if capability_paths:
         # Key the scope set with the SAME normalization the display filter uses

@@ -33,11 +33,6 @@ from reporails_cli.core.platform.observability.stage_timer import get_stage_time
 
 logger = logging.getLogger(__name__)
 
-# Atom-count bound for one charge-decode chunk. Big enough to fill the encode
-# thread pool (>> the 32-atom bucket), small enough that `progress` ticks several
-# times through charge classification instead of sitting silent on one whole-run batch.
-_CHARGE_PROGRESS_CHUNK = 256
-
 
 def _translate_atom_lines(
     atoms: list[Atom],
@@ -345,13 +340,8 @@ def _apply_charge_stage(
     the model fingerprint). No-op when the bundled classification models are
     not available, so atoms keep the tokenize-time lexical charge.
 
-    Fresh files are charged in atom-count-bounded chunks (``_CHARGE_PROGRESS_CHUNK``)
-    rather than one whole-run batch: each chunk is still large enough to fill the
-    encode thread pool, and charging in chunks lets ``progress`` emit a live counter
-    through this step — the heavy phase that runs after the per-element classify
-    counter completes, where the spinner would otherwise sit silent. The decode is
-    per-text and each file is rebuilt on its own, so the chunked result is
-    byte-identical to charging the whole run at once.
+    All fresh files go through one batched call; ``progress`` receives a live
+    ``done/total`` counter.
     """
     if _charge_applier() is None:
         return all_atoms, atoms_needing_embed
@@ -369,25 +359,11 @@ def _apply_charge_stage(
     fresh_lists = [groups[i][1] for i in fresh_positions]
     total = sum(len(g) for g in fresh_lists)
 
-    rebuilt_fresh: list[list[Atom]] = []
-    done = 0
-    chunk: list[list[Atom]] = []
-    chunk_atoms = 0
-    for g in fresh_lists:
-        chunk.append(g)
-        chunk_atoms += len(g)
-        if chunk_atoms >= _CHARGE_PROGRESS_CHUNK:
-            rebuilt_fresh.extend(apply_multislot_groups(chunk))
-            done += chunk_atoms
-            if progress is not None and total:
-                progress(f"Analyzing instructions: {done}/{total}")
-            chunk = []
-            chunk_atoms = 0
-    if chunk:
-        rebuilt_fresh.extend(apply_multislot_groups(chunk))
-        done += chunk_atoms
-        if progress is not None and total:
-            progress(f"Analyzing instructions: {done}/{total}")
+    def _report(done: int, count: int) -> None:
+        if progress is not None:
+            progress(f"Analyzing instructions: {done}/{count}")
+
+    rebuilt_fresh = apply_multislot_groups(fresh_lists, _report) if total else []
 
     remap = dict(zip(fresh_positions, rebuilt_fresh, strict=True))
 

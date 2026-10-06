@@ -28,7 +28,7 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 
 if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.diagnostics import Diagnostic, LintResult, RulesetReport
+    from reporails_cli.core.platform.dto.diagnostics import Diagnostic, LintResult, Notice, RulesetReport
 
 
 @dataclass
@@ -58,6 +58,7 @@ class AssembleInputs:
     lint_result: LintResult | None
     alias_fn: Callable[[str], set[str]]
     rule_agents: tuple[str, ...] = ()
+    notices: tuple[Notice, ...] = ()
 
 
 def assemble_result(inp: AssembleInputs) -> Any:
@@ -104,6 +105,7 @@ def assemble_result(inp: AssembleInputs) -> Any:
         tier=lint_result.tier if lint_result else "",
     )
     result = _drop_dependent(result, inp)
+    result = replace(result, notices=inp.notices)
     # The workflow goes on first, so the suppressions the author wrote apply to what it lists too.
     if lint_result is not None and lint_result.workflow is not None:
         result = replace(result, workflow=lint_result.workflow)

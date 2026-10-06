@@ -6,6 +6,9 @@ All functions are pure (no I/O) except where noted.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
+import os
 import re
 from fnmatch import fnmatchcase
 from functools import lru_cache
@@ -13,6 +16,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # Use the C YAML loader when available (faster than the pure Python loader)
 try:
@@ -390,3 +395,33 @@ def normalize_rule_id(rule_id: str) -> str:
         Uppercase rule ID
     """
     return rule_id.upper()
+
+
+def json_object(text: str) -> dict[str, Any]:
+    """The JSON object `text` holds; empty when it is not JSON or not an object.
+
+    For a reply body read by its fields: a body without them (a proxy's HTML page, a bare
+    list) names nothing, and the caller classifies the reply by its status.
+    """
+    body: object = None
+    try:
+        body = json.loads(text)
+    except (ValueError, TypeError):
+        logger.debug("Not a JSON body: %r", text[:200])
+    return body if isinstance(body, dict) else {}
+
+
+def write_json_atomic(path: Path, data: Any) -> None:
+    """Write `data` as JSON to `path` in one step (I/O).
+
+    The JSON goes to a temp file beside `path` and `os.replace` swaps it in, so a
+    reader sees the old file or the new one, never a half-written one. Creates the
+    parent directory. Raises `OSError` when the write fails; the temp file is removed.
+    """
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)

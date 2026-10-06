@@ -78,7 +78,7 @@ def check(
         False,
         "--heal",
         "--fix",
-        help="Apply auto-fixes after validation. Needs an account — run `ails auth login` first.",
+        help="Apply auto-fixes after validation. Needs an account — run `ails login` first.",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing."),
     cwd: bool = typer.Option(False, "--cwd", help="With --heal: opt into rewriting the whole project."),
@@ -168,14 +168,13 @@ def main() -> None:
 import reporails_cli.interfaces.cli.checks_command  # noqa: E402  # list_checks helper backing rules_command
 import reporails_cli.interfaces.cli.commands  # noqa: E402  # Register commands
 import reporails_cli.interfaces.cli.install  # noqa: E402  # Register install command
+import reporails_cli.interfaces.cli.login_command  # noqa: E402  # Register login and logout
 import reporails_cli.interfaces.cli.rules_command  # noqa: E402  # Register `ails rules`
 import reporails_cli.interfaces.cli.test_command  # noqa: F401, E402  # Register test command
-from reporails_cli.interfaces.cli.auth_command import auth_app  # noqa: E402
 from reporails_cli.interfaces.cli.config_command import config_app  # noqa: E402
 from reporails_cli.interfaces.cli.daemon_cmd import daemon_app  # noqa: E402
 from reporails_cli.interfaces.cli.stopwords_command import stopwords_app  # noqa: E402
 
-app.add_typer(auth_app, rich_help_panel="Account & setup")
 app.add_typer(config_app, rich_help_panel="Account & setup")
 app.add_typer(daemon_app, hidden=True)
 app.add_typer(stopwords_app, hidden=True)

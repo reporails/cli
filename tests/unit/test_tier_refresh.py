@@ -12,21 +12,19 @@ from unittest.mock import patch
 import httpx
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from reporails_cli.core.platform.adapters.api_client import DEFAULT_SERVER_URL, AilsClient
+from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
-from reporails_cli.interfaces.cli.auth_command import auth_app
 from tests.unit.test_api_client import _make_map, _payload_with_file
 
-runner = CliRunner()
 _ROOT = Path("/tmp/reporails-test-scan-root")
 
 
 def _seed(home: Path, tier: str, key: str = "rr_stored") -> Path:
     path = home / ".reporails" / "credentials.yml"
     path.parent.mkdir(parents=True)
-    path.write_text(yaml.dump({"api_key": key, "github_login": "octocat", "tier": tier}), encoding="utf-8")
+    path.write_text(yaml.dump({"api_key": key, "account": "octocat", "tier": tier}), encoding="utf-8")
     path.chmod(0o600)
     return path
 
@@ -68,12 +66,8 @@ def _lint(
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     if dev_mode:
         monkeypatch.setenv("AILS_DEV_MODE", "1")
-    else:
-        monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)
-    else:
-        monkeypatch.delenv("AILS_API_KEY", raising=False)
     with (
         patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
         patch("httpx.post", return_value=reply),
@@ -90,12 +84,10 @@ def _stored(path: Path) -> dict[str, str]:
 def test_free_to_pro_refreshes_stored_tier_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     path = _seed(tmp_path, "free")
     _lint(monkeypatch, tmp_path, _Ok("pro"))
-    assert _stored(path) == {"api_key": "rr_stored", "github_login": "octocat", "tier": "pro"}
+    assert _stored(path) == {"api_key": "rr_stored", "account": "octocat", "tier": "pro"}
     if sys.platform != "win32":  # POSIX mode bits are not enforced on Windows
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    out = runner.invoke(auth_app, ["status"]).output
-    assert "Tier: pro" in out
-    assert "as of your last check or sign-in" in out
+    assert effective_tier() == "pro"
 
 
 @pytest.mark.unit
@@ -104,7 +96,7 @@ def test_pro_to_free_refreshes_stored_tier(monkeypatch: pytest.MonkeyPatch, tmp_
     path = _seed(tmp_path, "pro")
     _lint(monkeypatch, tmp_path, _Ok("free"))
     assert _stored(path)["tier"] == "free"
-    assert "Tier: free" in runner.invoke(auth_app, ["status"]).output
+    assert effective_tier() == "free"
 
 
 @pytest.mark.unit
@@ -196,7 +188,7 @@ def test_refresh_never_overwrites_a_concurrent_sign_in(monkeypatch: pytest.Monke
     def _login_lands_between_reads(text: str) -> Any:
         calls["n"] += 1
         if calls["n"] == 2:  # the re-read just before the replace
-            return {"api_key": "rr_new", "github_login": "other", "tier": "free"}
+            return {"api_key": "rr_new", "account": "other", "tier": "free"}
         return real(text)
 
     monkeypatch.setattr(owner.yaml, "safe_load", _login_lands_between_reads)

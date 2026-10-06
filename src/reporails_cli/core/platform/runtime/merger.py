@@ -18,6 +18,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     FileAnalysis,
     FunnelError,
     LocalTier,
+    Notice,
     QualityResult,
     RemediationWorkflow,
     RulesetReport,
@@ -120,6 +121,8 @@ class CombinedResult:
     # The composable remediation HOW; `None` offline, on the anon tier, or
     # from a pre-0.6.0 server. Carried through so JSON / MCP consumers can render it.
     workflow: RemediationWorkflow | None = None
+    # The messages the server sent with its reply, for every output surface; empty offline.
+    notices: tuple[Notice, ...] = ()
     # The diagnostics outcome when the request was rejected, timed out, or never
     # reached the service (a `FunnelError`); `None` when a response arrived normally
     # or no request was made. Carries the reason so JSON / github output can name it
@@ -430,6 +433,28 @@ def _compute_stats(
     )
 
 
+def _merged_items(
+    m_probe_findings: list[LocalFinding],
+    client_check_findings: list[LocalFinding],
+    server_report: RulesetReport | None,
+    norm_fn: Any,
+) -> tuple[list[FindingItem], int, int]:
+    """Every finding as one sorted list, with the M-probe and client-check counts.
+
+    A local finding the server also reports at the same (file, line, rule) is dropped.
+    """
+    items: list[FindingItem] = []
+    server_keys: set[tuple[str, int, str]] = set()
+    if server_report is not None:
+        items, server_keys = _collect_server_diagnostics(server_report, norm_fn)
+    m_items, m_count = _merge_local_findings(m_probe_findings, server_keys, "m_probe", norm_fn)
+    c_items, c_count = _merge_local_findings(client_check_findings, server_keys, "client_check", norm_fn)
+    items.extend(m_items)
+    items.extend(c_items)
+    items.sort(key=lambda f: (f.file, _SEVERITY_ORDER.get(f.severity, 9), f.line))
+    return items, m_count, c_count
+
+
 def merge_results(
     m_probe_findings: list[LocalFinding],
     client_check_findings: list[LocalFinding],
@@ -459,19 +484,7 @@ def merge_results(
     def _norm(fp: str) -> str:
         return normalize_finding_path(fp, project_root)
 
-    items: list[FindingItem] = []
-    server_keys: set[tuple[str, int, str]] = set()
-
-    if server_report is not None:
-        server_items, server_keys = _collect_server_diagnostics(server_report, _norm)
-        items.extend(server_items)
-
-    m_items, m_count = _merge_local_findings(m_probe_findings, server_keys, "m_probe", _norm)
-    c_items, c_count = _merge_local_findings(client_check_findings, server_keys, "client_check", _norm)
-    items.extend(m_items)
-    items.extend(c_items)
-    items.sort(key=lambda f: (f.file, _SEVERITY_ORDER.get(f.severity, 9), f.line))
-
+    items, m_count, c_count = _merged_items(m_probe_findings, client_check_findings, server_report, _norm)
     cross_file = tuple(
         replace(cf, file_1=_norm(cf.file_1), file_2=_norm(cf.file_2))
         for cf in (server_report.cross_file if server_report else ())

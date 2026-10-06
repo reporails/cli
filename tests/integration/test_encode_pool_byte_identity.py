@@ -57,9 +57,9 @@ def test_pooled_encode_byte_identical_to_serial(monkeypatch: pytest.MonkeyPatch,
     pooled_worker_counts: list[int] = []
     real_run_buckets = pool_mod.run_buckets
 
-    def _spy(tasks):  # type: ignore[no-untyped-def]
+    def _spy(tasks, on_done=None):  # type: ignore[no-untyped-def]
         pooled_worker_counts.append((pool_mod.encode_pool_workers(), len(tasks)))
-        return real_run_buckets(tasks)
+        return real_run_buckets(tasks, on_done)
 
     # bio_tagger and onnx_embedder import run_buckets locally at call time, so
     # patching the module attribute is seen by both call sites.

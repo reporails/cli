@@ -14,7 +14,8 @@ Usage:
   ails check [TARGET...] [OPTIONS]       Validate and score your instruction files
   ails explain RULE_ID                   Show what a rule checks, by ID or slug
   ails rules [list|agents|capabilities]  Browse the framework rule registry
-  ails auth [login|status|token|logout]  Authenticate with the Reporails platform
+  ails login                             Sign this machine in through your browser
+  ails logout                            Sign this machine out
   ails config [get|set|list]             Get and set project configuration
   ails install                           Put ails on PATH, print how to connect your agent
   ails update                            Update ails to the latest version

@@ -14,17 +14,44 @@ from typing import Any
 
 # The tier vocabulary, in ONE place. Every surface that has to answer "is this
 # session entitled?" (the scorecard banner, the funnel CTA, the contact-link
-# gate, `ails auth status`) reads these sets instead of re-spelling the member
+# gate, the sign-in report) reads these sets instead of re-spelling the member
 # names.
 # A tier string that is in NEITHER set is unknown, not unentitled: the reader
-# decides what to do with it (the banner treats it as entitled, `auth status`
+# decides what to do with it (the banner treats it as entitled, the sign-in report
 # declines to echo it).
 ENTITLED_TIERS = frozenset({"pro", "team"})
 UNENTITLED_TIERS = frozenset({"anonymous", "free"})
+# The tiers an account can hold: what a sign-in or a key check may name.
+ACCOUNT_TIERS = (ENTITLED_TIERS | UNENTITLED_TIERS) - {"anonymous"}
+
+
+def tier_label(tier: str) -> str:
+    """`Pro` for an account tier (Free, Pro, Team); "" for anything else."""
+    return tier.capitalize() if tier in ACCOUNT_TIERS else ""
+
+
+# A short message for the user, as the server sends it. `level` is one of NOTICE_LEVELS;
+# `url` is "" when the notice links nowhere.
+NOTICE_LEVELS = frozenset({"info", "warn"})
+
+
+@dataclass(frozen=True)
+class Notice:
+    """One message for the user: an id (stable across runs), a level, the text, an optional link."""
+
+    id: str
+    level: str
+    text: str
+    url: str = ""
+
 
 # Failures that clear by themselves: a busy server, a request that took too long, and the
 # client's own timeout. They read as "try again", never as a bug.
 RETRYABLE_ERRORS = frozenset({"server_busy", "scoring_timeout", "timeout"})
+# The 401 tokens: the server did not accept the key it was sent.
+AUTH_REJECTED_ERRORS = frozenset({"invalid_api_key", "missing_or_invalid_api_key"})
+# Shown instead of "the sign-in ended" when a key made moments ago is rejected.
+STILL_REACHING_MESSAGE = "Your sign-in is still reaching the server — try again in a minute."
 # Error tokens kept verbatim (with the body's own tier / limits / message). Anything else
 # collapses to `unknown_error`, which renders the bug-report link. The 401 tokens are listed
 # so an auth rejection renders its sign-in message.
@@ -36,8 +63,7 @@ KNOWN_ERRORS = frozenset(
         "file_cap_exceeded",
         "scoring_limit_exceeded",
         "project_limit_reached",
-        "invalid_api_key",
-        "missing_or_invalid_api_key",
+        *AUTH_REJECTED_ERRORS,
         *RETRYABLE_ERRORS,
     }
 )
@@ -308,8 +334,16 @@ class FunnelError:
 
     @property
     def retryable(self) -> bool:
-        """True for a failure that clears on its own, so the user is told to try again."""
-        return self.error in RETRYABLE_ERRORS
+        """True for a failure that clears on its own, so the user is told to try again.
+
+        A key rejected moments after sign-in (the still-reaching message) clears the same way.
+        """
+        return self.error in RETRYABLE_ERRORS or self.still_reaching
+
+    @property
+    def still_reaching(self) -> bool:
+        """True when a just-made key was rejected and the sign-in has not reached the server yet."""
+        return self.error in AUTH_REJECTED_ERRORS and self.message == STILL_REACHING_MESSAGE
 
     @property
     def reset_phrase(self) -> str:
@@ -327,3 +361,5 @@ class LintResponse:
 
     result: Any = None
     funnel_error: FunnelError | None = None
+    # The messages the server sent with this reply, success or error; empty when it sent none.
+    notices: tuple[Notice, ...] = ()

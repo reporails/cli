@@ -156,3 +156,18 @@ def test_output_heal_results_text_reports_no_fixable_issues_when_nothing_found()
     joined = "\n".join(console.lines)
     assert "No fixable issues found." in joined
     assert "Sections to add" not in joined
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_output_heal_results_json_carries_notices() -> None:
+    from reporails_cli.core.platform.dto.diagnostics import Notice
+
+    notice = Notice("pay", "warn", "Payment failed", "https://example.test/pay")
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        _output_heal_results([], [], True, 1.0, "json", _Console(), (notice,))
+    data = json.loads(buf.getvalue())
+    assert data["notices"] == [
+        {"id": "pay", "level": "warn", "text": "Payment failed", "url": "https://example.test/pay"}
+    ]

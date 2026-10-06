@@ -12,7 +12,7 @@ from pathlib import Path
 
 import typer
 
-from reporails_cli.interfaces.cli.auth_command import effective_tier
+from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.interfaces.cli.helpers import app, console
 
 logger = logging.getLogger(__name__)
@@ -140,12 +140,15 @@ def _codex_home() -> Path:
 
 
 def _engine_spec(version: str) -> str:
-    """The engine pin the plugin starts with: this release line, e.g. `>=0.6.0,<0.7`."""
-    match = re.match(r"(\d+)\.(\d+)", version)
+    """The engine pin the plugin starts with: this release or newer within its line, e.g. `>=0.6.1,<0.7`.
+
+    A suffix (`rc1`, `.dev3+g…`) is dropped; a bare `X.Y` counts as `X.Y.0`.
+    """
+    match = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", version)
     if not match:
         return "reporails-cli"
-    major, minor = int(match.group(1)), int(match.group(2))
-    return f"reporails-cli>={major}.{minor}.0,<{major}.{minor + 1}"
+    major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+    return f"reporails-cli>={major}.{minor}.{patch},<{major}.{minor + 1}"
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
@@ -388,6 +391,11 @@ def refresh_agent_plugins() -> None:
         steps = _agent_steps(agent, exe, source, state, refresh=True)
         if _run_steps(label, steps, manual, "refresh"):
             console.print(f"  [green]{label} plugin refreshed[/green]")
+    names = ", ".join(_MANUAL_AGENTS)
+    console.print(
+        f"  [dim]{names} install the plugin by hand: to update them, run git pull in the plugin clone,"
+        " then install again as `ails install` shows.[/dim]"
+    )
 
 
 def _warm_engine() -> None:
@@ -451,7 +459,7 @@ def install(
 
     signed_in = has_api_key()
     if not signed_in:
-        console.print("\nSign in with [bold]ails auth login[/bold] to use heal (Pro).")
+        console.print("\nSign in with [bold]ails login[/bold] to use heal (Pro).")
     if not in_place["claude"]:
         console.print("\n[green]Done.[/green] Claude Code's plugin steps are printed above.")
         return

@@ -1,4 +1,4 @@
-# Reporails CLI (v0.6.0)
+# Reporails CLI (v0.6.1)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Antigravity, Claude, Codex, Copilot, and Cursor.**
 > 
@@ -42,7 +42,7 @@ Reporails — Diagnostics
   ⚠  .claude/rules/testing.md ↔ CLAUDE.md — 3 overlaps
   ⚠  .claude/rules/testing.md ↔ CLAUDE.md — 1 repetition
 
-  Line-level detail → sign in with ails auth login, then upgrade to Pro
+  Line-level detail → sign in with ails login, then upgrade to Pro
 
   ── Summary ─────────────────────────────────────────
 
@@ -70,7 +70,7 @@ Reporails — Diagnostics
   1 element pair overlaps in topic — keep each topic in one file
 
   Pro adds the remedies and the order to apply them.
-  → sign in with ails auth login, then upgrade to Pro
+  → sign in with ails login, then upgrade to Pro
 ```
 
 ## Install permanently
@@ -85,11 +85,11 @@ Puts `ails` on your PATH, installs the reporails plugin into Claude Code and Cod
 
 ## Free vs Pro
 
-Anonymous mode needs no account, and signing in is free. Anonymous and signed-in free accounts share the same rate and payload caps and the same full diagnosis — every finding, the score, and the local deterministic fixes — and signing in additionally lets you apply fixes with `ails check --heal`. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies (what to change, where, and how), the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
+Anonymous mode needs no account, and signing in is free. Anonymous and signed-in free accounts share the same rate and payload caps and the same full diagnosis — every finding, the score, and the local deterministic fixes — and signing in additionally lets you apply fixes with `ails check --heal`. `ails check` also shows messages about your account (a failed payment, Pro ending) when there are any. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies (what to change, where, and how), the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
 
 ```bash
-# GitHub Device Flow - authorize in browser
-ails auth login
+# Sign in through your browser; one sign-in per machine
+ails login
 ```
 
 Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md).
@@ -99,14 +99,14 @@ Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/do
 Run on every PR so instruction-quality regressions (vague or buried instructions, oversized files, weak reinforcement, instructions repeated across files) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-- uses: reporails/cli/action@0.6.0
+- uses: reporails/cli/action@0.6.1
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - a Pro key unlocks the full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires
     min-score: "7.0"                            # exit 1 if Quality < 7.0
 ```
 
-Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
+Create an API key on [reporails.com/account](https://reporails.com/account) and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
 
 The action keeps the analysis model (~275 MB) in the repository's Actions cache: the first run downloads it, and later runs restore it instead of downloading it again, even when the check fails. Running `ails` directly in a workflow? See [Configuration → Caching the model in CI](https://github.com/reporails/cli/blob/main/docs/configuration.md#caching-the-model-in-ci).
 

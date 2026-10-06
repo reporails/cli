@@ -15,6 +15,7 @@ bundled this step does nothing and every atom keeps its tokenize-time charge.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 
 from reporails_cli.core.mapper.bio_tagger import (
@@ -375,7 +376,9 @@ def apply_multislot(atoms: list[Atom]) -> list[Atom]:
     return _reconstruct_atoms(texts, plan, decoded)
 
 
-def apply_multislot_groups(groups: list[list[Atom]]) -> list[list[Atom]]:
+def apply_multislot_groups(
+    groups: list[list[Atom]], progress: Callable[[int, int], None] | None = None
+) -> list[list[Atom]]:
     """Charge-decode several atom groups in ONE batch, each group rebuilt on its own.
 
     Same result as calling :func:`apply_multislot` on each group in turn, but the
@@ -384,7 +387,8 @@ def apply_multislot_groups(groups: list[list[Atom]]) -> list[list[Atom]]:
     with only a few buckets. Each group's reconstruction (frames, floors, position
     re-index) still runs over its own atoms alone, and the decode is per-text and
     order-preserving (padding is attention-masked), so each group's output is
-    byte-identical to the per-group call. No-ops (returns the input) when the charge
+    byte-identical to the per-group call. ``progress(done, total)`` counts the
+    distinct texts done so far. No-ops (returns the input) when the charge
     model is not bundled.
     """
     if not multislot_available():
@@ -395,5 +399,5 @@ def apply_multislot_groups(groups: list[list[Atom]]) -> list[list[Atom]]:
         texts, plan = _decode_plan(group)
         plans.append((texts, plan, len(all_texts)))
         all_texts.extend(texts)
-    decoded = _decode_logits_batch(all_texts)
+    decoded = _decode_logits_batch(all_texts, progress)
     return [_reconstruct_atoms(texts, plan, decoded[offset : offset + len(texts)]) for texts, plan, offset in plans]

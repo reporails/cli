@@ -321,7 +321,7 @@ class TestPreflightOversized:
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
     def test_anonymous_cta_omits_upgrade_url(self) -> None:
-        # The anonymous CTA's actionable instruction is `ails auth login`
+        # The anonymous CTA's actionable instruction is `ails login`
         # in the message itself; no landing-page URL is appended.
         payload = {"files": [], "atoms": [{}] * (UNIVERSAL_ATOM_CAP + 1)}
         err = preflight_oversized(payload, has_api_key=False)
@@ -362,7 +362,7 @@ class TestAuthErrorTokensSurviveParsing:
 
     An error token the client does not recognize collapses to `unknown_error`, which
     renders the bug-report deep link. An auth rejection routed there tells the user to
-    file a bug instead of running `ails auth login`.
+    file a bug instead of running `ails login`.
     """
 
     @pytest.mark.unit
@@ -461,7 +461,7 @@ class TestFormatCta:
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
     def test_anonymous_rate_limit_no_url(self, no_key: None) -> None:
-        # In 0.5.6 the anonymous CTA emits no URL — `ails auth login` is the
+        # In 0.5.6 the anonymous CTA emits no URL — `ails login` is the
         # action and lives in the message. Renderer must omit the arrow.
         err = FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5)
         cta = format_cta(err)
@@ -480,25 +480,25 @@ class TestFormatCta:
         cta = format_cta(err)
         assert "Anonymous limit hit" in cta
         assert "Try again in ~30 min" in cta
-        assert "ails auth login" in cta
+        assert "ails login" in cta
 
     @pytest.mark.unit
     @pytest.mark.subsys_funnel
     def test_anonymous_cta_attributes_the_cap_raise_to_pro_not_to_login(self, no_key: None) -> None:
         # Anonymous and free share identical caps — signing in raises nothing.
         # Both anonymous templates must name Pro as the actor that lifts the cap,
-        # with `ails auth login` offered only as the account step before it.
-        # Reddens if the copy returns to "Run `ails auth login` to raise it 40x".
+        # with `ails login` offered only as the account step before it.
+        # Reddens if the copy returns to "Run `ails login` to raise it 40x".
         rate = format_cta(FunnelError(error="rate_limit_exceeded", tier="anonymous", limit=5))
         payload = format_cta(FunnelError(error="payload_too_large", tier="anonymous", limit=2 * 1024 * 1024))
         for cta in (rate, payload):
             assert "upgrade to Pro" in cta
-            assert "ails auth login" in cta
-            assert cta.index("ails auth login") < cta.index("upgrade to Pro")
+            assert "ails login" in cta
+            assert cta.index("ails login") < cta.index("upgrade to Pro")
         # A `free` wire tier with no key held renders the same keyless copy —
         # the caps are identical, so the wire label alone must not flip it.
         free_wire = format_cta(FunnelError(error="rate_limit_exceeded", tier="free", limit=5))
-        assert "ails auth login" in free_wire
+        assert "ails login" in free_wire
         # The gain is named as the number Pro gives (1,200/hr), not a multiplier.
         assert rate.endswith("upgrade to Pro to raise it to 1,200/hr")
         assert "40x" not in rate
@@ -596,7 +596,7 @@ class TestFileCapCta:
 
 class TestFreeTierCta:
     """A `tier == "free"` body is a keyed-but-unentitled principal. Its CTA must
-    be subscribe/upgrade, NEVER `ails auth login` (the login dead-end a signed-in
+    be subscribe/upgrade, NEVER `ails login` (the login dead-end a signed-in
     user cannot act on). These reddens if the free row is dropped (CTA falls to
     the bare error name) or mis-aliased to `anonymous` (the login copy returns).
     """
@@ -607,7 +607,7 @@ class TestFreeTierCta:
         err = FunnelError(error="rate_limit_exceeded", tier="free", limit=5)
         cta = format_cta(err)
         assert "Upgrade to Pro" in cta
-        assert "ails auth login" not in cta
+        assert "ails login" not in cta
         assert "5/hr" in cta
         # The arrow links to the account page (the subscribe/trial action surface).
         assert "[link=https://reporails.com/account?utm_source=cli]" in cta
@@ -629,9 +629,9 @@ class TestFreeTierCta:
 
         assert keyed != keyless
         assert "Upgrade to Pro" in keyed
-        assert "ails auth login" not in keyed
+        assert "ails login" not in keyed
         assert _SUBSCRIBE_URL.split("?")[0] in keyed
-        assert "ails auth login" in keyless
+        assert "ails login" in keyless
         assert "→" not in keyless
 
     @pytest.mark.unit
@@ -649,7 +649,7 @@ class TestFreeTierCta:
         cta = format_cta(err)
         assert "Upgrade to Pro" in cta
         assert "20 MB" in cta
-        assert "ails auth login" not in cta
+        assert "ails login" not in cta
         assert "[link=https://reporails.com/account?utm_source=cli]" in cta
 
     @pytest.mark.unit
@@ -659,7 +659,7 @@ class TestFreeTierCta:
         # no upgrade promise and appends no misleading link.
         err = FunnelError(error="atom_cap_exceeded", tier="free", limit=10_000, size=12_396)
         cta = format_cta(err)
-        assert "ails auth login" not in cta
+        assert "ails login" not in cta
         assert "Upgrade to Pro" not in cta
         assert "→" not in cta
         assert "12,396" in cta
@@ -693,7 +693,7 @@ class TestFreeTierCta:
         )
         cta = format_cta(err)
         assert "Your trial has ended" in cta
-        assert "ails auth login" not in cta
+        assert "ails login" not in cta
         assert "[link=https://reporails.com/account?utm_source=cli]" in cta
 
 

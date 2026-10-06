@@ -61,14 +61,8 @@ jobs:
       - name: Integration tests (incl. slow install/self-update path)
         run: uv run poe test_integration_all
 
-      # Hermetic: no network. AILS_SERVER_URL points nowhere and
-      # AILS_MODEL_OFFLINE skips the model fetch — these scenarios guard
-      # discovery, classification, and formatter shape, none of which need
-      # the diagnostics server or the model.
+      # The suite sets its own hermetic environment.
       - name: Behavioral tests
-        env:
-          AILS_SERVER_URL: "http://127.0.0.1:9"
-          AILS_MODEL_OFFLINE: "1"
         run: uv run poe test_behave
 
       # Smoke tests intentionally not gated in CI yet — environment-dependent.
