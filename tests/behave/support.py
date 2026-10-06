@@ -43,17 +43,20 @@ def write_claude(project: Path, content: str) -> Path:
     return target
 
 
-def run_ails(project: Path, *args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+def run_ails(
+    project: Path, *args: str, timeout: int = 120, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run ``ails <args>`` with ``project`` as cwd; return the CompletedProcess.
 
     Runs from the project dir with no target so `ails` scans the whole project —
     the way a user invokes it in their repo. Forces a wide, color-free render so
     literal token assertions are not split by ANSI styling or column wrapping.
     Does NOT assert on the return code — a scenario testing `--strict` needs the
-    non-zero exit, so the exit-code assertion belongs in the step.
+    non-zero exit, so the exit-code assertion belongs in the step. `env` adds to the
+    environment the binary runs in (a scenario points `HOME` at its own temp dir).
     """
     assert AILS_BIN is not None, "`ails` console script not on PATH (run via `uv run behave`)"
-    env = {**os.environ, "COLUMNS": "200", "NO_COLOR": "1"}
+    run_env = {**os.environ, "COLUMNS": "200", "NO_COLOR": "1", **(env or {})}
     return subprocess.run(
         [str(AILS_BIN), *args],
         cwd=str(project),
@@ -61,7 +64,7 @@ def run_ails(project: Path, *args: str, timeout: int = 120) -> subprocess.Comple
         text=True,
         encoding="utf-8",
         timeout=timeout,
-        env=env,
+        env=run_env,
     )
 
 

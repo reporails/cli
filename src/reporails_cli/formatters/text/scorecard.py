@@ -582,12 +582,12 @@ def print_scorecard(
     refused = getattr(result, "server_error", None) is not None
     if tier == "free" and not refused:
         from reporails_cli.core.platform.adapters.api_client import has_api_key
-        from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
+        from reporails_cli.formatters.text.funnel_cta import UNPAID_PITCH_LINE, upgrade_link_line
 
         console.print()
-        console.print("  Pro adds the remedies and the order to apply them.")
+        console.print(UNPAID_PITCH_LINE)
         if has_api_key():
-            console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
+            console.print(upgrade_link_line())
         else:
             console.print("  \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:

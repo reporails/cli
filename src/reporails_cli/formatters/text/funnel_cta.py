@@ -20,6 +20,15 @@ BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
 # the account page, where the subscribe action lives.
 _SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
 
+# The one line an unpaid run adds in place of per-finding remedies, and the link that follows it.
+UNPAID_PITCH_LINE = "  Pro adds the remedies and the order to apply them."
+
+
+def upgrade_link_line() -> str:
+    """The `→ Upgrade to Pro` line pointing at the account page, as Rich markup."""
+    return f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]"
+
+
 # Free-tier rejections where subscribing genuinely lifts the cap, so the CTA
 # carries the subscribe link. The atom cap is universal (no tier moves it), so
 # it is deliberately excluded — its copy makes no subscribe promise.

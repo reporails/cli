@@ -1,0 +1,420 @@
+"""`ails login` and `ails logout`: the real app, with the website, the server and the browser stubbed."""
+
+from __future__ import annotations
+
+import stat
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+from typer.testing import CliRunner
+
+from reporails_cli.core.platform.config.credentials import credentials_path, read_credentials
+from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
+from reporails_cli.core.platform.dto.diagnostics import Notice
+from reporails_cli.core.platform.dto.sign_in import KeyCheck, PollOutcome, SignedIn, SignInGrant
+from reporails_cli.interfaces.cli import login_command
+from reporails_cli.interfaces.cli.main import app
+
+runner = CliRunner(env={"COLUMNS": "200"})  # no line wrapping inside the asserted sentences
+_GRANT = SignInGrant("dev-1", "ABCD-EFGH", "https://reporails.com/oauth/device?user_code=ABCD-EFGH", 600, 5)
+
+
+def _signed_in(tier: str = "free", notices: tuple[Notice, ...] = ()) -> PollOutcome:
+    return PollOutcome("signed_in", SignedIn("tok-new", "octo", tier, "laptop", notices))
+
+
+class _Site:
+    """The website, the diagnostics server and the clock as the command sees them."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+        self.polls: list[PollOutcome] = []
+        self.poll_calls = 0
+        self.start_error: Exception | None = None
+        self.check = KeyCheck("unavailable", reason="offline")
+        self.checked_keys: list[str] = []
+        self.revoked: list[str] = []
+        self.revoke_error: Exception | None = None
+        self.opened: list[str] = []
+        monkeypatch.setattr(login_command.time, "sleep", self._sleep)
+        monkeypatch.setattr(login_command.time, "monotonic", lambda: self.now)
+        monkeypatch.setattr(login_command, "start_sign_in", self._start)
+        monkeypatch.setattr(login_command, "poll_sign_in", self._poll)
+        monkeypatch.setattr(login_command, "revoke_sign_in", self._revoke)
+        monkeypatch.setattr(login_command, "check_api_key", self._check)
+        monkeypatch.setattr(login_command.webbrowser, "open", lambda url: self.opened.append(url) or True)
+        monkeypatch.delenv("AILS_API_KEY", raising=False)
+        monkeypatch.delenv("AILS_PLATFORM_URL", raising=False)
+
+    def _sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+    def _start(self, site: str, machine: str) -> SignInGrant:
+        if self.start_error:
+            raise self.start_error
+        return _GRANT
+
+    def _poll(self, site: str, device_code: str) -> PollOutcome:
+        self.poll_calls += 1
+        return self.polls.pop(0) if self.polls else PollOutcome("pending")
+
+    def _revoke(self, site: str, token: str) -> None:
+        self.revoked.append(token)
+        if self.revoke_error:
+            raise self.revoke_error
+
+    def _check(self, key: str) -> KeyCheck:
+        self.checked_keys.append(key)
+        return self.check
+
+
+def _terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the command see a terminal on stdout (CliRunner's stream is not one)."""
+    monkeypatch.setattr(login_command, "sys", SimpleNamespace(stdout=SimpleNamespace(isatty=lambda: True)))
+
+
+@pytest.fixture
+def site(monkeypatch: pytest.MonkeyPatch) -> _Site:
+    return _Site(monkeypatch)
+
+
+def _store(record: dict[str, str]) -> Path:
+    path = credentials_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump(record), encoding="utf-8")
+    return path
+
+
+_LOGIN_RECORD = {"api_key": "tok-old", "account": "octo", "tier": "free", "signed_in_at": "2026-10-01T00:00:00+00:00"}
+
+
+# --- login: a fresh sign-in -------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_saves_the_credential_and_reports(site: _Site) -> None:
+    site.polls = [_signed_in("free")]
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert "Signed in as @octo (Free)" in result.output
+    assert _GRANT.verification_url in result.output
+    assert "ABCD-EFGH" in result.output
+    stored = yaml.safe_load(credentials_path().read_text(encoding="utf-8"))
+    assert {k: stored[k] for k in ("api_key", "account", "tier")} == {
+        "api_key": "tok-new",
+        "account": "octo",
+        "tier": "free",
+    }
+    assert stored["signed_in_at"].endswith("+00:00")
+    if sys.platform != "win32":  # POSIX mode bits are not enforced on Windows
+        assert stat.S_IMODE(credentials_path().stat().st_mode) == 0o600
+    assert read_credentials()["api_key"] == "tok-new"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_polls_pending_then_slow_down_then_success(site: _Site) -> None:
+    site.polls = [PollOutcome("pending"), PollOutcome("slow_down"), PollOutcome("retry"), _signed_in("pro")]
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert site.sleeps == [5, 5, 10, 10]  # the wait grows by five seconds after a slow_down
+    assert "Signed in as @octo (Pro)" in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_opens_the_browser_only_on_a_terminal(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    site.polls = [_signed_in()]
+    runner.invoke(app, ["login"])
+    assert site.opened == []  # CliRunner's stdout is not a terminal
+    credentials_path().unlink()  # signed out again
+    _terminal(monkeypatch)
+    site.polls = [_signed_in()]
+    assert runner.invoke(app, ["login"]).exit_code == 0
+    assert site.opened == [_GRANT.verification_url]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_ignores_a_browser_that_will_not_open(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fail(url: str) -> bool:
+        raise login_command.webbrowser.Error("no browser")
+
+    _terminal(monkeypatch)
+    monkeypatch.setattr(login_command.webbrowser, "open", _fail)
+    site.polls = [_signed_in()]
+    assert runner.invoke(app, ["login"]).exit_code == 0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        (PollOutcome("denied"), "Sign-in was denied in the browser. Nothing was saved."),
+        (PollOutcome("expired"), "The sign-in link expired. Run `ails login` again. Nothing was saved."),
+        (PollOutcome("failed", code="server_error"), "Sign-in failed (server_error). Nothing was saved."),
+    ],
+)
+def test_login_that_ends_saves_nothing(site: _Site, outcome: PollOutcome, message: str) -> None:
+    site.polls = [PollOutcome("pending"), outcome]
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 1
+    assert message in result.output
+    assert not credentials_path().exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_stops_at_the_deadline(site: _Site) -> None:
+    result = runner.invoke(app, ["login"])  # the website never answers anything but pending
+    assert result.exit_code == 1
+    assert "The sign-in link expired. Run `ails login` again. Nothing was saved." in result.output
+    assert site.poll_calls == 120  # 600 s deadline at one ask every 5 s
+    assert not credentials_path().exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_start_failure_names_what_to_do(site: _Site) -> None:
+    site.start_error = PlatformUnavailableError("down")
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 1
+    assert "Could not reach reporails.com" in result.output
+    assert "nothing was saved. Try again shortly." in result.output
+    assert site.poll_calls == 0
+    assert not credentials_path().exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_ctrl_c_cancels_without_saving(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _interrupt(site_url: str, device_code: str) -> PollOutcome:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(login_command, "poll_sign_in", _interrupt)
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 130
+    assert "Sign-in cancelled. Nothing was saved." in result.output
+    assert not credentials_path().exists()
+
+
+# --- login: what the report says --------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_free_login_prints_the_upgrade_lines(site: _Site) -> None:
+    site.polls = [_signed_in("free")]
+    out = runner.invoke(app, ["login"]).output
+    assert "Pro adds the remedies and the order to apply them." in out
+    assert "Upgrade to Pro" in out
+    assert "/reporails:ails heal" not in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(("tier", "label"), [("pro", "Pro"), ("team", "Team")])
+def test_entitled_login_prints_the_pro_lines_and_no_pitch(site: _Site, tier: str, label: str) -> None:
+    site.polls = [_signed_in(tier)]
+    out = runner.invoke(app, ["login"]).output
+    assert f"Signed in as @octo ({label})" in out
+    assert "/reporails:ails heal" in out
+    assert "Pro adds the remedies" not in out
+    assert "Upgrade to Pro" not in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_an_unknown_tier_adds_no_parenthetical(site: _Site) -> None:
+    site.polls = [_signed_in("beta")]
+    out = runner.invoke(app, ["login"]).output
+    assert "Signed in as @octo" in out
+    assert "(Beta)" not in out
+    assert "(beta)" not in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_prints_notices_escaped(site: _Site) -> None:
+    notice = Notice("n1", "info", "Read [bold]this[/bold] first", "https://reporails.com/n")
+    site.polls = [_signed_in("free", (notice,))]
+    out = runner.invoke(app, ["login"]).output
+    assert "Read [bold]this[/bold] first" in out
+    assert "https://reporails.com/n" in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_an_account_name_is_never_read_as_markup(site: _Site) -> None:
+    site.polls = [PollOutcome("signed_in", SignedIn("tok-new", "a[/]b", "free"))]
+    assert "@a[/]b" in runner.invoke(app, ["login"]).output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_notes_a_different_env_key(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AILS_API_KEY", "rr_other")
+    site.polls = [_signed_in()]
+    out = runner.invoke(app, ["login"]).output
+    assert "AILS_API_KEY is set in this shell and is used instead of your sign-in;" in out
+    assert "unset it to use the sign-in." in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_says_nothing_about_an_env_key_that_is_the_credential(
+    site: _Site, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AILS_API_KEY", "tok-new")
+    site.polls = [_signed_in()]
+    assert "AILS_API_KEY" not in runner.invoke(app, ["login"]).output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_does_not_check_the_new_credential_with_the_server(site: _Site) -> None:
+    site.polls = [_signed_in()]
+    runner.invoke(app, ["login"])
+    assert site.checked_keys == []
+
+
+# --- login: already signed in -----------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_when_signed_in_and_accepted_echoes_the_server_tier(site: _Site) -> None:
+    _store(_LOGIN_RECORD)
+    site.check = KeyCheck("accepted", tier="pro", notices=(Notice("n2", "warn", "Heads up", ""),))
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert "Signed in as @octo (Pro)" in result.output  # the server's tier, not the stored "free"
+    assert "Heads up" in result.output
+    assert site.checked_keys == ["tok-old"]
+    assert site.poll_calls == 0
+    assert read_credentials()["api_key"] == "tok-old"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_when_signed_in_without_an_account_name(site: _Site) -> None:
+    _store({"api_key": "tok-old", "tier": "free"})
+    site.check = KeyCheck("accepted", tier="free")
+    assert "Signed in on this machine (Free)" in runner.invoke(app, ["login"]).output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_when_signed_in_notes_a_different_env_key(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    _store(_LOGIN_RECORD)
+    monkeypatch.setenv("AILS_API_KEY", "rr_other")
+    site.check = KeyCheck("accepted", tier="free")
+    assert "AILS_API_KEY is set in this shell" in runner.invoke(app, ["login"]).output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_when_the_stored_sign_in_was_rejected_signs_in_again(site: _Site) -> None:
+    _store(_LOGIN_RECORD)
+    site.check = KeyCheck("rejected", error="invalid_api_key")
+    site.polls = [_signed_in("pro")]
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert "Your sign-in on this machine ended; signing in again." in result.output
+    assert "Signed in as @octo (Pro)" in result.output
+    assert read_credentials()["api_key"] == "tok-new"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_when_the_server_is_unreachable_keeps_the_stored_sign_in(site: _Site) -> None:
+    _store(_LOGIN_RECORD)
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert "Signed in as @octo (Free)" in result.output
+    assert "(could not reach the server to confirm)" in result.output
+    assert site.poll_calls == 0
+    assert read_credentials()["api_key"] == "tok-old"
+
+
+# --- logout -----------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_logout_revokes_a_sign_in_made_by_login_then_deletes_the_file(site: _Site) -> None:
+    path = _store(_LOGIN_RECORD)
+    result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0
+    assert site.revoked == ["tok-old"]
+    assert "Logged out on this machine." in result.output
+    assert "could not be revoked" not in result.output
+    assert not path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_logout_never_sends_an_older_key_file_to_the_server(site: _Site) -> None:
+    path = _store({"api_key": "rr_ci_key", "github_login": "octocat", "tier": "pro"})
+    result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0
+    assert site.revoked == []  # that key may be the account's CI key
+    assert "Logged out on this machine." in result.output
+    assert not path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_logout_with_the_server_down_still_deletes_the_file_and_says_so(site: _Site) -> None:
+    site.revoke_error = PlatformUnavailableError("down")
+    path = _store(_LOGIN_RECORD)
+    result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0
+    assert not path.exists()
+    assert "Logged out on this machine." in result.output
+    assert "The sign-in could not be revoked on the server; revoke it on reporails.com/account." in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_logout_when_not_signed_in(site: _Site) -> None:
+    result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0
+    assert "Not signed in on this machine." in result.output
+    assert "AILS_API_KEY" not in result.output
+    assert site.revoked == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_logout_names_an_env_key_that_still_authenticates(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AILS_API_KEY", "rr_env")
+    out = runner.invoke(app, ["logout"]).output
+    assert "Not signed in on this machine." in out
+    assert "AILS_API_KEY" in out
+    path = _store(_LOGIN_RECORD)
+    result = runner.invoke(app, ["logout"])
+    assert not path.exists()
+    assert "Logged out on this machine." in result.output
+    assert "still authenticates ails commands" in result.output
+    assert login_command.env_api_key() == "rr_env"  # never touched
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_the_old_auth_group_is_gone() -> None:
+    assert runner.invoke(app, ["auth", "login"]).exit_code == 2
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_login_and_logout_are_listed_in_account_and_setup() -> None:
+    panels = {c.name: c.rich_help_panel for c in app.registered_commands}
+    assert panels["login"] == panels["logout"] == "Account & setup"

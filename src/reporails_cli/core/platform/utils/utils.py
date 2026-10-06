@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from fnmatch import fnmatchcase
@@ -15,6 +16,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # Use the C YAML loader when available (faster than the pure Python loader)
 try:
@@ -392,6 +395,20 @@ def normalize_rule_id(rule_id: str) -> str:
         Uppercase rule ID
     """
     return rule_id.upper()
+
+
+def json_object(text: str) -> dict[str, Any]:
+    """The JSON object `text` holds; empty when it is not JSON or not an object.
+
+    For a reply body read by its fields: a body without them (a proxy's HTML page, a bare
+    list) names nothing, and the caller classifies the reply by its status.
+    """
+    body: object = None
+    try:
+        body = json.loads(text)
+    except (ValueError, TypeError):
+        logger.debug("Not a JSON body: %r", text[:200])
+    return body if isinstance(body, dict) else {}
 
 
 def write_json_atomic(path: Path, data: Any) -> None:

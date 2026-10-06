@@ -1,6 +1,14 @@
 # Unreleased
 
+### Breaking changes
+
+- `ails auth login`, `ails auth logout`, `ails auth status` and `ails auth token` are replaced by `ails login` and `ails logout`. Upgrading from 0.6.0: run `ails update`, then `ails login`.
+- CI and the GitHub Action use an API key created on reporails.com/account, set as `AILS_API_KEY` (or the Action's `api-key` input); `ails auth token` is gone.
+
 ### Added
+
+- `ails login` signs this machine in to your account through your browser: it prints a link and a short code, opens the browser when it can, and finishes when you approve. One sign-in per machine, lasting a year, and your plan (Free or Pro) comes from your account, so a second machine or a CI key never affects the others. On a machine that is already signed in it shows who is signed in and on which plan, and signs in again when that sign-in has ended.
+- `ails logout` signs only this machine out, and still removes the local sign-in when the website cannot be reached.
 
 ### Changed
 

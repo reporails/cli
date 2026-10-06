@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from reporails_cli.core.platform.config import credentials
+from reporails_cli.core.platform.config.credentials import write_credentials_file
 from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError
 
 NOW = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
@@ -117,3 +121,54 @@ def test_signed_in_recently_honours_within_s(home: Path) -> None:
     _store(home, f"api_key: rr_k\nsigned_in_at: '{(NOW - timedelta(seconds=300)).isoformat()}'\n")
     assert credentials.signed_in_recently("rr_k", now=NOW) is False
     assert credentials.signed_in_recently("rr_k", within_s=600, now=NOW) is True
+
+
+# --- write_credentials_file: permissions and atomic replace (moved from the retired auth command tests) ---
+
+
+def _record() -> dict[str, str]:
+    return {"api_key": "KEY", "account": "octocat", "tier": "free"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_write_creates_nested_dirs_and_block_style_yaml(tmp_path: Path) -> None:
+    path = tmp_path / "a" / "b" / ".reporails" / "credentials.yml"
+    assert write_credentials_file(path, _record()) is True
+    text = path.read_text(encoding="utf-8")
+    assert "api_key: KEY" in text
+    assert "{" not in text
+    assert write_credentials_file(path, _record()) is True  # an existing directory is fine
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits not enforced on Windows")
+def test_write_is_owner_only_from_the_first_byte(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = tmp_path / ".reporails" / "credentials.yml"
+    modes: list[int] = []
+    real_open = os.open
+
+    def _spy(target: object, flags: int, mode: int = 0o777) -> int:
+        modes.append(mode)
+        return real_open(target, flags, mode)
+
+    monkeypatch.setattr(os, "open", _spy)
+    write_credentials_file(path, _record())
+    assert modes == [0o600]
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits not enforced on Windows")
+def test_write_narrows_an_existing_wider_file(tmp_path: Path) -> None:
+    path = tmp_path / ".reporails" / "credentials.yml"
+    path.parent.mkdir(parents=True)
+    path.write_text("api_key: OLD\n", encoding="utf-8")
+    path.chmod(0o644)
+    write_credentials_file(path, {**_record(), "api_key": "NEWKEY"})
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert "NEWKEY" in path.read_text(encoding="utf-8")
+    assert [p.name for p in path.parent.iterdir()] == ["credentials.yml"]
