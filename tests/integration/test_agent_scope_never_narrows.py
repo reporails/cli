@@ -93,7 +93,7 @@ def test_scope_equals_the_full_union_never_narrowed_by_distinctiveness(
 
     assert effective_agent == "claude"
     assert mixed is False
-    rel = {str(f.relative_to(project)) for f in scope}
+    rel = {f.relative_to(project).as_posix() for f in scope}
     expected = {".claude/rules/style.md"}
     expected |= {f".claude/skills/{name}/SKILL.md" for name in _SKILLS}
     expected |= {f".agents/skills/{name}/SKILL.md" for name in _SKILLS}
