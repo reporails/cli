@@ -14,6 +14,7 @@ from reporails_cli.core.platform.adapters.api_client import _user_agent
 from reporails_cli.core.platform.adapters.notices_wire import notices_from_list
 from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
 from reporails_cli.core.platform.dto.sign_in import PollOutcome, PollStatus, SignedIn, SignInGrant
+from reporails_cli.core.platform.policy.preflight import parse_retry_after
 from reporails_cli.core.platform.utils.utils import json_object
 
 if TYPE_CHECKING:
@@ -48,12 +49,6 @@ def _post(url: str, **kwargs: Any) -> httpx.Response:
         raise PlatformUnavailableError(f"Could not reach {url}: {exc}") from exc
 
 
-def _retry_after(resp: httpx.Response) -> int | None:
-    """The whole seconds in the reply's `Retry-After` header; None when absent or not a number."""
-    raw = resp.headers.get("Retry-After", "").strip()
-    return int(raw) if raw.isdigit() else None
-
-
 def start_sign_in(site: str, machine: str) -> SignInGrant:
     """Ask the website to start a sign-in for `machine`.
 
@@ -69,7 +64,7 @@ def start_sign_in(site: str, machine: str) -> SignInGrant:
         raise PlatformRefusedError(
             f"The website answered the sign-in start with HTTP {resp.status_code}",
             status=resp.status_code,
-            retry_after=_retry_after(resp),
+            retry_after=parse_retry_after(resp.headers.get("Retry-After")),
         )
     body = json_object(resp.text)
     try:

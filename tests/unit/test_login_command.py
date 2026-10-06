@@ -289,6 +289,8 @@ def test_login_start_failure_names_what_to_do(site: _Site) -> None:
         ),
         (PlatformRefusedError("x", status=429, retry_after=61), "Try again in 2 minutes."),
         (PlatformRefusedError("x", status=429), "Try again in 10 minutes."),
+        (PlatformRefusedError("x", status=429, retry_after=0), "Try again in 1 minute."),
+        (PlatformRefusedError("x", status=429, retry_after=30), "Try again in 1 minute."),
         (
             PlatformRefusedError("x", status=503),
             "The website refused to start a sign-in (HTTP 503). Nothing was saved.",

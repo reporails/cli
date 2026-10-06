@@ -24,9 +24,14 @@ _SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
 UNPAID_PITCH_LINE = "  Pro adds the remedies and the order to apply them."
 
 
+def upgrade_link() -> str:
+    """The `Upgrade to Pro` link to the account page, as Rich markup."""
+    return f"[link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]"
+
+
 def upgrade_link_line() -> str:
     """The `→ Upgrade to Pro` line pointing at the account page, as Rich markup."""
-    return f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]"
+    return f"  \u2192 {upgrade_link()}"
 
 
 # Free-tier rejections where subscribing genuinely lifts the cap, so the CTA

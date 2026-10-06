@@ -18,6 +18,7 @@ from typing import Any
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
+from reporails_cli.core.platform.config.credentials import env_api_key
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
     PlatformError,
@@ -117,7 +118,7 @@ def resolve_api_key() -> str:
     Returns "" when neither holds a key; an unreadable credentials file drops
     to "" with a WARNING.
     """
-    return os.environ.get("AILS_API_KEY") or _degrade_on_fault(_api_key_from_credentials, "API key")
+    return env_api_key() or _degrade_on_fault(_api_key_from_credentials, "API key")
 
 
 def default_server_api_key() -> str:

@@ -914,3 +914,32 @@ class TestRateLimitCooldown:
         from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
         assert not rate_cooldown._cooldown_path().is_relative_to(get_global_cache_dir())
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_diagnose_request_sends_bearer_key_to_v1(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
+    url, headers = AilsClient(base_url="https://x.example/", api_key="rr_k", tier="free").diagnose_request("a/b")
+    assert url == "https://x.example/v1/diagnose"
+    assert headers["Authorization"] == "Bearer rr_k"
+    assert headers["Content-Type"] == "a/b"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_diagnose_request_without_key_sends_no_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
+    monkeypatch.setattr(api_client_mod, "resolve_api_key", lambda: "")
+    _, headers = AilsClient(base_url="https://x.example", tier="free").diagnose_request("a/b")
+    assert "Authorization" not in headers
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_diagnose_request_dev_mode_uses_tier_header(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AILS_DEV_MODE", "1")
+    url, headers = AilsClient(base_url="http://localhost:8001", api_key="rr_k", tier="pro").diagnose_request("a/b")
+    assert url == "http://localhost:8001/diagnose"
+    assert headers["X-Tier"] == "pro"
+    assert "Authorization" not in headers

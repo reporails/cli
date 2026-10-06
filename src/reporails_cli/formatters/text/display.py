@@ -133,10 +133,6 @@ def _render_file_groups(groups: dict[str, list[tuple[str, list[Any]]]], ctx: _Ca
             _render_one_group(gkey, group_files, ctx)
 
 
-# The upgrade surface for a signed-in user (the subscribe button lives there).
-_SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
-
-
 def _render_detail_cta() -> None:
     """Print the "how to get line-level detail" call to action.
 
@@ -145,12 +141,10 @@ def _render_detail_cta() -> None:
     they get the upgrade surface instead.
     """
     from reporails_cli.core.platform.adapters.api_client import has_api_key
+    from reporails_cli.formatters.text.funnel_cta import upgrade_link
 
     if has_api_key():
-        console.print(
-            "\n  [dim]Line-level detail \u2192 "
-            f"[link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link][/dim]"
-        )
+        console.print(f"\n  [dim]Line-level detail \u2192 {upgrade_link()}[/dim]")
     else:
         console.print(
             "\n  [dim]Line-level detail \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro[/dim]"

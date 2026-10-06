@@ -121,8 +121,10 @@ def _confirm_stored_sign_in(record: dict[str, str]) -> None:
 def _refusal_line(exc: PlatformRefusedError) -> str:
     """One line for a start the website refused: the wait for a rate limit, the status otherwise."""
     if exc.status == _RATE_LIMITED:
-        minutes = math.ceil((exc.retry_after or _DEFAULT_WAIT_S) / _MINUTE_S)
-        return f"Too many sign-in attempts from this network. Try again in {minutes} minutes."
+        wait = _DEFAULT_WAIT_S if exc.retry_after is None else exc.retry_after
+        minutes = max(1, math.ceil(wait / _MINUTE_S))
+        unit = "minute" if minutes == 1 else "minutes"
+        return f"Too many sign-in attempts from this network. Try again in {minutes} {unit}."
     return f"The website refused to start a sign-in (HTTP {exc.status}). Nothing was saved."
 
 
