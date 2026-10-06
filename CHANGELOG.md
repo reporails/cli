@@ -13,7 +13,7 @@
 - `ails check --heal` no longer writes placeholder sections into your files; it lists what each file needs so you write the content.
 - In `.ails/config.yml` and `~/.reporails/config.yml`, the `overrides:` key and `framework_version` are removed, and `ails config set tier` is rejected as an unknown key. Move a per-rule `min_lines` threshold to the top-level `rule_thresholds:` key; a rule's severity comes from its rule file.
 - Rule severities changed across the core ruleset, so low-severity findings display as `info` instead of `warning`. Check any CI step that matches on `warning`.
-- The `CORE:C:0044` finding "Capacity saturation across N topics" is gone; topic overlap between files is reported as "Topic Overlap Across Elements".
+- `CORE:C:0044` changed meaning: it was the per-file "Capacity saturation across N topics" finding and now reports topic overlap between files that load together ("Topic Overlap Across Elements"). Review any suppression, threshold or CI match keyed on that rule id.
 
 ### Added
 
