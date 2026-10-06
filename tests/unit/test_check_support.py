@@ -35,6 +35,7 @@ def test_resume_check_timeout_is_a_noop_on_win32(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
+@pytest.mark.skipif(sys.platform == "win32", reason="signal.setitimer is POSIX-only")
 def test_resume_check_timeout_rearms_on_posix(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     calls = []
@@ -49,6 +50,7 @@ def test_resume_check_timeout_rearms_on_posix(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
+@pytest.mark.skipif(sys.platform == "win32", reason="signal.setitimer is POSIX-only")
 def test_resume_check_timeout_skips_rearm_when_nothing_was_left(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     calls = []

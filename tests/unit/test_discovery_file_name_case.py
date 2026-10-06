@@ -16,6 +16,15 @@ from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 CASES = [("claude", "CLAUDE.md", "docs"), ("codex", "AGENTS.md", "pkg")]
 
 
+def _fs_is_case_insensitive(root: Path) -> bool:
+    probe = root / "CaseProbe.tmp"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        return (root / "caseprobe.tmp").exists()
+    finally:
+        probe.unlink()
+
+
 def _write(root: Path, rel: str) -> None:
     p = root / rel
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +57,8 @@ def _files(root: Path, agent: str) -> list[str]:
 def test_wrong_case_copy_is_not_discovered_on_a_case_sensitive_filesystem(
     tmp_path: Path, agent: str, name: str, folder: str
 ) -> None:
+    if _fs_is_case_insensitive(tmp_path):
+        pytest.skip("filesystem is case-insensitive")
     _marker(tmp_path, agent)
     _write(tmp_path, name)
     alone = _level(tmp_path)

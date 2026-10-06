@@ -12,6 +12,7 @@ Network is always mocked — no test here reaches a real host.
 from __future__ import annotations
 
 import hashlib
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -809,6 +810,7 @@ def test_parallel_first_run_waits_for_the_peer_and_downloads_nothing(tmp_path, m
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
+@pytest.mark.skipif(sys.platform == "win32", reason="cross-process file-lock release timing differs on Windows")
 def test_download_in_another_process_is_reported_in_progress(tmp_path, monkeypatch):
     import subprocess
     import sys

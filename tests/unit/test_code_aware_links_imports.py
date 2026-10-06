@@ -36,9 +36,9 @@ _CODE = [
 
 
 def _classified(root: Path, text: str) -> tuple[Path, list[ClassifiedFile]]:
-    (root / "t.md").write_text("# target\n")
+    (root / "t.md").write_text("# target\n", encoding="utf-8")
     doc = root / "CLAUDE.md"
-    doc.write_text(text)
+    doc.write_text(text, encoding="utf-8")
     return doc, [ClassifiedFile(path=doc, file_type="main")]
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -490,6 +491,7 @@ def test_retire_daemon_leaves_a_daemon_started_since_the_ping(monkeypatch, tmp_p
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
+@pytest.mark.skipif(sys.platform == "win32", reason="the mapper daemon socket is POSIX-only")
 def test_retire_daemon_waits_for_the_answering_daemon_to_exit(monkeypatch, tmp_path):
     from reporails_cli.core.mapper import daemon
 

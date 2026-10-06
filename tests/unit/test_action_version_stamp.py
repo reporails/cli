@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ def _stamp_lines(script: str) -> str:
 
 @pytest.mark.unit
 @pytest.mark.subsys_gates
+@pytest.mark.skipif(sys.platform == "win32", reason="the stamp runs bash/sed in the ubuntu release job only")
 @pytest.mark.parametrize("version", ["0.6.0", "1.2.3"])
 def test_stamp_sets_the_version_default_and_nothing_else(tmp_path: Path, version: str) -> None:
     (tmp_path / "action").mkdir()

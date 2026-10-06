@@ -438,7 +438,10 @@ class TestFrontmatterValidGlobAnchoring:
         (tmp_path / ".agents" / "skills" / "foo").mkdir(parents=True)
         (tmp_path / ".agents" / "skills" / "foo" / "SKILL.md").write_text("# foo\n")
         (tmp_path / ".claude" / "rules").mkdir(parents=True)
-        (tmp_path / ".claude" / "skills").symlink_to("../.agents/skills", target_is_directory=True)
+        try:
+            (tmp_path / ".claude" / "skills").symlink_to(Path("..") / ".agents" / "skills", target_is_directory=True)
+        except OSError:
+            pytest.skip("symlinks cannot be created here")
         (tmp_path / ".claude" / "rules" / "r.md").write_text("---\npaths: .claude/skills/**\n---\nbody\n")
         args = {"path": ".claude/rules", "require_matches": True}
         assert frontmatter_valid_glob(tmp_path, args, []).passed

@@ -56,6 +56,9 @@ def test_walk_glob_skips_always_skip_dirs(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_walk_glob_skips_a_wrong_case_name_on_a_case_sensitive_filesystem(tmp_path: Path) -> None:
     """A lowercase `claude.md` is not the documented `CLAUDE.md` where the filesystem tells them apart."""
+    (tmp_path / "CaseProbe.tmp").write_text("x", encoding="utf-8")
+    if (tmp_path / "caseprobe.tmp").exists():
+        pytest.skip("filesystem is case-insensitive")
     (tmp_path / "claude.md").write_text("y")
     assert walk.walk_glob(tmp_path, "CLAUDE.md", DEFAULT_EXCLUDE_DIRS) == []
 

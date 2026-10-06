@@ -4,6 +4,7 @@ plugin commands it prints.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -224,8 +225,9 @@ def test_install_plugin_source_override(monkeypatch: pytest.MonkeyPatch) -> None
     _runner_invoke()
 
     cmds = runner.commands()
-    assert "claude plugin marketplace add /tmp/local-plugin" in cmds
-    assert "codex plugin marketplace add /tmp/local-plugin" in cmds
+    source = os.path.abspath("/tmp/local-plugin")
+    assert f"claude plugin marketplace add {source}" in cmds
+    assert f"codex plugin marketplace add {source}" in cmds
 
 
 @pytest.mark.unit
@@ -452,6 +454,7 @@ def test_closing_line_names_pro_unless_the_stored_tier_is_entitled(
     (home / ".reporails").mkdir(parents=True)
     (home / ".reporails" / "credentials.yml").write_text(f"api_key: k\ntier: '{tier}'\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     result = _runner.invoke(app, ["install"])
 
@@ -666,6 +669,7 @@ def test_closing_line_reads_the_tier_of_the_key_in_effect(
     (home / ".reporails").mkdir(parents=True)
     (home / ".reporails" / "credentials.yml").write_text(f"api_key: k\ntier: '{stored_tier}'\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("AILS_API_KEY", raising=False)
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)

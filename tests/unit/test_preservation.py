@@ -943,6 +943,7 @@ def test_a_path_relative_to_the_file_itself_is_not_invented(tmp_path) -> None:
 @pytest.mark.subsys_server
 def test_a_home_path_that_exists_is_not_invented(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / ".config").mkdir()
     (tmp_path / ".config" / "tool.toml").write_text("x = 1\n")
     before = "# Skill\n\nRead the user config first.\n"
