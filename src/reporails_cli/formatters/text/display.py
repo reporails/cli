@@ -401,6 +401,17 @@ def _print_header(tier: str) -> None:
     console.print(f"\n[bold]Reporails[/bold] \u2014 Diagnostics{tier_badge}\n")
 
 
+def _print_notices(notices: Any) -> None:
+    """Print the notices under the header, then a blank line; nothing when there are none."""
+    if not notices:
+        return
+    from reporails_cli.formatters.text.notices import notice_lines
+
+    for line in notice_lines(notices):
+        console.print(line)
+    console.print()
+
+
 def print_text_result(
     result: object,
     elapsed_ms: float,
@@ -434,6 +445,7 @@ def print_text_result(
     scope.type_str = file_type_summary(all_files, skill_of) if all_files else "0 files"
 
     _print_header(tier)
+    _print_notices(result.notices)
     if not result.findings:
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
         _render_funnel_cta(funnel_error)

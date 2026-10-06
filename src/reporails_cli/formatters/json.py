@@ -455,6 +455,7 @@ def format_combined_result(
         "offline": result.offline,
         "server_error": format_server_error(getattr(result, "server_error", None)),
         "tier": result.tier,
+        "notices": [{"id": n.id, "level": n.level, "text": n.text, "url": n.url} for n in result.notices],
         "quality": (
             float(result.quality.display_score)
             if result.quality is not None and result.quality.display_score is not None

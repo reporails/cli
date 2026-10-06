@@ -401,8 +401,11 @@ def _dispatch_output(
             )
         )
         return
+    from reporails_cli.core.platform.adapters.notices_seen import due_notices
+
+    # Only the notices due today are shown; JSON above carries them all.
     print_text_result(
-        result_for_output,
+        replace(result_for_output, notices=due_notices(result_for_output.notices)),
         elapsed_ms,
         ascii_mode,
         verbose,

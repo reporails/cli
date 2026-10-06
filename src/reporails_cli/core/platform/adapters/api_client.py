@@ -10,10 +10,12 @@ import json
 import logging
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
 from reporails_cli.core.platform.contract.errors import (
@@ -31,6 +33,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     LintResponse,
     LintResult,
     LocalTier,
+    Notice,
     QualityResult,
     RulesetReport,
 )
@@ -42,6 +45,16 @@ logger = logging.getLogger(__name__)
 
 # The diagnostics server used when `AILS_SERVER_URL` is unset.
 DEFAULT_SERVER_URL = "https://api.reporails.com"
+
+
+# Shown instead of the server's own message when a key is rejected within moments of signing in.
+_STILL_REACHING_MESSAGE = "Your sign-in is still reaching the server — try again in a minute."
+
+
+def _reply_notices(response: Any) -> tuple[Notice, ...]:
+    """The notices a reply carries in its notices header; none when it has no headers or no header."""
+    headers = getattr(response, "headers", None) or {}
+    return notices_from_header(headers.get(NOTICES_HEADER))
 
 
 def _user_agent() -> str:
@@ -224,9 +237,19 @@ class AilsClient:
                 funnel_err.tier,
             )
             record_cooldown(self.base_url, self.api_key, funnel_err)
-            return funnel_err
+            return self._early_rejection(funnel_err)
         logger.warning("Remote diagnostic returned HTTP %d (no parseable body)", status)
         return FunnelError(error="http_error", status=status, message=f"Diagnostics server returned HTTP {status}")
+
+    def _early_rejection(self, err: FunnelError) -> FunnelError:
+        """`err`, with a "still reaching the server" message when a key rejected right after sign-in is the cause."""
+        if err.error != "invalid_api_key" or not self.api_key:
+            return err
+        from reporails_cli.core.platform.config.credentials import signed_in_recently
+
+        if not signed_in_recently(self.api_key):
+            return err
+        return replace(err, message=_STILL_REACHING_MESSAGE)
 
     def _sent_stored_key(self) -> bool:
         """True only for a request to the real service that carried the key as its Authorization header."""
@@ -262,12 +285,12 @@ class AilsClient:
             resp.raise_for_status()
             result = _deserialize_lint_result(resp.json())
             self._remember_tier(result.tier)
-            return LintResponse(result=result)
+            return LintResponse(result=result, notices=_reply_notices(resp))
         except httpx.TimeoutException:
             logger.warning("Remote diagnostic request timed out after %.1fs", self.timeout)
             return LintResponse(funnel_error=FunnelError(error="timeout", reset_in=DEFAULT_RETRY_AFTER_S))
         except httpx.HTTPStatusError as exc:
-            return LintResponse(funnel_error=self._status_error(exc.response))
+            return LintResponse(funnel_error=self._status_error(exc.response), notices=_reply_notices(exc.response))
         except httpx.HTTPError as exc:
             logger.warning("Remote diagnostic network error: %s", exc)
             return LintResponse(

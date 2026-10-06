@@ -130,6 +130,7 @@ class CheckPipeline:
     rule_agents: tuple[str, ...] = ()
     lint_result: Any = None
     funnel_error: Any = None
+    notices: tuple[Any, ...] = ()
 
 
 @dataclass
@@ -434,6 +435,7 @@ def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> N
         response = AilsClient().lint(state.pipeline.ruleset_map, local, structural_required, root=state.targets.target)
     state.pipeline.lint_result = response.result if response else None
     state.pipeline.funnel_error = response.funnel_error if response else None
+    state.pipeline.notices = response.notices if response else ()
     state.pipeline.stage_timer.mark("server")
 
 
@@ -453,6 +455,7 @@ def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
         lint_result=lint_result,
         alias_fn=rule_aliases,
         rule_agents=state.pipeline.rule_agents,
+        notices=state.pipeline.notices,
     )
 
 

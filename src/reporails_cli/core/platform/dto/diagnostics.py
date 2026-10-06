@@ -342,3 +342,5 @@ class LintResponse:
 
     result: Any = None
     funnel_error: FunnelError | None = None
+    # The messages the server sent with this reply, success or error; empty when it sent none.
+    notices: tuple[Notice, ...] = ()
