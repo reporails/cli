@@ -382,6 +382,8 @@
 - Check: the summary names the agent you passed with `--agent`, or the one it detected, also when the analysis model is not on disk.
 - GitHub Action: the `min-score` gate fails when content checks were skipped, instead of passing on a partial score.
 - MCP: a `validate` call that hit a busy or slow server can be retried on the same file instead of being refused as a repeat; the reply says it is retryable and how long to wait, and retries still count toward the per-file call limit.
+- Heal: settings, hook and MCP config files are no longer rewritten. Their findings stay in the check output with their impact grade, and are listed for you to edit by hand.
+- Check: the topic-overlap summary says "+1 more pair" instead of "+1 more pairs".
 
 ### Removed
 
