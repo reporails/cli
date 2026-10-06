@@ -449,6 +449,14 @@ class TestDetectAgentName:
         )
         assert _detect_agent_name(rmap) == "claude + cursor"
 
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_no_map_names_the_agent_the_run_used(self) -> None:
+        """An offline run with no model has no ruleset map; the agent whose rules ran is still named."""
+        assert _detect_agent_name(None, ("claude",)) == "claude"
+        assert _detect_agent_name(None, ("generic",)) == ""
+        assert _detect_agent_name(None) == ""
+
 
 # ── _build_file_groups: root used for file-type routing (L241) ─────────
 

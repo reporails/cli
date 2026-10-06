@@ -113,7 +113,8 @@ def assemble_result(inp: AssembleInputs) -> Any:
     # After suppressions, so ignoring either credential rule on a line keeps the other's finding.
     result = stamp_served_tiers(collapse_same_secret(result), inp.scan_root)
     result = stamp_local_tiers(result, report.local_tiers if report is not None else (), inp.scan_root)
-    return stamp_conventions(result, frozenset().union(*(convention_check_ids(a) for a in _rule_agents(inp))))
+    result = stamp_conventions(result, frozenset().union(*(convention_check_ids(a) for a in _rule_agents(inp))))
+    return replace(result, stats=replace(result.stats, agents=_rule_agents(inp)))
 
 
 # How long a quoted instruction may run in a finding that names where it is written.

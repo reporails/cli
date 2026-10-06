@@ -349,3 +349,14 @@ def test_stamping_served_tiers_without_a_workflow_returns_the_same_result():
 
     result = CombinedResult()
     assert stamp_served_tiers(result) is result
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_assemble_records_the_agents_whose_rules_ran(tmp_path):
+    """The summary names the agent even when no ruleset map exists (no model on disk)."""
+    assert assemble_result(_inputs(scan_root=tmp_path, effective_agent="claude")).stats.agents == ("claude",)
+    assert assemble_result(_inputs(scan_root=tmp_path, rule_agents=("claude", "cursor"))).stats.agents == (
+        "claude",
+        "cursor",
+    )

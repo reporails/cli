@@ -225,7 +225,7 @@ def _count_atoms(atoms: Any) -> ScopeInfo:
     return ScopeInfo(n_dir=n_dir, n_con=n_con, n_amb=n_amb, n_prose=n_total - n_dir - n_con, n_atoms=n_total)
 
 
-def _detect_agent_name(ruleset_map: Any) -> str:
+def _detect_agent_name(ruleset_map: Any, run_agents: tuple[str, ...] = ()) -> str:
     """Detect the agent(s) whose rules ran, from the ruleset map's file records.
 
     A single resolved agent returns its id, unchanged. Two or more distinct agent ids
@@ -235,6 +235,9 @@ def _detect_agent_name(ruleset_map: Any) -> str:
     rather than only the most common one. `map_instruction_files`'s `stamp_file_agents`
     is what makes each record's `agent` the discovery-resolved owner rather than the
     mapper's own, independently-guessed match, so this count is trustworthy.
+
+    A run without a ruleset map (no model on disk) falls back to `run_agents`, the agents
+    whose rules ran, so an explicit or detected agent is still named.
     """
     try:
         from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -245,7 +248,7 @@ def _detect_agent_name(ruleset_map: Any) -> str:
                 return " + ".join(ids)
     except (AttributeError, ImportError, TypeError):
         pass
-    return ""
+    return " + ".join(sorted({a for a in run_agents if a != "generic"}))
 
 
 def _detect_tier(result: Any, has_quality: bool) -> str:
@@ -510,7 +513,7 @@ def _render_findings_and_scorecard(
         n_atoms=scope.n_atoms,
         tier=tier,
         elapsed_ms=elapsed_ms,
-        agent=_detect_agent_name(ruleset_map),
+        agent=_detect_agent_name(ruleset_map, result.stats.agents),
         scope=scope,
         surface_health=surfaces,
         item_health=item_health,

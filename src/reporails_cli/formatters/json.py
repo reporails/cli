@@ -468,7 +468,7 @@ def format_combined_result(
             fp: _file_entry(findings, regime_by_file.get(fp))
             for fp, findings in sorted(by_file.items(), key=lambda x: -len(x[1]))
         },
-        "stats": asdict(result.stats),
+        "stats": {k: v for k, v in asdict(result.stats).items() if k != "agents"},  # `agents` is text-summary only
     }
     if result.cross_file:
         data["cross_file"] = [

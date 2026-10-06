@@ -3,7 +3,10 @@
 
 Usage: echo '<json>' | python3 parse_result.py
 Outputs: _SCORE=X.X  _LEVEL=LN  _VIOLATIONS=N  _RESULT=ok|server-unavailable
-         _SERVER_REASON=<reason-token-or-empty>  (one per line, eval-safe)
+         _SERVER_REASON=<reason-token-or-empty>  _CONTENT_SKIPPED=true|false  (one per line, eval-safe)
+
+_CONTENT_SKIPPED is true when the result carries `content_checks_skipped` (no model on
+disk): the score then does not reflect the content checks, so the min-score gate fails.
 
 _SCORE is the analysis service's whole-project Quality verdict (the same number
 `ails check` prints), read verbatim from the `quality` key — never recomputed here.
@@ -58,6 +61,7 @@ def main() -> None:
     print(f"_VIOLATIONS={violations}")
     print(f"_RESULT={result_out}")
     print(f"_SERVER_REASON={server_error_token}")
+    print(f"_CONTENT_SKIPPED={'true' if d.get('content_checks_skipped') is True else 'false'}")
 
 
 if __name__ == "__main__":

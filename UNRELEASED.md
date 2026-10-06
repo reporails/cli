@@ -8,6 +8,8 @@
 
 - `ails rules` and `ails explain` no longer describe the one-instruction-per-sentence and broad-conditional-scope rules as needing a server connection; both run on your machine.
 - Python 3.13: a symlink loop in a project is skipped instead of being treated as a normal file.
+- Check: the summary names the agent you passed with --agent, also when the server cannot be reached.
+- GitHub Action: the min-score gate fails when content checks were skipped, instead of passing on a partial score.
 
 ### Removed
 

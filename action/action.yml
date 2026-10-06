@@ -175,6 +175,7 @@ runs:
         echo "violations=$_VIOLATIONS" >> "$GITHUB_OUTPUT"
         echo "server-status=$_RESULT" >> "$GITHUB_OUTPUT"
         echo "server-error=$_SERVER_REASON" >> "$GITHUB_OUTPUT"
+        echo "content-skipped=$_CONTENT_SKIPPED" >> "$GITHUB_OUTPUT"
 
         # Store full JSON for downstream steps
         {
@@ -209,6 +210,7 @@ runs:
         SCORE: ${{ steps.check.outputs.score }}
         SERVER_STATUS: ${{ steps.check.outputs.server-status }}
         SERVER_ERROR: ${{ steps.check.outputs.server-error }}
+        CONTENT_SKIPPED: ${{ steps.check.outputs.content-skipped }}
         INPUT_MIN_SCORE: ${{ inputs.min-score }}
       run: |
         python3 -c "
@@ -217,6 +219,9 @@ runs:
         raw = os.environ.get('SCORE', '').strip()
         server_status = os.environ.get('SERVER_STATUS', '').strip()
         server_error = os.environ.get('SERVER_ERROR', '').strip()
+        if os.environ.get('CONTENT_SKIPPED', '').strip() == 'true':
+            print('::error::Quality gate cannot run: content checks were skipped (no model)')
+            sys.exit(1)
         if not raw:
             if server_status == 'server-unavailable':
                 token = server_error or 'unknown'

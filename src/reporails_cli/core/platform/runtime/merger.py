@@ -98,6 +98,9 @@ class CombinedStats:
     m_probe_count: int = 0
     client_check_count: int = 0
     server_diagnostic_count: int = 0
+    # The agents whose rules ran; lets the summary name the agent even when no ruleset map
+    # exists (no model on disk). Set by the assemble spine, empty for a hand-built result.
+    agents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -232,7 +235,7 @@ def _dedup_same_secret(items: tuple[FindingItem, ...]) -> list[FindingItem]:
     return keep
 
 
-def _severity_counts(findings: Sequence[FindingItem]) -> dict[str, int]:
+def _severity_counts(findings: Sequence[FindingItem]) -> dict[str, Any]:
     """The total and per-severity finding counts, keyed by their `CombinedStats` field."""
     return {
         "total_findings": len(findings),

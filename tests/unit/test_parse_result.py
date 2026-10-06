@@ -125,3 +125,51 @@ class TestMainEmitsServerOutcome:
         env = _run_main(capsys, monkeypatch, payload)
         assert env["_RESULT"] == "server-unavailable"
         assert env["_SERVER_REASON"] == "network_error"
+
+
+class TestContentChecksSkipped:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    @pytest.mark.parametrize(("flag", "expected"), [(True, "true"), (False, "false"), (None, "false")])
+    def test_flag_is_surfaced(self, capsys, monkeypatch, flag, expected):
+        payload = {"quality": 7.4, "level": "L3", "stats": {"total_findings": 1}, "files": {}}
+        if flag is not None:
+            payload["content_checks_skipped"] = flag
+        assert _run_main(capsys, monkeypatch, payload)["_CONTENT_SKIPPED"] == expected
+
+
+def _gate_script() -> str:
+    import yaml
+
+    action = yaml.safe_load((Path(__file__).resolve().parents[2] / "action" / "action.yml").read_text())
+    step = next(s for s in action["runs"]["steps"] if s.get("name") == "Apply min-score gate")
+    return step["run"].split('python3 -c "', 1)[1].rsplit('"', 1)[0]
+
+
+class TestMinScoreGate:
+    def _gate(self, **env):
+        import subprocess
+        import sys
+
+        base = {
+            "SCORE": "",
+            "SERVER_STATUS": "ok",
+            "SERVER_ERROR": "",
+            "CONTENT_SKIPPED": "false",
+            "INPUT_MIN_SCORE": "5",
+        }
+        return subprocess.run(
+            [sys.executable, "-c", _gate_script()], env={**base, **env}, capture_output=True, text=True, check=False
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_fails_when_content_checks_were_skipped_even_with_passing_score(self):
+        proc = self._gate(SCORE="9.0", CONTENT_SKIPPED="true")
+        assert proc.returncode == 1
+        assert "content checks were skipped" in proc.stdout
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_passes_when_score_meets_threshold(self):
+        assert self._gate(SCORE="9.0").returncode == 0
