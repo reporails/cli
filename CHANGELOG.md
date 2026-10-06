@@ -11,11 +11,12 @@
 
 - `ails login` signs this machine in to your account through your browser: it prints a link and a short code, opens the browser when it can (also when a coding agent runs it), and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. One sign-in per machine, lasting a year, and your plan (Free or Pro) comes from your account, so a second machine or a CI key never affects the others. On a machine that is already signed in it shows who is signed in and on which plan, and signs in again when that sign-in has ended. Where no browser can open, as in most SSH sessions, it prints the link instead, and after too many attempts from one network it says how long to wait.
 - `ails logout` signs only this machine out, and still removes the local sign-in when the website cannot be reached or the saved sign-in file is damaged.
-- Messages about your account (a failed payment, Pro ending, an announcement) appear under the header of `ails check` (indented, and wrapped to the output width), as a `notices` list in `--format json`, and in the MCP `validate` reply. A warning shows on every run; other messages once a day.
+- Messages about your account (a failed payment, Pro ending, an announcement) appear under the header of `ails check` (indented, and wrapped to the output width), as a `notices` list in `--format json` (also with `--heal`), as annotations in `--format github`, and in the MCP `validate` reply. A warning shows on every run; other messages once a day.
 
 ### Changed
 
 - The docs cover the messages about your account (a failed payment, Pro ending) and add FAQ answers for signing back in, signing in over SSH, and CI after the move to API keys.
+- `ails update` also says how to update the reporails plugin in Cursor, GitHub Copilot and Antigravity, which install it by hand.
 - Sign-in hints, `ails --help`, the npm wrapper's help and the docs point to `ails login` and `ails logout`. For CI and the GitHub Action, create an API key on reporails.com/account and set it as `AILS_API_KEY`.
 - Check: the first `ails check` on a large project, before anything is cached, finishes sooner.
 - Check: every `ails check` in a large repository finds its files faster: the folders it skips (`.git`, `vendor`, `node_modules` and your `exclude_dirs`) are no longer searched.
@@ -27,7 +28,9 @@
 
 ### Internal
 
+- The MCP server asks again when a new sign-in is still reaching the server instead of remembering that reply, and heal does not read that reply as no account.
 - The MCP server's idle model release has its own module.
+- The API key, the upgrade link and the server's retry wait are each read in one place; the plugin's server starts this release or a newer one in its line.
 - The stored sign-in is read through one reader, and messages from the server are read off a reply and remembered once shown.
 
 ## 0.6.0

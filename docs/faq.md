@@ -54,7 +54,7 @@ The token command from 0.6.0 no longer exists. Create an API key on [reporails.c
 
 ## What are the messages above my results?
 
-They are messages about your account: a failed payment (Pro stays on while the card is retried), Pro ending on a date, Pro having ended, or an announcement. A warning shows on every run; other messages show once a day. `ails check -f json` and the MCP `validate` reply carry all of them in a `notices` list. See [Tiers and Limits](tiers.md#messages-about-your-account).
+They are messages about your account: a failed payment (Pro stays on while the card is retried), Pro ending on a date, Pro having ended, or an announcement. A warning shows on every run; other messages show once a day. `ails check -f json` and the MCP `validate` reply carry all of them in a `notices` list, and `--format github` (the GitHub Action) prints each one as a workflow annotation. See [Tiers and Limits](tiers.md#messages-about-your-account).
 
 ## Does Reporails read my source code?
 
