@@ -72,7 +72,7 @@ def assemble_result(inp: AssembleInputs) -> Any:
     and the computed level is always threaded onto the merged result.
     """
     from reporails_cli.core.lint.memory_checks import validate_memory_files
-    from reporails_cli.core.lint.suppression import apply_suppressions
+    from reporails_cli.core.lint.suppression import apply_config_listing, apply_suppressions
     from reporails_cli.core.platform.adapters.registry import convention_check_ids
     from reporails_cli.core.platform.runtime.merger import (
         collapse_same_secret,
@@ -109,6 +109,7 @@ def assemble_result(inp: AssembleInputs) -> Any:
         result = replace(result, workflow=lint_result.workflow)
     imported = imported_places(inp.ruleset_map, inp.scan_root) if inp.ruleset_map is not None else None
     result = apply_suppressions(result, project_root=inp.scan_root, alias_fn=inp.alias_fn, imported=imported)
+    result = apply_config_listing(result, inp.scan_root)
     result = _apply_surface_mutations(result, inp.scan_root, inp.effective_agent, inp.alias_fn)
     # After suppressions, so ignoring either credential rule on a line keeps the other's finding.
     result = stamp_served_tiers(collapse_same_secret(result), inp.scan_root)

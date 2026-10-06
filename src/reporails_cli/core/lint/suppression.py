@@ -30,7 +30,12 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings, workflow_summary
+from reporails_cli.core.platform.dto.diagnostics import (
+    ListedFinding,
+    subtree_tier_rank,
+    walk_findings,
+    workflow_summary,
+)
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, rebuild_severity_stats
 
 # Canonical form is an inline HTML comment, invisible when the file renders.
@@ -269,6 +274,56 @@ def prune_workflow(
         return workflow
     locations = tuple(renumbered(kept))
     return replace(workflow, locations=locations, listed=listed, summary=workflow_summary(locations, listed))
+
+
+CONFIG_LISTED_REASON = "config-file"
+CONFIG_LISTED_WHY = (
+    "Settings, hook and MCP config files are not rewritten automatically; "
+    "review these findings and edit the file by hand."
+)
+
+
+def _is_config_location(loc: Any, norm: Callable[[str], str]) -> bool:
+    files = _location_files(loc) or set(loc.files)
+    return bool(files) and all(finding_surface(norm(x)) == "config" for x in files)
+
+
+def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
+    """`workflow` with each location made only of config-format files moved into `listed`.
+
+    Settings, hook and MCP config files take no rewrite location: each rule that fired there
+    is listed once with its summed row count (added to an entry the rule already has), the
+    kept locations are numbered again from 1 and the summary is written for them.
+    """
+    moved = [loc for loc in workflow.locations if _is_config_location(loc, norm)]
+    if not moved:
+        return workflow
+    counts: dict[str, int] = {}
+    for loc in moved:
+        for f in (*walk_findings(loc.findings), *loc.relations):
+            counts[f.rule] = counts.get(f.rule, 0) + 1
+    listed = list(workflow.listed)
+    for rule, n in counts.items():
+        at = next((i for i, e in enumerate(listed) if e.rule == rule), None)
+        if at is None:
+            listed.append(ListedFinding(rule=rule, reason=CONFIG_LISTED_REASON, count=n, why=CONFIG_LISTED_WHY))
+        else:
+            listed[at] = replace(listed[at], count=listed[at].count + n)
+    kept = tuple(renumbered([loc for loc in workflow.locations if loc not in moved]))
+    return replace(workflow, locations=kept, listed=tuple(listed), summary=workflow_summary(kept, listed))
+
+
+def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
+    """`result` whose workflow lists config-format files' findings instead of locating them."""
+    workflow = result.workflow
+    if getattr(workflow, "locations", None) is None:
+        return result
+
+    def norm(file: str) -> str:
+        return normalize_finding_path(file, project_root)
+
+    projected = list_config_locations(workflow, norm)
+    return result if projected is workflow else replace(result, workflow=projected)
 
 
 def _workflow_files(workflow: Any, norm: Callable[[str], str]) -> list[str]:
