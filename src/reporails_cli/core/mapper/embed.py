@@ -1,8 +1,7 @@
 """Embed atoms via the bundled embedding encoder.
 
 Builds embedding text from `atom.plain_text` only (no heading prepend).
-Deduplicates identical text values before the model call so each unique string
-hits the encoder exactly once per run. Quantises the float32 output to int8.
+Quantises the float32 output to int8.
 """
 
 from __future__ import annotations
@@ -40,21 +39,10 @@ def _quantize_int8(vec: Any) -> tuple[int, ...]:
 
 
 def _embed_atoms_deduped(atoms: list[Atom], encoder: Any) -> None:
-    """Embed atoms with deduplication. Atoms with identical text share embeddings."""
-    texts = [_embed_text(a) for a in atoms]
-    unique_texts: list[str] = []
-    text_index: dict[str, int] = {}
-    atom_to_unique: list[int] = []
-    for t in texts:
-        idx = text_index.get(t)
-        if idx is None:
-            idx = len(unique_texts)
-            text_index[t] = idx
-            unique_texts.append(t)
-        atom_to_unique.append(idx)
-    unique_embeddings = encoder.encode(unique_texts)
-    for atom, u_idx in zip(atoms, atom_to_unique, strict=True):
-        atom.embedding_int8 = _quantize_int8(unique_embeddings[u_idx])
+    """Embed atoms and store each one's int8 embedding."""
+    embeddings = encoder.encode([_embed_text(a) for a in atoms])
+    for atom, vec in zip(atoms, embeddings, strict=True):
+        atom.embedding_int8 = _quantize_int8(vec)
 
 
 def _embed_file_descriptions(file_records: list[FileRecord], encoder: Callable[[], Any]) -> list[FileRecord]:

@@ -1,15 +1,11 @@
 """Bundled sentence embedder, run on CPU from a model graph shipped with the download.
 
-Length-sorted batching
-----------------------
+Token-count bucketing
+---------------------
 
-The dominant CPU cost scales with the padded sequence length. When atoms in a batch
-have wildly different lengths, the short ones pad up to the longest and waste compute
-on pad tokens.
-
-Atoms are therefore sorted by approximate token length before batching, split into
-``BUCKET_SIZE`` chunks, encoded with tight dynamic padding, and scattered back into
-the caller's original order.
+The dominant CPU cost scales with the padded sequence length. Distinct texts are
+grouped into ``_BUCKET_SIZE`` buckets of similar token count, each encoded with tight
+padding, and scattered back into the caller's order (duplicates share one row).
 
 Order is preserved — callers see an ``ndarray`` where row ``i`` is the
 embedding of ``texts[i]``.
@@ -21,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
+from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession, _Tokens
 
 if TYPE_CHECKING:
     import numpy as np
@@ -70,74 +66,31 @@ class OnnxEmbedder(_OnnxEncoderSession):
     def encode(self, texts: list[str]) -> np.ndarray:
         """Encode ``texts`` to L2-normalised float32 embeddings.
 
-        Uses length-sorted bucketed batching for tight dynamic padding.
+        Each distinct text is encoded once, in buckets of similar token count.
         Output row ``i`` corresponds to ``texts[i]`` (original order).
-        """
-        import numpy as np
-
-        n = len(texts)
-        if n == 0:
-            return np.empty((0, _HIDDEN_DIM), dtype=np.float32)
-
-        # Length-sort (ascending). We use character length as a cheap
-        # proxy for token length — close enough for sort ordering and
-        # avoids a full tokenization pass up front.
-        indexed = sorted(enumerate(texts), key=lambda it: len(it[1]))
-        sorted_idx = [i for i, _ in indexed]
-        sorted_texts = [t for _, t in indexed]
-
-        # Encode each bucket (concurrently over the warm session when the pool is
-        # on), then scatter back to original order.
-        sorted_out = self._encode_buckets(sorted_texts)
-
-        result = np.empty((n, _HIDDEN_DIM), dtype=np.float32)
-        for new_i, orig_i in enumerate(sorted_idx):
-            result[orig_i] = sorted_out[new_i]
-        return result
-
-    # ──────────────────────────────────────────────────────────────
-    # Internal
-    # ──────────────────────────────────────────────────────────────
-
-    def _encode_buckets(self, sorted_texts: list[str]) -> np.ndarray:
-        """Encode length-sorted texts bucket-by-bucket, returning rows in sorted order.
-
-        Buckets run concurrently over the one warm session when the pool is on;
-        `run_buckets` preserves submission order, so the output is
-        byte-identical to the old serial loop.
         """
         import numpy as np
 
         from reporails_cli.core.mapper.encode_pool import run_buckets
 
-        n = len(sorted_texts)
+        n = len(texts)
+        if n == 0:
+            return np.empty((0, _HIDDEN_DIM), dtype=np.float32)
 
-        def _bucket(start: int) -> Callable[[], np.ndarray]:
-            def run() -> np.ndarray:
-                return self._encode_batch(sorted_texts[start : start + _BUCKET_SIZE])
+        buckets, slot = self.plan_buckets(texts, _BUCKET_SIZE)
 
-            return run
+        def _bucket(bucket: list[_Tokens]) -> Callable[[], np.ndarray]:
+            return lambda: self._encode_batch(bucket)
 
-        outs = run_buckets([_bucket(s) for s in range(0, n, _BUCKET_SIZE)])
-        sorted_out = np.empty((n, _HIDDEN_DIM), dtype=np.float32)
-        offset = 0
-        for out in outs:
-            sorted_out[offset : offset + len(out)] = out
-            offset += len(out)
-        return sorted_out
+        flat = np.concatenate(run_buckets([_bucket(b) for b in buckets]))
+        return flat[slot]
 
-    def _encode_batch(self, batch: list[str]) -> np.ndarray:
-        """Forward one bucket through the model graph + mean-pool + L2-normalise."""
+    def _encode_batch(self, bucket: list[_Tokens]) -> np.ndarray:
+        """Forward one bucket through the graph, mean-pool and L2-normalise."""
         import numpy as np
 
-        encs = self._tokenizer.encode_batch(batch)
-        # (B, T_max) where T_max is the max length within this bucket
-        ids = np.array([e.ids for e in encs], dtype=np.int64)
-        masks = np.array([e.attention_mask for e in encs], dtype=np.int64)
-
-        feed: dict[str, np.ndarray] = {"input_ids": ids, "attention_mask": masks}
-        if self._needs_token_type_ids:
-            feed["token_type_ids"] = np.zeros_like(ids)
+        feed = self._encode_feed(bucket)
+        masks = feed["attention_mask"]
 
         # Last hidden state: (B, T_max, hidden)
         last_hidden = self._session.run(None, feed)[0]

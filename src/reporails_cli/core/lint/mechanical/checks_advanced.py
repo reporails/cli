@@ -709,13 +709,12 @@ def file_absent(
         return CheckResult(passed=True, message=f"No {_match_type_label(match_type)} files classified")
 
     if scope_dir:
-        search_pattern = f"{scope_dir}/**/{pattern}"
-        direct_path = root / scope_dir / pattern
+        scope_root = root / scope_dir
+        direct_path = scope_root / pattern
+        matches = list(walk_glob_matches(scope_root, f"**/{pattern}", load_project_exclude_dirs(root)))
     else:
-        search_pattern = pattern
         direct_path = root / pattern
-
-    matches = _resolve_glob_targets(search_pattern, root)
+        matches = _resolve_glob_targets(pattern, root)
     if matches:
         name = matches[0].relative_to(root).as_posix() if matches[0].is_relative_to(root) else matches[0].name
         return CheckResult(passed=False, message=f"Forbidden file exists: {name}")

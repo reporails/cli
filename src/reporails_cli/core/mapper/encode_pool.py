@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def _cpu_count() -> int:
@@ -57,15 +57,26 @@ def ort_intra_threads() -> int:
     return 1 if encode_pool_workers() > 1 else _cpu_count()
 
 
-def run_buckets[T](tasks: list[Callable[[], T]]) -> list[T]:
-    """Run per-bucket encode callables, returning results in submission order.
+def run_buckets[T](tasks: list[Callable[[], T]], on_done: Callable[[int], None] | None = None) -> list[T]:
+    """Run per-bucket callables, returning results in submission order.
 
-    Serial (byte-identical to the old loop) when the pool is disabled or there is
-    only one bucket; otherwise concurrent over a bounded thread pool. Order is
-    preserved regardless, so the caller's scatter is unchanged.
+    Serial when the pool is disabled or there is only one bucket; otherwise
+    concurrent over a bounded thread pool. ``on_done(index)`` is called once per
+    finished task, always from the calling thread, in completion order.
     """
     workers = encode_pool_workers()
     if workers <= 1 or len(tasks) <= 1:
-        return [t() for t in tasks]
+        results: list[T] = []
+        for i, t in enumerate(tasks):
+            results.append(t())
+            if on_done is not None:
+                on_done(i)
+        return results
     with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as pool:
-        return list(pool.map(lambda t: t(), tasks))
+        futures = [pool.submit(t) for t in tasks]
+        if on_done is not None:
+            index = {f: i for i, f in enumerate(futures)}
+            for f in as_completed(futures):
+                f.result()
+                on_done(index[f])
+        return [f.result() for f in futures]

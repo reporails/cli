@@ -15,10 +15,13 @@
 
 - The docs cover the messages about your account (a failed payment, Pro ending) and add FAQ answers for signing back in, signing in over SSH, and CI after the move to API keys.
 - Sign-in hints, `ails --help`, the npm wrapper's help and the docs point to `ails login` and `ails logout`. For CI and the GitHub Action, create an API key on reporails.com/account and set it as `AILS_API_KEY`.
+- Check: the first `ails check` on a large project, before anything is cached, finishes sooner.
+- Check: every `ails check` in a large repository finds its files faster: the folders it skips (`.git`, `vendor`, `node_modules` and your `exclude_dirs`) are no longer searched.
 
 ### Fixed
 
 - A check run in the first minutes after signing in, while the sign-in is still reaching the server, says to try again in a minute instead of saying the sign-in ended.
+- Check: instruction files inside symlinked folders, such as a shared rules folder linked into `.claude/rules/` or a skill folder linked into `.claude/skills/`, are found and checked.
 
 ### Removed
 

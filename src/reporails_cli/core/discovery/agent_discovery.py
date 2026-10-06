@@ -14,7 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from reporails_cli.core.discovery.walk import documented_path, list_dir, walk_glob, walk_markdown
+from reporails_cli.core.discovery.walk import (
+    documented_path,
+    list_dir,
+    walk_glob,
+    walk_glob_matches,
+    walk_markdown,
+)
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 from reporails_cli.core.platform.utils.utils import matches_any_glob as _matches_any_glob
 
@@ -37,22 +43,15 @@ _USER_SCOPE_OPT_IN_CAPABILITIES = frozenset({"subagent_memory"})
 _PROJECT_SCOPED_HOME_CAPABILITIES = frozenset({"memory"})
 
 
-def ci_glob(target: Path, pattern: str) -> list[Path]:
+def ci_glob(target: Path, pattern: str, exclude_dirs: frozenset[str] = frozenset()) -> list[Path]:
     """Case-insensitive glob (`claude.md` == `CLAUDE.md`).
 
     Repos in the wild use mixed filename casing and the agent specs do not
     mandate exact case (the AGENTS.md spec is silent on casing), so a
-    lowercase copy is a real instruction file and must be collected.
+    lowercase copy is a real instruction file and must be collected. The walk
+    does not enter a folder named in `exclude_dirs`.
     """
-    parts = Path(pattern).parts
-    if len(parts) == 1 and "*" not in pattern:
-        pat_lower = pattern.lower()
-        try:
-            # is_file() (not `not is_dir()`) so dangling symlinks are excluded.
-            return [p for p in target.iterdir() if p.name.lower() == pat_lower and p.is_file()]
-        except OSError:
-            return []
-    return [p for p in target.glob(pattern, case_sensitive=False) if p.is_file()]
+    return list(walk_glob_matches(target, pattern, exclude_dirs, ignore_case=True))
 
 
 def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str:
@@ -541,11 +540,13 @@ def glob_file_type_patterns(
         elif eager_global and "**" not in pattern:
             if project_root is None:
                 project_root = resolve_project_root(target)
-            found.extend(m for m in ci_glob(project_root, pattern) if not is_excluded(m, target, exclude_dirs))
+            found.extend(
+                m for m in ci_glob(project_root, pattern, exclude_dirs) if not is_excluded(m, target, exclude_dirs)
+            )
         elif is_recursive_leaf:
             found.extend(_run_descendant_recursive(target, pattern, nested, exclude_dirs))
         else:
-            found.extend(m for m in ci_glob(target, pattern) if not is_excluded(m, target, exclude_dirs))
+            found.extend(m for m in ci_glob(target, pattern, exclude_dirs) if not is_excluded(m, target, exclude_dirs))
     return found
 
 

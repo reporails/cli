@@ -965,6 +965,20 @@ class TestMatchTypeScoping:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    def test_file_absent_scoped_catches_nested_readme_in_skill(self, tmp_path: Path) -> None:
+        """A README.md nested below a skill folder is found by the scoped search."""
+        skill = tmp_path / ".claude" / "skills" / "foo"
+        (skill / "docs").mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# Skill")
+        (skill / "docs" / "README.md").write_text("# Bad")
+        args = {"pattern": "README.md", "_match_type": "skills"}
+        classified = [ClassifiedFile(path=skill / "SKILL.md", file_type="skills")]
+        result = file_absent(tmp_path, args, classified)
+        assert not result.passed
+        assert result.message == "Forbidden file exists: .claude/skills/foo/docs/README.md"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_file_absent_unscoped_finds_root_readme(self, tmp_path: Path) -> None:
         """Without _match_type, file_absent searches from project root (original behavior)."""
         (tmp_path / "README.md").write_text("# Project")

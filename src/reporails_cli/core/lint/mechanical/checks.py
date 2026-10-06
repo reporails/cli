@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import glob as globmod
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.discovery.agent_discovery import is_excluded
 from reporails_cli.core.discovery.agents import load_project_exclude_dirs
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
@@ -27,22 +25,18 @@ _glob_cache: dict[tuple[str, str], list[Path]] = {}
 
 
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
-    """Resolve a glob pattern relative to root, filtered by project exclude_dirs.
+    """Resolve a glob pattern relative to root: the regular files it matches, not entering
+    any folder in the project's exclude_dirs.
 
-    Uses `include_hidden=True` (Python 3.11+) so `**/*.md` matches files under
-    dot-prefixed directories such as `.claude/`, `.github/`, `.cursor/`. The
-    intersection with `classified_files` in `get_target_files` bounds the
-    result back to in-scope instruction files, so widening the glob can't
-    over-scan; `exclude_dirs` still gates anything declared off-limits.
+    Hidden folders such as `.claude/` and `.cursor/` are walked, so `**/*.md`
+    matches files under them. The intersection with `classified_files` in
+    `get_target_files` bounds the result back to in-scope instruction files.
     """
     key = (pattern, str(root))
     cached = _glob_cache.get(key)
     if cached is not None:
         return cached
-    resolved = str(root / pattern)
-    matches = [Path(p) for p in globmod.glob(resolved, recursive=True, include_hidden=True)]
-    excl = load_project_exclude_dirs(root)
-    result = [p for p in matches if not is_excluded(p, root, excl)]
+    result = list(walk_glob_matches(root, pattern, load_project_exclude_dirs(root)))
     _glob_cache[key] = result
     return result
 
