@@ -17,6 +17,7 @@
 
 - The docs cover the messages about your account (a failed payment, Pro ending) and add FAQ answers for signing back in, signing in over SSH, and CI after the move to API keys.
 - `ails update` also says how to update the reporails plugin in Cursor, GitHub Copilot and Antigravity, which install it by hand.
+- After a Pro sign-in and at the end of a Pro check, the line about rewriting your instruction files also says what to do in a coding agent other than Claude Code.
 - Sign-in hints, `ails --help`, the npm wrapper's help and the docs point to `ails login` and `ails logout`. For CI and the GitHub Action, create an API key on reporails.com/account and set it as `AILS_API_KEY`.
 - Check: the first `ails check` on a large project, before anything is cached, finishes sooner.
 - Check: every `ails check` in a large repository finds its files faster: the folders it skips (`.git`, `vendor`, `node_modules` and your `exclude_dirs`) are no longer searched.
