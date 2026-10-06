@@ -42,7 +42,6 @@ from reporails_cli.core.mapper.bio_tagger import (
     _head_session,
     _softmax_rows,
 )
-from reporails_cli.core.mapper.onnx_session import _Tokens
 
 _BUCKET_SIZE = 32
 _CHARGE_OUT = ["logits_charge", "logits_modality"]
@@ -269,14 +268,14 @@ def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] 
     _head_session(str(head_b))
     buckets, slot = enc_a.plan_buckets(texts, _BUCKET_SIZE)
 
-    def _task(bucket: list[_Tokens]) -> Callable[[], list[_Decoded | None]]:
+    def _task(bucket: list[str]) -> Callable[[], list[_Decoded | None]]:
         def run() -> list[_Decoded | None]:
             decoded: list[_Decoded | None] = []
-            for tok, (ha, oa), (hb, ob) in zip(
+            for text, (ha, oa), (hb, ob) in zip(
                 bucket, enc_a.forward_bucket(bucket), enc_b.forward_bucket(bucket), strict=True
             ):
-                out, word_spans, covered = _extract_pass_from_states(ha, oa, tok.text, head_a, _CHARGE_OUT)
-                out_b, _, _ = _extract_pass_from_states(hb, ob, tok.text, head_b, _SPAN_OUT)
+                out, word_spans, covered = _extract_pass_from_states(ha, oa, text, head_a, _CHARGE_OUT)
+                out_b, _, _ = _extract_pass_from_states(hb, ob, text, head_b, _SPAN_OUT)
                 merged = _merge(out, out_b)
                 decoded.append((merged, word_spans, covered) if merged is not None else None)
             return decoded

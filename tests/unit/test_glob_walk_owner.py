@@ -10,7 +10,7 @@ import pytest
 
 from reporails_cli.core.discovery import walk
 from reporails_cli.core.discovery.agent_discovery import ci_glob, glob_file_type_patterns
-from reporails_cli.core.lint.mechanical.checks import _glob_cache, _resolve_glob_targets
+from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets
 
 
 def _write(path: Path, text: str = "# x\n") -> Path:
@@ -80,7 +80,6 @@ def test_mechanical_targets_never_list_a_nested_excluded_folder(
     _write(tmp_path / "a" / "keep.md")
     _write(tmp_path / "web" / "core" / "deep" / "y.md")
     _write(tmp_path / "a" / "node_modules" / "pkg" / "z.md")
-    _glob_cache.clear()
     listed = _spy_listings(monkeypatch)
     found = _resolve_glob_targets("**/*.md", tmp_path)
     assert _rel(tmp_path, found) == {"a/keep.md"}
@@ -93,7 +92,6 @@ def test_mechanical_targets_never_list_a_nested_excluded_folder(
 def test_mechanical_targets_are_files_only(tmp_path: Path) -> None:
     _write(tmp_path / "docs" / "a.md")
     (tmp_path / "folder.md").mkdir()
-    _glob_cache.clear()
     assert _rel(tmp_path, _resolve_glob_targets("**/*.md", tmp_path)) == {"docs/a.md"}
 
 

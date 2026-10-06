@@ -311,15 +311,17 @@ def walk_glob_matches(
     else:
         starts = [root / prefix if prefix else root]
     leaves = _leaf_globs(glob)
-    root_prefix = str(root)
     for start in starts:
         if not start.is_dir():
             continue
-        for entry in _walk_files(start, exclude_dirs):
+        start_prefix = str(start)
+        start_rel = os.path.relpath(start, root).replace(os.sep, "/")
+        base = "" if start_rel == "." else start_rel + "/"
+        for entry in _walk_files(start, exclude_dirs, report_loops=False):
             name = entry.name.lower() if ignore_case else entry.name
             if leaves is not None and not any(glob_matches(name, leaf, anchored=True) for leaf in leaves):
                 continue
-            rel = entry.path[len(root_prefix) :].lstrip(os.sep).replace(os.sep, "/")
+            rel = base + entry.path[len(start_prefix) :].lstrip(os.sep).replace(os.sep, "/")
             if glob_matches(rel.lower() if ignore_case else rel, glob, anchored=True):
                 yield Path(entry.path)
 
@@ -339,11 +341,12 @@ def _walk(root: Path, exclude_dirs: frozenset[str], predicate: Callable[[Path], 
             yield full_path
 
 
-def _walk_files(root: Path, exclude_dirs: frozenset[str]) -> Iterator[ListedEntry]:
+def _walk_files(root: Path, exclude_dirs: frozenset[str], *, report_loops: bool = True) -> Iterator[ListedEntry]:
     """Shared walker — top-down over listed directories with canonical-path cycle tracking.
 
     Yields each listed regular file. A plain file is taken from the listing as it stands; a
-    symlink is confirmed to resolve to a file, and a circular one is logged and skipped.
+    symlink is confirmed to resolve to a file, and a circular one is skipped (and logged unless
+    `report_loops` is False).
     """
     try:
         root_real = os.path.realpath(root)
@@ -364,6 +367,6 @@ def _walk_files(root: Path, exclude_dirs: frozenset[str]) -> Iterator[ListedEntr
                     yield entry
             elif Path(entry.path).is_file():
                 yield entry
-            elif has_symlink_loop(Path(entry.path)):
+            elif report_loops and has_symlink_loop(Path(entry.path)):
                 logger.warning("Circular symlink detected: %s — file will be skipped", entry.path)
         stack.extend(reversed(kept))

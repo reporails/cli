@@ -10,6 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, NamedTuple
 
+# Texts tokenized per call when counting tokens for bucket ordering.
+_COUNT_CHUNK = 1024
+
 
 class _Tokens(NamedTuple):
     """One text with its token ids and per-token character offsets (no padding)."""
@@ -64,34 +67,40 @@ class _OnnxEncoderSession:
 
         self._tokenizer = Tokenizer.from_file(str(tokenizer_path))
         self._tokenizer.enable_truncation(max_length=max_length)
-        self._tokenizer.enable_padding(pad_id=0, pad_token="[PAD]", length=None)
 
         # Whether this particular model graph takes token_type_ids as an input.
         self._needs_token_type_ids = any(i.name == "token_type_ids" for i in self._session.get_inputs())
 
-    def plan_buckets(self, texts: list[str], bucket_size: int) -> tuple[list[list[_Tokens]], list[int]]:
+    def plan_buckets(self, texts: list[str], bucket_size: int) -> tuple[list[list[str]], list[int]]:
         """Group the distinct ``texts`` into buckets of similar token count, longest first.
 
-        Returns ``(buckets, slot)``: each distinct text is tokenized once and appears
-        in exactly one bucket; ``slot[i]`` is the position of ``texts[i]`` in the
-        concatenation of the buckets, so ``flat[slot[i]]`` is the result for input
-        ``i`` (duplicate inputs share one slot).
+        Returns ``(buckets, slot)``: each distinct text appears in exactly one bucket;
+        ``slot[i]`` is the position of ``texts[i]`` in the concatenation of the
+        buckets, so ``flat[slot[i]]`` is the result for input ``i`` (duplicate inputs
+        share one slot). Token counts are taken in fixed-size chunks and only the
+        counts are kept; `_tokenize` builds the tokens of one bucket on demand.
         """
         unique = list(dict.fromkeys(texts))
         if not unique:
             return [], []
-        encs = self._tokenizer.encode_batch(unique)
-        tokens = [
-            _Tokens(t, e.ids[:n], list(e.offsets[:n]))
-            for t, e in zip(unique, encs, strict=True)
-            for n in [sum(e.attention_mask)]
-        ]
-        order = sorted(range(len(tokens)), key=lambda k: -len(tokens[k].ids))
+        counts: list[int] = []
+        for s in range(0, len(unique), _COUNT_CHUNK):
+            encs = self._tokenizer.encode_batch(unique[s : s + _COUNT_CHUNK])
+            counts.extend(sum(e.attention_mask) for e in encs)
+        order = sorted(range(len(unique)), key=lambda k: -counts[k])
         position = {k: pos for pos, k in enumerate(order)}
         index = {t: position[k] for k, t in enumerate(unique)}
-        ordered = [tokens[k] for k in order]
+        ordered = [unique[k] for k in order]
         buckets = [ordered[s : s + bucket_size] for s in range(0, len(ordered), bucket_size)]
         return buckets, [index[t] for t in texts]
+
+    def _tokenize(self, texts: list[str]) -> list[_Tokens]:
+        """Tokenize one bucket's ``texts`` (truncated, padding stripped)."""
+        tokens: list[_Tokens] = []
+        for t, e in zip(texts, self._tokenizer.encode_batch(texts), strict=True):
+            n = sum(e.attention_mask)
+            tokens.append(_Tokens(t, e.ids[:n], list(e.offsets[:n])))
+        return tokens
 
     def _encode_feed(self, bucket: list[_Tokens]) -> dict[str, Any]:
         """Build the ORT feed (int64 ids / attention mask / type-ids) for one bucket, zero-padded."""

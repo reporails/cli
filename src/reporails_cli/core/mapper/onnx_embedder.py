@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession, _Tokens
+from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
 
 if TYPE_CHECKING:
     import numpy as np
@@ -79,17 +79,17 @@ class OnnxEmbedder(_OnnxEncoderSession):
 
         buckets, slot = self.plan_buckets(texts, _BUCKET_SIZE)
 
-        def _bucket(bucket: list[_Tokens]) -> Callable[[], np.ndarray]:
+        def _bucket(bucket: list[str]) -> Callable[[], np.ndarray]:
             return lambda: self._encode_batch(bucket)
 
         flat = np.concatenate(run_buckets([_bucket(b) for b in buckets]))
         return flat[slot]
 
-    def _encode_batch(self, bucket: list[_Tokens]) -> np.ndarray:
-        """Forward one bucket through the graph, mean-pool and L2-normalise."""
+    def _encode_batch(self, bucket: list[str]) -> np.ndarray:
+        """Tokenize one bucket of texts, forward it through the graph, mean-pool and L2-normalise."""
         import numpy as np
 
-        feed = self._encode_feed(bucket)
+        feed = self._encode_feed(self._tokenize(bucket))
         masks = feed["attention_mask"]
 
         # Last hidden state: (B, T_max, hidden)

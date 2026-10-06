@@ -21,9 +21,6 @@ def _safe_float(value: Any, default: float = float("inf")) -> float:
         return default
 
 
-_glob_cache: dict[tuple[str, str], list[Path]] = {}
-
-
 def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
     """Resolve a glob pattern relative to root: the regular files it matches, not entering
     any folder in the project's exclude_dirs.
@@ -32,13 +29,7 @@ def _resolve_glob_targets(pattern: str, root: Path) -> list[Path]:
     matches files under them. The intersection with `classified_files` in
     `get_target_files` bounds the result back to in-scope instruction files.
     """
-    key = (pattern, str(root))
-    cached = _glob_cache.get(key)
-    if cached is not None:
-        return cached
-    result = list(walk_glob_matches(root, pattern, load_project_exclude_dirs(root)))
-    _glob_cache[key] = result
-    return result
+    return list(walk_glob_matches(root, pattern, load_project_exclude_dirs(root)))
 
 
 def get_target_files(

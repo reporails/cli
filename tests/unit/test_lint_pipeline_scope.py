@@ -23,7 +23,6 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.lint.mechanical.checks import (
-    _glob_cache,
     _resolve_glob_targets,
     get_target_files,
 )
@@ -78,9 +77,6 @@ class TestResolveGlobExcludeDirs:
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "config.yml").write_text("exclude_dirs:\n  - vendor\n")
 
-        # Clear caches between tmp_path runs (cache key is per-root)
-        _glob_cache.clear()
-
         results = _resolve_glob_targets("**/*.md", tmp_path)
         names = {p.name for p in results}
         assert "CLAUDE.md" in names
@@ -94,8 +90,6 @@ class TestResolveGlobExcludeDirs:
         sub = tmp_path / "deep"
         sub.mkdir()
         (sub / "nested.md").write_text("# nested\n")
-
-        _glob_cache.clear()
 
         results = _resolve_glob_targets("**/*.md", tmp_path)
         names = {p.name for p in results}
@@ -121,8 +115,6 @@ class TestGetTargetFilesNarrowing:
         other = tmp_path / "other.md"
         other.write_text("# other\n")
 
-        _glob_cache.clear()
-
         # Caller narrowed classified_files to other.md only — CLAUDE.md must
         # drop out of the glob result even though the `**/*.md` pattern matches it.
         cf = ClassifiedFile(path=other, file_type="generic", properties={})
@@ -140,8 +132,6 @@ class TestGetTargetFilesNarrowing:
         lead = tmp_path / "lead.md"
         lead.write_text("# clean lead\n")
 
-        _glob_cache.clear()
-
         cf = ClassifiedFile(path=lead, file_type="agents", properties={})
         result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
         assert result == [lead]
@@ -153,8 +143,6 @@ class TestGetTargetFilesNarrowing:
         # Fixture harness path: no classified context → glob result returned as-is.
         (tmp_path / "CLAUDE.md").write_text("# root\n")
         (tmp_path / "other.md").write_text("# other\n")
-
-        _glob_cache.clear()
 
         result = get_target_files({"path": "**/*.md"}, [], tmp_path)
         names = {p.name for p in result}
@@ -170,8 +158,6 @@ class TestGetTargetFilesNarrowing:
         notes = tmp_path / "docs" / "notes.md"
         notes.parent.mkdir()
         notes.write_text("# notes\n")
-
-        _glob_cache.clear()
 
         # Only CLAUDE.md is an instruction file; docs/notes.md isn't classified.
         cf = ClassifiedFile(path=claude_md, file_type="main", properties={})
@@ -300,6 +286,5 @@ def test_glob_targets_skip_the_built_in_excludes_and_local_config_excludes(tmp_p
         (tmp_path / folder / "note.md").write_text("# note\n")
     (tmp_path / ".ails").mkdir()
     (tmp_path / ".ails" / "config.local.yml").write_text("exclude_dirs:\n  - drafts\n")
-    _glob_cache.clear()
     found = {p.relative_to(tmp_path).as_posix() for p in _resolve_glob_targets("**/*.md", tmp_path)}
     assert found == {"docs/note.md"}

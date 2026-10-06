@@ -20,7 +20,7 @@ from reporails_cli.core.mapper.bio_graphs import (
     _head_a_path,
     _head_b_path,
 )
-from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession, _Tokens
+from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
 
 _MAX_LENGTH = 128
 _HIDDEN = 384
@@ -135,10 +135,11 @@ class _BioEncoder(_OnnxEncoderSession):
         last_hidden = self._session.run(["last_hidden_state"], feed)[0][0]  # (seq, hidden)
         return last_hidden, list(enc.offsets)
 
-    def forward_bucket(self, bucket: list[_Tokens]) -> list[tuple[Any, list[tuple[int, int]]]]:
-        """One forward over a bucket → per-text ``(hidden [seq, hidden], offsets)``, padding trimmed."""
-        hidden = self._session.run(["last_hidden_state"], self._encode_feed(bucket))[0]  # (B, max_len, hidden)
-        return [(hidden[i, : len(t.ids)], t.offsets) for i, t in enumerate(bucket)]
+    def forward_bucket(self, bucket: list[str]) -> list[tuple[Any, list[tuple[int, int]]]]:
+        """One forward over a bucket of texts → per-text ``(hidden [seq, hidden], offsets)``, padding trimmed."""
+        tokens = self._tokenize(bucket)
+        hidden = self._session.run(["last_hidden_state"], self._encode_feed(tokens))[0]  # (B, max_len, hidden)
+        return [(hidden[i, : len(t.ids)], t.offsets) for i, t in enumerate(tokens)]
 
 
 @lru_cache(maxsize=4)
