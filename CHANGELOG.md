@@ -377,6 +377,11 @@
 - Check: a project whose only instructions are Antigravity rules in `.agents/rules/` is found and checked, with or without `--agent`.
 - Check: a whole-project run set to one agent (with `--agent` or `default_agent`) that finds none of that agent's files now names the other agents the project has files for and how to check them, instead of asking for that agent's file; a check of an empty folder keeps its usual message.
 - Windows: files are classified, matched and reported with the same forward-slash paths as on macOS and Linux, so Cursor, Copilot, Antigravity and Codex files, skills and home-folder instructions are recognised there.
+- `ails rules` and `ails explain` no longer describe the one-instruction-per-sentence and broad-conditional-scope rules as needing a server connection; both run on your machine.
+- Python 3.13: a symlink loop in a project is skipped instead of being treated as a normal file.
+- Check: the summary names the agent you passed with `--agent`, or the one it detected, also when the analysis model is not on disk.
+- GitHub Action: the `min-score` gate fails when content checks were skipped, instead of passing on a partial score.
+- MCP: a `validate` call that hit a busy or slow server can be retried on the same file instead of being refused as a repeat; the reply says it is retryable and how long to wait, and retries still count toward the per-file call limit.
 
 ### Removed
 
@@ -406,6 +411,7 @@
 - The unit suite ends without failures on a machine with no model files: the tests that need no model run without it.
 - The tests that need the model files pass where the models are installed: the two-agent check test and the heal smoke fixture follow the current behaviour.
 - The test suites pass on a machine without the model files and skip exactly the tests that need it, as on CI, give the same results on a CI runner as locally (they no longer inherit the runner's CI variables, which switch the default output to JSON), and collect and run on Windows (tests that need POSIX-only behaviour — file modes, interval timers, case-sensitive file names, symlinks, bash, the daemon socket — skip there, and tests no longer depend on the platform's default encoding or the HOME variable); the source type-checks for Windows again, and the GitHub Action's self-test no longer expects a min-score gate to pass without a server.
+- CI and the release gate run the QA suite on Python 3.12 and 3.13 as well as on Windows; `typer` is capped below 0.22; an always-empty field is no longer uploaded and unused helpers are removed; Windows test expectations use the forward-slash paths the CLI reports.
 - The source archive carries tracked source only: no cache, project-settings or scratch folders. The GitHub Action's `version` input says what an empty value installs, and the Action's own test asserts that a minimum-score gate fails when the diagnostics service is unreachable.
 
 - Code structure, module layout, docstrings and comments tidied and unused code removed; tests, test tooling, build, CI and release checks expanded and tightened; maintainer tooling for development checkouts; the published package and source archive no longer include build-machine leftovers, local-only test data or maintainer scripts. No change in behavior or output. Comments and docstrings in the source, the tests, the workflows and the scripts describe what the code does.
