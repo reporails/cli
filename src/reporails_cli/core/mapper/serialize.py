@@ -72,8 +72,6 @@ def _pack_optional_atom_fields(atom: Atom, d: dict[str, Any]) -> None:
 
 def _pack_granularity_and_span_fields(atom: Atom, d: dict[str, Any]) -> None:
     """Add the caps/cell/stage/granularity-audit fields, the import origin, and the slot coordinates."""
-    if atom.caps_tokens:
-        d["caps_tokens"] = list(atom.caps_tokens)
     if atom.cell_straddle:
         d["cell_straddle"] = True
     if atom.stage:
@@ -194,7 +192,6 @@ def _atom_from_dict(d: dict[str, Any]) -> Atom:
         italic_tokens=italic_tokens,
         bold_tokens=bold_tokens,
         unformatted_code=unformatted_code,
-        caps_tokens=d.get("caps_tokens", []),
         position_index=d.get("position_index", 0),
         token_count=d.get("token_count", 0),
         file_path=d.get("file_path", ""),

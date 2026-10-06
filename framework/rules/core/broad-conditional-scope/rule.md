@@ -3,8 +3,8 @@ id: CORE:C:0060
 slug: broad-conditional-scope
 title: "Broad Conditional Scope"
 category: coherence
-type: mechanical
-execution: server
+type: deterministic
+execution: local
 severity: medium
 match: {}
 surface_mutations:

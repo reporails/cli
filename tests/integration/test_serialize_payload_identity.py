@@ -6,7 +6,7 @@
 whole-map cache (`full_map_cache.py`) round-trips the SAME two functions to
 disk. `_atom_to_dict`/`_atom_from_dict` must carry `slots` (the span coordinates the
 wire `so` block projects), plus `stage`, `over_merged`, `min_clause_cosine`,
-`caps_tokens`, `cell_straddle`, and `abstained` — so a daemon or whole-map-cache-hit run
+`cell_straddle`, and `abstained` — so a daemon or whole-map-cache-hit run
 ships the same payload, `so` block included, as a cold in-process run.
 
 This runs the real bundled multi-slot classifier + embedder (no stubs — the

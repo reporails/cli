@@ -3,8 +3,8 @@ id: CORE:C:0058
 slug: one-instruction-per-sentence
 title: "One Instruction Per Sentence"
 category: coherence
-type: mechanical
-execution: server
+type: deterministic
+execution: local
 severity: medium
 match: {}
 ---

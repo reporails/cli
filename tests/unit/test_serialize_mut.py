@@ -105,7 +105,7 @@ def test_scope_conditional_default_false_on_missing_key() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_atom_round_trip_carries_span_coordinates_and_stage_fields() -> None:
-    """An Atom with populated slots/stage/over_merged/min_clause_cosine/caps_tokens/
+    """An Atom with populated slots/stage/over_merged/min_clause_cosine/
     cell_straddle/abstained must round-trip through _atom_to_dict/_atom_from_dict
     with every field payload.py's _project_atom reads intact, so a daemon or whole-map-cache round-trip serves
     the same payload (`so` block included) as a cold in-process run."""
@@ -113,7 +113,6 @@ def test_atom_round_trip_carries_span_coordinates_and_stage_fields() -> None:
         charge_value=1,
         charge="DIRECTIVE",
         modality="imperative",
-        caps_tokens=["MUST"],
         cell_straddle=True,
         stage="multislot",
         over_merged=True,
@@ -131,7 +130,6 @@ def test_atom_round_trip_carries_span_coordinates_and_stage_fields() -> None:
         ),
     )
     back = _atom_from_dict(_atom_to_dict(atom))
-    assert back.caps_tokens == ["MUST"]
     assert back.cell_straddle is True
     assert back.stage == "multislot"
     assert back.over_merged is True

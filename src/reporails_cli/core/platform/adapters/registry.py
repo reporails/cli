@@ -11,13 +11,7 @@ from typing import Any
 import yaml
 
 from reporails_cli.core.platform.adapters.rule_builder import (
-    CORE_WEIGHT_THRESHOLD as CORE_WEIGHT_THRESHOLD,
-)
-from reporails_cli.core.platform.adapters.rule_builder import (
     build_rule as build_rule,
-)
-from reporails_cli.core.platform.adapters.rule_builder import (
-    derive_tier as derive_tier,
 )
 from reporails_cli.core.platform.adapters.rule_builder import (
     get_checks_paths as get_checks_paths,

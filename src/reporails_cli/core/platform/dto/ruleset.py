@@ -77,7 +77,6 @@ class Atom(BaseModel):
     named_tokens: list[str] = Field(default_factory=list)
     italic_tokens: list[str] = Field(default_factory=list)
     bold_tokens: list[str] = Field(default_factory=list)
-    caps_tokens: list[str] = []  # all-caps tokens (parallel to named/italic/bold; not yet populated)
     unformatted_code: list[str] = Field(default_factory=list)
     # 0-based document-order index among the file's atoms that hold a place: every non-heading
     # atom and each charged heading; a heading that only titles its section keeps 0, and a list

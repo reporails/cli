@@ -64,13 +64,6 @@ class Severity(str, Enum):
     INFO = "info"
 
 
-class Tier(str, Enum):
-    """Rule confidence tier, derived from backing source weights."""
-
-    CORE = "core"
-    EXPERIMENTAL = "experimental"
-
-
 class PatternConfidence(str, Enum):
     """How reliable a rule's detection pattern is."""
 
@@ -309,6 +302,5 @@ __all__ = [
     "Rule",
     "RuleType",
     "Severity",
-    "Tier",
     "Violation",
 ]

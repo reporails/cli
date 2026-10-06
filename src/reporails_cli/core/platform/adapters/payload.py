@@ -91,8 +91,6 @@ def _project_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
         d["li"] = True  # a line ending with a colon that introduces the list, code block or table after it
     if a.embedded_charge_markers:
         d["ecm"] = list(a.embedded_charge_markers)
-    if a.caps_tokens:
-        d["cap"] = list(a.caps_tokens)
     if a.slots is not None:
         so = _project_soas_span(a.slots)
         if so is not None:
