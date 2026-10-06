@@ -31,7 +31,7 @@ def _ids(findings: list, rel: str) -> set[str]:
 def test_nested_skill_md_alone_has_no_missing_description(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/foo/SKILL.md", GOOD.replace("wrong", "foo"))
     inner = _write(tmp_path, ".claude/skills/foo/sub/SKILL.md", GOOD)
-    skills = {str(entry): str(entry.parent), str(inner): str(entry.parent)}
+    skills = {entry.as_posix(): entry.parent.as_posix(), inner.as_posix(): entry.parent.as_posix()}
     ids = _ids(run_m_probes(tmp_path, [inner], agent="claude", skills=skills), "sub/SKILL.md")
     assert "CORE:S:0040" not in ids
 
@@ -41,7 +41,7 @@ def test_nested_skill_md_alone_has_no_missing_description(tmp_path: Path) -> Non
 def test_nested_skill_md_is_not_judged_by_entry_rules(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/foo/SKILL.md", GATES.replace("disable-model-invocation: true\n", ""))
     inner = _write(tmp_path, ".claude/skills/foo/sub/SKILL.md", GATES.replace("foo", "other"))
-    skills = {str(entry): str(entry.parent), str(inner): str(entry.parent)}
+    skills = {entry.as_posix(): entry.parent.as_posix(), inner.as_posix(): entry.parent.as_posix()}
     findings = run_m_probes(tmp_path, [entry, inner], agent="claude", skills=skills)
     ids = _ids(findings, "sub/SKILL.md")
     assert "CORE:S:0036" not in ids
@@ -52,7 +52,7 @@ def test_nested_skill_md_is_not_judged_by_entry_rules(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_bad_entry_still_judged(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/foo/SKILL.md", GOOD)
-    skills = {str(entry): str(entry.parent)}
+    skills = {entry.as_posix(): entry.parent.as_posix()}
     ids = _ids(run_m_probes(tmp_path, [entry], agent="claude", skills=skills), "foo/SKILL.md")
     assert "CORE:S:0036" in ids
 

@@ -34,14 +34,14 @@ class TestFirstMatchingPatternExpandsHome:
     @pytest.mark.subsys_classify
     def test_home_rooted_leaf_pattern_matches_the_absolute_path_it_found(self, home: Path) -> None:
         """`~/.claude/CLAUDE.md` matches the absolute path discovery expanded to find it."""
-        rel_path = str(home / ".claude" / "CLAUDE.md")
+        rel_path = (home / ".claude" / "CLAUDE.md").as_posix()
         assert _first_matching_pattern(rel_path, ("~/.claude/CLAUDE.md",)) == "~/.claude/CLAUDE.md"
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
     def test_home_rooted_directory_glob_matches_an_entry_file_inside_it(self, home: Path) -> None:
         """A trailing-slash home pattern (`~/.claude/projects/*/memory/`) matches a note inside."""
-        rel_path = str(home / ".claude" / "projects" / "proj-slug" / "memory" / "notes.md")
+        rel_path = (home / ".claude" / "projects" / "proj-slug" / "memory" / "notes.md").as_posix()
         patterns = ("~/.claude/projects/*/memory/",)
         assert _first_matching_pattern(rel_path, patterns) == "~/.claude/projects/*/memory/"
 

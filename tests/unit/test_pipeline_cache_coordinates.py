@@ -115,4 +115,4 @@ def test_byte_identical_plain_files_share_one_entry_with_correct_lines(tmp_path:
     pl._classify_file(b, MapCache(tmp_path / "cache"), all_atoms, needing, "legacy")
     assert needing == []
     assert _never_push_line([(x.line, x.imported_from, x.text) for x in all_atoms]) == 7
-    assert {x.file_path for x in all_atoms} == {str(b)}
+    assert {x.file_path for x in all_atoms} == {b.as_posix()}

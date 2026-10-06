@@ -45,8 +45,8 @@ def test_group_skill_md_is_not_a_skill(tmp_path: Path) -> None:
 def test_supporting_skill_md_is_not_measured_as_entry(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/a/SKILL.md", SHORT)
     inner = _write(tmp_path, ".claude/skills/a/b/SKILL.md", LONG)
-    folder = str(entry.parent)
-    skills = {str(entry): folder, str(inner): folder}
+    folder = entry.parent.as_posix()
+    skills = {entry.as_posix(): folder, inner.as_posix(): folder}
     ids = _ids(_run(tmp_path, [entry, inner], skills), "a/b/SKILL.md")
     assert "CORE:S:0031" not in ids
     assert "CORE:S:0040" not in ids
@@ -56,7 +56,7 @@ def test_supporting_skill_md_is_not_measured_as_entry(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_long_entry_still_reported(tmp_path: Path) -> None:
     entry = _write(tmp_path, ".claude/skills/a/SKILL.md", LONG)
-    skills = {str(entry): str(entry.parent)}
+    skills = {entry.as_posix(): entry.parent.as_posix()}
     assert "CORE:S:0031" in _ids(_run(tmp_path, [entry], skills), "a/SKILL.md")
 
 

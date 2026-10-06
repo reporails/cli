@@ -53,7 +53,7 @@ def _link_entries(root: Path) -> list[tuple[str, str, int]]:
 @pytest.mark.subsys_lint
 def test_a_broken_link_is_sent_on_its_line(tmp_path: Path, dev_rules_dir: Path) -> None:
     (tmp_path / "CLAUDE.md").write_text(_MAIN.format(target="gone.md", tail=""))
-    assert _link_entries(tmp_path) == [("CORE:S:0056", str(tmp_path / "CLAUDE.md"), 7)]
+    assert _link_entries(tmp_path) == [("CORE:S:0056", (tmp_path / "CLAUDE.md").as_posix(), 7)]
 
 
 @pytest.mark.unit

@@ -242,14 +242,14 @@ def test_a_skills_supporting_file_takes_the_skill_s_type(monkeypatch, tmp_path):
     records, _atoms, _embed = pl._classify_all_files(
         [skill_md, intake, nested, other], tmp_path, None, _load_registry(), "legacy"
     )
-    assert {r.path: r.type for r in records}[str(intake)] == "generic"  # mapped as the file type says
+    assert {r.path: r.type for r in records}[intake.as_posix()] == "generic"  # mapped as the file type says
     record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
 
     types = {r.path: r.type for r in records}
-    assert types[str(skill_md)] == "skills"
-    assert types[str(intake)] == "skills"
-    assert types[str(nested)] == "skills"
-    assert types[str(other)] == "generic"
+    assert types[skill_md.as_posix()] == "skills"
+    assert types[intake.as_posix()] == "skills"
+    assert types[nested.as_posix()] == "skills"
+    assert types[other.as_posix()] == "generic"
 
 
 @pytest.mark.unit
@@ -282,9 +282,9 @@ def test_a_retyped_skill_supporting_file_inherits_the_skill_s_loading_and_scope(
     record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
 
     by_path = {r.path: r for r in records}
-    skill_rec = by_path[str(skill_md)]
-    ref_rec = by_path[str(reference)]
-    other_rec = by_path[str(other)]
+    skill_rec = by_path[skill_md.as_posix()]
+    ref_rec = by_path[reference.as_posix()]
+    other_rec = by_path[other.as_posix()]
 
     assert ref_rec.type == "skills"
     assert ref_rec.loading == skill_rec.loading == "on_invocation"

@@ -23,7 +23,7 @@ def _atom_shape(ruleset, file_path: Path) -> list[tuple[str, int, str, str, bool
     return [
         (a.charge, a.charge_value, a.modality, a.stage, a.slots is not None)
         for a in ruleset.atoms
-        if a.file_path == str(file_path) and a.kind != "heading"
+        if a.file_path == file_path.as_posix() and a.kind != "heading"
     ]
 
 

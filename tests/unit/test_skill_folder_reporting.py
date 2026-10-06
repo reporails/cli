@@ -572,8 +572,8 @@ class TestSkillSlotFolders:
         broken = tmp_path / ".claude/skills/broken"
         assert skill_slot_folders(rmap, tmp_path) == {broken}
         members = skill_membership(rmap, tmp_path) or {}
-        assert members[str(broken)] == str(broken)
-        assert str(broken / "notes.md") not in members
+        assert members[broken.as_posix()] == broken.as_posix()
+        assert (broken / "notes.md").as_posix() not in members
         assert str(broken) not in (skill_membership(rmap) or {})
 
     @pytest.mark.unit

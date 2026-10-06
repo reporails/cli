@@ -450,5 +450,5 @@ def test_handler_finding_is_sent_as_a_located_entry(tmp_path: Path, dev_rules_di
     entries, structural_total = lint_request_local(inputs)
     wanted = _handler_rule_ids(agent)
     sent = [(e.file, e.line, e.severity) for e in entries if e.rule in wanted]
-    assert sent == [(str(project / AGENT_FILES[agent][1]), 1, "warning")]
+    assert sent == [((project / AGENT_FILES[agent][1]).as_posix(), 1, "warning")]
     assert structural_total == len(structural_rule_ids(agent))

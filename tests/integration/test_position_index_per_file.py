@@ -53,6 +53,6 @@ def test_position_index_is_per_file_across_map_ruleset(tmp_path: Path) -> None:
             continue
         by_file.setdefault(atom.file_path, []).append(atom.position_index)
 
-    assert set(by_file) == {str(a), str(b)}
+    assert set(by_file) == {a.as_posix(), b.as_posix()}
     for path, positions in by_file.items():
         assert sorted(positions) == list(range(len(positions))), (path, positions)
