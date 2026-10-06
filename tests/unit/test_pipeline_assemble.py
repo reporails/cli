@@ -312,6 +312,42 @@ def test_a_local_finding_the_workflow_serves_reads_the_served_tier(tmp_path, dev
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
+def test_a_listed_config_file_finding_keeps_the_tier_its_row_carried(tmp_path, dev_rules_dir):
+    """A finding in a config file is graded by its workflow row before heal lists that file."""
+    from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+    from reporails_cli.core.platform.dto.models import LocalFinding
+
+    config = str(tmp_path / ".claude" / "settings.json")
+    main = str(tmp_path / "AGENTS.md")
+
+    def row(rule, file, tier):
+        return LocationFinding(rule=rule, file=file, line=1, pi=None, message="", remedy="", impact_tier=tier)
+
+    config_row = row("CODEX:E:0002", config, "gate_mover")
+    locations = (
+        WorkflowLocation(order=1, element=config, kind="main", loading="", files=(config,), findings=(config_row,)),
+        WorkflowLocation(
+            order=2, element=main, kind="main", loading="", files=(main,), findings=(row("CODEX:E:0001", main, ""),)
+        ),
+    )
+    finding = LocalFinding(
+        file=".claude/settings.json", line=1, severity="error", rule="CODEX:E:0002", message="m", check_id="c"
+    )
+    lint_result = SimpleNamespace(
+        report=None, hints=(), cross_file_coordinates=(), tier="pro", workflow=RemediationWorkflow(locations=locations)
+    )
+
+    result = assemble_result(
+        _inputs(scan_root=tmp_path, m_findings=[finding], lint_result=lint_result, effective_agent="codex")
+    )
+
+    assert [f.impact_tier for f in result.findings if f.rule == "CODEX:E:0002"] == ["gate_mover"]
+    assert [loc.element for loc in result.workflow.locations] == [main]
+    assert [(e.rule, e.reason) for e in result.workflow.listed] == [("CODEX:E:0002", "config-file")]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
 def test_a_served_member_tier_stays_on_its_own_rule(tmp_path, dev_rules_dir):
     from reporails_cli.core.platform.dto.diagnostics import LocationFinding
     from reporails_cli.core.platform.dto.models import LocalFinding

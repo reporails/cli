@@ -109,10 +109,11 @@ def assemble_result(inp: AssembleInputs) -> Any:
         result = replace(result, workflow=lint_result.workflow)
     imported = imported_places(inp.ruleset_map, inp.scan_root) if inp.ruleset_map is not None else None
     result = apply_suppressions(result, project_root=inp.scan_root, alias_fn=inp.alias_fn, imported=imported)
-    result = apply_config_listing(result, inp.scan_root)
     result = _apply_surface_mutations(result, inp.scan_root, inp.effective_agent, inp.alias_fn)
     # After suppressions, so ignoring either credential rule on a line keeps the other's finding.
     result = stamp_served_tiers(collapse_same_secret(result), inp.scan_root)
+    # After the served tiers, so a config file's findings keep the tier their row carried.
+    result = apply_config_listing(result, inp.scan_root)
     result = stamp_local_tiers(result, report.local_tiers if report is not None else (), inp.scan_root)
     result = stamp_conventions(result, frozenset().union(*(convention_check_ids(a) for a in _rule_agents(inp))))
     return replace(result, stats=replace(result.stats, agents=_rule_agents(inp)))
