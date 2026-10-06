@@ -36,7 +36,7 @@
 - Every unit test added in this release carries its subsystem marker on the test itself.
 - The faster first check keeps memory use flat on very large projects, sees files created between checks in a long-running MCP server, works with a relative project root, and reports a looping symlink once per walk; the new batching has model-free unit tests.
 - The Pro footer under a check lives with the other sign-in and upgrade lines.
-- The sign-in and notice tests point the home folder at their temp folder on Windows too.
+- The sign-in and notice tests point the home folder at their temp folder on Windows too, and the folder-case test runs only where the filesystem tells upper and lower case apart.
 
 ## 0.6.0
 
