@@ -12,7 +12,7 @@ from pathlib import Path
 
 import typer
 
-from reporails_cli.interfaces.cli.auth_command import effective_tier
+from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.interfaces.cli.helpers import app, console
 
 logger = logging.getLogger(__name__)

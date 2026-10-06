@@ -18,7 +18,6 @@ from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, 
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
-    CredentialsUnreadableError,
     PlatformError,
 )
 from reporails_cli.core.platform.dto.diagnostics import (
@@ -84,23 +83,9 @@ def _api_key_from_credentials() -> str:
     Returns "" only for genuine absence (no file / no key). Raises
     CredentialsUnreadableError when the file exists but cannot be read or parsed.
     """
+    from reporails_cli.core.platform.config.credentials import load_credentials_record
 
-    try:
-        import yaml
-    except ImportError:
-        logger.debug("PyYAML not installed — cannot read credentials")
-        return ""
-
-    from reporails_cli.core.platform.config.credentials import credentials_path
-
-    path = credentials_path()
-    if not path.exists():
-        return ""
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as exc:
-        raise CredentialsUnreadableError(f"Could not read credentials file: {exc}") from exc
-    return data.get("api_key", "") if isinstance(data, dict) else ""
+    return str(load_credentials_record().get("api_key") or "")
 
 
 def _degrade_on_fault(reader: Callable[[], str], unit: str) -> str:

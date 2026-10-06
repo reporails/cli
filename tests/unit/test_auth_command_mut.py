@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import stat
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -19,6 +20,8 @@ import typer
 from typer.testing import CliRunner
 
 import reporails_cli.interfaces.cli.auth_command as auth
+from reporails_cli.core.platform.config import credentials as credentials_owner
+from reporails_cli.core.platform.config.credentials import read_credentials
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 from reporails_cli.interfaces.cli.auth_command import (
     _handle_exchange_response,
@@ -28,6 +31,12 @@ from reporails_cli.interfaces.cli.auth_command import (
 )
 
 runner = CliRunner()
+
+
+def _point_credentials(monkeypatch: pytest.MonkeyPatch, resolver: Callable[[], Path]) -> None:
+    """Point both the command and the credentials owner at one file."""
+    monkeypatch.setattr(auth, "credentials_path", resolver)
+    monkeypatch.setattr(credentials_owner, "credentials_path", resolver)
 
 
 class _FakePost:
@@ -66,7 +75,7 @@ def test_write_credentials_creates_nested_dir_block_style(monkeypatch: pytest.Mo
     """Writing into a not-yet-existing nested dir creates intermediates (kills `parents=True`
     -> `False`) and serialises block-style YAML (kills `default_flow_style=False` -> `True`)."""
     creds = tmp_path / "a" / "b" / ".reporails" / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds)
+    _point_credentials(monkeypatch, lambda: creds)
     _write_credentials("KEY", "octocat", "beta")
     assert creds.exists()
     text = creds.read_text(encoding="utf-8")
@@ -81,7 +90,7 @@ def test_write_credentials_tolerates_existing_dir(monkeypatch: pytest.MonkeyPatc
     parent = tmp_path / ".reporails"
     parent.mkdir()
     creds = parent / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds)
+    _point_credentials(monkeypatch, lambda: creds)
     _write_credentials("KEY", "octocat", "beta")
     assert creds.exists()
 
@@ -93,7 +102,7 @@ def test_write_credentials_restricts_permissions(monkeypatch: pytest.MonkeyPatch
     """On POSIX the credentials file ends at 0o600 — kills `== "win32"` -> `!=`, which would
     take the Windows branch and skip the owner-only open."""
     creds = tmp_path / ".reporails" / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds)
+    _point_credentials(monkeypatch, lambda: creds)
     _write_credentials("KEY", "octocat", "beta")
     assert stat.S_IMODE(creds.stat().st_mode) == 0o600
 
@@ -109,7 +118,7 @@ def test_write_credentials_file_is_owner_only_from_its_first_byte(
     created at 0o600 directly, instead of written at a default mode and
     narrowed by a later `chmod` (which leaves a race window on a shared host)."""
     creds = tmp_path / ".reporails" / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds)
+    _point_credentials(monkeypatch, lambda: creds)
     recorded_modes: list[int] = []
     real_open = os.open
 
@@ -129,7 +138,7 @@ def test_write_credentials_file_is_owner_only_from_its_first_byte(
 def test_write_credentials_directory_is_owner_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """`~/.reporails` is 0o700, not the umask-widened `mkdir` default."""
     creds = tmp_path / ".reporails" / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds)
+    _point_credentials(monkeypatch, lambda: creds)
     _write_credentials("KEY", "octocat", "free")
     assert stat.S_IMODE(creds.parent.stat().st_mode) == 0o700
 
@@ -146,7 +155,7 @@ def test_write_credentials_narrows_an_existing_wider_mode_file(monkeypatch: pyte
     creds.parent.mkdir(parents=True)
     creds.write_text("api_key: OLD\n", encoding="utf-8")
     creds.chmod(0o644)
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds)
+    _point_credentials(monkeypatch, lambda: creds)
 
     _write_credentials("NEWKEY", "octocat", "free")
 
@@ -202,7 +211,7 @@ def test_exchange_success_never_says_beta_or_full_diagnostics(
     unlocked' — unpaid tiers get no server fix text, and that promise
     undercuts the Pro upgrade at the conversion moment."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "free"})
     output = capsys.readouterr().out
     assert "beta" not in output.lower()
@@ -218,7 +227,7 @@ def test_exchange_free_key_gets_the_upgrade_line(
     """A free-tier sign-in keeps the one-line Pro pitch — matching what an
     unpaid `ails check` run already shows in place of server fix text."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "free"})
     output = capsys.readouterr().out
     assert "Pro adds the remedies" in output
@@ -235,7 +244,7 @@ def test_exchange_pro_key_gets_no_upgrade_pitch(
     """A Pro or team key sign-in must not print the Pro-upgrade pitch — the key
     already has what the pitch is selling."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "pro"})
     output = capsys.readouterr().out
     assert "Pro adds the remedies" not in output
@@ -251,7 +260,7 @@ def test_exchange_team_key_gets_no_upgrade_pitch(
 ) -> None:
     """A team key is entitled the same as pro — no upgrade pitch either."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat", "tier": "team"})
     output = capsys.readouterr().out
     assert "Pro adds the remedies" not in output
@@ -305,7 +314,7 @@ def test_status_authenticates_via_env_key_with_no_credentials_file(
     """`ails auth status` with `AILS_API_KEY` set and no credentials file must NOT
     say "Not authenticated" — `ails check` in the same shell authenticates via this
     same env var (api_client.py:146), so `auth status` must agree."""
-    monkeypatch.setattr(auth, "credentials_path", lambda: tmp_path / "credentials.yml")
+    _point_credentials(monkeypatch, lambda: tmp_path / "credentials.yml")
     monkeypatch.setenv("AILS_API_KEY", "rr_localtest_pro_0123456789abcdef")
     result = runner.invoke(auth_app, ["status"])
     assert "Not authenticated" not in result.output
@@ -318,7 +327,7 @@ def test_status_never_shows_bare_at_placeholder(monkeypatch: pytest.MonkeyPatch,
     """An env-only key with no matching stored identity has no local github
     handle to show — `auth status` must not render the literal `@?`
     placeholder, which reads as a broken f-string."""
-    monkeypatch.setattr(auth, "credentials_path", lambda: tmp_path / "credentials.yml")
+    _point_credentials(monkeypatch, lambda: tmp_path / "credentials.yml")
     monkeypatch.setenv("AILS_API_KEY", "rr_localtest_free_0123456789abcdef")
     result = runner.invoke(auth_app, ["status"])
     assert "@?" not in result.output
@@ -333,7 +342,7 @@ def test_status_does_not_claim_identity_is_resolved_at_check_time(
     CLI has no way to look one up for a key it did not issue — `auth status`
     must not claim the identity is 'resolved at check time' (only the tier is
     genuinely resolved then, by the server, on a check request)."""
-    monkeypatch.setattr(auth, "credentials_path", lambda: tmp_path / "credentials.yml")
+    _point_credentials(monkeypatch, lambda: tmp_path / "credentials.yml")
     monkeypatch.setenv("AILS_API_KEY", "rr_localtest_free_0123456789abcdef")
     result = runner.invoke(auth_app, ["status"])
     assert "Authenticated as" not in result.output  # no @handle claim of any kind
@@ -345,7 +354,7 @@ def test_status_does_not_claim_identity_is_resolved_at_check_time(
 def test_token_prints_env_key_with_no_credentials_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """`ails auth token` with `AILS_API_KEY` set and no credentials file must print
     the effective (env) key and exit 0, not exit 1 with "Not authenticated"."""
-    monkeypatch.setattr(auth, "credentials_path", lambda: tmp_path / "credentials.yml")
+    _point_credentials(monkeypatch, lambda: tmp_path / "credentials.yml")
     monkeypatch.setenv("AILS_API_KEY", "rr_localtest_pro_0123456789abcdef")
     result = runner.invoke(auth_app, ["token"])
     assert result.exit_code == 0
@@ -357,7 +366,7 @@ def test_token_prints_env_key_with_no_credentials_file(monkeypatch: pytest.Monke
 def test_token_env_key_wins_over_credentials_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Env wins over the stored file — mirrors api_client.py's own precedence."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     auth._write_credentials("rr_from_file", "octocat", "pro")
     monkeypatch.setenv("AILS_API_KEY", "rr_from_env")
     result = runner.invoke(auth_app, ["token"])
@@ -370,7 +379,7 @@ def test_status_never_renders_a_legacy_tier_string(monkeypatch: pytest.MonkeyPat
     """A stored `beta` (or `pro_grandfathered`) tier is a retired legacy string — `auth
     status` must never echo it verbatim; it falls back to the server-resolved message."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     monkeypatch.delenv("AILS_API_KEY", raising=False)
     auth._write_credentials("rr_key", "octocat", "beta")
     result = runner.invoke(auth_app, ["status"])
@@ -384,7 +393,7 @@ def test_status_never_renders_a_legacy_tier_string(monkeypatch: pytest.MonkeyPat
 def test_status_shows_valid_stored_tier(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A settled stored tier (`free`/`pro`/`team`) IS safe to echo verbatim."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     monkeypatch.delenv("AILS_API_KEY", raising=False)
     auth._write_credentials("rr_key", "octocat", "pro")
     result = runner.invoke(auth_app, ["status"])
@@ -400,10 +409,10 @@ def test_login_persists_no_tier_when_the_server_omits_one(monkeypatch: pytest.Mo
     `auth status` echoed it for the life of the credentials file.
     """
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     _handle_exchange_response({"api_key": "rr_key", "github_login": "octocat"})
 
-    assert auth._read_credentials()["tier"] == ""
+    assert read_credentials()["tier"] == ""
 
 
 @pytest.mark.unit
@@ -417,7 +426,7 @@ def test_login_echo_of_an_existing_session_filters_a_legacy_tier(
     exists, title-cased into something that reads authoritative.
     """
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     monkeypatch.setattr(auth, "_resolve_client_id", lambda _base: "cid")
     auth._write_credentials("rr_key", "octocat", "beta")
     result = runner.invoke(auth_app, ["login"])
@@ -431,7 +440,7 @@ def test_login_echo_of_an_existing_session_filters_a_legacy_tier(
 @pytest.mark.subsys_cli_ux
 def test_login_echo_of_an_existing_session_keeps_a_known_tier(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     monkeypatch.setattr(auth, "_resolve_client_id", lambda _base: "cid")
     auth._write_credentials("rr_key", "octocat", "team")
     result = runner.invoke(auth_app, ["login"])
@@ -445,7 +454,7 @@ def test_already_enrolled_echo_filters_a_legacy_tier(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     auth._write_credentials("rr_key", "octocat", "pro")
     with pytest.raises(typer.Exit):
         _handle_exchange_response({"already_enrolled": True, "github_login": "octocat", "tier": "beta"})
@@ -460,7 +469,7 @@ def test_already_enrolled_echo_filters_a_legacy_tier(
 def test_already_enrolled_without_a_local_key_points_to_a_new_key_on_the_account_page(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(auth, "credentials_path", lambda: tmp_path / "credentials.yml")
+    _point_credentials(monkeypatch, lambda: tmp_path / "credentials.yml")
     with pytest.raises(typer.Exit):
         _handle_exchange_response({"already_enrolled": True, "github_login": "octocat", "tier": "pro"})
 
@@ -477,7 +486,7 @@ def test_logout_does_not_clear_env_var_and_says_so(monkeypatch: pytest.MonkeyPat
     """`auth logout` only clears the on-disk file; it never touches the environment,
     and tells the user their env override is still live."""
     creds_path = tmp_path / "credentials.yml"
-    monkeypatch.setattr(auth, "credentials_path", lambda: creds_path)
+    _point_credentials(monkeypatch, lambda: creds_path)
     auth._write_credentials("rr_key", "octocat", "pro")
     monkeypatch.setenv("AILS_API_KEY", "rr_from_env")
     result = runner.invoke(auth_app, ["logout"])

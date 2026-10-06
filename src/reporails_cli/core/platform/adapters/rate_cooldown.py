@@ -18,12 +18,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS, FunnelError
+from reporails_cli.core.platform.utils.utils import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -60,15 +60,10 @@ def _load() -> dict[str, Any]:
 
 
 def _save(entries: dict[str, Any]) -> None:
-    path = _cooldown_path()
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(entries), encoding="utf-8")
-        tmp.replace(path)
+        write_json_atomic(_cooldown_path(), entries)
     except OSError as exc:
         logger.debug("Could not persist rate-limit cooldown: %s", exc)
-        tmp.unlink(missing_ok=True)
 
 
 def active_cooldown(base_url: str, api_key: str, now: float | None = None) -> FunnelError | None:

@@ -1,0 +1,62 @@
+"""Notice text is the server's, so it prints literally: never as markup."""
+
+from __future__ import annotations
+
+import io
+
+import pytest
+from rich.console import Console
+
+from reporails_cli.core.platform.dto.diagnostics import Notice
+from reporails_cli.formatters.text.notices import notice_lines
+
+
+def _printed(notices: list[Notice]) -> str:
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=200, emoji=False, highlight=False)
+    for line in notice_lines(notices):
+        console.print(line)
+    return buf.getvalue()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_markup_in_text_prints_literally() -> None:
+    text = "Pay [bold]now[/bold] at [link=https://evil.test]here[/link]"
+    out = _printed([Notice("a", "info", text)])
+    assert text in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_markup_in_text_carries_no_style_when_rendered() -> None:
+    console = Console(force_terminal=True, color_system="standard", width=200, file=io.StringIO(), highlight=False)
+    with console.capture() as cap:
+        for line in notice_lines([Notice("a", "info", "[bold]loud[/bold]")]):
+            console.print(line)
+    assert "\x1b[1m" not in cap.get()
+    assert "[bold]loud[/bold]" in cap.get()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_warn_is_yellow_and_info_is_plain() -> None:
+    warn, info = (notice_lines([Notice("a", level, "msg")])[0] for level in ("warn", "info"))
+    assert warn == "  [yellow]msg[/yellow]"
+    assert info == "  msg"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_https_url_renders_as_a_link_and_brackets_cannot_close_the_tag() -> None:
+    lines = notice_lines([Notice("a", "info", "msg", "https://example.test/a[1]")])
+    assert lines[1].startswith("  → [link=https://example.test/a%5B1%5D]")
+    assert "https://example.test/a[1]" not in lines[1].split("]", 1)[0]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_non_web_url_is_text_not_a_link() -> None:
+    lines = notice_lines([Notice("a", "info", "msg", "file:///etc/passwd")])
+    assert "[link" not in lines[1]
+    assert "file:///etc/passwd" in lines[1]

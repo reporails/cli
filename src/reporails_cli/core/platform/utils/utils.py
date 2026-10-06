@@ -6,6 +6,8 @@ All functions are pure (no I/O) except where noted.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 from fnmatch import fnmatchcase
 from functools import lru_cache
@@ -390,3 +392,19 @@ def normalize_rule_id(rule_id: str) -> str:
         Uppercase rule ID
     """
     return rule_id.upper()
+
+
+def write_json_atomic(path: Path, data: Any) -> None:
+    """Write `data` as JSON to `path` in one step (I/O).
+
+    The JSON goes to a temp file beside `path` and `os.replace` swaps it in, so a
+    reader sees the old file or the new one, never a half-written one. Creates the
+    parent directory. Raises `OSError` when the write fails; the temp file is removed.
+    """
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)

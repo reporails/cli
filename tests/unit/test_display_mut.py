@@ -412,11 +412,11 @@ class TestDetectTier:
     @pytest.mark.subsys_cli_ux
     def test_beta_credentials_file_never_influences_the_banner(self, monkeypatch) -> None:
         """A legacy `beta` credentials file must NOT influence the banner — only the
-        wire tier does. `_read_credentials` is monkeypatched to prove it is never
+        wire tier does. `read_credentials` is monkeypatched to prove it is never
         consulted (and even if it were, `beta` is not a value the function accepts)."""
-        import reporails_cli.interfaces.cli.auth_command as auth
+        import reporails_cli.core.platform.config.credentials as credentials
 
-        monkeypatch.setattr(auth, "_read_credentials", lambda: {"tier": "beta"})
+        monkeypatch.setattr(credentials, "read_credentials", lambda: {"tier": "beta"})
         result = SimpleNamespace(offline=False, hints=(), tier="anonymous")
         assert _detect_tier(result, has_quality=False) == "free"
         assert _detect_tier(result, has_quality=False) != "Pro (beta)"

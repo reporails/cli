@@ -10,10 +10,15 @@ import logging
 import time
 
 import typer
-import yaml
 from rich.console import Console
 
-from reporails_cli.core.platform.config.credentials import credentials_path
+from reporails_cli.core.platform.config.credentials import (
+    clear_credentials,
+    credentials_path,
+    env_api_key,
+    identity_and_tier,
+    read_credentials,
+)
 from reporails_cli.core.platform.contract.errors import PlatformUnavailableError
 from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, UNENTITLED_TIERS
 
@@ -48,18 +53,6 @@ def _user_agent() -> str:
     return f"reporails-cli/{__version__} (auth)"
 
 
-def _read_credentials() -> dict[str, str]:
-    """Read stored credentials."""
-    path = credentials_path()
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (yaml.YAMLError, OSError):
-        return {}
-
-
 def _write_credentials(api_key: str, github_login: str, tier: str) -> None:
     """Store credentials securely.
 
@@ -83,13 +76,6 @@ def _write_credentials(api_key: str, github_login: str, tier: str) -> None:
         credentials_path(),
         {"api_key": api_key, "github_login": github_login, "tier": tier},
     )
-
-
-def _clear_credentials() -> None:
-    """Remove stored credentials."""
-    path = credentials_path()
-    if path.exists():
-        path.unlink()
 
 
 def _get_platform_url() -> str:
@@ -211,7 +197,7 @@ def _handle_exchange_response(payload: dict[str, str]) -> None:
     if payload.get("already_enrolled"):
         username = payload.get("github_login", "")
         tier = _tier_phrase(payload.get("tier", ""))
-        creds = _read_credentials()
+        creds = read_credentials()
         if creds.get("api_key"):
             console.print(f"  Already enrolled as [bold]@{username}[/]{tier}.")
             console.print("  Your existing key is still active.\n")
@@ -319,7 +305,7 @@ def login(
         raise typer.Exit(1)
 
     # Check if already authenticated
-    creds = _read_credentials()
+    creds = read_credentials()
     if creds.get("api_key"):
         console.print(
             f"\n  Already authenticated as [bold]@{creds.get('github_login', '?')}[/]"
@@ -361,13 +347,6 @@ def login(
     _handle_exchange_response(payload)
 
 
-def _env_api_key() -> str:
-    """Read the `AILS_API_KEY` env override — mirrors api_client.py's env-wins precedence."""
-    import os
-
-    return os.environ.get("AILS_API_KEY", "")
-
-
 # Stored tiers that are safe to echo verbatim — the shared tier vocabulary, not a
 # second copy of it. Anything else (empty, or a retired legacy tier string) is
 # resolved at check time, so this never prints a stale value.
@@ -384,27 +363,11 @@ def _tier_phrase(tier: str) -> str:
     return f" ({tier} tier)" if tier in _DISPLAYABLE_TIERS else ""
 
 
-def _identity_and_tier(creds: dict[str, str], api_key: str) -> tuple[bool, str]:
-    """(stored identity matches the key in effect, stored tier for that key or "").
-
-    The stored login and tier are only meaningful when the key in effect IS the
-    locally cached one — an env-provided key may not match anything on disk.
-    """
-    known_identity = bool(creds.get("api_key")) and creds.get("api_key") == api_key
-    return known_identity, creds.get("tier", "") if known_identity else ""
-
-
-def effective_tier() -> str:
-    """Stored tier for the API key in effect ("" when unknown or the key is not the stored one)."""
-    creds = _read_credentials()
-    return _identity_and_tier(creds, _env_api_key() or creds.get("api_key", ""))[1]
-
-
 @auth_app.command("status")
 def status() -> None:
     """Show current authentication status."""
-    env_key = _env_api_key()
-    creds = _read_credentials()
+    env_key = env_api_key()
+    creds = read_credentials()
     api_key = env_key or creds.get("api_key", "")
 
     if not api_key:
@@ -415,7 +378,7 @@ def status() -> None:
     prefix = api_key[:16] + "..." if len(api_key) > 16 else api_key
     source = "env AILS_API_KEY" if env_key else str(credentials_path())
 
-    known_identity, stored_tier = _identity_and_tier(creds, api_key)
+    known_identity, stored_tier = identity_and_tier(creds, api_key)
     tier_line = stored_tier if stored_tier in _DISPLAYABLE_TIERS else _TIER_UNKNOWN_MSG
 
     console.print()
@@ -442,8 +405,8 @@ def logout() -> None:
     Only clears the on-disk credentials file — an `AILS_API_KEY` set in the
     environment is a shell/CI concern and is never modified by this command.
     """
-    env_key = _env_api_key()
-    creds = _read_credentials()
+    env_key = env_api_key()
+    creds = read_credentials()
 
     if not creds.get("api_key"):
         if env_key:
@@ -456,7 +419,7 @@ def logout() -> None:
         raise typer.Exit(0)
 
     username = creds.get("github_login", "?")
-    _clear_credentials()
+    clear_credentials()
     if env_key:
         console.print(
             f"\n  [green]Logged out.[/] Credentials for @{username} removed. "
@@ -483,8 +446,8 @@ def token() -> None:
     Exits non-zero if no key is available from either source, so scripts can
     detect missing credentials.
     """
-    env_key = _env_api_key()
-    creds = _read_credentials()
+    env_key = env_api_key()
+    creds = read_credentials()
     api_key = env_key or creds.get("api_key", "")
 
     if not api_key:

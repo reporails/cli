@@ -22,6 +22,21 @@ from typing import Any
 ENTITLED_TIERS = frozenset({"pro", "team"})
 UNENTITLED_TIERS = frozenset({"anonymous", "free"})
 
+# A short message for the user, as the server sends it. `level` is one of NOTICE_LEVELS;
+# `url` is "" when the notice links nowhere.
+NOTICE_LEVELS = frozenset({"info", "warn"})
+
+
+@dataclass(frozen=True)
+class Notice:
+    """One message for the user: an id (stable across runs), a level, the text, an optional link."""
+
+    id: str
+    level: str
+    text: str
+    url: str = ""
+
+
 # Failures that clear by themselves: a busy server, a request that took too long, and the
 # client's own timeout. They read as "try again", never as a bug.
 RETRYABLE_ERRORS = frozenset({"server_busy", "scoring_timeout", "timeout"})
