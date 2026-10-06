@@ -32,6 +32,8 @@
 - The MCP server's idle model release has its own module.
 - The API key, the upgrade link and the server's retry wait are each read in one place; the plugin's server starts this release or a newer one in its line.
 - The stored sign-in is read through one reader, and messages from the server are read off a reply and remembered once shown.
+- Every unit test added in this release carries its subsystem marker on the test itself.
+- The faster first check keeps memory use flat on very large projects, sees files created between checks in a long-running MCP server, works with a relative project root, and reports a looping symlink once per walk; the new batching has model-free unit tests.
 
 ## 0.6.0
 
