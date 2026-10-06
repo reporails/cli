@@ -108,7 +108,6 @@ def _setup(
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(install_module.subprocess, "run", runner)
     monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: key)
-    monkeypatch.delenv("AILS_PLUGIN_SOURCE", raising=False)
     if tmp_path is not None:
         monkeypatch.chdir(tmp_path)
 
@@ -268,7 +267,6 @@ def _update_setup(monkeypatch: pytest.MonkeyPatch, runner: _Runner, present: set
     monkeypatch.setattr(commands_module, "_update_engine", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(install_module.subprocess, "run", runner)
-    monkeypatch.delenv("AILS_PLUGIN_SOURCE", raising=False)
 
 
 @pytest.mark.unit
@@ -670,7 +668,6 @@ def test_closing_line_reads_the_tier_of_the_key_in_effect(
     (home / ".reporails" / "credentials.yml").write_text(f"api_key: k\ntier: '{stored_tier}'\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.delenv("AILS_API_KEY", raising=False)
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)
 

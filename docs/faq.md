@@ -36,7 +36,7 @@ Signing in is free, and it does not change your limits: an anonymous run and a s
 
 Anonymous and free already show *what's* wrong and *where*: every local finding with its line, and the file-level findings as per-file counts where the line detail belongs to Pro. The deeper diagnostic is what **Pro** adds: the *remedies* (what to change, where, and how), the *exact line* of every cross-file repetition and topic overlap (anonymous and free see which files and how many, not the lines), and the ordered remediation workflow your coding agent runs end to end. The server sends no remedies at all to anonymous or free callers — only the deterministic, local fixes (like wrapping a bare name in backticks) ship free, because those run entirely on your machine. Pro also raises the hourly rate (5 → 1,200) and the payload cap (2 MB → 20 MB).
 
-Sign in with `ails login`: it prints a link and a short code, opens your browser when it can, and finishes when you approve. You sign in once per machine, and it lasts a year. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX); `ails logout` signs out only that machine. Your plan comes from your account, so any machine you sign in on gets it. For CI, create an API key on [reporails.com/account](https://reporails.com/account).
+Sign in with `ails login`: it prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. You sign in once per machine, and it lasts a year. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX); `ails logout` signs out only that machine. Your plan comes from your account, so any machine you sign in on gets it. For CI, create an API key on [reporails.com/account](https://reporails.com/account).
 
 Full breakdown of what each mode includes: [Tiers and Limits](tiers.md).
 
@@ -46,7 +46,7 @@ Run `ails login`. Your plan comes from your account, so signing in gives this ma
 
 ## How do I sign in on a server over SSH?
 
-Run `ails login`. Without a graphical session it prints the link and a short code instead of opening a browser; open the link on any device, enter the code, and approve. The command on the server finishes when you do.
+Run `ails login`. Over SSH without a forwarded display it prints the link and a short code instead of opening a browser; open the link on your own machine within 30 seconds, check the code matches the page, and approve. The command on the server then finishes. With X forwarding, the page opens on your screen.
 
 ## My CI stopped authenticating after upgrading to 0.6.1
 

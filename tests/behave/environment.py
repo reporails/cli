@@ -7,11 +7,14 @@ and the real `ails` binary scans) torn down after. No state leaks between scenar
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # `tests.suite_env`, shared with pytest
+
+from support import run_ails, scenario_home
 
 
 def before_all(context) -> None:
@@ -22,18 +25,21 @@ def before_all(context) -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="replace")
-    # A CI runner's variables flip the default output to JSON; scenarios assert text.
-    for var in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI"):
-        os.environ.pop(var, None)
+    # The real model cache, read once with the real HOME, is shared into every scenario's own HOME.
+    context.real_models = Path.home() / ".reporails" / "cache" / "models"
 
 
 def before_scenario(context, scenario) -> None:
     context.tmpdir = Path(tempfile.mkdtemp(prefix="ails-behave-"))
+    context.home = scenario_home(context.tmpdir, context.real_models)
     context.project = None  # the steps build it (a git project with instruction files)
     context.result = None  # the last CompletedProcess from a real `ails` run
 
 
 def after_scenario(context, scenario) -> None:
     tmpdir = getattr(context, "tmpdir", None)
+    if tmpdir is not None and tmpdir.exists():
+        # A check starts a mapper daemon under the scenario's own home; stop it before the home goes.
+        run_ails(tmpdir, "daemon", "stop", home=context.home, timeout=30)
     if tmpdir is not None and tmpdir.exists():
         shutil.rmtree(tmpdir, ignore_errors=True)

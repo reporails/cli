@@ -574,7 +574,6 @@ class TestHealCommand:
     @requires_rules
     def test_heal_anonymous_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Anonymous (no key) gets the diagnosis but not the fix — `--heal` returns an auth notice."""
-        monkeypatch.delenv("AILS_API_KEY", raising=False)
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")

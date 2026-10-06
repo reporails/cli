@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from rich.console import Console, Group
+from rich.console import Console
 from rich.markup import escape
-from rich.padding import Padding
 from rich.text import Text
 
 from reporails_cli.core.platform.dto.diagnostics import Notice
@@ -41,7 +40,13 @@ def notice_lines(notices: Iterable[Notice]) -> list[str]:
 
 
 def print_notices(console: Console, notices: Iterable[Notice]) -> None:
-    """Print `notices` on `console`, each line indented two spaces, wrapped lines too."""
+    """Print `notices` on `console`: the text indented two spaces, wrapped lines too; a link on one line."""
+    indent = Text("  ")
+    width = max(console.width - len(indent), 1)
     for notice in notices:
-        lines = Group(*(Text.from_markup(line) for line in _notice_lines(notice)))
-        console.print(Padding(lines, (0, 0, 0, 2)))
+        text, *links = _notice_lines(notice)
+        for wrapped in Text.from_markup(text, emoji=False).wrap(console, width):
+            wrapped.rstrip()
+            console.print(indent + wrapped if wrapped.plain else "", soft_wrap=True)
+        for link in links:
+            console.print(indent + Text.from_markup(link, emoji=False), soft_wrap=True)

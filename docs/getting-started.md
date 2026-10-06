@@ -86,7 +86,7 @@ ails login    # sign this machine in through your browser
 ails logout   # sign this machine out
 ```
 
-`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. One sign-in per machine, good for a year; your plan (Free or Pro) comes from your account, so any machine you sign in on gets it.
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. One sign-in per machine, good for a year; your plan (Free or Pro) comes from your account, so any machine you sign in on gets it.
 
 See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configuration → Authentication](configuration.md#authentication) for the credential-storage and CI specifics.
 

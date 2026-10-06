@@ -311,7 +311,9 @@ ails login        # sign this machine in through your browser
 ails logout       # sign this machine out
 ```
 
-`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. One sign-in per machine; it lasts a year. Run again on a signed-in machine, it shows who is signed in and on which plan. `ails logout` signs out only this machine. Your plan (Free or Pro) comes from your account, not the machine.
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. One sign-in per machine; it lasts a year. Run again on a signed-in machine, it shows who is signed in and on which plan. `ails logout` signs out only this machine. Your plan (Free or Pro) comes from your account, not the machine.
+
+The page also opens when your coding agent runs `ails login`, for example from the plugin's heal. When `BROWSER` is set, that is the browser it uses, which is how remote editors and containers open the page on your own machine. In CI it never opens.
 
 The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually). When `AILS_API_KEY` is set, it is used instead of the sign-in.
 

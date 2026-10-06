@@ -122,7 +122,7 @@ ails login        # sign this machine in through your browser
 ails logout       # sign this machine out
 ```
 
-`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. You sign in once per machine, and the sign-in lasts a year. Run on a machine that is already signed in, it shows who is signed in and on which plan. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning that NTFS ACLs are not auto-restricted, so secure the file manually if you're on Windows). `ails logout` signs out only the machine you run it on.
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. You sign in once per machine, and the sign-in lasts a year. Run on a machine that is already signed in, it shows who is signed in and on which plan. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning that NTFS ACLs are not auto-restricted, so secure the file manually if you're on Windows). `ails logout` signs out only the machine you run it on.
 
 Your plan, Free or Pro, comes from your account, not from the machine: sign in on any machine and you get your account's plan.
 

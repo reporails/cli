@@ -62,12 +62,30 @@ def test_non_web_url_is_text_not_a_link() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_a_long_notice_keeps_its_indent_on_every_wrapped_line() -> None:
-    console = Console(width=40, record=True, file=io.StringIO(), highlight=False)
-    long = Notice(
-        "a", "warn", "Your payment failed and the plan ends soon " * 3, "https://example.test/billing/" + "x" * 50
-    )
-    print_notices(console, [long])
-    lines = console.export_text().splitlines()
-    assert len(lines) > 4
+def test_a_long_notice_keeps_its_indent_on_every_wrapped_line_and_ends_without_spaces() -> None:
+    buf = io.StringIO()
+    console = Console(width=40, file=buf, force_terminal=False, highlight=False)
+    print_notices(console, [Notice("a", "warn", "Your payment failed and the plan ends soon " * 3)])
+    lines = buf.getvalue().splitlines()
+    assert len(lines) > 2
     assert all(line.startswith("  ") for line in lines)
+    assert all(line == line.rstrip() for line in lines)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_long_link_stays_on_one_line() -> None:
+    url = "https://example.test/billing/" + "x" * 50
+    buf = io.StringIO()
+    print_notices(Console(width=30, file=buf, force_terminal=False, highlight=False), [Notice("a", "info", "Pay", url)])
+    assert buf.getvalue().splitlines() == ["  Pay", f"  → {url}"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_blank_line_prints_empty_and_an_emoji_code_prints_literally() -> None:
+    buf = io.StringIO()
+    print_notices(
+        Console(width=40, file=buf, force_terminal=False, highlight=False), [Notice("a", "info", "One\n\nTwo :smile:")]
+    )
+    assert buf.getvalue().splitlines() == ["  One", "", "  Two :smile:"]

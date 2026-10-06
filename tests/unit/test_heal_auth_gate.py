@@ -20,7 +20,6 @@ class TestHealAuthGate:
     def test_no_key_is_not_authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from reporails_cli.interfaces.cli.check_support import _heal_authed
 
-        monkeypatch.delenv("AILS_API_KEY", raising=False)
         assert _heal_authed(None) is False
 
     @pytest.mark.unit

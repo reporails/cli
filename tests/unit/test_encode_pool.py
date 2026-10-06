@@ -39,7 +39,6 @@ def test_run_buckets_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_workers_default_is_cpu_count(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AILS_MAP_ENCODE_WORKERS", raising=False)
     assert encode_pool.encode_pool_workers() == encode_pool._cpu_count()
 
 
@@ -58,7 +57,6 @@ def test_workers_env_override_and_floor(monkeypatch: pytest.MonkeyPatch) -> None
 @pytest.mark.subsys_map
 def test_intra_op_coordinates_with_pool(monkeypatch: pytest.MonkeyPatch) -> None:
     """intra_op = 1 when the pool is on; cpu_count when off; explicit env wins."""
-    monkeypatch.delenv("AILS_ORT_THREADS", raising=False)
     monkeypatch.setenv("AILS_MAP_ENCODE_WORKERS", "8")
     assert encode_pool.ort_intra_threads() == 1
     monkeypatch.setenv("AILS_MAP_ENCODE_WORKERS", "1")

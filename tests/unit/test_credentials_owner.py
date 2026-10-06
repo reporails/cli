@@ -20,7 +20,6 @@ NOW = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
 @pytest.fixture(autouse=True)
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("AILS_API_KEY", raising=False)
     return tmp_path
 
 

@@ -40,7 +40,6 @@ def _header(notices: list[dict[str, str]]) -> dict[str, str]:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_request_is_an_empty_json_body_with_the_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
     check_api_key("tok_1", base_url="http://srv/")
     assert seen["url"] == "http://srv/v1/diagnose"
@@ -125,7 +124,6 @@ def test_other_replies_are_unavailable(monkeypatch: pytest.MonkeyPatch, reply: h
 @pytest.mark.subsys_cli_ux
 def test_probe_goes_where_the_client_goes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AILS_SERVER_URL", "http://localhost:8001/")
-    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
     check_api_key("tok_1")
     assert seen["url"] == "http://localhost:8001/v1/diagnose"

@@ -19,7 +19,6 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
-    monkeypatch.delenv("AILS_API_KEY", raising=False)
     monkeypatch.setattr("reporails_cli.core.platform.config.bootstrap.REPORAILS_HOME", home / ".reporails")
     root = tmp_path / "proj"
     (root / ".claude").mkdir(parents=True)

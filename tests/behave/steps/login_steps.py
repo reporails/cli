@@ -72,12 +72,6 @@ class _Website(BaseHTTPRequestHandler):
             self._send(404, {"error": "not_found"})
 
 
-def _home(context) -> Path:
-    home = context.tmpdir / "home"
-    home.mkdir(exist_ok=True)
-    return home
-
-
 @given("a website that approves the sign-in after one pending answer")
 def step_website(context) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Website)
@@ -93,19 +87,16 @@ def step_website(context) -> None:
 def step_run(context, command: str) -> None:
     parts = command.split()
     assert parts[0] == "ails", command
-    home = _home(context)
+    home = context.home
     env = {
-        "HOME": str(home),
-        "USERPROFILE": str(home),
         "AILS_PLATFORM_URL": context.website.state["site"],
-        "AILS_API_KEY": "",
         # The login opens a browser whenever the machine can show one: point it at a command that succeeds
         # and does nothing, and hide any screen, so a developer's real browser never opens.
         "BROWSER": f'"{Path(sys.executable).as_posix()}" -c pass %s',
         "DISPLAY": "",
         "WAYLAND_DISPLAY": "",
     }
-    context.result = run_ails(home, *parts[1:], timeout=60, env=env)
+    context.result = run_ails(home, *parts[1:], home=home, timeout=60, env=env)
 
 
 @then("the login exits {code:d}")
@@ -125,7 +116,7 @@ def step_code(context, code: str) -> None:
 
 
 def _stored(context) -> Path:
-    return _home(context) / ".reporails" / "credentials.yml"
+    return context.home / ".reporails" / "credentials.yml"
 
 
 @then('the stored sign-in holds the issued token for "{account}"')

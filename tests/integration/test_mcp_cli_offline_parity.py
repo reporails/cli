@@ -131,7 +131,6 @@ def test_cli_and_mcp_agree_offline_and_server_error_on_a_server_error_response(
     on the rejection must not flip MCP's `offline` to `false` while the CLI still reports
     `true` for the identical run."""
     _isolate_global_config(monkeypatch, tmp_path)
-    monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     project = _make_project(tmp_path)
 
     with _stub_error_server(status_code) as server_url:

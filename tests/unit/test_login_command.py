@@ -49,8 +49,6 @@ class _Site:
         monkeypatch.setattr(login_command, "revoke_sign_in", self._revoke)
         monkeypatch.setattr(login_command, "check_api_key", self._check)
         monkeypatch.setattr(login_command, "_open_in_browser", self.opened.append)
-        monkeypatch.delenv("AILS_API_KEY", raising=False)
-        monkeypatch.delenv("AILS_PLATFORM_URL", raising=False)
 
     def _sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)

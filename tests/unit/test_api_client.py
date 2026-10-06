@@ -124,9 +124,6 @@ class TestFaultDistinction:
         """AilsClient() with a fault on read → no raise, anonymous tier, visible WARNING."""
         import logging
 
-        monkeypatch.delenv("AILS_API_KEY", raising=False)
-        monkeypatch.delenv("AILS_TIER", raising=False)
-
         def _raise_creds() -> str:
             raise CredentialsUnreadableError("corrupt")
 
@@ -543,8 +540,6 @@ class TestOutgoingHeaders:
     @pytest.mark.subsys_api
     def test_authenticated_post_carries_custom_user_agent_and_bearer(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from unittest.mock import patch
-
-        monkeypatch.delenv("AILS_DEV_MODE", raising=False)
 
         from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
 

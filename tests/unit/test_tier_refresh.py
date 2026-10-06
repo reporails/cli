@@ -66,12 +66,8 @@ def _lint(
     monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     if dev_mode:
         monkeypatch.setenv("AILS_DEV_MODE", "1")
-    else:
-        monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)
-    else:
-        monkeypatch.delenv("AILS_API_KEY", raising=False)
     with (
         patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
         patch("httpx.post", return_value=reply),

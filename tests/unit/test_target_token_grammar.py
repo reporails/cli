@@ -110,7 +110,6 @@ def test_file_scheme_overrides_capability_name(tmp_path: Path):
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_check_timeout_ceiling_default_and_overrides(monkeypatch):
-    monkeypatch.delenv("AILS_CHECK_TIMEOUT_S", raising=False)
     assert _check_timeout_ceiling() == 600
     monkeypatch.setenv("AILS_CHECK_TIMEOUT_S", "30")
     assert _check_timeout_ceiling() == 30

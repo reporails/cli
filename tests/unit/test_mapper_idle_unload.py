@@ -25,7 +25,6 @@ def test_unload_resets_loaded_model() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_daemon_idle_timeout_defaults_on(monkeypatch) -> None:
-    monkeypatch.delenv("AILS_DAEMON_IDLE_S", raising=False)
     assert daemon._parse_idle_timeout() == daemon._DEFAULT_IDLE_TIMEOUT_S
 
 
@@ -46,7 +45,6 @@ def test_daemon_idle_timeout_zero_disables(monkeypatch) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_mcp_idle_timeout_defaults_on(monkeypatch) -> None:
-    monkeypatch.delenv("AILS_MCP_IDLE_S", raising=False)
     assert idle_release._parse_idle_timeout() == idle_release._DEFAULT_IDLE_S
 
 
