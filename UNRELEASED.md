@@ -7,7 +7,7 @@
 
 ### Added
 
-- `ails login` signs this machine in to your account through your browser: it prints a link and a short code, opens the browser when it can, and finishes when you approve. One sign-in per machine, lasting a year, and your plan (Free or Pro) comes from your account, so a second machine or a CI key never affects the others. On a machine that is already signed in it shows who is signed in and on which plan, and signs in again when that sign-in has ended. Over SSH or without a display it prints the link instead of opening a browser, and after too many attempts from one network it says how long to wait.
+- `ails login` signs this machine in to your account through your browser: it prints a link and a short code, opens the browser when it can (also when a coding agent runs it), and finishes when you approve. One sign-in per machine, lasting a year, and your plan (Free or Pro) comes from your account, so a second machine or a CI key never affects the others. On a machine that is already signed in it shows who is signed in and on which plan, and signs in again when that sign-in has ended. Where no browser can open, as in most SSH sessions, it prints the link instead, and after too many attempts from one network it says how long to wait.
 - `ails logout` signs only this machine out, and still removes the local sign-in when the website cannot be reached or the saved sign-in file is damaged.
 - Messages about your account (a failed payment, Pro ending, an announcement) appear under the header of `ails check`, as a `notices` list in `--format json`, and in the MCP `validate` reply. A warning shows on every run; other messages once a day.
 
@@ -24,4 +24,5 @@
 
 ### Internal
 
+- The MCP server's idle model release has its own module.
 - The stored sign-in is read through one reader, and messages from the server are read off a reply and remembered once shown.

@@ -6,7 +6,7 @@ import pytest
 
 from reporails_cli.core.mapper import daemon
 from reporails_cli.core.mapper.models import Models
-from reporails_cli.interfaces.mcp import server
+from reporails_cli.interfaces.mcp import idle_release
 
 
 @pytest.mark.unit
@@ -47,21 +47,21 @@ def test_daemon_idle_timeout_zero_disables(monkeypatch) -> None:
 @pytest.mark.subsys_runtime
 def test_mcp_idle_timeout_defaults_on(monkeypatch) -> None:
     monkeypatch.delenv("AILS_MCP_IDLE_S", raising=False)
-    assert server._parse_mcp_idle_timeout() == server._DEFAULT_MCP_IDLE_S
+    assert idle_release._parse_idle_timeout() == idle_release._DEFAULT_IDLE_S
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_mcp_idle_timeout_zero_disables(monkeypatch) -> None:
     monkeypatch.setenv("AILS_MCP_IDLE_S", "0")
-    assert server._parse_mcp_idle_timeout() is None
+    assert idle_release._parse_idle_timeout() is None
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_mcp_idle_timeout_env_override(monkeypatch) -> None:
     monkeypatch.setenv("AILS_MCP_IDLE_S", "5")
-    assert server._parse_mcp_idle_timeout() == 5
+    assert idle_release._parse_idle_timeout() == 5
 
 
 @pytest.mark.unit
@@ -84,7 +84,7 @@ def test_idle_watchdog_disabled_returns_immediately(monkeypatch) -> None:
     import asyncio
 
     monkeypatch.setenv("AILS_MCP_IDLE_S", "0")
-    asyncio.run(asyncio.wait_for(server._idle_watchdog(), timeout=1))
+    asyncio.run(asyncio.wait_for(idle_release._idle_watchdog(), timeout=1))
 
 
 @pytest.mark.unit
@@ -93,8 +93,8 @@ def test_idle_watchdog_unloads_once_while_idle(monkeypatch) -> None:
     import asyncio
 
     monkeypatch.setenv("AILS_MCP_IDLE_S", "1")
-    monkeypatch.setattr(server, "_last_activity", 0.0)
-    monkeypatch.setattr(server.time, "monotonic", lambda: 10_000.0)  # always idle
+    monkeypatch.setattr(idle_release, "_last_activity", 0.0)
+    monkeypatch.setattr(idle_release.time, "monotonic", lambda: 10_000.0)  # always idle
 
     calls = {"unload": 0}
 
@@ -111,9 +111,9 @@ def test_idle_watchdog_unloads_once_while_idle(monkeypatch) -> None:
         if polls["n"] >= 3:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr(server.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(idle_release.asyncio, "sleep", _fake_sleep)
 
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(server._idle_watchdog())
+        asyncio.run(idle_release._idle_watchdog())
 
     assert calls["unload"] == 1  # unloaded once, not once per poll

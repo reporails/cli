@@ -9,6 +9,7 @@ the scenario's temp dir. No in-process `CliRunner`, no stubbed code.
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -98,6 +99,11 @@ def step_run(context, command: str) -> None:
         "USERPROFILE": str(home),
         "AILS_PLATFORM_URL": context.website.state["site"],
         "AILS_API_KEY": "",
+        # The login opens a browser whenever the machine can show one: point it at a command that succeeds
+        # and does nothing, and hide any screen, so a developer's real browser never opens.
+        "BROWSER": f'"{Path(sys.executable).as_posix()}" -c pass %s',
+        "DISPLAY": "",
+        "WAYLAND_DISPLAY": "",
     }
     context.result = run_ails(home, *parts[1:], timeout=60, env=env)
 

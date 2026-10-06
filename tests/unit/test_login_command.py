@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import stat
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -41,13 +41,14 @@ class _Site:
         self.revoked: list[str] = []
         self.revoke_error: Exception | None = None
         self.opened: list[str] = []
+        self.grant = _GRANT
         monkeypatch.setattr(login_command.time, "sleep", self._sleep)
         monkeypatch.setattr(login_command.time, "monotonic", lambda: self.now)
         monkeypatch.setattr(login_command, "start_sign_in", self._start)
         monkeypatch.setattr(login_command, "poll_sign_in", self._poll)
         monkeypatch.setattr(login_command, "revoke_sign_in", self._revoke)
         monkeypatch.setattr(login_command, "check_api_key", self._check)
-        monkeypatch.setattr(login_command.webbrowser, "open", lambda url: self.opened.append(url) or True)
+        monkeypatch.setattr(login_command, "_open_in_browser", self.opened.append)
         monkeypatch.delenv("AILS_API_KEY", raising=False)
         monkeypatch.delenv("AILS_PLATFORM_URL", raising=False)
 
@@ -58,7 +59,7 @@ class _Site:
     def _start(self, site: str, machine: str) -> SignInGrant:
         if self.start_error:
             raise self.start_error
-        return _GRANT
+        return self.grant
 
     def _poll(self, site: str, device_code: str) -> PollOutcome:
         self.poll_calls += 1
@@ -74,11 +75,25 @@ class _Site:
         return self.check
 
 
-def _terminal(monkeypatch: pytest.MonkeyPatch, platform: str = "darwin") -> None:
-    """Make the command see a terminal on stdout (CliRunner's stream is not one) on `platform`."""
-    monkeypatch.setattr(
-        login_command, "sys", SimpleNamespace(platform=platform, stdout=SimpleNamespace(isatty=lambda: True))
-    )
+# The autouse fixture in conftest already clears the CI variables.
+_ENV_THAT_DECIDES = ("DISPLAY", "WAYLAND_DISPLAY", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "BROWSER")
+
+
+class _FakeSys:
+    """`sys` for the command with one thing changed: the platform."""
+
+    def __init__(self, platform: str) -> None:
+        self.platform = platform
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(sys, name)
+
+
+def _on_platform(monkeypatch: pytest.MonkeyPatch, platform: str = "darwin") -> None:
+    """Run the command on `platform`, with no screen and no SSH session unless the test sets one."""
+    for name in _ENV_THAT_DECIDES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(login_command, "sys", _FakeSys(platform))
 
 
 @pytest.fixture
@@ -132,19 +147,6 @@ def test_login_polls_pending_then_slow_down_then_success(site: _Site) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_login_opens_the_browser_only_on_a_terminal(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
-    site.polls = [_signed_in()]
-    runner.invoke(app, ["login"])
-    assert site.opened == []  # CliRunner's stdout is not a terminal
-    credentials_path().unlink()  # signed out again
-    _terminal(monkeypatch)
-    site.polls = [_signed_in()]
-    assert runner.invoke(app, ["login"]).exit_code == 0
-    assert site.opened == [_GRANT.verification_url]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
 @pytest.mark.parametrize(
     ("platform", "env", "opens"),
     [
@@ -153,16 +155,23 @@ def test_login_opens_the_browser_only_on_a_terminal(site: _Site, monkeypatch: py
         ("linux", {"WAYLAND_DISPLAY": "wayland-0"}, True),
         ("darwin", {}, True),
         ("win32", {}, True),
+        ("freebsd", {}, False),
+        ("darwin", {"SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22"}, False),
+        ("win32", {"SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22"}, False),
+        ("linux", {"SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22", "DISPLAY": "localhost:10.0"}, True),
+        ("darwin", {"SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22", "DISPLAY": "localhost:10.0"}, False),
+        ("linux", {"SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22", "BROWSER": "wslview"}, True),
+        ("linux", {"BROWSER": "  "}, False),
+        ("darwin", {"CI": "true"}, False),
+        ("linux", {"CI": "true", "DISPLAY": ":0"}, False),
     ],
 )
 def test_login_opens_the_browser_only_where_a_screen_can_show_it(
     site: _Site, monkeypatch: pytest.MonkeyPatch, platform: str, env: dict[str, str], opens: bool
 ) -> None:
-    monkeypatch.delenv("DISPLAY", raising=False)
-    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    _on_platform(monkeypatch, platform)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
-    _terminal(monkeypatch, platform)
     site.polls = [_signed_in()]
     result = runner.invoke(app, ["login"])
     assert result.exit_code == 0
@@ -173,13 +182,62 @@ def test_login_opens_the_browser_only_where_a_screen_can_show_it(
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_login_ignores_a_browser_that_will_not_open(site: _Site, monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fail(url: str) -> bool:
-        raise login_command.webbrowser.Error("no browser")
+    def _fail(url: str) -> None:
+        raise OSError("no browser")
 
-    _terminal(monkeypatch)
-    monkeypatch.setattr(login_command.webbrowser, "open", _fail)
+    _on_platform(monkeypatch)
+    monkeypatch.setattr(login_command, "_open_in_browser", _fail)
     site.polls = [_signed_in()]
     assert runner.invoke(app, ["login"]).exit_code == 0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_the_page_opens_in_a_real_child_that_ignores_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "marker.txt"
+    program = tmp_path / "marker.py"
+    program.write_text(
+        f"import sys\nwith open({marker.as_posix()!r}, 'a') as out:\n    out.write(sys.argv[1])\n", encoding="utf-8"
+    )
+    shadowed = tmp_path / "shadowed.txt"
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / "webbrowser.py").write_text(f"open({shadowed.as_posix()!r}, 'w').write('x')\n", encoding="utf-8")
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("BROWSER", f'"{Path(sys.executable).as_posix()}" "{program.as_posix()}" %s')
+    login_command._open_in_browser("https://reporails.com/x")
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not (marker.exists() or shadowed.exists()):
+        time.sleep(0.05)
+    time.sleep(0.2)  # let a wrongly imported file finish writing
+    assert marker.read_text(encoding="utf-8") == "https://reporails.com/x"
+    assert not shadowed.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example/oauth/device?user_code=ABCD-EFGH",
+        "http://reporails.com/oauth/device?user_code=ABCD-EFGH",
+        "file:///etc/passwd",
+        "https://reporails.com/oauth/device\x00?user_code=ABCD-EFGH",
+        "https://reporails.com/oauth/device\x1b[2J",
+    ],
+)
+def test_login_never_opens_a_link_that_is_not_the_websites(
+    site: _Site, monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    _on_platform(monkeypatch)
+    site.grant = SignInGrant("dev-1", "ABCD-EFGH", url, 600, 5)
+    site.polls = [_signed_in()]
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert "ABCD-EFGH" in result.output
+    assert site.opened == []
 
 
 @pytest.mark.unit
