@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.discovery.agents import get_all_instruction_files, get_all_scannable_files
-from reporails_cli.core.discovery.walk import has_symlink_loop, is_under, safe_resolve
+from reporails_cli.core.discovery.walk import (
+    has_symlink_loop,
+    is_symlink_loop_error,
+    is_under,
+    safe_resolve,
+)
 
 
 def _project_with_loop(root: Path) -> Path:
@@ -58,3 +63,39 @@ def test_loop_error_is_recognised_in_both_python_forms() -> None:
     assert is_symlink_loop_error(RuntimeError("Symlink loop"))
     assert is_symlink_loop_error(OSError(errno.ELOOP, "loop"))
     assert not is_symlink_loop_error(FileNotFoundError(errno.ENOENT, "missing"))
+
+
+def _resolve_raising(monkeypatch: pytest.MonkeyPatch, winerror: int) -> None:
+    def fake_resolve(self: Path, strict: bool = False) -> Path:
+        exc = OSError(22, "windows resolve failure")
+        exc.winerror = winerror  # type: ignore[attr-defined]
+        raise exc
+
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.parametrize("winerror", [1920, 1921])
+def test_a_windows_unfollowable_symlink_error_is_a_loop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, winerror: int
+) -> None:
+    _resolve_raising(monkeypatch, winerror)
+    exc = OSError(22, "x")
+    exc.winerror = winerror  # type: ignore[attr-defined]
+    assert is_symlink_loop_error(exc) is True
+    assert has_symlink_loop(tmp_path / "CLAUDE.md") is True
+    assert is_under(tmp_path / "CLAUDE.md", tmp_path) is False
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.parametrize("winerror", [2, 3])
+def test_a_windows_missing_file_error_is_not_a_loop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, winerror: int
+) -> None:
+    _resolve_raising(monkeypatch, winerror)
+    exc = OSError(2, "x")
+    exc.winerror = winerror  # type: ignore[attr-defined]
+    assert is_symlink_loop_error(exc) is False
+    assert has_symlink_loop(tmp_path / "CLAUDE.md") is False

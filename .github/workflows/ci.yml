@@ -20,6 +20,7 @@ jobs:
     name: QA gate (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         # macos-latest deliberately omitted: ubuntu-latest covers the POSIX/Unix
         # surface and windows-latest covers the non-POSIX surface; macOS is POSIX-like,

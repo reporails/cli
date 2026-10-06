@@ -27,6 +27,9 @@ from reporails_cli.core.platform.utils.utils import glob_matches
 logger = logging.getLogger(__name__)
 
 
+_WINDOWS_LOOP_ERRORS = frozenset({1920, 1921})
+
+
 def safe_resolve(path: Path) -> Path:
     """`path.resolve()`, or `path` unchanged when a symlink loop or an unreadable link stops it."""
     try:
@@ -38,9 +41,13 @@ def safe_resolve(path: Path) -> Path:
 def is_symlink_loop_error(exc: BaseException) -> bool:
     """True when `exc` from `Path.resolve(strict=True)` reports a symlink loop.
 
-    Python 3.12 raises `RuntimeError`; 3.13 raises `OSError` with `errno.ELOOP`.
+    Python 3.12 raises `RuntimeError`; 3.13 raises `OSError` with `errno.ELOOP` on POSIX and
+    with Windows error 1920 or 1921 (`ERROR_CANT_ACCESS_FILE`, `ERROR_CANT_RESOLVE_FILENAME`:
+    an unfollowable symlink) on Windows. A missing file (Windows error 2 or 3) is not a loop.
     """
-    return isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP
+    if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+        return True
+    return getattr(exc, "winerror", None) in _WINDOWS_LOOP_ERRORS
 
 
 def has_symlink_loop(path: Path) -> bool:
