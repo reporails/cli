@@ -60,3 +60,19 @@ def test_version_input_describes_the_stamped_default() -> None:
     assert version["default"] == ""
     assert "released with" in version["description"]
     assert "Defaults to latest" not in version["description"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_gates
+def test_rehearsal_twine_matches_the_pinned_publish_action() -> None:
+    """Bumping the PyPI publish action or the rehearsal's twine alone must fail here."""
+    release = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))
+    uses = [s.get("uses", "") for s in release["jobs"]["publish"]["steps"]]
+    assert "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33" in uses, (
+        "the publish action pin changed: update the twine version in release-wheel.yml to the one it bundles"
+    )
+    wheel = yaml.safe_load((ROOT / ".github" / "workflows" / "release-wheel.yml").read_text(encoding="utf-8"))
+    runs = [s.get("run", "") for s in wheel["jobs"]["build"]["steps"]]
+    assert any("twine==7.0.0" in r and "check --strict" in r for r in runs), (
+        "the wheel build has no twine==7.0.0 strict check matching the pinned publish action"
+    )

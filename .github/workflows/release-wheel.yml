@@ -60,6 +60,12 @@ jobs:
           print('No direct URL dependencies in the wheel or the sdist metadata')
           PY
 
+      # The twine version must match the one bundled in the pinned
+      # pypa/gh-action-pypi-publish release in release.yml, so this fails
+      # exactly where the publish would.
+      - name: Publisher metadata check (twine, as the PyPI publish action runs it)
+        run: uvx --from "twine==7.0.0" twine check --strict dist/*
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
