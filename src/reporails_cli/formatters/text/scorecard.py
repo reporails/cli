@@ -341,13 +341,13 @@ def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
 
 
 _NAMED_OVERLAP_PAIRS = 3  # element lines the scorecard names; the rest are counted
+_OVERLAP_HINT = "ails check -v shows each file's overlaps"
 
 
 def _render_cross_file_counts(
     result: Any, project_root: Path | None = None, element_of: Callable[[str], Element] | None = None
 ) -> None:
     """Render the cross-file repetition and topic-overlap counts.
-
     With detailed rows the headline counts the element pairs named below; else the `stats` count stands.
     """
     from reporails_cli.core.platform.runtime.merger import overlapping_pairs
@@ -371,7 +371,7 @@ def _render_cross_file_counts(
     for head, partners in groups[:_NAMED_OVERLAP_PAIRS]:
         console.print(f"    [dim]{head:<{width}} \u2194 {partner_list(partners)}[/dim]")
     if hidden := sum(len(partners) for _head, partners in groups[_NAMED_OVERLAP_PAIRS:]):
-        console.print(f"    [dim]+{hidden} more pairs \u00b7 ails check -v shows each file's overlaps[/dim]")
+        console.print(f"    [dim]+{hidden} more pair{'s' * (hidden != 1)} \u00b7 {_OVERLAP_HINT}[/dim]")
 
 
 _RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}

@@ -312,7 +312,7 @@ class TestCrossFileCounts:
             "audit-checks (skill) \u2194 tighten-language, write-rule, lead (agent) "
             "tighten-language (skill) \u2194 write-rule "
             "lead (agent) \u2194 CLAUDE.md "
-            "+1 more pairs \u00b7 ails check -v shows each file's overlaps"
+            "+1 more pair \u00b7 ails check -v shows each file's overlaps"
         )
 
     @pytest.mark.unit

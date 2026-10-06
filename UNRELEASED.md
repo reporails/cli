@@ -7,6 +7,7 @@
 ### Fixed
 
 - Heal no longer rewrites settings, hook or MCP config files. Their findings stay in the check output and are listed for you to edit by hand.
+- The check summary says "+1 more pair" instead of "+1 more pairs".
 
 ### Removed
 
