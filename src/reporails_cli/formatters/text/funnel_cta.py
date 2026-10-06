@@ -26,6 +26,13 @@ UNPAID_PITCH_LINE = "  Pro adds the remedies and the order to apply them."
 # The Pro line that tells a user of any other coding agent how to run the rewrite.
 OTHER_AGENT_HEAL_TEXT = "in another coding agent, ask it to run the reporails heal."
 
+# The Pro footer under a check: where the remedies are, then how to run the rewrite in each agent.
+PRO_HEAL_FOOTER_LINES = (
+    "  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]",
+    "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files;[/dim]",
+    f"  [dim]{OTHER_AGENT_HEAL_TEXT}[/dim]",
+)
+
 
 def upgrade_link() -> str:
     """The `Upgrade to Pro` link to the account page, as Rich markup."""

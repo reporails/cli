@@ -580,9 +580,10 @@ def print_scorecard(
     # `ails login` is sent to a dead end. Never claims a fix for every
     # finding — only that Pro adds the remedies and the order to apply them.
     refused = getattr(result, "server_error", None) is not None
+    from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINES, UNPAID_PITCH_LINE, upgrade_link_line
+
     if tier == "free" and not refused:
         from reporails_cli.core.platform.adapters.api_client import has_api_key
-        from reporails_cli.formatters.text.funnel_cta import UNPAID_PITCH_LINE, upgrade_link_line
 
         console.print()
         console.print(UNPAID_PITCH_LINE)
@@ -591,13 +592,8 @@ def print_scorecard(
         else:
             console.print("  \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:
-        from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT
-
         console.print()
-        console.print("  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]")
-        console.print(
-            "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files;[/dim]"
-        )
-        console.print(f"  [dim]{OTHER_AGENT_HEAL_TEXT}[/dim]")
+        for line in PRO_HEAL_FOOTER_LINES:
+            console.print(line)
 
     console.print()
