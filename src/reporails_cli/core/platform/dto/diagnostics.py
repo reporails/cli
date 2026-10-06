@@ -334,8 +334,16 @@ class FunnelError:
 
     @property
     def retryable(self) -> bool:
-        """True for a failure that clears on its own, so the user is told to try again."""
-        return self.error in RETRYABLE_ERRORS
+        """True for a failure that clears on its own, so the user is told to try again.
+
+        A key rejected moments after sign-in (the still-reaching message) clears the same way.
+        """
+        return self.error in RETRYABLE_ERRORS or self.still_reaching
+
+    @property
+    def still_reaching(self) -> bool:
+        """True when a just-made key was rejected and the sign-in has not reached the server yet."""
+        return self.error in AUTH_REJECTED_ERRORS and self.message == STILL_REACHING_MESSAGE
 
     @property
     def reset_phrase(self) -> str:

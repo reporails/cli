@@ -166,6 +166,8 @@ def format_cta(err: FunnelError) -> str:
 
 def retry_text(err: FunnelError) -> str:
     """The plain line for a busy server, a request that took too long, or the client's own timeout."""
+    if err.still_reaching:
+        return err.message
     seconds = err.reset_in if err.reset_in > 0 else DEFAULT_RETRY_AFTER_S
     wait = f"{seconds} second{'' if seconds == 1 else 's'}"
     if err.error == "server_busy":

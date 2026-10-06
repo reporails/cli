@@ -58,3 +58,23 @@ class TestHealAuthGate:
         monkeypatch.setenv("AILS_API_KEY", "k")
         rate_limited = FunnelError(error="rate_limit_exceeded", status=429)
         assert _heal_authed(rate_limited) is True
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_still_reaching_heal_gate_prints_no_account_advice(capsys: pytest.CaptureFixture[str]) -> None:
+    from types import SimpleNamespace
+
+    from reporails_cli.core.platform.dto.diagnostics import STILL_REACHING_MESSAGE
+    from reporails_cli.interfaces.cli.check_flow import _flow_heal
+
+    err = FunnelError(error="invalid_api_key", status=401, message=STILL_REACHING_MESSAGE)
+    state = SimpleNamespace(
+        inputs=SimpleNamespace(heal=True),
+        render=SimpleNamespace(heal_authed=False),
+        pipeline=SimpleNamespace(funnel_error=err),
+        targets=SimpleNamespace(output_format="text"),
+    )
+    _flow_heal(state)  # type: ignore[arg-type]
+    out = capsys.readouterr()
+    assert "needs an account" not in out.out + out.err

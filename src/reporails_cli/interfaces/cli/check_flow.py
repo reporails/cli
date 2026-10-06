@@ -524,6 +524,8 @@ def _flow_heal(state: CheckState) -> None:
     if not state.inputs.heal:
         return
     if not state.render.heal_authed:
+        if getattr(state.pipeline.funnel_error, "still_reaching", False):
+            return
         _emit_heal_auth_required(state.targets.output_format)
         return
     heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
