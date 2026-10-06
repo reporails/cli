@@ -13,3 +13,4 @@
 
 - Tests that rely on POSIX-only behaviour (interval timers, case-sensitive file names, symlinks, bash, the daemon socket) skip on Windows, and tests that write non-ASCII files or set a home directory no longer depend on the platform default encoding or the HOME variable.
 - The case-insensitive filesystem probe used by discovery tests is one shared test helper, and the shared-walk tests skip on case-insensitive filesystems.
+- The default-format tests carry the lane and subsystem markers every test needs.
