@@ -19,3 +19,4 @@
 - Dropped the unused all-caps token field from the uploaded instruction map and removed the unused rule-tier derivation helpers.
 - CI and the release gate run the QA suite on Python 3.12 and 3.13; `typer` is capped below 0.22; CLI tests no longer use `CliRunner.isolated_filesystem`.
 - Windows test expectations for home-folder, skill-entry, hook-handler and cache paths use the same forward-slash paths the product reports.
+- MCP: a retried validate call still counts toward the per-path call limit, and a concurrent call's result is kept.

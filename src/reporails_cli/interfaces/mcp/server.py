@@ -25,7 +25,7 @@ import threading  # noqa: E402
 import time  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
-from dataclasses import dataclass, field, replace  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -309,7 +309,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
 
     The circuit-breaker state read-modify-write runs inline on the event loop —
     no `await` between the `_validate_states` read and its write — so concurrent
-    same-path calls serialize and the counters cannot interleave; only the
+    same-path calls serialize (a retryable reply edits that live state, never a copy); only the
     blocking pipeline (`run_pipeline_for_path`) is offloaded to a worker thread. The
     pipeline always runs `full=True` internally (the bounding step is the last
     thing it does) and the bounded view is derived here via `bound_validate_payload`,
@@ -348,7 +348,6 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     # file set means the locations it named may no longer even resolve. `part=1` requested
     # after this rebuilds; parts of an untouched location build once again.
     state.remedy_brief_cache.clear()
-    snapshot = replace(state)
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
     if not unchanged:
         state.full_payload = None
@@ -390,7 +389,8 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
             return result
         payload, ruleset_map, score = result
         if is_retryable_reply(payload):
-            _validate_states[path_key] = snapshot  # no real result: leave no trace in the breaker
+            state.full_payload, state.last_mtime_hash = None, ""
+            state.consecutive_unchanged -= unchanged and not full
             return payload if full else bound_validate_payload(payload)
         # The run may have mapped other files than the last one did: store the fingerprint of
         # the list the next call will read, so the two compare like with like.

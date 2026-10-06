@@ -354,41 +354,76 @@ def test_full_follow_up_to_a_free_reply_makes_no_second_run(
     assert pipeline_replies == []
 
 
+_BUSY = {"files": {}, "stats": {}, "funnel": {"error": "server_busy", "retryable": True, "retry_after": 10}}
+
+
+def _state() -> Any:
+    return next(iter(server._validate_states.values()))
+
+
 @pytest.mark.unit
 @pytest.mark.subsys_server
 def test_retryable_server_error_reply_can_be_retried_on_the_same_file(
     project: Path, pipeline_replies: list[dict[str, Any]]
 ) -> None:
-    busy = {"files": {}, "stats": {}, "funnel": {"error": "server_busy", "retryable": True, "retry_after": 10}}
     ok = {"files": {}, "stats": {}, "tier": "pro"}
-    pipeline_replies.extend([busy, busy, busy, ok])
-    for _ in range(3):
+    pipeline_replies.extend([_BUSY, _BUSY, ok])
+    for _ in range(2):
         reply = _call(project)
         assert reply.get("error") is None
         assert reply["funnel"]["retryable"] is True
-    state = next(iter(server._validate_states.values()))
-    assert state.call_count == 0
-    assert state.full_payload is None
     final = _call(project)
     assert final.get("error") is None
     assert "funnel" not in final
+    assert pipeline_replies == []
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_retryable_error_leaves_the_breaker_counters_as_they_were(
+def test_retryable_reply_counts_as_a_call_but_not_as_an_unchanged_repeat(
     project: Path, pipeline_replies: list[dict[str, Any]]
 ) -> None:
     ok = {"files": {}, "stats": {}, "tier": "pro"}
-    busy = {"files": {}, "stats": {}, "funnel": {"error": "timeout", "retryable": True, "retry_after": 10}}
-    pipeline_replies.extend([ok, busy])
+    pipeline_replies.extend([ok, _BUSY])
     assert _call(project).get("error") is None
-    state = next(iter(server._validate_states.values()))
-    before = (state.call_count, state.last_mtime_hash, state.consecutive_unchanged, state.full_payload)
+    before = _state().call_count
     _rewrite(project / "CLAUDE.md", "# changed\n")
     assert _call(project)["funnel"]["retryable"] is True
-    state = next(iter(server._validate_states.values()))
-    assert (state.call_count, state.last_mtime_hash, state.consecutive_unchanged, state.full_payload) == before
+    state = _state()
+    assert state.call_count == before + 1
+    assert state.full_payload is None
+    assert state.consecutive_unchanged == 0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_retryable_replies_beyond_the_call_limit_trip_the_breaker(
+    project: Path, pipeline_replies: list[dict[str, Any]]
+) -> None:
+    pipeline_replies.extend([_BUSY] * (server._MAX_CALLS + 1))
+    for _ in range(server._MAX_CALLS):
+        assert _call(project).get("error") is None
+    assert _call(project).get("error") == "circuit_breaker"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_concurrent_calls_result_survives_a_retryable_reply(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fresh(path: str, tokens: Any, scan_root: Path, state: Any) -> tuple[dict, Any, float]:
+        # Another validate on the same path completes while this one awaits the server.
+        live = next(iter(server._validate_states.values()))
+        live.call_count += 2
+        live.last_score = 0.7
+        live.last_ruleset_map = "other-call-map"
+        return dict(_BUSY), None, 0.0
+
+    monkeypatch.setattr(server, "_fresh_validate_payload", fake_fresh)
+    monkeypatch.setattr(server, "_with_preservation", lambda payload, *a, **k: payload)
+    assert _call(project)["funnel"]["retryable"] is True
+    state = _state()
+    assert state.call_count == 3
+    assert (state.last_score, state.last_ruleset_map) == (0.7, "other-call-map")
+    assert state.full_payload is None
 
 
 @pytest.mark.unit
