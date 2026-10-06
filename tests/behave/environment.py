@@ -9,11 +9,19 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
 
 def before_all(context) -> None:
+    # The pretty formatter holds the very sys.stdout object (formatter/base.py StreamOpener,
+    # built before this hook), so reconfiguring it in place makes the report independent of the
+    # console code page (a Windows cp1252 console cannot encode the feature text's arrows).
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
     # A CI runner's variables flip the default output to JSON; scenarios assert text.
     for var in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI"):
         os.environ.pop(var, None)
