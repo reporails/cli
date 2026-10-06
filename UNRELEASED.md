@@ -5,6 +5,7 @@
 ### Changed
 
 - `ails update` also says how to update the reporails plugin in Cursor, GitHub Copilot and Antigravity, which install it by hand.
+- Account messages also appear as annotations in `--format github` and in the `--heal` JSON output.
 
 ### Fixed
 

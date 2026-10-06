@@ -113,3 +113,11 @@ def test_more_than_the_cap_keeps_the_first_ten() -> None:
     raw = [{"id": f"n{i}", "level": "info", "text": f"t{i}"} for i in range(MAX_NOTICES + 5)]
     got = notices_from_list(raw)
     assert [n.id for n in got] == [f"n{i}" for i in range(10)]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize("level", [["warn"], {"a": 1}])
+def test_unhashable_level_is_dropped_not_raised(level: object) -> None:
+    got = notices_from_list([{"id": "x", "level": level, "text": "t"}, GOOD])
+    assert got == (Notice("a", "warn", "Payment failed", "https://example.test/pay"),)

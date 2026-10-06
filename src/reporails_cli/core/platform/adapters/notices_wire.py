@@ -30,7 +30,7 @@ def _notice(entry: Any) -> Notice | None:
     url = entry.get("url", "")
     if not (isinstance(ident, str) and ident and isinstance(text, str) and text):
         return None
-    if level not in NOTICE_LEVELS or not isinstance(url, str):
+    if not (isinstance(level, str) and isinstance(url, str)) or level not in NOTICE_LEVELS:
         return None
     return Notice(id=ident, level=level, text=text, url=url)
 

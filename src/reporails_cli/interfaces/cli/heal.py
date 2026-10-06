@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.formatters.json import format_notices
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ def _output_heal_results(
     elapsed_ms: float,
     output_format: str,
     console: Any,
+    notices: Any = (),
 ) -> None:
     """Output heal results in the requested format.
 
@@ -154,6 +156,7 @@ def _output_heal_results(
         data = {
             "auto_fixed": mechanical_results,
             "suggested": suggested,
+            "notices": format_notices(notices),
             "summary": {
                 "auto_fixed_count": len(mechanical_results),
                 "suggested_count": len(suggested),

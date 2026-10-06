@@ -543,6 +543,7 @@ def _flow_heal(state: CheckState) -> None:
         state.scope.effective_agent,
         state.inputs.dry_run,
         state.targets.output_format,
+        state.render.result.notices,
     )
 
 

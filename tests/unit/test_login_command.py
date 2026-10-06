@@ -96,6 +96,7 @@ def _on_platform(monkeypatch: pytest.MonkeyPatch, platform: str = "darwin") -> N
 
 @pytest.fixture
 def site(monkeypatch: pytest.MonkeyPatch) -> _Site:
+    monkeypatch.setenv("AILS_PLATFORM_URL", "https://reporails.com")  # the stub answers; nothing is contacted
     return _Site(monkeypatch)
 
 

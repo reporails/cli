@@ -436,6 +436,7 @@ def _run_heal_pass(
     effective_agent: str,
     dry_run: bool,
     output_format: str,
+    notices: Any = (),
 ) -> None:
     """Apply mechanical fixes and collect section suggestions using the already-built map."""
     from reporails_cli.core.lint.suppression import suppressed_lines
@@ -457,7 +458,7 @@ def _run_heal_pass(
     mech = _apply_mechanical_fixes(ruleset_map, target, dry_run, show, console, instruction_files, suppressed)
     suggested = _collect_section_suggestions(target, instruction_files, ruleset_map, effective_agent, show, console)
     heal_ms = round((time.perf_counter() - heal_start) * 1000, 1)
-    _output_heal_results(mech, suggested, dry_run, heal_ms, output_format, console)
+    _output_heal_results(mech, suggested, dry_run, heal_ms, output_format, console, notices)
 
 
 # A key the server rejected, quoted back to the caller as `FunnelError.error`.

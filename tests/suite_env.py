@@ -13,7 +13,11 @@ CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  
 
 # Tests never download the model set, and never reach a hosted service: a closed local port
 # fails fast, so a check runs its offline path.
-SUITE_DEFAULTS = {"AILS_MODEL_OFFLINE": "1", "AILS_SERVER_URL": "http://127.0.0.1:9"}
+SUITE_DEFAULTS = {
+    "AILS_MODEL_OFFLINE": "1",
+    "AILS_SERVER_URL": "http://127.0.0.1:9",
+    "AILS_PLATFORM_URL": "http://127.0.0.1:9",
+}
 
 
 def suite_env(base: Mapping[str, str], *, drop_ci: bool = True) -> dict[str, str]:
