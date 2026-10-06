@@ -5,7 +5,7 @@ title: "Default Behavior Competition"
 category: coherence
 type: mechanical
 execution: server
-severity: medium
+severity: high
 match: {}
 ---
 
@@ -27,7 +27,7 @@ The model always has a default behavior for any task — what it does without in
 # Formatting
 
 Use `ruff` for all formatting. Run `ruff format .` before committing.
-*NEVER run `black` or manual formatting.*
+*Never run a formatter other than `ruff`.*
 ~~~~
 
 ### Fail
@@ -39,13 +39,6 @@ Consider using a consistent code formatter.
 You might want to format code before committing.
 ~~~~
 
-## Fix
-
-Work with the default or overwhelm it:
-- If the desired behavior aligns with the model's default: lighter instructions suffice
-- If the desired behavior opposes the default: maximum strength required — name exact constructs, use direct commands, place last in context. Any weakness leaves the default unchanged.
-- Never rely on conflicting instructions to produce "average" behavior — conflict produces default behavior, identical to no instruction at all.
-
 ## Limitations
 
-This is an informational diagnostic. The model's default behavior for a given task cannot be directly measured — this rule flags instructions that are likely too weak to override defaults based on their specificity and modality.
+This is an informational diagnostic. The model's default behavior for a given task cannot be directly measured — this rule flags instructions that are likely too weak to override defaults based on their specificity and modality. It fires once per topic whose every instruction is both vague and hedged, on the topic's first instruction; one named or direct instruction on the topic clears it, though an instruction written as a heading does not.

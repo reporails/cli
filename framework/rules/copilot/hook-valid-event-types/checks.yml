@@ -4,6 +4,15 @@ checks:
   check: file_exists
 - id: COPILOT.S.0003.valid-event-types
   type: deterministic
-  expect: present
-  pattern-regex: (?:SessionStart|UserPromptSubmit|PreToolUse|PostToolUse|PreCompact|SubagentStart|SubagentStop|Stop)
-  message: No recognized Copilot event type names found in hook configuration (PascalCase only)
+  expect: absent
+  message: No recognized Copilot event type names found in hook configuration (PascalCase or camelCase)
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-not-regex: (?:SessionStart|sessionStart|SessionEnd|sessionEnd|UserPromptSubmit|userPromptSubmitted|UserPromptTransformed|userPromptTransformed|PreToolUse|preToolUse|PostToolUseFailure|postToolUseFailure|PostToolUse|postToolUse|PreCompact|preCompact|AgentStop|agentStop|SubagentStart|subagentStart|SubagentStop|subagentStop|Stop|ErrorOccurred|errorOccurred|PermissionRequest|permissionRequest|Notification|notification)
+- id: COPILOT.S.0003.no-unrecognized-event-key
+  type: deterministic
+  expect: absent
+  message: An event-shaped key next to a recognized event name is not a recognized Copilot event type
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-regex: '"(?!(?:SessionStart|sessionStart|SessionEnd|sessionEnd|UserPromptSubmit|userPromptSubmitted|UserPromptTransformed|userPromptTransformed|PreToolUse|preToolUse|PostToolUseFailure|postToolUseFailure|PostToolUse|postToolUse|PreCompact|preCompact|AgentStop|agentStop|SubagentStart|subagentStart|SubagentStop|subagentStop|Stop|ErrorOccurred|errorOccurred|PermissionRequest|permissionRequest|Notification|notification)")[A-Za-z]+"\s*:\s*\[\s*\{'

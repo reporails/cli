@@ -1,1 +1,4 @@
-# Instruction file content
+{
+  "hooks": {},
+  "statusLine": { "type": "command", "command": "status.sh" }
+}

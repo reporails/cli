@@ -1,9 +1,24 @@
 checks:
+- id: CURSOR.S.0001.file_in_scope
+  type: mechanical
+  check: file_exists
+  args:
+    path: ".cursor/rules/**/*"
+  replaces: CORE.S.0038.file_in_scope
+- id: CURSOR.S.0001.has_frontmatter
+  type: mechanical
+  check: frontmatter_present
+  args:
+    path: ".cursor/rules/**/*"
+  message: "Path-scoped file must have frontmatter declaring its scope"
+  replaces: CORE.S.0038.has_frontmatter
 - id: CURSOR.S.0001.has_globs
   type: mechanical
   check: frontmatter_key
   args:
+    lenient: true
     key: globs
+    path: ".cursor/rules/**/*"
   message: "Path-scoped rule must declare a 'globs' key in frontmatter"
 - id: CURSOR.S.0001.uses_paths_key
   type: deterministic
@@ -15,6 +30,7 @@ checks:
   type: mechanical
   check: frontmatter_valid_glob
   args:
+    lenient: true
     path: ".cursor/rules"
     require_matches: true
   message: "Glob in frontmatter does not match any files in the project"

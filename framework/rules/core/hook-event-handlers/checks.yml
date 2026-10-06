@@ -3,14 +3,10 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.S.0020.content_check
-  type: content_query
-  query: has_heading_matching
-  args:
-    terms:
-    - Hook
-    - Event
-    - Trigger
-    - Pre-commit
-    message: Missing hook/event handler definitions — document trigger conditions
-      for hooks
-  expect: present
+  type: deterministic
+  expect: absent
+  message: Missing hook/event handler definitions — declare a "hooks" block with
+    at least one handler that names its type
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-not-regex: '"hooks"\s*:\s*(?P<hastype>\{(?:[^{}]|(?&any))*?(?:"type"\s*:\s*"|(?&hastype))(?:[^{}]|(?&any))*\})(?(DEFINE)(?P<any>\{(?:[^{}]|(?&any))*\}))'

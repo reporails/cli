@@ -6,13 +6,13 @@ category: structure
 type: deterministic
 severity: low
 backed_by: []
-match: {type: skill}
-source: https://developers.openai.com/codex/skills
+match: {type: skills}
+source: https://learn.chatgpt.com/docs/build-skills
 ---
 
 # Codex Skill Metadata Present
 
-Codex skill directories SHOULD contain an `agents/openai.yaml` file with `display_name`, icon, and invocation policy fields. This metadata controls how the skill appears in the Codex UI and whether it can be triggered implicitly.
+Codex reads optional per-skill metadata — a display name, an icon, and an invocation policy — from a settings file in the skill directory. Without it, the skill shows with no name or icon in the Codex UI, and cannot be triggered implicitly.
 
 ## Antipatterns
 

@@ -3,34 +3,14 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.imports import import_refs
+from reporails_cli.core.mapper.structure import link_targets, strip_anchor
+
 logger = logging.getLogger(__name__)
-
-# Inline `[text](path)` — the `path` group is the second `(...)`.
-# Allows internal escapes; rejects URLs (anything with `://`) at the caller.
-_INLINE_LINK_RE = re.compile(r"\[(?:[^\]]+)\]\(([^)]+)\)")
-
-# Reference-definition `[ref]: path` — used to back reference-style links.
-_REF_DEFINITION_RE = re.compile(r"^\s*\[(?:[^\]]+)\]:\s*(\S+)", re.MULTILINE)
-
-# `@<path>` inline include — mirrors the pattern in
-# `core/lint/mechanical/checks_advanced.py:extract_imports`/`import_depth`.
-# Capture the path without the leading `@`.
-_IMPORT_RE = re.compile(r"@([\w./-]+)")
-
-# Code-span stripping — `[text](path)` inside backticks is documentation,
-# not a real link. Mirror this with `checks_advanced._strip_code_spans`.
-_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
-_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
-
-
-def _strip_code_spans(text: str) -> str:
-    """Remove fenced code blocks and inline code spans before link extraction."""
-    text = _CODE_FENCE_RE.sub("", text)
-    return _INLINE_CODE_RE.sub("", text)
 
 
 @dataclass(frozen=True)
@@ -51,10 +31,10 @@ def walk_markdown_links(
     max_depth: int = 3,
 ) -> list[LinkEdge]:
     """BFS outgoing Markdown links + `@<path>` imports from `start_paths`; emit one edge per `(source, target)`."""
-    classified_resolved = {p.resolve() for p in classified_paths}
-    project_root_resolved = project_root.resolve()
+    classified_resolved = {safe_resolve(p) for p in classified_paths}
+    project_root_resolved = safe_resolve(project_root)
 
-    seed_resolved: dict[Path, str] = {p.resolve(): ft for p, ft in start_paths.items() if p.exists()}
+    seed_resolved: dict[Path, str] = {safe_resolve(p): ft for p, ft in start_paths.items() if p.exists()}
     visited: set[Path] = set(seed_resolved.keys())
 
     # Frontier: (resolved_path, depth_already_taken, source_type)
@@ -73,7 +53,7 @@ def walk_markdown_links(
             continue
         next_depth = depth + 1
         for linked, verb in _outgoing_links(current):
-            resolved = linked.resolve()
+            resolved = safe_resolve(linked)
             if not _is_in_tree(resolved, project_root_resolved):
                 continue
             if not resolved.is_file():
@@ -109,66 +89,27 @@ def _outgoing_links(file_path: Path) -> list[tuple[Path, str]]:
         logger.debug("link_walker: cannot read %s: %s", file_path, exc)
         return []
 
-    # Strip fenced blocks only. Inline code is NOT stripped: a real link whose
-    # text is backtick-wrapped (`[`name`](path)`) must survive — a common form
-    # where the link text names a command, skill, or construct. Instead, skip a
-    # link only when the link itself sits INSIDE an inline-code span (a literal
-    # `[text](path)` example). `@<path>` imports run on the full text (imports
-    # inside code spans are still imports per Claude's `@import` semantics).
-    link_text = _CODE_FENCE_RE.sub("", text)
-    code_spans = [(m.start(), m.end()) for m in _INLINE_CODE_RE.finditer(link_text)]
-
-    def _in_code_span(pos: int) -> bool:
-        return any(start <= pos < end for start, end in code_spans)
-
     base_dir = file_path.parent
     out: list[tuple[Path, str]] = []
-
-    for match in _INLINE_LINK_RE.finditer(link_text):
-        if _in_code_span(match.start()):
-            continue
-        target = match.group(1).strip()
-        resolved = _resolve_md_target(base_dir, target)
-        if resolved is not None:
-            out.append((resolved, "read"))
-
-    for match in _REF_DEFINITION_RE.finditer(link_text):
-        if _in_code_span(match.start()):
-            continue
-        target = match.group(1).strip()
-        resolved = _resolve_md_target(base_dir, target)
-        if resolved is not None:
-            out.append((resolved, "read"))
-
-    for match in _IMPORT_RE.finditer(text):
-        target = match.group(1).strip()
-        resolved = _resolve_md_target(base_dir, target)
-        if resolved is not None:
-            out.append((resolved, "imported"))
-
+    for verb, targets in (
+        ("read", [target for _line, target in link_targets(text)]),
+        ("imported", import_refs(text)),
+    ):
+        for target in targets:
+            resolved = _resolve_md_target(base_dir, target.strip())
+            if resolved is not None:
+                out.append((resolved, verb))
     return out
-
-
-def _outgoing_md_links(file_path: Path) -> list[Path]:
-    """Return just the `.md` target paths from `_outgoing_links` (back-compat shim)."""
-    return [target for target, _verb in _outgoing_links(file_path)]
 
 
 def _resolve_md_target(base_dir: Path, target: str) -> Path | None:
     """Resolve a raw link target to a `.md` Path, or None if not eligible."""
-    cleaned = _strip_anchor(target)
+    cleaned = strip_anchor(target)
     if not cleaned or _looks_like_url(cleaned):
         return None
     if not cleaned.endswith(".md"):
         return None
-    return (base_dir / cleaned).resolve()
-
-
-def _strip_anchor(target: str) -> str:
-    """Drop trailing `#anchor` and surrounding whitespace from a link target."""
-    if "#" in target:
-        target = target.split("#", 1)[0]
-    return target.strip()
+    return safe_resolve(base_dir / cleaned)
 
 
 def _looks_like_url(target: str) -> bool:

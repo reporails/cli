@@ -28,7 +28,7 @@ class TestStrictExitPathNormalization:
         while the display filter used `normalize_finding_path`. For a user-scope (`~/...`)
         target the two diverged, so a strict run could exit 0 despite a displayed error.
         The membership must use the same normalization the finding path carries."""
-        from reporails_cli.interfaces.cli.main import _should_exit_strict
+        from reporails_cli.interfaces.cli.check_orchestration import _should_exit_strict
 
         # A finding on a user-scope file, carrying the normalized `~/...` form.
         user_file = Path.home() / ".claude" / "subagent_memory.md"
@@ -40,11 +40,54 @@ class TestStrictExitPathNormalization:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_strict_no_exit_when_finding_outside_scope(self, tmp_path: Path) -> None:
-        from reporails_cli.interfaces.cli.main import _should_exit_strict
+        from reporails_cli.interfaces.cli.check_orchestration import _should_exit_strict
 
         user_file = Path.home() / ".claude" / "subagent_memory.md"
         result = _Result(findings=(_Finding(file="other.md"),))
         assert _should_exit_strict(True, {user_file}, tmp_path, result) is False
+
+
+class TestStrictExitOnRejectedKey:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_strict_exits_on_rejected_key_with_no_local_findings(self, tmp_path: Path) -> None:
+        """Regression: a revoked or unknown `AILS_API_KEY` returned exit 0 under `--strict`
+        whenever the tree itself carried no local findings, because `_should_exit_strict`
+        only ever looked at `result.findings`. An auth rejection must fail `--strict` on
+        its own, independent of whether the target has anything else wrong with it."""
+        from reporails_cli.core.platform.dto.diagnostics import FunnelError
+        from reporails_cli.interfaces.cli.check_orchestration import _should_exit_strict
+
+        result = _Result(findings=())
+        rejected = FunnelError(error="invalid_api_key", status=401)
+
+        assert _should_exit_strict(True, set(), tmp_path, result, rejected) is True
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_plain_run_stays_zero_on_rejected_key(self, tmp_path: Path) -> None:
+        """A plain (non-strict) run never turns the auth rejection into a new exit
+        code — it stays 0 and the message alone carries the news."""
+        from reporails_cli.core.platform.dto.diagnostics import FunnelError
+        from reporails_cli.interfaces.cli.check_orchestration import _should_exit_strict
+
+        result = _Result(findings=())
+        rejected = FunnelError(error="invalid_api_key", status=401)
+
+        assert _should_exit_strict(False, set(), tmp_path, result, rejected) is False
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_strict_unaffected_by_an_unrelated_funnel_error(self, tmp_path: Path) -> None:
+        """A non-auth funnel error (e.g. a rate limit) must not itself trip `--strict` —
+        only the two auth-rejection tokens do."""
+        from reporails_cli.core.platform.dto.diagnostics import FunnelError
+        from reporails_cli.interfaces.cli.check_orchestration import _should_exit_strict
+
+        result = _Result(findings=())
+        rate_limited = FunnelError(error="rate_limit_exceeded", status=429)
+
+        assert _should_exit_strict(True, set(), tmp_path, result, rate_limited) is False
 
 
 class TestExcludeFilesDropsLinkWalked:

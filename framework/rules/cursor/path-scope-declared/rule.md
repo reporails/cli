@@ -8,12 +8,12 @@ severity: medium
 backed_by: []
 match: {scope: path_scoped}
 supersedes: CORE:S:0038
-source: https://docs.cursor.com/context/rules
+source: https://cursor.com/docs/rules
 ---
 
 # Path Scope Declared
 
-Cursor path-scoped rules must declare a `globs` frontmatter key. Rules without `globs` and without `alwaysApply: true` are manual-only (loaded via @-mention, not automatically).
+Cursor path-scoped `.mdc` rules must declare a `globs` frontmatter key. Rules without `globs` and without `alwaysApply: true` are manual-only (loaded via @-mention, not automatically).
 
 ## Antipatterns
 
@@ -26,6 +26,7 @@ Cursor path-scoped rules must declare a `globs` frontmatter key. Rules without `
 ### Pass
 
 ~~~~markdown
+<!-- .cursor/rules/testing.mdc -->
 ---
 globs: ["src/**/*.py"]
 ---
@@ -37,6 +38,7 @@ Tests exist to catch bugs, not to confirm the implementation works.
 ### Fail
 
 ~~~~markdown
+<!-- .cursor/rules/testing.mdc -->
 ---
 description: Rules for testing files
 ---

@@ -4,6 +4,8 @@ slug: permission-config-denies-sensitive
 title: Permission Config Denies Sensitive
 category: governance
 type: mechanical
+enforcement_required: true
+enforcement_mechanism: permission
 severity: medium
 backed_by: []
 match: {type: config}
@@ -11,34 +13,37 @@ source: https://code.claude.com/docs/en/settings
 ---
 # Permission Config Denies Sensitive
 
-Configuration files must contain at least one constraint instruction that restricts access to sensitive files. Without an explicit denial, the agent may read or write secrets, credentials, and private keys.
+A configuration file must declare a non-empty `"permissions.deny"` list. Without an explicit denial, the agent may read or write secrets, credentials, and private keys.
 
 ## Antipatterns
 
-- **Config file with only positive directives.** A settings file that grants permissions but never denies anything fails -- the check requires at least one constraint atom (a `-1` charge instruction such as "NEVER read `.env` files").
-- **Mentioning sensitive files in prose without a constraint.** Describing that `.env` files exist is not a denial. The check looks for constraint-charged instructions, not informational references.
-- **Relying on `.gitignore` alone.** Excluding sensitive files from version control does not prevent the agent from reading them at runtime. The config must contain an explicit denial instruction.
+- **Config file with only positive permissions.** A settings file that grants tool access but declares no `"deny"` entries at all. The check requires at least one denied pattern.
+- **Empty deny array.** Declaring `"deny": []` — the key exists but denies nothing, which behaves the same as omitting it.
+- **Mentioning sensitive files in prose without a denial.** Describing that `.env` files exist in a comment or doc is not a denial. The check reads the config's own `"deny"` list, not prose about it.
+- **Relying on `.gitignore` alone.** Excluding sensitive files from version control does not prevent the agent from reading them at runtime. The config must contain an explicit denial entry.
 
 ## Pass / Fail
 
 ### Pass
 
-~~~~markdown
-# Sensitive Files
-
-Ask the user to modify `.env`, `.env.*`, `credentials*`, and `*.pem` files manually.
-*Do NOT read or write these files.*
-~~~~
+```json
+{
+  "permissions": {
+    "deny": ["Read(.env)", "Read(credentials.yml)", "Read(*.pem)"]
+  }
+}
+```
 
 ### Fail
 
-~~~~markdown
-# Project Settings
-
-This project uses `.env` for environment variables.
-See `credentials.json` for API keys.
-~~~~
+```json
+{
+  "permissions": {
+    "deny": []
+  }
+}
+```
 
 ## Limitations
 
-Checks for at least one constraint atom restricting access to secrets or credentials. Does not verify the restrictions match the project's actual sensitive files.
+Checks for a non-empty `"deny"` list. Does not verify the denied patterns actually cover the project's own secrets and credentials.

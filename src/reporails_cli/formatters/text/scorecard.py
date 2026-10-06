@@ -5,25 +5,40 @@ Renders the bottom summary section: score bar, scope, findings, compliance, CTA.
 
 from __future__ import annotations
 
+import fnmatch
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from rich.console import Console
+from rich.text import Text
 
+from reporails_cli.core.discovery.features import agent_main_literal_paths, agent_rule_surface_markers
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
-    classify_file,
+    Element,
     display_rule_id,
+    element_namer,
     get_term_width,
+    group_element_pairs,
+    partner_list,
+    path_tag,
     rule_docs_url,
+    rule_title,
+    skill_lookup,
 )
-from reporails_cli.formatters.text.score import (
-    SCORE_GREEN_CUTOFF,
-    score_color,
+from reporails_cli.formatters.text.score import score_color
+from reporails_cli.formatters.text.verdict import (
+    _plural,
+    _render_verdict_block,
+    _score_bar,
+    compute_score,
+    console,
 )
+from reporails_cli.formatters.triage import split_conventions
 
-console = Console()
+__all__ = ["ScopeInfo", "SurfaceHealth", "compute_score", "compute_surface_scores", "print_scorecard"]
 
 
 # ── Score computation ─────────────────────────────────────────────────
@@ -38,45 +53,51 @@ def _hint_totals(result: Any) -> tuple[int, int]:
     return errors, warnings
 
 
-def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float:  # noqa: ARG001
-    """Return the api's whole-project display score verbatim.
-
-    The score is the analysis service's own verdict, computed server-side; the CLI
-    renders it without re-deriving. Falls back to 0.0 when offline (no server quality).
-    `n_atoms` is retained for call-signature stability.
-    """
-    if has_quality and result.quality is not None:
-        return float(result.quality.display_score)
-    return 0.0
-
-
 # ── Surface health ────────────────────────────────────────────────────
 
 _SURFACE_NAMES = {
     "main": "Main",
     "nested": "Nested",
-    "rule": "Rules",
-    "skill": "Skills",
-    "agent": "Agents",
+    "rules": "Rules",
+    "skills": "Skills",
+    "agents": "Agents",
     "memory": "Memory",
     "imported": "Imported",
 }
 # `imported` (eager `@`-imports) earns a scored bar. `referenced` (discoverable markdown
 # links) deliberately gets NO surface bar — the harness never loads it, so a score would be
 # a false signal; its findings surface in the Referenced file-panel group instead.
-_SURFACE_ORDER = ["main", "nested", "rule", "skill", "agent", "memory", "imported"]
+_SURFACE_ORDER = ["main", "nested", "rules", "skills", "agents", "memory", "imported"]
 
 
-def _surface_key(rel: str, ft_by_path: dict[str, str]) -> str:
+def _surface_key(rel: str, ft_by_path: dict[str, str], skill_of: dict[str, str] | None) -> str:
     """Surface tag for a path.
 
-    `@`-import-reached files (`file_type == "generic"`, eager) map to the Imported surface;
-    everything else falls back to the path-based `classify_file` tag. Markdown-`referenced`
-    files therefore land outside `_SURFACE_ORDER` and never get a scored bar (by design).
+    A file inside a skill folder is on the Skills surface first, whatever else marks it. With a
+    skill lookup (a ruleset map is present) membership alone decides Skills, so a `SKILL.md`
+    outside every skill folder is a plain file; without one the path-based tag decides.
+    `@`-import-reached files (`file_type == "generic"`, eager) map to the Imported surface; every
+    other path takes the `path_tag` tag, corrected for two shapes a path-only, Claude-shaped
+    classifier cannot see on its own: an agent whose main file sits one fixed directory deep
+    (Copilot) reads as `nested`, and a path-scoped rule surface named or extended differently
+    from Claude's own (`.github/instructions/*.instructions.md`, Cursor's `.mdc`) matches nothing
+    at all and falls back to the generic `file` tag. Both are re-keyed here from every agent's
+    own bundled config.
     """
+    if skill_of is not None and rel in skill_of:
+        return "skills"
     if ft_by_path.get(rel, "") == "generic":
         return "imported"
-    return classify_file(rel).split(":")[0]
+    tag = path_tag(rel, skill_of).split(":")[0]
+    if tag in ("nested", "file") and rel.lstrip("/") in agent_main_literal_paths():
+        return "main"
+    if tag == "file":
+        parts = Path(rel).parts
+        name = Path(rel).name
+        dir_names, filename_globs = agent_rule_surface_markers()
+        if dir_names & set(parts) and any(fnmatch.fnmatchcase(name, g) for g in filename_globs):
+            return "rules"
+    return tag
 
 
 @dataclass
@@ -89,6 +110,8 @@ class SurfaceHealth:
     score: float | None
     file_count: int
     finding_count: int
+    # Items beside the type name: a skill folder counts once, every other file once.
+    item_count: int
     errors: int = 0
     warnings: int = 0
     infos: int = 0
@@ -105,6 +128,7 @@ def compute_surface_scores(
     ruleset_map: Any = None,
     project_root: Any = None,
     file_type_by_path: dict[str, str] | None = None,
+    skill_of: dict[str, str] | None = None,
 ) -> list[SurfaceHealth]:
     """Compute per-surface health scores from combined result.
 
@@ -117,8 +141,6 @@ def compute_surface_scores(
     on relative paths. `result.findings` and `result.per_file_analysis`
     already carry relative paths; `ruleset_map.files` does not.
     """
-    from pathlib import Path
-
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     root = Path(project_root) if project_root is not None else Path.cwd()
@@ -126,35 +148,32 @@ def compute_surface_scores(
     # Per-path classifier file_type (computed at the composition root for generic-scanned
     # files) routes `@`-import-reached files to the Imported surface.
     ft_by_path = file_type_by_path or {}
+    skill_of = skill_lookup(ruleset_map, root) if skill_of is None else skill_of
 
-    # Count files per surface from ruleset_map (authoritative file list)
-    surface_file_counts: dict[str, int] = {}
+    # Files per surface from ruleset_map (authoritative file list)
+    surface_paths: dict[str, set[str]] = {}
     if ruleset_map is not None:
         try:
             for fr in ruleset_map.files:
-                key = _surface_key(normalize_finding_path(fr.path, root), ft_by_path)
-                surface_file_counts[key] = surface_file_counts.get(key, 0) + 1
+                rel = normalize_finding_path(fr.path, root)
+                surface_paths.setdefault(_surface_key(rel, ft_by_path, skill_of), set()).add(rel)
         except (AttributeError, TypeError):
             pass
 
-    # Group findings by surface. Re-normalize defensively (cheap, ~#findings) rather
-    # than trust the unenforced "FindingItem.file already normalized" invariant.
-    surface_findings: dict[str, list[Any]] = {}
-    for f in result.findings:
-        key = _surface_key(normalize_finding_path(f.file, root), ft_by_path)
-        surface_findings.setdefault(key, []).append(f)
+    # Group findings and per-file analysis by surface, re-normalizing defensively. Server
+    # per-file paths are absolute, but `main` keys on root-level path depth, so normalize to
+    # the project-relative form first or every absolute path falls out of `main`.
+    def by_surface(items: Any) -> dict[str, list[Any]]:
+        grouped: dict[str, list[Any]] = {}
+        for it in items:
+            key = _surface_key(normalize_finding_path(it.file, root), ft_by_path, skill_of)
+            grouped.setdefault(key, []).append(it)
+        return grouped
 
-    # Group per-file analysis by surface. Server per-file paths are absolute, but
-    # `classify_file` keys `main` on root-level path depth — so normalize to the
-    # project-relative form first (as `result.findings` already are), or every
-    # absolute path falls out of the `main` surface and its score reads 0.0.
-    surface_analysis: dict[str, list[Any]] = {}
-    for fa in result.per_file_analysis:
-        key = _surface_key(normalize_finding_path(fa.file, root), ft_by_path)
-        surface_analysis.setdefault(key, []).append(fa)
+    surface_findings, surface_analysis = by_surface(result.findings), by_surface(result.per_file_analysis)
 
     # Collect all surfaces from any source
-    all_keys = set(surface_findings) | set(surface_analysis) | set(surface_file_counts)
+    all_keys = set(surface_findings) | set(surface_analysis) | set(surface_paths)
 
     surfaces = []
     for key in _SURFACE_ORDER:
@@ -164,24 +183,23 @@ def compute_surface_scores(
         findings = surface_findings.get(key, [])
         analyses = surface_analysis.get(key, [])
 
-        n_errors = sum(1 for f in findings if f.severity == "error")
-        n_warnings = sum(1 for f in findings if f.severity == "warning")
-        n_infos = sum(1 for f in findings if f.severity == "info")
-        # File count: prefer mapper discovery, fall back to findings/analysis
-        n_files = surface_file_counts.get(key, max(len(analyses), len({f.file for f in findings})))
-
-        # Score: mean of the api's per-file display scores over the surface's files.
-        score = _mean_display_score(analyses)
+        by_severity = Counter(f.severity for f in findings)
+        # Files: prefer mapper discovery, fall back to the files findings/analysis name.
+        paths = surface_paths.get(key) or {
+            normalize_finding_path(p, root) for p in [*(f.file for f in findings), *(a.file for a in analyses)]
+        }
 
         surfaces.append(
             SurfaceHealth(
                 name=display_name,
-                score=score,
-                file_count=n_files,
+                # Mean of the reported per-file display scores over the surface's files.
+                score=_mean_display_score(analyses),
+                file_count=len(paths),
+                item_count=len({(skill_of or {}).get(p, p) for p in paths}),
                 finding_count=len(findings),
-                errors=n_errors,
-                warnings=n_warnings,
-                infos=n_infos,
+                errors=by_severity["error"],
+                warnings=by_severity["warning"],
+                infos=by_severity["info"],
                 category_breakdown=_count_categories(findings),
             )
         )
@@ -189,13 +207,12 @@ def compute_surface_scores(
 
 
 def _mean_display_score(analyses: list[Any]) -> float | None:
-    """Atom-weighted mean of the api's per-file display scores.
+    """Atom-weighted mean of the reported per-file display scores.
 
-    Mirrors the server's whole-project roll-up so a surface's bar (and the filtered
-    headline) aggregate the same way the headline does. Unscored files (`display_score`
-    is `None` — no charged atoms) are excluded from the aggregation, matching the
-    server roll-up. Falls back to a simple mean when atom counts are unavailable;
-    `None` when there is no scored analysis to aggregate.
+    A surface's bar (and the filtered headline) aggregate the same way the
+    whole-project headline does. Unscored files (`display_score`
+    is `None`) are excluded from the aggregation. Falls back to a
+    simple mean when atom counts are unavailable; `None` when there is no scored analysis to aggregate.
     """
     scored = [
         (float(fa.display_score), int(fa.stats.get("atoms", 0)))
@@ -232,37 +249,38 @@ def _count_categories(findings: list[Any]) -> dict[str, int]:
     return dict(counts)
 
 
-def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13) -> str:
-    """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓▓▓▓▓▓░░░░  7.2'.
+def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13, count_width: int = 0) -> str:
+    """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓▓▓▓▓▓░░░░  7.2  27 findings · 10 errors'.
 
     bar_width=15 is the smallest width that visually distinguishes 6.9 from 7.2
     under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     label_width pads the name column to the widest label in the set so the two
-    columns stay aligned when a long name carries a 2-digit count.
+    columns stay aligned when a long name carries a 2-digit count; count_width
+    right-aligns the finding counts the same way.
     """
-    label = f"{s.name} ({s.file_count}):"
-    err = f"  [red]{s.errors} err[/red]" if s.errors else ""
+    label = f"{s.name} ({s.item_count}):"
+    tag = _count_tag(s, count_width)
     if s.score is None:
         empty = "░" * bar_width
-        return f"{label:<{label_width}s} [dim]{empty}[/dim]  [dim]not scored[/dim]{err}"
+        return f"{label:<{label_width}s} [dim]{empty}[/dim]  [dim]not scored[/dim]{tag}"
     color = score_color(s.score)
     bar = _score_bar(s.score, bar_width, color)
-    # A surface can score well while errors remain, so the error count is what
-    # routes attention — surface the per-surface error tally next to the bar.
-    return f"{label:<{label_width}s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{err}"
+    return f"{label:<{label_width}s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{tag}"
 
 
-def _score_bar(score: float, bar_width: int, color: str) -> str:
-    """Render a score bar with colored fill + dim gray empty.
+def _count_tag(s: SurfaceHealth, count_width: int = 0) -> str:
+    """Tag beside a health bar: `N findings · M errors` (the error part only when M > 0).
 
-    Splitting the markup at the fill boundary gives every bar a
-    consistent gray baseline so the colored fill is the only visual
-    variable that changes across rows.
+    One axis, whole then part, so the row answers "which surface is worst" without
+    competing with the bar. Empty when the surface has no findings at all.
     """
-    filled = round(bar_width * score / 10)
-    fill = "\u2593" * filled
-    empty = "\u2591" * (bar_width - filled)
-    return f"[{color}]{fill}[/{color}][dim]{empty}[/dim]"
+    if not s.finding_count:
+        return ""
+    count = f"{s.finding_count:,}".rjust(count_width)
+    tag = f"  [dim]{count} finding{'' if s.finding_count == 1 else 's'}[/dim]"
+    if s.errors:
+        tag += f"[dim] · [/dim][red]{_plural(s.errors, 'error')}[/red]"
+    return tag
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
@@ -274,66 +292,18 @@ def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
     """
     if len(surfaces) <= 1:
         return
-    label_width = max(len(f"{s.name} ({s.file_count}):") for s in surfaces)
+    label_width = max(len(f"{s.name} ({s.item_count}):") for s in surfaces)
+    count_width = max(len(f"{s.finding_count:,}") for s in surfaces)
+    cells = [_surface_cell(s, label_width=label_width, count_width=count_width) for s in surfaces]
+    # Pair two cells per row only when the widest pair fits the terminal; a pair
+    # that overflows wraps its second label onto the next line and the grid
+    # stops reading as rows.
+    widest = max(Text.from_markup(c).cell_len for c in cells)
+    per_row = 2 if 2 + widest + 4 + widest <= get_term_width() else 1
     console.print()
-    for i in range(0, len(surfaces), 2):
-        left = _surface_cell(surfaces[i], label_width=label_width)
-        right = _surface_cell(surfaces[i + 1], label_width=label_width) if i + 1 < len(surfaces) else ""
-        sep = "    " if right else ""
-        console.print(f"  {left}{sep}{right}")
-
-
-# ── Scorecard sub-renderers ───────────────────────────────────────────
-
-
-_VERDICT_LABEL_W = 9  # widest label is "Findings"
-
-
-def _render_verdict_block(
-    result: Any,
-    has_quality: bool,
-    n_atoms: int,
-    elapsed_ms: float,
-) -> None:
-    """Render the Quality headline and the findings worklist beneath it.
-
-    One quality number — the server's single scoring verdict, which already folds in
-    delivery (completeness + truncation) so a structurally incomplete or truncated file
-    cannot read as high quality. The findings line below is the worklist, not a
-    competing score.
-    """
-    tw = get_term_width()
-    bar_width = min(20, max(10, tw - 48))
-    elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
-
-    score: float | None = None
-    if has_quality and result.quality is not None:
-        score = compute_score(result, has_quality, n_atoms)
-        color = score_color(score)
-        bar = _score_bar(score, bar_width, color)
-        value = f"[{color} bold]{score:>4.1f}[/{color} bold] / 10"
-        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}{value}  {bar}{elapsed_s}")
-    else:
-        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (server diagnostics unavailable)[/dim]{elapsed_s}")
-
-    _render_findings_axis(result)
-
-    # Bridging caption when the score is high but errors remain, so a green headline
-    # above red errors does not read as "nothing to do". Gate on visible error
-    # findings (the worklist actually rendered below), not the stats count — anon /
-    # free tier gates its errors into Pro hints, leaving no list for the caption to
-    # point at.
-    visible_errors = sum(1 for f in (result.findings or []) if f.severity == "error")
-    if score is not None and score >= SCORE_GREEN_CUTOFF and visible_errors:
-        console.print("  [dim]Quality folds in the findings below; the listed errors are still your worklist.[/dim]")
-
-
-def _render_findings_axis(result: Any) -> None:
-    """Render the Findings worklist line — distinct from the score; errors carry red."""
-    s = result.stats
-    err = f"[red]{s.errors} errors[/red]" if s.errors else f"[dim]{s.errors} errors[/dim]"
-    parts = [err, f"[yellow]{s.warnings} warnings[/yellow]", f"[dim]{s.infos} info[/dim]"]
-    console.print(f"  {'Findings':<{_VERDICT_LABEL_W}}{' · '.join(parts)}")
+    for i in range(0, len(cells), per_row):
+        row = cells[i : i + per_row]
+        console.print("  " + "    ".join(row))
 
 
 @dataclass
@@ -370,25 +340,38 @@ def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
             console.print(f"                  {extra}")
 
 
-def _render_cross_file_counts(result: Any) -> None:
-    """Render cross-file conflict/repetition counts in the scorecard."""
-    if result.cross_file:
-        items = result.cross_file
-        n_conflicts = sum(1 for cf in items if cf.finding_type == "conflict")
-        n_reps = sum(1 for cf in items if cf.finding_type == "repetition")
-    elif result.cross_file_coordinates:
-        items = result.cross_file_coordinates
-        n_conflicts = sum(c.count for c in items if c.finding_type == "conflict")
-        n_reps = sum(c.count for c in items if c.finding_type == "repetition")
-    else:
-        return
-    cf_parts = []
-    if n_conflicts:
-        cf_parts.append(f"{n_conflicts} cross-file conflicts")
+_NAMED_OVERLAP_PAIRS = 3  # element lines the scorecard names; the rest are counted
+_OVERLAP_HINT = "ails check -v shows each file's overlaps"
+
+
+def _render_cross_file_counts(
+    result: Any, project_root: Path | None = None, element_of: Callable[[str], Element] | None = None
+) -> None:
+    """Render the cross-file repetition and topic-overlap counts.
+    With detailed rows the headline counts the element pairs named below; else the `stats` count stands.
+    """
+    from reporails_cli.core.platform.runtime.merger import overlapping_pairs
+
+    n_reps = getattr(result.stats, "cross_file_repetitions", 0)
     if n_reps:
-        cf_parts.append(f"{n_reps} cross-file repetitions")
-    if cf_parts:
-        console.print(f"  {' \u00b7 '.join(cf_parts)}")
+        console.print(f"  {n_reps} cross-file repetition{'s' if n_reps != 1 else ''}")
+    n_pairs = getattr(result.stats, "cross_file_overlaps", 0)
+    if not n_pairs:
+        return
+    groups: list[tuple[str, list[str]]] = []
+    if pairs := overlapping_pairs(result.cross_file):
+        element_of = element_of or element_namer(None, project_root)
+        groups = group_element_pairs([(element_of(file_1), element_of(file_2)) for file_1, file_2 in pairs])
+        n_pairs = sum(len(partners) for _head, partners in groups)
+        if not n_pairs:
+            return
+    noun = "pair overlaps" if n_pairs == 1 else "pairs overlap"
+    console.print(f"  {n_pairs} element {noun} in topic \u2014 keep each topic in one file")
+    width = max((len(head) for head, _ in groups[:_NAMED_OVERLAP_PAIRS]), default=0)
+    for head, partners in groups[:_NAMED_OVERLAP_PAIRS]:
+        console.print(f"    [dim]{head:<{width}} \u2194 {partner_list(partners)}[/dim]")
+    if hidden := sum(len(partners) for _head, partners in groups[_NAMED_OVERLAP_PAIRS:]):
+        console.print(f"    [dim]+{hidden} more pair{'s' * (hidden != 1)} \u00b7 {_OVERLAP_HINT}[/dim]")
 
 
 _RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
@@ -417,11 +400,61 @@ def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, 
     return rows[:limit]
 
 
-def _render_top_rules(result: Any) -> None:
-    """Render the Top-rules block in the whole-repo scorecard."""
-    if not result.findings:
+_QUOTE_CHARS = "'\"`"
+
+
+def _open_quote_start(text: str) -> int | None:
+    """Index of the quote or backtick that `text` leaves open, or None when it closes every one.
+
+    An apostrophe inside a word (`don't`) is not a quote."""
+    opener: str | None = None
+    start = 0
+    for i, ch in enumerate(text):
+        if ch not in _QUOTE_CHARS:
+            continue
+        if opener is None:
+            if ch == "'" and i > 0 and text[i - 1].isalnum():
+                continue
+            opener, start = ch, i
+        elif ch == opener:
+            opener = None
+    return start if opener is not None else None
+
+
+def _first_sentence(message: str) -> str:
+    """The message up to its first sentence end, never ending inside a quoted or backticked token."""
+    for i, ch in enumerate(message):
+        ends_sentence = ch == "—" or (ch == "." and (i + 1 == len(message) or message[i + 1].isspace()))
+        if ends_sentence and _open_quote_start(message[:i]) is None:
+            return message[:i].strip()
+    return message.strip()
+
+
+def _fit(text: str, width: int) -> str:
+    """`text` cut to `width` columns with an ellipsis, backing off a token the cut would split."""
+    if len(text) <= width:
+        return text
+    cut = text[: width - 1]
+    opened = _open_quote_start(cut)
+    if opened is not None and opened > 0:
+        cut = cut[:opened]
+    return cut.rstrip() + "…"
+
+
+def _rule_label(rule: str, message: str) -> str:
+    """What a Top-rules row says about a rule: its title, else the message's first sentence."""
+    return rule_title(rule) or _first_sentence(message)
+
+
+def _render_top_rules(result: Any, verbose: bool = True) -> None:
+    """Render the Top-rules block in the whole-repo scorecard.
+
+    Outside verbose output the documentation conventions are left out, as they are in the file cards.
+    """
+    findings, _ = split_conventions(result.findings, verbose)
+    if not findings:
         return
-    rows = _aggregate_top_rules(result.findings)
+    rows = _aggregate_top_rules(findings)
     if not rows:
         return
     tw = get_term_width()
@@ -435,9 +468,7 @@ def _render_top_rules(result: Any) -> None:
     snippet_w = max(20, tw - fixed - 2)
     for rule, count, severity, message in rows:
         label = _RULE_SEVERITY_LABEL.get(severity, severity)
-        snippet = message.split(".")[0].split("—")[0].strip()
-        if len(snippet) > snippet_w:
-            snippet = snippet[: snippet_w - 1] + "…"
+        snippet = _fit(_rule_label(rule, message), snippet_w)
         # Hyperlink the ID but pad by its visible length — the link markup is zero-width.
         url = rule_docs_url(rule)
         rule_cell = f"[link={url}]{rule}[/link]" if url else rule
@@ -447,9 +478,10 @@ def _render_top_rules(result: Any) -> None:
 
 def _render_results_summary(
     result: Any,
-    has_quality: bool,  # noqa: ARG001 — kept for API stability
     hint_errors: int,
     hint_warnings: int,
+    project_root: Path | None = None,
+    element_of: Callable[[str], Element] | None = None,
 ) -> tuple[int, int]:
     """Render pro diagnostics + cross-file counts. Returns (visible_findings, pro_total).
 
@@ -470,7 +502,7 @@ def _render_results_summary(
         pro_detail = f" ({' \u00b7 '.join(pro_parts)})" if pro_parts else ""
         console.print(f"  [dim]+ {pro_total} Pro diagnostics{pro_detail}[/dim]")
 
-    _render_cross_file_counts(result)
+    _render_cross_file_counts(result, project_root, element_of)
 
     return visible_findings, pro_total
 
@@ -488,6 +520,9 @@ def print_scorecard(
     scope: ScopeInfo | None = None,
     surface_health: list[SurfaceHealth] | None = None,
     item_health: list[SurfaceHealth] | None = None,
+    verbose: bool = False,
+    project_root: Path | None = None,
+    element_of: Callable[[str], Element] | None = None,
 ) -> None:
     """Print the bottom scorecard — the payoff users scroll to.
 
@@ -502,10 +537,13 @@ def print_scorecard(
 
     console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
 
-    _render_verdict_block(result, has_quality, n_atoms, elapsed_ms)
+    _render_verdict_block(result, has_quality, n_atoms, elapsed_ms, hint_errors=hint_errors, verbose=verbose)
 
-    agent_name = agent.title() if agent else "auto"
-    console.print(f"  Agent: {agent_name}")
+    if agent:
+        console.print(f"  Agent: {agent.title()}")
+    else:
+        console.print("  Agent: not determined, only the rules every agent shares ran")
+        console.print("  [dim]Name your agent: --agent <name>, or ails config set default_agent <name>[/dim]")
 
     level = getattr(result, "level", Level.L0)
     label = LEVEL_LABELS.get(level, "Unknown")
@@ -530,14 +568,33 @@ def print_scorecard(
 
         render_item_health(item_health)
 
-    _render_top_rules(result)
+    _render_top_rules(result, verbose)
 
-    visible_findings, pro_total = _render_results_summary(result, has_quality, hint_errors, hint_warnings)
+    _visible_findings, _pro_total = _render_results_summary(
+        result, hint_errors, hint_warnings, project_root, element_of
+    )
 
-    # CTA for free tier
-    if tier == "free":
-        all_total = visible_findings + pro_total
+    # One line per run for an unpaid tier, in place of any per-finding remedy
+    # (the reply carries none for an anonymous or free run) — keyed on whether a
+    # key is held, not on the reported tier: a signed-in free user told to run
+    # `ails auth login` is sent to a dead end. Never claims a fix for every
+    # finding — only that Pro adds the remedies and the order to apply them.
+    refused = getattr(result, "server_error", None) is not None
+    if tier == "free" and not refused:
+        from reporails_cli.core.platform.adapters.api_client import has_api_key
+        from reporails_cli.formatters.text.funnel_cta import _SUBSCRIBE_URL
+
         console.print()
-        console.print(f"  See all {all_total} findings with fixes \u2192 [bold]ails auth login[/bold]")
+        console.print("  Pro adds the remedies and the order to apply them.")
+        if has_api_key():
+            console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
+        else:
+            console.print("  \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro")
+    elif tier == "Pro" and not refused:
+        console.print()
+        console.print("  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]")
+        console.print(
+            "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files.[/dim]"
+        )
 
     console.print()

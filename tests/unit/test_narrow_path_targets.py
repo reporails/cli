@@ -1,7 +1,7 @@
 """Regression tests for `_narrow_to_path_targets` symlink handling.
 
 A directory target must keep an in-tree symlinked instruction file (e.g. a
-hub-symlinked rule). The earlier `f.resolve()`-only membership test dropped it,
+symlinked rule). The earlier `f.resolve()`-only membership test dropped it,
 because resolution follows the symlink out of the target directory.
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.interfaces.cli.main import _narrow_to_path_targets, _resolved_within_target
+from reporails_cli.interfaces.cli.check_orchestration import _narrow_to_path_targets, _resolved_within_target
 
 
 @pytest.mark.unit

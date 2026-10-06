@@ -1,19 +1,12 @@
-"""Engine helper functions and constants extracted from engine.py."""
+"""Engine helper functions and constants."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from reporails_cli.core.cache import ProjectCache, content_hash, structural_hash
-from reporails_cli.core.platform.dto.models import (
-    Category,
-    CategoryStats,
-    ClassifiedFile,
-    JudgmentRequest,
-    Rule,
-    Severity,
-    Violation,
-)
+from reporails_cli.core.platform.dto.models import Category, ClassifiedFile, JudgmentRequest, Rule, Severity, Violation
+from reporails_cli.core.platform.dto.results import CategoryStats
 
 # Project-root marker directories that signal "this is a project". Used by
 # _find_project_root for cache-key derivation and mapper coordination — NOT
@@ -42,6 +35,10 @@ def _find_project_root(target: Path) -> Path:
       3. Any IDE / agent config directory: .vscode/, .idea/, .cursor/,
          .claude/, .codex/, .gemini/, .github/
 
+    The user's home directory is never the root of a target below it, whether
+    it is a git repository or holds editor folders: only a target that is the
+    home directory itself roots there.
+
     Falls back to `target` if no marker is found anywhere up the tree. Used
     for cache key derivation and mapper coordination so that worktrees and
     subdirectories of the same repo share one cache namespace.
@@ -50,12 +47,20 @@ def _find_project_root(target: Path) -> Path:
     agent_discovery.resolve_project_root for discovery boundary semantics.
     """
     current = target if target.is_dir() else target.parent
+    start = current
+    try:
+        home: Path | None = Path.home().resolve()
+    except (RuntimeError, OSError):
+        home = None
     first_git = None
     first_marker = None
     while current != current.parent:
         backbone = current / ".ails" / "backbone.yml"
         if backbone.exists():
             return current
+        if current == home and current != start.resolve():
+            current = current.parent
+            continue
         if (current / ".git").exists() and first_git is None:
             first_git = current
         if first_marker is None:
@@ -148,7 +153,7 @@ def _group_rules_by_target_files(
     classified_files: list[ClassifiedFile],
 ) -> dict[frozenset[Path], dict[str, Rule]]:
     """Group rules by resolved file targets for batched regex calls."""
-    from reporails_cli.core.classify import match_files
+    from reporails_cli.core.platform.policy.matching import match_files
 
     groups: dict[frozenset[Path], dict[str, Rule]] = {}
     for rule_id, rule in rules.items():
@@ -178,7 +183,7 @@ def _collect_body_only_paths(group_rules: dict[str, Rule]) -> set[Path] | None:
     return paths or None
 
 
-def _filter_dismissed_violations(  # pylint: disable=too-many-locals
+def _filter_dismissed_violations(
     violations: list[Violation],
     scan_root: Path,
     project_root: Path,
@@ -233,7 +238,7 @@ def _filter_dismissed_violations(  # pylint: disable=too-many-locals
     return filtered
 
 
-def _filter_cached_judgments(  # pylint: disable=too-many-locals
+def _filter_cached_judgments(
     judgment_requests: list[JudgmentRequest],
     violations: list[Violation],
     scan_root: Path,

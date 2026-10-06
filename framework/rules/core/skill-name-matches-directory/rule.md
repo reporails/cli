@@ -3,16 +3,11 @@ id: CORE:S:0036
 slug: skill-name-matches-directory
 title: Skill Name Matches Directory
 category: structure
-type: deterministic
+type: mechanical
 severity: medium
 backed_by: []
-match: {type: skill}
+match: {type: skills, format: [frontmatter, freeform]}
 source: https://agentskills.io/specification
-fix: |
-  Add a `name:` field to the `SKILL.md` frontmatter matching the containing
-  directory name in kebab-case. If the directory is `commit-helper/`, set
-  `name: commit-helper`. Lowercase letters, digits, and hyphens only — no
-  underscores, no CamelCase, no spaces.
 ---
 
 # Skill Name Matches Directory
@@ -23,7 +18,7 @@ The `name` field in `SKILL.md` YAML frontmatter MUST match the containing direct
 
 - **CamelCase name.** Using `commitHelper` instead of `commit-helper`. Skill loaders expect kebab-case in the `name` field to match the directory naming convention.
 - **Name/directory mismatch.** Directory is `review-pr/` but frontmatter says `name: pr-review`. The skill is invocable as `/review-pr` (from directory) but displayed as `pr-review` (from frontmatter).
-- **Missing name field.** Omitting the `name` field entirely from frontmatter. Loaders fall back to the directory name but the skill appears without a display name in listings.
+- **Directory renamed without updating the field.** Moving a skill from `pr-review/` to `review-pr/` but leaving `name: pr-review` in frontmatter. The stale name no longer equals the directory and is flagged.
 
 ## Pass / Fail
 
@@ -47,5 +42,5 @@ name: commitHelper
 
 ## Limitations
 
-Checks that a kebab-case `name:` field exists in frontmatter. Does not verify the name matches the exact directory name — only that the format is valid kebab-case.
+Compares the frontmatter `name` value against the containing directory name and flags any mismatch. A `name` that is absent (or not a string) is not flagged — loaders fall back to the directory name, so the default trivially matches. The check tests equality with the directory, not kebab-case formatting on its own: a name equal to a non-kebab directory passes, and a kebab-case name that differs from the directory still fails.
 

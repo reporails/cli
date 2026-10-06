@@ -1,0 +1,32 @@
+# markdown-it token-type -> mapper block/format vocabulary.
+#
+# Consumed by core/mapper/parse.py. Structural parser wiring.
+# Shape-validated by core/platform/dto/lexicon.MarkdownTokens.
+
+# Block open token -> nesting-context label pushed on the block stack.
+block_types:
+  bullet_list_open: bullet_list
+  ordered_list_open: ordered_list
+  blockquote_open: blockquote
+  table_open: table
+
+# Block close tokens that pop the block stack.
+block_close:
+  - bullet_list_close
+  - ordered_list_close
+  - blockquote_close
+  - table_close
+
+# Inline emphasis open token -> [marker, format-name].
+format_open:
+  strong_open:
+    - "**"
+    - bold
+  em_open:
+    - "*"
+    - italic
+
+# Inline emphasis close token -> marker.
+format_close:
+  strong_close: "**"
+  em_close: "*"

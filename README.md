@@ -1,6 +1,6 @@
-# Reporails CLI (v0.5.12)
+# Reporails CLI (v0.6.0)
 
-> **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Claude, Codex, Copilot, Cursor, and Gemini.**
+> **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Antigravity, Claude, Codex, Copilot, and Cursor.**
 > 
 > *Beta phase - moving fast, feedback welcome.*
 
@@ -17,32 +17,60 @@ No install, no account. The headline is a single **Quality** score (the analysis
 ```
 Reporails — Diagnostics
 
-  ┌─ Main (1)  10 directive / 1 constraint · 71% prose
-  │ CLAUDE.md  10 dir / 1 con / 1 amb · 71% prose
-  │   ✗       Missing tech stack declaration — list languages, frameworks, runtimes  CORE:C:0034
-  │       → Name the languages, frameworks, and runtimes the project targets.
-  │   ⚠       'pytest' should be in backticks (×3)  CORE:E:0003
-  │       → Wrap in backticks: `pytest`
-  │     ◦ +4 lower-priority (won't move your score yet) · -v to list
-  │     ⊕ 6 Pro diagnostics (1 error) — isolated instructions, buried directives
+  ┌─ Main (1)  6 directive / 1 constraint · 30% prose
+  │ CLAUDE.md  6 dir / 1 con · 30% prose
+  │   ✗       Unresolved imports: docs/setup.md  CORE:S:0024
+  │   ⚠       Missing directory layout — show the project structure with a tre…  CORE:C:0035
+  │     ... and 19 more
+  │     6 vague · 7 brief · 1 weak
+  │     ⊕ 2 Pro diagnostics — topic overlap, unbalanced topics
   │
-  └─ 12 findings
+  └─ 35 findings
 
-  ── Summary ────────────────────────────────────────────────────────
+  ┌─ Rules (1)  4 directive · 20% prose
+  │ testing  4 dir · 20% prose
+  │   ⚠       No frontmatter block found  CLAUDE:S:0012
+  │   ⚠       Missing frontmatter block — start with --- delimited YAML frontm…  CORE:S:0006
+  │     ... and 1 more
+  │     4 vague · 4 brief
+  │     ⊕ 1 Pro diagnostics — topic overlap
+  │
+  └─ 11 findings
 
-  Quality   6.4 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░  (4.1s)
-  Findings 3 errors · 38 warnings · 12 info
+  ── Cross-file ────────────────────────────────────────
+
+  ⚠  .claude/rules/testing.md ↔ CLAUDE.md — 3 overlaps
+  ⚠  .claude/rules/testing.md ↔ CLAUDE.md — 1 repetition
+
+  Line-level detail → sign in with ails auth login, then upgrade to Pro
+
+  ── Summary ─────────────────────────────────────────
+
+  Quality   1.0 / 10  ▓▓░░░░░░░░░░░░░░░░░░  (1.0s)
+  Fix now   1 error. Start with CORE:S:0024.
+  Findings  46 total · -v to list every one
   Agent: Claude
-  Level: L4 Delegated
+  Level: L3 Scoped
 
   Scope:
-    instructions: 64 directive / 102 prose (61%)
-                  18 constraint / 4 ambiguous
+    instructions: 10 directive / 4 prose (27%)
+                  1 constraint
 
-  Main (1):    ▓▓▓▓▓▓▓▓▓░░░░░░   6.4  1 err    Rules (2):   ▓▓▓▓▓▓▓▓▓▓▓▓░░░   7.9
-  Skills (3):  ▓▓▓▓▓▓▓▓▓▓▓░░░░   7.2           Agents (1):  ▓▓▓▓▓▓▓▓▓▓░░░░░   6.6
+  Main (1):  ▓▓░░░░░░░░░░░░░   1.0  35 findings · 1 error
+  Rules (1): ▓▓░░░░░░░░░░░░░   1.0  11 findings
 
-  + 41 Pro diagnostics (1 error · 32 warnings) — sign in for line numbers + fix coordinates
+  Top rules (by finding count):
+    CORE:E:0004   x11  warn  Instruction Elaboration
+    CORE:C:0042   x10  warn  Specificity Gap
+    CLAUDE:S:0012 x2   warn  Path Scope Declared
+    CORE:C:0005   x1   warn  Testing Framework Documented
+
+  + 3 Pro diagnostics (3 warnings)
+  1 cross-file repetition
+  1 element pair overlaps in topic — keep each topic in one file
+
+  Pro adds the remedies and the order to apply them.
+  → sign in with ails auth login, then upgrade to Pro
 ```
 
 ## Install permanently
@@ -53,11 +81,11 @@ npx @reporails/cli install
 uvx --from reporails-cli ails install
 ```
 
-Puts `ails` on your PATH.
+Puts `ails` on your PATH, installs the reporails plugin into Claude Code and Codex when they are on your machine, and prints the install steps for the other supported agents (also listed in [Agent Support](https://github.com/reporails/cli/blob/main/docs/agent-support.md#plugin-support)). `ails install --project` installs the plugin for the current repository only, shared with collaborators through its Claude Code settings; Codex installs for your user. `ails update` upgrades `ails` and refreshes the plugin in each agent that has it. With Pro, the step after install is `/reporails:ails heal` in Claude Code, which rewrites your instruction files.
 
-## Anonymous vs signed
+## Free vs Pro
 
-Anonymous mode needs no account. Signing in raises the rate / payload caps and unlocks per-finding fix text and exact cross-file conflict locations.
+Anonymous mode needs no account, and signing in is free. Anonymous and signed-in free accounts share the same rate and payload caps and the same full diagnosis — every finding, the score, and the local deterministic fixes — and signing in additionally lets you apply fixes with `ails check --heal`. Pro is the paid subscription: it raises the rate and payload caps and unlocks the remedies (what to change, where, and how), the exact line of each cross-file repetition and topic overlap, and the ordered remediation workflow your coding agent runs end to end.
 
 ```bash
 # GitHub Device Flow - authorize in browser
@@ -68,23 +96,25 @@ Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/do
 
 ## In CI
 
-Run on every PR so instruction-quality regressions (contradictions, oversized files, weak reinforcement) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
+Run on every PR so instruction-quality regressions (vague or buried instructions, oversized files, weak reinforcement, instructions repeated across files) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-- uses: reporails/cli/action
+- uses: reporails/cli/action@0.6.0
   with:
-    api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - sign-in for full diagnostic detail
+    api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - a Pro key unlocks the full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires
     min-score: "7.0"                            # exit 1 if Quality < 7.0
 ```
 
 Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` in your CI secret store. See [Configuration → Authentication](https://github.com/reporails/cli/blob/main/docs/configuration.md#authentication).
 
+The action keeps the analysis model (~275 MB) in the repository's Actions cache: the first run downloads it, and later runs restore it instead of downloading it again, even when the check fails. Running `ails` directly in a workflow? See [Configuration → Caching the model in CI](https://github.com/reporails/cli/blob/main/docs/configuration.md#caching-the-model-in-ci).
+
 ## Documentation
 
 - [Getting Started](https://github.com/reporails/cli/blob/main/docs/getting-started.md) - install, first run, what the output means
 - [Agent Support](https://github.com/reporails/cli/blob/main/docs/agent-support.md) - which agents are recognized and what's covered
-- [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md) - anonymous vs signed in, what each mode includes
+- [Tiers and Limits](https://github.com/reporails/cli/blob/main/docs/tiers.md) - Free vs Pro, what each tier includes
 - [Configuration](https://github.com/reporails/cli/blob/main/docs/configuration.md) - disabling rules, project / global config, exclude paths
 - [Score Guide](https://github.com/reporails/cli/blob/main/docs/score-guide.md) - how the score is built and what it tells you
 - [Capability Levels](https://github.com/reporails/cli/blob/main/docs/capability-levels.md) - the L0-L7 ladder and what each level requires
@@ -93,12 +123,14 @@ Capture your API key with `ails auth token` and store it as `REPORAILS_API_KEY` 
 
 ## Built and validated for
 
+- **Antigravity** — [Google](https://antigravity.google)
 - **Claude** — [Anthropic](https://github.com/anthropics)
 - **Codex** — [OpenAI](https://github.com/openai)
 - **Copilot** — [GitHub](https://github.com/github)
 - **Cursor** — [Anysphere](https://github.com/cursor)
-- **Gemini** — [Google](https://github.com/google-gemini)
 
 ## License
 
-[BUSL 1.1](LICENSE) - converts to Apache 2.0 three years after each release.
+[BUSL 1.1](https://github.com/reporails/cli/blob/main/LICENSE) - converts to Apache 2.0 three years after each release.
+
+The analysis model files are licensed separately under the [Reporails Model Licence](https://github.com/reporails/cli/blob/main/LICENSE-weights).

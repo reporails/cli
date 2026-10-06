@@ -4,38 +4,46 @@ slug: hook-event-handlers
 title: Hook Event Handlers
 category: structure
 type: mechanical
+enforcement_required: true
+enforcement_mechanism: hook
 severity: medium
 backed_by: [enterprise-claude-usage, fowler-context-engineering-agents, instruction-limits-principles]
-match: {type: config}
+match: {type: [config, hooks]}
+requires_capability: hooks
 ---
 # Hook Event Handlers
 
-Config files that define hooks or event handlers must include a heading matching Hook, Event, Trigger, or Pre-commit. Without a labeled section, trigger conditions are buried in unstructured content where they are easy to miss.
+A config file that declares a `"hooks"` block must give at least one handler a `"type"`. A `"hooks"` block with no typed handler leaves the agent with a section that names nothing it can act on. A config file with no `"hooks"` key at all is not this rule's concern — it has not declared hooks, so there is nothing to check.
 
 ## Antipatterns
 
-- **Hook logic without a labeled section**: Describing pre-commit behavior in a general "Workflow" section without a heading containing "Hook", "Event", "Trigger", or "Pre-commit". The check looks for headings matching those keywords.
-- **Trigger keyword only in body text**: Mentioning "trigger" or "hook" in paragraphs but never in a heading. The check requires a heading-level match, not body-level.
-- **Generic heading name**: Using `## Automation` to describe event handlers instead of `## Event Handlers` or `## Pre-commit Hooks`. The heading must contain one of the target keywords.
+- **Empty hooks block**: Declaring `"hooks": {}` or an event with an empty list, with no handler object underneath. The check looks for a `"type"` field inside the `"hooks"` block itself, not for `"type"` anywhere later in the file.
+- **Handler with no type**: Listing a handler object under an event name but leaving out `"type"`. Without a type, the agent cannot tell whether the handler runs a command, a prompt, or something else.
+- **Hook logic described only in prose**: Writing about pre-commit behavior in a comment or a separate doc instead of declaring it in the config's own `"hooks"` block. The check reads the config file itself, not prose about it.
 
 ## Pass / Fail
 
 ### Pass
 
-~~~~markdown
-## Pre-commit Hooks
-
-Run `ruff check` and `pytest` before each commit.
-~~~~
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "command": "ruff check" }
+    ]
+  }
+}
+```
 
 ### Fail
 
-~~~~markdown
-## Workflow
-
-Before committing, the linter runs automatically.
-~~~~
+```json
+{
+  "hooks": {},
+  "statusLine": { "type": "command", "command": "status.sh" }
+}
+```
 
 ## Limitations
 
-Checks for a heading containing "Hook", "Event", "Trigger", or "Pre-commit". Does not verify the section documents actual event handler configurations.
+Checks for a `"type"` field inside the `"hooks"` block's own value, not in an unrelated key that happens to follow it. Does not verify the type is a recognized handler kind or that it pairs with a valid event name — the agent-specific event-type rules cover that.

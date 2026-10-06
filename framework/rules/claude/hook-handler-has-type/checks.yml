@@ -3,7 +3,15 @@ checks:
   type: mechanical
   check: file_exists
 - id: CLAUDE.S.0006.handler_has_type
-  expect: present
-  message: No handler with a valid type field (command, http, mcp_tool, prompt, or agent) found
-  pattern-regex: '"type"\s*:\s*"(command|http|mcp_tool|prompt|agent)"'
-  type: deterministic
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0028.has-type-field
+  severity: medium
+  args:
+    message: Hook handler has no valid type — set "type" to command, http, mcp_tool, prompt, or agent
+    block: hooks
+    handlers: grouped
+    select:
+      has: [type, command, url, prompt, server, tool]
+    require:
+      type: [command, http, mcp_tool, prompt, agent]

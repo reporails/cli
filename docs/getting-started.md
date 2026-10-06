@@ -1,8 +1,8 @@
 ---
 title: "Getting Started"
 description: "Install, first run, what the output means"
-version: "0.5.11"
-last_updated: 2026-06-17
+version: "0.6.0"
+last_updated: 2026-09-20
 ---
 
 # Getting Started
@@ -16,6 +16,8 @@ npx @reporails/cli check
 # or
 uvx --from reporails-cli ails check
 ```
+
+> **First run downloads the model once (~275 MB).** The package itself is small; on the first `check` that needs it, Reporails downloads its analysis model into `~/.reporails/cache/` and prints a `Downloading reporails model…` banner followed by one line per file fetched. The download lives in your home cache, not the package cache, so it happens once per machine and every later run — including a fresh `npx` — is silent and offline. A first run needs network access; see [Configuration](configuration.md#model-cache) to point the download at a mirror. A CI job starts on a fresh machine every time; see [Caching the model in CI](configuration.md#caching-the-model-in-ci) so that only the first run downloads it.
 
 You'll see something like this:
 
@@ -34,7 +36,8 @@ Reporails — Diagnostics
   ── Summary ────────────────────────────────────────────────────────
 
   Quality   7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  (1.3s)
-  Findings 16 errors · 4 warnings · 1 info
+  Fix now   16 errors. Start with CORE:C:0053.
+  Findings  21 total · -v to list every one
   Agent: Claude
   Level: L4 Delegated
 
@@ -46,23 +49,23 @@ Reporails — Diagnostics
 Three things to read first:
 
 - **Quality** — closer to 10 is better. See the [Score Guide](score-guide.md) for what each band means.
+- **Fix now** — the error count and the rule to start with. The `Findings` total beneath it is the size of the rest.
 - **Findings list** — each row is a rule that fired. Run `ails explain CORE:C:0035` (or whichever rule ID) to see what the rule checks for and how to fix it. In supporting terminals the rule IDs in the output are clickable links to their docs page.
 - **Scope summary** — counts of directives, constraints, and prose detected. If a number looks wrong (e.g., zero directives), your instructions are probably written as prose rather than as commands the agent can act on.
 
-## Install permanently
+Reporails ships in two pieces: the **engine** (the CLI + MCP server) and the **plugin** (the `ails` skill + MCP registration your agent installs natively).
+
+**1. Install the engine on your PATH:**
 
 ```bash
-npx @reporails/cli install
+uv tool install reporails-cli
 # or
-uvx --from reporails-cli ails install
+npm install -g @reporails/cli
 ```
 
-Either command does two things:
+`ails install` then ensures the binary is on PATH. After it runs, `ails check` works from anywhere without the `npx` / `uvx` prefix.
 
-1. Puts the `ails` binary on your PATH
-2. Writes a one-line `~/.reporails/config.yml` with sensible defaults
-
-After this, `ails check` runs from anywhere without the `npx` / `uvx` prefix.
+**2. Add the reporails plugin to your agent.** The plugin carries the `ails` skill and the MCP server; installing it registers both in one step — no per-agent config editing. The per-agent install commands are listed in [Agent Support](agent-support.md#plugin-support); `ails install` runs them for Claude Code and Codex and prints the rest. Add `--project` to install the plugin for the current repository only, shared with collaborators (Codex installs for your user); `ails update` refreshes the plugin in each agent that has it. What the plugin needs to start is stated there. Without the plugin, `ails check` in your terminal scores your instruction files and applies formatting fixes; rewriting them needs the plugin and Pro (`/reporails:ails heal` in Claude Code).
 
 ## Configure (optional)
 
@@ -72,15 +75,15 @@ Reporails auto-detects which agent rules to run based on the base config files p
 ails config set --global default_agent claude
 ```
 
-Per-repo overrides, severity tweaks, and rule disables live in `.ails/config.yml` — see [Configuration](configuration.md) for the full surface.
+Per-repo settings, rule thresholds, and rule disables live in `.ails/config.yml` — see [Configuration](configuration.md) for the full surface.
 
-## Authenticate (optional, for full diagnostics)
+## Authenticate (optional, free)
 
-The anonymous tier works without an account and is enough to see whether your instructions are working. Sign in to raise your request and payload caps and unlock the full diagnostic detail (per-finding fix text and exact cross-file conflict locations):
+The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription) and `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail (the remedies, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
 
 ```bash
 ails auth login    # browser-based GitHub Device Flow
-ails auth status   # show current tier and a redacted key prefix
+ails auth status   # show whether you are signed in, the key source and a redacted key prefix (the tier for a stored sign-in; a key from the environment shows "resolved at check time")
 ails auth token    # print the full API key (for CI export)
 ails auth logout   # remove stored credentials
 ```
@@ -89,8 +92,8 @@ See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configurat
 
 ## Common follow-ups
 
-- **The score is lower than you expected.** Run `ails check -v` to see all findings (the default output truncates after a per-file budget). Then `ails explain CORE:S:0002` (or whichever rule ID) to see the rule body and pass / fail examples. The [Score Guide](score-guide.md) explains what each band means, how per-surface scores roll up, and which rules to fix first for the biggest score improvement.
-- **You disagree with a rule.** Browse [reporails.com/rules](https://reporails.com/rules) for the rule's intent before deciding, then either disable it or override its severity in `.ails/config.yml` — see [Configuration → Disabling rules](configuration.md#disabling-rules).
+- **The score is lower than you expected.** Run `ails check -v` to see all findings (the default output may leave some out). Then `ails explain CORE:S:0002` (or whichever rule ID) to see the rule body and pass / fail examples. The [Score Guide](score-guide.md) explains what each band means, how per-surface scores roll up, and which rules to start with.
+- **You disagree with a rule.** Browse [reporails.com/rules](https://reporails.com/rules) for the rule's intent before deciding, then disable it in `.ails/config.yml` — see [Configuration → Disabling rules](configuration.md#disabling-rules).
 - **You want this in CI.** See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme) and [Configuration → Authentication](configuration.md#authentication) for capturing your API key with `ails auth token` and wiring it as `secrets.REPORAILS_API_KEY`.
 
 ## Useful flags
@@ -99,12 +102,17 @@ See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configurat
 ails check -v               # verbose — show all findings, not just top per file
 ails check -f json          # machine-readable JSON
 ails check -f github        # GitHub Actions inline annotations
-ails check --strict         # exit code 1 if any finding fires
-ails check --agent claude   # only run rules scoped to one agent
-ails check --heal           # apply deterministic auto-fixes after validation
-ails check --fix            # alias for --heal (eslint / ruff convention)
-ails check --heal --dry-run # preview fixes without writing
+                            # (text, json and github are the only formats; any
+                            #  other value is a usage error)
+ails check --strict              # exit code 1 if any finding fires
+ails check --agent claude        # only run rules scoped to one agent
+ails check CLAUDE.md --heal      # apply deterministic auto-fixes to one target (needs an account)
+ails check CLAUDE.md --fix       # alias for --heal (eslint / ruff convention)
+ails check CLAUDE.md --heal --dry-run  # preview fixes without writing (needs an account)
+ails check --heal --cwd          # with --heal: opt into rewriting the whole project instead of naming a target
 ```
+
+`--heal` needs an explicit target — a path or a capability like `skills` — or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. It also needs an account: run `ails auth login` first — a free account is enough, and Pro is not required. Without stored credentials (or an `AILS_API_KEY` in the environment) the run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs an account.` and applies nothing. See [Tiers and Limits](tiers.md).
 
 The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats` and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
 
@@ -117,19 +125,20 @@ ails check skills:backlog    # focus on .claude/skills/backlog/SKILL.md
 ails check rules:git         # focus on .claude/rules/git.md
 ails check agents:rule-writer
                              # subagent + any skills its frontmatter preloads
-ails check @skills           # listing mode — table of all skills with scores
+ails check @skills           # listing mode — every skill, one card each
 ails check ./CLAUDE.md       # focus on a path
+ails check .claude/skills    # focus on a directory — every instruction file under it
 ails check skills:backlog @agents  # mix: one skill + all agents
 ```
 
-The full pipeline still runs (so cross-file rules see the whole project), but only the focused file or capability appears in the output, with findings grouped by rule and a `Next:` action pointer. Listing mode (`ails check <capability>` with no name) prints a per-target score table for that capability under the detected agent. Capability names come from the agent's declared `file_types:` — both singular and plural are accepted.
+Only the named files are read and checked, so cross-file rules compare them with each other, not with the rest of the project, and checks about the project as a whole (such as whether a main instruction file exists) are skipped. The output uses the same per-file card layout as a whole-project run, narrowed to the named target. Listing mode (`ails check <capability>` with no name) narrows the same card layout to every file under that capability instead of a single one. Capability names come from the agent's declared `file_types:` — both singular and plural are accepted.
 
 The whole-repo summary also shows a `Top rules (by finding count)` block — a fast triage view of which rule classes contribute the most findings across your project.
 
 ## Next steps
 
 - [Score Guide](score-guide.md) — what the number means in practice
-- [Tiers and Limits](tiers.md) — anonymous vs signed-in mode, what each includes
+- [Tiers and Limits](tiers.md) — Free vs Pro, what each tier includes
 - [Configuration](configuration.md) — tuning rules, agents, exclusions
 - [FAQ](faq.md) — common questions
 

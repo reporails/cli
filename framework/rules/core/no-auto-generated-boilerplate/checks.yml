@@ -4,6 +4,6 @@ checks:
   check: file_exists
 - id: CORE.C.0030.pattern_check
   type: deterministic
-  pattern-regex: '(?i)(auto[_-]?generated|do\s+not\s+edit|generated\s+by\s+\w+|this\s+file\s+was\s+auto)'
+  pattern-regex: '(?im)(auto[_-]?generated|generated\s+by\s+\w+|this\s+file\s+was\s+auto|do\s+not\s+edit(?:\s+(?:this\s+file|manually|by\s+hand|directly)\b|[.!:;]|\s*(?:$|[\-–—]|\*/)))'
   expect: absent
   message: "Auto-generated boilerplate detected — instruction content should be human-authored"

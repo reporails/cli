@@ -5,9 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from reporails_cli.core.platform.config.bootstrap import get_framework_root
 from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
@@ -17,71 +14,7 @@ from reporails_cli.core.platform.dto.models import (
     Rule,
     RuleType,
     Severity,
-    Tier,
 )
-
-# Threshold for core tier (from sources.schema.yml tier_derivation)
-CORE_WEIGHT_THRESHOLD = 0.8
-
-
-def _parse_sources_yml(path: Path) -> dict[str, float]:
-    """Parse a single sources.yml file into id->weight map."""
-    if not path.exists():
-        return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not data:
-        return {}
-
-    weights: dict[str, float] = {}
-    sources_list: list[dict[str, Any]] = []
-    if isinstance(data, list):
-        sources_list = data
-    elif isinstance(data, dict):
-        for scope_sources in data.values():
-            if isinstance(scope_sources, list):
-                sources_list.extend(scope_sources)
-
-    for src in sources_list:
-        if isinstance(src, dict) and "id" in src and "weight" in src:
-            weights[src["id"]] = src["weight"]
-    return weights
-
-
-def _load_source_weights(
-    rules_dir: Path | None = None,
-    extra_source_dirs: list[Path] | None = None,
-) -> dict[str, float]:
-    """Load source weights from sources.yml in rules dir and extra packages."""
-    base = rules_dir or get_framework_root()
-    candidates = [
-        base / "docs" / "sources.yml",  # installed mode: docs/ alongside rules
-        base.parent / "docs" / "sources.yml",  # legacy: rules_dir is rules/, docs at parent
-        base / "sources.yml",  # bundled: sources.yml at package root
-        base.parent / "sources.yml",  # bundled: rules_dir is rules/, sources.yml at parent
-    ]
-    sources_path = next((p for p in candidates if p.exists()), candidates[0])
-    weights = _parse_sources_yml(sources_path)
-
-    if extra_source_dirs:
-        for pkg_dir in extra_source_dirs:
-            weights.update(_parse_sources_yml(pkg_dir / "docs" / "sources.yml"))
-
-    return weights
-
-
-def derive_tier(backed_by: list[str], source_weights: dict[str, float] | None = None) -> Tier:
-    """Derive rule tier (CORE/EXPERIMENTAL) from backing source weights."""
-    if not backed_by:
-        return Tier.EXPERIMENTAL
-
-    if source_weights is None:
-        source_weights = _load_source_weights()
-    max_weight = max(
-        (source_weights.get(source_id, 0.0) for source_id in backed_by),
-        default=0.0,
-    )
-
-    return Tier.CORE if max_weight >= CORE_WEIGHT_THRESHOLD else Tier.EXPERIMENTAL
 
 
 def _load_checks(frontmatter: dict[str, Any]) -> list[Check]:
@@ -98,7 +31,8 @@ def _load_checks(frontmatter: dict[str, Any]) -> list[Check]:
             replaces=item.get("replaces", ""),
             severity=item.get("severity", ""),
             message=item.get("message", ""),
-            project_scope=item.get("project_scope", False),
+            project_scope=item.get("project_scope", ""),
+            convention=item.get("convention", False),
         )
         for item in frontmatter.get("checks", [])
     ]
@@ -129,6 +63,8 @@ def _parse_match(frontmatter: dict[str, Any]) -> FileMatch | None:
             vcs=raw.get("vcs"),
             loading=raw.get("loading"),
             precedence=raw.get("precedence"),
+            loading_verb=raw.get("loading_verb"),
+            link_source_type=raw.get("link_source_type"),
         )
     if raw is not None:
         # Empty match (match: {}) parsed as None by YAML — treat as match-all
@@ -154,6 +90,10 @@ def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None
         supersedes=frontmatter.get("supersedes"),
         inherited=frontmatter.get("inherited"),
         depends_on=frontmatter.get("depends_on", []),
+        enforcement_required=bool(frontmatter.get("enforcement_required", False)),
+        enforcement_mechanism=frontmatter.get("enforcement_mechanism"),
+        requires_capability=frontmatter.get("requires_capability"),
+        surface_mutations=frontmatter.get("surface_mutations"),
         checks=_load_checks(frontmatter),
         sources=frontmatter.get("sources", []),
         see_also=frontmatter.get("see_also", []),

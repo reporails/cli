@@ -1,1 +1,1 @@
-{ "type": "prompt", "prompt": "Review this" }
+{ "hooks": { "preToolUse": [{ "type": "prompt", "prompt": "Review this" }] } }

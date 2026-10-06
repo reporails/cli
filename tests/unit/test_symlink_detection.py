@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.discovery.agents import DEFAULT_EXCLUDE_DIRS
 from reporails_cli.core.discovery.features import (
     detect_features_filesystem,
     resolve_symlinked_files,
@@ -256,7 +257,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
     @pytest.mark.subsys_lint
     def test_finds_file_inside_symlinked_directory(self, tmp_path: Path) -> None:
         """A SKILL.md inside a directory symlink should appear in results."""
-        from reporails_cli.core.discovery.agent_discovery import walk_glob
+        from reporails_cli.core.discovery.walk import walk_glob
 
         # Canonical location outside the project
         canonical = tmp_path / "canonical" / "audit"
@@ -269,7 +270,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
         skills_dir.mkdir(parents=True)
         os.symlink(str(canonical), str(skills_dir / "audit"))
 
-        results = walk_glob(skills_dir, "SKILL.md", frozenset())
+        results = walk_glob(skills_dir, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
 
         rel = [str(p.relative_to(project)) for p in results]
         assert ".claude/skills/audit/SKILL.md" in rel
@@ -278,7 +279,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
     @pytest.mark.subsys_lint
     def test_breaks_symlink_cycle(self, tmp_path: Path) -> None:
         """An `a -> b -> a` directory cycle must terminate the walk."""
-        from reporails_cli.core.discovery.agent_discovery import walk_glob
+        from reporails_cli.core.discovery.walk import walk_glob
 
         root = tmp_path / "root"
         a = root / "a"
@@ -291,7 +292,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
         os.symlink(str(b), str(a / "loop"))
         os.symlink(str(a), str(b / "loop"))
 
-        results = walk_glob(root, "SKILL.md", frozenset())
+        results = walk_glob(root, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
 
         # Must find the file exactly once despite the cycle; must not hang.
         assert len(results) == 1
@@ -302,7 +303,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
     def test_dedupes_two_symlinks_to_same_target(self, tmp_path: Path) -> None:
         """Two surface paths symlinking to the same canonical dir → file
         appears once (canonical inode tracked in `visited_real`)."""
-        from reporails_cli.core.discovery.agent_discovery import walk_glob
+        from reporails_cli.core.discovery.walk import walk_glob
 
         canonical = tmp_path / "canonical" / "shared"
         canonical.mkdir(parents=True)
@@ -313,7 +314,7 @@ class TestWalkGlobFollowsSymlinkedDirs:
         os.symlink(str(canonical), str(project / "via_a"))
         os.symlink(str(canonical), str(project / "via_b"))
 
-        results = walk_glob(project, "SKILL.md", frozenset())
+        results = walk_glob(project, "SKILL.md", DEFAULT_EXCLUDE_DIRS)
 
         assert len(results) == 1
 

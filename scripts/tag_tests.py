@@ -65,7 +65,6 @@ _MAPPING: dict[str, tuple[str | None, list[str]]] = {
     "tests/unit/test_github_formatter.py": (None, ["subsys_diagnostic"]),
     "tests/unit/test_harness.py": (None, ["subsys_lint"]),
     "tests/unit/test_json_formatter.py": (None, ["subsys_diagnostic"]),
-    "tests/unit/test_mcp_install.py": (None, ["subsys_cli_ux"]),
     "tests/unit/test_mechanical.py": (None, ["subsys_lint"]),
     "tests/unit/test_merger.py": (None, ["subsys_lint"]),
     "tests/unit/test_package_levels.py": (None, ["subsys_gates"]),

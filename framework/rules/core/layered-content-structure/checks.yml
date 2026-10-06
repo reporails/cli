@@ -3,6 +3,7 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.S.0016.content_check
+  convention: true
   type: content_query
   query: has_layered_structure
   args:

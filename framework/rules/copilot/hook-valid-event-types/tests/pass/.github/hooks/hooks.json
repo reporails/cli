@@ -1,1 +1,6 @@
-Valid hook events: SessionStart, PreToolUse, PostToolUse
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [{ "type": "command", "bash": "./guard.sh" }]
+  }
+}

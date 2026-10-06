@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from reporails_cli.core.platform.config.bootstrap import get_package_paths, get_project_config
+from reporails_cli.core.platform.config.bootstrap import get_package_paths
+from reporails_cli.core.platform.config.config import get_project_config
 
 
 class TestGetProjectConfig:
@@ -24,11 +25,37 @@ class TestGetProjectConfig:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_loads_all_fields(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file("framework_version: '0.1.0'\npackages:\n  - custom\ndisabled_rules:\n  - S1\n")
+        make_config_file("packages:\n  - custom\ndisabled_rules:\n  - S1\n")
         config = get_project_config(tmp_path)
-        assert config.framework_version == "0.1.0"
         assert config.packages == ["custom"]
         assert config.disabled_rules == ["S1"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_framework_version_is_a_dead_key_never_parsed(self, tmp_path: Path, make_config_file) -> None:
+        """`framework_version` is retired: nothing in the codebase reads it, `ails config
+        set` rejects it, and `get_project_config` no longer carries it up from disk even
+        when a stale `.ails/config.yml` still sets it."""
+        make_config_file("framework_version: '0.1.0'\n")
+        config = get_project_config(tmp_path)
+        assert config.framework_version is None
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_segmentation_defaults_to_legacy(self, tmp_path: Path) -> None:
+        assert get_project_config(tmp_path).mapper.segmentation == "legacy"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_segmentation_structure_aware_parsed(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("segmentation: structure-aware\n")
+        assert get_project_config(tmp_path).mapper.segmentation == "structure-aware"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_segmentation_unknown_value_falls_back_to_legacy(self, tmp_path: Path, make_config_file) -> None:
+        make_config_file("segmentation: bogus-mode\n")
+        assert get_project_config(tmp_path).mapper.segmentation == "legacy"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -41,7 +68,7 @@ class TestGetProjectConfig:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_malformed_yaml_inherits_global(self, tmp_path: Path, make_config_file) -> None:
-        from reporails_cli.core.platform.dto.models import GlobalConfig
+        from reporails_cli.core.platform.dto.results import GlobalConfig
 
         make_config_file(": : :\n  bad yaml [[[")
         with patch(
@@ -66,7 +93,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_inherits_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
         """Project without default_agent inherits global value."""
-        from reporails_cli.core.platform.dto.models import GlobalConfig
+        from reporails_cli.core.platform.dto.results import GlobalConfig
 
         make_config_file("packages:\n  - custom\n")
         with patch(
@@ -80,7 +107,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_project_overrides_global_default_agent(self, tmp_path: Path, make_config_file) -> None:
         """Project default_agent wins over global."""
-        from reporails_cli.core.platform.dto.models import GlobalConfig
+        from reporails_cli.core.platform.dto.results import GlobalConfig
 
         make_config_file("default_agent: cursor\n")
         with patch(
@@ -94,7 +121,7 @@ class TestGlobalDefaultsMerged:
     @pytest.mark.subsys_cli_ux
     def test_no_config_file_inherits_global(self, tmp_path: Path) -> None:
         """No .ails/config.yml — global defaults apply."""
-        from reporails_cli.core.platform.dto.models import GlobalConfig
+        from reporails_cli.core.platform.dto.results import GlobalConfig
 
         with patch(
             "reporails_cli.core.platform.config.config.get_global_config",

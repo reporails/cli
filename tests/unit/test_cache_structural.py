@@ -89,6 +89,25 @@ class TestStructuralHash:
 
     @pytest.mark.unit
     @pytest.mark.subsys_caching
+    def test_fenced_hash_comment_is_not_a_heading(self, tmp_path: Path) -> None:
+        """A `# comment` line inside a fenced block is code, so editing it keeps the hash."""
+        f = tmp_path / "test.md"
+        f.write_text("# Title\n\n```bash\n# install deps\nmake\n```\n")
+        h1 = structural_hash(f)
+        f.write_text("# Title\n\n```bash\n# build it\nmake\n```\n")
+        assert structural_hash(f) == h1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
+    def test_nested_list_item_change_differs(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.md"
+        f.write_text("- Outer\n  - Inner one\n")
+        h1 = structural_hash(f)
+        f.write_text("- Outer\n  - Inner two\n")
+        assert structural_hash(f) != h1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_caching
     def test_empty_file(self, tmp_path: Path) -> None:
         """Empty file produces a valid hash."""
         f = tmp_path / "empty.md"

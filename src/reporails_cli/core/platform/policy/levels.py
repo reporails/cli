@@ -6,8 +6,10 @@ Two level mechanisms coexist:
    for rule applicability. Uses axis divergence from file type properties.
 
 2. Capability gates (determine_level_from_gates): computes the displayed
-   project level from detected features. Cumulative walk L1→L6, stop at
-   first level with no detected capability.
+   project level from detected features. The level is the highest level
+   whose own capability is present — a project may skip a level (e.g.
+   skills + sub-agents + memory with no path-scoped rules) and still reach
+   the level its highest surface supports.
 
 The displayed level comes from (2). Rule applicability comes from (1).
 """
@@ -139,14 +141,17 @@ def _type_exists(scan_root: Path, patterns: tuple[str, ...]) -> bool:
 # Level → capability mapping per `docs/capability-levels.md` detection table.
 # L1=Primer, L2=Composite, L3=Scoped, L4=Delegated, L5=Abstracted,
 # L6=Governed, L7=Adaptive. Each level adds one architectural capability;
-# the displayed level is the highest where all prior levels also pass.
+# the displayed level is the highest level whose own capability is present,
+# per the ladder's "highest architectural capability present" rule — a
+# project may skip a level (skills + sub-agents + memory with no path-scoped
+# rules) and still reach the level its highest surface supports.
 LEVEL_CAPS: dict[str, list[str]] = {
     "L0": [],
     "L1": ["instruction_file"],
     "L2": ["multiple_files"],
     "L3": ["path_scoping"],
     "L4": ["skills"],
-    "L5": ["subagents"],
+    "L5": ["agents"],
     "L6": ["governance"],
     "L7": ["adaptive_memory"],
 }
@@ -156,40 +161,40 @@ LEVEL_CAPS: dict[str, list[str]] = {
 FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
     # L1 — Primer: one main file present
     "instruction_file": lambda f: f.has_instruction_file,
-    # L2 — Composite: multiple main files (project + user-scope defaults)
+    # L2 — Composite: multiple main files in the project (user-scope files do not count)
     "multiple_files": lambda f: f.has_multiple_instruction_files,
     # L3 — Scoped: path-conditional rule loading
     "path_scoping": lambda f: f.has_path_scoped_rules,
     # L4 — Delegated: skills directory with definitions
     "skills": lambda f: f.has_skills_dir,
     # L5 — Abstracted: sub-agent definitions
-    "subagents": lambda f: f.has_subagents,
-    # L6 — Governed: hooks, MCP, or managed policies
-    "governance": lambda f: f.has_hooks or f.has_mcp_config,
+    "agents": lambda f: f.has_subagents,
+    # L6 — Governed: hooks (enforcement outside the model's context)
+    "governance": lambda f: f.has_hooks,
     # L7 — Adaptive: auto-memory or self-modifying instruction sources
     "adaptive_memory": lambda f: f.has_auto_memory or f.has_memory_dir,
 }
 
 
 def determine_level_from_gates(features: DetectedFeatures) -> Level:
-    """Determine project level using cumulative capability walk.
+    """Determine project level: the highest level whose own capability is present.
 
-    A project is at the highest level where ALL levels L1 through N
-    have at least one detected capability (OR within level, AND across levels).
-
-    Walk from L6 down to L1, find highest where all cumulative levels pass.
+    Per the capability-model ladder, each level adds one architectural
+    capability and a project may skip levels — skills (L4), sub-agents (L5),
+    governance (L6) and adaptive memory (L7) with no path-scoped rules (L3) is
+    a real and common shape. The displayed level is the highest level with a
+    detected capability, not the highest contiguous run, so such a project
+    reaches the level its richest surface supports instead of being capped at
+    L2. A project with no instruction file at all is L0.
     """
-    for level in reversed(_LEVEL_ORDER):
-        if _all_levels_pass(features, level):
-            return level
+    if not _level_has_capability(features, Level.L1.value):
+        return Level.L0
 
-    return Level.L0
-
-
-def _all_levels_pass(features: DetectedFeatures, target_level: Level) -> bool:
-    """Check if all levels from L1 through target_level have at least one capability."""
-    target_index = _LEVEL_ORDER.index(target_level)
-    return all(_level_has_capability(features, lvl.value) for lvl in _LEVEL_ORDER[: target_index + 1])
+    highest = Level.L0
+    for level in _LEVEL_ORDER:
+        if _level_has_capability(features, level.value):
+            highest = level
+    return highest
 
 
 def _level_has_capability(features: DetectedFeatures, level_key: str) -> bool:

@@ -1,5 +1,4 @@
 """CLI command: ails test — validate rules against their own fixtures."""
-# pylint: disable=too-many-lines
 
 from __future__ import annotations
 
@@ -8,12 +7,13 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from rich.markup import escape
 
 from reporails_cli.interfaces.cli.helpers import app, console
 
 
 @app.command("test", hidden=True)
-def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
+def test_rules(
     path: str = typer.Argument(None, help="Filter by path prefix (e.g., core/structure/)"),
     rule: str = typer.Option(
         None,
@@ -28,9 +28,9 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
         help="Agent config for var resolution (default: claude)",
     ),
     rules_root: str = typer.Option(
-        ".",
+        None,
         "--rules-root",
-        help="Primary rules directory (default: .)",
+        help="Primary rules directory (default: the bundled framework rules).",
     ),
     package: list[str] = typer.Option(  # noqa: B008
         None,
@@ -77,7 +77,12 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
     ),
 ) -> None:
     """Validate rules against their own test fixtures."""
-    root = Path(rules_root).resolve()
+    if rules_root is None:
+        from reporails_cli.core.platform.config.bootstrap import get_rules_path
+
+        root = get_rules_path()
+    else:
+        root = Path(rules_root).resolve()
     if not root.exists():
         console.print(f"[red]Error:[/red] Rules root not found: {root}")
         raise typer.Exit(2)
@@ -96,11 +101,14 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
         _run_coverage_check(root, package_roots, agent, coverage_baseline)
         return
 
+    _require_model()
+
     if score:
         _run_score_mode(root, path, rule, package_roots, agent, format)
         return
 
-    from reporails_cli.core.lint.harness import HarnessStatus, run_harness
+    from reporails_cli.core.lint.harness import run_harness
+    from reporails_cli.core.lint.harness_models import HarnessStatus
 
     results = run_harness(
         root,
@@ -128,6 +136,15 @@ def test_rules(  # pylint: disable=too-many-arguments,too-many-locals
         raise typer.Exit(1)
 
 
+def _require_model() -> None:
+    """Fetch the model the way `ails check` does; exit 2 with a short error when it cannot be had."""
+    from reporails_cli.interfaces.cli.check_support import _ensure_model_or_exit
+
+    if not _ensure_model_or_exit():
+        console.print("[red]Error:[/red] `ails test` needs the reporails model; unset AILS_MODEL_OFFLINE to fetch it.")
+        raise typer.Exit(2)
+
+
 def _run_lint(
     root: Path,
     filter_path: str | None,
@@ -136,7 +153,8 @@ def _run_lint(
     agent: str,
 ) -> None:
     """Run structural integrity checks on rule files."""
-    from reporails_cli.core.lint.harness import discover_rules, lint_rules, load_agent_config
+    from reporails_cli.core.lint.harness_discovery import discover_rules, load_agent_config
+    from reporails_cli.core.lint.harness_quality import lint_rules
 
     _, excludes = load_agent_config(root, agent)
     rules = discover_rules(
@@ -173,7 +191,7 @@ def _run_export_baseline(
     output_path: str,
 ) -> None:
     """Export expected-rules baseline to JSON."""
-    from reporails_cli.core.lint.harness import export_baseline
+    from reporails_cli.core.lint.harness_quality import export_baseline
 
     entries = export_baseline(root, package_roots=package_roots, agent=agent)
     data = [{"rule_id": e.rule_id, "slug": e.slug, "has_fixtures": e.has_fixtures} for e in entries]
@@ -189,7 +207,7 @@ def _run_coverage_check(
     baseline_path: str,
 ) -> None:
     """Check rules against expected-rules baseline."""
-    from reporails_cli.core.lint.harness import check_coverage
+    from reporails_cli.core.lint.harness_quality import check_coverage
 
     bp = Path(baseline_path)
     if not bp.exists():
@@ -219,7 +237,7 @@ def _run_score_mode(
     format: str,
 ) -> None:
     """Run effectiveness scoring mode."""
-    from reporails_cli.core.lint.harness import score_rules
+    from reporails_cli.core.lint.harness_quality import score_rules
 
     deltas = score_rules(
         root,
@@ -275,7 +293,7 @@ def _print_score_json(deltas: list[Any]) -> None:
 
 def _print_text(results: list[Any], verbose: bool) -> None:
     """Print human-readable test results."""
-    from reporails_cli.core.lint.harness import HarnessStatus
+    from reporails_cli.core.lint.harness_models import HarnessStatus
 
     passed = [r for r in results if r.status == HarnessStatus.PASSED]
     failed = [r for r in results if r.status == HarnessStatus.FAILED]
@@ -306,7 +324,7 @@ def _print_text(results: list[Any], verbose: bool) -> None:
                 status = "[green]PASS[/green]" if run.passed else "[red]FAIL[/red]"
                 console.print(f"        [{status}] {run.check_id} ({run.check_type}, {run.fixture}): {run.message}")
             for msg in r.messages:
-                console.print(f"        {msg}")
+                console.print(f"        {escape(msg)}")
         console.print()
 
     # Passes (verbose only)
@@ -331,7 +349,7 @@ def _print_text(results: list[Any], verbose: bool) -> None:
     if skipped:
         console.print(f"  Skipped:         {len(skipped)}")
     console.print(f"  Total:           {len(results)}")
-    console.print()
+    _print_case_summary(results)
 
     if not_impl:
         console.print(f"Not implemented ({len(not_impl)}):")
@@ -340,9 +358,25 @@ def _print_text(results: list[Any], verbose: bool) -> None:
         console.print()
 
 
+def _print_case_summary(results: list[Any]) -> None:
+    """Print how many fixture cases ran and name each case directory that did not."""
+    cases_run = sum(len(r.cases_run) for r in results)
+    cases_not_run = [(r, name) for r in results for name in r.cases_not_run]
+    if cases_run or cases_not_run:
+        console.print(f"  Cases run:       {cases_run}")
+        console.print(f"  Cases not run:   {len(cases_not_run)}")
+    console.print()
+
+    if cases_not_run:
+        console.print(f"Cases not run ({len(cases_not_run)}) — a case directory runs only when named pass-… or fail-…:")
+        for r, name in cases_not_run:
+            console.print(f"  - {r.rule_id} {r.slug}: tests/cases/{escape(name)}")
+        console.print()
+
+
 def _print_json(results: list[Any]) -> None:
     """Print JSON test results."""
-    from reporails_cli.core.lint.harness import HarnessStatus
+    from reporails_cli.core.lint.harness_models import HarnessStatus
 
     data = {
         "rules": [
@@ -362,6 +396,8 @@ def _print_json(results: list[Any]) -> None:
                     for cr in r.check_runs
                 ],
                 "messages": r.messages,
+                "cases_run": r.cases_run,
+                "cases_not_run": r.cases_not_run,
             }
             for r in results
         ],
@@ -371,6 +407,8 @@ def _print_json(results: list[Any]) -> None:
             "not_implemented": sum(1 for r in results if r.status == HarnessStatus.NOT_IMPLEMENTED),
             "no_fixtures": sum(1 for r in results if r.status == HarnessStatus.NO_FIXTURES),
             "total": len(results),
+            "cases_run": sum(len(r.cases_run) for r in results),
+            "cases_not_run": sum(len(r.cases_not_run) for r in results),
         },
     }
     print(json.dumps(data, indent=2))

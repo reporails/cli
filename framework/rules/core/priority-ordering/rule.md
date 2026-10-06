@@ -4,7 +4,8 @@ slug: priority-ordering
 title: Critical Instructions at Edges
 category: coherence
 type: mechanical
-severity: high
+severity: medium
+depends_on: [CORE:D:0001]
 backed_by: [builder-ai-instruction-best-practices, claude-md-guide, claudemd-best-practices-mermaid-for-workflows,
   enterprise-claude-usage, fowler-context-engineering-agents, instruction-limits-principles,
   lost-in-the-middle-long-contexts, rules-directory-mechanics, sewell-agents-md-tips,
@@ -30,7 +31,7 @@ Freeform instruction files must contain at least one directive instruction. File
 # Testing
 
 Run `uv run pytest tests/` before committing changes.
-*Do NOT skip the test suite for quick fixes.*
+*Do not skip the test suite for quick fixes.*
 ~~~~
 
 ### Fail
@@ -41,10 +42,6 @@ Run `uv run pytest tests/` before committing changes.
 The project uses pytest for testing.
 Tests are located in the `tests/` directory.
 ~~~~
-
-## Fix
-
-Place critical instructions at the start of the first-loaded file or the end of the last-loaded file in the agent's loading order. If an instruction must appear in the middle, name specific constructs rather than using abstract terms.
 
 ## Limitations
 

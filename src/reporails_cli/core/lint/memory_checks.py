@@ -6,16 +6,27 @@ MEMORY.md index entries. Runs client-side (not in the API).
 
 from __future__ import annotations
 
-import re
+from collections.abc import Iterable
 from pathlib import Path
 
+from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
+from reporails_cli.core.mapper.structure import link_targets
 from reporails_cli.core.platform.dto.models import LocalFinding
+from reporails_cli.core.platform.dto.ruleset import FileRecord
+from reporails_cli.core.platform.utils.utils import NOT_A_MAPPING, read_frontmatter
 
-_MEMORY_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+\.md)\)(?:\s*[—\-]\s*(.+))?")
 _FRONTMATTER_REQUIRED = {"name", "description", "type"}
 
-_RULE_BROKEN_LINK = "CORE:E:0010"
-_RULE_MISSING_FM = "CORE:E:0011"
+# `CORE:S:0056` (Markdown Link Targets Resolve) — its `match` is unrestricted on
+# `type`, so it already covers a memory file's links; this check re-implements it
+# for memory files the mechanical scanner never reaches (auto-memory lives outside
+# the scanned project tree).
+_RULE_BROKEN_LINK = "CORE:S:0056"
+# No shipped rule requires frontmatter on a memory-typed file — the two rules that
+# require frontmatter identity (`CORE:S:0006`, `CORE:S:0005`) are matched to
+# `type: rules` only. A missing/unclosed/incomplete frontmatter finding is reported
+# under this local label instead of a `CORE:*` rule id, since no shipped rule covers it.
+_RULE_MISSING_FM = "memory_frontmatter"
 
 
 def _validate_link_target(
@@ -53,7 +64,8 @@ def _check_frontmatter(
     content: str,
 ) -> list[LocalFinding]:
     """Validate frontmatter presence and required fields in a memory file."""
-    if not content.startswith("---"):
+    read = read_frontmatter(content)
+    if read.block is None and read.problem is None:
         return [
             LocalFinding(
                 file=file_path,
@@ -66,8 +78,7 @@ def _check_frontmatter(
             )
         ]
 
-    end = content.find("\n---", 3)
-    if end <= 0:
+    if read.block is None:
         return [
             LocalFinding(
                 file=file_path,
@@ -80,46 +91,65 @@ def _check_frontmatter(
             )
         ]
 
-    try:
-        import yaml
+    if read.problem is not None and read.problem.message == NOT_A_MAPPING:
+        return [
+            LocalFinding(
+                file=file_path,
+                line=line_num,
+                severity="warning",
+                rule=_RULE_MISSING_FM,
+                message=f"`{link_target}` has frontmatter that is not a mapping of name, description, type.",
+                fix="Write the frontmatter as `name:`, `description:` and `type:` lines.",
+                source="client_check",
+            )
+        ]
 
-        fm = yaml.safe_load(content[3:end])
-        if isinstance(fm, dict):
-            missing = _FRONTMATTER_REQUIRED - set(fm.keys())
-            if missing:
-                return [
-                    LocalFinding(
-                        file=file_path,
-                        line=line_num,
-                        severity="warning",
-                        rule=_RULE_MISSING_FM,
-                        message=f"`{link_target}` missing frontmatter: {', '.join(sorted(missing))}.",
-                        fix="Add the missing fields to the memory file's YAML frontmatter.",
-                        source="client_check",
-                    )
-                ]
-    except Exception:  # yaml.YAMLError; yaml imported in try scope
-        pass
+    if read.problem is not None:
+        return [
+            LocalFinding(
+                file=file_path,
+                line=line_num,
+                severity="warning",
+                rule=_RULE_MISSING_FM,
+                message=f"`{link_target}` has frontmatter that is not valid YAML.",
+                fix="Fix the YAML frontmatter so it parses (quote values that contain `:` or `[`).",
+                source="client_check",
+            )
+        ]
 
+    missing = _FRONTMATTER_REQUIRED - set(read.data or {})
+    if missing:
+        return [
+            LocalFinding(
+                file=file_path,
+                line=line_num,
+                severity="warning",
+                rule=_RULE_MISSING_FM,
+                message=f"`{link_target}` missing frontmatter: {', '.join(sorted(missing))}.",
+                fix="Add the missing fields to the memory file's YAML frontmatter.",
+                source="client_check",
+            )
+        ]
     return []
 
 
 def validate_memory_files(
-    file_paths: list[str],
+    files: Iterable[FileRecord],
 ) -> list[LocalFinding]:
     """Validate memory index files — check links and frontmatter.
 
     Args:
-        file_paths: All instruction file paths from the ruleset map.
+        files: The ruleset map's file records; those typed as a memory surface are validated.
 
     Returns:
         List of LocalFinding for memory index issues.
     """
     findings: list[LocalFinding] = []
 
-    for file_path in file_paths:
-        if "memory" not in file_path.lower() and "MEMORY" not in file_path:
+    for record in files:
+        if record.type not in MEMORY_SURFACES:
             continue
+        file_path = record.path
 
         fp = Path(file_path)
         if not fp.is_absolute():
@@ -132,12 +162,11 @@ def validate_memory_files(
 
         memory_dir = fp.parent
 
-        for line_num, line in enumerate(raw.splitlines(), 1):
-            m = _MEMORY_LINK_RE.search(line)
-            if not m:
-                continue
-
-            link_target = m.group(2)
+        first_per_line: dict[int, str] = {}
+        for line_num, target in link_targets(raw):
+            if target.endswith(".md"):
+                first_per_line.setdefault(line_num, target)
+        for line_num, link_target in first_per_line.items():
             target_path = memory_dir / link_target
             findings.extend(_validate_link_target(file_path, line_num, link_target, target_path))
 

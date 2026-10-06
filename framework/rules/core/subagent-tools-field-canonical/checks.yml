@@ -1,0 +1,9 @@
+checks:
+- id: CORE.C.0056.file_in_scope
+  type: mechanical
+  check: file_exists
+- id: CORE.C.0056.no_misnamed_tool_field
+  type: deterministic
+  pattern-regex: '\A---\n(?:(?!\n---\n)[\s\S])*?^[ \t]*(?:allowed-tools|allowedTools)[ \t]*:(?:(?!\n---\n)[\s\S])*\n---\n'
+  expect: absent
+  message: "Subagent uses allowed-tools (a skill field), silently ignored — restrict tools with the canonical tools / disallowedTools field"

@@ -3,7 +3,16 @@ checks:
   type: mechanical
   check: file_exists
 - id: CLAUDE.S.0005.valid_event_types
-  expect: present
-  message: No recognized event type names found in hook configuration
-  pattern-regex: (?:SessionStart|Setup|UserPromptSubmit|UserPromptExpansion|PreToolUse|PermissionRequest|PermissionDenied|PostToolUse|PostToolUseFailure|PostToolBatch|Notification|SubagentStart|SubagentStop|TaskCreated|TaskCompleted|Stop|StopFailure|TeammateIdle|InstructionsLoaded|ConfigChange|CwdChanged|FileChanged|WorktreeCreate|WorktreeRemove|PreCompact|PostCompact|Elicitation|ElicitationResult|SessionEnd)
   type: deterministic
+  expect: absent
+  message: No recognized event type names found in hook configuration
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-not-regex: (?:SessionStart|Setup|UserPromptSubmit|UserPromptExpansion|PreToolUse|PermissionRequest|PermissionDenied|PostToolUse|PostToolUseFailure|PostToolBatch|Notification|MessageDisplay|SubagentStart|SubagentStop|TaskCreated|TaskCompleted|Stop|StopFailure|TeammateIdle|InstructionsLoaded|ConfigChange|CwdChanged|DirectoryAdded|FileChanged|WorktreeCreate|WorktreeRemove|PreCompact|PostCompact|PreModelSwitch|PostModelSwitch|Elicitation|ElicitationResult|SessionEnd)
+- id: CLAUDE.S.0005.no_unrecognized_event_key
+  type: deterministic
+  expect: absent
+  message: An event-shaped key next to a recognized event name is not a recognized event type
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-regex: '"(?!(?:SessionStart|Setup|UserPromptSubmit|UserPromptExpansion|PreToolUse|PermissionRequest|PermissionDenied|PostToolUse|PostToolUseFailure|PostToolBatch|Notification|MessageDisplay|SubagentStart|SubagentStop|TaskCreated|TaskCompleted|Stop|StopFailure|TeammateIdle|InstructionsLoaded|ConfigChange|CwdChanged|DirectoryAdded|FileChanged|WorktreeCreate|WorktreeRemove|PreCompact|PostCompact|PreModelSwitch|PostModelSwitch|Elicitation|ElicitationResult|SessionEnd)")[A-Z][A-Za-z]*"\s*:\s*\['

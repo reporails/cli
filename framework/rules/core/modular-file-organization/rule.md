@@ -4,7 +4,7 @@ slug: modular-file-organization
 title: Modular File Organization
 category: structure
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agents-md-impact-efficiency, builder-ai-instruction-best-practices, claude-md-guide,
   claudemd-best-practices-mermaid-for-workflows, fowler-context-engineering-agents,
   instruction-limits-principles, rules-directory-mechanics, spec-writing-for-agents]

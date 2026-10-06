@@ -1,18 +1,15 @@
 """Read-side queries over the framework rule registry.
 
 Loads rules across agents, filters by capability + severity, sorts into
-authoring-workflow order, extracts Pass / Fail example sections from
-rule.md bodies.
+authoring-workflow order.
 """
 
 from __future__ import annotations
 
-import re
-from fnmatch import fnmatch
 from pathlib import Path
 
-from reporails_cli.core.platform.adapters.registry import _load_from_path, get_rules_dir
-from reporails_cli.core.platform.config.bootstrap import get_agent_config
+from reporails_cli.core.platform.adapters.registry import _load_from_path, apply_agent_excludes, get_rules_dir
+from reporails_cli.core.platform.config.config import get_agent_config
 from reporails_cli.core.platform.dto.models import Category, Rule, Severity
 
 _CATEGORY_ORDER: dict[Category, int] = {
@@ -29,14 +26,6 @@ _SEVERITY_ORDER: dict[Severity, int] = {
     Severity.HIGH: 1,
     Severity.MEDIUM: 2,
     Severity.LOW: 3,
-}
-
-# Mirror of `core.classify.capability_paths._CAPABILITY_FOLD`. Duplicated
-# to respect the adapter-layer boundary; keep in sync.
-_CAPABILITY_FOLD: dict[str, tuple[str, ...]] = {
-    "main": ("main", "override"),
-    "memories": ("memory", "subagent_memory"),
-    "memory": ("memory", "subagent_memory"),
 }
 
 
@@ -57,20 +46,27 @@ def load_all_rules(agents: list[str] | None = None, rules_dir: Path | None = Non
     by_id: dict[str, Rule] = {}
     by_id.update(_load_from_path(root / "core"))
     for agent in agent_ids:
-        agent_rules = _load_from_path(root / agent)
-        excludes = list(get_agent_config(agent).excludes or [])
-        if excludes:
-            agent_rules = {k: v for k, v in agent_rules.items() if not any(fnmatch(k, pat) for pat in excludes)}
-        by_id.update(agent_rules)
+        by_id.update(apply_agent_excludes(_load_from_path(root / agent), get_agent_config(agent)))
     return sorted(by_id.values(), key=lambda r: r.id)
+
+
+def capability_file_types(capability: str | list[str]) -> set[str]:
+    """The config file types a capability word names: a config key itself, a word a user may
+    type for one (`skill`, `agent`), or a display alias folding several (`memories`)."""
+    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+
+    vocab = load_capability_vocabulary()
+    caps = [capability] if isinstance(capability, str) else list(capability)
+    targets: set[str] = set()
+    for cap in caps:
+        key = vocab.input_forms.get(cap, cap)
+        targets.update(vocab.fold.get(key, [key]))
+    return targets
 
 
 def filter_rules_by_capability(rules: list[Rule], capability: str | list[str]) -> list[Rule]:
     """Keep rules whose `match.type` includes any of the capabilities (or are universal)."""
-    caps = [capability] if isinstance(capability, str) else list(capability)
-    targets: set[str] = set()
-    for cap in caps:
-        targets.update(_CAPABILITY_FOLD.get(cap, (cap,)))
+    targets = capability_file_types(capability)
     out: list[Rule] = []
     for rule in rules:
         if rule.match is None or rule.match.type is None:
@@ -98,54 +94,6 @@ def sort_rules_for_authoring(rules: list[Rule]) -> list[Rule]:
             r.id,
         ),
     )
-
-
-def load_rule_examples(rule: Rule) -> dict[str, str | None]:
-    """Extract `### Pass` and `### Fail` sections from rule.md body."""
-    result: dict[str, str | None] = {"pass": None, "fail": None}
-    if rule.md_path is None or not rule.md_path.exists():
-        return result
-    try:
-        text = rule.md_path.read_text(encoding="utf-8")
-    except OSError:
-        return result
-    result["pass"] = _extract_section(text, "Pass")
-    result["fail"] = _extract_section(text, "Fail")
-    return result
-
-
-def _extract_section(text: str, heading: str) -> str | None:
-    """Body of `## <heading>` or `### <heading>` to next equal-or-shallower heading, fence-aware."""
-    pattern = re.compile(rf"^(#{{2,3}})\s+{re.escape(heading)}\s*$", re.MULTILINE)
-    m = pattern.search(text)
-    if m is None:
-        return None
-    depth = len(m.group(1))
-    start = m.end() + 1
-    heading_re = re.compile(rf"^#{{1,{depth}}}\s+\S")
-    body_lines: list[str] = []
-    in_fence = False
-    fence_marker = ""
-    for line in text[start:].splitlines(keepends=False):
-        stripped = line.lstrip()
-        if not in_fence:
-            for marker in ("~~~~", "~~~", "```"):
-                if stripped.startswith(marker):
-                    in_fence = True
-                    fence_marker = marker
-                    body_lines.append(line)
-                    break
-            else:
-                if heading_re.match(line):
-                    break
-                body_lines.append(line)
-        else:
-            body_lines.append(line)
-            if stripped.startswith(fence_marker):
-                in_fence = False
-                fence_marker = ""
-    body = "\n".join(body_lines).strip()
-    return body or None
 
 
 def rules_for_capability(

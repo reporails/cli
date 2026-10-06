@@ -3,7 +3,14 @@ checks:
   type: mechanical
   check: file_exists
 - id: ANTIGRAVITY.S.0002.handler-has-type
-  type: deterministic
-  expect: present
-  pattern-regex: '"type"\s*:\s*"command"'
-  message: No handler with a valid type field found — only "command" is supported
+  type: mechanical
+  check: hook_handlers
+  replaces: CORE.S.0028.has-type-field
+  severity: medium
+  args:
+    message: Hook handler type is not "command" — the only supported type
+    named_hooks: true
+    handlers: grouped
+    default_type: command
+    require:
+      type: [command]

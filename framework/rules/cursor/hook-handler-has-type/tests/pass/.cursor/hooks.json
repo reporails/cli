@@ -1,1 +1,1 @@
-{ "type": "command", "command": "echo" }
+{ "hooks": { "afterFileEdit": [{ "type": "command", "command": "./hooks/format.sh" }] } }

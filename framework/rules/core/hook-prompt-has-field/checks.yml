@@ -1,6 +1,13 @@
 checks:
 - id: CORE.S.0030.has-prompt-field
-  type: deterministic
-  expect: present
-  pattern-regex: '"prompt"\s*:\s*"[^"]+"'
-  message: No prompt or agent handler with a prompt field found
+  type: mechanical
+  check: hook_handlers
+  severity: medium
+  args:
+    message: No prompt or agent handler with a prompt field found
+    block: hooks
+    handlers: grouped
+    select:
+      type: [prompt, agent]
+    require:
+      non_empty: [prompt]

@@ -6,7 +6,7 @@ category: structure
 type: mechanical
 severity: medium
 backed_by: []
-match: {type: skill}
+match: {type: skills, format: [frontmatter, freeform]}
 source: https://agentskills.io/specification
 ---
 

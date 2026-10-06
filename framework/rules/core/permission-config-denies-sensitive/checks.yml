@@ -3,9 +3,8 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.G.0005.content_check
-  type: content_query
-  query: has_constraint_atoms
-  args:
-    message: Missing sensitive access restriction — explicitly deny access to secrets
-      and credentials
+  type: deterministic
   expect: present
+  pattern-regex: '"deny"\s*:\s*\[\s*"'
+  message: Missing sensitive access restriction — declare a non-empty "permissions.deny"
+    list covering secrets and credentials

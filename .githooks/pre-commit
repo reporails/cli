@@ -31,3 +31,55 @@ if $has_src; then
         exit 1
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# Public-surface content gate.
+#
+# Every tracked file in this repository is published — to GitHub, to the wheel,
+# and to the npm tarball. This checks the lines a commit ADDS against a pattern
+# list, so a new disclosure is blocked while pre-existing text stays committable
+# and is cleaned on its own schedule.
+#
+# The pattern list is deliberately NOT stored here. This hook is itself a
+# published file, and a published file enumerating what must not be published
+# is the disclosure it was written to prevent. The list is read from a local
+# file that is not tracked in this repository; without that file the gate
+# reports that it is inactive rather than passing silently.
+# ---------------------------------------------------------------------------
+gate_config="hub/canon/knowledge/hygiene/hygiene-config.md"
+if [ ! -r "$gate_config" ]; then
+    echo "NOTE: public-surface gate inactive (pattern list not reachable)."
+else
+    patterns=$(awk '
+        /^  public_surface_patterns:/ { inlist = 1; next }
+        inlist && /^    - / { sub(/^    - /, ""); gsub(/^'\''|'\''$/, ""); print; next }
+        inlist { exit }
+    ' "$gate_config")
+
+    leaks=""
+    for f in $staged; do
+        [ -f "$f" ] || continue
+        # This file names the config path it reads; that reference is not a leak.
+        [ "$f" = ".githooks/pre-commit" ] && continue
+        added=$(git diff --cached -U0 -- "$f" | grep '^+' | grep -v '^+++')
+        [ -n "$added" ] || continue
+        while IFS= read -r pat; do
+            [ -n "$pat" ] || continue
+            hit=$(printf '%s\n' "$added" | grep -E -- "$pat" | head -3)
+            [ -n "$hit" ] || continue
+            leaks="${leaks}  ${f}  [${pat}]
+$(printf '%s\n' "$hit" | sed 's/^+/    /')
+"
+        done <<< "$patterns"
+    done
+
+    if [ -n "$leaks" ]; then
+        echo "ERROR: staged lines disclose internal detail on a published surface."
+        echo ""
+        printf '%s' "$leaks"
+        echo ""
+        echo "Describe what the unit does for a user; drop how the system is wired."
+        echo "Override with --no-verify only when the match is genuinely a false positive."
+        exit 1
+    fi
+fi

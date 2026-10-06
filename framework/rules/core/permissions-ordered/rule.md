@@ -1,24 +1,25 @@
 ---
 id: CORE:G:0003
 slug: permissions-ordered
-title: Permissions Ordered
+title: Permission Config Declared
 category: governance
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: permission
 severity: medium
 backed_by: []
 match: {type: config}
 source: https://code.claude.com/docs/en/settings
 ---
 
-# Permissions Ordered
+# Permission Config Declared
 
-Permission declarations in agent configuration must follow a deterministic order — deny rules before allow rules, specific patterns before broad wildcards. First-match-wins semantics in permission evaluation mean ordering determines which rule fires. A broad `allow: Bash(*)` before a specific `deny: Bash(rm -rf *)` silently permits the dangerous command.
+Agent configuration must declare an explicit permission block. A config with no `permissions` section leaves access entirely to the host defaults, so nothing in the project records which tools and paths the agent may touch. Declaring the block — even a minimal one — makes the access policy visible and reviewable in the repository.
 
 ## Antipatterns
 
-- **Broad allow before specific deny.** Placing `"Bash(*)"` in the allow list while a deny rule for destructive commands exists later. The allow matches first.
-- **Wildcard permissions without narrowing.** Using `"Read(**)"`, `"Write(**)"`, `"Bash(*)"` without any deny entries to constrain the broad access.
-- **No deny section at all.** Omitting the deny list entirely when sensitive file patterns (`.env`, credentials) should be restricted.
+- **No permission block at all.** A settings file that omits the `permissions` key entirely, deferring every access decision to the host runtime's defaults.
+- **Access policy kept out of the repository.** Relying on user-level or machine-level settings for project access rules, so the committed config records nothing a reviewer can inspect.
 
 ## Pass / Fail
 
@@ -37,12 +38,10 @@ Permission declarations in agent configuration must follow a deterministic order
 
 ```json
 {
-  "permissions": {
-    "allow": ["Bash(*)", "Read(**)", "Write(**)"]
-  }
+  "settings": {}
 }
 ```
 
 ## Limitations
 
-Checks for the presence of permission structure with both restrictive and permissive entries. Does not evaluate the semantic ordering of individual permission patterns or verify that deny rules are actually more specific than allow rules.
+Checks only that a `permissions` block is present in the configuration. Does not evaluate the order of individual permission entries, whether deny rules precede allow rules, or whether any given pattern is broad or narrow. Confirming that sensitive paths are actually denied is covered separately by `CORE:G:0005`.

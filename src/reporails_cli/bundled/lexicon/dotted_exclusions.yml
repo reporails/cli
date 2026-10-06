@@ -1,0 +1,18 @@
+# English abbreviations that look like dotted code tokens but are not code.
+#
+# Consumed by core/mapper/annotate.py to keep `e.g.` /
+# `i.e.` / `a.m.` out of the unformatted-code token set. Generic English
+# grammar. Shape-validated by
+# core/platform/dto/lexicon.DottedExclusions.
+exclusions:
+  - e.g
+  - i.e
+  - a.m
+  - p.m
+  - vs.
+  - cf.
+  - al.
+  - e.g.
+  - i.e.
+  - a.m.
+  - p.m.

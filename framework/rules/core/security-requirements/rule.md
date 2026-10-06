@@ -4,7 +4,7 @@ slug: security-requirements
 title: Security Requirements
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, developer-context-cursor-study,
   evaluating-agents-md, fowler-pushing-ai-autonomy, openai-community-agents-md-optimization,
   prompthub-cursor-rules-analysis]
@@ -29,7 +29,7 @@ The instruction file must contain a section with a heading matching security-rel
 
 ## Boundaries
 
-NEVER modify `.env` or `credentials.json`.
+Never modify environment or credential files.
 Ask the user to handle sensitive file changes manually.
 ~~~~
 

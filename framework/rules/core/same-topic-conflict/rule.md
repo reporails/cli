@@ -5,14 +5,8 @@ title: "Same-Topic Reinforcement and Conflict"
 category: coherence
 type: mechanical
 execution: server
-severity: critical
+severity: high
 match: {}
-fix: |
-  Pick one direction for the topic and remove the contradicting
-  instruction. When two charged atoms on the same topic point opposite
-  ways (one directive, one constraint), the model follows the
-  last-seen instruction — which one wins is fragile across edits.
-  Designate one file as authoritative and remove the conflicting one.
 ---
 
 # Same-Topic Reinforcement and Conflict
@@ -43,10 +37,6 @@ Use `pytest` for all tests.
 <!-- file: .claude/rules/workflow.md -->
 Use `unittest` for all tests.
 ~~~~
-
-## Fix
-
-Remove or resolve conflicts first. Then check for weak reinforcement: strengthen the weak instruction (name constructs, use imperative modality) or remove it. Reinforce only with instructions of comparable strength.
 
 ## Limitations
 

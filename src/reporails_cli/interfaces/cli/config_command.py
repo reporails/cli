@@ -26,12 +26,10 @@ KNOWN_KEYS = {
     "exclude_dirs": list,
     "exclude_files": list,
     "disabled_rules": list,
-    "framework_version": str,
-    "tier": str,
 }
 
 # Subset of keys allowed in global config (~/.reporails/config.yml)
-GLOBAL_KEYS = {"default_agent", "tier"}
+GLOBAL_KEYS = {"default_agent"}
 
 
 def _project_config_path(path: Path) -> Path:

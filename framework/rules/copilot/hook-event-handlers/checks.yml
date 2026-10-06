@@ -1,0 +1,13 @@
+checks:
+- id: COPILOT.S.0006.file_in_scope
+  type: mechanical
+  check: file_exists
+  replaces: CORE.S.0020.file_in_scope
+- id: COPILOT.S.0006.content_check
+  type: deterministic
+  expect: absent
+  replaces: CORE.S.0020.content_check
+  message: Missing hook handler definitions — declare at least one handler under an event in the "hooks" block
+  patterns:
+  - pattern-regex: '"hooks"\s*:\s*\{'
+  - pattern-not-regex: '"hooks"\s*:\s*(?P<hashandler>\{(?:[^{}]|(?&any))*?(?:"(?:type|bash|powershell|command|exec)"\s*:\s*"|(?&hashandler))(?:[^{}]|(?&any))*\})(?(DEFINE)(?P<any>\{(?:[^{}]|(?&any))*\}))'

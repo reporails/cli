@@ -2,6 +2,6 @@ checks:
 - id: CORE.E.0001.check
   type: mechanical
   check: aggregate_byte_size
-  project_scope: true
+  project_scope: aggregate
   args:
     max: 102400

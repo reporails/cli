@@ -41,10 +41,6 @@ Run `uv run poe qa` before committing. Use `pytest` for all tests.
 Run `uv run poe qa` before committing. Use `pytest` for all tests.
 ~~~~
 
-## Fix
-
-Keep each instruction in one canonical location. If two files need the same constraint, designate one as authoritative and reference it from the other. When reinforcing a topic across files, use different wording that pushes the same direction — do not copy-paste identical text.
-
 ## Limitations
 
 Detects near-identical text across files using embedding similarity. Same-direction reinforcement with different wording is not flagged — only high-similarity duplicates that risk drift.

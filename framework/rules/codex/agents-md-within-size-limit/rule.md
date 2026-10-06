@@ -7,7 +7,7 @@ type: mechanical
 severity: high
 backed_by: []
 match: {format: freeform}
-source: https://developers.openai.com/codex/guides/agents-md
+source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
 supersedes: CORE:E:0001
 ---
 

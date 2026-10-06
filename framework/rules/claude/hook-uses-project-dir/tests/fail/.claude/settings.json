@@ -1,1 +1,7 @@
-# Instruction file content
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "command": "/home/user/project/.claude/hooks/lint.sh" }
+    ]
+  }
+}

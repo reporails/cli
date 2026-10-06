@@ -1,1 +1,7 @@
-# Instruction file content
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "matcher": "Edit" }
+    ]
+  }
+}

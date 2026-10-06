@@ -4,16 +4,18 @@ slug: hook-valid-event-types
 title: Hook Valid Event Types
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
 source: https://code.claude.com/docs/en/hooks
 supersedes: CORE:S:0027
 ---
 
 # Hook Valid Event Types
 
-Hook event keys in `.claude/settings.json` MUST use recognized Claude Code event type names (29 events as of 2026-04-29). Unrecognized event names are silently ignored, so a typo like `"PreTooluse"` (lowercase u) means the hook never fires.
+Hook event keys in `.claude/settings.json` MUST use recognized Claude Code event type names (33 events as of 2026-09-30). Unrecognized event names are silently ignored, so a typo like `"PreTooluse"` (lowercase u) means the hook never fires.
 
 
 ## Antipatterns
@@ -49,5 +51,5 @@ Hook event keys in `.claude/settings.json` MUST use recognized Claude Code event
 
 ## Limitations
 
-Only checks that at least one recognized event type is present. Does not detect misspelled event names if a valid one also exists.
+Checks that at least one recognized event type is present, and separately flags a key shaped like an event name that isn't one of the 33 recognized names — so a typo next to a valid event is still caught.
 

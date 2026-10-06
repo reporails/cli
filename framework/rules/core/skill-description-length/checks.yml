@@ -3,7 +3,14 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.S.0040.has_description
-  expect: present
+  type: mechanical
+  check: frontmatter_key
+  args:
+    path: "**/SKILL.md"
+    key: description
+    entry_only: true
   message: Skill SKILL.md missing description field in frontmatter
-  pattern-regex: 'description:\s*\S'
-  type: deterministic
+- id: CORE.S.0040.frontmatter_reads
+  type: mechanical
+  check: frontmatter_valid_yaml
+  message: "Skill frontmatter is not valid YAML — fix the block so it reads as a mapping"

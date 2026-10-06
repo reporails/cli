@@ -1,14 +1,13 @@
-"""Integration tests for CLI self-upgrade.
+"""Integration tests for install-method detection (used by `ails version`).
 
 These tests create real virtual environments and exercise the actual
-subprocess plumbing (without hitting PyPI — we install from local wheel).
+install-metadata plumbing (installing from a local wheel, no PyPI).
 
 Run via: uv run poe test_integration  (or CI=1 to enable)
 """
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -49,8 +48,15 @@ def _create_venv(base: Path, name: str = "venv") -> Path:
     return python
 
 
+@pytest.mark.slow
 class TestSelfUpdateIntegration:
-    """End-to-end: build wheel, install in venv, verify detect + command construction."""
+    """End-to-end: build wheel, install in venv, verify install-method detection.
+
+    Marked `slow` (class-level): each test builds a real wheel and/or a fresh venv +
+    pip install via subprocess — tens of seconds each (minutes on a cold cache). The
+    default `test_integration` gate excludes `-m slow`; `test_integration_all` (CI)
+    runs them.
+    """
 
     @pytest.mark.integration
     @pytest.mark.subsys_cli_ux
@@ -77,83 +83,6 @@ class TestSelfUpdateIntegration:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         method = result.stdout.strip()
         assert method == "pip", f"Expected 'pip', got '{method}'"
-
-    @pytest.mark.integration
-    @pytest.mark.subsys_cli_ux
-    def test_build_command_in_venv(self, tmp_path: Path, wheel: Path) -> None:
-        """Install in venv and verify _build_upgrade_command produces runnable commands."""
-        python = _create_venv(tmp_path)
-
-        subprocess.run(
-            [str(python), "-m", "pip", "install", str(wheel)],
-            check=True,
-            capture_output=True,
-        )
-
-        result = subprocess.run(
-            [
-                str(python),
-                "-c",
-                (
-                    "from reporails_cli.core.install.self_update import _build_upgrade_command, InstallMethod; "
-                    "cmd = _build_upgrade_command(InstallMethod.PIP, '99.0.0'); "
-                    "assert 'reporails-cli==99.0.0' in cmd, cmd; "
-                    "print('OK')"
-                ),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"stderr: {result.stderr}"
-        assert "OK" in result.stdout
-
-    @pytest.mark.integration
-    @pytest.mark.subsys_cli_ux
-    def test_upgrade_cli_dev_install_refused(self, tmp_path: Path) -> None:
-        """Editable install should refuse upgrade without running subprocess."""
-        python = _create_venv(tmp_path)
-
-        # Install editable into the venv's own copy to avoid polluting project root
-        work_dir = tmp_path / "project"
-        shutil.copytree(
-            PROJECT_ROOT,
-            work_dir,
-            ignore=shutil.ignore_patterns(
-                ".venv",
-                "__pycache__",
-                "*.pyc",
-                ".git",
-                ".pytest_cache",
-                ".ails",
-                "dist",
-                "specs",
-            ),
-            ignore_dangling_symlinks=True,
-        )
-
-        subprocess.run(
-            [str(python), "-m", "pip", "install", "-e", str(work_dir)],
-            check=True,
-            capture_output=True,
-        )
-
-        result = subprocess.run(
-            [
-                str(python),
-                "-c",
-                (
-                    "from reporails_cli.core.install.self_update import upgrade_cli; "
-                    "r = upgrade_cli('99.0.0'); "
-                    "assert not r.updated; "
-                    "assert r.method.value == 'dev'; "
-                    "print('OK')"
-                ),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"stderr: {result.stderr}"
-        assert "OK" in result.stdout
 
     @pytest.mark.integration
     @pytest.mark.subsys_cli_ux

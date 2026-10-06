@@ -3,12 +3,7 @@ checks:
   type: mechanical
   check: file_exists
 - id: CORE.S.0021.content_check
-  type: content_query
-  query: has_heading_matching
-  args:
-    terms:
-    - Settings
-    - Scope
-    - Configuration
-    message: Missing scope declaration in settings — declare scope level for configuration
+  type: deterministic
   expect: present
+  pattern-regex: '"[A-Za-z0-9_.$-]+"\s*:'
+  message: Empty configuration file — declare at least one real setting

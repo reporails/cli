@@ -10,36 +10,30 @@ match: {type: config}
 ---
 # Settings Scope Declared
 
-Configuration files must contain a heading matching scope-related terms (Settings, Scope, or Configuration). Declaring scope level ensures the agent knows whether settings apply project-wide, per-user, or are system-managed.
+A configuration file's scope (project, user, local, or managed) is fixed by which path it lives at, so the file itself must declare real settings rather than ship as an empty placeholder. An empty config leaves the agent unable to tell whether the file is unused, mid-setup, or broken.
 
 ## Antipatterns
 
-- Embedding scope information in comments or inline text without a heading. The check requires a heading containing Settings, Scope, or Configuration.
-- Using a heading like "Options" or "Preferences" that describes configuration content but does not match the expected terms.
-- Assuming scope is implied by the file's location. The check requires an explicit heading declaration regardless of where the file lives.
+- **Empty settings object**: Committing `{}` with no top-level key. The file exists but declares nothing, so nothing distinguishes "not yet configured" from "intentionally empty."
+- **Placeholder left after scaffolding**: Generating the file from a template and never filling in any of `hooks`, `permissions`, `env`, `mcpServers`, or another real setting.
+- **Scope claimed in a comment**: Since JSON carries no comments, a `// project scope` note some tools tolerate is invisible to every JSON-reading agent — the scope comes from the file's path, not from text inside it.
 
 ## Pass / Fail
 
 ### Pass
 
-~~~~markdown
-# Agent Config
-
-## Settings
-
-scope: project
-format: yaml
-~~~~
+```json
+{
+  "env": { "NODE_ENV": "development" }
+}
+```
 
 ### Fail
 
-~~~~markdown
-# Agent Config
-
-format: yaml
-version: 1.0
-~~~~
+```json
+{}
+```
 
 ## Limitations
 
-Checks for a heading containing "Settings", "Scope", or "Configuration". Does not verify the content under that heading actually declares a scope level — only that the heading exists.
+Checks that the file declares at least one top-level key. Does not verify the key names a setting the agent actually recognizes.

@@ -11,6 +11,7 @@ import logging
 import socket
 import sys
 import time
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -79,13 +80,109 @@ def ping() -> dict[str, Any] | None:
     return send_request(sock, {"cmd": "ping"}, timeout=5.0)
 
 
+def _code_key(code: str) -> tuple[Any, int] | None:
+    """`(package version, map version)` of a code identity, or None when it does not parse."""
+    from packaging.version import InvalidVersion, Version
+
+    package, sep, mapper = code.rpartition("+map")
+    try:
+        return (Version(package), int(mapper)) if sep else None
+    except (InvalidVersion, ValueError):
+        return None
+
+
+def runs_older_code(pong: dict[str, Any]) -> bool:
+    """Whether a daemon reply comes from an older version than this process: one from before
+    the reply carried its code, or one whose package or map version is lower."""
+    from reporails_cli.core.mapper.daemon import code_identity
+
+    code = pong.get("code")
+    if not isinstance(code, str):
+        return True
+    theirs, ours = _code_key(code), _code_key(code_identity())
+    return theirs is not None and ours is not None and theirs < ours
+
+
+def runs_newer_code(pong: dict[str, Any]) -> bool:
+    """Whether a daemon reply comes from a newer version than this process."""
+    from reporails_cli.core.mapper.daemon import code_identity
+
+    code = pong.get("code")
+    theirs = _code_key(code) if isinstance(code, str) else None
+    ours = _code_key(code_identity())
+    return theirs is not None and ours is not None and theirs > ours
+
+
+def serves_this_code(pong: dict[str, Any] | None) -> bool:
+    """Whether a daemon reply (a ping or a map) comes from a daemon that maps with this
+    process's code.
+
+    Another installed version's daemon (or one from before the reply carried its code) maps
+    with its own mapper, so its map is not this version's.
+    """
+    from reporails_cli.core.mapper.daemon import code_identity
+
+    return pong is not None and pong.get("code") == code_identity()
+
+
+def _stream_map_response(
+    sock: socket.socket,
+    request: dict[str, Any],
+    progress: Callable[[str], None] | None,
+    timeout: float,
+) -> dict[str, Any] | None:
+    """Send a map request, forward streamed progress lines, return the result line.
+
+    Reads newline-delimited JSON objects: a ``{"type": "progress", "msg": ...}``
+    line is handed to ``progress`` and reading continues; the first line carrying
+    ``ok`` is the result and is returned. Returns None on timeout, socket error,
+    a malformed line, or a stream that closes before the result arrives.
+    """
+    try:
+        sock.settimeout(timeout)
+        sock.sendall(json.dumps(request, separators=(",", ":")).encode() + b"\n")
+
+        buf = b""
+        while True:
+            while b"\n" not in buf:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    return None  # stream closed before a result line
+                buf += chunk
+            line, buf = buf.split(b"\n", 1)
+            if not line.strip():
+                continue
+            obj: dict[str, Any] = json.loads(line)
+            if obj.get("type") == "progress":
+                if progress is not None:
+                    # A spinner/render error in the caller's callback must never
+                    # abort the map or the result read — swallow and keep reading.
+                    try:
+                        progress(str(obj.get("msg", "")))
+                    except Exception:
+                        logger.debug("map progress callback raised; ignoring", exc_info=True)
+                continue
+            return obj  # the result line (carries `ok`)
+    except (OSError, TimeoutError, json.JSONDecodeError):
+        return None
+    finally:
+        sock.close()
+
+
 def map_ruleset_via_daemon(
     paths: list[Path],
     root: Path,
+    progress: Callable[[str], None] | None = None,
 ) -> Any:
     """Map ruleset via global daemon. Returns RulesetMap or None on failure.
 
     Caller should fall back to in-process mapping when this returns None.
+
+    The daemon streams JSON lines: zero or more ``{"type": "progress", "msg": ...}``
+    lines (forwarded to ``progress`` so the caller's spinner advances per harness
+    element on the daemon path too, not just in-process), followed by the single
+    result line carrying ``ok`` + ``ruleset_map``. A malformed line or a closed
+    stream before the result yields None so the caller falls back to in-process.
     """
     sock = connect()
     if sock is None:
@@ -96,11 +193,15 @@ def map_ruleset_via_daemon(
         "paths": [str(p) for p in paths],
         "root": str(root),
     }
-    # 300s matches the daemon-side conn timeout. Covers cold ST import (~29s)
-    # + spaCy load + first-encode, plus mapping work, with headroom.
-    response = send_request(sock, request, timeout=300.0)
+    # Matches the daemon-side connection timeout; covers a cold model load and the
+    # first encode, plus mapping work, with headroom.
+    response = _stream_map_response(sock, request, progress, timeout=300.0)
     if response is None or not response.get("ok"):
         logger.debug("Daemon map_ruleset failed: %s", response.get("error") if response else "no response")
+        return None
+    if not serves_this_code(response):
+        # Mapped by another version's code: not this version's map.
+        logger.debug("Daemon map_ruleset came from other code: %s", response.get("code"))
         return None
 
     # Deserialize the RulesetMap from JSON
@@ -125,7 +226,7 @@ def map_ruleset_via_daemon(
         return None
 
 
-def ensure_daemon() -> DaemonStatus:
+def ensure_daemon(emit: Callable[[str], None] | None = None) -> DaemonStatus:
     """Ensure global daemon is running. Start it if not.
 
     Returns a status enum the caller uses to drive user-visible messaging and
@@ -133,12 +234,32 @@ def ensure_daemon() -> DaemonStatus:
     mapping. A readiness ping after ``start_daemon`` distinguishes a fully
     attached daemon (``STARTED``) from one whose socket is bound but whose
     model warmup is still in flight (``STARTING``).
+
+    When ``emit`` is given, reports the cold-start sub-phases (``Starting
+    Reporails...`` → ``Loading tools...``) so a caller's spinner shows the start
+    sequence; an already-running daemon (``ATTACHED``) emits nothing.
     """
-    from reporails_cli.core.mapper.daemon import is_daemon_running, start_daemon
+    from reporails_cli.core.mapper.daemon import daemon_pid, is_daemon_running, retire_daemon, start_daemon
+
+    say = emit if emit is not None else (lambda _msg: None)
 
     if is_daemon_running():
-        return DaemonStatus.ATTACHED
+        # One busy mapping misses the ping; it is attached as before, and a map it returns from
+        # other code is refused on arrival. A daemon that answers with other code is never used:
+        # an older version's (left over from before an upgrade) is replaced by this version's
+        # once it has exited, a newer version's is left to that version.
+        pong = ping()
+        if pong is None or serves_this_code(pong):
+            return DaemonStatus.ATTACHED
+        if not runs_older_code(pong):
+            return DaemonStatus.UNAVAILABLE
+        # Not retired because it is busy or slow to exit: leave it. Not retired because it is
+        # already gone or replaced (a check running beside this one got there first): start or
+        # attach to this version's below.
+        if not retire_daemon(pong.get("pid")) and daemon_pid() == pong.get("pid"):
+            return DaemonStatus.UNAVAILABLE
 
+    say("Starting Reporails...")
     try:
         start_daemon()
     except OSError:
@@ -147,6 +268,7 @@ def ensure_daemon() -> DaemonStatus:
     if not is_daemon_running():
         return DaemonStatus.UNAVAILABLE
 
+    say("Loading tools...")
     deadline = time.monotonic() + 1.0
     while time.monotonic() < deadline:
         if ping() is not None:

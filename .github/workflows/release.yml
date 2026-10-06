@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -16,144 +19,58 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags: the release condition below checks whether the
+          # `pyproject.toml` version's tag already exists, which a shallow clone
+          # (the actions/checkout default) would not reliably answer for a tag
+          # that isn't within the shallow depth.
+          fetch-depth: 0
 
-      - name: Detect version branch merge
+      - name: Detect unreleased version
         id: check
         run: |
+          # Detection keys on the `pyproject.toml` version having no matching tag
+          # yet — not on the merge-commit subject. The previous detection matched
+          # `Merge.*from.*X.Y.Z` in the HEAD commit message, which only exists for
+          # a merge-commit-style merge; this repo has squash-merge and rebase-merge
+          # both enabled, and either produces a push to `main` with no such subject.
+          # That miss made `is_release=false` silently — every downstream job
+          # (qa/build/publish/npm/tag) has `needs` on this job (directly or
+          # transitively) and GitHub Actions skips (not fails) a job whose `needs`
+          # resolved to a skipped upstream, so a wrong merge button published
+          # nothing while the workflow still reported green.
           VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          # Check if this push is a merge from a version branch
-          MERGE_BRANCH=$(git log -1 --pretty=%s | grep -oP 'Merge.*from.*\K[0-9]+\.[0-9]+\.[0-9]+' || true)
-          if [ "$MERGE_BRANCH" = "$VERSION" ]; then
+          # Belt-and-suspenders on top of the full-history checkout above — makes
+          # the tag list explicit and current regardless of checkout defaults.
+          git fetch --tags --force
+          # Tag naming matches the `tag` job below (`git tag "$VERSION"` — bare
+          # version, no `v` prefix; the two `v0.0.1`/`v0.0.2` tags in this repo's
+          # history predate that convention).
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Not a release: tag $VERSION already exists."
+          else
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "Release detected: $VERSION"
-          else
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-            echo "Not a release merge (merge_branch=$MERGE_BRANCH, version=$VERSION)"
+            echo "Release detected: $VERSION has no tag yet."
           fi
 
   qa:
-    name: QA gate (${{ matrix.os }})
+    name: QA gate
     needs: check-release
     if: needs.check-release.outputs.is_release == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
+    uses: ./.github/workflows/release-qa.yml
 
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Lint
-        run: uv run poe lint
-
-      - name: Type check (host platform)
-        run: uv run poe type
-
-      - name: Type check (cross-platform)
-        if: matrix.os == 'ubuntu-latest'
-        run: uv run mypy --platform=win32 src/
-
-      - name: Unit tests
-        run: uv run poe test_unit
-
-      - name: Integration tests
-        run: uv run poe test_integration
-
-      # Smoke tests intentionally not gated in CI yet — environment-dependent.
-      # Re-enable once the smoke suite is hermetic.
-
-  build:
-    name: Build wheel + sdist
+  wheel:
+    name: Build and verify wheel
     needs: [check-release, qa]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Fetch bundled ONNX model
-        run: uv run poe fetch_bundled_model
-
-      - name: Build package
-        run: |
-          # Build wheel directly from source tree (not via sdist) so the
-          # gitignored ONNX model is picked up by the build hook.
-          uv build --wheel
-          # sdist separately for PyPI (model not included — source-only)
-          uv build --sdist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  verify-wheel:
-    name: Verify wheel (${{ matrix.os }})
-    needs: build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install wheel in fresh venv (cross-platform)
-        run: |
-          python -m venv venv-verify
-          python -c "
-          import glob, subprocess, sys
-          from pathlib import Path
-          venv = Path('venv-verify')
-          pip = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('pip.exe' if sys.platform == 'win32' else 'pip')
-          wheels = glob.glob('dist/*.whl')
-          assert len(wheels) == 1, f'Expected 1 wheel, got {wheels}'
-          subprocess.run([str(pip), 'install', wheels[0], '--quiet'], check=True)
-          "
-        shell: bash
-
-      - name: Smoke check + ONNX model present
-        run: |
-          python -c "
-          import subprocess, sys
-          from pathlib import Path
-          venv = Path('venv-verify')
-          ails = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('ails.exe' if sys.platform == 'win32' else 'ails')
-          py = venv / ('Scripts' if sys.platform == 'win32' else 'bin') / ('python.exe' if sys.platform == 'win32' else 'python')
-          subprocess.run([str(ails), 'version'], check=True)
-          subprocess.run([str(ails), 'check', '--help'], check=True, stdout=subprocess.DEVNULL)
-          subprocess.run([str(py), '-c',
-              'from reporails_cli.bundled import get_models_path;'
-              'onnx = get_models_path() / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
-              'assert onnx.exists(), f\"ONNX missing: {onnx}\";'
-              'print(f\"ONNX OK: {onnx.stat().st_size // 1024 // 1024} MB\")'
-          ], check=True)
-          "
-        shell: bash
+    if: needs.check-release.outputs.is_release == 'true'
+    uses: ./.github/workflows/release-wheel.yml
 
   publish:
     name: Publish to PyPI
-    needs: [check-release, verify-wheel]
+    needs: [check-release, wheel]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -165,7 +82,10 @@ jobs:
           path: dist
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0
+        with:
+          # A re-run after a partial failure (npm/tag) must not fail on "file already exists".
+          skip-existing: true
 
   npm:
     name: Publish to npm
@@ -192,7 +112,17 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          # Idempotent on re-run: a retry after a partial failure downstream of
+          # this step (e.g. `tag`) must not fail on "you cannot publish over
+          # the previously published version" — the PyPI publish above already
+          # tolerates this via `skip-existing`.
+          if npm view "@reporails/cli@$VERSION" version >/dev/null 2>&1; then
+            echo "@reporails/cli@$VERSION already on npm — skipping publish"
+          else
+            npm publish --access public --provenance
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -205,6 +135,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Stamp the Action's default version
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          # `action/action.yml`'s `version` input defaults to '' (latest PyPI)
+          # so a caller can still pin explicitly. At tag time only, stamp that
+          # default to this release, so `uses: .../action@$VERSION` with no
+          # `version:` input runs the tagged release, not whatever happens to
+          # be newest on PyPI when the workflow runs. This commit is never
+          # pushed to a branch — it exists only in the tag created below, so
+          # `main` keeps '' for continued development.
+          sed -i "/^  version:\$/,+2 s/default: ''/default: '$VERSION'/" action/action.yml
+          grep -q "default: '$VERSION'" action/action.yml || {
+            echo "::error::failed to stamp action/action.yml's version default"
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Stamp action version default: $VERSION"
+
       - name: Create tag and GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,3 +164,28 @@ jobs:
           gh release create "$VERSION" \
             --title "v$VERSION" \
             --generate-notes
+
+  release-guard:
+    name: Guard against a silent no-op release
+    needs: [check-release, tag]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail loudly if a due release did not complete
+        env:
+          IS_RELEASE: ${{ needs.check-release.outputs.is_release }}
+          VERSION: ${{ needs.check-release.outputs.version }}
+          TAG_RESULT: ${{ needs.tag.result }}
+        run: |
+          # `needs.tag.result` is one of success/failure/cancelled/skipped. A job
+          # whose `needs` resolve to a skipped upstream is itself skipped, not
+          # failed — so a detection regression (or any future gate misconfigured
+          # to skip instead of fail) would otherwise leave every job downstream of
+          # `check-release` grey, and a grey/skipped run does not turn the workflow
+          # red. This is the explicit, unconditional check that closes that gap:
+          # if a release was due, `tag` must show `success`, or the run fails loud.
+          if [ "$IS_RELEASE" = "true" ] && [ "$TAG_RESULT" != "success" ]; then
+            echo "::error::Release $VERSION was due (pyproject.toml version has no tag) but the release pipeline did not complete successfully (tag job result: $TAG_RESULT). This must not report green — investigate the failing/skipped job above."
+            exit 1
+          fi
+          echo "Release guard OK (is_release=$IS_RELEASE, version=$VERSION, tag job result=$TAG_RESULT)."

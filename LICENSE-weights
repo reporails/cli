@@ -1,0 +1,126 @@
+Reporails Model Licence
+Version 1.0
+
+Licensor:  Mészáros Gábor e.v. (egyéni vállalkozó), trading as Reporails,
+           registration number 56115138
+Contact:   info@reporails.com
+
+Licensed Work:  The Reporails model files that the Reporails CLI (ails)
+  downloads or ships: the files charge_encoder_encA.onnx,
+  charge_encoder_encB.onnx, multislot_head_encA.onnx and
+  multislot_head_encB.onnx, together with the descriptor files that travel
+  with them (the "Model Files").
+
+  The Licensed Work does NOT include the folder minilm-l6-v2/ or anything in
+  it. That folder holds a third-party model that is distributed under the
+  Apache License, Version 2.0, and not under this licence. See the file
+  NOTICE, which travels with the Model Files, and the file
+  LICENSE-APACHE-2.0 next to it.
+
+  This licence covers the Model Files only. The Reporails CLI source code is
+  licensed separately under the file LICENSE in its repository.
+
+By downloading, copying or using the Model Files you accept this licence. If
+you do not accept it, do not download or use them.
+
+1. Definitions
+
+   "Reporails CLI" means the command-line program reporails-cli (command
+   "ails"), as distributed by the Licensor.
+
+   "Your Files" means the instruction files and configuration files of coding
+   agents that you own or that you are entitled to analyse, for example your
+   own or your employer's project.
+
+   "Output" means any score, label, span, vector, embedding, logit,
+   prediction or other result that the Model Files produce.
+
+   "Model" means a machine-learning model of any kind, including a language
+   model, a classifier and an embedding model.
+
+2. Licence
+
+   The Licensor grants you a non-exclusive, non-transferable, royalty-free
+   licence to download the Model Files through the Reporails CLI and to use
+   them only by running the Reporails CLI on Your Files. You may keep Outputs
+   and use them for any purpose that Section 3 does not forbid, including
+   reading the findings, fixing Your Files, and passing the findings to a
+   coding agent to edit Your Files.
+
+3. What you may not do
+
+   You may not:
+
+   (a) use the Model Files or any Output to train, fine-tune or distil a
+       Model, or to create or improve a Model in any other way, or to build a
+       dataset for doing so. This includes using the Model Files as a teacher,
+       and labelling data with them for that purpose. It does not forbid
+       anything allowed in Section 2.
+
+   (b) copy, publish, host, sell, lend or otherwise make the Model Files, or a
+       modified version of them, available to anyone else. You may let the
+       Reporails CLI download them to your own machines. If you receive the
+       Reporails CLI from a third party, the Model Files are still licensed to
+       you only by this licence.
+
+   (c) run the Model Files in any way other than through the Reporails CLI,
+       for example by loading them in your own code or in another program.
+
+   (d) offer the Model Files, or a product or service built on them, as a
+       competing product or service for validation, analysis, optimisation,
+       governance, scoring, monitoring or drift detection of AI agent
+       instruction files or configurations.
+
+   (e) reverse engineer, decompile or disassemble the Model Files, or try to
+       extract or reconstruct their parameters, architecture or training data.
+
+   (f) remove or change the notices in the Model Files or in the file NOTICE.
+
+   Nothing in this Section limits a right that the law gives you and that a
+   contract cannot take away.
+
+4. Third-party model
+
+   The folder minilm-l6-v2/ contains the model all-MiniLM-L6-v2 in ONNX
+   format. It is licensed to you under the Apache License, Version 2.0 and is
+   not part of the Licensed Work. The classifier files in the Licensed Work
+   were created by further training of that model; the Licensor's changes to
+   it are licensed under this licence, and the Apache License continues to
+   apply to the parts of it that come from the original. Details are in the
+   file NOTICE.
+
+5. Ownership
+
+   The Licensor keeps all rights that this licence does not expressly grant.
+   This licence gives you no right in the name or logo of Reporails.
+
+6. Ending of the licence
+
+   Your rights under this licence end automatically if you break it. You must
+   then delete all copies of the Model Files. A new version of the Model Files
+   is licensed under the licence that comes with that version. Sections 3, 7,
+   8 and 9 stay in force after the licence ends.
+
+7. No warranty and limit of liability
+
+   TO THE EXTENT THE LAW ALLOWS, THE LICENSED WORK AND ITS OUTPUT ARE PROVIDED
+   "AS IS", WITHOUT WARRANTY OF ANY KIND, INCLUDING ANY WARRANTY OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE AND
+   NON-INFRINGEMENT. TO THE EXTENT THE LAW ALLOWS, THE LICENSOR IS NOT LIABLE
+   FOR INDIRECT, SPECIAL OR CONSEQUENTIAL LOSS OR FOR LOST PROFIT ARISING OUT
+   OF THIS LICENCE. NOTHING IN THIS LICENCE EXCLUDES OR LIMITS LIABILITY THAT
+   CANNOT BE EXCLUDED OR LIMITED UNDER THE LAW THAT APPLIES TO YOU.
+
+8. Governing law
+
+   This licence is governed by Hungarian law. Disputes are
+   decided by the competent courts of Hungary. If you use the Model Files as a
+   consumer, this does not take away the mandatory protection of the law of the
+   country where you live or the right to sue there.
+
+9. General
+
+   If a part of this licence is not valid, the rest stays in force. This
+   licence and the file NOTICE are the whole agreement about the Model Files.
+
+Copyright 2026 Mészáros Gábor

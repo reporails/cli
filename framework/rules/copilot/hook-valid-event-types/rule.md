@@ -4,21 +4,23 @@ slug: hook-valid-event-types
 title: Hook Valid Event Types
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
 supersedes: CORE:S:0027
-source: https://code.visualstudio.com/docs/copilot/customization/hooks
+source: https://docs.github.com/en/copilot/reference/hooks-configuration
 ---
 
 # Hook Valid Event Types
 
-Hook event keys in `.github/hooks/*.json` or VS Code hook config MUST use recognized Copilot event type names. The VS Code Copilot doc lists eight events in PascalCase: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `SubagentStart`, `SubagentStop`, `Stop`. Unrecognized event names — including camelCase variants like `preToolUse` — are silently ignored, so the hook never fires.
+Hook event keys in `.github/hooks/*.json` MUST use a recognized Copilot event type name. The Copilot hooks reference accepts both the camelCase form (`sessionStart`, `preToolUse`, `userPromptSubmitted`, …) and its PascalCase alias (`SessionStart`, `PreToolUse`, `UserPromptSubmit`, …) — either casing fires the hook. An unrecognized name in neither list is silently ignored, so the hook never fires.
 
 ## Antipatterns
 
-- **camelCase variants.** Writing `preToolUse`, `sessionStart`, or `userPromptSubmitted` — Copilot's event names are uniformly PascalCase, and the camelCase aliases are not recognized.
-- **Cross-agent event names.** Using event names from another agent (e.g., `SessionEnd` is a Claude/Cursor event, not a Copilot one).
+- **Made-up casing.** Writing `OnToolUse` or `on_tool_use` — neither the camelCase nor the PascalCase form.
+- **Cross-agent event names.** Using an event name Copilot does not document (e.g. another agent's hook vocabulary).
 - **Deprecated event names.** Using event names from older versions that have been renamed or removed.
 
 ## Pass / Fail
@@ -27,8 +29,9 @@ Hook event keys in `.github/hooks/*.json` or VS Code hook config MUST use recogn
 
 ```json
 {
+  "version": 1,
   "hooks": {
-    "SessionStart": [{ "type": "command", "command": "echo hook" }]
+    "preToolUse": [{ "type": "command", "bash": "./guard.sh" }]
   }
 }
 ```
@@ -37,6 +40,7 @@ Hook event keys in `.github/hooks/*.json` or VS Code hook config MUST use recogn
 
 ```json
 {
+  "version": 1,
   "hooks": {
     "onToolUse": [{ "type": "command", "command": "echo hook" }]
   }
@@ -45,4 +49,4 @@ Hook event keys in `.github/hooks/*.json` or VS Code hook config MUST use recogn
 
 ## Limitations
 
-Checks that at least one recognized Copilot event type is present. Does not detect misspelled event names if a valid one also exists.
+Checks that at least one recognized Copilot event type (either casing) is present, and separately flags a key shaped like an event name (an array of handler objects) that is not a recognized name, so a typo next to a valid event is still caught.

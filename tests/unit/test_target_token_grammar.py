@@ -1,4 +1,4 @@
-"""Grammar coverage for `ails check` target tokens (`_classify_target_token`).
+"""Grammar coverage for target tokens (`classify_target_token`), shared by `ails check` and MCP `validate`.
 
 A bare capability noun (`skills`) targets every instance; `capability:name`
 (`skill:backlog`) targets one named instance; everything else is a path. A
@@ -12,11 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.interfaces.cli.main import (
-    _check_timeout_ceiling,
-    _classify_target_token,
-    _looks_like_windows_path,
+from reporails_cli.core.classify.capability_paths import (
+    classify_target_token as _classify_target_token,
 )
+from reporails_cli.core.classify.capability_paths import (
+    looks_like_windows_path as _looks_like_windows_path,
+)
+from reporails_cli.interfaces.cli.check_support import _check_timeout_ceiling
 
 
 @pytest.mark.unit
@@ -82,7 +84,7 @@ def test_windows_drive_letter_routes_to_path(tmp_path: Path):
 @pytest.mark.parametrize(
     "token, expected_path",
     [
-        ("file:../hub/CLAUDE.md", "../hub/CLAUDE.md"),
+        ("file:../shared/CLAUDE.md", "../shared/CLAUDE.md"),
         ("file:/home/x/CLAUDE.md", "/home/x/CLAUDE.md"),
         ("file:./CLAUDE.md", "./CLAUDE.md"),
     ],

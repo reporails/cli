@@ -4,7 +4,7 @@
 #
 # Compared fields: version, description, keywords, homepage, bug-tracker, repository
 # Package-manager-specific fields (Documentation URL, dependencies, bin, engines)
-# are skipped — see .claude/rules/config-sync.md for the full table.
+# are skipped — each package manager owns its own shape for those.
 
 set -euo pipefail
 

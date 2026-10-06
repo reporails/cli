@@ -10,7 +10,7 @@ the platform substrate is freshly bootstrapped and code has not yet migrated
 into `contract/`, `dto/`, `policy/`. The check is wired up so it catches the
 first regression once migration begins.
 
-Flip `_FAIL_ON_VIOLATION = True` once Phase 5 of the platform migration completes.
+Flip `_FAIL_ON_VIOLATION = True` once the platform migration completes.
 """
 
 from __future__ import annotations

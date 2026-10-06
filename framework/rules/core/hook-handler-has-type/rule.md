@@ -4,15 +4,17 @@ slug: hook-handler-has-type
 title: Hook Handler Has Type
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
-depends_on: [CORE:S:0027]
+match: {type: [config, hooks]}
+requires_capability: hooks
 ---
 
 # Hook Handler Has Type
 
-Hook configuration must contain at least one `"type"` key. Without a type field, the agent cannot dispatch handlers. Agent-specific rules supersede with the valid type enum per agent.
+At least one handler in the `"hooks"` block must carry a `"type"`. Without a type field, the agent cannot dispatch handlers. Agent-specific rules supersede with the valid type enum per agent.
 
 ## Antipatterns
 
@@ -44,4 +46,4 @@ Hook configuration must contain at least one `"type"` key. Without a type field,
 
 ## Limitations
 
-Checks for any `"type":` key in the config file. Does not verify the type value is valid or that the field is inside a hook handler object. Agent-specific rules supersede with per-agent type enum validation.
+Checks that at least one handler in the `"hooks"` block carries a `"type"`; a `"type"` elsewhere in the file does not count. Does not verify the type value is valid. A hooks block with no handler, or a file that is not valid JSON, draws no finding here. Agent-specific rules supersede with per-agent type enum validation.

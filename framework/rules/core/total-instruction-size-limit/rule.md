@@ -4,16 +4,11 @@ slug: total-instruction-size-limit
 title: Total Instruction Size Limit
 category: efficiency
 type: mechanical
-severity: medium
+severity: low
 backed_by: [advanced-context-engineering, agents-md-impact-efficiency, developer-context-cursor-study,
   fowler-context-engineering-agents, lost-in-the-middle-long-contexts, osmani-ai-coding-workflow,
   spec-writing-for-agents]
 match: {format: freeform}
-fix: |
-  Trim the always-loaded surface. Keep eager files — the main instruction
-  file, its imports, and the memory index — lean, targeting the whole
-  one-round footprint under 100 KB. Move depth into skills, on-demand rules,
-  or linked topic files; those load only when needed and are not counted.
 ---
 
 # Total Instruction Size Limit

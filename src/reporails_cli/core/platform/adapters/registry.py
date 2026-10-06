@@ -8,14 +8,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.platform.adapters.rule_builder import (
-    CORE_WEIGHT_THRESHOLD as CORE_WEIGHT_THRESHOLD,
-)
+import yaml
+
 from reporails_cli.core.platform.adapters.rule_builder import (
     build_rule as build_rule,
-)
-from reporails_cli.core.platform.adapters.rule_builder import (
-    derive_tier as derive_tier,
 )
 from reporails_cli.core.platform.adapters.rule_builder import (
     get_checks_paths as get_checks_paths,
@@ -26,20 +22,13 @@ from reporails_cli.core.platform.adapters.rule_builder import (
 from reporails_cli.core.platform.adapters.rule_builder import (
     get_rules_by_type as get_rules_by_type,
 )
-from reporails_cli.core.platform.config.bootstrap import (
-    get_agent_config,
-    get_project_config,
-    get_rules_path,
-)
-from reporails_cli.core.platform.dto.models import (
-    AgentConfig,
-    Execution,
-    ProjectConfig,
-    Rule,
-    RuleType,
-    Severity,
-)
-from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file, parse_frontmatter
+from reporails_cli.core.platform.config.bootstrap import get_rules_path
+from reporails_cli.core.platform.config.capabilities import agent_capabilities, clear_capability_cache
+from reporails_cli.core.platform.config.config import get_agent_config, get_project_config
+from reporails_cli.core.platform.dto.models import Execution, Rule, RuleType, Severity
+from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
+from reporails_cli.core.platform.policy.applicability import filter_by_capability
+from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file, read_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -52,21 +41,26 @@ def clear_rule_cache() -> None:
     """Clear the rule loading cache. Called by --refresh and after ails update."""
     _path_cache.clear()
     clear_yaml_cache()
+    clear_capability_cache()
     structural_rule_ids.cache_clear()
+    registry_rule_ids.cache_clear()
+    file_level_check_ids.cache_clear()
+    convention_check_ids.cache_clear()
+    rule_dependencies.cache_clear()
+    whole_run_check_ids.cache_clear()
 
 
 @lru_cache(maxsize=8)
 def structural_rule_ids(agent: str = "") -> frozenset[str]:
     """Rule ids of the structural family — mechanical rules that run locally.
 
-    These check section / config / file presence and hygiene; they are scored on a
-    separate completeness axis, not the main score. Sourced from the registry
+    These check section / config / file presence and hygiene. Sourced from the registry
     (single source of truth); empty if none load.
 
     Must be resolved with the SAME agent the findings were produced under: an agent
     rule that supersedes a core structural rule (e.g. `CODEX:E:0001` superseding
     `CORE:E:0001`) replaces it under the agent's id, so the no-agent (core-only) set
-    would miss it and the matching finding would be dropped from the completeness map.
+    would miss it and the finding under the agent's id would not be counted as structural.
     """
     try:
         rules = load_rules(agent=agent)
@@ -75,6 +69,65 @@ def structural_rule_ids(agent: str = "") -> frozenset[str]:
     return frozenset(
         rid for rid, rule in rules.items() if rule.type == RuleType.MECHANICAL and rule.execution == Execution.LOCAL
     )
+
+
+@lru_cache(maxsize=8)
+def registry_rule_ids(agent: str = "") -> frozenset[str]:
+    """Every rule id the registry defines under `agent`."""
+    return frozenset(load_rules(agent=agent))
+
+
+@lru_cache(maxsize=8)
+def file_level_check_ids(agent: str = "") -> frozenset[str]:
+    """Ids of the content checks that require something in a file.
+
+    A finding from one of these concerns the whole file: there is no line to point at.
+    """
+    return frozenset(
+        check.id
+        for rule in load_rules(agent=agent).values()
+        for check in rule.checks
+        if check.type == "content_query" and check.expect == "present" and check.id
+    )
+
+
+@lru_cache(maxsize=8)
+def convention_check_ids(agent: str = "") -> frozenset[str]:
+    """Ids of the checks flagged `convention: true`: their finding names a missing documentation convention."""
+    return frozenset(
+        check.id for rule in load_rules(agent=agent).values() for check in rule.checks if check.convention and check.id
+    )
+
+
+@lru_cache(maxsize=8)
+def whole_run_check_ids(agent: str = "") -> frozenset[str]:
+    """Ids of the checks whose finding stands for the matched files as a whole.
+
+    These are the content checks that require something in a file and the project-aggregate
+    checks: neither points at one file or line.
+    """
+    return file_level_check_ids(agent) | frozenset(
+        check.id
+        for rule in load_rules(agent=agent).values()
+        for check in rule.checks
+        if check.project_scope and check.id
+    )
+
+
+@lru_cache(maxsize=8)
+def rule_dependencies(agent: str = "") -> dict[str, frozenset[str]]:
+    """`{rule id: the rule ids it depends on}` under `agent`, resolved through supersession.
+
+    A dependency on a rule an agent rule supersedes names the superseding rule, which carries
+    the findings under its own id.
+    """
+    rules = load_rules(agent=agent)
+    successor = {r.supersedes: rid for rid, r in rules.items() if r.supersedes}
+    return {
+        rid: frozenset(successor.get(dep, dep) for dep in rule.depends_on)
+        for rid, rule in rules.items()
+        if rule.depends_on
+    }
 
 
 def get_rules_dir() -> Path:
@@ -105,7 +158,15 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
 
         try:
             content = md_path.read_text(encoding="utf-8")
-            frontmatter = parse_frontmatter(content)
+        except OSError as exc:
+            # An unreadable rule.md (e.g. permission-denied) must not crash every command
+            # that loads the pack it lives in — skip it and name the file, matching the
+            # checks.yml parse-failure handling below.
+            logger.warning("Skipping unreadable rule.md %s: %s", md_path, exc)
+            continue
+
+        try:
+            frontmatter = read_frontmatter(content).data
 
             if not frontmatter:
                 continue
@@ -119,8 +180,8 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
                 try:
                     yml_data = load_yaml_file(yml_path)
                     frontmatter["checks"] = (yml_data or {}).get("checks", [])
-                except Exception:  # rule building from YAML; skip broken rules
-                    pass
+                except (OSError, yaml.YAMLError) as exc:
+                    logger.warning("Skipping unreadable checks.yml %s: %s", yml_path, exc)
 
             rule = build_rule(frontmatter, md_path, yml_path)
             rules[rule.id] = rule
@@ -133,7 +194,7 @@ def _load_from_path(path: Path) -> dict[str, Rule]:
     return rules
 
 
-def load_rules(  # pylint: disable=too-many-locals
+def load_rules(
     rules_paths: list[Path] | None = None,
     project_root: Path | None = None,
     agent: str = "",
@@ -164,17 +225,10 @@ def load_rules(  # pylint: disable=too-many-locals
         if extra.exists():
             rules.update(_load_from_path(extra))
 
-    # 3-4. Apply agent excludes and overrides
-    agent_config = get_agent_config(agent) if agent else AgentConfig()
-    if agent_config.excludes:
-        rules = {k: v for k, v in rules.items() if not any(fnmatch(k, pat) for pat in agent_config.excludes)}
-    if agent_config.overrides:
-        rules = _apply_agent_overrides(rules, agent_config.overrides)
+    on_disk_ids = set(rules)
 
-    # 4b. Filter rules by agent namespace
-    if agent:
-        agent_prefix = agent_config.prefix or agent.upper()
-        rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
+    # 3-4b2. Apply agent excludes, overrides, namespace filter, and capability gating.
+    rules = _filter_by_agent(rules, agent)
 
     # 4c. Handle supersession: agent rules that supersede CORE rules
     # inherit the CORE checks and replace the CORE rule in the set.
@@ -186,8 +240,9 @@ def load_rules(  # pylint: disable=too-many-locals
 
     # 4e. Validate depends_on: detect circular dependency chains. Supersession
     # redirects are honored — a depends_on pointing at a superseded rule is
-    # satisfied by its active successor.
-    _validate_depends_on(rules, superseded_by)
+    # satisfied by its active successor. A dependency the agent filter left out
+    # is absent without a warning; only an id no loaded rule file defines warns.
+    _validate_depends_on(rules, superseded_by, on_disk_ids)
 
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
     config = _load_project_config(project_root)
@@ -197,6 +252,34 @@ def load_rules(  # pylint: disable=too-many-locals
         disabled |= set(scan_config.disabled_rules or [])
     if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
+
+    return rules
+
+
+def apply_agent_excludes(rules: dict[str, Rule], agent_config: AgentConfig) -> dict[str, Rule]:
+    """Drop the rules whose id matches one of the agent config's `excludes` globs."""
+    if not agent_config.excludes:
+        return rules
+    return {k: v for k, v in rules.items() if not any(fnmatch(k, pat) for pat in agent_config.excludes)}
+
+
+def _filter_by_agent(rules: dict[str, Rule], agent: str) -> dict[str, Rule]:
+    """Apply agent excludes, overrides, namespace filter, and capability gating.
+
+    Excludes/overrides come from the agent's config; the namespace filter drops
+    other agents' rules; capability gating drops rules requiring a capability the
+    agent lacks per framework/capabilities_matrix.yml (no-op for an unknown or
+    empty agent — see filter_by_capability).
+    """
+    agent_config = get_agent_config(agent) if agent else AgentConfig()
+    rules = apply_agent_excludes(rules, agent_config)
+    if agent_config.overrides:
+        rules = _apply_agent_overrides(rules, agent_config.overrides)
+
+    if agent:
+        agent_prefix = agent_config.prefix or agent.upper()
+        rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
+        rules = filter_by_capability(rules, agent_capabilities(agent))
 
     return rules
 
@@ -233,8 +316,8 @@ def _apply_supersession(rules: dict[str, Rule]) -> dict[str, str]:
     """Handle rule supersession: agent rules inherit CORE checks and replace CORE rules.
 
     When CLAUDE:S:0012 supersedes CORE:S:0038, the CORE checks are inherited
-    (unless explicitly replaced), and the CORE rule is removed from the set.
-    Modifies the rules dict in place.
+    (unless explicitly replaced) and its `depends_on`, and the CORE rule is removed from
+    the set. Modifies the rules dict in place.
 
     Returns a mapping `{superseded_id: successor_id}` so downstream validators
     (e.g. `_validate_depends_on`) can resolve `depends_on: [CORE:S:xxxx]`
@@ -250,7 +333,8 @@ def _apply_supersession(rules: dict[str, Rule]) -> dict[str, str]:
         # Inherit parent checks that aren't replaced by the agent rule
         replaced_ids = {c.replaces for c in rule.checks if c.replaces}
         inherited = [c for c in parent.checks if c.id not in replaced_ids]
-        rules[rule_id] = rule.model_copy(update={"checks": inherited + list(rule.checks)})
+        depends_on = list(dict.fromkeys([*parent.depends_on, *rule.depends_on]))
+        rules[rule_id] = rule.model_copy(update={"checks": inherited + list(rule.checks), "depends_on": depends_on})
     for sid in superseded_by:
         del rules[sid]
     return superseded_by
@@ -272,7 +356,11 @@ def _apply_inheritance(rules: dict[str, Rule]) -> None:
         rules[rule_id] = rule.model_copy(update={"checks": parent_checks + list(rule.checks)})
 
 
-def _validate_depends_on(rules: dict[str, Rule], superseded_by: dict[str, str] | None = None) -> None:
+def _validate_depends_on(
+    rules: dict[str, Rule],
+    superseded_by: dict[str, str] | None = None,
+    known_ids: set[str] | None = None,
+) -> None:
     """Validate depends_on references and detect circular dependency chains.
 
     Logs warnings for invalid references and circular chains rather than
@@ -280,14 +368,19 @@ def _validate_depends_on(rules: dict[str, Rule], superseded_by: dict[str, str] |
 
     `superseded_by` maps removed rule ids to their successor ids; a depends_on
     pointing at a superseded rule is satisfied by the successor.
+    `known_ids` holds every rule id defined on disk before agent filtering; a
+    depends_on naming one of them is not warned about when the filter left it out.
     """
     redirects = superseded_by or {}
+    known = known_ids or set()
     for rule_id, rule in rules.items():
         for dep_id in rule.depends_on:
             if dep_id in rules:
                 continue
             if dep_id in redirects and redirects[dep_id] in rules:
                 # Dependency was superseded by an active rule — treat as satisfied.
+                continue
+            if dep_id in known:
                 continue
             logger.warning("Rule %s depends_on %s which is not loaded", rule_id, dep_id)
 

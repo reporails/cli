@@ -6,24 +6,18 @@ category: structure
 type: deterministic
 severity: medium
 backed_by: []
-match: {type: scoped_rule}
+match: {type: main}
 source: https://agents.md/
-fix: |
-  Add a list of canonical filenames the agent recognizes to the rule
-  body. Each filename gets a brief role description — `\`AGENTS.md\` —
-  project-wide agent instructions`, `\`AGENTS.override.md\` — local
-  override that wins over committed AGENTS.md`. Without the filename
-  list, the rule can't enforce what the agent's docs declare.
 ---
 
 # Agent Documents Filenames
 
-Agent configuration must document which instruction filenames it checks and in what priority order.
+The main instruction file must document which instruction filenames its agents read and in what priority order.
 
 ## Antipatterns
 
-- Describing agent behavior generically ("the agent reads configuration files") without naming specific instruction filenames like `CLAUDE.md` or `.cursorrules`. The check looks for recognized filenames, not general descriptions.
-- Listing only one agent's filename when the file covers multiple agents. The check passes with any recognized filename, but a single-agent list in a multi-agent scoped rule leaves gaps.
+- Describing agent behavior generically ("the agent reads configuration files") without naming the instruction files, such as `AGENTS.md`. The check looks for recognized filenames, not general descriptions.
+- Naming an agent's own instruction file, such as `CLAUDE.md` or `copilot-instructions.md`, in a file several agents share, such as `AGENTS.md`. The shared file names the files every agent reads and which one takes precedence; each agent's own file names what that agent reads. Cross Agent Compatibility (`CORE:C:0026`) flags an agent's own filename in a shared file.
 - Using informal references like "the main config" instead of the actual filename. The pattern matches literal filenames and the words "filename" or "file name" -- synonyms like "config" or "settings" do not match.
 
 ## Pass / Fail
@@ -31,11 +25,10 @@ Agent configuration must document which instruction filenames it checks and in w
 ### Pass
 
 ~~~~markdown
-# Discovery
+# Instruction files
 
-Claude Code reads `CLAUDE.md` at session start.
-Cursor checks `.cursorrules` in the project root.
-Copilot loads `copilot-instructions.md` from `.github/`.
+`AGENTS.md` at the project root holds the instructions every agent shares.
+A closer `AGENTS.md` in a subdirectory takes precedence for the files under it.
 ~~~~
 
 ### Fail
@@ -49,4 +42,4 @@ Priority is determined by the loading order.
 
 ## Limitations
 
-Checks that the file documents recognized instruction filenames. Does not validate whether the documented filenames match actual project files.
+Checks the project's main instruction file. Checks that it documents recognized instruction filenames. Does not validate whether the documented filenames match actual project files.

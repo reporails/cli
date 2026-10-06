@@ -1,1 +1,7 @@
-"command": "/bin/bash .claude/hooks/lint.sh"
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "command": "/bin/bash .claude/hooks/lint.sh" }
+    ]
+  }
+}

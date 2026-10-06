@@ -1,1 +1,12 @@
-"prompt": "Check for security issues before proceeding"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          { "type": "prompt", "prompt": "Check for security issues before proceeding" }
+        ]
+      }
+    ]
+  }
+}

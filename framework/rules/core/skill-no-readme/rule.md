@@ -6,7 +6,7 @@ category: structure
 type: mechanical
 severity: high
 backed_by: []
-match: {type: skill}
+match: {type: skills}
 source: https://agentskills.io/specification
 ---
 

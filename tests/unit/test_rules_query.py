@@ -7,13 +7,11 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.adapters.rules_query import (
-    _extract_section,
     filter_rules_by_capability,
     filter_rules_by_severity,
     find_rule_by_id,
     list_known_agents,
     load_all_rules,
-    load_rule_examples,
     rules_for_capability,
     sort_rules_for_authoring,
 )
@@ -79,7 +77,7 @@ def test_load_all_rules_with_agent_filters_namespace() -> None:
 @pytest.mark.subsys_lint
 def test_filter_by_capability_keeps_universal_rules() -> None:
     universal = _make_rule("CORE:S:9001", match=FileMatch())
-    skill_only = _make_rule("CORE:S:9002", match=FileMatch(type="skill"))
+    skill_only = _make_rule("CORE:S:9002", match=FileMatch(type="skills"))
     out = filter_rules_by_capability([universal, skill_only], "agent")
     ids = {r.id for r in out}
     assert "CORE:S:9001" in ids
@@ -89,10 +87,12 @@ def test_filter_by_capability_keeps_universal_rules() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_filter_by_capability_specific_type() -> None:
-    skill_rule = _make_rule("CORE:S:9003", match=FileMatch(type="skill"))
-    agent_rule = _make_rule("CORE:S:9004", match=FileMatch(type="agent"))
-    out = filter_rules_by_capability([skill_rule, agent_rule], "skill")
-    assert {r.id for r in out} == {"CORE:S:9003"}
+    skill_rule = _make_rule("CORE:S:9003", match=FileMatch(type="skills"))
+    agent_rule = _make_rule("CORE:S:9004", match=FileMatch(type="agents"))
+    assert {r.id for r in filter_rules_by_capability([skill_rule, agent_rule], "skills")} == {"CORE:S:9003"}
+    # The word a user types resolves to the config key it names.
+    assert {r.id for r in filter_rules_by_capability([skill_rule, agent_rule], "skill")} == {"CORE:S:9003"}
+    assert {r.id for r in filter_rules_by_capability([skill_rule, agent_rule], "agent")} == {"CORE:S:9004"}
 
 
 @pytest.mark.unit
@@ -103,7 +103,7 @@ def test_filter_by_capability_main_fold_strict() -> None:
     override = _make_rule("CORE:S:9006", match=FileMatch(type="override"))
     nested = _make_rule("CORE:S:9007", match=FileMatch(type="nested_context"))
     child = _make_rule("CORE:S:9008", match=FileMatch(type="child_instruction"))
-    other = _make_rule("CORE:S:9009", match=FileMatch(type="skill"))
+    other = _make_rule("CORE:S:9009", match=FileMatch(type="skills"))
     out = filter_rules_by_capability([main_rule, override, nested, child, other], "main")
     assert {r.id for r in out} == {"CORE:S:9005", "CORE:S:9006"}
 
@@ -111,8 +111,8 @@ def test_filter_by_capability_main_fold_strict() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_filter_by_capability_list_type() -> None:
-    multi = _make_rule("CORE:S:9008", match=FileMatch(type=["skill", "agent"]))
-    assert len(filter_rules_by_capability([multi], "agent")) == 1
+    multi = _make_rule("CORE:S:9008", match=FileMatch(type=["skills", "agents"]))
+    assert len(filter_rules_by_capability([multi], "agents")) == 1
 
 
 @pytest.mark.unit
@@ -153,45 +153,6 @@ def test_sort_stable_by_id() -> None:
         _make_rule("CORE:S:0001", category=Category.STRUCTURE, severity=Severity.HIGH),
     ]
     assert [r.id for r in sort_rules_for_authoring(rules)] == ["CORE:S:0001", "CORE:S:0002"]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_load_rule_examples_extracts_pass_and_fail(tmp_path: Path) -> None:
-    rule_md = tmp_path / "rule.md"
-    rule_md.write_text(
-        "---\nid: TEST:S:0001\n---\n# Title\n\nBody.\n\n## Pass / Fail\n\n"
-        "### Pass\n\n```markdown\n# Good\n## Inside fence\n```\n\n"
-        "### Fail\n\n```markdown\nBad\n```\n\n"
-        "## Limitations\n\nSome.\n",
-        encoding="utf-8",
-    )
-    examples = load_rule_examples(_make_rule("TEST:S:0001", md_path=rule_md))
-    assert examples["pass"] is not None and "Inside fence" in examples["pass"]
-    assert examples["fail"] is not None and "Bad" in examples["fail"]
-    assert "Limitations" not in examples["fail"]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_load_rule_examples_none_when_missing(tmp_path: Path) -> None:
-    rule_md = tmp_path / "rule.md"
-    rule_md.write_text("---\nid: TEST:S:0002\n---\n# Title\n", encoding="utf-8")
-    assert load_rule_examples(_make_rule("TEST:S:0002", md_path=rule_md)) == {"pass": None, "fail": None}
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_load_rule_examples_no_path() -> None:
-    assert load_rule_examples(_make_rule("TEST:S:0003", md_path=None)) == {"pass": None, "fail": None}
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_extract_section_fence_aware() -> None:
-    text = "### Pass\n\n~~~~markdown\n# H1\n## H2\n~~~~\n\n### Fail\n\nBody.\n"
-    out = _extract_section(text, "Pass")
-    assert out is not None and "H2" in out and "Fail" not in out
 
 
 @pytest.mark.unit

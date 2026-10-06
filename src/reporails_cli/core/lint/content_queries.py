@@ -7,10 +7,12 @@ Each query inspects the mapper's AST-derived atoms — no regex on raw text.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.mapper.md_parser import wrapping_runs
+from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, Atom, RulesetMap
+from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
 
 @dataclass(frozen=True)
@@ -21,16 +23,58 @@ class QueryResult:
     file: str = ""
     line: int = 0
     evidence: str = ""
+    # Every match in the file, in line order, for a query that reports each one; the result
+    # itself then stands for the first. Empty for a query that reports one match.
+    matches: tuple[QueryResult, ...] = ()
 
 
-def _atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
-    """Get atoms belonging to a specific file."""
-    return [a for a in rm.atoms if a.file_path.endswith(file_path) or file_path in a.file_path]
+def _every_match(file_path: str, found: list[QueryResult]) -> QueryResult:
+    """One result carrying every match: found at the first, with the whole list in `matches`."""
+    if not found:
+        return QueryResult(False, file_path)
+    return replace(found[0], matches=tuple(found))
+
+
+def _norm_key(path: str) -> str:
+    """Normalize a file path to the exact key used to group atoms/records by file.
+
+    Both `Atom.file_path` and `FileRecord.path` originate from the same
+    RulesetMap, so an exact key (leading `./` stripped) matches a file's atoms
+    without the substring bleed that let one file's key match another's path.
+    """
+    return path[2:] if path.startswith("./") else path
+
+
+def atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+    """Get atoms belonging to a specific file (exact normalized path match)."""
+    key = _norm_key(file_path)
+    return [a for a in rm.atoms if _norm_key(a.file_path) == key]
+
+
+def instruction_atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+    """`file_path`'s atoms without the list items read as an instruction's object
+    (`LIST_OBJECT_ROLE`), which take no place of their own among the file's instructions."""
+    return [a for a in atoms_for_file(rm, file_path) if a.role != LIST_OBJECT_ROLE]
 
 
 def _all_file_paths(rm: RulesetMap) -> set[str]:
     """Get unique file paths from RulesetMap."""
     return {fr.path for fr in rm.files}
+
+
+def instruction_inventory(rm: RulesetMap, file_path: str) -> list[dict[str, Any]]:
+    """`file_path`'s content, in line order: each non-heading atom as `{line, polarity, text,
+    named}` (`polarity` is the atom's `charge_value`, `named` its named tokens), each heading as
+    `{line, depth, text}`. A list item read as its instruction's object is not a unit of its own
+    (`LIST_OBJECT_ROLE`) and is left out, matching how the rest of the pipeline addresses atoms."""
+    atoms = instruction_atoms_for_file(rm, file_path)
+    out: list[dict[str, Any]] = []
+    for a in sorted(atoms, key=lambda a: a.line):
+        if a.kind == "heading":
+            out.append({"line": a.line, "depth": a.depth, "text": a.text})
+        else:
+            out.append({"line": a.line, "polarity": a.charge_value, "text": a.text, "named": list(a.named_tokens)})
+    return out
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -42,7 +86,7 @@ def _all_file_paths(rm: RulesetMap) -> set[str]:
 
 def has_headings(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has any markdown headings."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         if a.kind == "heading":
             return QueryResult(True, file_path, a.line, f"Heading: {a.text[:60]}")
@@ -55,16 +99,47 @@ def has_heading_matching(rm: RulesetMap, file_path: str, **args: Any) -> QueryRe
     if not terms:
         return QueryResult(False, file_path)
     pattern = re.compile("|".join(re.escape(t) for t in terms), re.IGNORECASE)
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         if a.kind == "heading" and pattern.search(a.text):
             return QueryResult(True, file_path, a.line, f"Matched heading: {a.text[:60]}")
     return QueryResult(False, file_path)
 
 
+# A lead block is description-shaped when it is uncharged prose, a blockquote, or a list
+# of at least this many words — long enough to say what the project is.
+_LEAD_FORMATS = frozenset({"prose", "blockquote", "list"})
+_LEAD_MIN_TOKENS = 5
+
+
+def has_project_description(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
+    """Check if file describes the project: a matching heading, or a lead block under the title.
+
+    The lead block is the content under the title, up to the first second-level (or deeper)
+    heading or the first instruction. It counts when a descriptive prose, blockquote, or list
+    atom there carries at least `_LEAD_MIN_TOKENS` words — the sentence under `# Project` that
+    says what it is. An instruction-shaped (ambiguous) sentence is not a description.
+    """
+    by_heading = has_heading_matching(rm, file_path, **args)
+    if by_heading.found:
+        return by_heading
+    for a in sorted(atoms_for_file(rm, file_path), key=lambda a: a.line):
+        if a.kind == "heading":
+            if a.depth is not None and a.depth >= 2:
+                break
+            continue
+        if a.charge_value != 0:
+            break
+        if a.charge == "AMBIGUOUS":
+            continue
+        if a.format in _LEAD_FORMATS and a.token_count >= _LEAD_MIN_TOKENS:
+            return QueryResult(True, file_path, a.line, f"Lead description: {a.text[:60]}")
+    return QueryResult(False, file_path)
+
+
 def has_code_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has code block content."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         if a.format == "code_block":
             return QueryResult(True, file_path, a.line, "Code block found")
@@ -74,7 +149,7 @@ def has_code_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult
 def has_layered_structure(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
     """Check if file has top-level heading structure (content layering)."""
     min_headings = args.get("min_headings", 2)
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     top_headings = [a for a in atoms if a.kind == "heading" and a.depth is not None and a.depth <= 2]
     if len(top_headings) >= min_headings:
         return QueryResult(True, file_path, top_headings[0].line, f"{len(top_headings)} top-level headings")
@@ -86,7 +161,7 @@ def has_named_tokens_matching(rm: RulesetMap, file_path: str, **args: Any) -> Qu
     tokens = set(args.get("tokens", []))
     if not tokens:
         return QueryResult(False, file_path)
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         overlap = tokens & {t.lower() for t in a.named_tokens}
         if overlap:
@@ -96,7 +171,7 @@ def has_named_tokens_matching(rm: RulesetMap, file_path: str, **args: Any) -> Qu
 
 def has_constraint_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has constraint atoms (charge_value == -1)."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         if a.charge_value == -1:
             return QueryResult(True, file_path, a.line, f"Constraint: {a.text[:60]}")
@@ -105,7 +180,7 @@ def has_constraint_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryR
 
 def has_directive_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has directive atoms (charge_value == +1)."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         if a.charge_value == +1:
             return QueryResult(True, file_path, a.line, f"Directive: {a.text[:60]}")
@@ -114,7 +189,7 @@ def has_directive_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRe
 
 def has_role_definition(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file defines an agent role ('you are', 'your role', role: anchor)."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         lower = (a.plain_text or a.text).lower()
         if "you are" in lower or "your role" in lower or a.role == "anchor":
@@ -124,7 +199,7 @@ def has_role_definition(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRe
 
 def has_valid_markdown(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has any parsed atoms (valid markdown that produced content)."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     if atoms:
         return QueryResult(True, file_path, atoms[0].line, f"{len(atoms)} atoms parsed")
     return QueryResult(False, file_path)
@@ -133,12 +208,14 @@ def has_valid_markdown(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRes
 def has_frontmatter_field(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
     """Check if the file record has specific frontmatter-derived fields."""
     field_name = args.get("field", "")
+    key = _norm_key(file_path)
     for fr in rm.files:
-        if fr.path.endswith(file_path) or file_path in fr.path:
-            if field_name == "scope" and fr.scope != "global":
-                return QueryResult(True, file_path, 1, f"scope={fr.scope}")
-            if field_name == "globs" and fr.globs:
-                return QueryResult(True, file_path, 1, f"globs={fr.globs}")
+        if _norm_key(fr.path) != key:
+            continue
+        if field_name == "scope" and fr.scope != "global":
+            return QueryResult(True, file_path, 1, f"scope={fr.scope}")
+        if field_name == "globs" and fr.globs:
+            return QueryResult(True, file_path, 1, f"globs={fr.globs}")
     return QueryResult(False, file_path)
 
 
@@ -146,30 +223,28 @@ def has_non_italic_constraints(rm: RulesetMap, file_path: str, **_args: Any) -> 
     """Check if file has constraint atoms not fully wrapped in *italic*.
 
     Returns found=True when a constraint (-1) exists without full-sentence italic,
-    meaning the rule is violated (expect: absent to flag as violation).
+    meaning the rule is violated (expect: absent to flag as violation). Every such
+    constraint is a match.
     """
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
+    found: list[QueryResult] = []
     for a in atoms:
-        if a.charge_value != -1 or a.kind == "heading":
+        # A `code_block` atom (a fence-cascade directive) carries LITERAL markdown:
+        # its `*`/`**` are text inside a fence, not rendered italic/bold, so an
+        # italic-wrapping appearance check must not fire on it. The charge count
+        # (`has_constraint_atoms`) still sees it — only this appearance read skips.
+        if a.charge_value != -1 or a.kind == "heading" or a.format == "code_block":
             continue
-        content = a.text.strip()
-        # Strip leading list markers
-        for prefix in ("- ", "* "):
-            if content.startswith(prefix):
-                content = content[len(prefix) :].strip()
-                break
-        if re.match(r"^\d+\.\s", content):
-            content = re.sub(r"^\d+\.\s+", "", content).strip()
-        # Full-sentence italic: starts and ends with single * (not **)
-        if content.startswith("*") and content.endswith("*") and not content.startswith("**"):
+        # Full-sentence italic: an italic run covers the whole text
+        if any(not run.strong for run in wrapping_runs(a.text)):
             continue
-        return QueryResult(True, file_path, a.line, f"Constraint not italic: {a.text[:60]}")
-    return QueryResult(False, file_path)
+        found.append(QueryResult(True, file_path, a.line, f"Constraint not italic: {a.text[:60]}"))
+    return _every_match(file_path, found)
 
 
 def has_mermaid_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has mermaid code blocks (```mermaid)."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     for a in atoms:
         if a.format == "code_block" and "mermaid" in a.named_tokens:
             return QueryResult(True, file_path, a.line, "Mermaid block found")
@@ -178,7 +253,7 @@ def has_mermaid_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRes
 
 def has_branching_steps(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     """Check if file has numbered list items with conditional/branching language."""
-    atoms = _atoms_for_file(rm, file_path)
+    atoms = atoms_for_file(rm, file_path)
     numbered_count = 0
     branching = False
     for a in atoms:
@@ -191,14 +266,18 @@ def has_branching_steps(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRe
     return QueryResult(False, file_path)
 
 
-def has_charged_headings(rm: Any, file_path: str, **_args: Any) -> QueryResult:
-    """Check if file has heading atoms with charge (instructions in headings)."""
-    for a in rm.atoms:
-        if a.file_path != file_path:
-            continue
-        if a.kind == "heading" and a.charge_value != 0:
-            return QueryResult(True, file_path, a.line, f"Charged heading: {a.text[:60]}")
-    return QueryResult(False, file_path)
+def has_charged_headings(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+    """Check if file has heading atoms with charge (instructions in headings). Every one is a match;
+    its evidence is the heading text. A bare negative heading (`## Don'ts`) labels a list of
+    prohibitions and is not a match."""
+    return _every_match(
+        file_path,
+        [
+            QueryResult(True, file_path, a.line, a.text[:50])
+            for a in atoms_for_file(rm, file_path)
+            if a.kind == "heading" and a.charge_value != 0 and not is_negative_heading(a.text)
+        ],
+    )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -208,6 +287,7 @@ def has_charged_headings(rm: Any, file_path: str, **_args: Any) -> QueryResult:
 QUERY_REGISTRY: dict[str, Any] = {
     "has_headings": has_headings,
     "has_heading_matching": has_heading_matching,
+    "has_project_description": has_project_description,
     "has_code_blocks": has_code_blocks,
     "has_layered_structure": has_layered_structure,
     "has_named_tokens_matching": has_named_tokens_matching,

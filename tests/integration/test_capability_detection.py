@@ -85,8 +85,8 @@ class TestProjectLevelDetermination:
         """Level is driven by the type with most divergences."""
         classified = [
             _cf("main"),  # depth 0
-            _cf("scoped_rule", format="frontmatter"),  # depth 1
-            _cf("skill", format="frontmatter", scope="task_scoped", loading="on_invocation"),  # depth 3
+            _cf("rules", format="frontmatter"),  # depth 1
+            _cf("skills", format="frontmatter", scope="task_scoped", loading="on_invocation"),  # depth 3
         ]
         level, _ = determine_project_level(tmp_path, [], classified)
         assert level == Level.L4  # max(0, 1, 3) + 1
@@ -101,7 +101,7 @@ class TestProjectLevelDeterminism:
         """Same files always give same level."""
         classified = [
             _cf("main"),
-            _cf("scoped_rule", format="frontmatter", scope="path_scoped"),
+            _cf("rules", format="frontmatter", scope="path_scoped"),
         ]
         results = [determine_project_level(tmp_path, [], classified) for _ in range(5)]
         levels = [r[0] for r in results]

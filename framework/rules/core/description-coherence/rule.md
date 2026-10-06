@@ -7,13 +7,6 @@ type: mechanical
 execution: server
 severity: medium
 match: {loading: on_invocation}
-fix: |
-  Rewrite the `description:` frontmatter field so it names the same
-  concepts the body covers. If the body covers three formats, the
-  description should mention all three (or use a covering term like
-  "structured output formats"). The description's job is dispatch —
-  the agent reads it to decide whether the file applies, before paying
-  the cost of loading the body.
 ---
 
 # Description Coherence
@@ -57,10 +50,6 @@ When the user asks for JSON, render keys in lowercase snake_case…
 When the user asks for YAML, prefer flow style for short objects…
 When the user asks for CSV, escape commas with double quotes…
 ~~~~
-
-## Fix
-
-Rewrite the description so it names the same concepts the body covers. If the body covers three formats, the description should mention all three (or use a covering term like "structured output formats"). The description's job is dispatch: the agent uses it to decide whether the file applies, before paying the cost of loading the body.
 
 ## Limitations
 

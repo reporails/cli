@@ -75,7 +75,7 @@ def test_heal_refusal_is_json_parseable_under_json_format() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 @pytest.mark.parametrize("second", ["CLAUDE.md", "skills"])
-def test_heal_dot_plus_token_still_refused(second: str) -> None:
+def test_heal_dot_plus_token_still_refused(second: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`ails check . <token> --heal`: the `.` keeps every file in scope, so a second
     narrower token must NOT rescue the whole-project rewrite — it is still refused.
     Regression: a second token previously flipped `whole_project_heal` to False.
@@ -84,9 +84,9 @@ def test_heal_dot_plus_token_still_refused(second: str) -> None:
     real in-tree target (a file, or the detected agent's `skills` capability);
     otherwise a "path not found" exits before the scope guard, which made this test
     depend on the runner's cwd happening to carry a root CLAUDE.md."""
-    with runner.isolated_filesystem():
-        Path("CLAUDE.md").write_text("# Project\n", encoding="utf-8")
-        result = runner.invoke(app, ["check", ".", second, "--heal"])
+    monkeypatch.chdir(tmp_path)
+    Path("CLAUDE.md").write_text("# Project\n", encoding="utf-8")
+    result = runner.invoke(app, ["check", ".", second, "--heal"])
     assert result.exit_code == 2
     assert "needs an explicit target" in result.stdout
 
@@ -118,7 +118,7 @@ def test_mechanical_fixes_bounded_to_allowed_files(tmp_path: object) -> None:
             charge="NEUTRAL",
             charge_value=0,
             modality="none",
-            specificity=0.0,
+            specificity="abstract",
             unformatted_code=["pyproject.toml"],
             file_path=file_path,
         )
@@ -160,7 +160,7 @@ def test_mechanical_fixes_skip_suppressed_lines(tmp_path: object) -> None:
             charge="NEUTRAL",
             charge_value=0,
             modality="none",
-            specificity=0.0,
+            specificity="abstract",
             unformatted_code=["pyproject.toml"],
             file_path=str(f),
         )
@@ -199,7 +199,7 @@ def test_mechanical_fixes_skip_files_with_imports(tmp_path: object) -> None:
         charge="NEUTRAL",
         charge_value=0,
         modality="none",
-        specificity=0.0,
+        specificity="abstract",
         unformatted_code=["pyproject.toml"],
         file_path=str(f),
     )

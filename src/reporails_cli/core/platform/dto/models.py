@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,13 +64,6 @@ class Severity(str, Enum):
     INFO = "info"
 
 
-class Tier(str, Enum):
-    """Rule confidence tier, derived from backing source weights."""
-
-    CORE = "core"
-    EXPERIMENTAL = "experimental"
-
-
 class PatternConfidence(str, Enum):
     """How reliable a rule's detection pattern is."""
 
@@ -104,10 +97,11 @@ class FileTypeDeclaration(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str  # "main", "scoped_rule", "skill", etc.
+    name: str  # the config key: "main", "rules", "skills", "agents", …
     patterns: tuple[str, ...]  # glob patterns
     required: bool = False
     properties: dict[str, str | list[str]] = Field(default_factory=dict)
+    entry_patterns: tuple[str, ...] = ()  # where an instance's entry file sits (a skill's SKILL.md)
 
 
 class ClassifiedFile(BaseModel):
@@ -116,7 +110,7 @@ class ClassifiedFile(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     path: Path
-    file_type: str  # type name from FileTypeDeclaration.name
+    file_type: str  # the config key, as FileTypeDeclaration.name
     properties: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
@@ -164,7 +158,10 @@ class Check(BaseModel):
     replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
     severity: str = ""  # Check-level severity override (empty = use rule severity)
     message: str = ""  # Check-level message (empty = use check result message)
-    project_scope: bool = False  # Skip under a scoped/narrowed run (project-aggregate check)
+    # "aggregate": project-aggregate check, skipped under a scoped/narrowed run;
+    # "once": one project-wide fact, reported once per project and kept on a narrowed run.
+    project_scope: Literal["", "aggregate", "once"] = ""
+    convention: bool = False  # Finding names a documentation convention the file does not follow
 
 
 class Rule(BaseModel):
@@ -193,6 +190,12 @@ class Rule(BaseModel):
     inherited: str | None = None  # Coordinate of parent rule to inherit checks from (both stay active)
     depends_on: list[str] = Field(default_factory=list)  # Rule coordinates that must pass first
 
+    # Enforcement + capability gating
+    enforcement_required: bool = False  # True when a lint finding alone cannot enforce this concern
+    enforcement_mechanism: str | None = None  # hook | permission | ci | managed_settings | static_analysis
+    requires_capability: str | None = None  # Capability ID; rule fires only for agents that have it
+    surface_mutations: dict[str, Any] | None = None  # Per-surface applicable-concern overrides (population deferred)
+
     # Checks (all rule types)
     checks: list[Check] = Field(default_factory=list)
 
@@ -216,16 +219,33 @@ class Rule(BaseModel):
 
 @dataclass(frozen=True)
 class LocalFinding:
-    """A finding from local M-probe or D-level client check."""
+    """A finding from a local check or a client check."""
 
     file: str  # relative file path
     line: int  # 1-based line number
     severity: str  # "error" | "warning" | "info"
-    rule: str  # rule_id (M probes) or theory label (client checks)
+    rule: str  # rule id (local checks) or check label (client checks)
     message: str  # human-readable description
     fix: str = ""  # suggested fix text
     source: str = "local"  # "m_probe" | "client_check"
     check_id: str = ""  # specific check that triggered this
+    signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
+
+
+@dataclass(frozen=True)
+class LocalEntry:
+    """One local finding as the diagnostics request carries it — no message, no matched text.
+
+    `file` is the absolute path, `line` is 0 for a finding about the whole file, and `type` is the file's type
+    as its agent's config names it.
+    """
+
+    rule: str
+    file: str
+    line: int
+    severity: str
+    check: str = ""
+    type: str = "generic"
 
 
 @dataclass(frozen=True)
@@ -268,48 +288,19 @@ class JudgmentResponse:
     passed: bool  # verdict == pass_value
 
 
-# Re-exports for backward compatibility
-from reporails_cli.core.platform.dto.results import (  # noqa: E402
-    AgentConfig,
-    CategoryStats,
-    DetectedFeatures,
-    FrictionEstimate,
-    GlobalConfig,
-    InitResult,
-    PendingSemantic,
-    ProjectConfig,
-    RuleResult,
-    ScanDelta,
-    UpdateResult,
-    ValidationResult,
-)
-
 __all__ = [
     "CATEGORY_CODES",
-    "AgentConfig",
     "Category",
-    "CategoryStats",
     "Check",
     "ClassifiedFile",
-    "DetectedFeatures",
     "FileMatch",
     "FileTypeDeclaration",
-    "FrictionEstimate",
-    "GlobalConfig",
-    "InitResult",
     "JudgmentRequest",
     "JudgmentResponse",
     "Level",
     "PatternConfidence",
-    "PendingSemantic",
-    "ProjectConfig",
     "Rule",
-    "RuleResult",
     "RuleType",
-    "ScanDelta",
     "Severity",
-    "Tier",
-    "UpdateResult",
-    "ValidationResult",
     "Violation",
 ]

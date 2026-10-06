@@ -5,12 +5,13 @@ title: Layered Content Structure
 category: structure
 type: mechanical
 severity: medium
+depends_on: [CORE:S:0002]
 backed_by: [developer-context-cursor-study, lost-in-the-middle-long-contexts, spec-writing-for-agents]
-match: {format: freeform}
+match: {type: [main, override, agents_md, legacy_cursorrules, cross_read, system_prompt], cardinality: [singleton, chain]}
 ---
 # Layered Content Structure
 
-Instruction content must be organized with at least two top-level headings for major topics. This lets the agent quickly find relevant sections instead of scanning a flat wall of text.
+The agent's main instruction file must be organized with at least two top-level headings for major topics. This lets the agent quickly find relevant sections instead of scanning a flat wall of text.
 
 ## Antipatterns
 

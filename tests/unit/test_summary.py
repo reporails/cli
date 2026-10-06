@@ -23,12 +23,16 @@ def _result(
     files: dict | None = None,
     stats: dict | None = None,
     offline: bool = True,
+    server_error: dict | None = None,
 ) -> dict:
-    return {
+    d = {
         "offline": offline,
         "files": files or {},
         "stats": stats or {"errors": 0, "warnings": 0},
     }
+    if server_error is not None:
+        d["server_error"] = server_error
+    return d
 
 
 def _file(findings: list[dict]) -> dict:
@@ -175,6 +179,40 @@ class TestFindingsTable:
         assert "\u274c" in md  # error
         assert "\u26a0\ufe0f" in md  # warning/medium
         assert "\U0001f535" in md  # info
+
+
+# ---------------------------------------------------------------------------
+# generate_summary — server_error callout
+# ---------------------------------------------------------------------------
+
+
+class TestServerErrorCallout:
+    """A server rejection/timeout/network failure must be named in the summary —
+    not just read as a silent `Mode | offline` row indistinguishable from a
+    designed offline run."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_no_server_error_no_callout(self):
+        md = generate_summary(_result())
+        assert "Diagnostics server unavailable" not in md
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_rejection_names_the_reason(self):
+        md = generate_summary(
+            _result(server_error={"status": 429, "error": "rate_limit_exceeded", "message": "x", "tier": "free"})
+        )
+        assert "Diagnostics server unavailable" in md
+        assert "rate_limit_exceeded" in md
+        assert "HTTP 429" in md
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_transport_failure_names_the_reason_with_no_status(self):
+        md = generate_summary(_result(server_error={"status": None, "error": "network_error", "message": "x"}))
+        assert "network_error" in md
+        assert "HTTP None" not in md
 
 
 # ---------------------------------------------------------------------------

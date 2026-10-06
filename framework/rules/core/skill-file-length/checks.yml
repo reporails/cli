@@ -7,3 +7,5 @@ checks:
   check: line_count
   args:
     max: 500
+    entry_only: true
+    path: "**/SKILL.md"

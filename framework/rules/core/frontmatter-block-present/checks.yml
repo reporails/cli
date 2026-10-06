@@ -7,3 +7,9 @@ checks:
   pattern-regex: '(?m)\A---\s*\n'
   expect: present
   message: "Missing frontmatter block — start with --- delimited YAML frontmatter"
+- id: CORE.S.0006.frontmatter_reads
+  type: mechanical
+  check: frontmatter_valid_yaml
+  args:
+    lenient: true
+  message: "Frontmatter is not valid YAML — fix the block so it reads as a mapping"

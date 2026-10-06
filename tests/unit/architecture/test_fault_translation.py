@@ -43,6 +43,15 @@ _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
         "_post_payload",
         "json.JSONDecodeError,KeyError,ValueError,TypeError",
     ),
+    # Legitimate tolerant-wire degrade — a malformed `pi` on the remediation wire (contract:
+    # "an absent, null or wrong-shaped key degrades ... never an error") reads as unaddressed
+    # rather than raising.
+    ("src/reporails_cli/core/platform/adapters/workflow_wire.py", "_opt_int", "TypeError,ValueError"),
+    # Legitimate advisory-cache degrade — the rate-limit cooldown only saves a request, so an
+    # absent / unreadable / malformed entry means "no cooldown" (one extra request, never a blocked run).
+    ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "FileNotFoundError"),
+    ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "OSError,ValueError"),
+    ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "active_cooldown", "KeyError,TypeError,ValueError"),
     # Grandfathered debt — collapses a load fault to an empty result. TODO: raise a typed fault.
     (
         "src/reporails_cli/core/platform/adapters/registry.py",

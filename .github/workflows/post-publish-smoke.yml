@@ -9,24 +9,43 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  get-version:
+    name: Resolve the released version
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Read the released pyproject.toml version
+        id: v
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   smoke-pypi:
     name: "Smoke: pip install from PyPI (${{ matrix.os }})"
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: get-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Wait for PyPI propagation + install
+      - name: Wait for PyPI propagation + install the released version
         shell: bash
         run: |
           for i in 1 2 3 4 5 6; do
-            if pip install reporails-cli --quiet 2>/dev/null; then break; fi
+            if pip install "reporails-cli==$VERSION" --quiet 2>/dev/null; then break; fi
             echo "Waiting for PyPI propagation (attempt $i)..."
             sleep 30
           done
@@ -36,24 +55,45 @@ jobs:
         run: |
           ails version
           python -c "
-          from reporails_cli.bundled import get_models_path
-          onnx = get_models_path() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
+          from reporails_cli.bundled import ensure_models_available
+          onnx = ensure_models_available() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
           assert onnx.exists(), f'ONNX model missing: {onnx}'
           print(f'OK: {onnx.stat().st_size // 1024 // 1024} MB')
           "
           mkdir -p smoke-project
-          echo "# Test Project" > smoke-project/CLAUDE.md
-          ails check smoke-project -f json
+          cat > smoke-project/CLAUDE.md << 'FIXTURE'
+          # My Project
+
+          Use `npm run build` to build the project.
+
+          NEVER commit secrets or API keys.
+          FIXTURE
+          cd smoke-project
+          ails check . -f json > result.json
+          cat result.json
+          python -c "
+          import json
+          d = json.load(open('result.json'))
+          n = d.get('stats', {}).get('client_check_count', 0)
+          assert n > 0, f'client_check_count={n} (expected > 0)'
+          print(f'client_check_count={n}')
+          "
 
   smoke-uvx:
     name: "Smoke: uvx ephemeral install (${{ matrix.os }})"
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: get-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
     steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
@@ -62,7 +102,7 @@ jobs:
         shell: bash
         run: |
           for i in 1 2 3 4 5 6; do
-            if uvx --from reporails-cli ails version 2>/dev/null; then break; fi
+            if uvx --from "reporails-cli==$VERSION" ails version 2>/dev/null; then break; fi
             echo "Waiting for PyPI propagation (attempt $i)..."
             sleep 30
           done
@@ -70,20 +110,41 @@ jobs:
       - name: Verify uvx + smoke check
         shell: bash
         run: |
-          uvx --from reporails-cli ails version
+          uvx --from "reporails-cli==$VERSION" ails version
           mkdir -p smoke-project
-          echo "# Test Project" > smoke-project/CLAUDE.md
-          uvx --from reporails-cli ails check smoke-project -f json
+          cat > smoke-project/CLAUDE.md << 'FIXTURE'
+          # My Project
+
+          Use `npm run build` to build the project.
+
+          NEVER commit secrets or API keys.
+          FIXTURE
+          cd smoke-project
+          uvx --from "reporails-cli==$VERSION" ails check . -f json > result.json
+          cat result.json
+          python -c "
+          import json
+          d = json.load(open('result.json'))
+          n = d.get('stats', {}).get('client_check_count', 0)
+          assert n > 0, f'client_check_count={n} (expected > 0)'
+          print(f'client_check_count={n}')
+          "
 
   smoke-npx:
     name: "Smoke: npx @reporails/cli (${{ matrix.os }})"
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: get-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
     steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -96,7 +157,7 @@ jobs:
         shell: bash
         run: |
           for i in 1 2 3 4 5 6; do
-            if npx --yes @reporails/cli version 2>/dev/null; then break; fi
+            if npx --yes "@reporails/cli@$VERSION" version 2>/dev/null; then break; fi
             echo "Waiting for npm propagation (attempt $i)..."
             sleep 20
           done
@@ -104,7 +165,22 @@ jobs:
       - name: Verify npx + smoke check
         shell: bash
         run: |
-          npx --yes @reporails/cli version
+          npx --yes "@reporails/cli@$VERSION" version
           mkdir -p smoke-project
-          echo "# Test Project" > smoke-project/CLAUDE.md
-          npx --yes @reporails/cli check smoke-project -f json
+          cat > smoke-project/CLAUDE.md << 'FIXTURE'
+          # My Project
+
+          Use `npm run build` to build the project.
+
+          NEVER commit secrets or API keys.
+          FIXTURE
+          cd smoke-project
+          npx --yes "@reporails/cli@$VERSION" check . -f json > result.json
+          cat result.json
+          python -c "
+          import json
+          d = json.load(open('result.json'))
+          n = d.get('stats', {}).get('client_check_count', 0)
+          assert n > 0, f'client_check_count={n} (expected > 0)'
+          print(f'client_check_count={n}')
+          "

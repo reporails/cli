@@ -6,41 +6,49 @@ category: structure
 type: deterministic
 severity: low
 backed_by: []
-match: {type: main}
-source: https://docs.github.com/copilot/how-tos/agents/copilot-coding-agent/best-practices-for-using-copilot-to-work-on-tasks
+match: {type: coding_agent_setup}
+source: https://docs.github.com/en/copilot/how-tos/agents/copilot-coding-agent/customizing-the-development-environment-for-copilot-coding-agent
 ---
 
 # Setup Steps Defined
 
-Copilot Coding Agent projects SHOULD define a `steps:` array in their configuration to specify workspace setup commands. These steps run before the agent starts working — without them, the agent may fail on projects that require dependency installation, database setup, or build steps.
+A Copilot Coding Agent project that ships `.github/workflows/copilot-setup-steps.yml` SHOULD define its job with the exact id `copilot-setup-steps`. The docs state the job "MUST be called `copilot-setup-steps` or it will not be picked up by Copilot" — any other job id in that file is silently ignored, and the agent starts working without the environment the workflow was meant to prepare.
 
 ## Antipatterns
 
-- **Setup in prose, not in `steps:`.** Writing "Run `npm install` first" in natural language instead of defining a structured `steps:` array. Copilot Coding Agent executes the `steps:` array automatically — prose instructions require the agent to interpret and may be skipped.
-- **Missing build step.** Defining `steps:` with only `npm install` but omitting `npm run build`. The agent starts working on a project that isn't built, leading to false failures.
-- **Steps without names.** Defining command entries without `name:` fields. Names appear in the agent's execution log and help diagnose which setup step failed.
+- **Wrong job id.** Naming the job `setup`, `install`, or anything other than `copilot-setup-steps`. Copilot never runs it.
+- **Setup steps only in prose.** Documenting "Run `npm install` first" in a Markdown instructions file instead of the workflow. Copilot's coding agent executes this specific workflow automatically; prose elsewhere requires the agent to interpret it and may be skipped.
+- **Workflow not on the default branch.** The file only takes effect once it exists on the repository's default branch.
 
 ## Pass / Fail
 
 ### Pass
 
 ```yaml
-steps:
-  - name: install
-    command: npm install
-  - name: build
-    command: npm run build
+name: "Copilot Setup Steps"
+on:
+  workflow_dispatch:
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm install
 ```
 
 ### Fail
 
-```markdown
-# Project Setup
-
-Run npm install to get started.
+```yaml
+name: "Copilot Setup Steps"
+on:
+  workflow_dispatch:
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm install
 ```
 
 ## Limitations
 
-Checks for the presence of a `steps:` key in the file. Does not validate that individual step entries have valid `name` and `command` fields.
+Checks for the exact job id `copilot-setup-steps` in the workflow file. Does not validate the job's `steps:`, `permissions`, or other content.
 

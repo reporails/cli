@@ -7,6 +7,7 @@ type: mechanical
 severity: medium
 backed_by: []
 match: {type: memory}
+requires_capability: memory
 source: https://code.claude.com/docs/en/memory#auto-memory
 ---
 

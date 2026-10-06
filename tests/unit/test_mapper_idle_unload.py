@@ -5,21 +5,21 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.mapper import daemon
-from reporails_cli.core.mapper.models import _UNSET, Models
+from reporails_cli.core.mapper.models import Models
 from reporails_cli.interfaces.mcp import server
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_unload_resets_loaded_models() -> None:
+def test_unload_resets_loaded_model() -> None:
+    # unload() must drop the resident ONNX embedder so its memory is reclaimed;
+    # the next `.st` access reloads. Idempotent — safe to call when nothing is loaded.
     models = Models()
     models._st = object()  # stand in for a loaded embedder
-    models._nlp = object()  # stand in for a loaded spaCy pipeline
-
     models.unload()
-
     assert models._st is None
-    assert models._nlp is _UNSET
+    models.unload()  # no-op when already unloaded
+    assert models._st is None
 
 
 @pytest.mark.unit

@@ -1,1 +1,1 @@
-{ "type": "command", "command": "$CURSOR_PROJECT_DIR/lint.sh" }
+{ "hooks": { "preToolUse": [{ "type": "command", "command": "$CURSOR_PROJECT_DIR/lint.sh" }] } }

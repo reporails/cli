@@ -5,13 +5,14 @@
 # Targets AGENTS.md — the cross-agent instruction standard.
 # Spec: https://agents.md
 #
-# Synced from .claude/skills/audit-agent/assets/registry/generic/config.yml
 # Last verified: 2026-05-06
 
 agent: generic
 version: "0.5.0"
 name: Generic AI Instructions
 core: true
+home_dir: .agents  # the folder holding the agent's own files; a path inside it points at this agent
+shared_names: [AGENTS.md]  # root file names every agent reads; one of them points at no agent
 
 file_types:
   main:
@@ -61,12 +62,15 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".agents/skills/**/SKILL.md"]
+        patterns: [".agents/skills/**/*.md"]
+        # The Agent Skills spec documents only <skills root>/<skill-name>/SKILL.md (one level).
+        entry_patterns: [".agents/skills/*/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.agents/skills/**/SKILL.md"]
+        patterns: ["~/.agents/skills/**/*.md"]
+        entry_patterns: ["~/.agents/skills/*/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human

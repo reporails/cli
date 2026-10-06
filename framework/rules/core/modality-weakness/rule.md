@@ -7,12 +7,6 @@ type: mechanical
 execution: server
 severity: high
 match: {}
-fix: |
-  Replace hedged language with imperative or absolute modality.
-  "consider using" → "use"; "you might want to" → drop; "perhaps run" →
-  "run". For prohibitions: "try not to" → "do not"; "avoid" → "never".
-  Hedged instructions are treated as optional — the model follows them
-  inconsistently. Be direct.
 ---
 
 # Modality Weakness
@@ -23,7 +17,7 @@ Hedged instructions ("should", "try to", "consider", "prefer") couple significan
 
 - Writing "You should run tests before merging" instead of "Run tests before merging" -- hedged modality reduces compliance compared to direct imperatives.
 - Using "Consider using `ruff` for formatting" when the intent is mandatory -- "consider" signals optional guidance, so the agent may skip it entirely.
-- Prefixing constraints with "Try to avoid" instead of "Do not" or "NEVER" -- the softer phrasing undercuts the constraint's force.
+- Prefixing constraints with "Try to avoid" instead of "Do not" -- the softer phrasing undercuts the constraint's force.
 - Reserving hedges like "prefer" for hard requirements -- "Prefer X over Y" reads as a suggestion, not a mandate.
 
 ## Pass / Fail
@@ -32,7 +26,7 @@ Hedged instructions ("should", "try to", "consider", "prefer") couple significan
 
 ~~~~markdown
 Run `uv run pytest` before every commit.
-ALWAYS use `ruff` for formatting.
+Use `ruff` for formatting.
 Do not modify generated files in `dist/`.
 ~~~~
 
@@ -43,12 +37,6 @@ You should run tests before merging.
 Consider using `ruff` for formatting.
 Try to avoid modifying generated files.
 ~~~~
-
-## Fix
-
-Replace "You should run tests before merging" with "Run tests before
-merging" (direct) or "ALWAYS run tests before merging" (absolute). Reserve hedging for
-genuinely optional guidance.
 
 ## Limitations
 

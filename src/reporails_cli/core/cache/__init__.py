@@ -1,4 +1,4 @@
-"""Caching system — project-local cache and hash functions for cache invalidation."""  # pylint: disable=too-many-lines
+"""Caching system — project-local cache and hash functions for cache invalidation."""
 
 from __future__ import annotations
 
@@ -9,18 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-# Re-exports for backward compatibility (explicit re-export via `as` for mypy)
-from reporails_cli.core.platform.observability.analytics import AnalyticsEntry as AnalyticsEntry
-from reporails_cli.core.platform.observability.analytics import ProjectAnalytics as ProjectAnalytics
-from reporails_cli.core.platform.observability.analytics import get_analytics_dir as get_analytics_dir
-from reporails_cli.core.platform.observability.analytics import get_git_remote as get_git_remote
-from reporails_cli.core.platform.observability.analytics import get_previous_scan as get_previous_scan
-from reporails_cli.core.platform.observability.analytics import get_project_analytics_path as get_project_analytics_path
-from reporails_cli.core.platform.observability.analytics import get_project_id as get_project_id
-from reporails_cli.core.platform.observability.analytics import get_project_name as get_project_name
-from reporails_cli.core.platform.observability.analytics import load_project_analytics as load_project_analytics
-from reporails_cli.core.platform.observability.analytics import record_scan as record_scan
-from reporails_cli.core.platform.observability.analytics import save_project_analytics as save_project_analytics
+from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.classify import CONSTRAINT_WORDS
+from reporails_cli.core.mapper.structure import read_structure
+from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 
 def content_hash(path: Path) -> str:
@@ -65,24 +57,32 @@ def rules_fingerprint(rules_paths: list[Path]) -> str:
     return fp
 
 
+def _structural_lines(text: str) -> list[str]:
+    """Headings, list items and constraint-word lines of markdown ``text``, read from its structure."""
+    lines = strip_frontmatter(text, keep_lines=True).split("\n")
+    structure = read_structure(text)
+    headings = set(structure.headings)
+    items = {line for line, _ in structure.list_items}
+    fenced = {n for line, body in structure.fences for n in range(line, line + body.count("\n") + 2)}
+    out: list[str] = []
+    for n, raw in enumerate(lines, start=1):
+        stripped = raw.strip()
+        if n in headings:
+            out.append(stripped)
+        elif n in items:
+            out.append(f"- {stripped.lstrip('-*+ ')}".strip())
+        elif n not in fenced and any(word in stripped for word in CONSTRAINT_WORDS):
+            out.append(stripped)
+    return out
+
+
 def structural_hash(path: Path) -> str:
     """Hash of semantic-relevant structure: headings, constraint lines, list items.
 
     Cosmetic edits (whitespace, prose) keep the same structural hash, allowing
     cached semantic verdicts to survive as stale-but-usable.
     """
-    lines = path.read_text(encoding="utf-8").splitlines()
-    structural_lines = [
-        line.strip()
-        for line in lines
-        if line.strip().startswith("#")
-        or "MUST" in line
-        or "NEVER" in line
-        or "ALWAYS" in line
-        or "IMPORTANT" in line
-        or line.strip().startswith("- ")
-    ]
-    blob = "\n".join(structural_lines).encode("utf-8")
+    blob = "\n".join(_structural_lines(path.read_text(encoding="utf-8"))).encode("utf-8")
     return "struct:" + hashlib.sha256(blob).hexdigest()[:16]
 
 
@@ -313,7 +313,7 @@ def cache_violation_dismissal(target: Path, violation: Any) -> None:
     )
 
 
-def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disable=too-many-locals
+def cache_judgments(target: Path, judgments: list[Any]) -> int:
     """Cache semantic judgment verdicts for a project."""
     from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
 
@@ -339,13 +339,13 @@ def cache_judgments(target: Path, judgments: list[Any]) -> int:  # pylint: disab
 
         # Strip line number from location to get file path
         file_path = location.rsplit(":", 1)[0] if ":" in location else location
-        full_path = (target / file_path).resolve()
+        full_path = safe_resolve(target / file_path)
 
         # Guard: file must exist and be within the target directory
         if not full_path.exists():
             continue
         try:
-            file_path = full_path.relative_to(target.resolve()).as_posix()
+            file_path = full_path.relative_to(safe_resolve(target)).as_posix()
         except ValueError:
             continue  # Path traversal -- outside project root
 

@@ -4,14 +4,14 @@ slug: descriptive-filenames
 title: Descriptive Filenames
 category: structure
 type: mechanical
-severity: high
+severity: medium
 backed_by: [awesome-copilot-meta-instructions, instruction-limits-principles, microsoft-awesome-copilot-blog,
   rules-directory-mechanics, spec-writing-for-agents]
-match: {type: scoped_rule}
+match: {type: rules}
 ---
 # Descriptive Filenames
 
-Scoped rule files must use lowercase kebab-case filenames ending in `.md`, `.yml`, or `.yaml`. Consistent naming lets developers predict file content from the filename and prevents platform-specific path issues.
+Scoped rule files must use lowercase kebab-case filenames ending in `.md`, `.mdc`, `.yml`, or `.yaml`. Consistent naming lets developers predict file content from the filename and prevents platform-specific path issues.
 
 ## Antipatterns
 
@@ -27,6 +27,7 @@ Scoped rule files must use lowercase kebab-case filenames ending in `.md`, `.yml
 .claude/rules/self-check.md
 .claude/rules/testing-design.md
 .claude/rules/no-unverified-claims.md
+.cursor/rules/testing.mdc
 ~~~~
 
 ### Fail

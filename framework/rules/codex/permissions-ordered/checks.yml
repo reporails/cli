@@ -1,0 +1,11 @@
+checks:
+- id: CODEX.G.0001.config-file-exists
+  type: mechanical
+  check: file_exists
+  replaces: CORE.G.0003.config-file-exists
+- id: CODEX.G.0001.has-permission-structure
+  type: deterministic
+  expect: present
+  replaces: CORE.G.0003.has-permission-structure
+  message: No access policy found in Codex configuration — set approval_policy or sandbox_mode
+  pattern-regex: '(?m)^[ 	]*(?:[A-Za-z0-9_"''-]+[ 	]*\.[ 	]*)*(?:approval_policy|sandbox_mode)[ 	]*='

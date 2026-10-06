@@ -4,7 +4,7 @@ slug: project-description-present
 title: Project Description Present
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
   awesome-copilot-meta-instructions, claude-md-guide, developer-context-cursor-study,
   evaluating-agents-md, instruction-limits-principles, microsoft-awesome-copilot-blog,
@@ -17,9 +17,9 @@ The root instruction file must describe the project — what it does and who it'
 
 ## Antipatterns
 
-- **Jumping straight to commands.** A root file that starts with `## Commands` and lists CLI invocations but never describes what the project is. The check looks for a heading matching "Description", "About", or "Overview".
-- **Description buried under a non-matching heading.** Writing the project description under `## Background` or `## Context` does not match the expected heading terms. Use "Description", "About", or "Overview" as the heading.
-- **Project name as the only heading.** A single `# My Project` heading with commands underneath does not satisfy the check. The file needs a dedicated description section under one of the matching heading terms.
+- **Jumping straight to commands.** A root file that starts with `## Commands` and lists CLI invocations but never describes what the project is. The check looks for a heading matching "Description", "About", or "Overview", or a description under the title.
+- **Description buried under a non-matching heading.** Writing the project description under `## Background` or `## Context`, after the first section, does not count. Put it directly under the title, or use "Description", "About", or "Overview" as the heading.
+- **Project name with nothing under it.** A `# My Project` title followed straight by commands or instructions does not describe the project. Add a sentence under the title that says what the project is and who it is for.
 
 ## Pass / Fail
 
@@ -50,4 +50,4 @@ AI instruction validator for coding agents.
 
 ## Limitations
 
-Checks for a heading containing "Description", "About", or "Overview". Does not evaluate whether the description accurately represents the project.
+Accepts a heading containing "Description", "About", or "Overview", or a descriptive paragraph, blockquote, or list of five or more words under the title, before the first section heading and before the first instruction. An instruction-shaped sentence does not count as a description. Does not evaluate whether the description accurately represents the project.

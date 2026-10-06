@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import shutil
 from collections import Counter
+from collections.abc import Callable, Iterable
 from functools import lru_cache
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PurePosixPath
+from typing import Any, NamedTuple
+
+from reporails_cli.core.classify.file_tags import classify_file
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
 
@@ -23,22 +26,24 @@ AGGREGATE_RULES = {
     "CORE:E:0004",
     "CORE:C:0043",
     "CORE:E:0003",
+    "CORE:C:0058",
     # Server diagnostics — interaction
     "CORE:C:0041",
     "CORE:C:0044",
     "CORE:C:0046",
     "CORE:C:0047",
     "CORE:D:0002",
+    "CORE:D:0003",
     "CORE:C:0051",
     "CORE:C:0050",
+    "CORE:C:0052",
     "CORE:C:0040",
+    "CORE:S:0039",
+    "CORE:C:0060",
     # Client check labels
     "format",
     "bold",
-    "orphan",
     "heading_instruction",
-    "ordering",
-    "scope",
     # Classifier confidence
     "ambiguous_charge",
 }
@@ -46,44 +51,50 @@ AGGREGATE_RULES = {
 AGGREGATE_LABELS: dict[str, str] = {
     "CORE:C:0042": "vague",
     "CORE:E:0004": "brief",
+    "CORE:C:0058": "packed",
     "CORE:C:0043": "weak",
     "CORE:E:0003": "bold issues",
-    "CORE:C:0041": "diluted",
-    "CORE:C:0044": "overloaded",
+    "CORE:C:0041": "excess context",
+    "CORE:C:0044": "overlapping",
     "CORE:C:0046": "conflicting",
     "CORE:C:0047": "buried",
     "CORE:D:0002": "unbalanced",
+    "CORE:D:0003": "out of order",
     "CORE:C:0051": "weak overall",
-    "CORE:C:0050": "low coverage",
+    "CORE:C:0050": "context near vague",
+    "CORE:C:0052": "default wins",
     "CORE:C:0040": "redundant",
     "format": "unformatted",
     "bold": "bold",
-    "orphan": "orphan",
     "heading_instruction": "heading as instruction",
-    "ordering": "misordered",
-    "scope": "broad scope",
+    "CORE:C:0060": "broad scope",
     "ambiguous_charge": "ambiguous",
 }
+
+# Rule ids counted under another aggregate key: the heading rule's findings are grouped under
+# the short heading label.
+AGGREGATE_KEY = {"CORE:S:0039": "heading_instruction"}
 
 AGG_ORDER = [
     "CORE:C:0042",
     "CORE:E:0004",
+    "CORE:C:0058",
     "CORE:C:0043",
     "format",
     "CORE:E:0003",
     "bold",
-    "ordering",
-    "orphan",
     "heading_instruction",
-    "scope",
+    "CORE:C:0060",
     "ambiguous_charge",
     "CORE:C:0044",
     "CORE:C:0041",
     "CORE:C:0047",
     "CORE:D:0002",
+    "CORE:D:0003",
     "CORE:C:0046",
     "CORE:C:0051",
     "CORE:C:0050",
+    "CORE:C:0052",
     "CORE:C:0040",
 ]
 
@@ -91,15 +102,18 @@ SEV_WEIGHT = {"error": 0, "warning": 1, "info": 2}
 HRULE = "\u2500" * 56
 
 HINT_TYPE_LABELS = {
-    "CORE:C:0044": "topic overload",
+    "CORE:C:0044": "topic overlap",
     "CORE:C:0047": "buried instructions",
     "CORE:C:0046": "conflicts",
     "CORE:C:0041": "content dilution",
     "CORE:C:0051": "vague overall",
     "CORE:D:0002": "unbalanced topics",
-    "CORE:C:0050": "low named coverage",
-    "CORE:C:0053": "isolated instructions",
+    "CORE:D:0003": "prohibitions out of order",
+    "CORE:C:0050": "vague instructions amid context",
+    "CORE:C:0052": "topics the default wins",
+    "CORE:C:0053": "weak instructions",
     "CORE:C:0040": "repetition",
+    "CORE:C:0059": "ambiguous phrasing",
 }
 
 HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
@@ -109,10 +123,7 @@ HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
 CLIENT_CHECK_RULE_ID = {
     "format": "CORE:E:0003",
     "bold": "CORE:E:0003",
-    "ordering": "CORE:D:0003",
-    "scope": "CORE:C:0048",
     "heading_instruction": "CORE:S:0039",
-    "orphan": "CORE:C:0053",
 }
 
 
@@ -147,6 +158,38 @@ def rule_docs_url(rule_id: str) -> str | None:
     return f"{_RULE_DOCS_BASE}/{agent}/{slug}"
 
 
+@lru_cache(maxsize=1)
+def _rule_title_map() -> dict[str, str]:
+    """`{rule_id: title}` from the bundled framework registry, loaded once per process."""
+    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+
+    try:
+        return {r.id: r.title for r in load_all_rules() if r.title}
+    except (OSError, ValueError):
+        return {}
+
+
+def rule_title(rule_id: str) -> str:
+    """The registry title of a canonical rule ID, or an empty string when none is known."""
+    return _rule_title_map().get(rule_id, "")
+
+
+def rule_label(rule_id: str) -> dict[str, str] | None:
+    """`{"title": ..., "url": ...}` for a canonical rule ID — a coding agent's label for a
+    bare rule code. `url` is omitted when unresolvable; `None` when neither title nor url
+    resolves (e.g. an unknown/retired rule ID)."""
+    title = _rule_title_map().get(rule_id)
+    url = rule_docs_url(rule_id)
+    if not title and not url:
+        return None
+    entry: dict[str, str] = {}
+    if title:
+        entry["title"] = title
+    if url:
+        entry["url"] = url
+    return entry
+
+
 def linked_rule_id(rule: str) -> str:
     """Rule token as a Rich hyperlink to its docs page; plain canonical ID if unresolvable."""
     rule_id = display_rule_id(rule)
@@ -154,10 +197,16 @@ def linked_rule_id(rule: str) -> str:
     return f"[link={url}]{rule_id}[/link]" if url else rule_id
 
 
+# A rule a suppression directive may also name by its short token, as it has always been written.
+SHORT_TOKEN = {"CORE:S:0039": "heading_instruction"}
+
+
 def rule_aliases(rule: str) -> set[str]:
     """Every name a suppression directive may use for a finding's rule: raw token, canonical ID, slug."""
     canon = display_rule_id(rule)
     names = {rule, canon}
+    if canon in SHORT_TOKEN:
+        names.add(SHORT_TOKEN[canon])
     slug = _rule_slug_map().get(canon)
     if slug:
         names.add(slug)
@@ -166,23 +215,17 @@ def rule_aliases(rule: str) -> set[str]:
 
 # ── File classification lookup tables ─────────────────────────────────
 
-_CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))
-# Case-sensitive — matches agent specs (CLAUDE.md, AGENTS.md uppercase per
-# Codex source `DEFAULT_AGENTS_MD_FILENAME = "AGENTS.md"` and the agents.md
-# spec). Wrong-case copies (e.g. `agents.md` lowercase in skill assets) are
-# not real instruction files.
-_MAIN_NAMES = frozenset(("CLAUDE.md", "AGENTS.md", ".cursorrules", ".windsurfrules", "copilot-instructions.md"))
-
-_TYPE_ORDER = ["main", "nested", "rule", "skill", "agent", "config", "memory", "file"]
-_TYPE_PLURALS = {
-    "main": "main",
-    "nested": "nested",
-    "rule": "rules",
-    "skill": "skills",
-    "agent": "agents",
-    "config": "configs",
-    "memory": "memory",
-    "file": "files",
+_TYPE_ORDER = ["main", "nested", "rules", "skills", "agents", "config", "memory", "file"]
+# A tag's count label: (one, many).
+_TYPE_LABELS = {
+    "main": ("main", "main"),
+    "nested": ("nested", "nested"),
+    "rules": ("rule", "rules"),
+    "skills": ("skill", "skills"),
+    "agents": ("agent", "agents"),
+    "config": ("config", "configs"),
+    "memory": ("memory", "memory"),
+    "file": ("file", "files"),
 }
 
 # ── Small utility functions ────────────────────────────────────────────
@@ -207,54 +250,26 @@ def truncate(text: str, max_len: int) -> str:
     return text[: max_len - 1] + "\u2026"
 
 
-def classify_file(filepath: str) -> str:
-    """Classify a file path into a human-readable type tag."""
-    p = Path(filepath)
-    name = p.name
-    parts = p.parts
-
-    # Check structural directories first
-    if "skills" in parts and name == "SKILL.md":
-        idx = parts.index("skills")
-        return f"skill:{parts[idx + 1]}" if idx + 1 < len(parts) - 1 else "skill"
-    if "agents" in parts and name.endswith(".md"):
-        return f"agent:{p.stem}"
-    if "rules" in parts and name.endswith(".md"):
-        return f"rule:{p.stem}"
-
-    # Check name-based and directory-based categories
-    tag = _classify_by_name(name, parts)
-    return tag if tag else "file"
-
-
-def _classify_by_name(name: str, parts: tuple[str, ...]) -> str:
-    """Classify by filename or directory membership. Returns empty string if unrecognized."""
-    if name in _CONFIG_NAMES:
-        return "config"
-    if "memory" in parts:
-        return "memory"
-    # Case-sensitive — matches discovery (walk_glob) and agent specs.
-    # Wrong-case copies (e.g. `agents.md` lowercase) are not instruction files.
-    if name in _MAIN_NAMES:
-        # Files at the project root are `main`; subdirectory copies of the
-        # same filename are `nested` (per scope: nested in agent.schema.yml).
-        # `parts` for a relative path like `tests/CLAUDE.md` has length 2;
-        # a root-level `CLAUDE.md` has length 1.
-        return "main" if len(parts) <= 1 else "nested"
-    return ""
-
-
-def friendly_name(filepath: str, tag: str) -> str:
+def friendly_name(filepath: str, tag: str, skill_dir: str | None = None) -> str:
     """Extract a friendly display name from the tag. Falls back to filename.
 
     For `nested` files (subdirectory copies of CLAUDE.md / AGENTS.md /
     GEMINI.md), return the FULL relative path so users can locate the file
     — `web/CLAUDE.md` alone is ambiguous when the file actually lives at
-    `packages/web/CLAUDE.md`.
+    `packages/web/CLAUDE.md`. A skill's own `SKILL.md` is named for the skill; every other
+    file in it (`skill_dir` is the skill's directory), a deeper `SKILL.md` included, shows
+    its path inside the skill folder (`ails/workflows/heal.md`).
     """
+    p = Path(filepath)
+    if skill_dir:
+        try:
+            inside = PurePosixPath(filepath).relative_to(skill_dir).as_posix()
+        except ValueError:
+            inside = ""
+        if inside not in ("", ".", "SKILL.md"):
+            return f"{PurePosixPath(skill_dir).name}/{inside}"
     if ":" in tag:
         return tag.split(":", 1)[1]
-    p = Path(filepath)
     if tag == "nested" and not p.is_absolute():
         # Show the full relative path for nested files so the user can find them
         return p.as_posix()
@@ -272,36 +287,197 @@ def short_path(file_path: str) -> str:
             rel = p.relative_to(home).as_posix()
             if "memory" in p.parts:
                 idx = p.parts.index("memory")
-                return "~/" + str(Path(*p.parts[idx:]))
+                return "~/" + PurePosixPath(*p.parts[idx:]).as_posix()
             return "~/" + rel
         except ValueError:
             pass
     parts = p.parts
     if "memory" in parts:
         idx = parts.index("memory")
-        return str(Path(*parts[idx:]))
+        return PurePosixPath(*parts[idx:]).as_posix()
     for i, part in enumerate(parts):
         if part in (".claude", "tests"):
-            return str(Path(*parts[i:]))
+            return PurePosixPath(*parts[i:]).as_posix()
         if part.endswith(".md") and part[:1].isupper():
-            return str(Path(*parts[i:]))
+            return PurePosixPath(*parts[i:]).as_posix()
     return p.name
 
 
-def file_type_summary(filepaths: set[str]) -> str:
-    """Build a compact type breakdown like '1 main, 8 rules, 3 skills'."""
+def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
+    """Project-relative path of each file in a skill -> its skill folder (project-relative).
+
+    Reads the skill each file record carries, and each slot folder of a one-level skills root as
+    its own skill; a file with none is a plain file. `None` when there is no ruleset map (the
+    path-based tags then decide); empty when the map carries no skills.
+    """
+    from reporails_cli.core.mapper.skills import skill_membership
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    membership = skill_membership(ruleset_map, project_root)
+    if membership is None:
+        return None
+    return {
+        normalize_finding_path(path, project_root): normalize_finding_path(folder, project_root)
+        for path, folder in membership.items()
+    }
+
+
+class Element(NamedTuple):
+    """A harness element a file belongs to: `key` is its identity (the skill folder, else the file), `name` its
+    display name, `kind` skill / agent / rule / command (empty for any other file), `where` its location."""
+
+    key: str
+    name: str
+    kind: str
+    where: str
+
+    @property
+    def base(self) -> str:
+        """The name as written: a command carries its slash."""
+        return f"/{self.name}" if self.kind == "command" else self.name
+
+    @property
+    def label(self) -> str:
+        return f"{self.base} ({self.kind})" if self.kind else self.base
+
+
+def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str], Element]:
+    """Resolve a file to the harness element it belongs to.
+
+    A file in a skill folder is that skill (every file of the folder is one element); an agent
+    definition, rule file and command are named by their file stem, by the type the ruleset map
+    records for the file. Any other file is named by its project-relative path.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    root = project_root if project_root is not None else Path.cwd()
+    skill_of = skill_lookup(ruleset_map, root) or {}
+    type_by_path = {normalize_finding_path(fr.path, root): fr.type for fr in getattr(ruleset_map, "files", ())}
+    kinds = {"agents": "agent", "rules": "rule", "commands": "command"}
+    from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
+
+    def element(path: str) -> Element:
+        norm = normalize_finding_path(path, root)
+        folder = skill_of.get(norm)
+        if folder:
+            return Element(folder, PurePosixPath(folder).name, "skill", folder)
+        ftype = type_by_path.get(norm, "")
+        if ftype in MEMORY_SURFACES:
+            index = PurePosixPath(norm).name == MEMORY_INDEX_FILENAME
+            return Element(
+                norm,
+                MEMORY_INDEX_FILENAME if index else PurePosixPath(norm).stem,
+                "memory index" if index else "memory",
+                norm,
+            )
+        if kind := kinds.get(ftype):
+            return Element(norm, PurePosixPath(norm).stem, kind, norm)
+        outside = PurePosixPath(norm).is_absolute() or project_root is None
+        return Element(norm, short_path(path) if outside else norm, "", norm)
+
+    return element
+
+
+def partner_list(partners: list[str], limit: int = 3) -> str:
+    """A summary line's partners, the first `limit` named and the rest counted."""
+    more = [f"+{len(partners) - limit} more"] if len(partners) > limit else []
+    return ", ".join([*partners[:limit], *more])
+
+
+def partner_resolver(result: Any, project_root: Path) -> Callable[[str, str], str]:
+    """Resolve the shortened file name a server overlap message carries to the partner's full path.
+
+    The name is looked up among the overlap pairs that include the card's file; exactly one path equal to
+    the name, or ending in `/<name>`, resolves it; anything else leaves the name as sent.
+    """
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
+
+    partners: dict[str, set[str]] = {}
+    for left, right in overlapping_pairs(result.cross_file, getattr(result, "cross_file_coordinates", ())):
+        l_norm, r_norm = normalize_finding_path(left, project_root), normalize_finding_path(right, project_root)
+        partners.setdefault(l_norm, set()).add(r_norm)
+        partners.setdefault(r_norm, set()).add(l_norm)
+
+    def resolve(filepath: str, name: str) -> str:
+        found = {
+            p
+            for p in partners.get(normalize_finding_path(filepath, project_root), ())
+            if p == name or p.endswith("/" + name)
+        }
+        return found.pop() if len(found) == 1 else name
+
+    return resolve
+
+
+def element_labels(elements: Iterable[Element]) -> dict[str, str]:
+    """Display label per element identity; two identities sharing a label each add their location."""
+    by_key = {e.key: e for e in elements}
+    shared = Counter(e.label for e in by_key.values())
+    return {
+        k: e.label if shared[e.label] == 1 else f"{e.base} ({e.kind + ', ' if e.kind else ''}{e.where})"
+        for k, e in by_key.items()
+    }
+
+
+def group_element_pairs(pairs: list[tuple[Element, Element]]) -> list[tuple[str, list[str]]]:
+    """Collapse element pairs (heaviest first) and group them: one `(head, partners)` per element.
+
+    Pairs are keyed on element identity; a pair inside one element is dropped. A pair joins the
+    group of an element that already heads one; otherwise its first element heads a new group, so
+    no pair is listed twice. A partner of its head's kind drops the kind suffix.
+    """
+    label = element_labels(e for pair in pairs for e in pair)
+    seen: set[frozenset[str]] = set()
+    heads: dict[str, Element] = {}
+    groups: dict[str, list[Element]] = {}
+    for left, right in pairs:
+        key = frozenset((left.key, right.key))
+        if len(key) < 2 or key in seen:
+            continue
+        seen.add(key)
+        head, partner = (right, left) if right.key in groups and left.key not in groups else (left, right)
+        heads[head.key] = head
+        groups.setdefault(head.key, []).append(partner)
+
+    def partner_text(head: Element, p: Element) -> str:
+        return p.base if p.kind == head.kind and label[p.key] == p.label else label[p.key]
+
+    return [(label[k], [partner_text(heads[k], p) for p in ps]) for k, ps in groups.items()]
+
+
+def path_tag(filepath: str, skill_of: dict[str, str] | None, norm: str | None = None) -> str:
+    """Tag of a path: `skills:<name>` for a file in a skill folder, else the path-based tag.
+
+    With a skill lookup (a ruleset map is present) membership alone decides what is a skill: a
+    `SKILL.md` outside every skill folder is a plain `file`. Without one (`None`), the path-based
+    tag decides. `norm` is the project-relative form of `filepath` the lookup is keyed by.
+    """
+    if skill_of is None:
+        return classify_file(filepath)
+    skill_dir = skill_of.get(filepath if norm is None else norm)
+    if skill_dir is not None:
+        return f"skills:{PurePosixPath(skill_dir).name}"
+    tag = classify_file(filepath)
+    return "file" if tag.split(":")[0] == "skills" else tag
+
+
+def file_type_summary(filepaths: set[str], skill_of: dict[str, str] | None = None) -> str:
+    """Build a compact type breakdown like '1 main, 8 rules, 3 skills'; a skill folder counts once."""
     type_counts: Counter[str] = Counter()
+    seen: set[str] = set()
     for fp in filepaths:
-        tag = classify_file(fp)
-        base = tag.split(":")[0]
-        type_counts[base] += 1
+        key = (skill_of or {}).get(fp, fp)
+        if key in seen:
+            continue
+        seen.add(key)
+        type_counts[path_tag(fp, skill_of).split(":")[0]] += 1
 
     parts = []
     for t in _TYPE_ORDER:
         n = type_counts.get(t, 0)
         if n > 0:
-            label = _TYPE_PLURALS.get(t, t) if n > 1 else t
-            parts.append(f"{n} {label}")
+            one, many = _TYPE_LABELS.get(t, (t, t))
+            parts.append(f"{n} {many if n > 1 else one}")
     return ", ".join(parts)
 
 
@@ -415,3 +591,8 @@ def group_stats_line(atoms: list[Any]) -> str:
         instr_parts.append(f"{n_con} constraint")
     instr_str = " / ".join(instr_parts) if instr_parts else "0 instructions"
     return f"{instr_str} \u00b7 {prose_pct}% prose"
+
+
+def conventions_phrase(n: int) -> str:
+    """The counted line for the findings that only ask a file to document something."""
+    return f"{n:,} documentation convention{'s' if n != 1 else ''} not present"

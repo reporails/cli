@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Pre-push hook — runs release verification checks before pushing.
-# Skips on non-release branches (only runs on version branches and main).
+# Pre-push hook — runs the structural + architecture floors and release
+# verification before pushing. Skips on non-release branches (only runs on
+# version branches and main). The structural/architecture gates mirror CI so a
+# release-branch push can't bypass them; the fast pre-commit hook stays untouched.
 
 remote="$1"
 url="$2"
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+root=$(git rev-parse --show-toplevel)
 
 # Only gate release-relevant branches
 case "$branch" in
   main|[0-9]*.[0-9]*.[0-9]*)
-    echo "Pre-push: release branch detected ($branch), running checks..."
-    exec "$(git rev-parse --show-toplevel)/scripts/pre-release-check.sh"
+    echo "Pre-push: release branch detected ($branch), running gates..."
+    uv run poe pylint_struct || exit 1
+    uv run poe arch || exit 1
+    exec "$root/scripts/pre-release-check.sh"
     ;;
   *)
     exit 0

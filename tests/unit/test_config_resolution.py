@@ -1,6 +1,6 @@
 """Config resolution — `~/.reporails/config.yml` ↘ `.ails/config.yml` merge.
 
-Bug 2 (0.5.11): `GlobalConfig` was a 4-field schema (`framework_path`,
+`GlobalConfig` was a 4-field schema (`framework_path`,
 `auto_update_check`, `default_agent`, `tier`). Fields like
 `disabled_rules` and `exclude_dirs` in `~/.reporails/config.yml` were
 silently dropped at parse time, so global defaults had no effect.
@@ -145,12 +145,12 @@ def test_global_applies_when_no_project_config(tmp_path: Path, monkeypatch: pyte
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_global_overrides_dict_merges_under_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dict fields like `overrides` deep-merge — project wins on the same rule_id."""
+def test_global_rule_thresholds_dict_merges_under_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dict fields like `rule_thresholds` deep-merge — project wins on the same rule_id."""
     home = tmp_path / ".reporails"
     home.mkdir()
     (home / "config.yml").write_text(
-        "overrides:\n  CORE:D:0001:\n    severity: low\n  CORE:G:0002:\n    severity: info\n",
+        "rule_thresholds:\n  CORE:S:0013:\n    min_lines: 10\n  CORE:C:0010:\n    min_lines: 20\n",
         encoding="utf-8",
     )
     _patch_reporails_home(monkeypatch, home)
@@ -158,13 +158,13 @@ def test_global_overrides_dict_merges_under_project(tmp_path: Path, monkeypatch:
     project = tmp_path / "proj"
     (project / ".ails").mkdir(parents=True)
     (project / ".ails" / "config.yml").write_text(
-        "overrides:\n  CORE:D:0001:\n    severity: critical\n",
+        "rule_thresholds:\n  CORE:S:0013:\n    min_lines: 50\n",
         encoding="utf-8",
     )
 
     from reporails_cli.core.platform.config.config import get_project_config
 
     cfg = get_project_config(project)
-    # Project's CORE:D:0001 wins; global's CORE:G:0002 surfaces from the global layer.
-    assert cfg.overrides["CORE:D:0001"]["severity"] == "critical"
-    assert cfg.overrides["CORE:G:0002"]["severity"] == "info"
+    # Project's CORE:S:0013 wins; global's CORE:C:0010 surfaces from the global layer.
+    assert cfg.rule_thresholds["CORE:S:0013"]["min_lines"] == 50
+    assert cfg.rule_thresholds["CORE:C:0010"]["min_lines"] == 20

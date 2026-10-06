@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from reporails_cli.core.platform.dto.models import ScanDelta
+from reporails_cli.core.platform.dto.results import ScanDelta
 
 if TYPE_CHECKING:
     from reporails_cli.core.discovery.agents import DetectedAgent
@@ -265,8 +265,8 @@ def build_surface_summary(agents: list[DetectedAgent], target: Path) -> dict[str
                 if rel not in root_files:
                     root_files.append(rel)
                     continue
-            if str(f) not in root_files:
-                root_files.append(str(f))
+            if f.as_posix() not in root_files:
+                root_files.append(f.as_posix())
 
         for label, dir_path in agent.detected_directories.items():
             dir_full = target / dir_path.rstrip("/")

@@ -5,5 +5,10 @@ checks:
 - id: ANTIGRAVITY.S.0001.valid-event-types
   type: deterministic
   expect: present
-  pattern-regex: (?:SessionStart|SessionEnd|BeforeAgent|AfterAgent|BeforeModel|AfterModel|BeforeToolSelection|BeforeTool|AfterTool|PreCompress|Notification)
+  pattern-regex: (?:PreToolUse|PostToolUse|PreInvocation|PostInvocation|Stop)
   message: No recognized hook event type names found in hook configuration
+- id: ANTIGRAVITY.S.0001.no-unrecognized-event-key
+  type: deterministic
+  expect: absent
+  pattern-regex: '"(?!(?:PreToolUse|PostToolUse|PreInvocation|PostInvocation|Stop)")[A-Z][A-Za-z]*"\s*:\s*\['
+  message: An event-shaped key next to a recognized event name is not a recognized hook event type

@@ -1,1 +1,12 @@
-# Instruction file content
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          { "type": "prompt" }
+        ]
+      }
+    ]
+  }
+}

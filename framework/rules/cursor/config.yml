@@ -1,8 +1,7 @@
 # Cursor Agent Configuration
 # Schema: schemas/agent.schema.yml v0.5.0
 #
-# Synced from .claude/skills/audit-agent/assets/registry/cursor/config.yml
-# Last verified: 2026-06-15
+# Last verified: 2026-09-03
 #
 # Items intentionally NOT included here (not measurable on disk):
 #   - User Rules (Cursor Settings UI text)
@@ -10,12 +9,18 @@
 #   - Cursor Automations (cloud-only, no on-disk file)
 #   - Cursor Memories (cloud / agent-state, no static project file)
 #   - Design Mode (in-app UI)
-#   - CLI --output-format (CLI flag, not a file)
+#
+# NOT a capability: CLI `--output-format` (text/json/stream-json) is structured
+# data serialization, not persona/style customization — so `output` is absent
+# from cursor's capability list. The `output` capability means
+# persona/style (cf. claude output-styles, codex `personality`), which Cursor
+# does not have.
 
 agent: cursor
 version: "0.5.0"
 prefix: CURSOR
 name: Cursor
+home_dir: .cursor  # the folder holding the agent's own files; a path inside it points at this agent
 
 file_types:
   main:
@@ -57,15 +62,18 @@ file_types:
     # alwaysApply (always loaded), intelligent (agent decides), globs (file-scoped),
     # manual (@-mention only). globs frontmatter makes this path_scoped — the
     # path filter is in-file, not just at the surface level.
+    # https://cursor.com/docs/rules#project-rules: "A plain `.md` file in `.cursor/rules` is ignored by the rules system"
     source: https://cursor.com/docs/rules
     format: [frontmatter, freeform]
     scope: path_scoped
+    path_key: globs
+    always_key: alwaysApply
     cardinality: collection
     lifecycle: static
     loading: on_demand
     scopes:
       project:
-        patterns: [".cursor/rules/**/*.mdc", ".cursor/rules/**/*.md"]
+        patterns: [".cursor/rules/**/*.mdc"]
         precedence: project
         vcs: committed
         maintainer: human
@@ -87,7 +95,10 @@ file_types:
         maintainer: human
 
   skills:
-    # Cross-agent skill paths supported (.claude/skills, .codex/skills, .agents/skills)
+    # Primary directories per docs: .agents/skills and .cursor/skills. .claude/skills
+    # and .codex/skills are cross-agent legacy compatibility paths.
+    # https://cursor.com/docs/skills: "including nested project subdirectories such as `apps/web/.cursor/skills/` in a monorepo"
+    # The nested sentence names `.agents/skills` and `.cursor/skills` only; the Claude and Codex roots are not stated nested.
     source: https://cursor.com/docs/skills
     format: [frontmatter, freeform]
     scope: task_scoped
@@ -96,12 +107,16 @@ file_types:
     loading: on_invocation
     scopes:
       project:
-        patterns: [".cursor/skills/**/SKILL.md", ".claude/skills/**/SKILL.md", ".codex/skills/**/SKILL.md"]
+        patterns: [".agents/skills/**/*.md", ".cursor/skills/**/*.md", ".claude/skills/**/*.md", ".codex/skills/**/*.md", "**/.agents/skills/**/*.md", "**/.cursor/skills/**/*.md"]
+        # Cursor walks its skills roots recursively, so a SKILL.md at any depth below a skill folder
+        # is a skill; a SKILL.md directly in a skills root is no skill.
+        entry_patterns: [".agents/skills/*/**/SKILL.md", ".cursor/skills/*/**/SKILL.md", ".claude/skills/*/**/SKILL.md", ".codex/skills/*/**/SKILL.md", "**/.agents/skills/*/**/SKILL.md", "**/.cursor/skills/*/**/SKILL.md"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.cursor/skills/**/SKILL.md", "~/.claude/skills/**/SKILL.md", "~/.codex/skills/**/SKILL.md"]
+        patterns: ["~/.agents/skills/**/*.md", "~/.cursor/skills/**/*.md", "~/.claude/skills/**/*.md", "~/.codex/skills/**/*.md"]
+        entry_patterns: ["~/.agents/skills/*/**/SKILL.md", "~/.cursor/skills/*/**/SKILL.md", "~/.claude/skills/*/**/SKILL.md", "~/.codex/skills/*/**/SKILL.md"]
         precedence: user
         vcs: external
         maintainer: human
@@ -189,8 +204,9 @@ file_types:
         maintainer: human
 
   config:
-    # Cursor settings — both project (.vscode/settings.json or .cursor/settings.json)
-    # and user (~/.cursor/settings.json) levels
+    # Cursor CLI configuration. The project level is `.cursor/cli.json` and carries only
+    # permissions (allow/deny lists); the user level is `~/.cursor/cli-config.json`.
+    # Editor settings (.vscode/settings.json) are not Cursor agent configuration.
     source: https://cursor.com/docs/cli/reference/configuration
     format: schema_validated
     scope: global
@@ -199,12 +215,12 @@ file_types:
     loading: session_start
     scopes:
       project:
-        patterns: [".vscode/settings.json", ".cursor/settings.json"]
+        patterns: [".cursor/cli.json"]
         precedence: project
         vcs: committed
         maintainer: human
       user:
-        patterns: ["~/.cursor/settings.json"]
+        patterns: ["~/.cursor/cli-config.json"]
         precedence: user
         vcs: external
         maintainer: human
@@ -255,6 +271,22 @@ file_types:
         vcs: committed
         maintainer: human
 
+  nested_bugbot:
+    # Bugbot also reads BUGBOT.md files found upward from changed files, so a nested one applies to its subtree.
+    # https://cursor.com/docs/bugbot#project-rules: "Bugbot always includes the root `.cursor/BUGBOT.md` file and any additional files found while traversing upward from changed files."
+    source: https://cursor.com/docs/bugbot
+    format: freeform
+    scope: nested
+    cardinality: hierarchical
+    lifecycle: static
+    loading: on_demand
+    scopes:
+      project:
+        patterns: ["**/.cursor/BUGBOT.md"]
+        precedence: project
+        vcs: committed
+        maintainer: human
+
   bugbot_rules:
     # Auto-generated learned rules under .cursor/rules/ — agent-managed.
     # Bugbot decides when each rule applies (auto-promoted/disabled), so the
@@ -289,3 +321,4 @@ file_types:
 excludes:
   - CLAUDE:*
   - CODEX:*
+  - CORE:S:0005  # identity-fields-in-frontmatter — Cursor rule frontmatter is description, globs and alwaysApply; it defines no id, name or slug (cursor.com/docs/rules)

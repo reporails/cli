@@ -6,5 +6,5 @@ checks:
   type: content_query
   query: has_non_italic_constraints
   args:
-    message: Constraint not in italic — wrap the full sentence in *italic* to signal charge type visually
+    message: Constraint not in italic — wrap the full sentence in *italic* to mark it as a prohibition
   expect: absent

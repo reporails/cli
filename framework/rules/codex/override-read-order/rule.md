@@ -7,7 +7,7 @@ type: deterministic
 severity: medium
 backed_by: []
 match: {type: main}
-source: https://developers.openai.com/codex/guides/agents-md
+source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
 ---
 
 # Codex Discovery Chain Documented

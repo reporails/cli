@@ -9,6 +9,7 @@ import pytest
 from reporails_cli.core.classify import _parse_file_types, classify_files
 from reporails_cli.core.discovery.agent_discovery import (
     categorize_file_type,
+    claude_project_folder_name,
     discover_from_config,
     load_config_file_types,
 )
@@ -123,3 +124,22 @@ class TestMemoryClassification:
         by_name = {cf.path.name: cf for cf in classified if cf.file_type == "subagent_memory"}
         assert by_name["MEMORY.md"].properties.get("loading") == "session_start"
         assert by_name["topic.md"].properties.get("loading") == "on_demand"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_memory_folder_is_found_for_a_project_path_with_underscore_and_dot(tmp_path: Path, monkeypatch) -> None:
+    from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
+
+    project = tmp_path / "rv_mem.proj"
+    project.mkdir()
+    home = tmp_path / "home"
+    folder = home / ".claude" / "projects" / claude_project_folder_name(project) / "memory"
+    folder.mkdir(parents=True)
+    (folder / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
+
+    entries = memory_entries_for_agent("claude", project)
+
+    assert [e.path.name for e in entries] == ["MEMORY.md"]

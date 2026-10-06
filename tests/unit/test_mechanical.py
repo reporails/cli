@@ -10,8 +10,9 @@ from reporails_cli.core.lint.mechanical.checks import (
     MECHANICAL_CHECKS,
     _safe_float,
     byte_size,
-    content_absent,
+    directory_contains,
     directory_exists,
+    file_count,
     file_exists,
     git_tracked,
     line_count,
@@ -19,6 +20,7 @@ from reporails_cli.core.lint.mechanical.checks import (
 from reporails_cli.core.lint.mechanical.checks_advanced import (
     _scope_dir_from_glob,
     check_import_targets_exist,
+    content_absent,
     count_at_least,
     count_at_most,
     extract_imports,
@@ -71,6 +73,83 @@ class TestDirectoryExists:
     def test_missing(self, tmp_path: Path) -> None:
         result = directory_exists(tmp_path, {"path": ".claude/rules"}, [])
         assert not result.passed
+
+
+class TestDirectoryContains:
+    """`directory_contains` — verdict + the min-count boundary.
+
+    Mutation-derived: with no direct coverage, injecting `passed=False -> True`
+    on the not-found/too-few branches and `>= -> >` on the count boundary all
+    SURVIVED the suite. These assert the verdict each mutant flips, so each one
+    reddens the moment its bug returns.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_missing_directory_fails(self, tmp_path: Path) -> None:
+        result = directory_contains(tmp_path, {"path": "rules", "min": 1}, [])
+        assert not result.passed  # kills `passed=False -> True` on the not-found branch
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_enough_files_passes(self, tmp_path: Path) -> None:
+        d = tmp_path / "rules"
+        d.mkdir()
+        (d / "a.md").write_text("x")
+        (d / "b.md").write_text("y")
+        result = directory_contains(tmp_path, {"path": "rules", "pattern": "*.md", "min": 2}, [])
+        assert result.passed  # kills `passed=True -> False` on the satisfied branch
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_too_few_files_fails(self, tmp_path: Path) -> None:
+        d = tmp_path / "rules"
+        d.mkdir()
+        (d / "a.md").write_text("x")
+        result = directory_contains(tmp_path, {"path": "rules", "pattern": "*.md", "min": 2}, [])
+        assert not result.passed  # kills `passed=False -> True` on the too-few branch
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_exact_min_count_passes(self, tmp_path: Path) -> None:
+        d = tmp_path / "rules"
+        d.mkdir()
+        (d / "a.md").write_text("x")
+        result = directory_contains(tmp_path, {"path": "rules", "pattern": "*.md", "min": 1}, [])
+        assert result.passed  # kills the off-by-one `len(matches) >= min_count -> >`
+
+
+class TestFileCountBounds:
+    """`file_count` — the `min <= count <= max` boundary, both edges.
+
+    Mutation-derived: the boundary had no direct coverage (only scoping did), so
+    `<= -> <` on either edge SURVIVED. The at-min and at-max tests kill both.
+    """
+
+    @staticmethod
+    def _two_real_files(tmp_path: Path) -> list[ClassifiedFile]:
+        # file_count counts only files that exist on disk (_get_counted_files).
+        (tmp_path / "a.md").write_text("x")
+        (tmp_path / "b.md").write_text("y")
+        return _cf(tmp_path, "a.md", "b.md")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_count_at_min_boundary_passes(self, tmp_path: Path) -> None:
+        result = file_count(tmp_path, {"min": 2, "max": 5}, self._two_real_files(tmp_path))
+        assert result.passed  # kills `min_count <= count -> <`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_count_at_max_boundary_passes(self, tmp_path: Path) -> None:
+        result = file_count(tmp_path, {"min": 1, "max": 2}, self._two_real_files(tmp_path))
+        assert result.passed  # kills `count <= max_count -> <`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_below_min_fails(self, tmp_path: Path) -> None:
+        result = file_count(tmp_path, {"min": 3, "max": 5}, self._two_real_files(tmp_path))
+        assert not result.passed  # kills `passed=True -> False` when out of bounds
 
 
 class TestGitTracked:
@@ -160,7 +239,7 @@ class TestContentAbsentMultiFile:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/bad.md", "scoped_rule"),
+            (".claude/rules/bad.md", "rules"),
         )
         result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, classified)
         assert not result.passed
@@ -177,7 +256,7 @@ class TestContentAbsentMultiFile:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/also_clean.md", "scoped_rule"),
+            (".claude/rules/also_clean.md", "rules"),
         )
         result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, classified)
         assert result.passed
@@ -193,7 +272,7 @@ class TestContentAbsentMultiFile:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/also_bad.md", "scoped_rule"),
+            (".claude/rules/also_bad.md", "rules"),
         )
         result = content_absent(tmp_path, {"pattern": "FORBIDDEN"}, classified)
         assert not result.passed
@@ -210,7 +289,7 @@ class TestContentAbsentMultiFile:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/risky.md", "scoped_rule"),
+            (".claude/rules/risky.md", "rules"),
         )
         result = content_absent(tmp_path, {"pattern": r"api_key\s*=\s*\S+"}, classified)
         assert not result.passed
@@ -301,7 +380,7 @@ class TestRunMechanicalChecks:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/big.md", "scoped_rule"),
+            (".claude/rules/big.md", "rules"),
         )
         violations = run_mechanical_checks(rules, tmp_path, classified)
         assert len(violations) == 1
@@ -317,12 +396,17 @@ class TestSkillEntrypointPresent:
         (d / entry).write_text("# skill\n")
         return d / entry
 
+    def _classified_alpha(self, root: Path) -> list[ClassifiedFile]:
+        alpha = root / ".claude" / "skills" / "alpha"
+        props: dict[str, str | list[str]] = {"skill": str(alpha), "skill_entry_patterns": [".claude/skills/*/SKILL.md"]}
+        return [ClassifiedFile(path=alpha / "SKILL.md", file_type="skills", properties=props)]
+
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_all_dirs_have_entrypoint_passes(self, tmp_path: Path) -> None:
         self._make_skill(tmp_path, "alpha")
         self._make_skill(tmp_path, "beta")
-        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", ".claude/skills/beta/SKILL.md", file_type="skill")
+        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", ".claude/skills/beta/SKILL.md", file_type="skills")
         result = skill_entrypoint_present(tmp_path, {}, classified)
         assert result.passed
 
@@ -334,7 +418,7 @@ class TestSkillEntrypointPresent:
         broken.mkdir(parents=True)
         (broken / "notes.md").write_text("no entry point here\n")
         # Only the real skill is discovered/classified; the broken sibling is found by enumeration.
-        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
+        classified = self._classified_alpha(tmp_path)
         result = skill_entrypoint_present(tmp_path, {}, classified)
         assert not result.passed
         assert ".claude/skills/broken" in result.message
@@ -360,17 +444,17 @@ class TestSkillEntrypointPresent:
             category=Category.STRUCTURE,
             type=RuleType.MECHANICAL,
             severity=Severity.MEDIUM,
-            match=FileMatch(type="skill"),
+            match=FileMatch(type="skills"),
             checks=[
                 Check(
                     id="CORE.S.0015.entrypoint",
                     type="mechanical",
                     check="skill_entrypoint_present",
-                    project_scope=True,
+                    project_scope="aggregate",
                 )
             ],
         )
-        classified = _cf(tmp_path, ".claude/skills/alpha/SKILL.md", file_type="skill")
+        classified = self._classified_alpha(tmp_path)
         rules = {"CORE:S:0015": rule}
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
@@ -379,7 +463,7 @@ class TestSkillEntrypointPresent:
 class TestScopedProjectChecks:
     """Project-aggregate checks are skipped under a targeted (scoped) run."""
 
-    def _rule(self, rule_id: str, check_name: str, args: dict, project_scope: bool = False) -> Rule:
+    def _rule(self, rule_id: str, check_name: str, args: dict, project_scope: str = "") -> Rule:
         return Rule(
             id=rule_id,
             title=f"Rule {rule_id}",
@@ -402,16 +486,26 @@ class TestScopedProjectChecks:
     @pytest.mark.subsys_lint
     def test_file_count_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
-        rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2}, project_scope=True)}
+        rules = {"CORE:S:0010": self._rule("CORE:S:0010", "file_count", {"min": 2}, project_scope="aggregate")}
         classified = _cf(tmp_path, "CLAUDE.md")  # single file → count 1 < min 2
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    def test_once_per_project_check_is_kept_under_a_scoped_run(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text("# Hello")
+        rules = {"CORE:G:0001": self._rule("CORE:G:0001", "git_tracked", {}, project_scope="once")}
+        classified = _cf(tmp_path, "CLAUDE.md")
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 1
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True, project_checks="defer")) == 0
+        assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True, project_checks="only")) == 1
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_aggregate_byte_size_fires_unscoped_skipped_scoped(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text("this content is well over five bytes")
-        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5}, project_scope=True)}
+        rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 5}, project_scope="aggregate")}
         classified = _cf(tmp_path, "CLAUDE.md")
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 1
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=True)) == 0
@@ -448,7 +542,7 @@ class TestScopedProjectChecks:
         skill = tmp_path / "SKILL.md"
         skill.write_text("---\nname: x\ndescription: short\n---\n" + ("BODY " * 1000))
         rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
-        classified = [ClassifiedFile(path=skill, file_type="skill", properties={"loading": "on_invocation"})]
+        classified = [ClassifiedFile(path=skill, file_type="skills", properties={"loading": "on_invocation"})]
         # name(1) + description(5) = 6 bytes counted; the large body is ignored → under max.
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
 
@@ -459,7 +553,7 @@ class TestScopedProjectChecks:
         rule_file = tmp_path / "rule.md"
         rule_file.write_text("x" * 500)
         rules = {"CORE:E:0001": self._rule("CORE:E:0001", "aggregate_byte_size", {"max": 100})}
-        classified = [ClassifiedFile(path=rule_file, file_type="scoped_rule", properties={"loading": "on_demand"})]
+        classified = [ClassifiedFile(path=rule_file, file_type="rules", properties={"loading": "on_demand"})]
         assert len(run_mechanical_checks(rules, tmp_path, classified, scoped=False)) == 0
 
     @pytest.mark.unit
@@ -562,7 +656,7 @@ class TestResolveLocationMainFile:
         rule = self._rule_with_match(FileMatch())  # match-all
         classified = _cf_mixed(
             tmp_path,
-            (".claude/skills/integrations/SKILL.md", "skill"),
+            (".claude/skills/integrations/SKILL.md", "skills"),
             ("CLAUDE.md", "main"),
         )
         assert resolve_location(rule, classified) == "CLAUDE.md:0"
@@ -573,7 +667,7 @@ class TestResolveLocationMainFile:
         rule = self._rule_with_match(FileMatch(type="main"))
         classified = _cf_mixed(
             tmp_path,
-            (".claude/skills/SKILL.md", "skill"),
+            (".claude/skills/SKILL.md", "skills"),
             ("CLAUDE.md", "main"),
         )
         assert resolve_location(rule, classified) == "CLAUDE.md:0"
@@ -584,8 +678,8 @@ class TestResolveLocationMainFile:
         rule = self._rule_with_match(FileMatch())  # match-all
         classified = _cf_mixed(
             tmp_path,
-            (".claude/skills/SKILL.md", "skill"),
-            (".claude/rules/foo.md", "scoped_rule"),
+            (".claude/skills/SKILL.md", "skills"),
+            (".claude/rules/foo.md", "rules"),
         )
         # No main type — falls back to first classified file
         assert resolve_location(rule, classified) == "SKILL.md:0"
@@ -748,7 +842,9 @@ class TestFilenameMatchesPattern:
         (tmp_path / "CLAUDE.md").write_text("# Hello")
         result = filename_matches_pattern(tmp_path, {"pattern": r"^[a-z]+\.md$"}, _cf(tmp_path, "CLAUDE.md"))
         assert not result.passed
-        assert "does not match" in result.message
+        assert "do not match" in result.message
+        assert result.occurrences is not None
+        assert "CLAUDE.md" in result.occurrences[0][1]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -814,7 +910,7 @@ class TestMatchTypeScoping:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/core-rules.md", "scoped_rule"),
+            (".claude/rules/core-rules.md", "rules"),
         )
         # With _match_type scoping to main, only CLAUDE.md is checked
         args = {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$", "_match_type": "main"}
@@ -831,13 +927,14 @@ class TestMatchTypeScoping:
         classified = _cf_mixed(
             tmp_path,
             ("CLAUDE.md", "main"),
-            (".claude/rules/core-rules.md", "scoped_rule"),
+            (".claude/rules/core-rules.md", "rules"),
         )
         # Without _match_type, falls back to all classified files — core-rules.md fails regex
         args = {"pattern": r"(?i)^(CLAUDE|AGENTS)\.md$"}
         result = filename_matches_pattern(tmp_path, args, classified)
         assert not result.passed
-        assert "core-rules.md" in result.message
+        assert result.occurrences is not None
+        assert any("core-rules.md" in msg for _loc, msg in result.occurrences)
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -847,8 +944,8 @@ class TestMatchTypeScoping:
         skills = tmp_path / ".claude" / "skills" / "test-skill"
         skills.mkdir(parents=True)
         (skills / "SKILL.md").write_text("# Skill")
-        args = {"pattern": "README.md", "_match_type": "skill"}
-        classified = [ClassifiedFile(path=skills / "SKILL.md", file_type="skill")]
+        args = {"pattern": "README.md", "_match_type": "skills"}
+        classified = [ClassifiedFile(path=skills / "SKILL.md", file_type="skills")]
         result = file_absent(tmp_path, args, classified)
         assert result.passed
 
@@ -860,8 +957,8 @@ class TestMatchTypeScoping:
         skills.mkdir(parents=True)
         (skills / "SKILL.md").write_text("# Skill")
         (skills / "README.md").write_text("# Bad")
-        args = {"pattern": "README.md", "_match_type": "skill"}
-        classified = [ClassifiedFile(path=skills / "SKILL.md", file_type="skill")]
+        args = {"pattern": "README.md", "_match_type": "skills"}
+        classified = [ClassifiedFile(path=skills / "SKILL.md", file_type="skills")]
         result = file_absent(tmp_path, args, classified)
         assert not result.passed
         assert "README.md" in result.message
@@ -873,6 +970,44 @@ class TestMatchTypeScoping:
         (tmp_path / "README.md").write_text("# Project")
         result = file_absent(tmp_path, {"pattern": "README.md"}, [])
         assert not result.passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_file_absent_list_match_type_message_is_not_a_python_list_repr(self, tmp_path: Path) -> None:
+        """Bug fix: a list-valued `_match_type` (`match: {type: [config, hooks]}`) with no
+        classified files of either type must render `No config/hooks files classified`,
+        never the Python list repr `No ['config', 'hooks'] files classified`."""
+        args = {"pattern": "forbidden.md", "_match_type": ["config", "hooks"]}
+        result = file_absent(tmp_path, args, [])
+        assert result.passed
+        assert result.message == "No config/hooks files classified"
+        assert "[" not in result.message
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_file_absent_list_match_type_resolves_scope_deterministically(self, tmp_path: Path) -> None:
+        """With classified files of BOTH listed types, the scope dir must resolve to the
+        alphabetically-first type (`config` before `hooks`) regardless of the order the
+        files appear in `classified_files` — not "whichever file happened to be first"."""
+        config_dir = tmp_path / "config-area"
+        config_dir.mkdir()
+        (config_dir / "settings.md").write_text("# Settings")
+        hooks_dir = tmp_path / "hooks-area"
+        hooks_dir.mkdir()
+        (hooks_dir / "forbidden.md").write_text("# Bad")
+        args = {"pattern": "forbidden.md", "_match_type": ["config", "hooks"]}
+
+        # hooks classified file listed FIRST — scope must still anchor on `config`
+        # (sorted-first), not the discovery-order-first `hooks` entry.
+        classified = [
+            ClassifiedFile(path=hooks_dir / "forbidden.md", file_type="hooks"),
+            ClassifiedFile(path=config_dir / "settings.md", file_type="config"),
+        ]
+        result = file_absent(tmp_path, args, classified)
+        # The forbidden file lives under hooks-area, which is out of the config-anchored
+        # scope, so it is not found — passed is True precisely because scope resolution
+        # is deterministic (config) rather than accidental (hooks).
+        assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -906,7 +1041,8 @@ class TestMatchTypeScoping:
         )
         result_both = filename_matches_pattern(tmp_path, args, classified_both)
         assert not result_both.passed
-        assert "notes.md" in result_both.message
+        assert result_both.occurrences is not None
+        assert any("notes.md" in msg for _loc, msg in result_both.occurrences)
 
 
 class TestScopeDirFromGlob:

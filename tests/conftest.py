@@ -5,14 +5,29 @@ Provides reusable fixtures for testing rule validation and scoring.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
+# Tests never download the model set: a runner without the in-tree model (CI)
+# runs without it, as `ails check` does offline. Set at import so `ails`
+# subprocesses inherit it; a test of the download path unsets it.
+os.environ.setdefault("AILS_MODEL_OFFLINE", "1")
+# Tests never reach the hosted diagnostics service: with `AILS_SERVER_URL` unset, every
+# `ails check` a test runs would be sent there. A closed local port fails fast, so a check
+# runs its offline path; a test that needs a diagnostics endpoint sets its own.
+os.environ.setdefault("AILS_SERVER_URL", "http://127.0.0.1:9")
+
+
+CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI")  # mirrors helpers._is_ci
+
 
 @pytest.fixture(autouse=True)
-def _isolate_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_home(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Generator[None, None, None]:
     """Isolate HOME so a developer's global config can't leak into discovery.
 
     A real `~/.reporails/config.yml` (`default_agent`), `~/.codex/`, or
@@ -20,6 +35,13 @@ def _isolate_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.
     and config merge, making detection tests pass in clean CI but fail locally.
     Points HOME and the frozen `REPORAILS_HOME` constant at a fresh temp dir so
     every test sees the clean-HOME baseline CI runs under.
+
+    On teardown, reap any mapper daemon this test forked. Each test gets a fresh
+    HOME, so a cold `ails check` sees no running daemon and forks a new one
+    (~500MB, model-loading) under this test's isolated home. With no teardown those
+    daemons accumulate across the run — dozens of ~500MB processes that can exhaust
+    the machine. Reaping here (while HOME still points at this test's dir, so the
+    right socket is targeted) bounds concurrent daemons to at most one.
     """
     from reporails_cli.core.platform.config import bootstrap
 
@@ -27,7 +49,18 @@ def _isolate_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    # A CI runner's variables flip the default output to JSON; tests that care set them.
+    for var in CI_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(bootstrap, "REPORAILS_HOME", home / ".reporails")
+    yield
+    try:
+        from reporails_cli.core.mapper.daemon import is_daemon_running, stop_daemon
+
+        if is_daemon_running():
+            stop_daemon()
+    except Exception:
+        pass
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -38,6 +71,35 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Regenerate golden snapshot expected.json files",
     )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip tests marked `requires_model` when the in-tree model set is absent.
+
+    A runner without the model files (CI) runs the rest of the suite and skips
+    exactly the tests that need the mapper model, as `ails check` runs without it.
+    """
+    from reporails_cli.bundled import get_bundled_path
+    from reporails_cli.core.mapper.model_fetch import models_present
+
+    if models_present(get_bundled_path() / "models"):
+        return
+    skip = pytest.mark.skip(reason="Bundled mapper model not available")
+    for item in items:
+        if item.get_closest_marker("requires_model"):
+            item.add_marker(skip)
+
+
+def skip_if_case_insensitive_fs(root: Path) -> None:
+    """Skip the calling test when `root` sits on a case-insensitive filesystem (NTFS, default APFS)."""
+    probe = root / "CaseProbe.tmp"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        insensitive = (root / "caseprobe.tmp").exists()
+    finally:
+        probe.unlink()
+    if insensitive:
+        pytest.skip("filesystem is case-insensitive")
 
 
 @pytest.fixture
@@ -75,9 +137,9 @@ def agent_file_types() -> list:
 
     Skips when framework is not installed (CI without ~/.reporails/rules/).
     """
-    from reporails_cli.core.platform.config.bootstrap import get_agent_file_types
+    from reporails_cli.core.classify import load_file_types
 
-    result = get_agent_file_types("claude")
+    result = load_file_types("claude")
     if not result:
         pytest.skip("Framework not installed (no agent config available)")
     return result

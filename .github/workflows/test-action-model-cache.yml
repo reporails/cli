@@ -1,0 +1,98 @@
+# Regression test for the action's model cache: a run after the first must
+# restore the analysis model from the Actions cache instead of downloading it.
+# Job 1 runs the action with `strict` on a fixture that has findings, so its
+# check fails the way a real strict run with findings does; the model is
+# downloaded when no cache entry exists yet and saved despite the failed check.
+# Job 2 runs after it with the model host unreachable. The download banner
+# prints only when a download starts, and a download there fails the check, so
+# job 2 passes only when the model was restored; it also fails if any model file
+# was written during the job.
+
+name: Test Action model cache
+on:
+  push:
+    branches: [main, "[0-9]*.[0-9]*.[0-9]*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  first-run:
+    name: "Model cache: first run, strict check with findings"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create fixture with findings
+        run: |
+          mkdir -p /tmp/model-cache-strict
+          cat > /tmp/model-cache-strict/CLAUDE.md << 'FIXTURE'
+          This is a project with no structure. You should do things correctly. Make sure to follow all the rules. Do not skip steps. Always verify your work. This is important. Remember to test everything.
+          FIXTURE
+      - uses: ./action
+        id: check
+        continue-on-error: true
+        with:
+          path: /tmp/model-cache-strict
+          agent: claude
+          strict: "true"
+          from-source: "true"
+      - name: Require the strict check to have failed with the model on disk
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          echo "check outcome: $OUTCOME"
+          [ "$OUTCOME" = "failure" ] || { echo "FAIL: expected the strict check to fail on the fixture's findings"; exit 1; }
+          python -c "from reporails_cli.core.mapper.model_fetch import cache_models_dir, models_present; import sys; d = cache_models_dir(); print(d); sys.exit(0 if models_present(d) else 'FAIL: the model is not on disk after the failed check')"
+
+  second-run:
+    name: "Model cache: later run restores, never downloads"
+    needs: first-run
+    runs-on: ubuntu-latest
+    env:
+      # Unreachable model host: a download attempt here fails the check.
+      AILS_MODEL_URL: http://127.0.0.1:9
+    steps:
+      - name: Mark job start
+        run: touch "$RUNNER_TEMP/job-start"
+      - uses: actions/checkout@v4
+      - name: Create fixture
+        run: |
+          mkdir -p /tmp/model-cache-fixture
+          cat > /tmp/model-cache-fixture/CLAUDE.md << 'FIXTURE'
+          # Fixture
+
+          Run `uv run pytest` before every commit.
+          Never commit secrets or API keys.
+          FIXTURE
+      - uses: ./action
+        id: check
+        with:
+          path: /tmp/model-cache-fixture
+          agent: claude
+          from-source: "true"
+      - name: Fail if this run downloaded the model
+        if: always()
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          echo "check outcome: $OUTCOME"
+          [ "$OUTCOME" = "success" ] || { echo "FAIL: the check needed the model host, so the model was not restored"; exit 1; }
+          python - << 'PY'
+          import os
+          import sys
+
+          from reporails_cli.core.mapper.model_fetch import FETCH_RELPATHS, cache_models_dir
+
+          root = cache_models_dir()
+          start = os.path.getmtime(os.path.join(os.environ["RUNNER_TEMP"], "job-start"))
+          missing = [r for r in FETCH_RELPATHS if not (root / r).is_file()]
+          fresh = [r for r in FETCH_RELPATHS if (root / r).is_file() and (root / r).stat().st_mtime > start]
+          print(f"model files at {root}: {len(FETCH_RELPATHS) - len(missing)} present, {len(fresh)} written during this job")
+          if missing:
+              sys.exit(f"FAIL: model files missing: {missing}")
+          if fresh:
+              sys.exit(f"FAIL: the model was downloaded again instead of restored: {fresh}")
+          PY

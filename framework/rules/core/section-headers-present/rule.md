@@ -4,14 +4,14 @@ slug: section-headers-present
 title: Section Headers Present
 category: structure
 type: mechanical
-severity: critical
+severity: medium
 backed_by: [agent-readmes-empirical-study, awesome-copilot-meta-instructions, claude-md-guide,
   spec-writing-for-agents]
-match: {format: freeform}
+match: {type: [main, override, agents_md, legacy_cursorrules, cross_read, system_prompt], cardinality: [singleton, chain]}
 ---
 # Section Headers Present
 
-Each instruction file must contain markdown section headers (lines starting with `#`). Headers organize content into navigable sections that help agents locate relevant instructions.
+The agent's main instruction file must contain markdown section headers (lines starting with `#`). Headers organize content into navigable sections that help agents locate relevant instructions.
 
 ## Antipatterns
 

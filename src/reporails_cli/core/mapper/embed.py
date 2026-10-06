@@ -1,15 +1,13 @@
-"""Mapper Stage 5: Embed atoms via the ONNX MiniLM-L6-v2 encoder.
+"""Embed atoms via the bundled embedding encoder.
 
-Builds embedding text from `atom.plain_text` only (no heading prepend, to avoid
-double-counting heading atoms and artificial clustering by heading structure).
+Builds embedding text from `atom.plain_text` only (no heading prepend).
 Deduplicates identical text values before the model call so each unique string
-hits the encoder exactly once per run. Quantises the float32 output to int8 for
-compact wire-format storage; the per-vector scale is not retained because
-cosine similarity is preserved under L2 normalisation.
+hits the encoder exactly once per run. Quantises the float32 output to int8.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord
@@ -30,7 +28,7 @@ def _embed_text(atom: Atom) -> str:
 def _quantize_int8(vec: Any) -> tuple[int, ...]:
     """Quantize a float32 embedding vector to int8 (-128..127).
 
-    Preserves cosine similarity with < 1% error for all-MiniLM-L6-v2 vectors.
+    Keeps cosine similarity between vectors close to the float original.
     """
     import numpy as np
 
@@ -59,14 +57,19 @@ def _embed_atoms_deduped(atoms: list[Atom], encoder: Any) -> None:
         atom.embedding_int8 = _quantize_int8(unique_embeddings[u_idx])
 
 
-def _embed_file_descriptions(file_records: list[FileRecord], encoder: Any) -> None:
-    """Embed frontmatter descriptions for on_invocation files."""
-    desc_texts = [fr.description for fr in file_records if fr.description]
-    if not desc_texts:
-        return
-    desc_embeddings = encoder.encode(desc_texts)
-    desc_idx = 0
-    for fr in file_records:
-        if fr.description:
-            fr.description_embedding = _quantize_int8(desc_embeddings[desc_idx])
-            desc_idx += 1
+def _embed_file_descriptions(file_records: list[FileRecord], encoder: Callable[[], Any]) -> list[FileRecord]:
+    """Embed the frontmatter descriptions of on_invocation files that carry no embedding yet.
+
+    `encoder` returns the embedder; it is called only when some description is still
+    unembedded, so a map whose records all arrive embedded (read back from the per-file
+    cache) never loads the model. Identical descriptions are encoded once. Returns the
+    records embedded here, for the caller to persist.
+    """
+    pending = [fr for fr in file_records if fr.description and fr.description_embedding is None]
+    if not pending:
+        return []
+    texts = sorted({fr.description for fr in pending})
+    quantized = {t: _quantize_int8(v) for t, v in zip(texts, encoder().encode(texts), strict=True)}
+    for fr in pending:
+        fr.description_embedding = quantized[fr.description]
+    return pending

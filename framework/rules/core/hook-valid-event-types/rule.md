@@ -4,9 +4,12 @@ slug: hook-valid-event-types
 title: Hook Valid Event Types
 category: structure
 type: deterministic
+enforcement_required: true
+enforcement_mechanism: hook
 severity: high
 backed_by: []
-match: {type: config}
+match: {type: [config, hooks]}
+requires_capability: hooks
 ---
 
 # Hook Valid Event Types

@@ -17,15 +17,17 @@ env:
 
 jobs:
   qa:
-    name: QA gate (${{ matrix.os }})
+    name: QA gate (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         # macos-latest deliberately omitted: ubuntu-latest covers the POSIX/Unix
         # surface and windows-latest covers the non-POSIX surface; macOS is POSIX-like,
         # so it is unlikely to surface issues ubuntu does not, and GitHub's macOS
         # runners bill far more CI minutes. Revisit if a macOS-specific defect appears.
         os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -34,16 +36,25 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --python ${{ matrix.python-version }}
 
       - name: Lint
         run: uv run poe lint
+
+      - name: Structural gate
+        run: uv run poe pylint_struct
+
+      - name: Architecture gate
+        run: uv run poe arch
 
       - name: Type check
         run: uv run poe type
 
       - name: Rule lint
         run: uv run poe test_lint
+
+      - name: Capabilities registry gate
+        run: uv run python scripts/validate_registry.py
 
       - name: Unit tests
         run: uv run poe test_unit
@@ -58,8 +69,8 @@ jobs:
       - name: Smoke tests
         run: uv run poe test_smoke
 
-  # Live-path regression — hits the real platform host, so it stays out of the
-  # gated QA matrix (offline CI must remain green when the edge is flaky).
+  # Live-path regression — needs the network, so it stays out of the gated QA
+  # matrix (offline CI must stay green when the network is unavailable).
   # Manual via the Actions tab; the assertion is the new-user activation hop.
   live:
     name: Live activation path

@@ -5,4 +5,4 @@ description: Sample skill for link-source-attribution fixture
 
 # Foo
 
-Read [architecture](architecture.md) before invoking.
+Read [architecture](../../../docs/architecture.md) before invoking.

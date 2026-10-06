@@ -6,4 +6,4 @@ checks:
   type: mechanical
   check: import_depth
   args:
-    max: 5
+    max: 4

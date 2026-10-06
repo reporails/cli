@@ -6,5 +6,5 @@ checks:
   type: content_query
   query: has_charged_headings
   args:
-    message: Instruction in heading — headings should organize content, not carry instructions
+    message: 'Instruction in heading: "{text}" — headings should organize content, not carry instructions. Move the instruction to the section body.'
   expect: absent

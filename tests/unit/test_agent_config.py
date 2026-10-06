@@ -17,15 +17,9 @@ from reporails_cli.core.discovery.agents import (
     get_known_agents,
 )
 from reporails_cli.core.platform.adapters.registry import _apply_agent_overrides, _is_other_agent_rule, load_rules
-from reporails_cli.core.platform.config.bootstrap import get_agent_config
-from reporails_cli.core.platform.dto.models import (
-    AgentConfig,
-    Category,
-    Check,
-    Rule,
-    RuleType,
-    Severity,
-)
+from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.dto.models import Category, Check, Rule, RuleType, Severity
+from reporails_cli.core.platform.dto.results import AgentConfig
 
 # =============================================================================
 # get_agent_config tests

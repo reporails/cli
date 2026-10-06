@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-from reporails_cli.core.platform.dto.models import (
-    Category,
-    Level,
-    RuleType,
-    Severity,
-    ValidationResult,
-    Violation,
-)
+from reporails_cli.core.platform.dto.models import Category, Level, RuleType, Severity, Violation
+from reporails_cli.core.platform.dto.results import ValidationResult
 
 __all__ = [
     "Category",

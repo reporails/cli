@@ -5,14 +5,14 @@ title: Rule File Length Limit
 category: structure
 type: mechanical
 severity: low
-match: {type: scoped_rule}
+match: {type: rules, format: [frontmatter, freeform]}
 see_also: [CORE:C:0044, CORE:S:0019]
 source: https://code.claude.com/docs/en/memory#organize-rules-with-clauderules
 ---
 
 # Rule File Length Limit
 
-Keep `.claude/rules/*.md` files under 200 lines. This is best-practice guidance rather than a documented Claude Code limit — Claude Code does not truncate rule files at any length. The 200-line ceiling is a soft cap that works in concert with the topic-focus rules: when a rule file follows `CORE:C:0044 topic-scatter` (one or two topics per file) and `CORE:S:0019 single-topic-per-section` (each topic in its own section), 200 lines is comfortably enough to cover that scope with concrete examples and constraints. Files that exceed the cap usually betray topic fragmentation, redundant restatement, or examples that belong in referenced project files rather than inline. Long rule files also compete for attention with other context — every line is loaded into the agent's context window at session start, so density wins over breadth.
+Keep `.claude/rules/*.md` files under 200 lines. This is best-practice guidance rather than a documented Claude Code limit — Claude Code does not truncate rule files at any length. The 200-line ceiling is a soft cap that works in concert with the topic-focus rules: when a rule file keeps each topic in its own section (`CORE:S:0019 single-topic-per-section`) and does not restate topics another loaded file already covers (`CORE:C:0044 topic-overlap`), 200 lines is comfortably enough to cover that scope with concrete examples and constraints. Files that exceed the cap usually betray topic fragmentation, redundant restatement, or examples that belong in referenced project files rather than inline. Long rule files also compete for attention with other context — every line is loaded into the agent's context window at session start, so density wins over breadth.
 
 ## Antipatterns
 
@@ -32,7 +32,7 @@ description: Testing conventions
 
 Run `uv run pytest tests/ -v` before committing.
 Use `@pytest.mark.parametrize` for multi-case tests.
-*Do NOT mock database connections — use the test fixture in `conftest.py`.*
+*Do not substitute a stand-in for the database — use the test fixture in `conftest.py`.*
 ~~~~
 
 ### Fail

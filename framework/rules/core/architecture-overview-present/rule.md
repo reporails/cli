@@ -4,7 +4,7 @@ slug: architecture-overview-present
 title: Architecture Overview Present
 category: coherence
 type: mechanical
-severity: high
+severity: medium
 backed_by: [agent-readmes-empirical-study, agentic-coding-adoption-github, agents-md-impact-efficiency,
   awesome-copilot-meta-instructions, claudemd-best-practices-backbone-yml-pattern,
   developer-context-cursor-study, dometrain-claude-md-guide, evaluating-agents-md,

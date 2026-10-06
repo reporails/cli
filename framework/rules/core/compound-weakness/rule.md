@@ -17,7 +17,7 @@ Multiple weaknesses in the same instruction compound — an instruction that is 
 
 - Writing a short, hedged instruction early in the file ("you might want to consider formatting"). This stacks three weaknesses: brevity, hedged modality, and early position. Each weakness multiplies the others.
 - Using abstract language in a hedged instruction ("consider using appropriate tools for code quality"). Abstract + hedged is far weaker than either alone.
-- Burying a terse constraint at the top of the file without naming specific constructs. Position, length, and specificity weaknesses compound into near-zero compliance.
+- Burying a terse constraint at the top of the file with hedged modality. Position, length, and modality weaknesses compound into near-zero compliance. A constraint's prohibited scope belongs as an abstract category — naming the forbidden construct anchors it rather than strengthening it.
 
 ## Pass / Fail
 
@@ -36,10 +36,6 @@ You might want to think about code quality.
 Consider using appropriate tools.
 Perhaps run tests sometimes.
 ~~~~
-
-## Fix
-
-Never stack weaknesses. A short directive MUST name specific constructs and sit near the end of the file. A short constraint is the inverse: state the prohibited thing as an abstract category, since naming a forbidden construct anchors it. An abstract directive MUST use direct language, include multiple relevant terms, and sit last. Fixing any one weakness improves the instruction; leaving several stacked is the failure case. Elaborating a directive with distinct relevant terms is the easiest fix.
 
 ## Limitations
 

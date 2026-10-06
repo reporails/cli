@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="ails",
-    help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your Harness's instructions"),
+    help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your project's instructions"),
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
@@ -43,15 +42,16 @@ def _warn_unresolved_skills(unresolved: list[Any], project_root: Path) -> None:
 
 
 def _default_format() -> str:
-    """Return default format based on environment detection."""
+    """Return default format based on environment detection.
+
+    A non-TTY pipe gets `text` — the worst-first summary `print_text_result`
+    renders (colorless when piped) — the format `_dispatch_output` actually
+    routes. Returning an undispatched value here silently fell through to the
+    same renderer while promising a formatter that no longer runs.
+    """
     if _is_ci():
         return "json"
-    if not sys.stdout.isatty():
-        return "compact"
     return "text"
-
-
-VALID_FORMATS = {"text", "json", "compact", "brief", "github", "agent"}
 
 
 def _validate_agent(agent: str, con: Console) -> str:
@@ -65,14 +65,6 @@ def _validate_agent(agent: str, con: Console) -> str:
         con.print(f"Known agents: {', '.join(sorted(known))}")
         raise typer.Exit(2)
     return agent
-
-
-def _validate_format(format: str | None, con: Console) -> None:
-    """Validate --format value or exit."""
-    if format and format not in VALID_FORMATS:
-        con.print(f"[red]Error:[/red] Unknown format: {format}")
-        con.print(f"Valid formats: {', '.join(sorted(VALID_FORMATS))}")
-        raise typer.Exit(2)
 
 
 def _show_agent_auto_detect_hint(
@@ -115,44 +107,33 @@ def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
         console.print(f"  {ns}: {', '.join(ids[:5])}{tail}")
 
 
-def _resolve_agent_filters(
-    agent: str,
-    all_detected: list[Any],
-    target: Path,
-    exclude_dirs: list[str] | None,
-    exclude_files: list[str] | None = None,
-) -> tuple[str, bool, bool, list[Any]]:
-    """Resolve agent selection and filter detected agents. Returns (agent, assumed, mixed, filtered)."""
-    from reporails_cli.core.discovery.agents import (
-        detect_single_agent,
-        filter_agents_by_exclude_dirs,
-        filter_agents_by_exclude_files,
-        filter_agents_by_id,
-        resolve_agent,
+def _print_no_instruction_files(effective_agent: str, con: Console, detected_agents: list[Any] | None = None) -> None:
+    """Print the human message for a run that found nothing to check.
+
+    Text surface only. The machine surfaces (`json` / `github`) render the same
+    outcome as an ordinary empty result through their normal formatter, so a
+    consumer reads one envelope shape whether or not anything was in scope —
+    see `check_notices._emit_empty_run`.
+    """
+    from reporails_cli.core.discovery.agents import get_known_agents
+    from reporails_cli.core.platform.dto.models import Level
+    from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+
+    at = get_known_agents().get(effective_agent)
+    others = sorted(
+        {a.agent_type.id for a in detected_agents or () if a.agent_type.id not in (effective_agent, "generic")}
     )
-
-    agent, assumed, mixed = resolve_agent(agent, all_detected)
-    effective = agent if agent else "generic"
-    if mixed:
-        filtered = [a for a in all_detected if a.agent_type.id != "generic"]
-    else:
-        filtered = filter_agents_by_id(all_detected, effective)
-        if not filtered and agent:
-            single = detect_single_agent(target, agent)
-            if single:
-                filtered = [single]
-    filtered = filter_agents_by_exclude_dirs(filtered, target, exclude_dirs)
-    filtered = filter_agents_by_exclude_files(filtered, target, exclude_files)
-    return effective, assumed, mixed, filtered
-
-
-def _handle_no_instruction_files(effective_agent: str, output_format: str, con: Console) -> None:
-    """Print appropriate message when no instruction files are found, then exit."""
-    if output_format in ("json", "github"):
-        print(json.dumps({"violations": [], "score": 0, "level": "L0"}))
-    else:
-        from reporails_cli.core.discovery.agents import get_known_agents
-
-        at = get_known_agents().get(effective_agent)
-        hint = at.instruction_patterns[0] if at else "AGENTS.md"
-        con.print(f"No instruction files found.\nLevel: L0 (Absent)\n\n[dim]Create a {hint} to get started.[/dim]")
+    if others:
+        names = ", ".join(others)
+        con.print(
+            f"No instruction files found for {effective_agent}.\nLevel: L0 {LEVEL_LABELS[Level.L0]}\n\n"
+            f"[dim]This project has files for: {names}. "
+            f"Run with --agent {others[0]}, or: ails config set default_agent {others[0]}[/dim]"
+        )
+        return
+    hint = at.instruction_patterns[0] if at else "AGENTS.md"
+    article = "an" if hint[:1].upper() in "AEIOU" else "a"
+    con.print(
+        f"No instruction files found.\nLevel: L0 {LEVEL_LABELS[Level.L0]}\n\n"
+        f"[dim]Create {article} {hint} to get started.[/dim]"
+    )

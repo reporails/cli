@@ -6,13 +6,52 @@ Produces Violation objects compatible with the scoring pipeline.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, CheckResult
+from reporails_cli.core.discovery.walk import is_under
+from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, get_target_files
+from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
 
 logger = logging.getLogger(__name__)
+
+
+class UnknownCheckError(LookupError):
+    """A check name that no mechanical check is registered under."""
+
+
+def run_mechanical_check(
+    check: Check,
+    root: Path,
+    classified_files: list[ClassifiedFile],
+    extra_args: dict[str, Any] | None = None,
+    match_type: str | list[str] | None = None,
+) -> CheckResult | None:
+    """Run one mechanical check.
+
+    `extra_args` (upstream annotations) sit under the check's own `args`, so a check.yml entry
+    always wins. `match_type` is the rule's match type; the check scopes to the rule's file
+    targets unless `_targets` is given.
+
+    Returns None when the check is `entry_only` and no skill entry file is in scope (nothing to
+    judge). Raises `UnknownCheckError` for a check name that is not registered; any exception
+    the check itself raises propagates unchanged.
+    """
+    fn = MECHANICAL_CHECKS.get(check.check or "")
+    if fn is None:
+        raise UnknownCheckError(check.check)
+    args: dict[str, Any] = {}
+    if extra_args:
+        args.update(extra_args)
+    args.update(check.args or {})
+    if match_type and "_targets" not in args:
+        args["_match_type"] = match_type
+    if args.get("entry_only") and not get_target_files(args, classified_files, root):
+        return None
+    result: CheckResult = fn(root, args, classified_files)
+    return result
 
 
 def dispatch_single_check(
@@ -42,24 +81,16 @@ def dispatch_single_check(
     if not check.check:
         return None, None
 
-    fn = MECHANICAL_CHECKS.get(check.check)
-    if fn is None:
+    match_type = rule.match.type if rule.match is not None else None
+    try:
+        result = run_mechanical_check(check, root, classified_files, extra_args, match_type)
+    except UnknownCheckError:
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
-
-    args: dict[str, Any] = {}
-    if extra_args:
-        args.update(extra_args)
-    args.update(check.args or {})
-
-    # Inject rule match type so checks can scope to the rule's file targets.
-    if rule.match is not None and rule.match.type and "_targets" not in args:
-        args["_match_type"] = rule.match.type
-
-    try:
-        result = fn(root, args, classified_files)
     except Exception:  # mechanical checks are plugin-like; any failure caught and logged
         logger.exception("Mechanical check %s failed for rule %s", check.check, rule.id)
+        return None, None
+    if result is None:
         return None, None
 
     passed = result.passed if check.expect == "present" else not result.passed
@@ -86,6 +117,7 @@ def run_mechanical_checks(
     target: Path,
     classified_files: list[ClassifiedFile],
     scoped: bool = False,
+    project_checks: str = "all",
 ) -> list[Violation]:
     """Run mechanical checks from rules and return violations.
 
@@ -98,12 +130,16 @@ def run_mechanical_checks(
         target: Project root directory
         classified_files: Classified files for file targeting
         scoped: When True, skip project-aggregate checks that are
-            meaningless on a narrowed subset (checks flagged `project_scope: true`).
+            meaningless on a narrowed subset (checks with `project_scope: aggregate`).
+            Checks with `project_scope: once` still run.
+        project_checks: ``"all"`` runs every check; ``"defer"`` skips the project-wide
+            checks of core rules (a later whole-project pass runs them once);
+            ``"only"`` runs nothing but the project-wide checks.
 
     Returns:
         List of Violation objects for failed checks
     """
-    from reporails_cli.core.classify import match_files
+    from reporails_cli.core.platform.policy.matching import match_files
 
     violations: list[Violation] = []
 
@@ -125,12 +161,19 @@ def run_mechanical_checks(
         for check in rule.checks:
             if check.type != "mechanical":
                 continue
-            if scoped and check.project_scope:
+            if scoped and check.project_scope == "aggregate":
+                continue
+            project_wide = bool(check.project_scope)
+            if project_checks == "only" and not project_wide:
+                continue
+            if project_checks == "defer" and project_wide and rule.id.startswith("CORE:"):
                 continue
             violation, result = dispatch_single_check(
                 check, rule, target, matched, location, extra_args=accumulated_args
             )
-            if violation:
+            if violation and result is not None and result.occurrences:
+                violations.extend(replace(violation, location=loc, message=msg) for loc, msg in result.occurrences)
+            elif violation:
                 violations.append(violation)
             if result is not None and result.annotations:
                 accumulated_args.update(result.annotations)
@@ -193,10 +236,7 @@ def _first_classified_path(
 
 def _is_under_root(path: Path, root: Path) -> bool:
     """True when `path` resolves to a location under `root`."""
-    try:
-        return path.resolve().is_relative_to(root.resolve())
-    except (OSError, ValueError):
-        return False
+    return is_under(path, root)
 
 
 def resolve_location(

@@ -1,1 +1,7 @@
-Use $CLAUDE_PROJECT_DIR in hook commands for portable paths
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/lint.sh" }
+    ]
+  }
+}

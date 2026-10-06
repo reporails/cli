@@ -8,11 +8,8 @@ __pycache__
 .pytest_cache
 .ruff_cache
 
-# Internal coordination surface — private inner repo, never ships in the public CLI
-/hub/
-
-# doku session/worker state — hub coordination bookkeeping, never tracked in the public CLI
-/.doku/
+# Local workspace
+/hub
 
 # Claude specific - Dev internals (root only; fixtures under tests/ and framework/ are tracked)
 /.claude/
@@ -23,16 +20,22 @@ __pycache__
 # specs paths, and toolchain that should not ship in a public repo)
 /.ails/backbone.yml
 
-# Pre-existing local rule-harness scaffolds with the wrong filename for CORE
-# rules (should be AGENTS.md — agent-agnostic). 0.5.6 will rename these and
-# track them properly. Until then they live local-only.
-framework/rules/**/tests/**/CLAUDE.md
-framework/rules/**/tests/**/.claude/
+# Rule-harness fixtures stay local-only, whatever the fixture's own file or
+# directory name (CLAUDE.md, AGENTS.md, .agents/, .github/, .cursor/, or any
+# other sample tree a rule's pass/fail cases plant).
+framework/rules/**/tests/**
 
-# Bundled ML assets — fetched by scripts/fetch_bundled_model.py
+# Corpus-derived test data and its supporting tooling stay local-only; the
+# public suite carries a small synthetic test over the same behaviours instead.
+tests/unit/test_prose_split_corpus.py
+scripts/verify_canary.py
+scripts/canary_manifest.json
+tests/unit/test_canary_verify.py
+
+# Bundled lexical assets — fetched by scripts/fetch_bundled_model.py
 # (dev-only, not committed; populated on clone and in CI before hatch build).
-# ONNX embedder (~80 MB) + spaCy en_core_web_sm pipeline (~15 MB).
-src/reporails_cli/bundled/models/
+# Retired ML assets (embedding-free build no longer ships these).
+src/reporails_cli/bundled/models
 src/reporails_cli/bundled/spacy/
 
 # npm packaging — README.md is copied from the repo root by the prepack
@@ -41,3 +44,4 @@ src/reporails_cli/bundled/spacy/
 # READMEs while sidestepping the npmjs.com per-version display bug that the
 # previous symlink approach hit.
 packages/npm/README.md
+/tmp/

@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import (
+from reporails_cli.core.discovery.agents import get_all_instruction_files
+from reporails_cli.core.discovery.file_aliases import (
     _dedupe_with_aliases,
     compute_same_dir_content_aliases,
-    get_all_instruction_files,
     get_file_aliases,
 )
 

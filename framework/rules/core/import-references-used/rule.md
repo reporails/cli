@@ -5,15 +5,10 @@ title: "Import References Resolve"
 category: structure
 type: mechanical
 severity: medium
+depends_on: [CORE:S:0024]
 backed_by:
 - claude-code-imports
 match: {scope: path_scoped}
-fix: |
-  Either reference the imported file's content in the importing file's
-  body OR remove the unused `@<path>` import. Unused imports clutter the
-  context budget without contributing — the agent loads the imported
-  content but never sees it referenced, so it dilutes the surrounding
-  directives.
 ---
 
 # Import References Resolve

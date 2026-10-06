@@ -28,6 +28,7 @@ def generate_summary(result: dict) -> str:
     files = result.get("files", {})
     stats = result.get("stats", {})
     offline = result.get("offline", True)
+    server_error = result.get("server_error")
 
     total_findings = sum(f.get("count", 0) for f in files.values())
     errors = stats.get("errors", 0)
@@ -44,6 +45,19 @@ def generate_summary(result: dict) -> str:
     # Header
     lines.append("## Reporails Check")
     lines.append("")
+
+    # A rejection, timeout, or network failure reads identically to a designed
+    # offline run below (`Mode | offline`, no score) unless called out here \u2014 the
+    # reason a `min-score` gate silently skipped instead of failing.
+    if isinstance(server_error, dict):
+        reason = server_error.get("error", "unknown_error")
+        http_status = server_error.get("status")
+        detail = f" (HTTP {http_status})" if http_status else ""
+        lines.append(
+            f"> \u26a0\ufe0f **Diagnostics server unavailable \u2014 `{reason}`{detail}.** "
+            "Findings below are from local checks only; no quality score or min-score gate ran."
+        )
+        lines.append("")
 
     mode = "offline" if offline else "online"
     lines.append("| Metric | Value |")
