@@ -23,6 +23,9 @@ _SUBSCRIBE_URL = "https://reporails.com/account?utm_source=cli"
 # The one line an unpaid run adds in place of per-finding remedies, and the link that follows it.
 UNPAID_PITCH_LINE = "  Pro adds the remedies and the order to apply them."
 
+# The Pro line that tells a user of any other coding agent how to run the rewrite.
+OTHER_AGENT_HEAL_TEXT = "in another coding agent, ask it to run the reporails heal."
+
 
 def upgrade_link() -> str:
     """The `Upgrade to Pro` link to the account page, as Rich markup."""

@@ -35,7 +35,7 @@ from reporails_cli.core.platform.config.endpoints import platform_url
 from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError, PlatformError, PlatformRefusedError
 from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_REACHING_MESSAGE, Notice, tier_label
 from reporails_cli.core.platform.dto.sign_in import SignedIn, SignInGrant
-from reporails_cli.formatters.text.funnel_cta import UNPAID_PITCH_LINE, upgrade_link_line
+from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT, UNPAID_PITCH_LINE, upgrade_link_line
 from reporails_cli.formatters.text.notices import print_notices
 from reporails_cli.interfaces.cli.helpers import _is_ci, app, console
 
@@ -85,8 +85,9 @@ def _print_tier_lines(tier: str) -> None:
     if tier in ENTITLED_TIERS:
         console.print("  Rewriting your instruction files runs in your coding agent.")
         console.print(
-            "  [bold]ails install[/bold] adds the plugin, then run [bold]/reporails:ails heal[/bold] in Claude Code."
+            "  [bold]ails install[/bold] adds the plugin, then run [bold]/reporails:ails heal[/bold] in Claude Code;"
         )
+        console.print(f"  {OTHER_AGENT_HEAL_TEXT}")
         return
     console.print("  Your diagnosis is unchanged; [bold]ails check --heal[/bold] now applies formatting fixes.")
     console.print(UNPAID_PITCH_LINE)

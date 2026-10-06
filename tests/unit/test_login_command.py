@@ -340,6 +340,7 @@ def test_free_login_prints_the_upgrade_lines(site: _Site) -> None:
     assert "Pro adds the remedies and the order to apply them." in out
     assert "Upgrade to Pro" in out
     assert "/reporails:ails heal" not in out
+    assert "ask it to run the reporails heal" not in out
 
 
 @pytest.mark.unit
@@ -350,6 +351,7 @@ def test_entitled_login_prints_the_pro_lines_and_no_pitch(site: _Site, tier: str
     out = runner.invoke(app, ["login"]).output
     assert f"Signed in as @octo ({label})" in out
     assert "/reporails:ails heal" in out
+    assert "ask it to run the reporails heal" in out
     assert "Pro adds the remedies" not in out
     assert "Upgrade to Pro" not in out
 

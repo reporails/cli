@@ -591,10 +591,13 @@ def print_scorecard(
         else:
             console.print("  \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:
+        from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT
+
         console.print()
         console.print("  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]")
         console.print(
-            "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files.[/dim]"
+            "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files;[/dim]"
         )
+        console.print(f"  [dim]{OTHER_AGENT_HEAL_TEXT}[/dim]")
 
     console.print()
