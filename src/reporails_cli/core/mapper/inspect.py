@@ -82,7 +82,7 @@ def _parse_frontmatter_globs(path: Path, key: str = "globs") -> tuple[str, ...]:
 def path_filter_key(path: Path, root: Path) -> str | None:
     """The frontmatter key the file's registry file type declares as its `path_key` (`globs` when it declares
     none); None for a file no file type claims."""
-    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), _load_registry(), path, root)
     return str(match[2].get("path_key", "globs")) if match else None
 
@@ -245,7 +245,7 @@ def _detect_file_loading(
     """
     from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 
-    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), registry, path, root)
     if match is None:
         return "session_start", "global", (), "generic", "generic"
@@ -281,6 +281,6 @@ def _detect_file_loading(
 
 def file_type_of(path: Path, root: Path, registry: dict[str, dict[str, Any]]) -> str:
     """The config key of the file type `path` matches, `generic` when it matches none."""
-    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), registry, path, root)
     return match[1] if match is not None else "generic"

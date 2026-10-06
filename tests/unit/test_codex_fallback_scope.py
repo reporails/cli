@@ -49,7 +49,7 @@ def test_fallback_file_is_kept_when_files_are_classified_for_rules(tmp_path: Pat
 
 
 def _rel(root: Path, files: list[Path]) -> list[str]:
-    return sorted(str(p.relative_to(root)) for p in files)
+    return sorted(p.relative_to(root).as_posix() for p in files)
 
 
 def _codex_files(root: Path, *, single: bool) -> list[str]:

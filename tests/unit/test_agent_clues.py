@@ -186,6 +186,7 @@ def test_a_codex_config_in_the_home_folder_does_not_name_a_projects_agent(
     home = tmp_path / "home"
     _write(home, ".codex/config.toml", 'model = "gpt-5"\n')
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     _write(project, "AGENTS.md")
     _write(project, ".gitignore", ".codex/\n")

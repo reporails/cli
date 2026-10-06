@@ -477,7 +477,10 @@ class TestFileLevelOverlap:
 
         def rec(folder: str) -> SimpleNamespace:
             return SimpleNamespace(
-                path=str(tmp_path / folder / "SKILL.md"), type="skills", skill=str(tmp_path / folder), agent="claude"
+                path=(tmp_path / folder / "SKILL.md").as_posix(),
+                type="skills",
+                skill=(tmp_path / folder).as_posix(),
+                agent="claude",
             )
 
         rmap = SimpleNamespace(files=(rec(".claude/skills/foo"), rec(".agents/skills/foo")), atoms=())
@@ -573,7 +576,9 @@ class TestFileLevelOverlap:
         from types import SimpleNamespace
 
         recs = tuple(
-            SimpleNamespace(path=str(tmp_path / f / n), type="skills", skill=str(tmp_path / f), agent="claude")
+            SimpleNamespace(
+                path=(tmp_path / f / n).as_posix(), type="skills", skill=(tmp_path / f).as_posix(), agent="claude"
+            )
             for f in folders
             for n in files
         )
@@ -619,7 +624,7 @@ class TestFileLevelOverlap:
     def test_memory_partner_is_named_by_stem_and_outside_files_by_the_header_path(self, monkeypatch, tmp_path) -> None:
         from types import SimpleNamespace
 
-        mem = str(tmp_path / "memory" / "feedback_surface_progress_on_background_work.md")
+        mem = (tmp_path / "memory" / "feedback_surface_progress_on_background_work.md").as_posix()
         rmap = SimpleNamespace(files=(SimpleNamespace(path=mem, type="memory", skill="", agent="claude"),), atoms=())
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))

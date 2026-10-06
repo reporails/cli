@@ -65,6 +65,7 @@ def _lint(
 ) -> Any:
     monkeypatch.setattr(Path, "home", lambda: home)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     if dev_mode:
         monkeypatch.setenv("AILS_DEV_MODE", "1")
     else:

@@ -26,7 +26,7 @@ def _analyse(paths: list[Path], cache: MapCache) -> dict[str, list[tuple[int, st
     records: list[FileRecord] = []
     for p in paths:
         chash = pl._classify_file(p, cache, all_atoms, needing, "legacy")
-        records.append(FileRecord(path=str(p), content_hash=chash))
+        records.append(FileRecord(path=p.as_posix(), content_hash=chash))
     pl._update_cache_after_embedding(cache, all_atoms, needing, records)
     out: dict[str, list[tuple[int, str | None, str]]] = {}
     for a in all_atoms:

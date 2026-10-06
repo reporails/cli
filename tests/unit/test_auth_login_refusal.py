@@ -44,6 +44,7 @@ def _run(
     monkeypatch: pytest.MonkeyPatch, tmp_path, exchange: _Reply | None, client_id: _Reply | None = None
 ) -> tuple[int, str]:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() reads USERPROFILE on Windows
     monkeypatch.delenv("AILS_API_KEY", raising=False)
     monkeypatch.setattr(auth_command, "_load_credentials", lambda: {}, raising=False)
     monkeypatch.setattr(auth_command, "GITHUB_CLIENT_ID", "" if client_id else "cid")

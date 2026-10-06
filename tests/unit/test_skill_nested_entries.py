@@ -17,7 +17,13 @@ def _registry(*entry_patterns: str) -> dict[str, dict[str, Any]]:
 
 def _rec(path: Path, type_: str = "skills") -> SimpleNamespace:
     return SimpleNamespace(
-        path=str(path), type=type_, skill="", loading="on_invocation", scope="task_scoped", globs=(), agent="claude"
+        path=path.as_posix(),
+        type=type_,
+        skill="",
+        loading="on_invocation",
+        scope="task_scoped",
+        globs=(),
+        agent="claude",
     )
 
 
@@ -40,10 +46,10 @@ def test_nested_skill_folder_is_recorded(tmp_path: Path) -> None:
         ],
         _registry("**/.claude/skills/*/SKILL.md"),
     )
-    nested = str(tmp_path / "packages/web/.claude/skills/deploy")
+    nested = (tmp_path / "packages/web/.claude/skills/deploy").as_posix()
     assert recs["packages/web/.claude/skills/deploy/SKILL.md"].skill == nested
     assert recs["packages/web/.claude/skills/deploy/ref.md"].skill == nested
-    top = str(tmp_path / ".claude/skills/top")
+    top = (tmp_path / ".claude/skills/top").as_posix()
     assert recs[".claude/skills/top/SKILL.md"].skill == top
     assert recs[".claude/skills/top/ref.md"].skill == top
 
@@ -61,19 +67,20 @@ def test_nested_category_skills_are_each_their_own_folder(tmp_path: Path) -> Non
         _registry("**/.cursor/skills/*/**/SKILL.md"),
     )
     base = tmp_path / "pkg/.cursor/skills/cat"
-    assert recs["pkg/.cursor/skills/cat/a/SKILL.md"].skill == str(base / "a")
-    assert recs["pkg/.cursor/skills/cat/a/ref.md"].skill == str(base / "a")
-    assert recs["pkg/.cursor/skills/cat/b/SKILL.md"].skill == str(base / "b")
+    assert recs["pkg/.cursor/skills/cat/a/SKILL.md"].skill == (base / "a").as_posix()
+    assert recs["pkg/.cursor/skills/cat/a/ref.md"].skill == (base / "a").as_posix()
+    assert recs["pkg/.cursor/skills/cat/b/SKILL.md"].skill == (base / "b").as_posix()
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_user_level_skill_is_recorded_from_its_full_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() reads USERPROFILE on Windows
     root = tmp_path / ".claude"
     recs = _record(root, ["skills/s/SKILL.md", "skills/s/ref.md"], _registry("~/.claude/skills/*/SKILL.md"))
-    assert recs["skills/s/SKILL.md"].skill == str(root / "skills/s")
-    assert recs["skills/s/ref.md"].skill == str(root / "skills/s")
+    assert recs["skills/s/SKILL.md"].skill == (root / "skills/s").as_posix()
+    assert recs["skills/s/ref.md"].skill == (root / "skills/s").as_posix()
 
 
 def _resolver(root: Path, skill: Path) -> Any:
@@ -81,7 +88,7 @@ def _resolver(root: Path, skill: Path) -> Any:
     from reporails_cli.core.pipeline.assemble import _local_finding_type_resolver
 
     rec = _rec(skill / "SKILL.md")
-    rec.skill = str(skill)
+    rec.skill = skill.as_posix()
     inp = SimpleNamespace(ruleset_map=SimpleNamespace(files=[rec]), scan_root=root)
     return _local_finding_type_resolver(inp, _load_registry())  # type: ignore[arg-type]
 
@@ -92,8 +99,8 @@ def test_unmapped_file_in_a_skill_folder_is_a_skill_file(tmp_path: Path) -> None
     skill = tmp_path / ".claude/skills/a"
     skill.mkdir(parents=True)
     typed = _resolver(tmp_path, skill)
-    assert typed(str(skill / "data.json")) == "skills"
-    assert typed(str(tmp_path / "docs/data.json")) != "skills"
+    assert typed((skill / "data.json").as_posix()) == "skills"
+    assert typed((tmp_path / "docs/data.json").as_posix()) != "skills"
 
 
 @pytest.mark.unit
@@ -104,7 +111,7 @@ def test_unmapped_file_under_a_symlinked_subfolder_of_a_skill_is_a_skill_file(tm
     skill.mkdir(parents=True)
     (skill / "linked").symlink_to(tmp_path / "shared")
     typed = _resolver(tmp_path, skill)
-    assert typed(str(skill / "linked" / "data.json")) == "skills"
+    assert typed((skill / "linked" / "data.json").as_posix()) == "skills"
 
 
 def _write(root: Path, rel: str) -> None:
@@ -160,5 +167,6 @@ def test_user_level_skill_file_is_typed_skills_from_inside_the_user_folder(
     from reporails_cli.core.mapper.inspect import _load_registry, file_type_of
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() reads USERPROFILE on Windows
     root = tmp_path / ".claude"
     assert file_type_of(root / "skills/s/SKILL.md", root, _load_registry()) == "skills"

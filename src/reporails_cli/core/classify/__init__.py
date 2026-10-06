@@ -228,7 +228,7 @@ def _with_skill_folder(
     """The declaration's properties; a `skills` file also carries its skill folder as `skill`."""
     props = dict(ft.properties)
     if ft.name == "skills" and skills is not None:
-        props["skill"] = skills[str(file_path)]
+        props["skill"] = skills[file_path.as_posix()]
         props["skill_entry_patterns"] = list(ft.entry_patterns)
     return props
 
@@ -244,7 +244,7 @@ def _classify_one(
     try:
         rel = file_path.relative_to(scan_root).as_posix()
     except ValueError:
-        rel = str(file_path)
+        rel = file_path.as_posix()
 
     for ft in file_types:
         # A pattern that matches but fails the location check (e.g. a shared
@@ -262,7 +262,7 @@ def _classify_one(
         )
         if matched_pattern is None:
             continue
-        if ft.name == "skills" and skills is not None and str(file_path) not in skills:
+        if ft.name == "skills" and skills is not None and file_path.as_posix() not in skills:
             continue
         props = _with_skill_folder(ft, file_path, skills)
         # Per-entry memory loading: only MEMORY.md is the eager index;
@@ -389,7 +389,7 @@ def resolve_match_to_paths(
         try:
             paths.append(cf.path.relative_to(scan_root).as_posix())
         except ValueError:
-            paths.append(str(cf.path))
+            paths.append(cf.path.as_posix())
     return paths
 
 

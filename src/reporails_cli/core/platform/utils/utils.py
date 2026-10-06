@@ -269,7 +269,7 @@ def relative_to_safe(path: Path, base: Path) -> str:
     try:
         return path.relative_to(base).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 def _segments_match(parts: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
@@ -326,7 +326,7 @@ def expand_home_pattern(pattern: str) -> str:
     Lets a pattern be compared against a file outside the scan root, whose relative path falls
     back to its absolute path string. A pattern with no leading `~` is returned unchanged.
     """
-    return str(Path(pattern).expanduser()) if pattern.startswith("~") else pattern
+    return Path(pattern).expanduser().as_posix() if pattern.startswith("~") else pattern
 
 
 def is_loose_leaf_pattern(pattern: str) -> bool:

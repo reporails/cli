@@ -22,7 +22,7 @@ def _write(root: Path, rel: str, text: str = "x: 1\n") -> Path:
 def _types(project: Path, rels: list[str]) -> dict[str, str]:
     files = [project / r for r in rels]
     classified = classify_files(project, files, load_file_types("codex"))
-    return {str(cf.path.relative_to(project)): cf.file_type for cf in classified}
+    return {cf.path.relative_to(project).as_posix(): cf.file_type for cf in classified}
 
 
 @pytest.mark.unit
@@ -53,6 +53,7 @@ def test_project_skill_locations_and_metadata_are_typed(tmp_path: Path) -> None:
 def test_user_skill_metadata_is_typed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     project.mkdir()
     meta = _write(home, ".agents/skills/foo/agents/openai.yaml")

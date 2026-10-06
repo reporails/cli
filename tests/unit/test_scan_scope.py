@@ -857,6 +857,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
         return home
 
     @pytest.mark.unit

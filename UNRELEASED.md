@@ -6,6 +6,7 @@
 
 ### Fixed
 
+- Windows: files are classified, matched and reported with the same forward-slash paths as on macOS and Linux, so Cursor, Copilot, Antigravity and Codex files, skills and home-folder instructions are recognised there.
 ### Removed
 
 ### Internal

@@ -35,7 +35,7 @@ def _matching_files(
 
     from reporails_cli.core.platform.policy.matching import file_matches, is_wildcard_match
 
-    matched = [str(cf.path) for cf in classified if file_matches(cf, match) and str(cf.path) in rm_paths]
+    matched = [cf.path.as_posix() for cf in classified if file_matches(cf, match) and cf.path.as_posix() in rm_paths]
     if matched:
         return sorted(matched)
     # Don't fall back to all files when the match names ANY criterion — a config

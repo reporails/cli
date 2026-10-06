@@ -90,7 +90,9 @@ def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
         schema_version="1",
         embedding_model="m",
         generated_at="2026-01-01T00:00:00Z",
-        files=(FileRecord(path=str(skill_md), content_hash="sha256:x", type="skills", skill=str(skill_dir)),),
+        files=(
+            FileRecord(path=skill_md.as_posix(), content_hash="sha256:x", type="skills", skill=skill_dir.as_posix()),
+        ),
         atoms=(),
     )
     finding = SimpleNamespace(rule="CORE:S:0056", file=str(supporting), line=1, severity="error")
@@ -151,7 +153,7 @@ def test_a_main_file_without_headings_is_sent_as_a_warning(tmp_path: Path, dev_r
         schema_version="1",
         embedding_model="none",
         generated_at="t",
-        files=(FileRecord(path=str(main), content_hash="sha256:a"),),
+        files=(FileRecord(path=main.as_posix(), content_hash="sha256:a"),),
         atoms=(),
         summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
     )

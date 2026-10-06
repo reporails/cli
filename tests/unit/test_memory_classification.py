@@ -138,6 +138,7 @@ def test_memory_folder_is_found_for_a_project_path_with_underscore_and_dot(tmp_p
     folder.mkdir(parents=True)
     (folder / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
 
     entries = memory_entries_for_agent("claude", project)
 

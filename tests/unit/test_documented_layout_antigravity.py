@@ -68,6 +68,7 @@ def test_project_location(tmp_path: Path, rel: str, expected: str) -> None:
 def test_user_location(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rel: str, expected: str) -> None:
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     project.mkdir()
     f = _write(home / rel)

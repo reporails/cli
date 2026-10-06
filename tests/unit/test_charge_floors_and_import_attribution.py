@@ -347,7 +347,7 @@ def test_a_finding_on_an_imported_instruction_names_its_file_and_line(tmp_path: 
         schema_version="1",
         embedding_model="test",
         generated_at="2026-01-01T00:00:00Z",
-        files=(FileRecord(path=str(main), content_hash="sha256:x"),),
+        files=(FileRecord(path=main.as_posix(), content_hash="sha256:x"),),
         atoms=(own, first, second),
         summary=RulesetSummary(n_atoms=3, n_charged=3, n_neutral=0),
     )

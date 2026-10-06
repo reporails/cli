@@ -32,7 +32,7 @@ def dir_prefix_from_glob(pattern: str) -> tuple[str, str] | None:
         dir_parts.append(part)
     if not dir_parts:
         return None
-    return dir_parts[-1], str(Path(*dir_parts))
+    return dir_parts[-1], Path(*dir_parts).as_posix()
 
 
 def clue_patterns(agent_type: AgentType, registry: dict[str, AgentType]) -> list[str]:

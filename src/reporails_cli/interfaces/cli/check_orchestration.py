@@ -325,7 +325,7 @@ def _file_under_target(f: Path, tgt: Path) -> bool:
 
 
 def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:
-    return {str(p.relative_to(project_root)) if p.is_relative_to(project_root) else str(p) for p in paths}
+    return {p.relative_to(project_root).as_posix() if p.is_relative_to(project_root) else p.as_posix() for p in paths}
 
 
 # The formats `_dispatch_output` actually routes — the live registry, and the only

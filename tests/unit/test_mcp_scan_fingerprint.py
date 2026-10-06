@@ -13,6 +13,7 @@ from reporails_cli.interfaces.mcp.scan_fingerprint import scan_inputs_fingerprin
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))  # Path.home() reads USERPROFILE on Windows
     monkeypatch.delenv("AILS_API_KEY", raising=False)
     monkeypatch.delenv("AILS_SERVER_URL", raising=False)
     root = tmp_path / "project"

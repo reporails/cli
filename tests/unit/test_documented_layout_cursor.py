@@ -20,7 +20,7 @@ def _write(root: Path, rel: str, text: str = "# Notes\n\nRun `make test`.\n") ->
 def _types(root: Path, rels: list[str]) -> dict[str, str | None]:
     paths = [_write(root, rel) for rel in rels]
     classified = classify_files(root, paths, load_file_types("cursor"))
-    return {str(c.path.relative_to(root)): c.file_type for c in classified}
+    return {c.path.relative_to(root).as_posix(): c.file_type for c in classified}
 
 
 @pytest.mark.unit

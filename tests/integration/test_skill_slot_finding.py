@@ -33,7 +33,7 @@ def _fixture(root: Path) -> None:
 def test_slot_finding_wire_type_is_skills_and_its_file_is_generic(tmp_path: Path) -> None:
     _fixture(tmp_path)
     recs = tuple(
-        FileRecord(path=str(tmp_path / rel), content_hash=rel, type=t, agent="claude")
+        FileRecord(path=(tmp_path / rel).as_posix(), content_hash=rel, type=t, agent="claude")
         for rel, t in (
             (".claude/skills/good/SKILL.md", "skills"),
             (".claude/skills/broken/notes.md", "skills"),

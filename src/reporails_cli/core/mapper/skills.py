@@ -44,7 +44,7 @@ def entry_pattern(path: Path, root: Path, patterns: list[str]) -> str | None:
     """The first of `patterns` that `path` matches, anchored the way file-type `patterns` are; None when none does."""
     from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 
-    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     return next((p for p in patterns if config_pattern_hits(path, rel, p, root)), None)
 
 
@@ -101,7 +101,7 @@ def record_skills(
         rec.type = skill_type(was, rec.path, () if folder is None else (folder,))
         if folder is None:
             continue
-        rec.skill = str(folder)
+        rec.skill = folder.as_posix()
         if was != "skills":
             _join_skill(rec, folders.entries.get(folder))
 
@@ -135,7 +135,7 @@ class _SkillFolders:
         """Whether `folder/SKILL.md` is a skill's entry file: the map's own verdict when it carries
         that record, else a match on the agents' entry patterns plus the file existing on disk."""
         candidate = folder / "SKILL.md"
-        if str(candidate) in self.by_path:
+        if candidate.as_posix() in self.by_path:
             return folder in self.entries
         key = (folder, agent)
         if key not in self._on_disk:
@@ -167,7 +167,7 @@ def skill_membership(
         return None
     members = {rec.path: rec.skill for rec in getattr(ruleset_map, "files", ()) if rec.skill}
     if root is not None:
-        members.update({str(slot): str(slot) for slot in skill_slot_folders(ruleset_map, root, registry)})
+        members.update({slot.as_posix(): slot.as_posix() for slot in skill_slot_folders(ruleset_map, root, registry)})
     return members
 
 

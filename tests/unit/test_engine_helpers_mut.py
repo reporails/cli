@@ -123,6 +123,7 @@ def test_find_root_never_picks_the_home_directory_for_a_target_below_it(
     (home / ".git").mkdir()
     (home / ".vscode").mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
 
     assert _find_project_root(project) == project
     assert _find_project_root(home) == home

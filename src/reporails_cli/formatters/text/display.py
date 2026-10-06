@@ -632,8 +632,8 @@ def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root
     """Return a RulesetMap restricted to `paths` (matching files + their atoms)."""
     if ruleset_map is None or not paths:
         return ruleset_map
-    keep = {str(_relativize(p, project_root)) for p in paths} | {str(p) for p in paths}
-    files = tuple(fr for fr in ruleset_map.files if str(fr.path) in keep)
+    keep = {_relativize(p, project_root).as_posix() for p in paths} | {p.as_posix() for p in paths}
+    files = tuple(fr for fr in ruleset_map.files if fr.path in keep)
     atoms = tuple(a for a in ruleset_map.atoms if a.file_path in keep)
     # RulesetMap/RulesetSummary are Pydantic models; dataclasses.replace
     # raises TypeError on a BaseModel, so use model_copy for the Pydantic target.

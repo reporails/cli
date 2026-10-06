@@ -124,7 +124,7 @@ def _imported_note(atom: Any, scan_root: Path) -> str:
     """` (from docs/style.md:7: "Keep the diff small.")` — where an imported instruction is written."""
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    where = normalize_finding_path(str(Path(atom.file_path).parent / atom.imported_from), scan_root)
+    where = normalize_finding_path((Path(atom.file_path).parent / atom.imported_from).as_posix(), scan_root)
     text = " ".join(atom.text.split())
     quote = text if len(text) <= _QUOTE_MAX_CHARS else text[: _QUOTE_MAX_CHARS - 1].rstrip() + "…"
     return f' (from {where}:{atom.imported_line}: "{quote}")'
@@ -270,7 +270,7 @@ def lint_request_local(inp: AssembleInputs) -> tuple[list[Any], int]:
 
     def _absolute(rel: str) -> str:
         path = resolve_finding_path(rel, inp.scan_root)
-        return str(path) if path is not None else rel
+        return path.as_posix() if path is not None else rel
 
     entries = local_entries(
         reported_local_findings(inp),

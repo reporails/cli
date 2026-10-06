@@ -20,7 +20,7 @@ from reporails_cli.core.platform.dto.ruleset import FileRecord
 
 
 def _memory(path: Path, file_type: str = "memory") -> list[FileRecord]:
-    return [FileRecord(path=str(path), content_hash="sha256:0", type=file_type)]
+    return [FileRecord(path=path.as_posix(), content_hash="sha256:0", type=file_type)]
 
 
 @pytest.mark.unit

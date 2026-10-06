@@ -222,7 +222,7 @@ def _relative_uri(path: Path, scan_root: Path) -> str:
             return path.relative_to(root).as_posix()
         except ValueError:
             continue
-    return str(path)
+    return path.as_posix()
 
 
 def _emit_results(
@@ -373,7 +373,7 @@ def _scan_file(
     try:
         file_uri = file_path.relative_to(scan_root).as_posix()
     except ValueError:
-        file_uri = str(file_path)
+        file_uri = file_path.as_posix()
 
     if combined_patterns:
         _scan_combined(content, file_uri, combined_patterns, results, rule_defs)
@@ -504,7 +504,7 @@ def _resolve_scanned_files(
         try:
             scanned.append(fp.relative_to(scan_root).as_posix())
         except ValueError:
-            scanned.append(str(fp))
+            scanned.append(fp.as_posix())
     return scanned
 
 
@@ -682,7 +682,7 @@ def checks_per_file(
         try:
             rel = file_path.relative_to(scan_root).as_posix()
         except ValueError:
-            rel = str(file_path)
+            rel = file_path.as_posix()
         path_ids = [c.id for c in _get_applicable_checks(file_path, scan_root, [], by_pattern)]
         result[rel] = base_ids + path_ids
 

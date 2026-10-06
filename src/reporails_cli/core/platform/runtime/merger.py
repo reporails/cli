@@ -40,7 +40,7 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
 
     # Without project_root, return paths as-is (no resolution)
     if project_root is None:
-        return str(p)
+        return p.as_posix()
 
     # Resolve to absolute for comparison
     resolved = project_root / p if not p.is_absolute() else p
@@ -61,7 +61,7 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
             pass
 
     # Already relative or fallback
-    return str(p)
+    return p.as_posix()
 
 
 @dataclass(frozen=True)

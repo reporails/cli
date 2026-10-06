@@ -22,6 +22,7 @@ def _write(root: Path, rel: str, text: str) -> None:
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))  # Path.home() reads USERPROFILE on Windows
     _write(tmp_path, "CLAUDE.md", "# Project\n\nRun `uv run pytest` before commits.\n")
     _write(tmp_path, ".claude/skills/api/SKILL.md", _SKILL)
     _write(tmp_path, ".claude/skills/api/reference.md", "# Reference\n\nUse the v2 endpoint.\n")
@@ -33,7 +34,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _scanned(root: Path) -> list[str]:
     clear_agent_cache()
-    return sorted(str(p.relative_to(root)) for p in get_all_scannable_files(root))
+    return sorted(p.relative_to(root).as_posix() for p in get_all_scannable_files(root))
 
 
 @pytest.mark.unit

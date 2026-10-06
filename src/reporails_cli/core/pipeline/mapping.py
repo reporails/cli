@@ -180,7 +180,7 @@ def agent_file_pairs(
     owner_by_path = partition_by_native_owner(filter_agents, target)
     pairs: dict[str, list[Path]] = {}
     for f in instruction_files:
-        owner = owner_by_path.get(str(f), "generic")
+        owner = owner_by_path.get(f.as_posix(), "generic")
         pairs.setdefault("" if owner == "generic" else owner, []).append(f)
     return list(pairs.items())
 

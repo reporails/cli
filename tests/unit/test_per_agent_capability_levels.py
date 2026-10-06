@@ -318,6 +318,7 @@ class TestLevelFollowsTheCheckedAgent:
         home = tmp_path / "home"
         _write(home, f".claude/projects/{claude_project_folder_name(project)}/memory/MEMORY.md", "# Memory\n")
         monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(project, "CLAUDE.md", "# Project\n")
         _write(project, "AGENTS.md", "# Project\n")

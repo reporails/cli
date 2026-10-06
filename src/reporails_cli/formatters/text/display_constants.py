@@ -287,19 +287,19 @@ def short_path(file_path: str) -> str:
             rel = p.relative_to(home).as_posix()
             if "memory" in p.parts:
                 idx = p.parts.index("memory")
-                return "~/" + str(Path(*p.parts[idx:]))
+                return "~/" + PurePosixPath(*p.parts[idx:]).as_posix()
             return "~/" + rel
         except ValueError:
             pass
     parts = p.parts
     if "memory" in parts:
         idx = parts.index("memory")
-        return str(Path(*parts[idx:]))
+        return PurePosixPath(*parts[idx:]).as_posix()
     for i, part in enumerate(parts):
         if part in (".claude", "tests"):
-            return str(Path(*parts[i:]))
+            return PurePosixPath(*parts[i:]).as_posix()
         if part.endswith(".md") and part[:1].isupper():
-            return str(Path(*parts[i:]))
+            return PurePosixPath(*parts[i:]).as_posix()
     return p.name
 
 

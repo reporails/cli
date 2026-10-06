@@ -82,7 +82,7 @@ def _atoms_from_cache(cached: Any, path: Path) -> list[Atom]:
 
     atoms = dicts_to_atoms(cached.atoms)
     for a in atoms:
-        a.file_path = str(path)
+        a.file_path = path.as_posix()
     return atoms
 
 
@@ -108,7 +108,7 @@ def _tokenize_and_cache(
     atoms = tokenize(content, segmentation)
     _translate_atom_lines(atoms, line_map, origins, path)
     for a in atoms:
-        a.file_path = str(path)
+        a.file_path = path.as_posix()
     return atoms
 
 
@@ -262,7 +262,7 @@ def _classify_one_file(
     chash = _classify_file(path, map_cache, all_atoms, atoms_needing_embed, segmentation)
     description = _parse_frontmatter_description(path) if loading == "on_invocation" else ""
     return FileRecord(
-        path=str(path),
+        path=path.as_posix(),
         content_hash=chash,
         loading=loading,
         scope=scope,

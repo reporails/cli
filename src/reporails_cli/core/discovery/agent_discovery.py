@@ -171,7 +171,7 @@ def partition_by_native_owner(detected_agents: list[Any], target: Path) -> dict[
     natively owns it -- a shared cross-agent standard (`.agents/skills/**`) or a nested
     `AGENTS.md` no agent's own namespace claims runs the core rule set only, exactly as a
     plain single-agent project's own unclaimed files would. This never drops a file from
-    the map -- it only routes each one to the right ruleset. Keyed by `str(path)` to match
+    the map -- it only routes each one to the right ruleset. Keyed by `path.as_posix()` to match
     `FileRecord.path` and `Path` instruction-file entries directly."""
     from reporails_cli.core.discovery.agents import _distinctive_agents, _own_files
     from reporails_cli.core.discovery.read_gates import reads_as_fallback
@@ -195,7 +195,7 @@ def partition_by_native_owner(detected_agents: list[Any], target: Path) -> dict[
         # claim the same path (a shared standard like root `AGENTS.md`), where the
         # claim alone can't say which detected agent, if any, really owns it here.
         if len(claimant_ids) == 1 and claimant_ids[0] in distinctive_ids:
-            owner_by_path[str(f)] = claimant_ids[0]
+            owner_by_path[f.as_posix()] = claimant_ids[0]
             continue
         owner = "generic"
         # An agent that reads the file only in place of its own main file (Claude and a
@@ -205,7 +205,7 @@ def partition_by_native_owner(detected_agents: list[Any], target: Path) -> dict[
             if cid in distinctive_ids and (_agent_namespace(f, target) == cid or _is_project_root_file(f, target)):
                 owner = cid
                 break
-        owner_by_path[str(f)] = owner
+        owner_by_path[f.as_posix()] = owner
     return owner_by_path
 
 
@@ -553,7 +553,7 @@ def _glob_external(pattern: str, target: Path, found: list[Path]) -> None:
     """Resolve an external path pattern (~/... or /absolute/...)."""
     expanded = Path(pattern).expanduser()
     if "*" in pattern:
-        expanded_str = str(expanded)
+        expanded_str = expanded.as_posix()
         if "/projects/*/" in expanded_str:
             expanded_str = expanded_str.replace("/projects/*/", f"/projects/{claude_project_folder_name(target)}/")
         import glob as _glob
@@ -583,7 +583,7 @@ def _glob_directory_entries(
     """
     dir_pattern = pattern.rstrip("/")
     if _is_external_pattern(dir_pattern):
-        expanded_str = str(Path(dir_pattern).expanduser())
+        expanded_str = Path(dir_pattern).expanduser().as_posix()
         if "/projects/*/" in expanded_str:
             expanded_str = expanded_str.replace("/projects/*/", f"/projects/{claude_project_folder_name(target)}/")
         import glob as _glob

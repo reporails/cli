@@ -169,7 +169,7 @@ def test_whole_map_cache_entry_is_not_shared_across_project_roots(
         schema_version=SCHEMA_VERSION,
         embedding_model=EMBEDDING_MODEL,
         generated_at="2026-09-20T00:00:00Z",
-        files=(FileRecord(path=str(rule), content_hash="sha256:abc", loading="on_demand", agent="cursor"),),
+        files=(FileRecord(path=rule.as_posix(), content_hash="sha256:abc", loading="on_demand", agent="cursor"),),
         atoms=(),
         summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
     )
