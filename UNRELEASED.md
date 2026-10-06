@@ -13,6 +13,7 @@
 
 ### Changed
 
+- The docs cover the messages about your account (a failed payment, Pro ending) and add FAQ answers for signing back in, signing in over SSH, and CI after the move to API keys.
 - Sign-in hints, `ails --help`, the npm wrapper's help and the docs point to `ails login` and `ails logout`. For CI and the GitHub Action, create an API key on reporails.com/account and set it as `AILS_API_KEY`.
 
 ### Fixed

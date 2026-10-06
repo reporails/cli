@@ -1,7 +1,7 @@
 ---
 title: "Tiers and Limits"
 description: "Free vs Pro — what each tier includes"
-version: "0.6.0"
+version: "0.6.1"
 last_updated: 2026-09-20
 ---
 
@@ -104,6 +104,16 @@ When you cross an hourly limit, the normal output is replaced at the bottom of `
 ```
 
 The same shape renders for `payload_too_large` and `atom_cap_exceeded`.
+
+## Messages about your account
+
+When something about your account needs your attention, `ails check` prints a short message under its header:
+
+- **A payment failed.** The message says so, and Pro stays on while the card is retried. Update the payment method from your account page.
+- **Pro is ending.** The message names the date Pro ends.
+- **Pro has ended.** The message says so, and the run continues on Free limits.
+
+A warning shows on every run until it is resolved; other messages, such as announcements, show once a day. `ails check -f json` and the MCP `validate` reply carry every message as the `notices` list (see [Configuration → Output format](configuration.md#output-format)).
 
 ## How to sign in
 

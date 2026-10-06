@@ -463,6 +463,8 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
         " `preservation` block saying whether the rewrite kept everything the file had, and a"
         " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
         " introduced listed first."
+        " `notices`, when present, are messages for the user about their account (for example a"
+        " failed payment): show each one to the user."
         " Use when user asks to check, validate, or improve instruction files."
     ),
     annotations=_READ_ONLY,

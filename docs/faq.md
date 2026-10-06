@@ -1,7 +1,7 @@
 ---
 title: "FAQ"
 description: "Common questions"
-version: "0.6.0"
+version: "0.6.1"
 last_updated: 2026-09-20
 ---
 
@@ -40,6 +40,22 @@ Sign in with `ails login`: it prints a link and a short code, opens your browser
 
 Full breakdown of what each mode includes: [Tiers and Limits](tiers.md).
 
+## I signed out (or lost my key). How do I get Pro back on this machine?
+
+Run `ails login`. Your plan comes from your account, so signing in gives this machine your plan with no key to copy.
+
+## How do I sign in on a server over SSH?
+
+Run `ails login`. Without a graphical session it prints the link and a short code instead of opening a browser; open the link on any device, enter the code, and approve. The command on the server finishes when you do.
+
+## My CI stopped authenticating after upgrading to 0.6.1
+
+The token command from 0.6.0 no longer exists. Create an API key on [reporails.com/account](https://reporails.com/account) and set it as the CI secret: `AILS_API_KEY` in the environment, or the `api-key` input of the GitHub Action. An API key and a sign-in on the same account share one plan and one hourly limit.
+
+## What are the messages above my results?
+
+They are messages about your account: a failed payment (Pro stays on while the card is retried), Pro ending on a date, Pro having ended, or an announcement. A warning shows on every run; other messages show once a day. `ails check -f json` and the MCP `validate` reply carry all of them in a `notices` list. See [Tiers and Limits](tiers.md#messages-about-your-account).
+
 ## Does Reporails read my source code?
 
 No. The CLI reads only the instruction-file types listed in [Agent Support](agent-support.md) — `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md`, `GEMINI.md`, plus the rule / skill / agent / hook files associated with each. It does not scan your repo's `src/`, `tests/`, or any other application code.
@@ -69,7 +85,7 @@ If you only have a root file but a large repo, you'll likely trip `CORE:E:0002` 
 CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or environment variable:
 
 ```yaml
-- uses: reporails/cli/action@0.6.0
+- uses: reporails/cli/action@0.6.1
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}
 ```

@@ -1,7 +1,7 @@
 ---
 title: "Score Guide"
 description: "How the score is built and what it tells you"
-version: "0.6.0"
+version: "0.6.1"
 last_updated: 2026-09-20
 ---
 
