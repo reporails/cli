@@ -364,6 +364,7 @@
 - Sign-in: `ails auth status` shows the plan your last check saw, so a new Pro subscription (or a cancellation) shows there after your next check, rather than the plan you had when you signed in.
 - Check: a project whose only instructions are Antigravity rules in `.agents/rules/` is found and checked, with or without `--agent`.
 - Check: a whole-project run set to one agent (with `--agent` or `default_agent`) that finds none of that agent's files now names the other agents the project has files for and how to check them, instead of asking for that agent's file; a check of an empty folder keeps its usual message.
+- Windows: files are classified, matched and reported with the same forward-slash paths as on macOS and Linux, so Cursor, Copilot, Antigravity and Codex files, skills and home-folder instructions are recognised there.
 
 ### Removed
 
@@ -392,7 +393,7 @@
 - `ails test` passes on a fresh clone: the source files three path-scope rule fixtures need are tracked.
 - The unit suite ends without failures on a machine with no model files: the tests that need no model run without it.
 - The tests that need the model files pass where the models are installed: the two-agent check test and the heal smoke fixture follow the current behaviour.
-- The test suites pass on a machine without the model files and skip exactly the tests that need it, as on CI, give the same results on a CI runner as locally (they no longer inherit the runner's CI variables, which switch the default output to JSON), and collect and run on Windows (tests that need POSIX file modes skip there); the source type-checks for Windows again, and the GitHub Action's self-test no longer expects a min-score gate to pass without a server.
+- The test suites pass on a machine without the model files and skip exactly the tests that need it, as on CI, give the same results on a CI runner as locally (they no longer inherit the runner's CI variables, which switch the default output to JSON), and collect and run on Windows (tests that need POSIX-only behaviour — file modes, interval timers, case-sensitive file names, symlinks, bash, the daemon socket — skip there, and tests no longer depend on the platform's default encoding or the HOME variable); the source type-checks for Windows again, and the GitHub Action's self-test no longer expects a min-score gate to pass without a server.
 - The source archive carries tracked source only: no cache, project-settings or scratch folders. The GitHub Action's `version` input says what an empty value installs, and the Action's own test asserts that a minimum-score gate fails when the diagnostics service is unreachable.
 
 - Code structure, module layout, docstrings and comments tidied and unused code removed; tests, test tooling, build, CI and release checks expanded and tightened; maintainer tooling for development checkouts; the published package and source archive no longer include build-machine leftovers, local-only test data or maintainer scripts. No change in behavior or output. Comments and docstrings in the source, the tests, the workflows and the scripts describe what the code does.
