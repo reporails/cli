@@ -10,21 +10,23 @@ import pytest
 from reporails_cli.core.platform.utils import utils
 from reporails_cli.core.platform.utils.utils import json_object, write_json_atomic
 
-pytestmark = pytest.mark.subsys_api
 
 
 @pytest.mark.unit
+@pytest.mark.subsys_api
 def test_json_object_returns_the_object() -> None:
     assert json_object('{"a": 1}') == {"a": 1}
 
 
 @pytest.mark.unit
+@pytest.mark.subsys_api
 @pytest.mark.parametrize("text", ["<html>", "[1, 2]", "", "null"])
 def test_json_object_is_empty_for_non_object_bodies(text: str) -> None:
     assert json_object(text) == {}
 
 
 @pytest.mark.unit
+@pytest.mark.subsys_api
 def test_write_json_atomic_writes_and_creates_parent(tmp_path: Path) -> None:
     target = tmp_path / "deep" / "state.json"
     write_json_atomic(target, {"k": [1, 2]})
@@ -33,6 +35,7 @@ def test_write_json_atomic_writes_and_creates_parent(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.subsys_api
 def test_write_json_atomic_failure_keeps_old_file_and_removes_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

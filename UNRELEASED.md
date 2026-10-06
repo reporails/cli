@@ -10,4 +10,4 @@
 
 ### Internal
 
-- Every new unit test carries its subsystem marker.
+- Every unit test added in this release carries its subsystem marker on the test itself.
