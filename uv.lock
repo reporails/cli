@@ -1499,7 +1499,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "tokenizers", specifier = ">=0.19,<1" },
-    { name = "typer", specifier = ">=0.12.4" },
+    { name = "typer", specifier = ">=0.12.4,<0.22" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.0" },
 ]
 provides-extras = ["dev"]

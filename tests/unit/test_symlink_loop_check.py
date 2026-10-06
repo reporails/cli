@@ -45,3 +45,16 @@ def test_discovery_leaves_out_a_looping_link_and_keeps_the_real_file(tmp_path: P
     for files in (get_all_instruction_files(tmp_path), get_all_scannable_files(tmp_path)):
         assert looping not in files
         assert any(f.name == "CLAUDE.md" and f.parent == tmp_path for f in files)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_loop_error_is_recognised_in_both_python_forms() -> None:
+    """3.12 raises RuntimeError, 3.13 raises OSError(ELOOP); a missing file is no loop."""
+    import errno
+
+    from reporails_cli.core.discovery.walk import is_symlink_loop_error
+
+    assert is_symlink_loop_error(RuntimeError("Symlink loop"))
+    assert is_symlink_loop_error(OSError(errno.ELOOP, "loop"))
+    assert not is_symlink_loop_error(FileNotFoundError(errno.ENOENT, "missing"))

@@ -57,7 +57,7 @@ jobs:
           fi
 
   qa:
-    name: QA gate (${{ matrix.os }})
+    name: QA gate (${{ matrix.os }}, py${{ matrix.python-version }})
     needs: check-release
     if: needs.check-release.outputs.is_release == 'true'
     runs-on: ${{ matrix.os }}
@@ -65,6 +65,7 @@ jobs:
       fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +74,7 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --python ${{ matrix.python-version }}
 
       - name: Lint
         run: uv run poe lint

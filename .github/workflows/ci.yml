@@ -17,7 +17,7 @@ env:
 
 jobs:
   qa:
-    name: QA gate (${{ matrix.os }})
+    name: QA gate (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -26,6 +26,7 @@ jobs:
         # so it is unlikely to surface issues ubuntu does not, and GitHub's macOS
         # runners bill far more CI minutes. Revisit if a macOS-specific defect appears.
         os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +35,7 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --python ${{ matrix.python-version }}
 
       - name: Lint
         run: uv run poe lint

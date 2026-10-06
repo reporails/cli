@@ -35,19 +35,33 @@ def safe_resolve(path: Path) -> Path:
         return path
 
 
+def is_symlink_loop_error(exc: BaseException) -> bool:
+    """True when `exc` from `Path.resolve(strict=True)` reports a symlink loop.
+
+    Python 3.12 raises `RuntimeError`; 3.13 raises `OSError` with `errno.ELOOP`.
+    """
+    return isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP
+
+
 def has_symlink_loop(path: Path) -> bool:
-    """True when following `path`'s symlinks never ends, so the path names no file."""
+    """True when following `path`'s symlinks never ends, so the path names no file.
+
+    Resolves strictly: Python 3.13's non-strict `resolve()` no longer raises on a loop.
+    A merely missing path is not a loop.
+    """
     try:
-        path.resolve()
-    except RuntimeError:
-        return True
-    except OSError as exc:
-        return exc.errno == errno.ELOOP
+        path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        return is_symlink_loop_error(exc)
+    except ValueError:
+        return False
     return False
 
 
 def is_under(path: Path, root: Path) -> bool:
     """True when `path` resolves to a location under `root` (a looping link is under nothing)."""
+    if has_symlink_loop(path):
+        return False
     try:
         return path.resolve().is_relative_to(safe_resolve(root))
     except (OSError, RuntimeError, ValueError):

@@ -9,7 +9,6 @@ regex engine can scan them as extra targets.
 
 from __future__ import annotations
 
-import errno
 import functools
 import logging
 import re
@@ -32,7 +31,7 @@ from reporails_cli.core.discovery.agents import (
     get_all_instruction_files,
     get_known_agents,
 )
-from reporails_cli.core.discovery.walk import is_under, safe_resolve
+from reporails_cli.core.discovery.walk import is_symlink_loop_error, is_under, safe_resolve
 from reporails_cli.core.mapper.classify import CONSTRAINT_WORDS
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.platform.dto.results import DetectedFeatures
@@ -56,7 +55,7 @@ def resolve_symlinked_files(target: Path, agents: list[DetectedAgent] | None = N
         try:
             real_path = path.resolve(strict=True)
         except (OSError, RuntimeError) as exc:
-            if isinstance(exc, RuntimeError) or getattr(exc, "errno", None) == errno.ELOOP:
+            if is_symlink_loop_error(exc):
                 logger.warning(
                     "Circular symlink detected: %s — file will be skipped",
                     path,

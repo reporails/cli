@@ -1294,15 +1294,15 @@ class TestInstallCommand:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_install_writes_no_agent_config(self, tmp_path: Path) -> None:
+    def test_install_writes_no_agent_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Install no longer writes a per-agent MCP config — the plugin registers the server."""
         # Run install in an isolated cwd so a reintroduced per-agent config write
         # would land here and redden the guard.
-        with runner.isolated_filesystem(temp_dir=tmp_path):
-            result = runner.invoke(app, ["install"])
-            assert result.exit_code == 0, f"install failed:\n{result.output}"
-            assert not Path(".mcp.json").exists()
-            assert not Path(".claude/mcp.json").exists()
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, ["install"])
+        assert result.exit_code == 0, f"install failed:\n{result.output}"
+        assert not Path(".mcp.json").exists()
+        assert not Path(".claude/mcp.json").exists()
 
 
 # Update command removed in 0.5.2 — tests removed.
