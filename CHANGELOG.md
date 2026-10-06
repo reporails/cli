@@ -378,7 +378,7 @@
 - Check: a whole-project run set to one agent (with `--agent` or `default_agent`) that finds none of that agent's files now names the other agents the project has files for and how to check them, instead of asking for that agent's file; a check of an empty folder keeps its usual message.
 - Windows: files are classified, matched and reported with the same forward-slash paths as on macOS and Linux, so Cursor, Copilot, Antigravity and Codex files, skills and home-folder instructions are recognised there.
 - `ails rules` and `ails explain` no longer describe the one-instruction-per-sentence and broad-conditional-scope rules as needing a server connection; both run on your machine.
-- Python 3.13: a symlink loop in a project is skipped instead of being treated as a normal file.
+- Python 3.13: a symlink loop in a project is skipped instead of being treated as a normal file or followed, on macOS, Linux and Windows.
 - Check: the summary names the agent you passed with `--agent`, or the one it detected, also when the analysis model is not on disk.
 - GitHub Action: the `min-score` gate fails when content checks were skipped, instead of passing on a partial score.
 - MCP: a `validate` call that hit a busy or slow server can be retried on the same file instead of being refused as a repeat; the reply says it is retryable and how long to wait, and retries still count toward the per-file call limit.
