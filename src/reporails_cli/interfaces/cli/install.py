@@ -451,7 +451,7 @@ def install(
 
     signed_in = has_api_key()
     if not signed_in:
-        console.print("\nSign in with [bold]ails auth login[/bold] to use heal (Pro).")
+        console.print("\nSign in with [bold]ails login[/bold] to use heal (Pro).")
     if not in_place["claude"]:
         console.print("\n[green]Done.[/green] Claude Code's plugin steps are printed above.")
         return

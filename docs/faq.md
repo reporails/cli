@@ -36,7 +36,7 @@ Signing in is free, and it does not change your limits: an anonymous run and a s
 
 Anonymous and free already show *what's* wrong and *where*: every local finding with its line, and the file-level findings as per-file counts where the line detail belongs to Pro. The deeper diagnostic is what **Pro** adds: the *remedies* (what to change, where, and how), the *exact line* of every cross-file repetition and topic overlap (anonymous and free see which files and how many, not the lines), and the ordered remediation workflow your coding agent runs end to end. The server sends no remedies at all to anonymous or free callers — only the deterministic, local fixes (like wrapping a bare name in backticks) ship free, because those run entirely on your machine. Pro also raises the hourly rate (5 → 1,200) and the payload cap (2 MB → 20 MB).
 
-Sign in with `ails auth login` (browser-based GitHub Device Flow — the CLI exchanges your GitHub token for a Reporails API key). Credentials are stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX); remove them with `ails auth logout`. To capture the key for CI, run `ails auth token`.
+Sign in with `ails login`: it prints a link and a short code, opens your browser when it can, and finishes when you approve. You sign in once per machine, and it lasts a year. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX); `ails logout` signs out only that machine. Your plan comes from your account, so any machine you sign in on gets it. For CI, create an API key on [reporails.com/account](https://reporails.com/account).
 
 Full breakdown of what each mode includes: [Tiers and Limits](tiers.md).
 
@@ -66,7 +66,7 @@ If you only have a root file but a large repo, you'll likely trip `CORE:E:0002` 
 
 ## Why does my CI run say "anonymous" even though I'm authenticated locally?
 
-CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails auth login` writes locally. Capture your key with `ails auth token`, store it as a secret in your CI provider, and pass it via the action input or environment variable:
+CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or environment variable:
 
 ```yaml
 - uses: reporails/cli/action@0.6.0
@@ -88,7 +88,7 @@ When you run `ails check --agent claude`, only CORE plus Claude-scoped rules fir
 
 ## How do I auto-fix findings?
 
-Run `ails check <target> --heal` (a path, or a capability like `skills`) — it applies the deterministic formatting fixes after validation and lists any missing sections for you to write. `--heal` needs an explicit target or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. Healing also needs an account: run `ails auth login` first (a free account is enough — Pro is not required). An anonymous run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs an account.` and changes nothing. Preview what would change with `ails check <target> --heal --dry-run`. `--fix` is an alias for `--heal` (matching the eslint / ruff convention), so `ails check <target> --fix` works the same way. To have your agent rewrite the instruction files (Pro), run `ails install`, then `/reporails:ails heal` in Claude Code; in other agents, ask your agent to run the reporails heal. See [Tiers and Limits](tiers.md).
+Run `ails check <target> --heal` (a path, or a capability like `skills`) — it applies the deterministic formatting fixes after validation and lists any missing sections for you to write. `--heal` needs an explicit target or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. Healing also needs an account: run `ails login` first (a free account is enough — Pro is not required). An anonymous run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs an account.` and changes nothing. Preview what would change with `ails check <target> --heal --dry-run`. `--fix` is an alias for `--heal` (matching the eslint / ruff convention), so `ails check <target> --fix` works the same way. To have your agent rewrite the instruction files (Pro), run `ails install`, then `/reporails:ails heal` in Claude Code; in other agents, ask your agent to run the reporails heal. See [Tiers and Limits](tiers.md).
 
 ## What's the right way to file a bug?
 

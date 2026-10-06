@@ -82,11 +82,11 @@ Per-repo settings, rule thresholds, and rule disables live in `.ails/config.yml`
 The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription) and `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail (the remedies, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
 
 ```bash
-ails auth login    # browser-based GitHub Device Flow
-ails auth status   # show whether you are signed in, the key source and a redacted key prefix (the tier for a stored sign-in; a key from the environment shows "resolved at check time")
-ails auth token    # print the full API key (for CI export)
-ails auth logout   # remove stored credentials
+ails login    # sign this machine in through your browser
+ails logout   # sign this machine out
 ```
+
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. One sign-in per machine, good for a year; your plan (Free or Pro) comes from your account, so any machine you sign in on gets it.
 
 See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configuration → Authentication](configuration.md#authentication) for the credential-storage and CI specifics.
 
@@ -94,7 +94,7 @@ See [Tiers and Limits](tiers.md) for the side-by-side breakdown, and [Configurat
 
 - **The score is lower than you expected.** Run `ails check -v` to see all findings (the default output may leave some out). Then `ails explain CORE:S:0002` (or whichever rule ID) to see the rule body and pass / fail examples. The [Score Guide](score-guide.md) explains what each band means, how per-surface scores roll up, and which rules to start with.
 - **You disagree with a rule.** Browse [reporails.com/rules](https://reporails.com/rules) for the rule's intent before deciding, then disable it in `.ails/config.yml` — see [Configuration → Disabling rules](configuration.md#disabling-rules).
-- **You want this in CI.** See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme) and [Configuration → Authentication](configuration.md#authentication) for capturing your API key with `ails auth token` and wiring it as `secrets.REPORAILS_API_KEY`.
+- **You want this in CI.** See the [GitHub Actions section in the README](https://github.com/reporails/cli#readme) and [Configuration → Authentication](configuration.md#authentication) for creating an API key on [reporails.com/account](https://reporails.com/account) and wiring it as `secrets.REPORAILS_API_KEY`.
 
 ## Useful flags
 
@@ -112,7 +112,7 @@ ails check CLAUDE.md --heal --dry-run  # preview fixes without writing (needs an
 ails check --heal --cwd          # with --heal: opt into rewriting the whole project instead of naming a target
 ```
 
-`--heal` needs an explicit target — a path or a capability like `skills` — or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. It also needs an account: run `ails auth login` first — a free account is enough, and Pro is not required. Without stored credentials (or an `AILS_API_KEY` in the environment) the run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs an account.` and applies nothing. See [Tiers and Limits](tiers.md).
+`--heal` needs an explicit target — a path or a capability like `skills` — or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. It also needs an account: run `ails login` first — a free account is enough, and Pro is not required. Without stored credentials (or an `AILS_API_KEY` in the environment) the run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs an account.` and applies nothing. See [Tiers and Limits](tiers.md).
 
 The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats` and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
 

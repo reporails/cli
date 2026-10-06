@@ -131,7 +131,7 @@ def test_install_runs_both_agents_plugin_commands(monkeypatch: pytest.MonkeyPatc
     for agent in ("Cursor", "GitHub Copilot", "Antigravity"):
         assert agent in out
     assert "Claude Code only" in out
-    assert "ails auth login" in out
+    assert "ails login" in out
     assert "/reporails:ails heal" in out
     assert "/reload-plugins" in out
 
@@ -146,7 +146,7 @@ def test_install_skips_absent_agents_and_signed_in_note(monkeypatch: pytest.Monk
 
     assert result.exit_code == 0
     assert runner.calls == []
-    assert "ails auth login" not in result.stdout
+    assert "ails login" not in result.stdout
 
 
 def _runner_invoke() -> Any:

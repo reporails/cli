@@ -18,7 +18,7 @@ The CLI sends your API key (if you have one) with each request; the diagnostic b
 
 | Limit / capability                        | Free (anonymous or signed in) | Pro                                       |
 |-------------------------------------------|-------------------------------|-------------------------------------------|
-| Account                                   | Optional (`ails auth login`)  | Subscription via your account page        |
+| Account                                   | Optional (`ails login`)  | Subscription via your account page        |
 | Hourly request rate                       | 5 / hour                      | 1,200 / hour                              |
 | Per-request payload cap                   | 2 MB                          | 20 MB                                     |
 | Mechanical and structural rule findings   | Full detail                   | Full detail                               |
@@ -37,9 +37,9 @@ On Free the local deterministic fixes, and on Pro the remedies and the workflow,
 
 ## What the limits mean in practice
 
-**Hourly request rate.** Each `ails check` run counts as one request. The free limit covers casual use — five runs per hour is enough to iterate while editing a single file. Once you cross the limit, the response is a `429 rate_limit_exceeded` with a call-to-action: anonymous is pointed at `ails auth login` and then at Pro (the account is the step before subscribing); a signed-in free user is pointed straight at upgrading to Pro.
+**Hourly request rate.** Each `ails check` run counts as one request. The free limit covers casual use — five runs per hour is enough to iterate while editing a single file. Once you cross the limit, the response is a `429 rate_limit_exceeded` with a call-to-action: anonymous is pointed at `ails login` and then at Pro (the account is the step before subscribing); a signed-in free user is pointed straight at upgrading to Pro.
 
-After a `429`, the CLI waits for your limit to reset before contacting the server again: every run in the meantime shows the same limit message, with the "Try again in ~N min" countdown. This keeps watchers, hooks, and agent loops that re-run `ails check` from hammering a limit that is already spent. Signing in with `ails auth login` applies your account's limit straight away.
+After a `429`, the CLI waits for your limit to reset before contacting the server again: every run in the meantime shows the same limit message, with the "Try again in ~N min" countdown. This keeps watchers, hooks, and agent loops that re-run `ails check` from hammering a limit that is already spent. Signing in with `ails login` applies your account's limit straight away.
 
 **Per-request payload cap.** The cap is the size of the analysis payload sent to the diagnostic backend (embeddings, structural metadata, file paths) — not the size of your instruction files on disk. A typical project sends well under 1 MB. Multi-MB payloads usually mean a very large root instruction file that should be split — see [FAQ → polyglot monorepo](faq.md#i-run-a-polyglot-monorepo-should-i-have-one-claudemd-or-many).
 
@@ -63,11 +63,11 @@ Free output shows the score, a card per file with its first findings, a count of
   ⚠  .claude/rules/testing.md ↔ CLAUDE.md — 3 overlaps
   ⚠  .claude/rules/testing.md ↔ CLAUDE.md — 1 repetition
 
-  Line-level detail → sign in with ails auth login, then upgrade to Pro
+  Line-level detail → sign in with ails login, then upgrade to Pro
 
   ...
   Pro adds the remedies and the order to apply them.
-  → sign in with ails auth login, then upgrade to Pro
+  → sign in with ails login, then upgrade to Pro
 ```
 
 Pro output folds a topic-overlap finding back into the per-file list with its line and its full message (`-v` shown here to avoid truncation); a cross-file *repetition* stays a summary count on both tiers — only the JSON `cross_file[]` carries its two lines. The remedies and the ordered remediation workflow go to your coding agent through the MCP `validate` tool (`-f json` carries them too); the terminal output lists findings, not fixes:
@@ -93,7 +93,7 @@ When you cross an hourly limit, the normal output is replaced at the bottom of `
 
 ```
   ⚠  Server diagnostics unavailable.
-  Anonymous limit hit (5/hr). Try again in ~12 min. Sign in with `ails auth login`, then upgrade to Pro to raise it to 1,200/hr
+  Anonymous limit hit (5/hr). Try again in ~12 min. Sign in with `ails login`, then upgrade to Pro to raise it to 1,200/hr
   Did you see an error? Let us know: https://github.com/reporails/cli/issues
 ```
 
@@ -108,21 +108,15 @@ The same shape renders for `payload_too_large` and `atom_cap_exceeded`.
 ## How to sign in
 
 ```bash
-ails auth login        # GitHub Device Flow — authorize in browser, exchange for API key
-ails auth status       # show whether you're signed in, the key source, and a redacted key prefix (the tier for a stored sign-in; a key from the environment shows "resolved at check time")
-ails auth token        # print the full API key (for CI export)
-ails auth logout       # remove stored credentials
+ails login        # sign this machine in through your browser
+ails logout       # sign this machine out
 ```
 
-`ails auth login` opens GitHub in your browser via the standard Device Flow; once you authorize, you have a free account. Credentials are stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning that NTFS ACLs are not auto-restricted, so secure the file manually if you're on Windows).
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. You sign in once per machine, and the sign-in lasts a year. Run on a machine that is already signed in, it shows who is signed in and on which plan. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning that NTFS ACLs are not auto-restricted, so secure the file manually if you're on Windows). `ails logout` signs out only the machine you run it on.
 
-For CI, capture the key and set it as a secret:
+Your plan, Free or Pro, comes from your account, not from the machine: sign in on any machine and you get your account's plan.
 
-```bash
-ails auth token   # prints the key to stdout
-```
-
-Then add it to your CI provider's secret store and pass it as `AILS_API_KEY` (env) or via the GitHub Action's `api-key` input — see [Configuration → Authentication](configuration.md#authentication).
+For CI, create an API key on [reporails.com/account](https://reporails.com/account), add it to your CI provider's secret store, and pass it as `AILS_API_KEY` (env) or via the GitHub Action's `api-key` input — see [Configuration → Authentication](configuration.md#authentication).
 
 ## Why sign in, and why upgrade?
 

@@ -434,7 +434,7 @@ class TestPrintScorecardGating:
 
 
 class TestFreeTierCta:
-    """The free-tier Pro-upsell line must not send a signed-in user to `ails auth login`."""
+    """The free-tier Pro-upsell line must not send a signed-in user to `ails login`."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -445,7 +445,7 @@ class TestFreeTierCta:
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
-        assert "ails auth login" in out
+        assert "ails login" in out
         assert "reporails.com/account" not in out
 
     @pytest.mark.unit
@@ -459,7 +459,7 @@ class TestFreeTierCta:
         out = cap.get()
         assert "Upgrade to Pro" in out
         assert "reporails.com/account" in out
-        assert "ails auth login" not in out
+        assert "ails login" not in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

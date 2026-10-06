@@ -297,7 +297,7 @@ class TestDetailCta:
         with display.console.capture() as cap:
             _render_cross_file_coordinates(result, get_sev_icons(True))
         out = cap.get()
-        assert "ails auth login" in out
+        assert "ails login" in out
         assert "reporails.com/account" not in out
 
     @pytest.mark.unit
@@ -314,7 +314,7 @@ class TestDetailCta:
         out = cap.get()
         assert "Upgrade to Pro" in out
         assert "reporails.com/account" in out
-        assert "ails auth login" not in out
+        assert "ails login" not in out
 
 
 # ── _print_header: tier badge branch (L332) ────────────────────────────

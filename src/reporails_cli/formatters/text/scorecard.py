@@ -577,7 +577,7 @@ def print_scorecard(
     # One line per run for an unpaid tier, in place of any per-finding remedy
     # (the reply carries none for an anonymous or free run) — keyed on whether a
     # key is held, not on the reported tier: a signed-in free user told to run
-    # `ails auth login` is sent to a dead end. Never claims a fix for every
+    # `ails login` is sent to a dead end. Never claims a fix for every
     # finding — only that Pro adds the remedies and the order to apply them.
     refused = getattr(result, "server_error", None) is not None
     if tier == "free" and not refused:
@@ -589,7 +589,7 @@ def print_scorecard(
         if has_api_key():
             console.print(f"  \u2192 [link={_SUBSCRIBE_URL}][bold]Upgrade to Pro[/bold] reporails.com/account[/link]")
         else:
-            console.print("  \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro")
+            console.print("  \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:
         console.print()
         console.print("  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]")

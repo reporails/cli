@@ -141,7 +141,7 @@ def _render_detail_cta() -> None:
     """Print the "how to get line-level detail" call to action.
 
     Keyed on whether a key is held locally, not on the reported tier: a
-    signed-in user told to run `ails auth login` is sent to a dead end, so
+    signed-in user told to run `ails login` is sent to a dead end, so
     they get the upgrade surface instead.
     """
     from reporails_cli.core.platform.adapters.api_client import has_api_key
@@ -153,7 +153,7 @@ def _render_detail_cta() -> None:
         )
     else:
         console.print(
-            "\n  [dim]Line-level detail \u2192 sign in with [bold]ails auth login[/bold], then upgrade to Pro[/dim]"
+            "\n  [dim]Line-level detail \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro[/dim]"
         )
 
 

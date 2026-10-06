@@ -14,10 +14,10 @@ from typing import Any
 
 # The tier vocabulary, in ONE place. Every surface that has to answer "is this
 # session entitled?" (the scorecard banner, the funnel CTA, the contact-link
-# gate, `ails auth status`) reads these sets instead of re-spelling the member
+# gate, the sign-in summary) reads these sets instead of re-spelling the member
 # names.
 # A tier string that is in NEITHER set is unknown, not unentitled: the reader
-# decides what to do with it (the banner treats it as entitled, `auth status`
+# decides what to do with it (the banner treats it as entitled, the sign-in summary
 # declines to echo it).
 ENTITLED_TIERS = frozenset({"pro", "team"})
 UNENTITLED_TIERS = frozenset({"anonymous", "free"})

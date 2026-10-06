@@ -78,7 +78,7 @@ def _tier_from_config() -> str:
 
 
 def _api_key_from_credentials() -> str:
-    """Read API key from ~/.reporails/credentials.yml (set by `ails auth login`).
+    """Read API key from ~/.reporails/credentials.yml (set by `ails login`).
 
     Returns "" only for genuine absence (no file / no key). Raises
     CredentialsUnreadableError when the file exists but cannot be read or parsed.

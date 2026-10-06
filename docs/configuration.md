@@ -78,7 +78,7 @@ The first run needs network access. If it cannot reach the download host, `ails 
 export AILS_MODEL_URL="https://mirror.example.com/reporails-model"
 ```
 
-`AILS_MODEL_URL` is the base URL; Reporails appends each model file's name to it, flattening any `/` in the file's own path to `__`, so a mirror serves one flat directory. To build one, run a check once on a machine that can reach the default host, then copy every file under `~/.reporails/cache/models/<version>/` to the mirror, naming each file by its path inside that folder with every `/` replaced by `__`. Unset, the model downloads from `https://models.reporails.com` — allow that host through a firewall or proxy for the first run. When you are signed in (`ails auth login` or `AILS_API_KEY`), that download carries your API key; the key is never sent to an `AILS_MODEL_URL` host.
+`AILS_MODEL_URL` is the base URL; Reporails appends each model file's name to it, flattening any `/` in the file's own path to `__`, so a mirror serves one flat directory. To build one, run a check once on a machine that can reach the default host, then copy every file under `~/.reporails/cache/models/<version>/` to the mirror, naming each file by its path inside that folder with every `/` replaced by `__`. Unset, the model downloads from `https://models.reporails.com` — allow that host through a firewall or proxy for the first run. When you are signed in (`ails login` or `AILS_API_KEY`), that download carries your API key; the key is never sent to an `AILS_MODEL_URL` host.
 
 To never download, set `AILS_MODEL_OFFLINE=1`. Reporails then uses a model already on disk and, without one, runs without the content checks.
 
@@ -307,15 +307,15 @@ When `min-score` is set, the gate fails CLOSED if the diagnostics server rejecte
 The anonymous tier requires no account, and signing in is free. A free account does not raise your rate or payload caps — anonymous and signed-in free accounts share the same limits. Signing in gives you an identity (so you can subscribe and manage the subscription) and enables `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
 
 ```bash
-ails auth login        # browser-based GitHub Device Flow
-ails auth status       # show whether you're signed in, the key source, and a redacted key prefix (the tier is shown for a stored sign-in; for a key held in `AILS_API_KEY` it reads `Tier: (resolved at check time)`)
-ails auth token        # print the full API key (for CI export)
-ails auth logout       # remove stored credentials
+ails login        # sign this machine in through your browser
+ails logout       # sign this machine out
 ```
 
-Credentials are stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually).
+`ails login` prints a link and a short code, opens your browser when it can, and finishes when you approve. One sign-in per machine; it lasts a year. Run again on a signed-in machine, it shows who is signed in and on which plan. `ails logout` signs out only this machine. Your plan (Free or Pro) comes from your account, not the machine.
 
-For CI, capture the API key with `ails auth token` and add it to your CI provider's secret store as `AILS_API_KEY` (or pass it via the GitHub Action's `api-key` input — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme)).
+The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX; Windows logs a warning, secure the file manually). When `AILS_API_KEY` is set, it is used instead of the sign-in.
+
+For CI, create an API key on [reporails.com/account](https://reporails.com/account) and add it to your CI provider's secret store as `AILS_API_KEY` (or pass it via the GitHub Action's `api-key` input — see the [GitHub Actions section in the README](https://github.com/reporails/cli#readme)).
 
 ## GitHub Action
 

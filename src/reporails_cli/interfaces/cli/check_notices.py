@@ -45,7 +45,7 @@ def _emit_heal_auth_required(output_format: str) -> None:
             json.dumps(
                 {
                     "error": "heal_requires_auth",
-                    "message": "Applying fixes (--heal) requires an account. Run `ails auth login`.",
+                    "message": "Applying fixes (--heal) requires an account. Run `ails login`.",
                 }
             ),
             file=sys.stderr,
@@ -53,7 +53,7 @@ def _emit_heal_auth_required(output_format: str) -> None:
         return
     console.print(
         "[yellow]Applying fixes needs an account.[/yellow] A free account is enough — this is not a paid feature.\n"
-        "  Run [bold]ails auth login[/bold] to enable [bold]--heal[/bold]."
+        "  Run [bold]ails login[/bold] to enable [bold]--heal[/bold]."
     )
 
 

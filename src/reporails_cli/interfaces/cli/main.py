@@ -78,7 +78,7 @@ def check(
         False,
         "--heal",
         "--fix",
-        help="Apply auto-fixes after validation. Needs an account — run `ails auth login` first.",
+        help="Apply auto-fixes after validation. Needs an account — run `ails login` first.",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="With --heal: preview fixes without writing."),
     cwd: bool = typer.Option(False, "--cwd", help="With --heal: opt into rewriting the whole project."),

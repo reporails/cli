@@ -204,7 +204,7 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
         "anonymous",
     ): (
         "Anonymous limit hit ({err.limit}/hr). {err.reset_phrase}"
-        "Sign in with `ails auth login`, then upgrade to Pro to raise it to 1,200/hr"
+        "Sign in with `ails login`, then upgrade to Pro to raise it to 1,200/hr"
     ),
     ("rate_limit_exceeded", "free"): (
         "Hit the free limit ({err.limit}/hr). {err.reset_phrase}Upgrade to Pro to raise it to 1,200/hr"
@@ -214,7 +214,7 @@ _CTA_TEMPLATES: dict[tuple[str, str], str] = {
     ),
     ("payload_too_large", "anonymous"): (
         "Project too large for anonymous (2 MB cap). "
-        "Sign in with `ails auth login`, then upgrade to Pro to raise it to 20 MB"
+        "Sign in with `ails login`, then upgrade to Pro to raise it to 20 MB"
     ),
     ("payload_too_large", "free"): (
         "Project too large on the free tier (2 MB cap). Upgrade to Pro to raise it to 20 MB"
