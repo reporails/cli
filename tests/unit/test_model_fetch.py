@@ -1184,7 +1184,7 @@ def test_licence_names_agree_across_fetch_manifest_package_metadata_and_release_
 
     repo = Path(__file__).resolve().parents[2]
     metadata = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))["project"]["license-files"]
-    release = (repo / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    release = (repo / ".github" / "workflows" / "release-wheel.yml").read_text(encoding="utf-8")
     checked = re.search(r"for name in \(([^)]*)\):", release)
     assert checked is not None
     release_names = re.findall(r"'([^']+)'", checked.group(1))
