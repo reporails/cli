@@ -10,6 +10,8 @@ import pytest
 from reporails_cli.core.platform.utils import utils
 from reporails_cli.core.platform.utils.utils import json_object, write_json_atomic
 
+pytestmark = pytest.mark.subsys_api
+
 
 @pytest.mark.unit
 def test_json_object_returns_the_object() -> None:
