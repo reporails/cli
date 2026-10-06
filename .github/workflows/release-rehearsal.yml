@@ -1,0 +1,28 @@
+name: Release rehearsal
+
+# Runs the release's QA and wheel verification without publishing, so a
+# release-only failure shows on the release branch and on the PR before the merge.
+
+on:
+  push:
+    branches: ["[0-9]*.[0-9]*.[0-9]*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  qa:
+    name: QA gate
+    uses: ./.github/workflows/release-qa.yml
+    with:
+      fail-fast: false
+
+  wheel:
+    name: Build and verify wheel
+    needs: qa
+    uses: ./.github/workflows/release-wheel.yml

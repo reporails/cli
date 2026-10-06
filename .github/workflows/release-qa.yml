@@ -1,0 +1,75 @@
+name: Release QA
+
+# Reusable: the release's QA gate. Called by release.yml and release-rehearsal.yml
+# so the rehearsal and the release run the same steps.
+
+on:
+  workflow_call:
+    inputs:
+      fail-fast:
+        description: Cancel the remaining matrix cells when one fails
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  qa:
+    name: QA gate (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: ${{ inputs.fail-fast }}
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --python ${{ matrix.python-version }}
+
+      - name: Lint
+        run: uv run poe lint
+
+      - name: Structural gate
+        run: uv run poe pylint_struct
+
+      - name: Architecture gate
+        run: uv run poe arch
+
+      - name: Type check (host platform)
+        run: uv run poe type
+
+      - name: Type check (cross-platform)
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run mypy --platform=win32 src/
+
+      - name: Rule lint
+        run: uv run poe test_lint
+
+      - name: Unit tests
+        run: uv run poe test_unit
+
+      - name: Integration tests (incl. slow install/self-update path)
+        run: uv run poe test_integration_all
+
+      # Hermetic: no network. AILS_SERVER_URL points nowhere and
+      # AILS_MODEL_OFFLINE skips the model fetch — these scenarios guard
+      # discovery, classification, and formatter shape, none of which need
+      # the diagnostics server or the model.
+      - name: Behavioral tests
+        env:
+          AILS_SERVER_URL: "http://127.0.0.1:9"
+          AILS_MODEL_OFFLINE: "1"
+        run: uv run poe test_behave
+
+      # Smoke tests intentionally not gated in CI yet — environment-dependent.
+      # Re-enable once the smoke suite is hermetic.
