@@ -49,7 +49,6 @@ Reporails — Diagnostics
   Quality   1.0 / 10  ▓▓░░░░░░░░░░░░░░░░░░  (1.0s)
   Fix now   1 error. Start with CORE:S:0024.
   Findings  46 total · -v to list every one
-  An error is worth fixing even when clearing it barely moves the score.
   Agent: Claude
   Level: L3 Scoped
 
@@ -133,3 +132,5 @@ The action keeps the analysis model (~275 MB) in the repository's Actions cache:
 ## License
 
 [BUSL 1.1](https://github.com/reporails/cli/blob/main/LICENSE) - converts to Apache 2.0 three years after each release.
+
+The analysis model files are licensed separately under the [Reporails Model Licence](https://github.com/reporails/cli/blob/main/LICENSE-weights).

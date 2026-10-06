@@ -26,6 +26,8 @@ Run it locally with `npx @reporails/cli check` or wire it into CI. Anonymous mod
 
 [BUSL 1.1](https://github.com/reporails/cli/blob/main/LICENSE) — converts to Apache 2.0 three years after each release.
 
+The analysis model files are licensed separately under the [Reporails Model Licence](https://github.com/reporails/cli/blob/main/LICENSE-weights).
+
 ---
 
 Reporails CLI Documentation · [Getting Started →](getting-started.md)

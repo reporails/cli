@@ -38,7 +38,6 @@ Reporails — Diagnostics
   Quality   7.9 / 10  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  (1.3s)
   Fix now   16 errors. Start with CORE:C:0053.
   Findings  21 total · -v to list every one
-  An error is worth fixing even when clearing it barely moves the score.
   Agent: Claude
   Level: L4 Delegated
 

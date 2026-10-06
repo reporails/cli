@@ -2,6 +2,19 @@
 
 ## 0.6.0
 
+### Breaking changes
+
+- The analysis model is no longer inside the package: the first `ails check` on a machine downloads it (about 275 MB) and needs network access once; later runs work offline. In CI or a locked-down network, allow that download first. If it cannot be reached, `ails check` stops with exit code 2.
+- `ails check --format compact` and `--format brief` are gone, and an unknown format now exits with code 2 instead of falling back to the scorecard. Use `text`, `json` or `github`.
+- The text summary now reads `Quality`, `Fix now` and `Findings`; the separate error/warning/info headline is gone. Read those counts from `stats` in `-f json` if a script parsed them.
+- In `-f json`, `stats.cross_file_conflicts` is gone and the per-file `regime` block carries only `triage_tier`; `named`, `within_capacity` and `confidence` no longer appear. Update any script that reads them.
+- A check that could not reach the diagnostic backend now puts a `server_error` object in `--format json` and `--format github`, and a CI `min-score` gate no longer passes on an outage. Expect failures where an outage used to read as a clean run.
+- Text findings no longer carry an indented fix line. Fixes reach your coding agent through the reporails plugin (`ails install`, then `/reporails:ails heal` in Claude Code) and per finding in `-f json`.
+- `ails check --heal` no longer writes placeholder sections into your files; it lists what each file needs so you write the content.
+- In `.ails/config.yml` and `~/.reporails/config.yml`, the `overrides:` key and `framework_version` are removed, and `ails config set tier` is rejected as an unknown key. Move a per-rule `min_lines` threshold to the top-level `rule_thresholds:` key; a rule's severity comes from its rule file.
+- Rule severities changed across the core ruleset, so low-severity findings display as `info` instead of `warning`. Check any CI step that matches on `warning`.
+- The `CORE:C:0044` finding "Capacity saturation across N topics" is gone; topic overlap between files is reported as "Topic Overlap Across Elements".
+
 ### Added
 
 - Pro: `ails auth login` and the `ails check` footer now say where rewriting runs: `ails install` adds the reporails plugin, then `/reporails:ails heal` in Claude Code (in other agents, ask your agent to run the reporails heal). `ails check --heal` is described as applying formatting fixes. The README, tiers, getting-started and FAQ pages say the same.
@@ -33,7 +46,7 @@
 
 - Rule authors: a rule can target subagent definitions and plugin manifests (`match.type: agents` / `plugins`). A rule can declare `requires_capability: <name>` (a capability from `framework/capabilities_matrix.yml`, such as `memory`, `hooks`, `skills`) and then applies only when the selected `--agent` has it; agent-agnostic scans and agents not in the matrix are not filtered. `enforcement_required` and `enforcement_mechanism` (`hook`, `permission`, `ci`, `managed_settings`, `static_analysis`) mark a concern that needs an enforcement partner outside the instruction file, and `surface_mutations` gives per-surface overrides. The hook, permission, CI and managed-settings governance rules now set the enforcement fields. `ails test --lint` flags a rule that sets `enforcement_required: true` without an `enforcement_mechanism`. No finding or score changes.
 
-- Licence: the analysis model files ship under their own licence, `LICENSE-weights` (BUSL 1.1 scoped to the model files). You may run the models on your own instruction files and evaluate them; you may not use the weights or their outputs to train, fine-tune or distill any machine-learning model, offer them as a competing product, redistribute them outside the CLI, or reverse-engineer them. The notice ships with the package and is downloaded next to the model files. No change to `ails` behaviour or output.
+- Licence: the analysis model files are licensed under the Reporails Model Licence (`LICENSE-weights`). You may run them through `ails` on your own instruction files and use the results; you may not use the model files or their results to train, fine-tune or distil any machine-learning model, offer them as a competing product or service, run them outside the CLI, redistribute them, or reverse-engineer them. The bundled third-party embedding model keeps its Apache-2.0 licence (see `NOTICE`). The licence ships with the package and is downloaded next to the model files. No change to `ails` behaviour or output.
 
 - GitHub Action: the model downloads on the first run only; later runs on the same runner OS restore it from the Actions cache, including after a failed check (for example `strict` findings). On a pull request, unchanged instruction files are served from the previous run's analysis, so only the files the change touches pay the cold cost; the score matches a full cold run, and a fresh clone with no prior cache does a full analysis. A workflow that runs `ails` directly can cache the model the same way ([Configuration → Caching the model in CI](docs/configuration.md#caching-the-model-in-ci)); when `ails` downloads the model inside GitHub Actions it prints a line pointing there.
 
@@ -78,7 +91,6 @@
 - MCP: `validate` on a large project answers a repeat call in about a second instead of ten or more, and a call after an edit in about half the time.
 - Rewrite check: a rewrite that turns a hedge into an order ("prefer X" to "use X", "Consider running X" to "Run X", "Consider avoiding X" to "Avoid X") passes and is listed with the line before and after; the heal report shows each one as made direct.
 - Rewrite check: a directive the rewrite appends is reported as an added instruction, as an appended prohibition already was.
-- Licence: the model files are licensed under the Reporails Model Licence (`LICENSE-weights`): use through `ails` on your own instruction files only; no training, fine-tuning or distilling a model, no redistribution, no competing service. The bundled third-party embedding model keeps its Apache-2.0 licence (see `NOTICE`).
 - Licence: a third-party notice (`NOTICE`) and the Apache License 2.0 text (`LICENSE-APACHE-2.0`) ship in the package and are downloaded next to the model files; the package metadata names the licensor (Mészáros Gábor e.v., trading as Reporails) and both licences.
 
 - Rules: a finding is not repeated where the rule it builds on already reports.
@@ -169,7 +181,7 @@
 
 - Rules: severity changed across the core ruleset. Specificity rules are now critical, instruction-direction and topic/scope rules high, and position, length, inline-formatting and dilution rules low. Low-severity findings display as `info` instead of `warning` in text, JSON and MCP output; the set of findings is unchanged. A per-check `severity:` in `checks.yml` carries through to deterministic findings. Example blocks and guidance text no longer model patterns that weaken the instruction they illustrate (prohibition examples use sentence-case negation and abstract categories).
 
-- Check (summary): the check summary reads in three lines — `Quality` (the score), `Fix now` (the error count and the rule with the most errors, to start with) and `Findings` (one total). The raw error/warning/info headline is gone from the text output; those counts stay in the JSON `stats`. The per-surface and per-item health bars read `N findings · M errors`, the file-card tail reads `+N more · -v to list`, and the caption "An error is worth fixing even when clearing it barely moves the score." appears whenever errors are listed. On the free tier the `Fix now` line names the errors held back as Pro diagnostics beside the visible count. The scorecard's upsell lines key on whether an API key is held: a signed-in user is pointed at the upgrade page and a keyless one at sign-in.
+- Check (summary): the check summary reads in three lines — `Quality` (the score), `Fix now` (the error count and the rule with the most errors, to start with) and `Findings` (one total). The raw error/warning/info headline is gone from the text output; those counts stay in the JSON `stats`. The per-surface and per-item health bars read `N findings · M errors`, and the file-card tail reads `+N more · -v to list`. On the free tier the `Fix now` line names the errors held back as Pro diagnostics beside the visible count. The scorecard's upsell lines key on whether an API key is held: a signed-in user is pointed at the upgrade page and a keyless one at sign-in.
 
 - Check (JSON output): `cross_file[].type` and `cross_file_coordinates[].type` can be `overlap` (one shared instruction of an overlapping file pair), `stats.cross_file_overlaps` counts the overlapping pairs, and the repetition count is one number at every tier (`stats.cross_file_repetitions`), which the text scorecard also reads. Cross-file repetition is reported once per repeated line pair, and `cross_file` rows name files by project-relative path.
 
