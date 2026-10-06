@@ -22,7 +22,7 @@ inputs:
     default: ''
   version:
     description: 'CLI version to install (e.g., 0.3.0). Empty = the version this Action was released with (the latest release when run from a branch).'
-    default: ''
+    default: '0.6.1'
   from-source:
     description: 'Install CLI from local checkout instead of PyPI (for CI testing of the action itself).'
     default: 'false'
