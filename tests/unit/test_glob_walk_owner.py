@@ -108,6 +108,8 @@ def test_case_insensitive_prefix_folders_are_resolved(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_case_sensitive_match_is_the_default(tmp_path: Path) -> None:
     _write(tmp_path / ".Claude" / "x.md")
+    if (tmp_path / ".claude").exists():
+        pytest.skip("case-insensitive filesystem: .claude and .Claude are the same folder")
     assert list(walk.walk_glob_matches(tmp_path, ".claude/*.md", frozenset())) == []
 
 
