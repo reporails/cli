@@ -16,7 +16,7 @@ Import references in instruction files must resolve to existing files. Broken im
 ## Antipatterns
 
 - **Renamed file without updating imports**: Moving `docs/setup.md` to `docs/getting-started.md` but leaving `@docs/setup.md` in another file. The `extract_imports` check finds the reference and `check_import_targets_exist` fails because the path no longer resolves.
-- **Relative path from wrong directory**: Writing `@../shared/config.md` when the file structure requires `@../../shared/config.md`. The path resolution check verifies the target exists relative to the project root.
+- **Relative path from wrong directory**: Writing `@../shared/config.md` when the file structure requires `@../../shared/config.md`. The path resolution check verifies the target exists relative to the file that holds the import.
 - **Import referencing a directory instead of a file**: Writing `@docs/specs/` instead of `@docs/specs/pipeline.md`. The check expects file paths, not directory paths.
 
 ## Pass / Fail

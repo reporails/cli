@@ -18,7 +18,7 @@ from reporails_cli.core.lint.mechanical.checks import (
     _safe_float,
     get_target_files,
 )
-from reporails_cli.core.mapper.imports import import_refs
+from reporails_cli.core.mapper.imports import import_refs, import_refs_with_lines, import_target
 from reporails_cli.core.mapper.inspect import path_filter_key, split_top_level_commas
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.mapper.skills import one_level_skills_roots, slot_subfolders
@@ -192,19 +192,25 @@ def extract_imports(
 ) -> CheckResult:
     """Check for @import references in instruction files.
 
-    Reads the imports through `import_refs` in `core/mapper/imports.py` so detection
+    Reads the imports through `import_refs_with_lines` in `core/mapper/imports.py` so detection
     matches `expand_imports` — a reference inside code (a fenced or indented block, or
     a span such as `` `npx @reporails/cli check .` ``, documenting a scoped npm
     package), an email and a non-path `@token` are not imports.
+
+    Annotates `discovered_imports` as a list of `"<file-rel>::<ref>::<line>"` entries, so each
+    reference stays with the file that holds it; `<file-rel>` is the file's path relative to
+    the root, or its full path when it sits outside the root.
     """
     imports_found: list[str] = []
     for match in get_target_files(args, classified_files, root):
         if not match.is_file():
             continue
+        rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else str(match)
         try:
-            imports_found.extend(import_refs(match.read_text(encoding="utf-8", errors="replace")))
+            refs = import_refs_with_lines(match.read_text(encoding="utf-8", errors="replace"))
         except OSError:
             continue
+        imports_found.extend(f"{rel}::{ref}::{line}" for ref, line in refs)
     if imports_found:
         return CheckResult(
             passed=True,
@@ -489,27 +495,38 @@ def check_import_targets_exist(
 ) -> CheckResult:
     """Check that all @import paths from metadata resolve to existing files.
 
-    Reads import paths from args (injected by pipeline from D check annotations).
-    Each path is resolved relative to the target instruction file's directory.
+    Reads `discovered_imports` from args (D check annotations, `"<file-rel>::<ref>::<line>"`
+    entries). Each reference resolves against the folder of the file that holds it, as the
+    agent reads it. Each file with unresolved imports is one occurrence, located on its first
+    unresolved import's line.
     """
-    import_paths: list[str] = []
+    entries: list[str] = []
     for value in args.values():
         if isinstance(value, list):
-            import_paths = value
+            entries = value
             break
-    if not import_paths:
+    if not entries:
         return CheckResult(passed=True, message="No import paths to check")
-    missing: list[str] = []
-    for ref in import_paths:
-        clean = ref.lstrip("@")
-        if not (root / clean).exists():
-            missing.append(clean)
+    missing: dict[str, list[str]] = {}
+    first_line: dict[str, str] = {}
+    for raw in entries:
+        parts = raw.split("::")
+        if len(parts) != 3:
+            continue
+        src_rel, ref, line = parts
+        if not import_target(ref, root / src_rel).exists():
+            missing.setdefault(src_rel, []).append(ref)
+            first_line.setdefault(src_rel, line)
     if missing:
         return CheckResult(
             passed=False,
-            message=f"Unresolved imports: {', '.join(missing[:5])}",
+            message=f"{len(missing)} file(s) with unresolved imports",
+            occurrences=[
+                (f"{src_rel}:{first_line[src_rel]}", f"Unresolved imports: {', '.join(refs[:5])}")
+                for src_rel, refs in missing.items()
+            ],
         )
-    return CheckResult(passed=True, message=f"All {len(import_paths)} import(s) resolve")
+    return CheckResult(passed=True, message=f"All {len(entries)} import(s) resolve")
 
 
 def _is_external_link(target: str) -> bool:

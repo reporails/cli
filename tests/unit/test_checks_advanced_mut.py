@@ -141,7 +141,7 @@ class TestSimpleVerdicts:
         (tmp_path / "a.md").write_text("See @docs/guide.md for setup.\n")
         result = extract_imports(tmp_path, {}, _cf(tmp_path, "a.md"))
         assert result.passed  # kills L149 passed=True -> False
-        assert result.annotations["discovered_imports"] == ["docs/guide.md"]
+        assert result.annotations["discovered_imports"] == ["a.md::docs/guide.md::1"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -153,7 +153,7 @@ class TestSimpleVerdicts:
         (tmp_path / "a.md").write_text("Run `npx @reporails/cli check .` to lint your repo. See @docs/guide.md too.\n")
         result = extract_imports(tmp_path, {}, _cf(tmp_path, "a.md"))
         assert result.passed
-        assert result.annotations["discovered_imports"] == ["docs/guide.md"]
+        assert result.annotations["discovered_imports"] == ["a.md::docs/guide.md::1"]
 
 
 # ── _metadata_bytes ───────────────────────────────────────────────────
