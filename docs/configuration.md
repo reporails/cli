@@ -40,7 +40,7 @@ Reporails always skips these directory names during discovery, no matter where t
 | Build output | `dist`, `build`, `target`, `out`                                                             |
 | Data         | `data`, `datasets`                                                                           |
 | Vendored     | `vendor`                                                                                     |
-| IDE / OS     | `.idea`, `.vscode`                                                                           |
+| IDE / OS     | `.idea`                                                                                      |
 
 Anything you add to `exclude_dirs` is *additional* — the built-ins always apply.
 
