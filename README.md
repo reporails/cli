@@ -1,4 +1,4 @@
-# Reporails CLI (v0.6.1)
+# Reporails CLI (v0.6.2)
 
 > **AI Instruction Diagnostics for coding agents. Validates the entire agentic instruction system against 120+ rules across six rule packs (core + per-agent). Supports Antigravity, Claude, Codex, Copilot, and Cursor.**
 > 
@@ -99,7 +99,7 @@ Full breakdown: [Tiers and Limits](https://github.com/reporails/cli/blob/main/do
 Run on every PR so instruction-quality regressions (vague or buried instructions, oversized files, weak reinforcement, instructions repeated across files) get caught the same way test or lint regressions do — before merge, not after a teammate's agent has been silently misbehaving for a week.
 
 ```yaml
-- uses: reporails/cli/action@0.6.1
+- uses: reporails/cli/action@0.6.2
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}   # optional - a Pro key unlocks the full diagnostic detail
     strict: "true"                              # exit 1 if any rule fires
