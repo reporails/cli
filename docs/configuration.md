@@ -44,6 +44,8 @@ Reporails always skips these directory names during discovery, no matter where t
 
 Anything you add to `exclude_dirs` is *additional* — the built-ins always apply.
 
+When your project is a git repository, a separate repository inside it is skipped as well: a folder with its own `.git` folder (a repository you cloned into the project) or a git worktree (such as the ones Claude Code keeps under `.claude/worktrees/`). Its instruction files belong to that repository, not yours; run `ails check <folder>` to check it on its own. Git submodules are part of your project and are checked, and so is a skill or agent you cloned into your own `.claude/skills/` or `.claude/agents/` folder.
+
 ## Global config — `~/.reporails/config.yml`
 
 Applies to every project.

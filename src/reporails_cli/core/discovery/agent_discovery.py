@@ -463,7 +463,70 @@ def is_memory_recall_entry(file_type: str, filename: str) -> bool:
     return file_type in MEMORY_SURFACES and filename != MEMORY_INDEX_FILENAME
 
 
-def _run_descendant_recursive(target: Path, pattern: str, nested: bool, exclude_dirs: frozenset[str]) -> list[Path]:
+def _is_separate_repository(folder: Path, cache: dict[Path, bool]) -> bool:
+    """Whether a folder is a clone or a git worktree (a submodule is part of its project)."""
+    cached = cache.get(folder)
+    if cached is not None:
+        return cached
+    marker = folder / ".git"
+    separate = False
+    if marker.is_dir():
+        separate = True
+    elif marker.is_file():
+        try:
+            text = marker.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            if line.startswith("gitdir:"):
+                gitdir = line[len("gitdir:") :].strip().replace("\\", "/")
+                separate = "/worktrees/" in f"/{gitdir}/"
+                break
+    cache[folder] = separate
+    return separate
+
+
+def _inside_git_repository(target: Path) -> bool:
+    """Whether the target or any folder above it holds a `.git`."""
+    try:
+        target = target.resolve()
+    except OSError:
+        return False
+    return any((folder / ".git").exists() for folder in (target, *target.parents))
+
+
+def in_nested_repository(path: Path, target: Path, pattern: str, cache: dict[Path, bool]) -> bool:
+    """Whether a file the `**/` part of a pattern reached sits in a separate repository.
+
+    A separate repository below a git project is not part of it. Only the folders
+    the leading `**/` covered count, so a clone inside the project's own
+    `.claude/skills/` is still found by the `.claude/skills/**` pattern.
+    """
+    if not pattern.startswith("**/"):
+        return False
+    try:
+        parts = path.relative_to(target).parts
+    except ValueError:
+        return False
+    rest = pattern[3:]
+    for depth in range(1, len(parts)):
+        if config_pattern_matches("/".join(parts[depth:]), rest, ignore_case=True, anchor_loose_leaf=True):
+            folder = target
+            for part in parts[:depth]:
+                folder = folder / part
+                if _is_separate_repository(folder, cache):
+                    return True
+            return False
+    return False
+
+
+def _run_descendant_recursive(
+    target: Path,
+    pattern: str,
+    nested: bool,
+    exclude_dirs: frozenset[str],
+    repo_cache: dict[Path, bool] | None = None,
+) -> list[Path]:
     """Descendant walk for **/<leaf> patterns.
 
     `nested` (scope: nested) excludes cwd itself — those files belong to the
@@ -488,6 +551,7 @@ def _run_descendant_recursive(target: Path, pattern: str, nested: bool, exclude_
         for m in results
         if not is_excluded(m, target, exclude_dirs)
         and config_pattern_matches(m.relative_to(target).as_posix(), pattern, ignore_case=True)
+        and not (repo_cache is not None and in_nested_repository(m, target, pattern, repo_cache))
     ]
 
 
@@ -515,6 +579,8 @@ def glob_file_type_patterns(
     eager_global = _is_eager_global(props)
     nested = _is_nested(props)
     project_root: Path | None = None
+    repo_cache: dict[Path, bool] = {}
+    cache = repo_cache if _inside_git_repository(target) else None
 
     found: list[Path] = []
     for pattern in patterns:
@@ -544,9 +610,14 @@ def glob_file_type_patterns(
                 m for m in ci_glob(project_root, pattern, exclude_dirs) if not is_excluded(m, target, exclude_dirs)
             )
         elif is_recursive_leaf:
-            found.extend(_run_descendant_recursive(target, pattern, nested, exclude_dirs))
+            found.extend(_run_descendant_recursive(target, pattern, nested, exclude_dirs, cache))
         else:
-            found.extend(m for m in ci_glob(target, pattern, exclude_dirs) if not is_excluded(m, target, exclude_dirs))
+            found.extend(
+                m
+                for m in ci_glob(target, pattern, exclude_dirs)
+                if not is_excluded(m, target, exclude_dirs)
+                and not (cache is not None and in_nested_repository(m, target, pattern, cache))
+            )
     return found
 
 
