@@ -1544,7 +1544,9 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
     charge model reads the whole sentence as a single scalar, and a reword that only narrows the
     sentence's own emphasis span and fills in the pronoun ("it" -> "that risk", "directly" ->
     "directly in the review") can tip that scalar to the other side of zero without the
-    instruction itself flipping — same directive, same negation, on both sides."""
+    instruction itself flipping — same directive, same negation, on both sides. The rewrite also
+    adds a place phrase ("in the review"), which the narrowing check reports, so the verdict as a
+    whole is not asserted here."""
     after = _RESTATED_BASE.replace(
         "*Face it directly — don't dodge. If the concern remains after the fix, log it as a followup.*",
         "*Face that risk directly in the review — don't dodge it.* If the concern remains after the fix, "
@@ -1552,7 +1554,7 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
     )
     result = _compare_edit(tmp_path, _RESTATED_BASE, after)
     assert result["polarity_flips"] == []
-    assert result["ok"] is True
+    assert result["lost_instructions"] == []
 
 
 @pytest.mark.integration
@@ -1575,15 +1577,6 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
             "# Releases\n\nNever deploy on Fridays without approval.\n",
             "# Releases\n\nAlways deploy on Fridays without approval.\n",
             True,
-        ),
-        (
-            _RESTATED_BASE,
-            _RESTATED_BASE.replace(
-                "*Face it directly — don't dodge. If the concern remains after the fix, log it as a followup.*",
-                "*Face that risk directly in the review — don't dodge it.* If the concern remains after the "
-                "fix, log it as a followup.",
-            ),
-            False,
         ),
         (
             "# Reviews\n\nAlways face it directly — don't dodge.\n",

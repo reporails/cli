@@ -89,6 +89,13 @@ _ROLE = (
     "four change types (per `docs/changes.md`), and write or update the matching "
     "entry at its canonical path."
 )
+_SERIES_HEAD = (
+    "Re-derive any budget-claim from the owning team's measured evidence (`docs/results.md`), "
+    "seed that evidence into a review before opinions form"
+)
+_SERIES = _SERIES_HEAD + ", and read a misfiring detector as a broken instrument to fix."
+_SERIES_CUT = _SERIES_HEAD + ". Read a misfiring detector as a broken instrument to fix."
+_SEMI = _SERIES_HEAD.replace("), seed", "), and seed") + "; read a misfiring detector as a broken instrument to fix."
 _ORIENT = (
     "Load targeted orientation: read the overview at `docs/index.md` as the base, read exactly "
     "the artifacts the invocation names, load a live recent-work seed, and synthesize the set "
@@ -122,6 +129,13 @@ _ORIENT = (
             "Load a live recent-work seed.\n\n"
             "Synthesize the set into one snapshot.",
         ),
+        (
+            _ROLE,
+            "You are a release author: you read the request, classify the change into one of the "
+            "four change types (per `docs/changes.md`).\n\n"
+            "You write or update the matching entry at its canonical path.",
+        ),
+        (_SERIES, _SERIES_CUT),
     ],
 )
 def test_a_split_that_leaves_a_fragment_behind_is_dangling(tmp_path, before, after) -> None:
@@ -162,6 +176,32 @@ def test_a_split_that_leaves_a_fragment_behind_is_dangling(tmp_path, before, aft
         ),
         ("Run the tests, then commit the result.", "Run the tests. Then commit the result."),
         (
+            "Select the artifacts for the task \u2014 rank candidates by term overlap, pick the best match "
+            "(at most one or two per class), name each chosen artifact and why, then load them per the procedure.",
+            "Select the artifacts for the task \u2014 rank candidates by term overlap, pick the best match "
+            "(at most one or two per class), name each chosen artifact and why.\n\n"
+            "Then load them per the procedure.",
+        ),
+        (
+            "Rank candidates by term overlap, pick the best match (at most one or two per class), name each "
+            "chosen artifact and why, then load them per the procedure.",
+            "Rank candidates by term overlap, pick the best match (at most one or two per class), name each "
+            "chosen artifact and why.\n\nThen load them per the procedure.",
+        ),
+        (
+            _SERIES,
+            "Re-derive any budget-claim from the owning team's measured evidence (`docs/results.md`).\n\n"
+            "Seed that evidence into a review before opinions form.\n\n"
+            "Read a misfiring detector as a broken instrument to fix.",
+        ),
+        (_SEMI, _SEMI.replace("; read", ". Read")),
+        (
+            _ROLE,
+            "You are a release author: you read the request and classify the change into one of the "
+            "four change types (per `docs/changes.md`).\n\n"
+            "You write or update the matching entry at its canonical path.",
+        ),
+        (
             "Before you push: run the tests, run the linter.",
             "Before you push: run the tests. Before you push: run the linter.",
         ),
@@ -191,4 +231,145 @@ _UNRELATED = "\n\nRun the tests before you push.\n"
 )
 def test_an_unchanged_long_sentence_is_never_a_dangling_fragment(tmp_path, sentence) -> None:
     result = _compare_edit(tmp_path, sentence + _UNRELATED, sentence + "\n\nRun the tests before every push.\n")
+    assert result["dangling_fragments"] == []
+
+
+_SPEC = (
+    "Produce the spec and define WHAT to build; the engineers own HOW within their team, "
+    "and the manager files the spec."
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            _SPEC,
+            _SPEC.replace(
+                "Produce the spec and define WHAT to build;",
+                "Produce the product spec. Define WHAT to build in that spec;",
+            ),
+        ),
+        ("Review the report and send the summary.", "Review the report. Send the summary in that report."),
+    ],
+)
+def test_a_place_built_from_a_word_the_sentence_used_as_an_object_narrows_the_rule(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("Write files to the scratch dir.", "Write files in the scratch dir."),
+        ("Run the tests in CI before you push.", "In CI, run the tests before you push."),
+    ],
+)
+def test_a_place_the_sentence_already_stood_in_a_phrase_does_not_narrow(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert result["narrowed_instructions"] == []
+
+
+_NEIGHBOUR = (
+    "Own the product spec content: feature shape, scope, priorities. "
+    "Produce the spec and define WHAT to build; the architects own HOW within their team, "
+    "and the manager files the spec into the tracker. Stamp the standard header as a norm of the craft."
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_place_built_from_a_word_a_neighbour_sentence_used_as_an_object_narrows_the_rule(tmp_path) -> None:
+    after = _NEIGHBOUR.replace(
+        "Produce the spec and define WHAT to build;", "Produce the product spec. Define WHAT to build in that spec;"
+    )
+    result = _compare_edit(tmp_path, _NEIGHBOUR + "\n", after + "\n")
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "*Load the live seed on every non-`help` invocation \u2014 anchor the synthesis to current state,* "
+        "*never return a stale snapshot of old data.*",
+        "`tool check` emits human-readable findings on `stdout` and exits non-zero on any error finding.",
+    ],
+)
+def test_an_unchanged_sentence_is_never_narrowed(tmp_path, sentence) -> None:
+    result = _compare_edit(tmp_path, sentence + _UNRELATED, sentence + "\n\nRun the tests before every push.\n")
+    assert result["narrowed_instructions"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "Check the bar's sparsity non-examples against the dry-run.",
+            "Check the bar's sparsity non-examples in `docs/roles/<role>/` against the dry-run.",
+        ),
+        (
+            "Load `voice.md` before composing, then match every external copy to the style guide.",
+            "Load the style guide at `voice.md` before composing, then match every external copy to the style guide.",
+        ),
+        (
+            "Hold the team's north star and drive the roadmap toward it: ask first.",
+            "Hold the team's north star at `vision.md` and drive the roadmap toward it: ask first.",
+        ),
+    ],
+)
+def test_a_place_that_opens_with_a_named_construct_is_listed_not_narrowed(tmp_path, before, after) -> None:
+    ground = "\n\nThe `docs/roles/<role>/`, `voice.md` and `product-vision` files exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"] == []
+
+
+_CODE_SPLITS = [
+    (
+        "Convert each requested question to a position or an `choice: <question> \u2014 <why>` tag, "
+        "and name the conversion in the return; keep the original wording of the question in the log.",
+        "Convert each requested question to a position or an `choice: <question> \u2014 <why>` tag."
+        "\n\nName the conversion in the return.\n\nKeep the original wording of the question in the log.",
+    ),
+    (
+        "Load `docs:guides/voice` before composing any external-facing copy (launch post, landing copy), "
+        "and add `x/structure` for long-form.",
+        "Load `docs:guides/voice` before composing any external-facing copy (launch post, landing copy)."
+        "\n\nAdd `x/structure` for long-form.",
+    ),
+    (
+        "Group tickets by tagging a `milestone:` label on the ticket; the board view "
+        "shows the grouping (see ticket 9), so do not add a separate grouping field.",
+        "Group tickets by tagging a `milestone:` label on the ticket; the board view "
+        "shows the grouping (see ticket 9).\n\nDo not add a separate grouping field.",
+    ),
+    (
+        "**`/search <query>`** \u2014 resolve a freeform description (e.g. `how do we find a page?`) to the "
+        "best-matching pages, then load the matched pages (the stretch form; see `## Query matching`).",
+        "**`/search <query>`** \u2014 resolve a freeform description (e.g. `how do we find a page?`) to the "
+        "best-matching pages.\n\nThen load the matched pages (the stretch form; see `## Query matching`).",
+    ),
+]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(("before", "after"), _CODE_SPLITS)
+def test_a_colon_in_code_or_a_then_step_is_not_a_dangling_fragment(tmp_path, before, after) -> None:
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
     assert result["dangling_fragments"] == []

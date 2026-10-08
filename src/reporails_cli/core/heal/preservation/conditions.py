@@ -33,6 +33,7 @@ from reporails_cli.core.mapper.classify import (
     CONDITIONAL_MARKERS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
+    PHRASE_PREPOSITIONS,
     SCOPE_PREPOSITIONS,
     SCOPE_RESTRICTORS,
     absolute_cues,
@@ -45,6 +46,10 @@ _SCOPE_REACH = 3  # words after a scope cue that make the scope it adds
 _NEUTRAL_COVERAGE = 0.75  # share of a new instruction's words a hedged line the mapper read as prose must hold
 
 _CLAUSE_RE = re.compile(r"[,;:()—]")
+# Stands in a clause for each named construct that was there, so the words after it do not fall
+# into the reach of the word before it.
+_NAMED = "namedconstruct"
+_SEGMENT_RE = re.compile(r"[,;:()—]|\b(?:and|or|then)\b", re.IGNORECASE)
 
 # Atoms of a file by line number, in file order.
 ByLine = dict[int, list[Any]]
@@ -180,17 +185,38 @@ def _known_words(old_by_line: ByLine, line: int) -> set[str]:
 
 def _fresh(tail: list[str], known: set[str]) -> bool:
     """Whether `tail` holds a content word the author's line does not have."""
-    return any(len(w) > 1 and w not in STOPWORDS and not word_forms(w) & known for w in tail)
+    return any(len(w) > 1 and w not in STOPWORDS and w != _NAMED and not word_forms(w) & known for w in tail)
 
 
-def _narrows(words: list[str], known: set[str]) -> bool:
+def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
+    """The words the author's line already holds where a scope phrase may reuse them: those that
+    stand inside a prepositional phrase, within a few words after a preposition in the same clause
+    (clauses cut as the rewrite's are, `_clauses`). A word only used as a verb's object is not among
+    them when its sentence goes on to other clauses; the paired sentence, when it is one clause,
+    gives all its words, since its one object is what the instruction is about. A code token that
+    is one plain word (`except`) is a word of the line, as in `_known_words`."""
+    placed: set[str] = set()
+    for atom in old_by_line.get(pair.old.line, ()):
+        placed.update(t.strip("`").lower() for t in atom.named_tokens if _PLAIN_WORD_RE.fullmatch(t.strip("`")))
+        for clause in _clauses(atom):
+            for i, word in enumerate(clause):
+                if word in PHRASE_PREPOSITIONS:
+                    placed.update(clause[i + 1 : i + 1 + _SCOPE_REACH])
+    if not _SEGMENT_RE.search(pair.old_sentence):
+        placed.update(w for clause in _clauses(pair.old) for w in clause)
+    return placed | {f for w in placed for f in word_forms(w)}
+
+
+def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     """Whether the rewrite's `words` add a restriction the author's line did not state: a
-    restricting word it never used, or a place / time / thing it never named after a preposition."""
+    restricting word it never used, a place / time / thing after a preposition that the author's
+    sentence did not already hold inside a prepositional phrase (`placed`), or a new noun phrase
+    after `for` (judged against every word of the line, `known`)."""
     for i, word in enumerate(words):
         tail = words[i + 1 : i + 1 + _SCOPE_REACH]
         if word in SCOPE_RESTRICTORS and word not in known:
             return True
-        if word in SCOPE_PREPOSITIONS and _fresh(tail, known):
+        if word in SCOPE_PREPOSITIONS and tail[:1] != [_NAMED] and _fresh(tail, placed):
             return True
         if word == "for" and tail[:1] and tail[0] in DETERMINERS and _fresh(tail, known):
             return True
@@ -198,9 +224,10 @@ def _narrows(words: list[str], known: set[str]) -> bool:
 
 
 def _clauses(atom: Any, *, named: bool = False) -> list[list[str]]:
-    """`atom`'s words, one list per comma / colon / parenthesis separated clause, named constructs
-    left out unless `named` (a condition's words read the same backticked or not)."""
-    parts = _CLAUSE_RE.split(prose_text(atom, named=named))
+    """`atom`'s words, one list per comma / colon / parenthesis separated clause, each named
+    construct a placeholder word unless `named` (a condition's words read the same backticked or
+    not)."""
+    parts = _CLAUSE_RE.split(prose_text(atom, named=named, fill=f" {_NAMED} "))
     return [w for w in ([t.lower() for t in WORD_RE.findall(part)] for part in parts) if w]
 
 
@@ -233,16 +260,27 @@ def _inserted_after_quantifier(p: Pair) -> bool:
     return False
 
 
+def _same_sentence(p: Pair) -> bool:
+    """Whether the rewrite's sentence is the author's, word for word (spacing and case aside)."""
+    return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
+
+
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[str, Any]]:
     """Each matched instruction whose rewrite adds words that restrict where, when or to what it
-    applies, without an if / when / before frame (which `added_conditions` already reports), or
+    applies, without an if / when / before frame (which `added_conditions` already reports): a
+    restricting word the line never used, or a scope preposition whose phrase holds a word the
+    author's sentence did not already hold inside a prepositional phrase (`define WHAT to build` ->
+    `define WHAT to build in that spec`, though `spec` is elsewhere on the line); or one that
     names a construct directly after a general quantifier the author's line already had (`every
     gate` -> `every X gate`)."""
     out: list[dict[str, Any]] = []
     for p in pairs:
+        if _same_sentence(p):
+            continue
         known = _known_words(old_by_line, p.old.line)
         known |= {f for w in known for f in word_forms(w)}
-        if any(_narrows(clause, known) for clause in _clauses(p.new)) or _inserted_after_quantifier(p):
+        placed = _placed_words(old_by_line, p)
+        if any(_narrows(clause, known, placed) for clause in _clauses(p.new)) or _inserted_after_quantifier(p):
             out.append(p.entry())
     return out
 
