@@ -395,6 +395,16 @@ def test_a_real_colon_beside_a_code_span_with_the_same_text_still_opens_a_list(t
 @pytest.mark.integration
 @pytest.mark.subsys_server
 @pytest.mark.requires_model
+def test_a_colon_in_code_after_a_prose_colon_still_opens_no_list(tmp_path) -> None:
+    before = "Before you push: run the tests, run the linter, and join the keys with `:`."
+    after = "Before you push: run the tests.\n\nRun the linter and join the keys with `:`."
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert result["dangling_fragments"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
 def test_a_new_place_word_after_a_named_construct_narrows_the_rule(tmp_path) -> None:
     ground = "\n\nThe `staging` host exists.\n"
     result = _compare_edit(
@@ -447,6 +457,9 @@ def test_a_rest_or_remaining_cut_of_what_a_rule_covers_narrows_it(tmp_path, befo
             "You read the request. You classify it. You write the entry.",
         ),
         ("Before you push, run the tests.", "Run the tests before you push."),
+        ("Call the API for each lookup.", "Call the REST API for each lookup."),
+        ("Sleep between retries.", "Rest between retries."),
+        ("Show the time left on the job.", "Show the remaining time on the job."),
     ],
 )
 def test_a_rewrite_that_adds_no_restricting_word_does_not_narrow(tmp_path, before, after) -> None:

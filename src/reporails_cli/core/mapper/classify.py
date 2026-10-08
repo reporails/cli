@@ -10,6 +10,7 @@ Public entry point: `classify_charge(md_text, plain_text=...)`.
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
 from reporails_cli.core.mapper.md_parser import leading_bold_run
@@ -541,11 +542,27 @@ _NO_DESCRIPTIVE_PREPS = frozenset(
         "per",
     }
 )
+
+
+class CoverageRestrictor(NamedTuple):
+    """When a word cuts a rule's coverage down: it must be followed by one of `next_words` (any word
+    when empty), and the author's line must hold none of `already` (the senses it already carries)."""
+
+    next_words: frozenset[str]
+    already: frozenset[str]
+
+
 # Words that cut a rule's coverage down to part of what it named (`the rest of the output`,
-# `the remaining tests`); read only as narrowing, since they open no condition.
-COVERAGE_RESTRICTORS: frozenset[str] = frozenset({"rest", "remaining"})
+# `the remaining tests`); read only as narrowing, since they open no condition. `rest` cuts only as
+# `rest of` (`the REST API` and `rest between retries` cut nothing); `remaining` cuts unless the
+# author's line already carries the sense (`the time left` -> `the remaining time`).
+COVERAGE_RESTRICTORS: dict[str, CoverageRestrictor] = {
+    "rest": CoverageRestrictor(frozenset({"of"}), frozenset({"rest"})),
+    "remaining": CoverageRestrictor(frozenset(), frozenset({"remaining", "rest", "left"})),
+}
 # Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`): the
-# scope prepositions and the prepositions above (not the subordinators among them), with a few more.
+# scope prepositions and the prepositions above less the words that open a clause rather than a phrase
+# (`unless`, `when`, `while`, `except`, `since`; `before` / `after` stay, opening a time phrase), with a few more.
 PHRASE_PREPOSITIONS: frozenset[str] = (
     SCOPE_PREPOSITIONS
     | (_NO_DESCRIPTIVE_PREPS - {"unless", "when", "while", "except", "since"})

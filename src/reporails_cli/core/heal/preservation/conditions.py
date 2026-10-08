@@ -220,6 +220,15 @@ def _phrase(tail: list[str]) -> list[str]:
     return tail
 
 
+def _cuts_coverage(word: str, tail: list[str], known: set[str]) -> bool:
+    """Whether `word`, followed by `tail`, cuts the rule's coverage down in a way the author's line
+    (`known`) did not already carry (`classify.COVERAGE_RESTRICTORS`)."""
+    rule = COVERAGE_RESTRICTORS.get(word)
+    if rule is None or rule.already & known:
+        return False
+    return not rule.next_words or bool(tail[:1]) and tail[0] in rule.next_words
+
+
 def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     """Whether the rewrite's `words` add a restriction the author's line did not state: a
     restricting word it never used, a place / time / thing after a preposition that the author's
@@ -227,7 +236,9 @@ def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     after `for` (judged against every word of the line, `known`)."""
     for i, word in enumerate(words):
         tail = words[i + 1 : i + 1 + _SCOPE_REACH]
-        if (word in SCOPE_RESTRICTORS or word in COVERAGE_RESTRICTORS) and word not in known:
+        if word in SCOPE_RESTRICTORS and word not in known:
+            return True
+        if _cuts_coverage(word, tail, known):
             return True
         if word in SCOPE_PREPOSITIONS and _fresh(_phrase(tail), placed):
             return True

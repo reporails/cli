@@ -14,7 +14,8 @@ from collections.abc import Iterable
 from typing import Any
 
 from reporails_cli.core.heal.preservation.words import WORD_RE, content_words, word_forms
-from reporails_cli.core.mapper.md_parser import code_spans
+from reporails_cli.core.mapper.md_parser import replace_code_spans
+from reporails_cli.core.mapper.parse import inline_plain_text
 
 # What opens a list or a closing clause: a colon, or a dash set off by spaces.
 _OPENER_RE = re.compile(r":|\s[—\u2013-]\s")
@@ -39,17 +40,13 @@ def _unmasked(text: str) -> str:
 
 
 def _plain(atom: Any) -> str:
-    """The atom's plain text with the opener marks inside its code spans masked (the plain text
-    holds no backticks, so the spans are read from the atom's marked-up text)."""
-    text: str = atom.plain_text
-    cursor = 0
-    for span in code_spans(atom.text):
-        start = text.find(span.content, cursor)
-        if start < 0:
-            continue
-        end = start + len(span.content)
-        text, cursor = text[:start] + _masked(span.content) + text[end:], end
-    return text
+    """The atom's plain text with the opener marks inside its code spans masked: each span is masked
+    where it stands in the atom's marked-up text, then the markup is read away. An atom whose plain
+    text is not its inline reading (a heading, a fenced block) keeps its own."""
+    text: str = atom.text
+    if inline_plain_text(text) != atom.plain_text:
+        return str(atom.plain_text)
+    return inline_plain_text(replace_code_spans(text, lambda span: _masked(text[span.start : span.end])))
 
 
 def _normal(text: str) -> str:
