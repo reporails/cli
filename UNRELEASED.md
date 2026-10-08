@@ -55,4 +55,4 @@
 
 ### Internal
 
-- Tests: `ails check --heal`, its sentence splits and the MCP `heal_apply` tool are covered for leaving settings files and files whose `@` imports expand unchanged, and for a signed-out run and an unreachable server independent of the developer's own login.
+- Tests: the listed-reason check reads the server's reason list as it now ships; `ails check --heal`, its sentence splits and the MCP `heal_apply` tool are covered for leaving settings files and files whose `@` imports expand unchanged, and for a signed-out run and an unreachable server independent of the developer's own login.
