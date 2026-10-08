@@ -31,6 +31,7 @@ from reporails_cli.core.mapper.classify import (
     CONDITION_OPENERS,
     CONDITION_QUANTIFIERS,
     CONDITIONAL_MARKERS,
+    COVERAGE_RESTRICTORS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
     PHRASE_PREPOSITIONS,
@@ -49,7 +50,11 @@ _CLAUSE_RE = re.compile(r"[,;:()—]")
 # Stands in a clause for each named construct that was there, so the words after it do not fall
 # into the reach of the word before it.
 _NAMED = "namedconstruct"
-_SEGMENT_RE = re.compile(r"[,;:()—]|\b(?:and|or|then)\b", re.IGNORECASE)
+_SEGMENT_RE = re.compile(
+    f"{_CLAUSE_RE.pattern}|\\b(?:{'|'.join(sorted(CONDITION_CONJUNCTIONS | {'then'}))})\\b", re.IGNORECASE
+)
+# What ends the phrase a scope preposition opens.
+_PHRASE_END = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
 
 # Atoms of a file by line number, in file order.
 ByLine = dict[int, list[Any]]
@@ -207,6 +212,14 @@ def _placed_words(old_by_line: ByLine, pair: Pair) -> set[str]:
     return placed | {f for w in placed for f in word_forms(w)}
 
 
+def _phrase(tail: list[str]) -> list[str]:
+    """`tail` up to the next preposition or conjunction: the words of the phrase a preposition opens."""
+    for i, word in enumerate(tail):
+        if word in _PHRASE_END:
+            return tail[:i]
+    return tail
+
+
 def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     """Whether the rewrite's `words` add a restriction the author's line did not state: a
     restricting word it never used, a place / time / thing after a preposition that the author's
@@ -214,9 +227,9 @@ def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     after `for` (judged against every word of the line, `known`)."""
     for i, word in enumerate(words):
         tail = words[i + 1 : i + 1 + _SCOPE_REACH]
-        if word in SCOPE_RESTRICTORS and word not in known:
+        if (word in SCOPE_RESTRICTORS or word in COVERAGE_RESTRICTORS) and word not in known:
             return True
-        if word in SCOPE_PREPOSITIONS and tail[:1] != [_NAMED] and _fresh(tail, placed):
+        if word in SCOPE_PREPOSITIONS and _fresh(_phrase(tail), placed):
             return True
         if word == "for" and tail[:1] and tail[0] in DETERMINERS and _fresh(tail, known):
             return True

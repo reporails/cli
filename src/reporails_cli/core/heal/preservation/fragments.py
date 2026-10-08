@@ -42,9 +42,13 @@ def _plain(atom: Any) -> str:
     """The atom's plain text with the opener marks inside its code spans masked (the plain text
     holds no backticks, so the spans are read from the atom's marked-up text)."""
     text: str = atom.plain_text
+    cursor = 0
     for span in code_spans(atom.text):
-        if span.content in text:
-            text = text.replace(span.content, _masked(span.content))
+        start = text.find(span.content, cursor)
+        if start < 0:
+            continue
+        end = start + len(span.content)
+        text, cursor = text[:start] + _masked(span.content) + text[end:], end
     return text
 
 
@@ -177,7 +181,7 @@ def _series_cut(old_text: str, new: str, new_sentences: list[str]) -> bool:
     no closing conjunction, is no list to cut short."""
     old_items, new_items = _items(old_text), _items(new)
     k = len(new_items)
-    if k < 2 or len(old_items) <= k or _bare(old_items[-1]) == _normal(old_items[-1]):
+    if k < 2 or len(old_items) <= k or _bare(old_items[-1]) == _normal(old_items[-1]) or _next_step(old_items[k]):
         return False
     if _bare(new_items[-1]) != _normal(new_items[-1]):
         return False

@@ -125,14 +125,18 @@ def named_key(token: str) -> str:
     return token.strip("`").lower()
 
 
+# Marks a blanked token until every token is done, so a shorter token never matches inside the fill.
+_BLANKED = "\ue010"
+
+
 def blank_named(text: str, tokens: Any, fill: str = " ") -> str:
     """`text` with each named token (backticks stripped) blanked, or replaced by `fill`, the longest
     first so a token inside a longer one (`reporails` in `reporails__explain`) leaves none of the
     longer one behind."""
     for token in sorted((t.strip("`") for t in tokens), key=len, reverse=True):
         if token:
-            text = text.replace(token, fill)
-    return text
+            text = text.replace(token, _BLANKED)
+    return text.replace(_BLANKED, fill)
 
 
 def prose_text(atom: Any, *, named: bool = False, fill: str = " ") -> str:

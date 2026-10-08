@@ -90,12 +90,16 @@ _ROLE = (
     "entry at its canonical path."
 )
 _SERIES_HEAD = (
-    "Re-derive any budget-claim from the owning team's measured evidence (`docs/results.md`), "
-    "seed that evidence into a review before opinions form"
+    "Lint every changed file with the shared config (`docs/lint.md`), "
+    "cache the results between builds until the next deploy"
 )
-_SERIES = _SERIES_HEAD + ", and read a misfiring detector as a broken instrument to fix."
-_SERIES_CUT = _SERIES_HEAD + ". Read a misfiring detector as a broken instrument to fix."
-_SEMI = _SERIES_HEAD.replace("), seed", "), and seed") + "; read a misfiring detector as a broken instrument to fix."
+_SERIES = _SERIES_HEAD + ", and report a failing check as a blocked release."
+_SERIES_CUT = _SERIES_HEAD + ". Report a failing check as a blocked release."
+_SEMI = _SERIES_HEAD.replace("), cache", "), and cache") + "; report a failing check as a blocked release."
+_RELEASER = (
+    "You are the release manager: you check the build status, sort the failures into one of "
+    "three buckets (per `docs/triage.md`), and file or update the matching ticket in the tracker."
+)
 _ORIENT = (
     "Load targeted orientation: read the overview at `docs/index.md` as the base, read exactly "
     "the artifacts the invocation names, load a live recent-work seed, and synthesize the set "
@@ -130,10 +134,9 @@ _ORIENT = (
             "Synthesize the set into one snapshot.",
         ),
         (
-            _ROLE,
-            "You are a release author: you read the request, classify the change into one of the "
-            "four change types (per `docs/changes.md`).\n\n"
-            "You write or update the matching entry at its canonical path.",
+            _RELEASER,
+            "You are the release manager: you check the build status, sort the failures into one of "
+            "three buckets (per `docs/triage.md`).\n\nYou file or update the matching ticket in the tracker.",
         ),
         (_SERIES, _SERIES_CUT),
     ],
@@ -176,30 +179,29 @@ def test_a_split_that_leaves_a_fragment_behind_is_dangling(tmp_path, before, aft
         ),
         ("Run the tests, then commit the result.", "Run the tests. Then commit the result."),
         (
-            "Select the artifacts for the task \u2014 rank candidates by term overlap, pick the best match "
-            "(at most one or two per class), name each chosen artifact and why, then load them per the procedure.",
-            "Select the artifacts for the task \u2014 rank candidates by term overlap, pick the best match "
-            "(at most one or two per class), name each chosen artifact and why.\n\n"
-            "Then load them per the procedure.",
+            "Prepare the release \u2014 collect the changed files, sort them by owner "
+            "(at most one or two per team), name each file and why, then publish the notes per the template.",
+            "Prepare the release \u2014 collect the changed files, sort them by owner "
+            "(at most one or two per team), name each file and why.\n\n"
+            "Then publish the notes per the template.",
         ),
         (
-            "Rank candidates by term overlap, pick the best match (at most one or two per class), name each "
-            "chosen artifact and why, then load them per the procedure.",
-            "Rank candidates by term overlap, pick the best match (at most one or two per class), name each "
-            "chosen artifact and why.\n\nThen load them per the procedure.",
+            "Collect the changed files, sort them by owner (at most one or two per team), name each "
+            "file and why, then publish the notes per the template.",
+            "Collect the changed files, sort them by owner (at most one or two per team), name each "
+            "file and why.\n\nThen publish the notes per the template.",
         ),
         (
             _SERIES,
-            "Re-derive any budget-claim from the owning team's measured evidence (`docs/results.md`).\n\n"
-            "Seed that evidence into a review before opinions form.\n\n"
-            "Read a misfiring detector as a broken instrument to fix.",
+            "Lint every changed file with the shared config (`docs/lint.md`).\n\n"
+            "Cache the results between builds until the next deploy.\n\n"
+            "Report a failing check as a blocked release.",
         ),
-        (_SEMI, _SEMI.replace("; read", ". Read")),
+        (_SEMI, _SEMI.replace("; report", ". Report")),
         (
-            _ROLE,
-            "You are a release author: you read the request and classify the change into one of the "
-            "four change types (per `docs/changes.md`).\n\n"
-            "You write or update the matching entry at its canonical path.",
+            _RELEASER,
+            "You are the release manager: you check the build status and sort the failures into one of "
+            "three buckets (per `docs/triage.md`).\n\nYou file or update the matching ticket in the tracker.",
         ),
         (
             "Before you push: run the tests, run the linter.",
@@ -235,8 +237,8 @@ def test_an_unchanged_long_sentence_is_never_a_dangling_fragment(tmp_path, sente
 
 
 _SPEC = (
-    "Produce the spec and define WHAT to build; the engineers own HOW within their team, "
-    "and the manager files the spec."
+    "Write the test plan and decide WHICH cases to run; the developers own HOW within their team, "
+    "and the manager files the plan in the tracker."
 )
 
 
@@ -249,8 +251,8 @@ _SPEC = (
         (
             _SPEC,
             _SPEC.replace(
-                "Produce the spec and define WHAT to build;",
-                "Produce the product spec. Define WHAT to build in that spec;",
+                "Write the test plan and decide WHICH cases to run;",
+                "Write the release test plan. Decide WHICH cases to run in that plan;",
             ),
         ),
         ("Review the report and send the summary.", "Review the report. Send the summary in that report."),
@@ -278,9 +280,9 @@ def test_a_place_the_sentence_already_stood_in_a_phrase_does_not_narrow(tmp_path
 
 
 _NEIGHBOUR = (
-    "Own the product spec content: feature shape, scope, priorities. "
-    "Produce the spec and define WHAT to build; the architects own HOW within their team, "
-    "and the manager files the spec into the tracker. Stamp the standard header as a norm of the craft."
+    "Keep the test plan current: scope, owners, dates. "
+    "Write the test plan and decide WHICH cases to run; the developers own HOW within their team, "
+    "and the manager files the plan in the tracker. Add the standard header to each page."
 )
 
 
@@ -289,7 +291,8 @@ _NEIGHBOUR = (
 @pytest.mark.requires_model
 def test_a_place_built_from_a_word_a_neighbour_sentence_used_as_an_object_narrows_the_rule(tmp_path) -> None:
     after = _NEIGHBOUR.replace(
-        "Produce the spec and define WHAT to build;", "Produce the product spec. Define WHAT to build in that spec;"
+        "Write the test plan and decide WHICH cases to run;",
+        "Write the release test plan. Decide WHICH cases to run in that plan;",
     )
     result = _compare_edit(tmp_path, _NEIGHBOUR + "\n", after + "\n")
     assert result["narrowed_instructions"]
@@ -302,9 +305,9 @@ def test_a_place_built_from_a_word_a_neighbour_sentence_used_as_an_object_narrow
 @pytest.mark.parametrize(
     "sentence",
     [
-        "*Load the live seed on every non-`help` invocation \u2014 anchor the synthesis to current state,* "
-        "*never return a stale snapshot of old data.*",
-        "`tool check` emits human-readable findings on `stdout` and exits non-zero on any error finding.",
+        "*Run the quick checks on every non-`draft` commit \u2014 keep the output short,* "
+        "*never print a stale log of old runs.*",
+        "`build check` emits readable results on `stdout` and exits non-zero on any failing job.",
     ],
 )
 def test_an_unchanged_sentence_is_never_narrowed(tmp_path, sentence) -> None:
@@ -319,49 +322,53 @@ def test_an_unchanged_sentence_is_never_narrowed(tmp_path, sentence) -> None:
     ("before", "after"),
     [
         (
-            "Check the bar's sparsity non-examples against the dry-run.",
-            "Check the bar's sparsity non-examples in `docs/roles/<role>/` against the dry-run.",
+            "Compare the build times of the slow jobs against the baseline.",
+            "Compare the build times of the slow jobs in `ci/jobs/<name>/` against the baseline.",
         ),
         (
-            "Load `voice.md` before composing, then match every external copy to the style guide.",
-            "Load the style guide at `voice.md` before composing, then match every external copy to the style guide.",
+            "Open `setup.md` before installing, then match every config line to the template.",
+            "Open the install notes at `setup.md` before installing, then match every config line to the template.",
         ),
         (
-            "Hold the team's north star and drive the roadmap toward it: ask first.",
-            "Hold the team's north star at `vision.md` and drive the roadmap toward it: ask first.",
+            "Update the changelog and tag each release from it: ask first.",
+            "Update the changelog at `CHANGES.md` and tag each release from it: ask first.",
         ),
     ],
 )
 def test_a_place_that_opens_with_a_named_construct_is_listed_not_narrowed(tmp_path, before, after) -> None:
-    ground = "\n\nThe `docs/roles/<role>/`, `voice.md` and `product-vision` files exist.\n"
+    ground = "\n\nThe `ci/jobs/<name>/`, `setup.md` and `CHANGES.md` files exist.\n"
     result = _compare_edit(tmp_path, before + ground, after + ground)
     assert result["narrowed_instructions"] == []
 
 
 _CODE_SPLITS = [
     (
-        "Convert each requested question to a position or an `choice: <question> \u2014 <why>` tag, "
-        "and name the conversion in the return; keep the original wording of the question in the log.",
-        "Convert each requested question to a position or an `choice: <question> \u2014 <why>` tag."
-        "\n\nName the conversion in the return.\n\nKeep the original wording of the question in the log.",
+        "Write each failing step as a line or a `step: <name> \u2014 <reason>` entry, "
+        "and put the summary at the end; keep the raw log in the artifact folder.",
+        "Write each failing step as a line or a `step: <name> \u2014 <reason>` entry."
+        "\n\nPut the summary at the end.\n\nKeep the raw log in the artifact folder.",
     ),
     (
-        "Load `docs:guides/voice` before composing any external-facing copy (launch post, landing copy), "
-        "and add `x/structure` for long-form.",
-        "Load `docs:guides/voice` before composing any external-facing copy (launch post, landing copy)."
-        "\n\nAdd `x/structure` for long-form.",
+        "Read `docs:guides/install` before changing any build script (shell scripts, makefiles), "
+        "and add `docs:guides/cache` for slow builds.",
+        "Read `docs:guides/install` before changing any build script (shell scripts, makefiles)."
+        "\n\nAdd `docs:guides/cache` for slow builds.",
     ),
     (
-        "Group tickets by tagging a `milestone:` label on the ticket; the board view "
-        "shows the grouping (see ticket 9), so do not add a separate grouping field.",
-        "Group tickets by tagging a `milestone:` label on the ticket; the board view "
-        "shows the grouping (see ticket 9).\n\nDo not add a separate grouping field.",
+        "Mark flaky tests by adding a `flaky:` tag to the test name; the nightly report lists "
+        "every marked test (see ticket 9), so do not keep a separate list.",
+        "Mark flaky tests by adding a `flaky:` tag to the test name; the nightly report lists "
+        "every marked test (see ticket 9).\n\nDo not keep a separate list.",
     ),
     (
-        "**`/search <query>`** \u2014 resolve a freeform description (e.g. `how do we find a page?`) to the "
-        "best-matching pages, then load the matched pages (the stretch form; see `## Query matching`).",
-        "**`/search <query>`** \u2014 resolve a freeform description (e.g. `how do we find a page?`) to the "
-        "best-matching pages.\n\nThen load the matched pages (the stretch form; see `## Query matching`).",
+        "**`/deploy <env>`** \u2014 copy the build to the matching host (e.g. `which host is next?`), "
+        "then restart the service (the last step; see `## Rollout`).",
+        "**`/deploy <env>`** \u2014 copy the build to the matching host (e.g. `which host is next?`)."
+        "\n\nThen restart the service (the last step; see `## Rollout`).",
+    ),
+    (
+        "Read the plan, write the code, then run the tests, and commit the change.",
+        "Read the plan, write the code.\n\nThen run the tests and commit the change.",
     ),
 ]
 
@@ -373,3 +380,76 @@ _CODE_SPLITS = [
 def test_a_colon_in_code_or_a_then_step_is_not_a_dangling_fragment(tmp_path, before, after) -> None:
     result = _compare_edit(tmp_path, before + "\n", after + "\n")
     assert result["dangling_fragments"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_real_colon_beside_a_code_span_with_the_same_text_still_opens_a_list(tmp_path) -> None:
+    before = "Separate fields with `:`: name, type, and default."
+    after = "Separate fields with `:`: name.\n\nType and default follow."
+    result = _compare_edit(tmp_path, before + "\n", after + "\n")
+    assert result["dangling_fragments"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_new_place_word_after_a_named_construct_narrows_the_rule(tmp_path) -> None:
+    ground = "\n\nThe `staging` host exists.\n"
+    result = _compare_edit(
+        tmp_path, "Run the migration." + ground, "Run the migration in `staging` environments." + ground
+    )
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "When a brief asks for questions, convert each to a position or a `choice:` tag and name the "
+            "conversion in the return.",
+            "When a brief asks for questions, convert each question to a position or a `choice:` tag.\n\n"
+            "When a brief asks for questions, name each question-to-position conversion in the dispatch return.",
+        ),
+        (
+            "Write the design notes at `docs/design/*.md`, capture observations at `notes/<date>.md`, "
+            "and return inline session output.",
+            "Write the design notes at `docs/design/*.md`.\n\nCapture observations at `notes/<date>.md`.\n\n"
+            "Return the rest of the UX output as inline session output.",
+        ),
+        ("Print the output.", "Print the rest of the output."),
+        ("Fix the failing tests.", "Fix the remaining failing tests."),
+    ],
+)
+def test_a_rest_or_remaining_cut_of_what_a_rule_covers_narrows_it(tmp_path, before, after) -> None:
+    ground = "\n\nThe `choice:` tag, `docs/design/*.md` and `notes/<date>.md` exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("Run the tests before you push.", "Always run the tests before you push."),
+        ("Run the tests.", "Run the tests with `pytest`."),
+        ("Run the linter.", "Run the `ruff` linter."),
+        (
+            "You read the request, classify it, and write the entry.",
+            "You read the request. You classify it. You write the entry.",
+        ),
+        ("Before you push, run the tests.", "Run the tests before you push."),
+    ],
+)
+def test_a_rewrite_that_adds_no_restricting_word_does_not_narrow(tmp_path, before, after) -> None:
+    ground = "\n\nThe `pytest` and `ruff` tools exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"] == []

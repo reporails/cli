@@ -350,3 +350,12 @@ def test_whole_line_quotation_maps_as_one_neutral_atom_structure_aware(tmp_path)
     on_line = [a for a in mapped.atoms if a.line == 5]
     assert len(on_line) == 1
     assert on_line[0].charge_value == 0
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_blank_named_fills_each_token_once_even_when_a_short_token_sits_inside_the_fill() -> None:
+    from reporails_cli.core.heal.preservation.words import blank_named
+
+    out = blank_named("Use struct and const here", ["`struct`", "`const`"], " namedconstruct ")
+    assert out == "Use  namedconstruct  and  namedconstruct  here"

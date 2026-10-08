@@ -67,11 +67,6 @@ SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", 
 )
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
 SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "within", "inside", "across", "under"})
-# Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`):
-# the scope prepositions and the wider set a sentence may already stand in.
-PHRASE_PREPOSITIONS: frozenset[str] = SCOPE_PREPOSITIONS | frozenset(
-    {"to", "into", "from", "of", "for", "with", "by", "onto", "over", "through", "against", "between", "via"}
-)
 # Words that open a noun phrase (`for the api module`).
 # Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
 # right after one narrows what the line covers.
@@ -545,6 +540,16 @@ _NO_DESCRIPTIVE_PREPS = frozenset(
         "since",
         "per",
     }
+)
+# Words that cut a rule's coverage down to part of what it named (`the rest of the output`,
+# `the remaining tests`); read only as narrowing, since they open no condition.
+COVERAGE_RESTRICTORS: frozenset[str] = frozenset({"rest", "remaining"})
+# Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`): the
+# scope prepositions and the prepositions above (not the subordinators among them), with a few more.
+PHRASE_PREPOSITIONS: frozenset[str] = (
+    SCOPE_PREPOSITIONS
+    | (_NO_DESCRIPTIVE_PREPS - {"unless", "when", "while", "except", "since"})
+    | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
 )
 
 # The noun phrases a `No <NP>` STATUS report names. A status line reports a count
