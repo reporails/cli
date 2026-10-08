@@ -75,25 +75,37 @@ file_types:
         maintainer: human
 
   rules:
-    # Path-scoped instructions with applyTo / excludeAgent frontmatter.
+    # Instructions with applyTo / excludeAgent frontmatter.
+    # https://code.visualstudio.com/docs/copilot/customization/custom-instructions: "If you omit both `description` and `applyTo`, attach the file manually when you want to use it."
+    # So `applyTo` -> on_demand path_scoped; a `description` without it -> on_invocation (the agent
+    # picks it by description); neither -> on_demand, manual attach. Activation keys are per scope.
     # VS Code also reads .claude/rules/ for cross-agent compatibility — those
-    # files keep Claude's own `paths:` key (VS Code docs: "For .claude/rules
-    # instructions files, use a paths property instead of applyTo").
+    # files keep Claude's own `paths:` key (VS Code docs: "For Claude rules, use the `paths`
+    # property instead of `applyTo` ... The `paths` property ... defaults to `**` when omitted"),
+    # so the `.claude/rules` scopes read `paths` and a file without it loads at session start.
     source: https://code.visualstudio.com/docs/copilot/customization/custom-instructions
     format: [frontmatter, freeform]
     scope: path_scoped
-    path_key: applyTo
     cardinality: collection
     lifecycle: static
     loading: on_demand
     scopes:
       project:
-        patterns: [".github/instructions/**/*.instructions.md", ".claude/rules/**/*.md"]
+        patterns: [".github/instructions/**/*.instructions.md"]
+        path_key: applyTo
+        description_key: description
+        precedence: project
+        vcs: committed
+        maintainer: human
+      project_claude:
+        patterns: [".claude/rules/**/*.md"]
+        path_key: paths
         precedence: project
         vcs: committed
         maintainer: human
       user:
         patterns: ["~/.claude/rules/*.md"]
+        path_key: paths
         precedence: user
         vcs: external
         maintainer: human
@@ -101,6 +113,8 @@ file_types:
         # https://code.visualstudio.com/docs/copilot/customization/custom-instructions#instructions-file-locations: "Agent Host user, Copilot format: `~/.copilot/instructions`" (files follow the `.instructions.md` naming)
         # Same page: "VS Code searches these folders recursively".
         patterns: ["~/.copilot/instructions/**/*.instructions.md"]
+        path_key: applyTo
+        description_key: description
         precedence: user
         vcs: external
         maintainer: human

@@ -11,20 +11,30 @@ import os
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.heal.preservation import Snapshot, compare, take_snapshot
-from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
+from reporails_cli.core.heal.conformance import check_plan
+from reporails_cli.core.heal.preservation import Snapshot, take_snapshot
+from reporails_cli.core.heal.preservation import check_rewrite as judge_rewrite
+from reporails_cli.core.lint.content_queries import atoms_for_file
+from reporails_cli.core.platform.dto.heal_plan import Plan
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
 
 _snapshots: dict[str, Snapshot] = {}
 # Per briefed file, how many findings each rule had when the brief was served.
 _rule_counts: dict[str, dict[str, int]] = {}
+# Per briefed file, the plan (edits and slots) its brief listed.
+_plans: dict[str, Plan] = {}
+# Briefed files whose held baseline a project `validate` released: the next brief re-snapshots them.
+_released: set[str] = set()
 
 
 def clear_snapshots() -> None:
     """Drop every stored snapshot."""
     _snapshots.clear()
     _rule_counts.clear()
+    _plans.clear()
+    _released.clear()
 
 
 def _key(file_path: Path | str) -> str:
@@ -55,6 +65,7 @@ def snapshot_file(
     score: float | None,
     relation_lines: Any = (),
     rule_counts: dict[str, int] | None = None,
+    plan: Plan | None = None,
 ) -> None:
     """Take (or replace) the snapshot of `file_path` from its content and `ruleset_map`, with the
     per-rule finding counts the brief's own run found. A file that cannot be read gets none, so
@@ -66,6 +77,25 @@ def snapshot_file(
         return
     _snapshots[_key(file_path)] = take_snapshot(str(file_path), text, ruleset_map, score, relation_lines)
     _rule_counts[_key(file_path)] = dict(rule_counts or {})
+    _plans[_key(file_path)] = plan or Plan()
+    _released.discard(_key(file_path))
+
+
+def held_brief(file_path: Path, current_text: str) -> tuple[str, Plan] | None:
+    """The original text and the plan an earlier brief of `file_path` stored, when the file has changed
+    since — a repeated brief for it keeps that baseline instead of replacing it with the half-edited file.
+    `None` when the file was never briefed or has not changed."""
+    snap, plan = _snapshots.get(_key(file_path)), _plans.get(_key(file_path))
+    if snap is None or plan is None or snap.text == current_text or _key(file_path) in _released:
+        return None
+    return snap.text, plan
+
+
+def release_holds(root: Path) -> None:
+    """Release the held baseline of every briefed file under `root`: the project is being validated
+    afresh, so the next brief of each takes a new snapshot of the file as it is then."""
+    base = Path(_key(root))
+    _released.update(k for k in _snapshots if Path(k).is_relative_to(base))
 
 
 def get_snapshot(file_path: Path) -> Snapshot | None:
@@ -82,6 +112,8 @@ def forget_snapshot(file_path: Path) -> None:
     """Drop the snapshot of `file_path`, if any."""
     _snapshots.pop(_key(file_path), None)
     _rule_counts.pop(_key(file_path), None)
+    _plans.pop(_key(file_path), None)
+    _released.discard(_key(file_path))
 
 
 def sibling_texts(snapshot: Snapshot, scan_root: Path | None) -> tuple[str, ...]:
@@ -100,5 +132,37 @@ def check_rewrite(
 ) -> dict[str, Any]:
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
     against `snapshot`, with the project on disk answering which names and paths exist."""
-    environment = LocalProjectEnvironment(scan_root, file_path.parent)
-    return compare(snapshot, ruleset_map, new_text, score, environment, sibling_texts(snapshot, scan_root))
+    return judge_rewrite(
+        snapshot, file_path, ruleset_map, new_text, score, scan_root, sibling_texts(snapshot, scan_root)
+    )
+
+
+def get_plan(file_path: Path) -> Plan | None:
+    """The plan the brief listed for `file_path`, or `None` when it was never briefed."""
+    return _plans.get(_key(file_path))
+
+
+def check_conformance(
+    file_path: Path, ruleset_map: Any, new_text: str, scan_root: Path | None
+) -> dict[str, Any] | None:
+    """The `conformance` block for `file_path`: its current `new_text` and `ruleset_map` judged
+    against the plan its brief listed, `{ok, deviations}`. `None` when the file was never briefed."""
+    snap = get_snapshot(file_path)
+    plan = get_plan(file_path)
+    if snap is None or plan is None:
+        return None
+    key = snap.file_path
+    atoms = atoms_for_file(ruleset_map, key) if ruleset_map is not None else []
+    found = check_plan(plan, {key: snap.text.splitlines()}, {key: new_text.splitlines()}, {key: atoms})
+    deviations = [
+        {
+            "file": normalize_finding_path(d.file, scan_root) if scan_root is not None else d.file,
+            "line": d.line,
+            "op": d.op,
+            "rule": d.rule,
+            "expected": d.expected,
+            "found": d.found,
+        }
+        for d in found
+    ]
+    return {"ok": not deviations, "deviations": deviations}

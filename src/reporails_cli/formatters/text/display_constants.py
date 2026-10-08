@@ -286,11 +286,10 @@ def partner_list(partners: list[str], limit: int = 3) -> str:
     return ", ".join([*partners[:limit], *more])
 
 
-def partner_resolver(result: Any, project_root: Path) -> Callable[[str, str], str]:
-    """Resolve the shortened file name a server overlap message carries to the partner's full path.
+def partner_lookup(result: Any, project_root: Path) -> Callable[[str], list[str]]:
+    """The files a card's file overlaps with, read from the reply's cross-file rows.
 
-    The name is looked up among the overlap pairs that include the card's file; exactly one path equal to
-    the name, or ending in `/<name>`, resolves it; anything else leaves the name as sent.
+    Each partner is a full project path, in a stable order; a file with no overlap pair has none.
     """
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
@@ -300,15 +299,10 @@ def partner_resolver(result: Any, project_root: Path) -> Callable[[str, str], st
         partners.setdefault(l_norm, set()).add(r_norm)
         partners.setdefault(r_norm, set()).add(l_norm)
 
-    def resolve(filepath: str, name: str) -> str:
-        found = {
-            p
-            for p in partners.get(normalize_finding_path(filepath, project_root), ())
-            if p == name or p.endswith("/" + name)
-        }
-        return found.pop() if len(found) == 1 else name
+    def lookup(filepath: str) -> list[str]:
+        return sorted(partners.get(normalize_finding_path(filepath, project_root), ()))
 
-    return resolve
+    return lookup
 
 
 def element_labels(elements: Iterable[Element]) -> dict[str, str]:

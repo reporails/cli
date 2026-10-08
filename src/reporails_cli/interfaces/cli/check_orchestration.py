@@ -81,14 +81,10 @@ def _resolve_capability_paths(
 
 
 def _resolved_within_target(f: Path, target: Path) -> bool:
-    """True when the file's real (symlink-resolved) location is within the heal target.
+    """True when the file's real (symlink-resolved) location is within the heal target."""
+    from reporails_cli.core.heal.apply import resolved_within
 
-    Heal writes through to the real file, so an in-tree symlink whose resolved path
-    escapes the target must not be written — never mutate a file outside the named scope.
-    """
-    fr = safe_resolve(f)
-    tr = safe_resolve(target)
-    return fr == tr or fr.is_relative_to(tr)
+    return resolved_within(f, target)
 
 
 def _is_project_root(directory: Path) -> bool:
@@ -444,11 +440,15 @@ def _run_heal_pass(
     dry_run: bool,
     output_format: str,
     notices: Any = (),
+    workflow: Any = None,
 ) -> None:
-    """Apply mechanical fixes and collect section suggestions using the already-built map."""
-    from reporails_cli.core.lint.suppression import suppressed_lines
+    """Fix each finding at its own place and collect section suggestions using the already-built map.
+
+    `workflow` is the paid remediation workflow; the fixes are the ones it lists.
+    """
+    from reporails_cli.core.heal.apply import suppressed_by_path
     from reporails_cli.interfaces.cli.heal import (
-        _apply_mechanical_fixes,
+        _apply_keyed_fixes,
         _collect_section_suggestions,
         _output_heal_results,
     )
@@ -458,14 +458,13 @@ def _run_heal_pass(
     # A line the author annotated with an `ails-disable-line` directive is reviewed —
     # heal must not mechanically rewrite it. Key the suppressed lines by resolved path
     # so they match the atom files regardless of path form.
-    supp_raw = suppressed_lines([str(f) for f in instruction_files], target)
-    suppressed = {safe_resolve(Path(k)): v for k, v in supp_raw.items()}
+    suppressed = suppressed_by_path(instruction_files, target)
     # The mechanical pass writes only within the scoped `instruction_files` set — it
     # cannot rewrite a mapped file outside scope. Section suggestions never write.
-    mech = _apply_mechanical_fixes(ruleset_map, target, dry_run, show, console, instruction_files, suppressed)
+    keyed = _apply_keyed_fixes(ruleset_map, target, workflow, dry_run, show, console, instruction_files, suppressed)
     suggested = _collect_section_suggestions(target, instruction_files, ruleset_map, effective_agent, show, console)
     heal_ms = round((time.perf_counter() - heal_start) * 1000, 1)
-    _output_heal_results(mech, suggested, dry_run, heal_ms, output_format, console, notices)
+    _output_heal_results(keyed.fixes, suggested, dry_run, heal_ms, output_format, console, notices, keyed)
 
 
 # A key the server rejected, quoted back to the caller as `FunnelError.error`.

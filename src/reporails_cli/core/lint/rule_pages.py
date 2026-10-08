@@ -3,11 +3,12 @@ description and the public guides, with each section taken from the page's markd
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from reporails_cli.core.mapper.structure import section_span
 from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, load_all_rules
 from reporails_cli.core.platform.dto.models import Rule
 from reporails_cli.core.platform.utils.utils import frontmatter_block, read_frontmatter
 
@@ -78,3 +79,10 @@ def load_rule_description(rule: Rule) -> str | None:
     span = section_span(text, "Pass / Fail")
     kept = lines[frontmatter_lines:] if span is None else lines[frontmatter_lines : span[0] - 1] + lines[span[1] - 1 :]
     return "\n".join(kept).strip() or None
+
+
+@lru_cache(maxsize=256)
+def rule_title(rule_id: str) -> str:
+    """The title of a bundled rule, or an empty string when none is known."""
+    rule = find_rule_by_id(rule_id)
+    return (rule.title or "") if rule else ""

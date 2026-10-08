@@ -8,6 +8,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import NamedTuple
 
+from reporails_cli.core.lint.rule_pages import rule_title
+
 # Client-check labels map to their canonical rule ID so local findings display the ID like
 # server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
 CLIENT_CHECK_RULE_ID = {
@@ -29,7 +31,6 @@ class _RuleMeta(NamedTuple):
     """The per-rule registry metadata the docs link, severity and title readers share."""
 
     slug: str
-    title: str
     severity: str
 
 
@@ -39,7 +40,7 @@ def _rule_registry() -> dict[str, _RuleMeta]:
     from reporails_cli.core.platform.adapters.rules_query import load_all_rules
 
     try:
-        return {r.id: _RuleMeta(r.slug or "", r.title or "", r.severity.value) for r in load_all_rules()}
+        return {r.id: _RuleMeta(r.slug or "", r.severity.value) for r in load_all_rules()}
     except (OSError, ValueError):
         return {}
 
@@ -66,12 +67,6 @@ def rule_docs_url(rule_id: str) -> str | None:
         return None
     agent = "core" if parts[0] == "CORE" else parts[0].lower()
     return f"{_RULE_DOCS_BASE}/{agent}/{slug}"
-
-
-def rule_title(rule_id: str) -> str:
-    """The registry title of a canonical rule ID, or an empty string when none is known."""
-    meta = _rule_registry().get(rule_id)
-    return meta.title if meta else ""
 
 
 def rule_label(rule_id: str) -> dict[str, str] | None:

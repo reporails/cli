@@ -257,6 +257,8 @@ def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
                 "scope": f.scope,
                 "agent": f.agent,
                 "type": f.type,
+                "activation": f.activation,
+                **({"reach": list(f.reach)} if f.reach else {}),
                 **({"globs": list(f.globs)} if f.globs else {}),
                 **({"description": f.description} if f.description else {}),
                 **(
@@ -294,6 +296,8 @@ def load_ruleset_map(path: Path) -> RulesetMap:
             globs=tuple(f.get("globs", [])),
             agent=f.get("agent", "generic"),
             type=f.get("type", "generic"),
+            activation=f.get("activation", "always"),
+            reach=tuple(f.get("reach", [])),
             description=f.get("description", ""),
             description_embedding=_decode_embedding_b64(f.get("description_embedding_b64")),
         )

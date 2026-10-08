@@ -20,7 +20,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     WorkflowLocation,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
 from reporails_cli.formatters.json import format_combined_result
 
 
@@ -58,7 +58,6 @@ def test_deserialize_present_workflow_round_trips() -> None:
         {
             "workflow": {
                 "summary": "s",
-                "escape": "e",
                 "locations": [
                     {
                         "order": 1,
@@ -73,8 +72,8 @@ def test_deserialize_present_workflow_round_trips() -> None:
                                 "file": "SKILL.md",
                                 "line": 12,
                                 "pi": 4,
-                                "message": "m",
-                                "remedy": "r",
+                                "op": "move",
+                                "expect": {"after": ["SKILL.md", 3, 1]},
                             }
                         ],
                     }
@@ -83,7 +82,7 @@ def test_deserialize_present_workflow_round_trips() -> None:
         }
     )
     assert isinstance(wf, RemediationWorkflow)
-    assert wf.summary == "s" and wf.escape == "e"
+    assert wf.summary == "s"
     assert len(wf.locations) == 1
     loc = wf.locations[0]
     assert loc.order == 1 and loc.importance == "gate_mover"
@@ -91,7 +90,8 @@ def test_deserialize_present_workflow_round_trips() -> None:
     assert loc.files == ("SKILL.md",)
     assert len(loc.findings) == 1
     f = loc.findings[0]
-    assert (f.rule, f.file, f.line, f.pi, f.message, f.remedy) == ("CORE:C:0042", "SKILL.md", 12, 4, "m", "r")
+    assert (f.rule, f.file, f.line, f.pi, f.op) == ("CORE:C:0042", "SKILL.md", 12, 4, "move")
+    assert f.expect == {"after": ["SKILL.md", 3, 1]}
 
 
 @pytest.mark.unit
@@ -158,8 +158,8 @@ def test_deserialize_reads_relations_and_listed() -> None:
                                 "line": 22,
                                 "partner_file": "CLAUDE.md",
                                 "partner_line": 30,
-                                "message": "m",
-                                "remedy": "r",
+                                "op": "dedupe",
+                                "expect": {"keep": ["CLAUDE.md", 30]},
                             }
                         ],
                     }
@@ -214,26 +214,24 @@ def test_deserialize_defaults_finding_impact_tier_to_empty_when_absent() -> None
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_deserialize_reads_listed_why() -> None:
+def test_deserialize_reads_listed_reason_code_only() -> None:
     wf = deserialize_workflow(
-        {
-            "workflow": {
-                "listed": [
-                    {"rule": "CORE:S:0039", "reason": "cosmetic", "count": 4, "why": "A stray dash reads as noise."}
-                ]
-            }
-        }
+        {"workflow": {"listed": [{"rule": "CORE:S:0039", "reason": "no-gain", "count": 4, "why": "ignored prose"}]}}
     )
     assert wf is not None
-    assert wf.listed[0].why == "A stray dash reads as noise."
+    assert (wf.listed[0].rule, wf.listed[0].reason, wf.listed[0].count) == ("CORE:S:0039", "no-gain", 4)
+    assert not hasattr(wf.listed[0], "why")
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_deserialize_defaults_listed_why_to_empty_when_absent() -> None:
-    wf = deserialize_workflow({"workflow": {"listed": [{"rule": "CORE:S:0039", "reason": "cosmetic", "count": 4}]}})
+def test_deserialize_tolerates_absent_op_and_expect() -> None:
+    wf = deserialize_workflow(
+        {"workflow": {"locations": [{"order": 1, "findings": [{"rule": "R", "file": "a.md", "line": 1}]}]}}
+    )
     assert wf is not None
-    assert wf.listed[0].why == ""
+    f = wf.locations[0].findings[0]
+    assert (f.op, f.expect) == ("", {})
 
 
 @pytest.mark.unit
@@ -248,19 +246,14 @@ def test_render_workflow_present_in_json() -> None:
                 loading="session_start",
                 files=("CLAUDE.md",),
                 importance="gate_mover",
-                findings=(
-                    LocationFinding(
-                        rule="CORE:C:0042", file="CLAUDE.md", line=5, pi=1, message="Vague.", remedy="Name it."
-                    ),
-                ),
+                findings=(LocationFinding(rule="CORE:C:0042", file="CLAUDE.md", line=5, pi=1, op="direct"),),
             ),
         ),
-        escape="esc",
         summary="sum",
     )
     data = format_combined_result(_result(workflow=wf))
     loc = data["workflow"]["locations"][0]
-    assert data["workflow"]["summary"] == "sum" and data["workflow"]["escape"] == "esc"
+    assert data["workflow"]["summary"] == "sum"
     assert loc["order"] == 1 and "tier" not in loc and loc["kind"] == "main"
     assert loc["files"] == ["CLAUDE.md"]
     assert loc["findings"] == [
@@ -269,8 +262,8 @@ def test_render_workflow_present_in_json() -> None:
             "file": "CLAUDE.md",
             "line": 5,
             "pi": 1,
-            "message": "Vague.",
-            "remedy": "Name it.",
+            "op": "direct",
+            "expect": {},
             "impact_tier": "",
             "members": [],
         }
@@ -297,8 +290,6 @@ def test_render_normalizes_absolute_location_paths() -> None:
                         file="/home/u/proj/.claude/rules/style.md",
                         line=5,
                         pi=None,
-                        message="m",
-                        remedy="",
                     ),
                 ),
             ),
@@ -329,8 +320,7 @@ def test_render_carries_finding_impact_tier() -> None:
                         file="CLAUDE.md",
                         line=5,
                         pi=1,
-                        message="Vague.",
-                        remedy="Name it.",
+                        op="direct",
                         impact_tier="gate_mover",
                     ),
                 ),
@@ -344,15 +334,13 @@ def test_render_carries_finding_impact_tier() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_render_carries_listed_why() -> None:
+def test_render_carries_listed_reason_code() -> None:
     wf = RemediationWorkflow(
-        listed=(ListedFinding(rule="CORE:S:0039", reason="cosmetic", count=2, why="A stray dash reads as noise."),),
+        listed=(ListedFinding(rule="CORE:S:0039", reason="cosmetic", count=2),),
         summary="s",
     )
     data = format_combined_result(_result(workflow=wf))
-    assert data["workflow"]["listed"] == [
-        {"rule": "CORE:S:0039", "reason": "cosmetic", "count": 2, "why": "A stray dash reads as noise."}
-    ]
+    assert data["workflow"]["listed"] == [{"rule": "CORE:S:0039", "reason": "cosmetic", "count": 2}]
 
 
 @pytest.mark.unit
@@ -382,7 +370,7 @@ def test_render_workflow_present_via_listed_alone() -> None:
     wf = RemediationWorkflow(listed=(ListedFinding(rule="CORE:S:0039", reason="cosmetic", count=2),), summary="s")
     data = format_combined_result(_result(workflow=wf))
     assert data["workflow"]["locations"] == []
-    assert data["workflow"]["listed"] == [{"rule": "CORE:S:0039", "reason": "cosmetic", "count": 2, "why": ""}]
+    assert data["workflow"]["listed"] == [{"rule": "CORE:S:0039", "reason": "cosmetic", "count": 2}]
 
 
 @pytest.mark.unit
@@ -403,8 +391,8 @@ def test_render_carries_relations_with_relative_paths() -> None:
                         line=22,
                         partner_file="/proj/CLAUDE.md",
                         partner_line=30,
-                        message="m",
-                        remedy="r",
+                        op="dedupe",
+                        expect={"keep": ["/proj/CLAUDE.md", 30]},
                     ),
                 ),
             ),
@@ -419,17 +407,15 @@ def test_render_carries_relations_with_relative_paths() -> None:
             "line": 22,
             "partner_file": "CLAUDE.md",
             "partner_line": 30,
-            "message": "m",
-            "remedy": "r",
+            "op": "dedupe",
+            "expect": {"keep": ["CLAUDE.md", 30]},
         }
     ]
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_render_fills_an_empty_finding_message_from_the_client_s_own_finding() -> None:
-    # A server-side finding with no message of its own (a local-check-derived defect) is filled
-    # from the cli's own finding at the same (file, line, rule) when one exists.
+def test_render_carries_a_move_s_expected_coordinates_relative() -> None:
     wf = RemediationWorkflow(
         locations=(
             WorkflowLocation(
@@ -439,34 +425,20 @@ def test_render_fills_an_empty_finding_message_from_the_client_s_own_finding() -
                 loading="session_start",
                 files=("CLAUDE.md",),
                 findings=(
-                    LocationFinding(rule="CORE:S:0056", file="CLAUDE.md", line=7, pi=None, message="", remedy=""),
+                    LocationFinding(
+                        rule="CORE:S:0056",
+                        file="/proj/CLAUDE.md",
+                        line=7,
+                        pi=None,
+                        op="move",
+                        expect={"after": ["/proj/CLAUDE.md", 2, 1]},
+                    ),
                 ),
             ),
         ),
         summary="s",
     )
-    client_finding = FindingItem(file="CLAUDE.md", line=7, severity="error", rule="CORE:S:0056", message="Broken link.")
-    data = format_combined_result(_result(workflow=wf, findings=(client_finding,)))
-    assert data["workflow"]["locations"][0]["findings"][0]["message"] == "Broken link."
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_diagnostic
-def test_render_leaves_an_unfilled_empty_message_empty_when_no_client_finding_matches() -> None:
-    wf = RemediationWorkflow(
-        locations=(
-            WorkflowLocation(
-                order=1,
-                element="CLAUDE.md",
-                kind="main",
-                loading="session_start",
-                files=("CLAUDE.md",),
-                findings=(
-                    LocationFinding(rule="CORE:S:0056", file="CLAUDE.md", line=7, pi=None, message="", remedy=""),
-                ),
-            ),
-        ),
-        summary="s",
-    )
-    data = format_combined_result(_result(workflow=wf))
-    assert data["workflow"]["locations"][0]["findings"][0]["message"] == ""
+    data = format_combined_result(_result(workflow=wf), project_root=Path("/proj"))
+    finding = data["workflow"]["locations"][0]["findings"][0]
+    assert finding["op"] == "move" and finding["expect"] == {"after": ["CLAUDE.md", 2, 1]}
+    assert "message" not in finding and "remedy" not in finding

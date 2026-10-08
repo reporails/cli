@@ -31,6 +31,8 @@ from reporails_cli.interfaces.cli.check_notices import (
     _agent_is_pinned,
     _emit_empty_run,
     _emit_heal_auth_required,
+    _emit_heal_no_fixes,
+    _emit_heal_pro_required,
     _emit_heal_scope_refusal,
     _notify_heal_scope_skips,
 )
@@ -493,7 +495,7 @@ def _flow_assemble(state: CheckState) -> None:
 def _flow_render(state: CheckState) -> None:
     """Dispatch the diagnosis output (unless an authed JSON heal replaces it) + timing + hint."""
     if state.inputs.heal:
-        state.render.heal_authed = _heal_authed(state.pipeline.funnel_error)
+        state.render.heal_authed = _heal_authed(state.pipeline.funnel_error) and _heal_workflow(state) is not None
 
     if not (state.render.heal_authed and state.targets.output_format == "json"):
         _dispatch_output(
@@ -519,6 +521,11 @@ def _flow_render(state: CheckState) -> None:
     )
 
 
+def _heal_workflow(state: CheckState) -> Any:
+    """The remediation workflow the report was drawn from (after suppressions); None when the reply carries none."""
+    return getattr(state.render.result, "workflow", None)
+
+
 def _flow_heal(state: CheckState) -> None:
     """Apply (or gate) the heal pass after the diagnosis is rendered."""
     if not state.inputs.heal:
@@ -526,7 +533,13 @@ def _flow_heal(state: CheckState) -> None:
     if not state.render.heal_authed:
         if getattr(state.pipeline.funnel_error, "still_reaching", False):
             return
-        _emit_heal_auth_required(state.targets.output_format)
+        if _heal_authed(state.pipeline.funnel_error):
+            if state.pipeline.lint_result is None:
+                _emit_heal_no_fixes(state.targets.output_format)
+                return
+            _emit_heal_pro_required(state.targets.output_format)
+        else:
+            _emit_heal_auth_required(state.targets.output_format)
         return
     heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
     candidate = (
@@ -544,6 +557,7 @@ def _flow_heal(state: CheckState) -> None:
         state.inputs.dry_run,
         state.targets.output_format,
         state.render.result.notices,
+        _heal_workflow(state),
     )
 
 

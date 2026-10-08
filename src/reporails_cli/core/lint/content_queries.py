@@ -62,21 +62,6 @@ def _all_file_paths(rm: RulesetMap) -> set[str]:
     return {fr.path for fr in rm.files}
 
 
-def instruction_inventory(rm: RulesetMap, file_path: str) -> list[dict[str, Any]]:
-    """`file_path`'s content, in line order: each non-heading atom as `{line, polarity, text,
-    named}` (`polarity` is the atom's `charge_value`, `named` its named tokens), each heading as
-    `{line, depth, text}`. A list item read as its instruction's object is not a unit of its own
-    (`LIST_OBJECT_ROLE`) and is left out, matching how the rest of the pipeline addresses atoms."""
-    atoms = instruction_atoms_for_file(rm, file_path)
-    out: list[dict[str, Any]] = []
-    for a in sorted(atoms, key=lambda a: a.line):
-        if a.kind == "heading":
-            out.append({"line": a.line, "depth": a.depth, "text": a.text})
-        else:
-            out.append({"line": a.line, "polarity": a.charge_value, "text": a.text, "named": list(a.named_tokens)})
-    return out
-
-
 # ──────────────────────────────────────────────────────────────────
 # QUERY FUNCTIONS
 # Each takes (rm, file_path, **args) and returns QueryResult.

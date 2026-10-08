@@ -9,6 +9,7 @@ mapper's classifier.
 
 from __future__ import annotations
 
+import difflib
 import os
 import re
 from collections.abc import Set as AbstractSet
@@ -17,6 +18,7 @@ from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import (
+    NEGATION_RE,
     STOPWORDS,
     WORD_RE,
     blank_named,
@@ -289,6 +291,32 @@ def _same_sentence(p: Pair) -> bool:
     return " ".join(p.old_sentence.lower().split()) == " ".join(p.new_sentence.lower().split())
 
 
+_DEFINITE = DETERMINERS - GENERAL_QUANTIFIERS
+
+
+def _known_qualifier(words: list[str], known: set[str]) -> bool:
+    """Whether `words` hold content words and every one of them is a word of the author's line."""
+    content = [w for w in words if len(w) > 2 and w not in STOPWORDS]
+    return bool(content) and all(w in known for w in content)
+
+
+def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
+    """Whether a prohibition's rewrite puts content words into its sentence anywhere but after a
+    definite reference (`the linter` -> `the ruff linter` names what the sentence already pointed
+    at): `file plans` -> `file X or Y plans`, `present a menu` -> `present a UX recommendation as a
+    menu` restrict what the rule forbids, though those words stand elsewhere on the line (`known`)."""
+    if not NEGATION_RE.search(p.new_sentence):
+        return False
+    old = [w.lower() for w in WORD_RE.findall(p.old_sentence)]
+    new = [w.lower() for w in WORD_RE.findall(p.new_sentence)]
+    ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
+    return any(
+        _known_qualifier(new[j1:j2], known)
+        for tag, _, _, j1, j2 in ops
+        if tag == "insert" and j1 > 0 and j2 < len(new) and new[j1 - 1] not in _DEFINITE
+    )
+
+
 def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[str, Any]]:
     """Each matched instruction whose rewrite adds words that restrict where, when or to what it
     applies, without an if / when / before frame (which `added_conditions` already reports): a
@@ -296,7 +324,8 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[s
     author's sentence did not already hold inside a prepositional phrase (`define WHAT to build` ->
     `define WHAT to build in that spec`, though `spec` is elsewhere on the line); or one that
     names a construct directly after a general quantifier the author's line already had (`every
-    gate` -> `every X gate`)."""
+    gate` -> `every X gate`); or a prohibition that gains a qualifier before its noun from words
+    the line has elsewhere (`file plans` -> `file X or Y plans`)."""
     out: list[dict[str, Any]] = []
     for p in pairs:
         if _same_sentence(p):
@@ -304,7 +333,8 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[s
         known = _known_words(old_by_line, p.old.line)
         known |= {f for w in known for f in word_forms(w)}
         placed = _placed_words(old_by_line, p)
-        if any(_narrows(clause, known, placed) for clause in _clauses(p.new)) or _inserted_after_quantifier(p):
+        narrows = any(_narrows(clause, known, placed) for clause in _clauses(p.new))
+        if narrows or _inserted_after_quantifier(p) or _qualified_general_noun(p, known):
             out.append(p.entry())
     return out
 
@@ -331,7 +361,7 @@ def _marker_words(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> s
     return set(prose_words(atom)) | (set(prose_words(atom, named=True)) & marked_before)
 
 
-def _conditional(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> bool:
+def conditional(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> bool:
     """Whether `atom` holds a condition: the mapper reads a conditional frame, or the instruction
     is restricted by a word like `only` / `except` in its prose."""
     return atom.scope_conditional or bool(_marker_words(atom, marked_before) & SCOPE_RESTRICTORS)
@@ -432,12 +462,12 @@ def dropped_conditions(pairs: list[Pair]) -> list[dict[str, Any]]:
     one that brings a word the original condition lacked is not."""
     out = []
     for p in pairs:
-        if not _conditional(p.old):
+        if not conditional(p.old):
             continue
         before = set(prose_words(p.old))
         rewrite_conditions = _conditions(p.new, before)
         original_conditions = _conditions(p.old)
-        if not _conditional(p.new, before) or not all(
+        if not conditional(p.new, before) or not all(
             _holds(g, rewrite_conditions, original_conditions) for g in original_conditions
         ):
             out.append(p.entry())

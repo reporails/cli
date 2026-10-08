@@ -12,48 +12,29 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.utils.utils import matches_any_glob
 from reporails_cli.formatters.json import format_notices
 
 logger = logging.getLogger(__name__)
 
 
-def _apply_mechanical_fixes(
+def _apply_keyed_fixes(
     ruleset_map: Any,
     target: Path,
+    workflow: Any,
     dry_run: bool,
     show_progress: bool,
     console: Any,
     allowed_files: list[Path] | None = None,
     suppressed: dict[Path, set[int]] | None = None,
-) -> list[dict[str, Any]]:
-    """Apply atom-level mechanical fixes. Returns list of fix dicts.
+) -> Any:
+    """Fix each finding at the place it names; list the places that need a decision (`apply_keyed_heal`)."""
+    from reporails_cli.core.heal.apply import apply_keyed_heal
 
-    `allowed_files` bounds the write set to the scoped heal files; a mapped file
-    outside it (e.g. an in-tree symlink whose real path escapes the target) is skipped.
-    `suppressed` maps a resolved file path to the line numbers the author annotated
-    with an `ails-disable-line` directive; heal leaves those lines unmodified.
-    A file the project's `heal_exclude` matches is never written.
-    """
-    if ruleset_map is None:
-        return []
-    if show_progress:
-        console.print("[bold]Applying mechanical fixes...[/bold]")
-    from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
-
-    allowed = {safe_resolve(p) for p in allowed_files} if allowed_files is not None else None
-    patterns = get_project_config(target).heal_exclude
-    if allowed is not None and patterns:
-        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target))}
-    mech_fixes = apply_mechanical_fixes(
-        ruleset_map, target, dry_run=dry_run, allowed_files=allowed, suppressed=suppressed
+    if show_progress and ruleset_map is not None and workflow is not None:
+        console.print("[bold]Applying fixes...[/bold]")
+    return apply_keyed_heal(
+        ruleset_map, target, workflow, dry_run=dry_run, allowed_files=allowed_files, suppressed=suppressed
     )
-    return [
-        {"rule_id": mf.fix_type, "file_path": mf.file_path, "line": mf.line, "description": mf.description}
-        for mf in mech_fixes
-    ]
 
 
 def _collect_section_suggestions(
@@ -152,27 +133,52 @@ def _output_heal_results(
     output_format: str,
     console: Any,
     notices: Any = (),
+    keyed: Any = None,
 ) -> None:
     """Output heal results in the requested format.
+
+    `keyed` carries the places that need a decision (`decisions`) and the files written back
+    unchanged because the result departed from the plan (`put_back`).
 
     `auto_fixed` carries only what was written (or would be, under `--dry-run`);
     `suggested` carries missing-section findings — reported, never written.
     """
+    decisions = keyed.decisions if keyed else []
+    put_back = keyed.put_back if keyed else []
     if output_format == "json":
         data = {
             "auto_fixed": mechanical_results,
             "suggested": suggested,
+            "decisions": decisions,
+            "put_back": put_back,
             "notices": format_notices(notices),
             "summary": {
                 "auto_fixed_count": len(mechanical_results),
                 "suggested_count": len(suggested),
+                "decisions_count": len(decisions),
+                "put_back_count": len(put_back),
                 "dry_run": dry_run,
                 "elapsed_ms": elapsed_ms,
             },
         }
         print(json.dumps(data, indent=2))
     else:
-        _print_text_result(mechanical_results, suggested, dry_run, elapsed_ms, console)
+        _print_text_result(mechanical_results, suggested, dry_run, elapsed_ms, console, decisions, put_back)
+
+
+def _print_decisions(decisions: list[dict[str, Any]], put_back: list[dict[str, Any]], console: Any) -> None:
+    """The files put back, then one line per place that needs a decision: `file:line  op  rule title`."""
+    for pb in put_back:
+        why = f"{pb['op']} {pb['rule']}" if pb["op"] else pb.get("check", "")
+        console.print(f"[yellow]put back: {pb['file']} ({why} line {pb['line']})[/yellow]")
+    if not decisions:
+        return
+    from reporails_cli.core.lint.rule_pages import rule_title
+
+    n = len(decisions)
+    console.print(f"\n[bold]{n}[/bold] place{'s' if n != 1 else ''} need{'' if n != 1 else 's'} a decision:")
+    for d in decisions:
+        console.print(f"  {d['file']}:{d['line']}  {d['op']}  {rule_title(d['rule']) or d['rule']}")
 
 
 def _print_text_result(
@@ -181,8 +187,10 @@ def _print_text_result(
     dry_run: bool,
     elapsed_ms: float,
     console: Any,
+    decisions: list[dict[str, Any]] | None = None,
+    put_back: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Print human-readable heal results: applied fixes, then suggested sections.
+    """Print human-readable heal results: fixes, put-back files, decisions, then suggested sections.
 
     The "N fixes applied" / "No fixable issues found." lines count applied fixes
     only; a run with suggestions and no applied fixes says so plainly before
@@ -199,9 +207,8 @@ def _print_text_result(
         for filepath, file_fixes in sorted(by_file.items()):
             console.print(f"\n[bold]{filepath}[/bold]")
             for fix in file_fixes:
-                line = fix.get("line", "")
-                line_str = f"L{line} " if line else ""
-                console.print(f"  {prefix} {line_str}{fix['description']}")
+                where = f"L{fix['line']} " if fix.get("line") else ""
+                console.print(f"  {prefix} {where}{fix['description']}")
 
         console.print(
             f"\n[bold]{len(fixes)}[/bold] fix{'es' if len(fixes) != 1 else ''} "
@@ -214,6 +221,8 @@ def _print_text_result(
     else:
         console.print("[green]No fixable issues found.[/green]")
         console.print(f"[dim]{elapsed_ms:.0f}ms[/dim]")
+
+    _print_decisions(decisions or [], put_back or [], console)
 
     if suggested:
         console.print("\n[bold]Sections to add (not written):[/bold]")

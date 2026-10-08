@@ -14,16 +14,14 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NamedTuple
 
-from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.annotate import backticked_words, is_unbacked_library_name
 from reporails_cli.core.mapper.imports import IMPORT_REF_RE
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import EmphasisRun, emphasis_runs, has_bold_label, replace_spans
 from reporails_cli.core.mapper.structure import LineSpans, in_any_span, line_spans, paragraph_lines
-from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.dto.ruleset import Atom
 
 logger = logging.getLogger(__name__)
 
@@ -230,8 +228,8 @@ def _bold_runs_to_soften(tokens: list[str], line: str, spans: LineSpans) -> list
     return chosen
 
 
-def fix_bold_on_constraints(atoms: list[Atom], lines: list[str]) -> list[MechanicalFix]:
-    """Replace bold with italic on constraint atoms (charge_value == -1).
+def fix_bold_on_constraints(atoms: list[Atom], lines: list[str], *, any_charge: bool = False) -> list[MechanicalFix]:
+    """Replace bold with italic on constraint atoms (charge_value == -1), or on any given atom with `any_charge`.
 
     Changes exactly the bold runs the atom's `bold_tokens` names (the bold the lint check
     reports: not a label, not a negation phrase), found on the line through the file's emphasis
@@ -241,7 +239,7 @@ def fix_bold_on_constraints(atoms: list[Atom], lines: list[str]) -> list[Mechani
     fixes: list[MechanicalFix] = []
     spans = line_spans("".join(lines))
     for atom in atoms:
-        if atom.charge_value != -1 or atom.format == "table" or not atom.bold_tokens:
+        if (atom.charge_value != -1 and not any_charge) or atom.format == "table" or not atom.bold_tokens:
             continue
         idx = atom.line - 1
         if idx < 0 or idx >= len(lines):
@@ -498,103 +496,3 @@ def fix_italic_constraints(atoms: list[Atom], lines: list[str]) -> list[Mechanic
         if span is not None:
             found.setdefault(span, atom)
     return _wrap_spans(found, lines)
-
-
-# ──────────────────────────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────────────────────────
-
-
-def apply_mechanical_fixes(
-    ruleset_map: RulesetMap,
-    scan_root: Path,  # noqa: ARG001
-    *,
-    dry_run: bool = False,
-    fix_types: set[str] | None = None,
-    allowed_files: set[Path] | None = None,
-    suppressed: dict[Path, set[int]] | None = None,
-) -> list[MechanicalFix]:
-    """Apply all mechanical fixes to files in the ruleset map.
-
-    Returns the list of fixes applied. When dry_run is True, computes
-    fixes but does not write files. When `allowed_files` is given (resolved
-    paths), a mapped file outside it is skipped — the write set is bounded to
-    the scoped heal files, so a file whose real path escapes the heal target
-    is never rewritten. When `suppressed` (resolved path -> line numbers) is
-    given, atoms on those lines are skipped — a line the author annotated with
-    an `ails-disable-line` directive is reviewed, so heal leaves it unmodified.
-    A config-format file (settings, hooks, MCP, plugin) is not instruction text and
-    gets no fix: it is the surface the formatting rule is not applied to.
-    """
-    all_fixes: list[MechanicalFix] = []
-
-    # Group atoms by file
-    atoms_by_file: dict[str, list[Atom]] = {}
-    for atom in ruleset_map.atoms:
-        atoms_by_file.setdefault(atom.file_path, []).append(atom)
-
-    allowed = fix_types or {"format", "bold", "italic_constraint"}
-
-    from reporails_cli.core.lint.suppression import finding_surface
-
-    for file_path, atoms in atoms_by_file.items():
-        path = Path(file_path)
-        if not path.is_file() or finding_surface(file_path) == "config":
-            continue
-        resolved = safe_resolve(path)
-        if allowed_files is not None and resolved not in allowed_files:
-            continue
-        sup_lines = suppressed.get(resolved, set()) if suppressed else set()
-        active = [a for a in atoms if a.line not in sup_lines] if sup_lines else atoms
-        all_fixes.extend(_fix_one_file(path, active, allowed, dry_run))
-
-    return all_fixes
-
-
-_LINE_BREAK = re.compile(r"(\r\n|\r|\n)")
-
-
-def _read_lines(path: Path) -> tuple[list[str], list[str]]:
-    """The file's lines (each ends in `\n` where the parse breaks a line) and the ending each was written with."""
-    with path.open(encoding="utf-8", newline="") as handle:
-        pieces = _LINE_BREAK.split(handle.read())
-    lines = [f"{text}\n" for text in pieces[0:-1:2]] + ([pieces[-1]] if pieces[-1] else [])
-    return lines, pieces[1::2]
-
-
-def _write_lines(path: Path, lines: list[str], endings: list[str]) -> None:
-    """Write `lines` back, each with the ending it was read with."""
-    out = "".join(line.removesuffix("\n") + endings[i] if i < len(endings) else line for i, line in enumerate(lines))
-    path.write_text(out, encoding="utf-8", newline="")
-
-
-def _fix_one_file(path: Path, atoms: list[Atom], allowed: set[str], dry_run: bool) -> list[MechanicalFix]:
-    """Apply the enabled fixers to one file's atoms; write unless dry_run. Returns its fixes."""
-    try:
-        lines, endings = _read_lines(path)
-    except UnicodeDecodeError:
-        logger.warning("%s is not UTF-8 text, so heal left it unchanged.", path)
-        return []
-    from reporails_cli.core.mapper.imports import expand_imports
-
-    content = "".join(lines)
-    try:  # a file whose @imports expand is skipped: atom.line is import-expanded, a write would mis-target
-        if expand_imports(content, path) != content:
-            return []
-    except Exception as exc:  # any import-resolution error: skip this file, never abort the heal pass
-        logger.warning("Skipping mechanical fix for %s: import-expansion failed: %s", path, exc)
-        return []
-
-    fixers = (
-        ("format", fix_unformatted_code),
-        ("bold", fix_bold_on_constraints),
-        ("italic_constraint", fix_italic_constraints),
-    )
-    file_fixes: list[MechanicalFix] = []
-    for name, fixer in fixers:
-        if name in allowed:
-            file_fixes.extend(fixer(atoms, lines))
-
-    if file_fixes and not dry_run:
-        _write_lines(path, lines, endings)
-    return file_fixes

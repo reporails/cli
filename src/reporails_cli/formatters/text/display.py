@@ -26,7 +26,7 @@ from reporails_cli.formatters.text.display_constants import (
     get_sev_icons,
     group_stats_line,
     more_pairs_line,
-    partner_resolver,
+    partner_lookup,
     short_path,
     skill_lookup,
 )
@@ -101,7 +101,7 @@ class _CardContext:
     atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
     skill_of: dict[str, str] | None = None
     element_of: Callable[[str], Element] | None = None
-    partner_of: Callable[[str, str], str] | None = None
+    partners_of: Callable[[str], list[str]] | None = None
     # Scanned item count per surface label, as the Summary's surface rows state it.
     scanned_items: dict[str, int] = field(default_factory=dict)
 
@@ -139,7 +139,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             atoms_by_path=ctx.atoms_by_path,
             skill_of=ctx.skill_of,
             element_of=ctx.element_of,
-            partner_of=ctx.partner_of,
+            partners_of=ctx.partners_of,
         )
 
     shown = sum(len(split_conventions(fs, ctx.verbose)[0]) for _, fs in group_files)
@@ -398,7 +398,7 @@ def _render_findings_and_scorecard(
         result.cross_file or result.cross_file_coordinates or any(f.rule == "CORE:C:0044" for f in result.findings)
     )
     element_of = element_namer(ruleset_map, project_root) if names_elements else None
-    partner_of = partner_resolver(result, project_root) if names_elements else None
+    partners_of = partner_lookup(result, project_root) if names_elements else None
     atoms_by_path = (
         index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
     )
@@ -421,7 +421,7 @@ def _render_findings_and_scorecard(
         atoms_by_path=atoms_by_path,
         skill_of=skill_of,
         element_of=element_of,
-        partner_of=partner_of,
+        partners_of=partners_of,
         scanned_items={s.name: s.item_count for s in surfaces},
     )
     _render_file_groups(build_file_groups(result, file_type_by_path, project_root, skill_of, aliases_by_file), ctx)

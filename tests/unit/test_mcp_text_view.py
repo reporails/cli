@@ -44,7 +44,7 @@ def _paid_payload() -> dict[str, Any]:
             "targets": {"tokens": ["@main"], "locations": 1, "of": 4},
             "locations": [_location(1)],
             "listed": [
-                {"why": "Kept as is.", "rules": [{"rule": "CORE:C:0001", "count": 3}, {"rule": "X:1", "count": 1}]}
+                {"reason": "Kept as is.", "rules": [{"rule": "CORE:C:0001", "count": 3}, {"rule": "X:1", "count": 1}]}
             ],
         },
         "rules": RULES,
@@ -137,7 +137,7 @@ def test_preservation_and_feedback_view() -> None:
                 "rule": "CORE:C:0001",
                 "line": 12,
                 "message": "Be specific",
-                "remedy": "Name the command",
+                "op": "direct",
                 "impact_tier": "gate_mover",
             }
         ],
@@ -152,8 +152,7 @@ def test_preservation_and_feedback_view() -> None:
     assert not any(line.startswith(("preservation.padded_lines", "preservation.removed_structure")) for line in lines)
     assert lines[4:] == [
         "feedback:",
-        "  - gate_mover Vague wording ([CORE:C:0001](https://docs.example/c1)) line 12"
-        " — Be specific — remedy: Name the command",
+        "  - gate_mover Vague wording ([CORE:C:0001](https://docs.example/c1)) line 12 — Be specific — op: direct",
     ]
 
 
@@ -283,8 +282,8 @@ def _finding(rule: str, line: int, **extra: Any) -> dict[str, Any]:
         "rule": rule,
         "file": "dir1/CLAUDE.md",
         "line": line,
-        "message": f"msg {line}",
-        "remedy": f"fix {line}",
+        "op": "split",
+        "expect": {},
         "impact_tier": "gate_mover",
         "members": [],
         **extra,
@@ -305,8 +304,8 @@ def test_targeted_view_renders_each_location_s_findings_members_and_relations() 
                 "line": 3,
                 "partner_file": "dir2/CLAUDE.md",
                 "partner_line": 11,
-                "message": "overlaps",
-                "remedy": "merge",
+                "op": "dedupe",
+                "expect": {"keep": ["dir2/CLAUDE.md", 11]},
             }
         ],
     }
@@ -318,10 +317,10 @@ def test_targeted_view_renders_each_location_s_findings_members_and_relations() 
     row = lines.index("  1 | main | dir1/CLAUDE.md | gate_mover | 12 | dir1/CLAUDE.md")
     link = "Vague wording ([CORE:C:0001](https://docs.example/c1))"
     assert lines[row + 1 :] == [
-        f"      - gate_mover {link} dir1/CLAUDE.md:4 — msg 4 — remedy: fix 4",
-        f"        - gate_mover {link} dir1/CLAUDE.md:9 — msg 9 — remedy: fix 9",
-        "      - cosmetic X:2 dir1/CLAUDE.md:7 — msg 7 — remedy: fix 7",
-        f"      - relation {link} dir1/CLAUDE.md:3 \u2194 dir2/CLAUDE.md:11 — remedy: merge",
+        f"      - gate_mover {link} dir1/CLAUDE.md:4 — op: split",
+        f"        - gate_mover {link} dir1/CLAUDE.md:9 — op: split",
+        "      - cosmetic X:2 dir1/CLAUDE.md:7 — op: split",
+        f"      - relation {link} dir1/CLAUDE.md:3 \u2194 dir2/CLAUDE.md:11 — op: dedupe",
     ]
 
 

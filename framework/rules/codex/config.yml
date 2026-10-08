@@ -64,13 +64,13 @@ file_types:
         maintainer: human
 
   nested_context:
-    # Per-package AGENTS.md in subdirectories below cwd. Codex's chain walk goes
-    # project-root → cwd, so files BELOW cwd aren't eagerly loaded — but a user
-    # who cd's into those subdirectories will pick them up. scope: nested
-    # captures the subtree-by-location semantic without overloading `global`.
+    # Per-package AGENTS.md in subdirectories below cwd. "Codex builds an instruction chain when
+    # it starts (once per run...)" and stops at the current directory, so files below cwd are
+    # not loaded and nothing loads mid-run. scope: nested keeps them by location, not frontmatter.
     source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
     format: freeform
     scope: nested
+    activation: launch_subtree
     cardinality: hierarchical
     lifecycle: static
     loading: on_demand

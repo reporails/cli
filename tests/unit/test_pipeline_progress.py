@@ -49,7 +49,9 @@ def test_element_label_root_main_is_main_on_absolute_paths(tmp_path: Path) -> No
 
 def _stub_classify(monkeypatch: pytest.MonkeyPatch) -> None:
     # Neuter the heavy per-file work; we are exercising only the progress counter.
-    monkeypatch.setattr(pipeline, "_detect_file_loading", lambda *a, **k: ("always", "", (), "generic", "generic"))
+    monkeypatch.setattr(
+        pipeline, "_detect_file_activation", lambda *a, **k: ("always", "", (), "generic", "generic", "always")
+    )
     monkeypatch.setattr(pipeline, "_classify_file", lambda *a, **k: "sha256:x")
 
 

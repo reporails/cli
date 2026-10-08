@@ -291,10 +291,6 @@ def prune_workflow(
 
 
 CONFIG_LISTED_REASON = "config-file"
-CONFIG_LISTED_WHY = (
-    "Settings, hook and MCP config files are not rewritten automatically; "
-    "review these findings and edit the file by hand."
-)
 
 
 def _is_config_location(loc: Any, norm: Callable[[str], str]) -> bool:
@@ -320,7 +316,7 @@ def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
     for rule, n in counts.items():
         at = next((i for i, e in enumerate(listed) if e.rule == rule), None)
         if at is None:
-            listed.append(ListedFinding(rule=rule, reason=CONFIG_LISTED_REASON, count=n, why=CONFIG_LISTED_WHY))
+            listed.append(ListedFinding(rule=rule, reason=CONFIG_LISTED_REASON, count=n))
         else:
             listed[at] = replace(listed[at], count=listed[at].count + n)
     kept = tuple(renumbered([loc for loc in workflow.locations if loc not in moved]))
@@ -328,23 +324,6 @@ def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
 
 
 HEAL_EXCLUDED_REASON = "excluded"
-_HEAL_EXCLUDED_NAMED = 3
-
-
-def _heal_excluded_why(paths: Sequence[str]) -> str:
-    """The user-facing sentence for findings listed because their files are in `heal_exclude`."""
-    shown = [f"`{p}`" for p in paths[:_HEAL_EXCLUDED_NAMED]]
-    if len(paths) > _HEAL_EXCLUDED_NAMED:
-        shown.append(f"{len(paths) - _HEAL_EXCLUDED_NAMED} more")
-    if len(paths) == 1:
-        return (
-            f"{shown[0]} is in `heal_exclude` in your `.ails/config.yml`: "
-            "it is still checked and scored, and heal does not rewrite it."
-        )
-    return (
-        f"{', '.join(shown)} are in `heal_exclude` in your `.ails/config.yml`: "
-        "they are still checked and scored, and heal does not rewrite them."
-    )
 
 
 def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Callable[[str], str]) -> Any:
@@ -352,15 +331,13 @@ def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Cal
 
     The rows leave their location (`prune_workflow`: a location left with nothing is dropped,
     the rest are numbered again from 1). Each rule that fired on an excluded file is listed once
-    with its row count and a `why` naming those files.
+    with its row count.
     """
-    paths: dict[str, set[str]] = {}
     counts: dict[str, int] = {}
     for loc in workflow.locations:
         for f in (*walk_findings(loc.findings), *loc.relations):
             if excluded(norm(f.file)):
                 counts[f.rule] = counts.get(f.rule, 0) + 1
-                paths.setdefault(f.rule, set()).add(norm(f.file))
     if not counts:
         return workflow
     pruned = prune_workflow(
@@ -368,10 +345,7 @@ def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Cal
     )
     listed = (
         *pruned.listed,
-        *(
-            ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n, why=_heal_excluded_why(sorted(paths[rule])))
-            for rule, n in counts.items()
-        ),
+        *(ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n) for rule, n in counts.items()),
     )
     return replace(pruned, listed=listed, summary=workflow_summary(pruned.locations, listed))
 

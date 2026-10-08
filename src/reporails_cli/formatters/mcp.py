@@ -16,6 +16,7 @@ from typing import Any, NamedTuple
 from reporails_cli.core.mapper.md_parser import file_lines
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
+from reporails_cli.formatters.listed_reasons import listed_reason_text
 from reporails_cli.formatters.triage import LeverageTier, resolve_row_leverage
 
 # ---------------------------------------------------------------------------
@@ -113,12 +114,12 @@ def with_rule_labels(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _group_listed(listed: Any) -> Any:
-    """`workflow.listed` grouped by its `why` text, one group per distinct `why` in
-    first-seen order: `{"why": <text>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
-    `reason` is dropped — the bounded view's user-facing explanation is `why`; `reason`
-    keeps riding on the ungrouped shape everywhere else (`-f json`, `full=true`). Several
-    rules commonly share one `why` sentence word for word, so grouping them removes the
-    repeated text instead of repeating it once per rule."""
+    """`workflow.listed` grouped by its reason code, one group per distinct code in
+    first-seen order: `{"reason": <sentence>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
+    The sentence is the cli's own wording for the code (`listed_reason_text`); several rules
+    commonly share one reason, so grouping them removes the repeated text instead of
+    repeating it once per rule. The code itself keeps riding on the ungrouped shape
+    everywhere else (`-f json`, `full=true`)."""
     if not isinstance(listed, list):
         return listed
     order: list[str] = []
@@ -126,18 +127,18 @@ def _group_listed(listed: Any) -> Any:
     for entry in listed:
         if not isinstance(entry, dict):
             continue
-        why = entry.get("why") or entry.get("reason") or ""
-        if why not in groups:
-            groups[why] = {"why": why, "rules": []}
-            order.append(why)
-        groups[why]["rules"].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
-    return [groups[why] for why in order]
+        code = str(entry.get("reason") or "")
+        if code not in groups:
+            groups[code] = {"reason": listed_reason_text(code), "rules": []}
+            order.append(code)
+        groups[code]["rules"].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
+    return [groups[code] for code in order]
 
 
 def _workflow_index(workflow: Any) -> Any:
     """The workflow as an index: each location without its findings/relations (those come with
     `remedy_brief(path, location)`), each with a true `finding_count`, and `listed` grouped by
-    its shared `why` text (`_group_listed`) instead of repeated once per rule. A workflow with
+    its reason code (`_group_listed`) instead of repeated once per rule. A workflow with
     no location list keeps its other keys as they are, with `listed` grouped the same way.
 
     A targeted workflow (`workflow.targets` present) is indexed the same way here;
@@ -324,9 +325,9 @@ def _bounded_payload(
     The paid `workflow` (when present) is an index: every location — order, tier, element,
     kind, loading, files, importance, and a true `finding_count` — with no findings or
     relations; `remedy_brief(path, location)` serves those. `listed` is grouped by its
-    shared `why` text (`{"why", "rules": [{"rule", "count"}, ...]}`) instead of repeating
-    the same explanation once per rule; `reason` is dropped from this bounded shape (it
-    stays on the ungrouped `-f json` / `full=true` shape).
+    reason code (`{"reason": <sentence>, "rules": [{"rule", "count"}, ...]}`) instead of
+    repeating the same sentence once per rule; the code stays on the ungrouped `-f json` /
+    `full=true` shape.
 
     Every reply also carries a top-level `rules` map (`with_rule_labels`) — a title + docs
     link for every rule id still named anywhere in the (possibly bounded) reply, so a coding
@@ -400,41 +401,37 @@ def _bounded_payload(
 def remedy_brief_payload(
     *,
     location: dict[str, Any],
-    files: list[dict[str, Any]],
-    findings: list[dict[str, Any]],
-    relations: list[dict[str, Any]],
-    artifact_rules: dict[str, Any] | None,
+    edits: list[dict[str, Any]],
+    slots: list[dict[str, Any]],
+    guides: dict[str, dict[str, str]],
+    ops: dict[str, str],
+    refused: list[dict[str, Any]],
     preservation_contract: str,
-    procedure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the `remedy_brief` reply from its already-shaped plain-dict parts.
 
-    `artifact_rules` is omitted entirely when no rule names the location's kind — every other
-    input rides as given, this function only shapes the envelope. `procedure` is this kind's
-    heal procedure: the deterministic line fixes to apply first, then the kind's rules in
-    the order to work them.
+    `edits` are exact block replacements to apply as written; `slots` are the few lines that need
+    a decision, each rule's `guides` entry and each op's `ops` line saying how; `refused` lists
+    the ops the plan does not carry. This function only shapes the envelope.
     """
-    out: dict[str, Any] = {
+    return {
         "location": location,
-        "files": files,
-        "findings": findings,
-        "relations": relations,
+        "edits": edits,
+        "slots": slots,
+        "guides": guides,
+        "ops": ops,
+        "refused": refused,
         "preservation_contract": preservation_contract,
         "next": (
-            "Apply `procedure.mechanical_fixes` first (every part carries some of them when the "
-            "brief pages; each replaces one line's `before` with its "
-            "`after`), then rewrite every file of this location whole, working this kind's rules in "
-            "`procedure.rules` order, then call validate with path set to each "
-            "file's absolute `path` (never its relative `file` name — the healed project may not "
-            "be the caller's own working directory); its preservation block says whether the "
+            "Apply each edit as written, replacing its `before` text with its `after` text in the "
+            "file at its absolute `path` (bottom to top within a file), then change only the slot "
+            "lines, following each slot's op line and its rule's guide, then call validate with path "
+            "set to each file's absolute `path` (never its relative `file` name — the healed project "
+            "may not be the caller's own working directory); its conformance block says whether every "
+            "listed change was made and nothing else changed, and its preservation block whether the "
             "rewrite kept everything."
         ),
     }
-    if procedure is not None:
-        out["procedure"] = procedure
-    if artifact_rules is not None:
-        out["artifact_rules"] = artifact_rules
-    return out
 
 
 # ---------------------------------------------------------------------------

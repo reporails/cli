@@ -115,7 +115,7 @@ def _write(root: Path, rel: str, text: str) -> Path:
         (
             ".cursor/rules/intelligent.mdc",
             "description: Testing guidance\nalwaysApply: false\n",
-            ("on_demand", "global", (), "cursor", "rules"),
+            ("on_invocation", "global", (), "cursor", "rules"),
         ),
         # No filter and no `alwaysApply`: loaded only when the rule is @-mentioned.
         (

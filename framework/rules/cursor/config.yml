@@ -59,15 +59,16 @@ file_types:
 
   rules:
     # .cursor/rules/ with MDC frontmatter — 4 activation modes per file:
-    # alwaysApply (always loaded), intelligent (agent decides), globs (file-scoped),
-    # manual (@-mention only). globs frontmatter makes this path_scoped — the
-    # path filter is in-file, not just at the surface level.
+    # alwaysApply (session_start), globs (on_demand, path_scoped), a description with
+    # neither (on_invocation: the agent decides), none of the three (on_demand: manual
+    # @-mention only). The activation keys below are read from the file's frontmatter.
     # https://cursor.com/docs/rules#project-rules: "A plain `.md` file in `.cursor/rules` is ignored by the rules system"
     source: https://cursor.com/docs/rules
     format: [frontmatter, freeform]
     scope: path_scoped
     path_key: globs
     always_key: alwaysApply
+    description_key: description
     cardinality: collection
     lifecycle: static
     loading: on_demand

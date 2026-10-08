@@ -110,7 +110,7 @@ def _clause_text(clause: str) -> str:
     return without_lead(clause).strip(" *_")
 
 
-def _opens_command(clause: str, *, sequenced: bool = False) -> bool:
+def opens_command(clause: str, *, sequenced: bool = False) -> bool:
     """Whether a clause starts with a command: a prohibition, or a verb telling the reader what to do.
 
     A clause of one bare word is a command only when `then` sets it after another (`…, then commit.`);
@@ -141,9 +141,7 @@ def _pipe_cuts(sentence: str, inside: list[bool]) -> list[re.Match[str]]:
     the cell it introduces, but a cell join whose next cell opens a command is where one
     instruction ends and the row's next one begins.
     """
-    return [
-        m for m in _PIPE_JOIN_RE.finditer(sentence) if not inside[m.start()] and _opens_command(sentence[m.end() :])
-    ]
+    return [m for m in _PIPE_JOIN_RE.finditer(sentence) if not inside[m.start()] and opens_command(sentence[m.end() :])]
 
 
 def _cut_mask(sentence: str) -> list[bool]:
@@ -231,7 +229,7 @@ def _prohibited_items(clauses: list[tuple[int, str, str]]) -> set[int]:
 
 def _sets_condition(clause: str) -> bool:
     """Whether the clause is a condition that gives no command (`when the build fails`)."""
-    return is_conditional_frame(_LEAD_CONNECTOR_RE.sub("", _clause_text(clause))) and not _opens_command(clause)
+    return is_conditional_frame(_LEAD_CONNECTOR_RE.sub("", _clause_text(clause))) and not opens_command(clause)
 
 
 def _acts_on_an_object(clause: str) -> bool:
@@ -249,7 +247,7 @@ def _closes_item_list(clauses: list[tuple[int, str, str]], k: int) -> bool:
     _, clause, joint = clauses[k]
     _, prev, prev_joint = clauses[k - 1]
     joined_by_and = joint.strip().lower() == "and" or _JOINING_AND_RE.match(clause.strip()) is not None
-    listed = prev_joint.strip() == "," and not _opens_command(prev) and not _sets_condition(prev)
+    listed = prev_joint.strip() == "," and not opens_command(prev) and not _sets_condition(prev)
     return joined_by_and and listed and not _acts_on_an_object(clause)
 
 
@@ -279,11 +277,20 @@ def instruction_starts(sentence: str) -> list[int]:
         purpose = purpose and ";" not in joint and not sequenced and not _is_prohibition(clause)
         titled = titled and joint.strip().lower() == "and"
         listed = k in items or purpose or titled or _closes_item_list(clauses, k) or _titles_next(clauses, k)
-        if clause and not listed and _opens_command(clause, sequenced=sequenced):
+        if clause and not listed and opens_command(clause, sequenced=sequenced):
             starts.append(_with_condition(clauses, k))
         purpose = purpose or _states_purpose(clause)
         titled = titled or _SEE_POINTER_RE.match(_LEAD_CONNECTOR_RE.sub("", _clause_text(clause))) is not None
     return starts
+
+
+def holds_comma_series(text: str) -> bool:
+    """Whether the text strings several clauses on commas (`read it, classify it`): a comma outside quotes,
+    parentheses and code that does not close a condition (`when the build fails, run it`)."""
+    clauses = _clauses(text)
+    return any(
+        joint.strip() == "," and not _sets_condition(clauses[k][1]) for k, (_, _, joint) in enumerate(clauses[1:])
+    )
 
 
 def instruction_count(sentence: str) -> int:
@@ -347,7 +354,7 @@ def _list_after(atoms: list[Atom], k: int) -> list[Atom]:
 
 
 def _gives_command(atom: Atom) -> bool:
-    return atom.charge_value != 0 or _opens_command(atom.text)
+    return atom.charge_value != 0 or opens_command(atom.text)
 
 
 def fold_lead_ins(atoms: list[Atom]) -> list[Atom]:

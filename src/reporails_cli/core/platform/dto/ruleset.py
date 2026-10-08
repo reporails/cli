@@ -122,6 +122,12 @@ class FileRecord(BaseModel):
     globs: tuple[str, ...] = ()  # activation patterns (on_demand/on_invocation)
     agent: str = "generic"  # owning agent (claude, codex, copilot, etc.)
     type: str = "generic"  # the matched file type's key in the agent's config (main, rules, skills, …)
+    # when the owning agent loads the file: always | subtree | launch_subtree | file_match | invoked |
+    # agent_decides | manual
+    activation: str = "always"
+    # project files and folders the file's own text points at (backticked paths, links, `@` imports),
+    # same path form as `path`, sorted and capped
+    reach: tuple[str, ...] = ()
     skill: str = ""  # folder of the skill this file belongs to (same path form as `path`); "" in no skill
     description: str = ""  # frontmatter name+description (always in base context)
     description_embedding: tuple[int, ...] | None = None  # int8 quantized embedding

@@ -8,7 +8,6 @@ import pytest
 
 from reporails_cli.core.lint.suppression import (
     CONFIG_LISTED_REASON,
-    CONFIG_LISTED_WHY,
     apply_config_listing,
     list_config_locations,
 )
@@ -53,7 +52,7 @@ def test_config_location_is_listed_and_the_rest_renumbered() -> None:
     out = list_config_locations(wf, _norm)
     assert [(loc.order, loc.kind) for loc in out.locations] == [(1, "skills")]
     assert {(e.rule, e.count) for e in out.listed} == {(RULE_A, 2), (RULE_B, 1)}
-    assert all(e.reason == CONFIG_LISTED_REASON and e.why == CONFIG_LISTED_WHY for e in out.listed)
+    assert all(e.reason == CONFIG_LISTED_REASON for e in out.listed)
     assert out.summary == "1 location to rewrite, by kind: 1 skills."
 
 
@@ -81,7 +80,7 @@ def test_mixed_file_location_is_kept() -> None:
 def test_a_rule_already_listed_gets_its_count_added() -> None:
     wf = _wf(
         [_loc(1, "config", [CFG], [_row(RULE_A, CFG)])],
-        [{"rule": RULE_A, "reason": "no_remedy", "count": 3, "why": "w"}],
+        [{"rule": RULE_A, "reason": "no_remedy", "count": 3}],
     )
     out = list_config_locations(wf, _norm)
-    assert [(e.rule, e.reason, e.count, e.why) for e in out.listed] == [(RULE_A, "no_remedy", 4, "w")]
+    assert [(e.rule, e.reason, e.count) for e in out.listed] == [(RULE_A, "no_remedy", 4)]

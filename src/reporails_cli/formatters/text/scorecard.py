@@ -15,6 +15,7 @@ from typing import Any
 from rich.text import Text
 
 from reporails_cli.core.discovery.features import agent_main_literal_paths, agent_rule_surface_markers
+from reporails_cli.core.lint.rule_pages import rule_title
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     NAMED_OVERLAP_PAIRS,
@@ -28,7 +29,7 @@ from reporails_cli.formatters.text.display_constants import (
     path_tag,
     skill_lookup,
 )
-from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url, rule_title
+from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.verdict import (
     _render_verdict_block,

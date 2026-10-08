@@ -58,16 +58,22 @@ def _rules_fired_before(scan_root: Path, rel: str) -> set[str] | None:
     return {str(f.get("rule") or "") for f in workflow_raw + per_file_raw}
 
 
-def _shaped(f: dict[str, Any], remedy_key: str) -> dict[str, Any]:
-    """One finding as a `feedback` entry; a plain per-file finding carries its fix as `fix`
-    and has no `impact_tier`."""
-    return {
+def _shaped(f: dict[str, Any]) -> dict[str, Any]:
+    """One finding as a `feedback` entry: a workflow finding carries its `op`, a plain per-file
+    finding its `fix` and no `impact_tier`. A finding with no message reads as its rule's title."""
+    from reporails_cli.core.lint.rule_pages import rule_title
+
+    entry = {
         "rule": f.get("rule", ""),
         "line": f.get("line"),
-        "message": f.get("message", ""),
-        "remedy": f.get(remedy_key, ""),
+        "message": f.get("message") or rule_title(str(f.get("rule") or "")),
         "impact_tier": f.get("impact_tier", ""),
     }
+    if f.get("op"):
+        entry["op"] = f["op"]
+    if f.get("fix"):
+        entry["fix"] = f["fix"]
+    return entry
 
 
 def _raw_file_findings(payload: dict[str, Any], rel: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -95,7 +101,7 @@ def _new_kind_findings(
     error_rules = {str(f.get("rule") or "") for f in per_file_raw if f.get("severity") == "error"}
     found: list[dict[str, Any]] = []
     seen: set[tuple[str, Any, str]] = set()
-    for c in [_shaped(f, "remedy") for f in workflow_raw] + [_shaped(f, "fix") for f in per_file_raw]:
+    for c in [_shaped(f) for f in workflow_raw] + [_shaped(f) for f in per_file_raw]:
         key = (str(c["rule"]), c["line"], str(c["message"]))
         if str(c["rule"]) in fired_before or key in seen or (not c["message"] and str(c["rule"]) not in error_rules):
             continue
@@ -110,8 +116,8 @@ def file_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> lis
     conditional -> cosmetic -> ""), at most `_FEEDBACK_LIMIT`.
 
     Prefers the paid `workflow`'s own findings for `target` (already shaped `{rule, file, line,
-    pi, message, remedy, impact_tier}` — `pi`/`file` dropped, the rest carried through) when any
-    location names one; falls back to `target`'s plain per-file findings (`fix` as `remedy`,
+    pi, op, expect, impact_tier}` — `pi`/`file` dropped, the rest carried through) when any
+    location names one; falls back to `target`'s plain per-file findings (`fix` as given,
     `impact_tier` `""`) when the workflow is absent or none of its findings land on this file.
     Either way, a candidate whose `(rule, file)` pair is absent from the STORED whole-project
     workflow (`_project_workflow_rule_files`) is dropped — a single-file-scope artifact the
@@ -134,8 +140,8 @@ def file_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> lis
         return known_pairs is None or (str(rule or ""), rel) in known_pairs
 
     workflow_raw, per_file_raw = _raw_file_findings(payload, rel)
-    workflow_findings = [_shaped(f, "remedy") for f in workflow_raw if _counted(f.get("rule"))]
-    per_file = [_shaped(f, "fix") for f in per_file_raw if _counted(f.get("rule"))]
+    workflow_findings = [_shaped(f) for f in workflow_raw if _counted(f.get("rule"))]
+    per_file = [_shaped(f) for f in per_file_raw if _counted(f.get("rule"))]
     kept = _sorted_findings(workflow_findings or per_file)
     fired_before = _rules_fired_before(scan_root, rel)
     if fired_before is None:

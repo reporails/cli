@@ -88,6 +88,26 @@ fields:
         always_key:
           type: string
           description: "Frontmatter key that makes a path_scoped file with an empty filter load at session start when it is true (`alwaysApply` for Cursor rules). Declared and not true, such a file loads on demand; not declared, it loads at session start."
+        description_key:
+          type: string
+          description: "Frontmatter key whose value, on a file with an empty path filter, lets the agent pick the file by description (`on_invocation`, `global`; `description` for Copilot instructions and Cursor rules). Declared and empty, the file loads on demand by manual attachment. May also be set per location scope."
+        trigger_key:
+          type: string
+          description: "Frontmatter key naming the file's activation mode (`trigger` for Antigravity rules); read against `trigger_modes`."
+        trigger_modes:
+          type: object
+          description: "Maps each `trigger_key` value to the `loading` and `scope` the agent gives the file."
+          additionalProperties:
+            type: object
+            properties:
+              loading: { type: enum, values: [session_start, on_demand, on_invocation] }
+              scope: { type: enum, values: [global, path_scoped, task_scoped, nested] }
+        trigger_missing:
+          type: object
+          description: "The `loading` and `scope` for a file whose trigger is missing or not in `trigger_modes`."
+          properties:
+            loading: { type: enum, values: [session_start, on_demand, on_invocation] }
+            scope: { type: enum, values: [global, path_scoped, task_scoped, nested] }
         cardinality:
           type: enum
           values: [singleton, optional, collection, hierarchical, chain]
@@ -113,6 +133,14 @@ fields:
                 type: array
                 items: { type: string }
                 description: "Glob patterns for file discovery in this scope"
+              path_key:
+                required: false
+                type: string
+                description: "Overrides the file type's `path_key` for files found in this scope (Copilot reads `paths` in its `.claude/rules` scope)."
+              description_key:
+                required: false
+                type: string
+                description: "Overrides the file type's `description_key` for files found in this scope."
               entry_patterns:
                 required: false
                 type: array

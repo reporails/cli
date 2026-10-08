@@ -7,13 +7,12 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.heal.mechanical_fixers import (
-    apply_mechanical_fixes,
     fix_bold_on_constraints,
     fix_italic_constraints,
     fix_unformatted_code,
 )
 from reporails_cli.core.mapper.annotate import check_specificity
-from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.dto.ruleset import Atom
 
 
 def _atom(line: int, text: str, tokens: list[str], fmt: str = "prose") -> Atom:
@@ -584,56 +583,6 @@ class TestBoldToItalicLeavesLabelsAlone:
         assert count == 1
 
 
-def _map_of(*atoms: Atom) -> RulesetMap:
-    return RulesetMap(
-        schema_version="1", embedding_model="m", generated_at="2026-01-01T00:00:00Z", files=(), atoms=atoms
-    )
-
-
-_SETTINGS = '{\n  "hooks": {\n    "SessionStart": [\n      {"command": "$CLAUDE_PROJECT_DIR/hook.sh"}\n    ]\n  }\n}\n'
-
-
-def _project_with_settings(root: Path) -> tuple[Path, Path, RulesetMap]:
-    md = root / "CLAUDE.md"
-    md.write_text("Run build.sh before committing.\n", encoding="utf-8")
-    settings = root / ".claude" / "settings.json"
-    settings.parent.mkdir()
-    settings.write_text(_SETTINGS, encoding="utf-8")
-    prose = _atom(1, "Run build.sh before committing.", ["build.sh"]).model_copy(update={"file_path": str(md)})
-    wiring = _atom(3, '"SessionStart": [', ["SessionStart"]).model_copy(update={"file_path": str(settings)})
-    return md, settings, _map_of(prose, wiring)
-
-
-class TestConfigFilesGetNoFix:
-    """A machine-config file is not instruction text, so no fixer edits it."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_heal
-    @pytest.mark.parametrize("dry_run", [True, False])
-    def test_only_the_markdown_file_is_fixed(self, tmp_path: Path, dry_run: bool) -> None:
-        md, settings, ruleset = _project_with_settings(tmp_path)
-        fixes = apply_mechanical_fixes(ruleset, tmp_path, dry_run=dry_run)
-        assert {f.file_path for f in fixes} == {str(md)}
-        assert settings.read_text(encoding="utf-8") == _SETTINGS
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_heal
-    def test_an_allowed_config_file_still_gets_no_fix(self, tmp_path: Path) -> None:
-        _md, settings, ruleset = _project_with_settings(tmp_path)
-        assert apply_mechanical_fixes(ruleset, tmp_path, allowed_files={settings.resolve()}) == []
-        assert settings.read_text(encoding="utf-8") == _SETTINGS
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_heal
-def test_the_remedy_brief_offers_no_fix_for_a_config_file(tmp_path: Path) -> None:
-    from reporails_cli.interfaces.mcp.remedy_brief import mechanical_fixes_for
-
-    md, settings, ruleset = _project_with_settings(tmp_path)
-    assert mechanical_fixes_for([(settings, ruleset, None, ([], []))], tmp_path) == []
-    assert [f["file"] for f in mechanical_fixes_for([(md, ruleset, None, ([], []))], tmp_path)] == ["CLAUDE.md"]
-
-
 class TestLibraryNameInProseIsWrappedOnlyWhenBackticked:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -872,9 +821,11 @@ class TestItalicWrapReadsTheParsedParagraph:
 
 
 def _heal_file(path: Path, line: int, text: str, tokens: list[str]) -> None:
-    from reporails_cli.core.heal.mechanical_fixers import _fix_one_file
+    from reporails_cli.core.heal.file_io import read_lines, write_lines
 
-    _fix_one_file(path, [_atom(line, text, tokens)], {"format"}, False)
+    lines, endings = read_lines(path)
+    fix_unformatted_code([_atom(line, text, tokens)], lines)
+    write_lines(path, lines, endings)
 
 
 @pytest.mark.unit
@@ -1005,17 +956,3 @@ def test_the_wrap_bookkeeping_agrees_with_a_fresh_parse(line: str) -> None:
     tokens = [t for t in ("main.py", "x_y_z", "b.py", "d.py", "f_g", "b_c.py", "h.py") if t in line]
     fix_unformatted_code([_atom(1, line, tokens)], lines)
     assert line_spans("".join(lines)) == line_spans(lines[0])
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_heal
-def test_heal_leaves_a_file_that_is_not_utf8_unchanged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    from reporails_cli.core.heal.mechanical_fixers import _fix_one_file
-
-    raw = b"# Title\n\nNever use **rm -rf** on caf\xe9 files.\n"
-    path = tmp_path / "CLAUDE.md"
-    path.write_bytes(raw)
-    with caplog.at_level("WARNING"):
-        assert _fix_one_file(path, [], {"format", "bold"}, dry_run=False) == []
-    assert path.read_bytes() == raw
-    assert "not UTF-8" in caplog.text

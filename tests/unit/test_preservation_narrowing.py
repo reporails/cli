@@ -8,8 +8,8 @@ import pytest
 
 from tests.unit.test_preservation import _compare_edit
 
-_HUB_1 = "Plan the change, then act on sensible defaults and present finished work; do not re-ask at every gate."
-_HUB_2 = "Once a direction is approved, carry it to completion. Collapse multi-step approvals into one."
+_PLAN_1 = "Plan the change, then act on sensible defaults and present finished work; do not re-ask at every gate."
+_PLAN_2 = "Once a direction is approved, carry it to completion. Collapse multi-step approvals into one."
 
 
 @pytest.mark.integration
@@ -18,8 +18,8 @@ _HUB_2 = "Once a direction is approved, carry it to completion. Collapse multi-s
 @pytest.mark.parametrize(
     ("before", "after"),
     [
-        (_HUB_1, _HUB_1.replace("every gate", "every `AskUserQuestion` gate")),
-        (_HUB_2, _HUB_2.replace("into one.", "into one `AskUserQuestion` call.")),
+        (_PLAN_1, _PLAN_1.replace("every gate", "every `AskUserQuestion` gate")),
+        (_PLAN_2, _PLAN_2.replace("into one.", "into one `AskUserQuestion` call.")),
         ("Ask before deleting any file.", "Ask before deleting any `.env` file."),
         ("Ask before deleting any file.", "Ask before deleting any `.env`."),
     ],
@@ -542,3 +542,32 @@ def test_a_rephrased_lead_in_with_bare_imperatives_is_still_a_fragment(tmp_path)
     before = "You are the intake agent: you read the intent, classify it, and write the entry.\n"
     after = "You are the intake agent: you read the intent.\n\nClassify it.\n\nWrite the entry.\n"
     assert _compare_edit(tmp_path, before, after)["dangling_fragments"]
+
+
+_PO_BEFORE = (
+    "- Hand release-notes and build-work to the `reviewer` for cross-team filing at `work/<team>/`; "
+    "routing through one owner keeps the build queue coherent. "
+    "*Do not file plans directly into another team's surfaces, bypassing the `reviewer`.*"
+)
+_UX_BEFORE = (
+    "- Frame each UX recommendation as one rationale-led `proposal` naming the interaction-shape alternative "
+    "it sacrifices, keeping the user the decider. "
+    "*Do not present a menu of N options absent genuine `AskUserQuestion` equipoise.*"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (_PO_BEFORE, _PO_BEFORE.replace("file plans", "file release-notes or build-work plans")),
+        (_UX_BEFORE, _UX_BEFORE.replace("present a menu", "present a UX recommendation as a menu")),
+    ],
+)
+def test_a_qualifier_on_a_general_noun_narrows_even_when_the_line_uses_its_words(tmp_path, before, after) -> None:
+    ground = "\n\nThe `reviewer` and `AskUserQuestion` exist.\n"
+    result = _compare_edit(tmp_path, before + ground, after + ground)
+    assert result["narrowed_instructions"]
+    assert result["ok"] is False

@@ -7,12 +7,9 @@ Also the dry-run write gate.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from reporails_cli.core.heal.mechanical_fixers import (
-    _fix_one_file,
     _wrap_site,
     fix_bold_on_constraints,
     fix_italic_constraints,
@@ -164,20 +161,3 @@ def test_fix_bold_leaves_a_line_that_is_bold_throughout(line: str) -> None:
     fixes = fix_bold_on_constraints([_atom(1, line.strip("- \n"), charge_value=-1)], lines)
     assert fixes == []
     assert lines[0] == line
-
-
-# ──────────────────────────────────────────────────────────────────
-# _fix_one_file dry-run write gate  (L322 and→or)
-# ──────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_fix_one_file_dry_run_does_not_write(tmp_path: Path) -> None:
-    p = tmp_path / "CLAUDE.md"
-    p.write_text("Keep the **foo** value.\n", encoding="utf-8")
-    atom = _atom(1, "Keep the **foo** value.", charge_value=-1, file_path=str(p))
-    fixes = _fix_one_file(p, [atom], {"bold"}, dry_run=True)
-    assert len(fixes) == 1  # the fix is computed
-    # dry_run → file must be left untouched. L322 and→or would write it.
-    assert p.read_text(encoding="utf-8") == "Keep the **foo** value.\n"

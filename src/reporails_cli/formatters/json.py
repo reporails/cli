@@ -259,7 +259,7 @@ def _file_entry(findings: list[dict[str, Any]], regime: dict[str, Any] | None) -
     return entry
 
 
-def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[str, Any]:
+def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
     """Serialize the remediation location index for agent consumption.
 
     Each location is a harness element (the root main file, a skill dir, an agent file, a
@@ -268,35 +268,33 @@ def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[st
     repetition) folded onto it. Paths (`files`, `element` when it names one, and each
     finding's / relation's `file` / `partner_file`) are relativized to project-relative (or
     `~/` for external surfaces) via the finding path-normalizer, so they read like the
-    findings. An empty finding `message` is filled from the client's own finding at the
-    same (file, line, rule) when one exists — the server may not repeat a message the
-    client already has. Each finding carries its own `impact_tier` ("gate_mover" |
+    findings. Each finding carries its `op` and `expect` coordinates (their file paths
+    relativized the same way) and its own `impact_tier` ("gate_mover" |
     "conditional" | "cosmetic" | "") — distinct from the location's own `importance` — so a
     caller can weigh findings within one location. Each finding also carries `members`, the
-    findings it owns, in the same shape and treatment (`[]` when it owns none). `listed` names every firing rule that
-    takes no location, with the reason, how many rows it covers, and one user-facing `why`
-    sentence.
+    findings it owns, in the same shape and treatment (`[]` when it owns none). `listed` names
+    every firing rule that takes no location, with its reason code and how many rows it covers.
     """
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
-    found: dict[tuple[str, int, str], str] = {}
-    for f in findings:
-        key = (normalize_finding_path(f.file, project_root), f.line, f.rule)
-        found.setdefault(key, f.message)
 
     def _rel(path: str) -> str:
         return normalize_finding_path(path, project_root) if path else path
 
+    def _expect(expect: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: [_rel(v[0]), *v[1:]] if isinstance(v, list) and v and isinstance(v[0], str) else v
+            for key, v in expect.items()
+        }
+
     def _finding(lf: Any) -> dict[str, Any]:
         file = _rel(lf.file)
-        message = lf.message or found.get((file, lf.line, lf.rule), "")
         return {
             "rule": lf.rule,
             "file": file,
             "line": lf.line,
             "pi": lf.pi,
-            "message": message,
-            "remedy": lf.remedy,
+            "op": lf.op,
+            "expect": _expect(lf.expect),
             "impact_tier": lf.impact_tier,
             "members": [_finding(m) for m in lf.members],
         }
@@ -308,8 +306,8 @@ def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[st
             "line": lr.line,
             "partner_file": _rel(lr.partner_file),
             "partner_line": lr.partner_line,
-            "message": lr.message,
-            "remedy": lr.remedy,
+            "op": lr.op,
+            "expect": _expect(lr.expect),
         }
 
     def _location(loc: Any) -> dict[str, Any]:
@@ -326,11 +324,10 @@ def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[st
 
     out: dict[str, Any] = {
         "summary": wf.summary,
-        "escape": wf.escape,
         "locations": [_location(loc) for loc in wf.locations],
     }
     if wf.listed:
-        out["listed"] = [{"rule": e.rule, "reason": e.reason, "count": e.count, "why": e.why} for e in wf.listed]
+        out["listed"] = [{"rule": e.rule, "reason": e.reason, "count": e.count} for e in wf.listed]
     return out
 
 
@@ -524,7 +521,7 @@ def format_combined_result(
     # paid result ("nothing to rewrite"), not the absence of the paid feature.
     workflow = getattr(result, "workflow", None)
     if workflow is not None:
-        data["workflow"] = _format_workflow(workflow, project_root or Path.cwd(), result.findings)
+        data["workflow"] = _format_workflow(workflow, project_root or Path.cwd())
     return data
 
 

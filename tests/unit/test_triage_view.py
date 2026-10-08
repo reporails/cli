@@ -28,10 +28,21 @@ def _finding(
     fix: str = "",
     pi: int | None = None,
     impact_tier: str | None = None,
+    partner_file: str | None = None,
+    overlap_pct: int | None = None,
 ) -> FindingItem:
     tier = _REPLY_GRADES.get(rule, "") if impact_tier is None else impact_tier
     return FindingItem(
-        file="CLAUDE.md", line=line, severity=severity, rule=rule, message=message, fix=fix, pi=pi, impact_tier=tier
+        file="CLAUDE.md",
+        line=line,
+        severity=severity,
+        rule=rule,
+        message=message,
+        fix=fix,
+        pi=pi,
+        impact_tier=tier,
+        partner_file=partner_file,
+        overlap_pct=overlap_pct,
     )
 
 
@@ -358,35 +369,23 @@ class TestDocumentationConventions:
 
 
 class TestFileLevelOverlap:
-    _OVERLAP = (
-        "62% of the instructions in this file and `AGENTS.md` cover the same topics \u2014 the copies can drift apart."
-    )
-
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_verbose_file_pair_overlap_renders_at_file_level_not_under_its_line(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         findings = [
-            _finding("CORE:C:0044", "warning", self._OVERLAP, line=11),
+            _finding("CORE:C:0044", "warning", "Overlap", line=11, partner_file="AGENTS.md", overlap_pct=62),
             _finding("CORE:C:0042", "warning", "Vague instruction", line=11),
         ]
         out = _render(monkeypatch, findings, classify_regime({}), verbose=True)
-        overlap_row = next(r for r in out.splitlines() if "topic overlap with AGENTS.md" in r)
+        overlap_row = next(r for r in out.splitlines() if "overlaps 62% with AGENTS.md" in r)
         vague_row = next(r for r in out.splitlines() if "Vague instruction" in r)
         assert "L11" not in overlap_row
         assert "CORE:C:0044" in overlap_row
         assert "L11" in vague_row
         # right under the file header: before the line-anchored finding
-        assert out.index("topic overlap with AGENTS.md") < out.index("Vague instruction")
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_other_overlap_findings_keep_their_line(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        findings = [_finding("CORE:C:0044", "warning", "Overlaps another instruction", line=11)]
-        out = _render(monkeypatch, findings, classify_regime({}), verbose=True)
-        row = next(r for r in out.splitlines() if "Overlaps another instruction" in r)
-        assert "L11" in row
+        assert out.index("overlaps 62% with AGENTS.md") < out.index("Vague instruction")
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -408,10 +407,11 @@ class TestFileLevelOverlap:
             atoms: tuple = ()
 
         rmap = Map((Rec(str(tmp_path / ".claude/skills/x/SKILL.md"), "skills", str(tmp_path / ".claude/skills/x")),))
-        msg = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
         findings = [
-            _finding("CORE:C:0044", "warning", msg.format(30, "AGENTS.md"), line=4),
-            _finding("CORE:C:0044", "warning", msg.format(62, ".claude/skills/x/SKILL.md"), line=11),
+            _finding("CORE:C:0044", "warning", "Overlap", partner_file="AGENTS.md", overlap_pct=30, line=4),
+            _finding(
+                "CORE:C:0044", "warning", "Overlap", partner_file=".claude/skills/x/SKILL.md", overlap_pct=62, line=11
+            ),
         ]
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
@@ -424,10 +424,9 @@ class TestFileLevelOverlap:
             project_root=tmp_path,
             element_of=element_namer(rmap, tmp_path),
         )
-        rows = [r for r in lines if "topic overlap with" in r]
-        assert "62% topic overlap with x (skill)" in rows[0] and "CORE:C:0044" in rows[0]
-        assert "30% topic overlap with AGENTS.md" in rows[1]
-        assert not any("of the instructions in this file" in r for r in lines)
+        rows = [r for r in lines if "CORE:C:0044" in r]
+        assert "overlaps 62% with x (skill)" in rows[0] and "CORE:C:0044" in rows[0]
+        assert "overlaps 30% with AGENTS.md" in rows[1]
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -450,10 +449,23 @@ class TestFileLevelOverlap:
 
         folder = str(tmp_path / ".claude/skills/bootstrap")
         rmap = Map((Rec(folder + "/SKILL.md", "skills", folder), Rec(folder + "/ref.md", "skills", folder)))
-        msg = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
         findings = [
-            _finding("CORE:C:0044", "warning", msg.format(27, ".claude/skills/bootstrap/ref.md"), line=4),
-            _finding("CORE:C:0044", "warning", msg.format(30, ".claude/skills/bootstrap/SKILL.md"), line=11),
+            _finding(
+                "CORE:C:0044",
+                "warning",
+                "Overlap",
+                partner_file=".claude/skills/bootstrap/ref.md",
+                overlap_pct=27,
+                line=4,
+            ),
+            _finding(
+                "CORE:C:0044",
+                "warning",
+                "Overlap",
+                partner_file=".claude/skills/bootstrap/SKILL.md",
+                overlap_pct=30,
+                line=11,
+            ),
         ]
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
@@ -466,9 +478,9 @@ class TestFileLevelOverlap:
             project_root=tmp_path,
             element_of=element_namer(rmap, tmp_path),
         )
-        rows = [r for r in lines if "topic overlap with" in r]
+        rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 1
-        assert "30% topic overlap with bootstrap (skill)" in rows[0]
+        assert "overlaps 30% with bootstrap (skill)" in rows[0]
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -484,10 +496,13 @@ class TestFileLevelOverlap:
             )
 
         rmap = SimpleNamespace(files=(rec(".claude/skills/foo"), rec(".agents/skills/foo")), atoms=())
-        msg = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
         findings = [
-            _finding("CORE:C:0044", "warning", msg.format(40, ".claude/skills/foo/SKILL.md"), line=4),
-            _finding("CORE:C:0044", "warning", msg.format(30, ".agents/skills/foo/SKILL.md"), line=5),
+            _finding(
+                "CORE:C:0044", "warning", "Overlap", partner_file=".claude/skills/foo/SKILL.md", overlap_pct=40, line=4
+            ),
+            _finding(
+                "CORE:C:0044", "warning", "Overlap", partner_file=".agents/skills/foo/SKILL.md", overlap_pct=30, line=5
+            ),
         ]
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
@@ -500,12 +515,10 @@ class TestFileLevelOverlap:
             project_root=tmp_path,
             element_of=element_namer(rmap, tmp_path),
         )
-        rows = [r for r in lines if "topic overlap with" in r]
+        rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 2
-        assert "40% topic overlap with foo (skill, .claude/skills/foo)" in rows[0]
-        assert "30% topic overlap with foo (skill, .agents/skills/foo)" in rows[1]
-
-    _MSG = "{}% of the instructions in this file and `{}` cover the same topics \u2014 the copies can drift apart."
+        assert "overlaps 40% with foo (skill, .claude/skills/foo)" in rows[0]
+        assert "overlaps 30% with foo (skill, .agents/skills/foo)" in rows[1]
 
     def _card(self, monkeypatch, findings, verbose, tmp_path, rmap=None, path="CLAUDE.md"):
         lines: list[str] = []
@@ -526,14 +539,22 @@ class TestFileLevelOverlap:
     def test_default_view_renders_overlap_as_file_level_rows(self, monkeypatch, tmp_path) -> None:
         findings = [
             *[
-                _finding("CORE:C:0044", "warning", self._MSG.format(62, "AGENTS.md"), line=i, impact_tier="gate_mover")
+                _finding(
+                    "CORE:C:0044",
+                    "warning",
+                    "Overlap",
+                    partner_file="AGENTS.md",
+                    overlap_pct=62,
+                    line=i,
+                    impact_tier="gate_mover",
+                )
                 for i in range(5)
             ],
             _finding("CORE:C:0042", "warning", "Vague instruction", line=9),
         ]
         lines = self._card(monkeypatch, findings, False, tmp_path)
-        rows = [r for r in lines if "topic overlap with" in r]
-        assert len(rows) == 1 and "62% topic overlap with AGENTS.md" in rows[0] and "CORE:C:0044" in rows[0]
+        rows = [r for r in lines if "CORE:C:0044" in r]
+        assert len(rows) == 1 and "overlaps 62% with AGENTS.md" in rows[0] and "CORE:C:0044" in rows[0]
         assert not any("of the instructions in this file" in r or "\u00d75" in r for r in lines)
         assert any("Vague instruction" in r for r in lines)
 
@@ -544,12 +565,19 @@ class TestFileLevelOverlap:
         findings = [
             _finding("CORE:C:0058", "warning", "This sentence holds 2 instructions", line=24),
             _finding(
-                "CORE:C:0044", "warning", self._MSG.format(38, "AGENTS.md"), line=24, pi=3, impact_tier="gate_mover"
+                "CORE:C:0044",
+                "warning",
+                "Overlap",
+                partner_file="AGENTS.md",
+                overlap_pct=38,
+                line=24,
+                pi=3,
+                impact_tier="gate_mover",
             ),
             _finding("CORE:E:0004", "warning", "Too brief", line=24, pi=4, impact_tier="conditional"),
         ]
         lines = self._card(monkeypatch, findings, verbose, tmp_path)
-        overlap = [r for r in lines if "topic overlap with AGENTS.md" in r]
+        overlap = [r for r in lines if "overlaps 38% with AGENTS.md" in r]
         assert len(overlap) == 1 and "L24" not in overlap[0]
         assert any("This sentence holds 2 instructions" in r for r in lines)
         assert any("Too brief" in r for r in lines)  # the owner keeps its other members
@@ -563,13 +591,20 @@ class TestFileLevelOverlap:
         rec = lambda rel: SimpleNamespace(path=f"{folder}/{rel}", type="skills", skill=folder, agent="claude")  # noqa: E731
         rmap = SimpleNamespace(files=(rec("SKILL.md"), rec("references/bootstrap-workflow.md")), atoms=())
         findings = [
-            _finding("CORE:C:0044", "warning", self._MSG.format(62, ".claude/skills/bootstrap/SKILL.md"), line=3)
+            _finding(
+                "CORE:C:0044",
+                "warning",
+                "Overlap",
+                partner_file=".claude/skills/bootstrap/SKILL.md",
+                overlap_pct=62,
+                line=3,
+            )
         ]
         lines = self._card(
             monkeypatch, findings, False, tmp_path, rmap, ".claude/skills/bootstrap/references/bootstrap-workflow.md"
         )
-        rows = [r for r in lines if "topic overlap with" in r]
-        assert "62% topic overlap with SKILL.md (same skill)" in rows[0]
+        rows = [r for r in lines if "CORE:C:0044" in r]
+        assert "overlaps 62% with SKILL.md (same skill)" in rows[0]
 
     @staticmethod
     def _skill_map(tmp_path, *folders, files=("SKILL.md",)):
@@ -586,10 +621,10 @@ class TestFileLevelOverlap:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_shortened_server_names_resolve_to_the_full_partner_path(self, monkeypatch, tmp_path) -> None:
+    def test_partners_come_from_the_cross_file_rows_when_the_finding_names_none(self, monkeypatch, tmp_path) -> None:
         from types import SimpleNamespace
 
-        from reporails_cli.formatters.text.display_constants import partner_resolver
+        from reporails_cli.formatters.text.display_constants import partner_lookup
 
         rmap = self._skill_map(tmp_path, "skills/foo", "skills/bar", files=("SKILL.md", "ref.md"))
         cross = SimpleNamespace(
@@ -602,8 +637,8 @@ class TestFileLevelOverlap:
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
         findings = [
-            _finding("CORE:C:0044", "warning", self._MSG.format(62, "ref.md"), line=3),
-            _finding("CORE:C:0044", "warning", self._MSG.format(40, "bar/SKILL.md"), line=4),
+            _finding("CORE:C:0044", "warning", "Overlap", line=3),
+            _finding("CORE:C:0044", "warning", "Overlap", line=4),
         ]
         triage_view.print_file_card(
             "skills/foo/SKILL.md",
@@ -613,11 +648,12 @@ class TestFileLevelOverlap:
             classify_regime({}),
             project_root=tmp_path,
             element_of=element_namer(rmap, tmp_path),
-            partner_of=partner_resolver(cross, tmp_path),
+            partners_of=partner_lookup(cross, tmp_path),
         )
-        rows = [r for r in lines if "topic overlap with" in r]
-        assert "62% topic overlap with ref.md (same skill)" in rows[0]
-        assert "40% topic overlap with bar (skill)" in rows[1]
+        rows = [r for r in lines if "CORE:C:0044" in r]
+        assert len(rows) == 2 and "%" not in "".join(rows)
+        assert "overlaps with bar (skill)" in rows[0]
+        assert "overlaps with ref.md (same skill)" in rows[1]
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -629,8 +665,15 @@ class TestFileLevelOverlap:
         lines: list[str] = []
         monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
         findings = [
-            _finding("CORE:C:0044", "warning", self._MSG.format(42, mem), line=3),
-            _finding("CORE:C:0044", "warning", self._MSG.format(20, "/etc/elsewhere/memory/other.md"), line=4),
+            _finding("CORE:C:0044", "warning", "Overlap", partner_file=mem, overlap_pct=42, line=3),
+            _finding(
+                "CORE:C:0044",
+                "warning",
+                "Overlap",
+                partner_file="/etc/elsewhere/memory/other.md",
+                overlap_pct=20,
+                line=4,
+            ),
         ]
         triage_view.print_file_card(
             "CLAUDE.md",
@@ -641,9 +684,9 @@ class TestFileLevelOverlap:
             project_root=tmp_path,
             element_of=element_namer(rmap, tmp_path),
         )
-        rows = [r for r in lines if "topic overlap with" in r]
-        assert "42% topic overlap with feedback_surface_progress_on_background_work (memory)" in rows[0]
-        assert "20% topic overlap with memory/other.md" in rows[1]
+        rows = [r for r in lines if "CORE:C:0044" in r]
+        assert "overlaps 42% with feedback_surface_progress_on_background_work (memory)" in rows[0]
+        assert "overlaps 20% with memory/other.md" in rows[1]
 
 
 class TestNeutralFileLevelFinding:

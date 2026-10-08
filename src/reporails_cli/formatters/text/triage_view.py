@@ -286,15 +286,11 @@ def _render_triaged(
 
 
 _FILE_OVERLAP_RULE = "CORE:C:0044"
-_FILE_OVERLAP_MESSAGE = re.compile(r"\d+% of the instructions in this file and ")
 
 
 def _is_file_overlap(f: Any) -> bool:
     """Whether a finding is the file-pair topic overlap: it concerns the whole file, whatever line it is pinned to."""
-    return f.rule == _FILE_OVERLAP_RULE and bool(_FILE_OVERLAP_MESSAGE.match(f.message or ""))
-
-
-_OVERLAP_PARTNER = re.compile(r"(\d+)% of the instructions in this file and `([^`]+)`")
+    return bool(f.rule == _FILE_OVERLAP_RULE)
 
 
 def _overlap_partner(full: str, filepath: str, element_of: Callable[[str], Element]) -> Element:
@@ -308,30 +304,51 @@ def _overlap_partner(full: str, filepath: str, element_of: Callable[[str], Eleme
     return Element(full, inside, "same skill", full)
 
 
+def _overlap_partners(
+    findings: list[Any],
+    element_of: Callable[[str], Element],
+    filepath: str,
+    partners_of: Callable[[str], list[str]] | None,
+    project_root: Path | None,
+) -> dict[Element, int | None]:
+    """Each partner element the overlap findings name, with the highest share any of them gives it.
+
+    The partner file comes from the finding itself; with none named, from the reply's cross-file rows."""
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+
+    root = project_root or Path.cwd()
+    best: dict[Element, int | None] = {}
+    for f in findings:
+        if getattr(f, "partner_file", None):
+            partner = _overlap_partner(normalize_finding_path(f.partner_file, root), filepath, element_of)
+            old, pct = best.get(partner), getattr(f, "overlap_pct", None)
+            best[partner] = pct if old is None else (old if pct is None else max(old, pct))
+    if not best:
+        for full in partners_of(filepath) if partners_of else ():
+            best.setdefault(_overlap_partner(full, filepath, element_of), None)
+    return best
+
+
 def _render_file_overlaps(
     findings: list[Any],
     border: str,
-    msg_width: int,
     element_of: Callable[[str], Element] | None,
     filepath: str = "",
-    resolve: Callable[[str, str], str] | None = None,
+    partners_of: Callable[[str], list[str]] | None = None,
+    project_root: Path | None = None,
 ) -> None:
-    """Print the file-pair overlap findings once each, unanchored, right under the file's header.
+    """Print the file-pair overlap findings once per partner, unanchored, right under the file's header.
 
-    Each partner element gets one row, `NN% topic overlap with <partner element>` at its highest
-    percentage, highest first; a message that does not parse prints as sent, after them."""
-    element_of = element_of or element_namer(None, None)
-    best: dict[Element, int] = {}
-    unparsed: list[str] = []
-    for f in findings:
-        if m := _OVERLAP_PARTNER.search(f.message or ""):
-            partner = _overlap_partner(resolve(filepath, m[2]) if resolve else m[2], filepath, element_of)
-            best[partner] = max(best.get(partner, -1), int(m[1]))
-        elif (text := truncate(f.message, msg_width)) not in unparsed:
-            unparsed.append(text)
+    A finding that names its partner file (and the share of the file's instructions) reads
+    `overlaps NN% with <partner>`, highest first; without one, the partners come from the
+    reply's cross-file rows and read `overlaps with <partner>`."""
+    if not findings:
+        return
+    best = _overlap_partners(findings, element_of or element_namer(None, None), filepath, partners_of, project_root)
     label = element_labels(best)
-    parsed = [f"{pct}% topic overlap with {label[e.key]}" for e, pct in sorted(best.items(), key=lambda kv: -kv[1])]
-    for text in (*parsed, *unparsed):
+    ranked = sorted(best.items(), key=lambda kv: (-1 if kv[1] is None else -kv[1], label[kv[0].key]))
+    texts = [f"overlaps {f'{pct}% ' if pct is not None else ''}with {label[e.key]}" for e, pct in ranked]
+    for text in texts or ["overlaps another file"]:
         console.print(
             f"  [dim]{border}     {text.replace('[', chr(92) + '[')}  {linked_rule_id(_FILE_OVERLAP_RULE)}[/dim]"
         )
@@ -403,7 +420,7 @@ def print_file_card(
     atoms_by_path: dict[str, list[Any]] | None = None,
     skill_of: dict[str, str] | None = None,
     element_of: Callable[[str], Element] | None = None,
-    partner_of: Callable[[str, str], str] | None = None,
+    partners_of: Callable[[str], list[str]] | None = None,
 ) -> None:
     """Print one file's card: name, stats, triaged findings (or neutral fallback). `skill_of` is the
     skill-folder lookup; a file in a skill folder is named inside it."""
@@ -431,7 +448,7 @@ def print_file_card(
 
     findings, conventions = split_conventions(findings, verbose)
     overlaps = [f for f in findings if _is_file_overlap(f)]
-    _render_file_overlaps(overlaps, border, msg_width, element_of, filepath, partner_of)
+    _render_file_overlaps(overlaps, border, element_of, filepath, partners_of, project_root)
     _render_card_body([f for f in findings if f not in overlaps], sev_icons, verbose, regime, border, msg_width)
     if conventions:
         console.print(f"  [dim]{border}     \u25e6 {conventions_phrase(len(conventions))} \u00b7 -v to list[/dim]")

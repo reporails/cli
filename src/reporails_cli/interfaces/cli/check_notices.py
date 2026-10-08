@@ -45,16 +45,42 @@ def _emit_heal_auth_required(output_format: str) -> None:
             json.dumps(
                 {
                     "error": "heal_requires_auth",
-                    "message": "Applying fixes (--heal) requires an account. Run `ails login`.",
+                    "message": "Applying fixes (--heal) needs a Pro account. Run `ails login`.",
                 }
             ),
             file=sys.stderr,
         )
         return
     console.print(
-        "[yellow]Applying fixes needs an account.[/yellow] A free account is enough — this is not a paid feature.\n"
+        "[yellow]Applying fixes needs a Pro account.[/yellow]\n"
         "  Run [bold]ails login[/bold] to enable [bold]--heal[/bold]."
     )
+
+
+def _emit_heal_pro_required(output_format: str) -> None:
+    """Emit the notice for a signed-in run whose server reply carries no fixes (the free tier).
+
+    Under json/github the diagnosis owns stdout, so the notice goes to stderr.
+    """
+    if output_format in ("json", "github"):
+        print(
+            json.dumps({"error": "heal_requires_pro", "message": "Applying fixes (--heal) needs a Pro account."}),
+            file=sys.stderr,
+        )
+        return
+    console.print("[yellow]Applying fixes needs a Pro account.[/yellow] --heal changed nothing.")
+
+
+def _emit_heal_no_fixes(output_format: str) -> None:
+    """Emit the notice for a signed-in run whose server sent no reply (unreachable or errored).
+
+    Under json/github the diagnosis owns stdout, so the notice goes to stderr.
+    """
+    message = "The server sent no fixes, so --heal changed nothing."
+    if output_format in ("json", "github"):
+        print(json.dumps({"error": "heal_no_fixes", "message": message}), file=sys.stderr)
+        return
+    console.print(f"[yellow]{message}[/yellow]")
 
 
 def _emit_heal_scope_refusal(output_format: str) -> None:

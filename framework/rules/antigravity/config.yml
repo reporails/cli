@@ -96,11 +96,23 @@ file_types:
 
   rules:
     # https://antigravity.google/docs/rules#frontmatter-triggers: "trigger field in YAML frontmatter with four valid options: model_decision, always_on, glob, or manual"
-    # `globs` (or `glob`) scopes a `trigger: glob` rule; the other triggers have no path filter.
+    # `globs` scopes a `trigger: glob` rule; the other triggers have no path filter.
+    # always_on: "injects the full content into the system prompt on every turn";
+    # glob: "activates when the agent interacts with files matching"; model_decision: "injects only
+    # the rule's path and `description` upfront"; manual: "never loads these rules automatically ...
+    # only when you explicitly `@`-mention it". A missing or unrecognised trigger: "Antigravity
+    # silently discards the rule" -- mapped as the least eager mode.
     source: https://antigravity.google/docs/rules
     format: [frontmatter, freeform]
     scope: path_scoped
     path_key: globs
+    trigger_key: trigger
+    trigger_modes:
+      always_on: {loading: session_start, scope: global}
+      glob: {loading: on_demand, scope: path_scoped}
+      model_decision: {loading: on_invocation, scope: global}
+      manual: {loading: on_demand, scope: global}
+    trigger_missing: {loading: on_demand, scope: global}
     cardinality: collection
     lifecycle: static
     loading: on_demand

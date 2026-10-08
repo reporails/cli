@@ -114,17 +114,39 @@ def _load_registry() -> dict[str, dict[str, Any]]:
     return configs
 
 
+_ACTIVATION_KEYS = (
+    "activation",
+    "path_key",
+    "always_key",
+    "description_key",
+    "trigger_key",
+    "trigger_modes",
+    "trigger_missing",
+)
+
+
 def _file_type_patterns_and_props(ft: Any) -> tuple[list[str], dict[str, Any]]:
-    """A registry file type's patterns and properties (its `path_key` and `always_key` folded in)."""
+    """A registry file type's patterns and properties (its activation keys folded in)."""
     from reporails_cli.core.discovery.agents import _extract_patterns, _extract_properties
 
     if not isinstance(ft, dict):
         return [], {}
     props = ft.get("properties", {}) or _extract_properties(ft)
-    for key in ("path_key", "always_key"):
+    for key in _ACTIVATION_KEYS:
         if key in ft:
             props = {**props, key: ft[key]}
     return _extract_patterns(ft), props
+
+
+def _scope_activation(ft: Any, pattern: str) -> dict[str, Any]:
+    """The activation keys the location scope holding `pattern` declares; they override the file
+    type's own (Copilot reads `paths`, not `applyTo`, in the `.claude/rules` scope)."""
+    if not isinstance(ft, dict):
+        return {}
+    for scope_spec in (ft.get("scopes") or {}).values():
+        if isinstance(scope_spec, dict) and pattern in (scope_spec.get("patterns") or []):
+            return {k: scope_spec[k] for k in _ACTIVATION_KEYS if k in scope_spec}
+    return {}
 
 
 def _match_lower(rel: str, pattern: str) -> bool:
@@ -220,7 +242,7 @@ def _find_best_registry_match(
                         )
                     continue
                 if _outranks(specificity, agent_id, best, registry):
-                    best = (specificity, agent_id, type_name, props)
+                    best = (specificity, agent_id, type_name, {**props, **_scope_activation(ft, pat)})
 
     found = best or below_root_copy
     if found is None:
@@ -228,12 +250,84 @@ def _find_best_registry_match(
     return found[1], found[2], found[3]
 
 
-def _detect_file_loading(
+def _frontmatter_text(path: Path, key: str) -> str:
+    """The non-blank string under `key` in the file's frontmatter, else empty."""
+    value = _frontmatter_data(path, lenient=True).get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _trigger_activation(path: Path, props: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
+    """Loading, scope and globs of a file whose frontmatter `trigger_key` picks its activation mode
+    (Antigravity rules). A missing or unrecognised trigger takes the `trigger_missing` row."""
+    modes = props.get("trigger_modes") or {}
+    trigger = _frontmatter_text(path, str(props["trigger_key"])).lower()
+    row = modes.get(trigger) or props.get("trigger_missing") or {}
+    loading = str(row.get("loading", "on_demand"))
+    scope = str(row.get("scope", "global"))
+    if scope == "path_scoped":
+        globs = _parse_frontmatter_globs(path, str(props.get("path_key", "globs")))
+        if not globs:
+            return loading, "global", ()
+        return loading, scope, globs
+    return loading, scope, ()
+
+
+def _resolve_activation(
+    path: Path, props: dict[str, Any], loading: str, scope: str
+) -> tuple[str, str, tuple[str, ...]]:
+    """The loading, scope and globs a file's frontmatter gives it, from the activation keys its
+    file type (or location scope) declares.
+
+    `trigger_key` picks the mode from a declared table. Otherwise `always_key` true loads at session
+    start; a non-empty `path_key` filter makes it path scoped; with no filter, a `description_key`
+    value lets the agent pick the file by description (`on_invocation`), and a declared `always_key`
+    or `description_key` without either leaves it for manual attachment (`on_demand`). A path-filtered
+    type declaring none of those loads at session start without its filter. A nested file is scoped by
+    where it lives, never by frontmatter.
+    """
+    if scope == "nested" or loading not in ("on_demand", "on_invocation"):
+        return loading, scope, ()
+    always_key = props.get("always_key")
+    if loading == "on_demand" and props.get("trigger_key"):
+        return _trigger_activation(path, props)
+    if always_key and loading == "on_demand" and _frontmatter_flag(path, str(always_key)):
+        return "session_start", "global", ()
+    globs = _parse_frontmatter_globs(path, str(props.get("path_key", "globs")))
+    if globs or loading == "on_invocation":
+        return loading, scope, globs
+    description_key = props.get("description_key")
+    if description_key and _frontmatter_text(path, str(description_key)):
+        return "on_invocation", "global", ()
+    return ("on_demand" if always_key or description_key else "session_start"), "global", ()
+
+
+# File types whose body loads when the agent or the user invokes them.
+INVOKED_TYPES = frozenset(
+    {"skills", "agents", "commands", "prompts", "output_styles", "scheduled_tasks", "skill_metadata"}
+)
+
+
+def activation_code(loading: str, scope: str, globs: tuple[str, ...], file_type: str, configured: str = "") -> str:
+    """The agent-neutral way a file comes into context, from its resolved loading, scope, globs
+    and type: always, subtree, launch_subtree, file_match, invoked, agent_decides or manual. A
+    nested file takes the `activation` its file type's config row declares (`subtree` otherwise)."""
+    if scope == "nested":
+        return configured or "subtree"
+    if loading == "session_start":
+        return "always"
+    if globs or scope == "path_scoped":
+        return "file_match"
+    if loading == "on_invocation":
+        return "invoked" if file_type in INVOKED_TYPES else "agent_decides"
+    return "manual"
+
+
+def _detect_file_activation(
     path: Path,
     root: Path,
     registry: dict[str, dict[str, Any]],
-) -> tuple[str, str, tuple[str, ...], str, str]:
-    """Determine loading/scope/globs/agent/type for an instruction file.
+) -> tuple[str, str, tuple[str, ...], str, str, str]:
+    """Determine loading/scope/globs/agent/type/activation for an instruction file.
 
     Matches the file against all agent registry patterns.
     Falls back to session_start/global/generic/generic if no match. The path filter is
@@ -241,42 +335,36 @@ def _detect_file_loading(
     (`globs` when it declares none).
 
     Returns:
-        (loading, scope, globs, agent, type) — `type` is the matched file type's config key
+        (loading, scope, globs, agent, type, activation) — `type` is the matched file type's
+        config key
     """
     from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), registry, path, root)
     if match is None:
-        return "session_start", "global", (), "generic", "generic"
+        return "session_start", "global", (), "generic", "generic", "always"
 
     agent_id, file_type, props = match
     loading = props.get("loading", "session_start")
     scope = props.get("scope", "global")
-    globs: tuple[str, ...] = ()
-    # A file type that declares an `always_key` (Cursor rules: `alwaysApply`) loads at session
-    # start whenever that key is true, whatever path filter the file also carries; without it
-    # the agent or the user pulls the file in on demand.
-    always_key = props.get("always_key")
-    always = (
-        bool(always_key) and loading == "on_demand" and scope != "nested" and _frontmatter_flag(path, str(always_key))
-    )
-    if always:
-        loading, scope = "session_start", "global"
-    elif loading in ("on_demand", "on_invocation"):
-        globs = _parse_frontmatter_globs(path, str(props.get("path_key", "globs")))
-    # A path-filtered file type (`.claude/rules`) without its filter loads at session start;
-    # a nested file is scoped by where it lives, never by frontmatter. A file type with an
-    # `always_key` that is not true stays on demand.
-    if loading == "on_demand" and not globs and scope != "nested":
-        if not always_key:
-            loading = "session_start"
-        scope = "global"
+    loading, scope, globs = _resolve_activation(path, props, loading, scope)
     # Per-entry memory loading: only MEMORY.md is the eager index; sibling
     # entries are recalled on-demand — same rule the classifier stamps.
     if is_memory_recall_entry(file_type, path.name):
         loading = "on_demand"
-    return loading, scope, globs, agent_id, file_type
+    activation = activation_code(loading, scope, globs, file_type, str(props.get("activation", "")))
+    return loading, scope, globs, agent_id, file_type, activation
+
+
+def _detect_file_loading(
+    path: Path,
+    root: Path,
+    registry: dict[str, dict[str, Any]],
+) -> tuple[str, str, tuple[str, ...], str, str]:
+    """Determine loading/scope/globs/agent/type for an instruction file (see
+    `_detect_file_activation`, which also names the activation)."""
+    return _detect_file_activation(path, root, registry)[:5]
 
 
 def file_type_of(path: Path, root: Path, registry: dict[str, dict[str, Any]]) -> str:

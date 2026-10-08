@@ -14,8 +14,10 @@ from collections.abc import Iterable
 from typing import Any
 
 from reporails_cli.core.heal.preservation.words import WORD_RE, content_words, word_forms
+from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.parse import inline_plain_text
+from reporails_cli.core.mapper.prose_split import split_prose_sentences
 
 # What opens a list or a closing clause: a colon, or a dash set off by spaces.
 _OPENER_RE = re.compile(r":|\s[—\u2013-]\s")
@@ -39,6 +41,11 @@ def _unmasked(text: str) -> str:
     return text
 
 
+def _masked_plain(text: str) -> str:
+    """`text` read as plain text with the opener marks inside its code spans masked."""
+    return inline_plain_text(replace_code_spans(text, lambda span: _masked(text[span.start : span.end])))
+
+
 def _plain(atom: Any) -> str:
     """The atom's plain text with the opener marks inside its code spans masked: each span is masked
     where it stands in the atom's marked-up text, then the markup is read away. An atom whose plain
@@ -46,7 +53,7 @@ def _plain(atom: Any) -> str:
     text: str = atom.text
     if inline_plain_text(text) != atom.plain_text:
         return str(atom.plain_text)
-    return inline_plain_text(replace_code_spans(text, lambda span: _masked(text[span.start : span.end])))
+    return _masked_plain(text)
 
 
 def _normal(text: str) -> str:
@@ -245,3 +252,11 @@ def dangling_fragments(old_atoms: Iterable[Any], new_atoms: Iterable[Any]) -> li
             text = new.text if sentence == _plain(new) else _unmasked(sentence)
             out.append({"line": old.line, "text": old.text, "new_line": new.line, "new_text": text})
     return out
+
+
+def leaves_fragment(before: str, after: str) -> bool:
+    """Whether the line `after`, a rewrite of the line `before`, holds a sentence that is what a split left
+    behind of one of `before` (the same reading `dangling_fragments` gives whole files)."""
+    wholes = [_masked_plain(without_list_marker(before))]
+    sentences = split_prose_sentences(_masked_plain(without_list_marker(after)), [])
+    return any(_source_of_cut(new, [True], wholes, sentences) is not None for new in sentences)

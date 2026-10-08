@@ -94,7 +94,7 @@ def _check_file(atoms: list[Atom], filepath: str, source_lines: list[str] | None
     return findings
 
 
-def _sentences(atoms: list[Atom]) -> list[list[Atom]]:
+def running_sentences(atoms: list[Atom]) -> list[list[Atom]]:
     """The file's running-text sentences, each as the atoms it was read into.
 
     Atoms on one line belong to one sentence until one ends with a sentence mark; a prose
@@ -117,7 +117,7 @@ def _sentences(atoms: list[Atom]) -> list[list[Atom]]:
     return sentences
 
 
-def _instructions(sentence: list[Atom]) -> list[str]:
+def sentence_instructions(sentence: list[Atom]) -> list[str]:
     """The instructions a sentence gives, as written: each one the sentence reads as charged.
 
     Parts of one instruction read apart (a label and the command it introduces) count once. The sentence's
@@ -143,8 +143,8 @@ def _instructions(sentence: list[Atom]) -> list[str]:
 def _check_packed_sentences(atoms: list[Atom], filepath: str) -> list[LocalFinding]:
     """Report each sentence read as more than one instruction, naming them."""
     findings: list[LocalFinding] = []
-    for sentence in _sentences(atoms):
-        instructions = _instructions(sentence)
+    for sentence in running_sentences(atoms):
+        instructions = sentence_instructions(sentence)
         if len(instructions) < 2:
             continue
         named = " / ".join(f'"{text}"' for text in instructions)

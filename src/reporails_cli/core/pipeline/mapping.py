@@ -213,10 +213,12 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
 
 def _apply_run_context(ruleset_map: Any, filtered_agents: list[Any] | None, target: Path) -> None:
     """Record skill membership for the run's agents, then stamp each file's owning agent."""
+    from reporails_cli.core.mapper.reach import record_reach
     from reporails_cli.core.mapper.skills import record_skills
 
     agents = [a.agent_type.id for a in filtered_agents or () if a.agent_type.id != "generic"]
     record_skills(ruleset_map, agents, target)
+    record_reach(ruleset_map, target)
     stamp_file_agents(ruleset_map, filtered_agents, target)
 
 

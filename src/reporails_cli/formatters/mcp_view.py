@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 # The `workflow.locations` block (header plus rows) stays under this many characters.
@@ -63,6 +64,7 @@ def render_text_view(payload: dict[str, Any]) -> str:
         _workflow_lines(payload, rules),
         _hook_lines(payload),
         _preservation_lines(payload),
+        _conformance_lines(payload),
         _feedback_lines(payload, rules),
         _truncated_lines(payload),
     )
@@ -270,8 +272,8 @@ def _detail_lines(loc: dict[str, Any], rules: dict[str, Any]) -> list[str]:
         head = f"relation {rule_label(str(rel.get('rule', '')), rules)}"
         here = f"{rel.get('file', '')}:{rel.get('line', '')}"
         there = f"{rel.get('partner_file', '')}:{rel.get('partner_line', '')}"
-        remedy = f"remedy: {rel['remedy']}" if rel.get("remedy") else ""
-        lines.append(_DETAIL_INDENT + "- " + " — ".join(p for p in (f"{head} {here} \u2194 {there}", remedy) if p))
+        op = f"op: {rel['op']}" if rel.get("op") else ""
+        lines.append(_DETAIL_INDENT + "- " + " — ".join(p for p in (f"{head} {here} \u2194 {there}", op) if p))
     return lines
 
 
@@ -281,11 +283,9 @@ def _finding_lines(findings: Any, rules: dict[str, Any], depth: int) -> list[str
         if not isinstance(f, dict):
             continue
         head = " ".join(p for p in (str(f.get("impact_tier") or ""), rule_label(str(f.get("rule", "")), rules)) if p)
-        remedy = f"remedy: {f['remedy']}" if f.get("remedy") else ""
+        op = f"op: {f['op']}" if f.get("op") else ""
         where = f"{head} {f.get('file', '')}:{f.get('line', '')}"
-        lines.append(
-            _DETAIL_INDENT + "  " * depth + "- " + " — ".join(p for p in (where, f.get("message"), remedy) if p)
-        )
+        lines.append(_DETAIL_INDENT + "  " * depth + "- " + " — ".join(p for p in (where, op) if p))
         lines.extend(_finding_lines(f.get("members"), rules, depth + 1))
     return lines
 
@@ -301,7 +301,7 @@ def _listed_lines(listed: Any, rules: dict[str, Any]) -> list[str]:
             for r in group.get("rules") or ()
             if isinstance(r, dict)
         )
-        lines.append(f"  - why: {group.get('why', '')}")
+        lines.append(f"  - reason: {group.get('reason', '')}")
         lines.append(f"    rules: {entries}")
     return lines
 
@@ -357,6 +357,21 @@ def _preservation_lines(payload: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _conformance_lines(payload: dict[str, Any]) -> list[str]:
+    block = payload.get("conformance")
+    if not isinstance(block, dict):
+        return []
+    lines = [f"conformance.ok: {_flag(block.get('ok'))}"]
+    for d in block.get("deviations") or ():
+        if isinstance(d, dict):
+            where = f"{d.get('file', '')} line {d.get('line')}".strip()
+            what = _dot(d.get("op"), d.get("rule"))
+            lines.append(
+                f"conformance.deviation: {where} — {what} — expected {d.get('expected')}, found {d.get('found')}"
+            )
+    return lines
+
+
 def _feedback_lines(payload: dict[str, Any], rules: dict[str, Any]) -> list[str]:
     items = [f for f in payload.get("feedback") or () if isinstance(f, dict)]
     if not items:
@@ -365,8 +380,8 @@ def _feedback_lines(payload: dict[str, Any], rules: dict[str, Any]) -> list[str]
     for f in items:
         head = " ".join(p for p in (str(f.get("impact_tier") or ""), rule_label(str(f.get("rule", "")), rules)) if p)
         where = f"line {f['line']}" if f.get("line") is not None else ""
-        remedy = f"remedy: {f['remedy']}" if f.get("remedy") else ""
-        lines.append("  - " + " — ".join(p for p in (f"{head} {where}".strip(), f.get("message"), remedy) if p))
+        how = f"op: {f['op']}" if f.get("op") else (f"fix: {f['fix']}" if f.get("fix") else "")
+        lines.append("  - " + " — ".join(p for p in (f"{head} {where}".strip(), f.get("message"), how) if p))
     return lines
 
 
@@ -374,3 +389,34 @@ def _truncated_lines(payload: dict[str, Any]) -> list[str]:
     truncated = payload.get("truncated")
     hint = truncated.get("hint") if isinstance(truncated, dict) else ""
     return [f"truncated.hint: {hint}"] if hint else []
+
+
+def render_heal_apply(
+    fixes: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    put_back: list[dict[str, Any]],
+    project_root: Path,
+) -> str:
+    """The `heal_apply` reply: a count line, one line per changed file, one line per file put back."""
+
+    def rel(file: str) -> str:
+        try:
+            return str(Path(file).resolve().relative_to(project_root.resolve()))
+        except ValueError:
+            return file
+
+    per_file: dict[str, int] = {}
+    for fix in fixes:
+        name = rel(str(fix.get("file_path", "")))
+        per_file[name] = per_file.get(name, 0) + 1
+    lines = [
+        _dot(
+            "heal_apply: " + f"{len(fixes)} fixed", f"{len(decisions)} left for a decision", f"{len(put_back)} put back"
+        )
+    ]
+    lines += [f"{name}  {count} fixed" for name, count in sorted(per_file.items())]
+    lines += [
+        f"put back: {rel(str(b.get('file', '')))} ({b.get('op', '')} {b.get('rule', '')} line {b.get('line', '')})"
+        for b in put_back
+    ]
+    return "\n".join(lines)

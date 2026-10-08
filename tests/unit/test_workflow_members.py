@@ -15,10 +15,10 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     walk_findings,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
 from reporails_cli.formatters.json import format_combined_result
 from reporails_cli.formatters.text.rule_meta import rule_aliases
-from reporails_cli.interfaces.mcp import remedy_brief, tools
+from reporails_cli.interfaces.mcp import remedy_brief
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_diagnostic]
 
@@ -41,8 +41,8 @@ def _wire(
         "file": file,
         "line": line,
         "pi": pi,
-        "message": f"{rule} m",
-        "remedy": "r",
+        "op": "split",
+        "expect": {},
         "impact_tier": tier,
     }
     if members is not None:
@@ -108,19 +108,21 @@ def test_parse_skips_a_malformed_member_and_a_malformed_members_value() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_json_nests_members_with_relative_paths_and_a_filled_message() -> None:
+def test_json_nests_members_with_relative_paths_and_their_operation() -> None:
     root = Path("/home/u/proj")
     wire = _packed_wire("/home/u/proj/CLAUDE.md")
-    wire["members"][0]["message"] = ""
+    wire["members"][0]["op"] = "move"
+    wire["members"][0]["expect"] = {"after": ["/home/u/proj/CLAUDE.md", 1, 0]}
     wf = deserialize_workflow({"workflow": {"locations": [_loc_wire([wire], "/home/u/proj/CLAUDE.md")]}})
-    local = FindingItem(file="CLAUDE.md", line=7, severity="warning", rule=E4, message="from the client")
     result = CombinedResult(
-        findings=(local,), cross_file=(), quality=None, per_file_analysis=(), stats=CombinedStats(), workflow=wf
+        findings=(), cross_file=(), quality=None, per_file_analysis=(), stats=CombinedStats(), workflow=wf
     )
     (row,) = format_combined_result(result, project_root=root)["workflow"]["locations"][0]["findings"]
     assert row["file"] == "CLAUDE.md"
     assert [m["rule"] for m in row["members"]] == [E4, E4, C51]
-    assert row["members"][0]["message"] == "from the client"
+    assert row["members"][0]["op"] == "move"
+    assert row["members"][0]["expect"] == {"after": ["CLAUDE.md", 1, 0]}
+    assert "message" not in row["members"][0] and "remedy" not in row["members"][0]
     assert row["members"][0]["members"] == []
     nested = row["members"][2]["members"]
     assert [m["rule"] for m in nested] == [C42, E4]
@@ -226,29 +228,14 @@ def _atom(abs_file: Path) -> Any:
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_the_brief_carries_nested_members_and_targets_their_rules(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")
-    abs_file = tmp_path / "CLAUDE.md"
-    abs_file.write_text("# T\n" + "x\n" * 5 + "Packed sentence.\n")
-    fake_map = SimpleNamespace(atoms=(_atom(abs_file),), files=())
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+def test_the_brief_makes_an_op_of_every_nested_member(tmp_path: Path) -> None:
     location = {**_loc_wire([_packed_wire()]), "importance": "gate_mover", "relations": []}
 
-    first = remedy_brief.remedy_brief_tool(location, tmp_path)
-    replies = [
-        remedy_brief.remedy_brief_tool(location, tmp_path, part=n) for n in range(1, first.get("total_parts", 1) + 1)
-    ]
-    reply = {
-        "findings": [f for r in replies for f in r["findings"]],
-        "files": [f for r in replies for f in r["files"]],
-    }
+    ops, names = remedy_brief._location_ops(location, tmp_path, [str((tmp_path / "CLAUDE.md").resolve())])
 
-    (owner,) = reply["findings"]
-    assert owner["rule"] == C58
-    assert [m["rule"] for m in owner["members"]] == [E4, E4, C51]
-    assert [m["rule"] for m in owner["members"][2]["members"]] == [C42, E4]
-    (instruction,) = reply["files"][0]["instructions"]
-    assert set(instruction["targets"]) == {C58, E4, C51, C42}
+    assert {(o.rule, o.pi) for o in ops} == {(C58, None), (E4, 1), (E4, 2), (C51, 3), (C42, 3), (E4, 3)}
+    assert {o.file for o in ops} == {str((tmp_path / "CLAUDE.md").resolve())}
+    assert names == {str((tmp_path / "CLAUDE.md").resolve()): "CLAUDE.md"}
 
 
 @pytest.mark.unit
@@ -277,6 +264,6 @@ def test_a_conditional_owner_holding_a_gate_mover_member_sorts_first_after_suppr
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
-def test_the_brief_sorts_a_conditional_owner_with_a_gate_mover_member_before_a_plain_conditional() -> None:
+def test_findings_sort_a_conditional_owner_with_a_gate_mover_member_before_a_plain_conditional() -> None:
     ordered = remedy_brief._sorted_findings(_tiered_rows())
     assert [f["rule"] for f in ordered] == [C58, C42]

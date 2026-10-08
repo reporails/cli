@@ -271,9 +271,7 @@ def _served(tmp_path, *rows):
 
     path = str(tmp_path / "AGENTS.md")
     findings = tuple(
-        LocationFinding(
-            rule=rule, file=path, line=line, pi=None, message="", remedy="", impact_tier=tier, members=members
-        )
+        LocationFinding(rule=rule, file=path, line=line, pi=None, impact_tier=tier, members=members)
         for rule, line, tier, members in rows
     )
     location = WorkflowLocation(order=1, element=path, kind="main", loading="", files=(path,), findings=findings)
@@ -321,7 +319,7 @@ def test_a_listed_config_file_finding_keeps_the_tier_its_row_carried(tmp_path, d
     main = str(tmp_path / "AGENTS.md")
 
     def row(rule, file, tier):
-        return LocationFinding(rule=rule, file=file, line=1, pi=None, message="", remedy="", impact_tier=tier)
+        return LocationFinding(rule=rule, file=file, line=1, pi=None, impact_tier=tier)
 
     config_row = row("CODEX:E:0002", config, "gate_mover")
     locations = (
@@ -353,9 +351,7 @@ def test_a_served_member_tier_stays_on_its_own_rule(tmp_path, dev_rules_dir):
     from reporails_cli.core.platform.dto.models import LocalFinding
 
     path = str(tmp_path / "AGENTS.md")
-    member = LocationFinding(
-        rule="CORE:C:0042", file=path, line=7, pi=None, message="", remedy="", impact_tier="gate_mover"
-    )
+    member = LocationFinding(rule="CORE:C:0042", file=path, line=7, pi=None, impact_tier="gate_mover")
     workflow = _served(tmp_path, ("CORE:C:0058", 7, "conditional", (member,)))
     local = [
         LocalFinding("AGENTS.md", 7, "warning", "CORE:C:0058", "packed", check_id="c"),
@@ -413,11 +409,7 @@ def _archive_project(tmp_path, config: str):
             kind="main",
             loading="",
             files=(str(tmp_path / place),),
-            findings=(
-                LocationFinding(
-                    rule="CODEX:E:0001", file=str(tmp_path / place), line=1, pi=None, message="m", remedy="r"
-                ),
-            ),
+            findings=(LocationFinding(rule="CODEX:E:0001", file=str(tmp_path / place), line=1, pi=None),),
         )
         for i, place in enumerate(places, start=1)
     )
@@ -445,10 +437,6 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
     assert [loc.order for loc in result.workflow.locations] == [1]
     [entry] = result.workflow.listed
     assert (entry.rule, entry.reason, entry.count) == ("CODEX:E:0001", "excluded", 1)
-    assert entry.why == (
-        "`archive/AGENTS.md` is in `heal_exclude` in your `.ails/config.yml`: "
-        "it is still checked and scored, and heal does not rewrite it."
-    )
 
 
 @pytest.mark.unit
@@ -467,7 +455,7 @@ def test_heal_exclude_naming_several_files_names_them_all_in_one_sentence(tmp_pa
     from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 
     def loc(order, file):
-        row = {"rule": "CORE:C:0042", "file": file, "line": 1, "pi": 0, "message": "m", "remedy": "r", "members": []}
+        row = {"rule": "CORE:C:0042", "file": file, "line": 1, "pi": 0, "members": []}
         return {"order": order, "element": file, "kind": "main", "loading": "", "files": [file], "findings": [row]}
 
     files = ["a/x.md", "a/y.md", "b.md"]
@@ -479,5 +467,4 @@ def test_heal_exclude_naming_several_files_names_them_all_in_one_sentence(tmp_pa
 
     [entry] = out.listed
     assert entry.count == 2
-    assert entry.why.startswith("`a/x.md`, `a/y.md` are in `heal_exclude`")
     assert [(x.order, x.element) for x in out.locations] == [(1, "b.md")]

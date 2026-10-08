@@ -63,7 +63,7 @@ AFFIRMATIVE_ABSOLUTES: frozenset[str] = ABSOLUTE_CUES - {"never"}
 CONSTRAINT_WORDS: frozenset[str] = frozenset({"MUST", "NEVER", "ALWAYS", "IMPORTANT"})
 _ABSOLUTE_ADVERBS: frozenset[str] = AFFIRMATIVE_ABSOLUTES | {"only"}
 # Words that narrow where, when or to what an instruction applies, whatever follows them ...
-SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", "outside"}) | (
+SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", "outside", "absent"}) | (
     _ABSOLUTE_ADVERBS - {"always"}
 )
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.

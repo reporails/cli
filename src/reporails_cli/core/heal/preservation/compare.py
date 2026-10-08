@@ -4,6 +4,7 @@ every check and builds the `preservation` block a rewrite check returns.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.heal.preservation import conditions, structure
@@ -25,6 +26,7 @@ from reporails_cli.core.heal.preservation.snapshot import (
 from reporails_cli.core.heal.preservation.words import named_key
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.mapper.structure import read_structure
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
@@ -44,6 +46,8 @@ PRESERVATION_CONTRACT = (
 
 # Findings that are reported but never fail the rewrite.
 _LISTED_ONLY = frozenset({"removed_structure", "made_direct", "made_specific"})
+# The block entries that are not checks.
+_NOT_CHECKS = frozenset({"ok", "score_before", "score_after", "kept"})
 
 
 def _negative_heading_texts(new_map: Any, file_path: str) -> list[str]:
@@ -183,3 +187,26 @@ def compare(
     )
     kept = _kept_counts(snap_atoms, snapshot, checks)
     return {"ok": ok, "score_before": snapshot.score, "score_after": score_after, **checks, "kept": kept}
+
+
+def check_rewrite(
+    snapshot: Snapshot,
+    file_path: Path,
+    ruleset_map: Any,
+    new_text: str,
+    score: float | None,
+    scan_root: Path | None,
+    siblings: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
+    against `snapshot`, with the project on disk answering which names and paths exist."""
+    environment = LocalProjectEnvironment(scan_root, file_path.parent)
+    return compare(snapshot, ruleset_map, new_text, score, environment, siblings)
+
+
+def failed_checks(block: dict[str, Any]) -> list[str]:
+    """The names of the checks that fail a `compare` block, in the order it lists them."""
+    names = [k for k, v in block.items() if k not in _LISTED_ONLY and k not in _NOT_CHECKS and v]
+    if any(block["removed_structure"].values()):
+        names.append("removed_structure")
+    return names

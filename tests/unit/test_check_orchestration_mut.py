@@ -279,12 +279,12 @@ def _run_heal_capture(monkeypatch, *, isatty, output_format):
     import reporails_cli.core.lint.suppression as supp
     import reporails_cli.interfaces.cli.heal as heal
 
-    def _fake_mech(ruleset_map, target, dry_run, show, console, files, suppressed):
+    def _fake_mech(ruleset_map, target, workflow, dry_run, show, console, files, suppressed):
         captured["show"] = show
-        return []
+        return SimpleNamespace(fixes=[], decisions=[], put_back=[])
 
     monkeypatch.setattr(supp, "suppressed_lines", lambda *a, **k: {})
-    monkeypatch.setattr(heal, "_apply_mechanical_fixes", _fake_mech)
+    monkeypatch.setattr(heal, "_apply_keyed_fixes", _fake_mech)
     monkeypatch.setattr(heal, "_collect_section_suggestions", lambda *a, **k: [])
     monkeypatch.setattr(heal, "_output_heal_results", lambda *a, **k: None)
     monkeypatch.setattr(orch.sys.stdout, "isatty", lambda: isatty, raising=False)

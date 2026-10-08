@@ -32,9 +32,9 @@ from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_label
 from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices  # noqa: E402
 from reporails_cli.interfaces.mcp import snapshots  # noqa: E402
 from reporails_cli.interfaces.mcp.feedback import file_feedback  # noqa: E402
+from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written  # noqa: E402
 from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity  # noqa: E402
 from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief  # noqa: E402
-from reporails_cli.interfaces.mcp.remedy_brief_paging import page_reply  # noqa: E402
 from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool  # noqa: E402
 from reporails_cli.interfaces.mcp.scan_fingerprint import (  # noqa: E402
     combine_scan_inputs,
@@ -79,19 +79,11 @@ class _CircuitState:
     # re-running the pipeline a second time just to get them again.
     last_ruleset_map: Any = None
     last_score: float | None = None
-    # The unpaged `remedy_brief` build for this path's workflow, keyed by a location's `order`
-    # — built once (`build_remedy_brief`) the first time a location is requested, then served
-    # to every later `part` request for that same location with no pipeline re-run and no
-    # snapshot re-commit. A new `validate` for this path clears the whole cache (below), since
-    # it may have changed the file set the workflow's locations name.
-    remedy_brief_cache: dict[int, Any] = field(default_factory=dict)
     # The notices a text view already showed for this path: each shows once per run.
     shown_notices: set[str] = field(default_factory=set)
 
 
 _validate_states: dict[str, _CircuitState] = {}
-# Held while a location's brief is built, so two requests for one location build it once.
-_brief_build_lock = threading.Lock()
 
 
 def _target_tokens(targets: list[str] | None) -> tuple[str, ...]:
@@ -112,24 +104,16 @@ def _state_key(path: str, tokens: tuple[str, ...]) -> str:
 
 
 def _serve_remedy_brief(
-    path: str, location: int, targets: list[str] | None = None, part: int = 1, has_guide: bool = False
+    path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
 ) -> dict[str, Any]:
-    """`remedy_brief(path, location, targets, part, has_guide)`'s body: a caller that does not
+    """`remedy_brief(path, location, targets, has_guide)`'s body: a caller that does not
     carry the rewrite guide (`has_guide` false) is refused with `plugin_update_required` before
     anything else — no state read, no build, no snapshot, no breaker counter touched. Reads the last `validate(path,
     targets)`'s stored workflow and scan root, and builds the location's rewrite brief.
-    `part` (1-based) selects one numbered part of a brief too large for one reply; a brief
-    that fits in one part ignores it. Never runs `validate`'s own pipeline for `path`. A
+    Never runs `validate`'s own pipeline for `path`. A
     served brief (no error) resets the path's `call_count` — the agent is still working this
     rewrite loop, not re-validating without progress — so a multi-round pass survives
     past `_MAX_CALLS`; `consecutive_unchanged` (the actual no-progress guard) is untouched.
-
-    A location's brief is built (`build_remedy_brief` — the file pipeline plus the snapshot
-    commit) at most once per `validate`: the first `part` request for a location builds it and
-    caches it on `state.remedy_brief_cache`; every later `part` request for that SAME location,
-    however many, is served straight from the cached build (`page_reply` alone) — no pipeline
-    re-run, no server call, no snapshot re-commit. A new `validate` for this path clears the
-    cache (`_run_validate`), so requesting part 1 again after it rebuilds.
 
     An unpaid or offline caller's `validate` never carries a `workflow` key at all (a
     DIFFERENT cause from never having called `validate`): `workflow_requires_pro` names that
@@ -140,8 +124,8 @@ def _serve_remedy_brief(
         return {
             "error": "plugin_update_required",
             "message": (
-                "The rewrite brief no longer carries the guide to writing an ideal instruction; "
-                "your agent has to carry it. Update the reporails plugin to 0.6.2 or later, then run heal again."
+                "This version of reporails needs the reporails plugin 0.6.2 or later. "
+                "Update the plugin, then run heal again."
             ),
         }
     state = _validate_states.get(_state_key(path, _target_tokens(targets)))
@@ -172,15 +156,7 @@ def _serve_remedy_brief(
             "message": f"The workflow has no location {location}; it has {len(locations)}.",
         }
     scan_root = state.scan_root or Path(path).resolve()
-    with _brief_build_lock:
-        built = state.remedy_brief_cache.get(location)
-        if built is None:
-            built = build_remedy_brief(loc, scan_root)
-            if isinstance(built, dict):
-                return built
-            state.remedy_brief_cache[location] = built
-    full, files_out, location_out = built
-    reply = page_reply(full, files_out, location_out, part)
+    reply = build_remedy_brief(loc, scan_root, state.last_ruleset_map)
     if "error" not in reply:
         state.call_count = 0
     return reply
@@ -200,8 +176,9 @@ def _with_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> di
 def _with_preservation(
     payload: dict[str, Any], target: Path, ruleset_map: Any, score: float | None, scan_root: Path | None
 ) -> dict[str, Any]:
-    """Add the `preservation` block to `payload` when `target` is a file `remedy_brief`
-    snapshotted. Carried on both the bounded and full replies — the caller bounds afterward.
+    """Add the `preservation` block, and the `conformance` block (the file against the plan its
+    brief listed), to `payload` when `target` is a file `remedy_brief` snapshotted.
+    Carried on both the bounded and full replies — the caller bounds afterward.
 
     Runs entirely off the event loop (the caller wraps this whole function in
     `asyncio.to_thread`). `ruleset_map` / `score` are the file's own, reused from the
@@ -224,7 +201,11 @@ def _with_preservation(
         return payload
     block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score, scan_root)
     block["introduced"] = snapshots.introduced_count(target, payload)
-    return {**payload, "preservation": block}
+    out = {**payload, "preservation": block}
+    conformance = snapshots.check_conformance(target, ruleset_map, new_text, scan_root)
+    if conformance is not None:
+        out["conformance"] = conformance
+    return out
 
 
 async def _fresh_validate_payload(
@@ -308,12 +289,6 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     prior_reply = prior.full_payload if prior is not None else None
     base_hash, mtime_hash = await asyncio.to_thread(compute_scan_fingerprint, scan_root, prior_map, prior_reply, target)
     state = _validate_states.get(path_key, _CircuitState())
-    # A new `validate` call for this path — whatever it decides below — invalidates any
-    # `remedy_brief` build already cached for it: the workflow this validate stores (or the
-    # tier-gated absence of one) may not be the one that cache was built from, and a changed
-    # file set means the locations it named may no longer even resolve. `part=1` requested
-    # after this rebuilds; parts of an untouched location build once again.
-    state.remedy_brief_cache.clear()
     unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
     if not unchanged:
         state.full_payload = None
@@ -342,6 +317,9 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
 
     if not target.exists():
         return {"error": "path_not_found", "message": f"Path not found: {target}"}
+
+    if target.is_dir():
+        snapshots.release_holds(target)  # a project round starts: a later brief takes a fresh baseline
 
     if unchanged and state.full_payload is not None:
         payload = state.full_payload
@@ -374,6 +352,26 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     # off the event loop too, so it never carries a stray blocking op later without review.
     payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
+
+
+async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
+    """`heal_apply`'s body: the pipeline `validate` runs, then the keyed heal the CLI runs."""
+    target = Path(path).resolve()
+    model_error = await asyncio.to_thread(model_not_ready_error)
+    if model_error is not None or not target.exists():
+        return heal_apply_message(model_error or {"error": f"Path not found: {target}"})
+    scan_root = _resolve_scan_target(target)[0]
+    result = await _fresh_validate_payload(path, _target_tokens(targets), scan_root, _CircuitState())
+    if isinstance(result, dict):
+        return heal_apply_message(result)
+    payload, ruleset_map, _score = result
+    workflow = payload.get("workflow")
+    if ruleset_map is None or not isinstance(workflow, dict):
+        return heal_apply_message(payload)
+    try:
+        return await asyncio.to_thread(heal_apply_write, ruleset_map, workflow, target, scan_root)
+    finally:
+        release_written(scan_root, _validate_states)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -459,32 +457,44 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
 @server.tool(
     name="remedy_brief",
     description=(
-        "Get the full rewrite brief for one location of the last `validate(path)`'s paid"
+        "Get the rewrite brief for one location of the last `validate(path)`'s paid"
         " `workflow` — `path` is the path last passed to `validate`, `location` is a"
         " location's `order` from that reply, `targets` the targets that `validate` call"
-        " passed (none for a whole-project reply). Returns each of the location's files with its"
-        " current score, every instruction and heading in it, the location's findings and"
-        " relations (with remedy text), the"
-        " rules that govern this kind of file, and the preservation contract the rewrite must"
-        " keep. A brief too large for one reply carries `part` / `total_parts` and a `next_part`"
-        " note — call again with the same path, location and targets, and that `part` number,"
-        " for the rest; every part's `files[]`, `findings`, `relations` and `procedure.mechanical_fixes`"
-        " together carry the whole brief, and each part is at most about 16,000 characters unless"
-        " one item (a single instruction or fixed field) is larger on its own. Call this before"
-        " rewriting a location, one location at a time, one kind at a time. Set `has_guide` true"
+        " passed (none for a whole-project reply). Returns the exact `edits` to apply as"
+        " written (each replaces its `before` text with its `after` text), the few `slots`"
+        " (lines that need a decision) with each rule's own `guides` example and one `ops`"
+        " line per op, any `refused` ops, and the preservation contract the rewrite must keep."
+        " Call this before rewriting a location, one location at a time, one kind at a time,"
+        " then `validate(path=<file>)` for each file: its `conformance` block says whether"
+        " every listed change was made and nothing else changed. Set `has_guide` true"
         " when your agent carries the rewrite guide (the reporails plugin 0.6.2 and later does);"
         " without it the call returns `plugin_update_required` and no brief."
     ),
     annotations=_READ_ONLY,
 )
 async def remedy_brief(
-    path: str, location: int, targets: list[str] | None = None, part: int = 1, has_guide: bool = False
+    path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
 ) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
-    return _result(
-        await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, int(part), bool(has_guide))
-    )
+    return _result(await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, bool(has_guide)))
+
+
+@server.tool(
+    name="heal_apply",
+    description=(
+        "Make every fix that needs no judgment across the project at `path` in one call, then list what"
+        " is left for a decision. Pro only: without a Pro account it changes nothing and says so."
+        " Each file it writes is checked and put back if it departs from the plan."
+        " `targets` narrows the files, read the way `validate` reads them. Run it before rewriting"
+        " locations by hand, then call `validate` again. Returns text: a count line"
+        " (`heal_apply: <n> fixed · <m> left for a decision · <k> put back`), then a line per file."
+    ),
+)
+async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallToolResult:
+    """Apply the project's deterministic fixes; see the tool description."""
+    touch_activity()
+    return _text_result(await _run_heal_apply(path, targets))
 
 
 @server.tool(
@@ -579,7 +589,6 @@ def _prewarm_models() -> None:
 
 def main() -> None:
     """Entry point for the MCP server (stdio transport)."""
-    import threading
 
     threading.Thread(target=_prewarm_models, name="model-prewarm", daemon=True).start()
     server.run("stdio")

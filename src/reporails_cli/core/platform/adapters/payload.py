@@ -139,6 +139,10 @@ def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
         }
         if f.skill:
             fd["skill"] = _relativize(f.skill, root)
+        if f.activation:
+            fd["act"] = f.activation
+        if f.reach:
+            fd["reach"] = [_relativize(r, root) for r in f.reach]
         if f.globs:
             fd["globs"] = list(f.globs[:MAX_FILE_GLOBS])
         if f.description_embedding:
