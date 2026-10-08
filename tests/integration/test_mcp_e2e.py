@@ -394,12 +394,15 @@ class TestValidateTargets:
         from reporails_cli.interfaces.mcp import server
 
         _run_async(server._run_validate(str(project), True, ["skills"]))
-        brief = server._serve_remedy_brief(str(project), 1, ["skills"])
+        brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)
         assert brief["location"]["element"] == "the `backlog` skill"
-        assert server._serve_remedy_brief(str(project), 1)["error"] == "no_workflow"
+        assert server._serve_remedy_brief(str(project), 1, has_guide=True)["error"] == "no_workflow"
         _run_async(server._run_validate(str(project), True))
-        assert server._serve_remedy_brief(str(project), 1)["location"]["element"] == "CLAUDE.md"
-        assert server._serve_remedy_brief(str(project), 1, ["skills"])["location"]["element"] == "the `backlog` skill"
+        assert server._serve_remedy_brief(str(project), 1, has_guide=True)["location"]["element"] == "CLAUDE.md"
+        assert (
+            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)["location"]["element"]
+            == "the `backlog` skill"
+        )
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
@@ -745,7 +748,7 @@ class TestCircuitBreaker:
             assert data.get("error") != "circuit_breaker", data
 
         # A served remedy_brief resets call_count for this path before the next tier's round.
-        brief = server._serve_remedy_brief(str(tmp_path), 1)
+        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
         assert "error" not in brief, brief
 
         # Round 2: 5 more validate calls (11 total across the run) must not trip.
@@ -1160,7 +1163,7 @@ class TestRemedyBrief:
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     def test_a_brief_before_any_validate_is_a_structured_error(self, tmp_path: Path) -> None:
-        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1}))
+        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
         assert data["error"] == "no_workflow"
 
     @pytest.mark.e2e
@@ -1172,7 +1175,7 @@ class TestRemedyBrief:
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
 
-        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 9}))
+        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 9, "has_guide": True}))
         assert data["error"] == "location_not_found"
 
     @pytest.mark.e2e
@@ -1194,7 +1197,7 @@ class TestRemedyBrief:
         unchanged_before = state_before.consecutive_unchanged
 
         for _ in range(5):
-            reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1}))
+            reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
             assert "error" not in reply, reply
             state_after = server._validate_states[str(tmp_path.resolve())]
             assert (state_after.call_count, state_after.consecutive_unchanged) == (0, unchanged_before)
@@ -1215,7 +1218,7 @@ class TestRemedyBrief:
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
 
-        reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1}))
+        reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
 
         assert reply["location"]["order"] == 1 and reply["location"]["kind"] == "main"
         assert reply["findings"] == [self._payload()["workflow"]["locations"][0]["findings"][0]]

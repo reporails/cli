@@ -8,6 +8,7 @@
 
 ### Changed
 
+- MCP: an older reporails plugin that asks for a rewrite brief without carrying the rewrite guide now gets a clear message to update the plugin to 0.6.2 or later, instead of rewriting without its guide.
 - Check: a heading that labels a category and has a sibling label at the same level (for example `## Keep — …` and `## Partial — …`) is no longer reported as an instruction in a heading (CORE:S:0039), so files with such headings can score higher. A heading whose leading word gives an order (`Always`, `Never`) or whose text after the dash gives an instruction is still reported.
 - Check: the fix text for a sentence that holds several instructions (CORE:C:0058) now says each sentence must stand on its own after the split: repeat the subject or object they share, keep a directive with the bound that limits it, and keep a lead-in with every item it introduces.
 - MCP: on a Pro account, `validate` returns a short text view (status, surfaces, the locations to rewrite, what stays listed and the rewrite check) instead of the full JSON; pass `full=true` for the JSON.

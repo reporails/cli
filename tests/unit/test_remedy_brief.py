@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
-from reporails_cli.interfaces.mcp import remedy_brief, server, tools
+from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots, tools
 from reporails_cli.interfaces.mcp.remedy_brief_paging import page_reply
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
@@ -780,7 +780,7 @@ def teardown_module() -> None:
 @pytest.mark.subsys_server
 def test_no_workflow_before_any_validate(tmp_path: Path) -> None:
     server._validate_states.clear()
-    reply = server._serve_remedy_brief(str(tmp_path), 1)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
     assert reply == {
         "error": "no_workflow",
         "message": "Call validate for this path (and these targets) first; remedy_brief reads its workflow.",
@@ -799,7 +799,7 @@ def test_workflow_requires_pro_when_the_last_validate_carried_no_workflow(tmp_pa
     server._validate_states[str(tmp_path.resolve())] = server._CircuitState(
         full_payload={"files": {}}, scan_root=tmp_path
     )
-    reply = server._serve_remedy_brief(str(tmp_path), 1)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
     assert reply["error"] == "workflow_requires_pro"
     assert "call validate" not in reply["message"].lower()
     assert "pro" in reply["message"].lower()
@@ -815,8 +815,52 @@ def test_no_workflow_when_the_last_validate_carried_workflow_none(tmp_path: Path
     server._validate_states[str(tmp_path.resolve())] = server._CircuitState(
         full_payload={"files": {}, "workflow": None}, scan_root=tmp_path
     )
-    reply = server._serve_remedy_brief(str(tmp_path), 1)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
     assert reply["error"] == "no_workflow"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@pytest.mark.parametrize("kwargs", [{}, {"has_guide": False}])
+def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
+    monkeypatch, tmp_path: Path, kwargs: dict[str, bool]
+) -> None:
+    """A caller that does not carry the rewrite guide (the reporails plugin before 0.6.2) gets
+    `plugin_update_required` before any work: no pipeline run, no snapshot, and the circuit
+    breaker counters stay as they were."""
+    server._validate_states.clear()
+    snapshots.clear_snapshots()
+    target = tmp_path / "CLAUDE.md"
+    target.write_text("# T\n\nAlways run the tests.\n", encoding="utf-8")
+
+    def _boom(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("the pipeline must not run for a refused caller")
+
+    monkeypatch.setattr(tools, "run_pipeline_for_path", _boom)
+    payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": ["CLAUDE.md"]}]}}
+    state = server._CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
+    server._validate_states[str(tmp_path.resolve())] = state
+
+    reply = server._serve_remedy_brief(str(tmp_path), 1, **kwargs)
+
+    assert reply["error"] == "plugin_update_required"
+    assert "Update the reporails plugin to 0.6.2 or later" in reply["message"]
+    assert snapshots.get_snapshot(target) is None
+    assert (state.call_count, state.consecutive_unchanged, state.remedy_brief_cache) == (3, 1, {})
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: Path) -> None:
+    server._validate_states.clear()
+    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None))
+    payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
+    server._validate_states[str(tmp_path.resolve())] = server._CircuitState(full_payload=payload, scan_root=tmp_path)
+
+    reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
+
+    assert "error" not in reply
+    assert reply["location"]["root"] == str(tmp_path)
 
 
 @pytest.mark.unit
@@ -826,7 +870,7 @@ def test_location_not_found_names_the_count(tmp_path: Path) -> None:
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": []}]}}
     server._validate_states[str(tmp_path.resolve())] = server._CircuitState(full_payload=payload, scan_root=tmp_path)
 
-    reply = server._serve_remedy_brief(str(tmp_path), 9)
+    reply = server._serve_remedy_brief(str(tmp_path), 9, has_guide=True)
 
     assert reply == {
         "error": "location_not_found",
@@ -846,7 +890,7 @@ def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(m
     server._validate_states[str(tmp_path.resolve())] = state
 
     for _ in range(4):
-        reply = server._serve_remedy_brief(str(tmp_path), 1)
+        reply = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
         assert "error" not in reply
         after = server._validate_states[str(tmp_path.resolve())]
         assert (after.call_count, after.consecutive_unchanged) == (0, 1)
@@ -909,14 +953,14 @@ def test_paged_remedy_brief_is_built_once_not_once_per_part(monkeypatch, tmp_pat
 
     monkeypatch.setattr(tools, "run_pipeline_for_path", counting_run)
 
-    first = server._serve_remedy_brief(str(tmp_path), 1)
+    first = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
     total_parts = first.get("total_parts", 1)
     assert total_parts > 1, "a 700-instruction single-file location must actually page"
     calls_for_part_one_alone = calls["n"]
     assert calls_for_part_one_alone == 1, "one file, one pipeline run, to build the whole brief"
 
     for part_number in range(2, total_parts + 1):
-        reply = server._serve_remedy_brief(str(tmp_path), 1, part=part_number)
+        reply = server._serve_remedy_brief(str(tmp_path), 1, part=part_number, has_guide=True)
         assert reply["part"] == part_number
 
     assert calls["n"] == calls_for_part_one_alone, (
@@ -945,14 +989,14 @@ def test_editing_the_file_between_parts_leaves_the_committed_snapshot_untouched(
     server._validate_states.clear()
     server._validate_states[str(tmp_path.resolve())] = server._CircuitState(full_payload=payload, scan_root=tmp_path)
 
-    first = server._serve_remedy_brief(str(tmp_path), 1)
+    first = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
     total_parts = first.get("total_parts", 1)
     assert total_parts > 1, "a 700-instruction single-file location must actually page"
     assert snapshots.get_snapshot(skill_file).text == original_text
 
     skill_file.write_text(original_text + "\nEdited after part 1, before part 2.\n", encoding="utf-8")
 
-    reply = server._serve_remedy_brief(str(tmp_path), 1, part=2)
+    reply = server._serve_remedy_brief(str(tmp_path), 1, part=2, has_guide=True)
 
     assert reply["part"] == 2
     assert snapshots.get_snapshot(skill_file).text == original_text, (
@@ -1109,7 +1153,9 @@ def test_two_concurrent_part_requests_for_one_location_build_the_brief_once(
 
     monkeypatch.setattr(server, "build_remedy_brief", slow_build)
     monkeypatch.setattr(server, "page_reply", lambda *a, **k: {"ok": True})
-    threads = [threading.Thread(target=server._serve_remedy_brief, args=(str(tmp_path), 1)) for _ in range(2)]
+    threads = [
+        threading.Thread(target=server._serve_remedy_brief, args=(str(tmp_path), 1, None, 1, True)) for _ in range(2)
+    ]
     for t in threads:
         t.start()
     for t in threads:

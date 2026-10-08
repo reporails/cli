@@ -111,8 +111,12 @@ def _state_key(path: str, tokens: tuple[str, ...]) -> str:
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _serve_remedy_brief(path: str, location: int, targets: list[str] | None = None, part: int = 1) -> dict[str, Any]:
-    """`remedy_brief(path, location, targets, part)`'s body: reads the last `validate(path,
+def _serve_remedy_brief(
+    path: str, location: int, targets: list[str] | None = None, part: int = 1, has_guide: bool = False
+) -> dict[str, Any]:
+    """`remedy_brief(path, location, targets, part, has_guide)`'s body: a caller that does not
+    carry the rewrite guide (`has_guide` false) is refused with `plugin_update_required` before
+    anything else — no state read, no build, no snapshot, no breaker counter touched. Reads the last `validate(path,
     targets)`'s stored workflow and scan root, and builds the location's rewrite brief.
     `part` (1-based) selects one numbered part of a brief too large for one reply; a brief
     that fits in one part ignores it. Never runs `validate`'s own pipeline for `path`. A
@@ -132,6 +136,14 @@ def _serve_remedy_brief(path: str, location: int, targets: list[str] | None = No
     real cause, never "call validate first" — which would send the agent straight back into
     `validate`'s own circuit breaker, with no way to learn the brief is what it actually lacks.
     """
+    if not has_guide:
+        return {
+            "error": "plugin_update_required",
+            "message": (
+                "The rewrite brief no longer carries the guide to writing an ideal instruction; "
+                "your agent has to carry it. Update the reporails plugin to 0.6.2 or later, then run heal again."
+            ),
+        }
     state = _validate_states.get(_state_key(path, _target_tokens(targets)))
     if state is None or not state.full_payload:
         return {
@@ -459,14 +471,20 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
         " for the rest; every part's `files[]`, `findings`, `relations` and `procedure.mechanical_fixes`"
         " together carry the whole brief, and each part is at most about 16,000 characters unless"
         " one item (a single instruction or fixed field) is larger on its own. Call this before"
-        " rewriting a location, one location at a time, one kind at a time."
+        " rewriting a location, one location at a time, one kind at a time. Set `has_guide` true"
+        " when your agent carries the rewrite guide (the reporails plugin 0.6.2 and later does);"
+        " without it the call returns `plugin_update_required` and no brief."
     ),
     annotations=_READ_ONLY,
 )
-async def remedy_brief(path: str, location: int, targets: list[str] | None = None, part: int = 1) -> CallToolResult:
+async def remedy_brief(
+    path: str, location: int, targets: list[str] | None = None, part: int = 1, has_guide: bool = False
+) -> CallToolResult:
     """Return the rewrite brief for one workflow location; see the tool description."""
     touch_activity()
-    return _result(await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, int(part)))
+    return _result(
+        await asyncio.to_thread(_serve_remedy_brief, path, int(location), targets, int(part), bool(has_guide))
+    )
 
 
 @server.tool(
