@@ -11,7 +11,7 @@ from reporails_cli.core.cache.map_cache import atoms_to_dicts, dicts_to_atoms
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
 from reporails_cli.core.platform.adapters.payload import (
-    WIRE_SCHEMA_VERSION_V4,
+    WIRE_SCHEMA_VERSION,
     encode_msgpack,
     project_local,
     project_payload,
@@ -152,10 +152,10 @@ class TestProjectionShape:
 
     @pytest.mark.unit
     @pytest.mark.subsys_server
-    def test_schema_version_is_4(self) -> None:
+    def test_schema_version_is_the_current_wire_version(self) -> None:
         rm = _ruleset()
         proj = project_payload(rm, _ROOT)
-        assert proj["schema_version"] == "4"
+        assert proj["schema_version"] == str(WIRE_SCHEMA_VERSION)
 
 
 class TestNegativeSectionKey:
@@ -452,7 +452,8 @@ class TestEncoding:
     def test_leading_version_byte(self) -> None:
         rm = _ruleset(n_atoms=1)
         encoded = encode_msgpack(project_payload(rm, _ROOT))
-        assert encoded[0] == WIRE_SCHEMA_VERSION_V4 == 4
+        assert encoded[0] == 5
+        assert encoded[0] == WIRE_SCHEMA_VERSION
 
     @pytest.mark.unit
     @pytest.mark.subsys_server
@@ -461,7 +462,8 @@ class TestEncoding:
         proj = project_payload(rm, _ROOT)
         encoded = encode_msgpack(proj)
         decoded = msgpack.unpackb(encoded[1:], raw=False)
-        assert decoded["schema_version"] == "4"
+        assert decoded["schema_version"] == "5"
+        assert decoded["schema_version"] == str(encoded[0]) == str(WIRE_SCHEMA_VERSION)
         assert len(decoded["atoms"]) == len(proj["atoms"])
         assert len(decoded["files"]) == len(proj["files"])
         assert decoded["atoms"][0].keys() == proj["atoms"][0].keys()

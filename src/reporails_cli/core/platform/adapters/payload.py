@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-WIRE_SCHEMA_VERSION_V4 = 4
+WIRE_SCHEMA_VERSION = 5
 
 # A file record carries at most this many activation patterns; the rest are dropped.
 MAX_FILE_GLOBS = 50
@@ -152,13 +152,13 @@ def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
 
 
 def project_payload(ruleset_map: RulesetMap, root: Path) -> dict[str, Any]:
-    """Build the v4 payload dict (pre-encoding). `root` is the scan root every wire path
+    """Build the payload dict (pre-encoding). `root` is the scan root every wire path
     rides relative to — the same root the rest of the run resolves local paths against.
     Required: there is no current-directory fallback, so a payload can never silently
     ride relative to wherever the process happens to be running from."""
     file_idx = {f.path: i for i, f in enumerate(ruleset_map.files)}
     return {
-        "schema_version": "4",
+        "schema_version": str(WIRE_SCHEMA_VERSION),
         "embedding_model": ruleset_map.embedding_model,
         "generated_at": ruleset_map.generated_at,
         "files": _project_files(ruleset_map, root),
@@ -252,11 +252,11 @@ def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) ->
 
 
 def encode_msgpack(payload: dict[str, Any]) -> bytes:
-    """Encode the v4 payload as msgpack with a leading version byte."""
+    """Encode the payload as msgpack with a leading version byte."""
     encoded = msgpack.packb(payload, use_bin_type=True)
     if not isinstance(encoded, bytes):
         raise RuntimeError(f"msgpack.packb returned {type(encoded).__name__}, expected bytes")
-    return bytes([WIRE_SCHEMA_VERSION_V4]) + encoded
+    return bytes([WIRE_SCHEMA_VERSION]) + encoded
 
 
 def estimated_byte_size(ruleset_map: RulesetMap) -> int:
