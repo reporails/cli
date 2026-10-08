@@ -1,7 +1,7 @@
 """The `remedy_brief` MCP tool: the full rewrite brief for one workflow location.
 
 `build_remedy_brief` builds the whole, unpaged brief once (per-file instruction inventory,
-ideal-instruction guide, artifact rules, findings/relations) and hands it to
+artifact rules, findings/relations) and hands it to
 `formatters.mcp.remedy_brief_payload` for assembly. For each of the location's files it runs
 the single-file pipeline — the same internal path `validate(path=<file>)` runs — via
 `tools.run_pipeline_for_path`. Only once every file of the location has built successfully
@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
+from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.remedy_brief_paging import page_reply
 
 # The ideal-instruction rule ids, in the fixed order `remedy_brief` presents them.
@@ -76,6 +77,30 @@ def ideal_instruction_guide() -> list[dict[str, Any]]:
     guides = load_rule_guides(list(IDEAL_INSTRUCTION_RULE_IDS))
     by_id = {r.id: r for r in load_all_rules()}
     return [_ideal_instruction_entry(rule_id, guides, by_id) for rule_id in IDEAL_INSTRUCTION_RULE_IDS]
+
+
+def _without_title_line(statement: str) -> str:
+    """`statement` without the `# Title` line a rule description opens with — the rendered guide
+    already heads each rule with its title."""
+    first, _, rest = statement.partition("\n")
+    return rest.strip() if first.startswith("# ") else statement
+
+
+def ideal_instruction_markdown() -> str:
+    """The ideal-instruction guide (`ideal_instruction_guide`) as Markdown, the same content
+    for a remedy agent definition to carry: per rule, in `IDEAL_INSTRUCTION_RULE_IDS` order, a
+    `### <Title> (<ID>)` heading, the statement, then the pass example and the antipatterns.
+    The same rules always give the same text."""
+    sections = []
+    for entry in ideal_instruction_guide():
+        parts = [
+            f"### {entry['title']} ({entry['id']})",
+            _without_title_line(entry["statement"]),
+            f"**Pass example**\n\n{entry['pass']}",
+            f"**Antipatterns**\n\n{entry['antipatterns']}",
+        ]
+        sections.append("\n\n".join(p for p in parts if p.strip()))
+    return "\n\n".join(sections) + "\n"
 
 
 def _matches_capability(rule: Any, targets: set[str]) -> bool:
@@ -215,7 +240,7 @@ def _headings_with_polarity(headings: list[dict[str, Any]], ruleset_map: Any, ab
 
 def _brief_file_entry(
     rel: str, location: dict[str, Any], scan_root: Path, relations: list[Any], findings: list[Any]
-) -> tuple[dict[str, Any], str, tuple[Path, Any, float | None, list[Any]]] | str:
+) -> tuple[dict[str, Any], str, _PendingSnapshot] | str:
     """`(files[] entry, the file's agent, snapshot args)` for `rel`: score, instruction/heading
     inventory, its own `loading` (falling back to the location's). Does NOT snapshot the file —
     the caller commits every file's snapshot together, only once every file of the location has
@@ -243,10 +268,20 @@ def _brief_file_entry(
         "instructions": instructions,
         "headings": _headings_with_polarity([e for e in entries if "depth" in e], ruleset_map, abs_file),
     }
-    return entry, _file_agent(ruleset_map, abs_file), (abs_file, ruleset_map, score, relation_lines)
+    return (
+        entry,
+        _file_agent(ruleset_map, abs_file),
+        (
+            abs_file,
+            ruleset_map,
+            score,
+            relation_lines,
+            snapshots.file_rule_counts(payload),
+        ),
+    )
 
 
-_PendingSnapshot = tuple[Path, Any, "float | None", list[Any]]
+_PendingSnapshot = tuple[Path, Any, "float | None", list[Any], dict[str, int]]
 
 
 def _build_files(
@@ -294,10 +329,8 @@ def _build_files(
 def _commit_snapshots(pending: list[_PendingSnapshot]) -> None:
     """Snapshot every file together — called only once every file of the location has built
     successfully, so a brief that is never delivered never overwrites an earlier snapshot."""
-    from reporails_cli.interfaces.mcp import snapshots
-
-    for abs_file, ruleset_map, score, relation_lines in pending:
-        snapshots.snapshot_file(abs_file, ruleset_map, score, relation_lines)
+    for abs_file, ruleset_map, score, relation_lines, rule_counts in pending:
+        snapshots.snapshot_file(abs_file, ruleset_map, score, relation_lines, rule_counts)
 
 
 # A character that, written right before or right after a code span, makes the span cover only
@@ -377,7 +410,7 @@ def mechanical_fixes_for(pending: list[_PendingSnapshot], scan_root: Path) -> li
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     out: list[dict[str, Any]] = []
-    for abs_file, ruleset_map, _score, _lines in pending:
+    for abs_file, ruleset_map, *_rest in pending:
         if ruleset_map is None:
             continue
         suppressed = {Path(k).resolve(): v for k, v in suppressed_lines([str(abs_file)], scan_root).items()}
@@ -453,7 +486,6 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path) -> _BuiltBrief
         files=files_out,
         findings=findings,
         relations=relations,
-        ideal_instruction=ideal_instruction_guide(),
         artifact_rules=artifact_rules,
         procedure=procedure,
         preservation_contract=PRESERVATION_CONTRACT,

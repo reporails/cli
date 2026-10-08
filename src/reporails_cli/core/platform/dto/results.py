@@ -14,6 +14,17 @@ from reporails_cli.core.platform.dto.models import JudgmentRequest, Level, Viola
 # =============================================================================
 
 
+@dataclass(frozen=True)
+class HookEntry:
+    """One hook handler found in an agent's hook config: where it fires and where it is written."""
+
+    agent: str
+    event: str
+    matcher: str
+    scope: str  # the scope of the agent's hooks surface the file sits in: project, local, user, plugin, managed
+    file: str  # project-relative, or `~/`-relative for a file in the home folder
+
+
 @dataclass
 class DetectedFeatures:
     """Features detected in a project for capability-gate level detection.
@@ -50,7 +61,10 @@ class DetectedFeatures:
     # L5 capabilities (Abstracted)
     has_subagents: bool = False  # .claude/agents/ or sub-agent definitions
     # L6 capabilities (Governed)
-    has_hooks: bool = False  # .claude/hooks/, .githooks/, or settings.json hooks
+    hook_files: tuple[
+        Path, ...
+    ] = ()  # repo-scoped hook files that count toward L6: a dedicated file, or a shared one with hooks
+    hooks: tuple[HookEntry, ...] = ()  # every hook found in every scope of each agent's hooks surface
     # L7 capabilities (Adaptive)
     has_memory_dir: bool = False  # memory/state persistence directory
     has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
@@ -91,6 +105,24 @@ class CategoryStats:
 # =============================================================================
 
 
+@dataclass(frozen=True)
+class HookFact:
+    """One documented fact about an agent's hooks: `value` is "yes", "no" or "unconfirmed"."""
+
+    value: str = "unconfirmed"
+    source: str = ""
+    fields: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SubagentHooks:
+    """What an agent's docs say about its hooks and the sub-agents it starts."""
+
+    fire_in_subagents: HookFact = field(default_factory=HookFact)
+    identifies_agent: HookFact = field(default_factory=HookFact)
+    extension_opt_out: HookFact = field(default_factory=HookFact)
+
+
 @dataclass
 class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
@@ -101,6 +133,9 @@ class AgentConfig:
     core: bool = False  # True for CORE config (generic agent)
     excludes: list[str] = field(default_factory=list)
     overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    subagent_hooks: SubagentHooks = field(default_factory=SubagentHooks)
+    # Hook events that run before a file tool and can block it, each with the tools of Read/Edit/Write it gates.
+    intercept_events: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,6 +184,7 @@ class ProjectConfig:
     disabled_rules: list[str] = field(default_factory=list)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
     exclude_files: list[str] = field(default_factory=list)  # File path globs (rel. to root) to exclude
+    heal_exclude: list[str] = field(default_factory=list)  # File path globs (rel. to root) heal never rewrites
     default_agent: str = ""  # Default agent when --agent not specified (e.g., "claude")
     # Per-agent overrides keyed by agent id. Currently supports `fallback_filenames`
     # (additional instruction filenames Codex / others may treat as candidates).

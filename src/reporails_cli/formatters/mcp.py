@@ -10,11 +10,13 @@ its already-shaped parts, and `format_rule` renders one rule as readable text fo
 
 from __future__ import annotations
 
+import json
 from typing import Any, NamedTuple
 
 from reporails_cli.core.mapper.md_parser import file_lines
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
+from reporails_cli.formatters.triage import LeverageTier, resolve_row_leverage
 
 # ---------------------------------------------------------------------------
 # Envelope — bound the validate payload
@@ -43,10 +45,17 @@ _ENVELOPE_CROSS_FILE_COORD_LIMIT = 8
 # come with `remedy_brief(path, location)`), just enough to route the next call.
 _LOCATION_INDEX_KEYS = ("order", "element", "kind", "loading", "files", "importance")
 
-# A targeted workflow keeps each kept location's findings/relations in the reply only when
-# it kept this many locations or fewer — a broad target (e.g. every `skills` location in a
-# project with dozens of skills) would otherwise re-grow the reply the index exists to bound.
-_TARGETED_DETAIL_MAX_LOCATIONS = 3
+# A targeted workflow carries each kept location's findings/relations in the reply only while
+# the whole reply, without its `rules` map, stays within this many characters — a broad target
+# (e.g. every `skills` location in a project with dozens of skills) would otherwise re-grow the
+# reply the index exists to bound. Past it the reply is index-only.
+_TARGETED_REPLY_MAX_CHARS = 16_000
+_TARGETED_DETAIL_KEYS = ("findings", "relations")
+_TARGETED_INDEX_HINT = (
+    "Targeted view over the reply size bar: the locations are indexed without their findings and "
+    "relations. Call remedy_brief(path, location, targets) for a location's findings, then "
+    "validate(path=<file>) after rewriting its files."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -131,11 +140,9 @@ def _workflow_index(workflow: Any) -> Any:
     its shared `why` text (`_group_listed`) instead of repeated once per rule. A workflow with
     no location list keeps its other keys as they are, with `listed` grouped the same way.
 
-    A targeted workflow (`workflow.targets` present — `validate(path, targets=...)` already
-    kept only the locations holding a targeted file) keeps each location's `findings` and
-    `relations` too, but only while that kept set is small (at most
-    `_TARGETED_DETAIL_MAX_LOCATIONS` locations); a broader targeted view behaves like the
-    untargeted index instead."""
+    A targeted workflow (`workflow.targets` present) is indexed the same way here;
+    `_with_targeted_detail` then puts its locations' `findings` and `relations` back when the
+    whole reply still fits `_TARGETED_REPLY_MAX_CHARS`."""
     if not isinstance(workflow, dict):
         return workflow
     if not isinstance(workflow.get("locations"), list):
@@ -143,7 +150,6 @@ def _workflow_index(workflow: Any) -> Any:
             return workflow
         return {**workflow, "listed": _group_listed(workflow["listed"])}
     raw_locations = workflow["locations"]
-    targeted = "targets" in workflow and len(raw_locations) <= _TARGETED_DETAIL_MAX_LOCATIONS
     locations = []
     for loc in raw_locations:
         if not isinstance(loc, dict):
@@ -153,17 +159,34 @@ def _workflow_index(workflow: Any) -> Any:
         entry["finding_count"] = sum(1 for _ in walk_findings(loc.get("findings") or ())) + len(
             loc.get("relations") or ()
         )
-        if targeted:
-            if "findings" in loc:
-                entry["findings"] = loc["findings"]
-            if "relations" in loc:
-                entry["relations"] = loc["relations"]
         locations.append(entry)
     index = {k: v for k, v in workflow.items() if k != "locations"}
     index["locations"] = locations
     if "listed" in index:
         index["listed"] = _group_listed(index["listed"])
     return index
+
+
+def _with_targeted_detail(reply: dict[str, Any], raw_workflow: Any) -> dict[str, Any]:
+    """`reply` (its workflow already an index) with every location's `findings` and `relations`
+    put back from `raw_workflow`, when the workflow is targeted and the whole reply, without its
+    `rules` map, then stays within `_TARGETED_REPLY_MAX_CHARS`. Otherwise the reply stays an
+    index, and `truncated.hint` names `remedy_brief(path, location,
+    targets)` for the findings."""
+    if not isinstance(raw_workflow, dict) or "targets" not in raw_workflow:
+        return reply
+    index = reply.get("workflow")
+    raw_locations = raw_workflow.get("locations")
+    if not isinstance(index, dict) or not isinstance(raw_locations, list):
+        return reply
+    detailed = [
+        {**entry, **{k: raw[k] for k in _TARGETED_DETAIL_KEYS if k in raw}} if isinstance(raw, dict) else entry
+        for entry, raw in zip(index["locations"], raw_locations, strict=True)
+    ]
+    candidate = {**reply, "workflow": {**index, "locations": detailed}}
+    if len(json.dumps(candidate, separators=(",", ":"))) <= _TARGETED_REPLY_MAX_CHARS:
+        return candidate
+    return {**reply, "truncated": {**reply.get("truncated", {}), "hint": _TARGETED_INDEX_HINT}}
 
 
 def _truncated_block(
@@ -249,7 +272,37 @@ def _set_or_drop_cut_list(bounded: dict[str, Any], key: str, bl: _BoundList) -> 
             del bounded[key]
 
 
-def bound_validate_payload(
+_SCORE_MOVING = (LeverageTier.GATE_MOVER, LeverageTier.CONDITIONAL)
+
+
+def _compression(payload: dict[str, Any]) -> dict[str, int] | None:
+    """How much the rewrite list compresses the findings, counted before the per-file findings
+    are withheld: `{findings, locations, moves_score, cosmetic}`. `findings` is the per-file
+    findings plus the cross-file rows (the location findings are the same ones, not added);
+    `moves_score` counts those rows graded `gate_mover` or `conditional`, `cosmetic` the rest.
+    `None` when the reply carries no workflow."""
+    workflow = payload.get("workflow")
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("locations"), list):
+        return None
+    files = payload["files"] if isinstance(payload.get("files"), dict) else {}
+    rows = [f for entry in files.values() for f in entry.get("findings", [])] + list(payload.get("cross_file") or ())
+    moves_score = sum(1 for r in rows if isinstance(r, dict) and resolve_row_leverage(r) in _SCORE_MOVING)
+    return {
+        "findings": len(rows),
+        "locations": len(workflow["locations"]),
+        "moves_score": moves_score,
+        "cosmetic": len(rows) - moves_score,
+    }
+
+
+def bound_validate_payload(payload: dict[str, Any], **limits: int) -> dict[str, Any]:
+    """`_bounded_payload` plus the reply's `compression` block, counted from the unbounded payload."""
+    bounded = _bounded_payload(payload, **limits)
+    compression = _compression(payload)
+    return {**bounded, "compression": compression} if compression else bounded
+
+
+def _bounded_payload(
     payload: dict[str, Any],
     *,
     per_file_limit: int = _ENVELOPE_PER_FILE_LIMIT,
@@ -289,7 +342,9 @@ def bound_validate_payload(
         indexed_workflow = _workflow_index(payload.get("workflow"))
         if indexed_workflow is payload.get("workflow"):
             return with_rule_labels(payload)
-        return with_rule_labels({**payload, "workflow": indexed_workflow})
+        return with_rule_labels(
+            _with_targeted_detail({**payload, "workflow": indexed_workflow}, payload.get("workflow"))
+        )
 
     workflow = _workflow_index(payload.get("workflow"))
     # A paid response carries the remediation `workflow` — the location index the coding
@@ -334,7 +389,7 @@ def bound_validate_payload(
         cross_file_coordinates=(coordinates.shown, coordinates.total),
         workflow_present=workflow_present,
     )
-    return with_rule_labels(bounded)
+    return with_rule_labels(_with_targeted_detail(bounded, payload.get("workflow")))
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +403,6 @@ def remedy_brief_payload(
     files: list[dict[str, Any]],
     findings: list[dict[str, Any]],
     relations: list[dict[str, Any]],
-    ideal_instruction: list[dict[str, Any]],
     artifact_rules: dict[str, Any] | None,
     preservation_contract: str,
     procedure: dict[str, Any] | None = None,
@@ -365,7 +419,6 @@ def remedy_brief_payload(
         "files": files,
         "findings": findings,
         "relations": relations,
-        "ideal_instruction": ideal_instruction,
         "preservation_contract": preservation_contract,
         "next": (
             "Apply `procedure.mechanical_fixes` first (every part carries some of them when the "

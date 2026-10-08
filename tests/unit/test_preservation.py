@@ -413,6 +413,7 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
         "dropped_conditions": [],
         "narrowed_instructions": [],
         "hedge_made_absolute": [],
+        "dangling_fragments": [],
         "padded_lines": [],
         "made_direct": [
             {
@@ -422,6 +423,7 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
                 "new_text": "Run the `qa suite` before you push.",
             }
         ],
+        "made_specific": [],
         "relabelled_negative_headings": [],
         "lost_context": [],
         "moved_list_items": [],
@@ -2226,6 +2228,7 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             line=n,
             position_index=0,
             text=line.lstrip("# ").strip(),
+            plain_text=line.lstrip("# ").strip(),
             charge_value=0,
             named_tokens=[],
             embedding_int8=None,

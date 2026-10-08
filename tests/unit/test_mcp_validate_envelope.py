@@ -519,37 +519,106 @@ def test_a_targeted_view_of_one_location_keeps_detail():
         assert "relations" in loc
 
 
+def _large_targeted_payload(n_locations: int = 3, n_findings: int = 60) -> dict:
+    """A targeted workflow whose locations each hold many findings, every one nesting members."""
+    payload = _workflow_payload(n_locations=n_locations)
+    payload["workflow"]["targets"] = {
+        "tokens": ["skills"],
+        "locations": list(range(1, n_locations + 1)),
+        "of": n_locations,
+    }
+    for loc in payload["workflow"]["locations"]:
+        loc["findings"] = [
+            {
+                "rule": "CORE:C:0058",
+                "file": loc["files"][0],
+                "line": n,
+                "pi": n,
+                "message": "x" * 150,
+                "remedy": "y" * 150,
+                "members": [
+                    {
+                        "rule": "CORE:C:0042",
+                        "file": loc["files"][0],
+                        "line": n,
+                        "message": "m" * 100,
+                        "remedy": "r" * 100,
+                    }
+                    for _ in range(3)
+                ],
+            }
+            for n in range(n_findings)
+        ]
+    return payload
+
+
+def _reply_size(reply: dict) -> int:
+    return len(json.dumps({k: v for k, v in reply.items() if k != "rules"}, separators=(",", ":")))
+
+
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_a_targeted_view_of_four_locations_drops_detail():
-    """A broad target (e.g. `skills` across dozens of skills) can still keep more locations
-    than the targeted view's small-reply budget allows — past that bound it behaves like the
-    untargeted index and drops `findings` / `relations`, the same re-growth guard as an
-    untargeted reply."""
-    payload = _workflow_payload(n_locations=4)
-    payload["workflow"]["targets"] = {"tokens": ["skills:*"], "locations": [1, 2, 3, 4], "of": 4}
+def test_a_targeted_reply_over_the_size_bar_is_index_only_and_points_at_remedy_brief():
+    """Three targeted locations with many findings and nested members would run past 16,000
+    characters; the reply stays under the bar without its `rules` map by serving the index,
+    and the `truncated.hint` names the call that serves the findings."""
+    payload = _large_targeted_payload()
 
-    bounded = bound_validate_payload(payload)["workflow"]
+    bounded = bound_validate_payload(payload)
 
-    for loc in bounded["locations"]:
-        assert "findings" not in loc
-        assert "relations" not in loc
+    assert _reply_size(bounded) <= 16_000
+    assert all("findings" not in loc and "relations" not in loc for loc in bounded["workflow"]["locations"])
+    assert bounded["workflow"]["locations"][0]["finding_count"] == 60 * 4
+    assert "remedy_brief(path, location, targets)" in bounded["truncated"]["hint"]
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_a_targeted_view_with_no_files_or_cross_file_still_drops_detail_past_the_budget():
+def test_a_targeted_reply_inlines_detail_only_while_it_fits():
+    """Many small targeted locations (more than three) still carry their findings while the
+    reply fits the bar; the same locations grown past it drop to the index."""
+    small = _workflow_payload(n_locations=6)
+    small["workflow"]["targets"] = {"tokens": ["skills:*"], "locations": [1, 2, 3, 4, 5, 6], "of": 6}
+
+    kept = bound_validate_payload(small)["workflow"]["locations"]
+
+    assert all("findings" in loc and "relations" in loc for loc in kept)
+    assert "remedy_brief(path, location, targets)" not in bound_validate_payload(small).get("truncated", {}).get(
+        "hint", ""
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_targeted_view_with_no_files_or_cross_file_drops_detail_past_the_size_bar():
     """Targeting clean files that sit in served locations leaves `files` empty with no
-    `cross_file` -- the envelope's early-return path (no `files` dict content and no
-    `cross_file`) must still apply the workflow index, so a target that kept more than
-    `_TARGETED_DETAIL_MAX_LOCATIONS` locations drops `findings`/`relations` the same as the
-    non-early-return path does."""
-    payload = _workflow_payload(n_locations=4)
+    `cross_file` -- the envelope's early-return path must apply the same size bar."""
+    payload = _large_targeted_payload()
     payload["files"] = {}
-    payload["workflow"]["targets"] = {"tokens": ["skills:*"], "locations": [1, 2, 3, 4], "of": 4}
 
-    bounded = bound_validate_payload(payload)["workflow"]
+    bounded = bound_validate_payload(payload)
 
-    for loc in bounded["locations"]:
-        assert "findings" not in loc
-        assert "relations" not in loc
+    assert _reply_size(bounded) <= 16_000
+    assert all("findings" not in loc for loc in bounded["workflow"]["locations"])
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_an_oversize_targeted_reply_without_a_cut_list_still_names_remedy_brief():
+    """A targeted reply too large to carry its findings stays an index, and `truncated.hint`
+    names `remedy_brief` even when no other list was cut."""
+    finding = {"rule": "CORE:C:0001", "file": "CLAUDE.md", "line": 1, "message": "m" * 400, "remedy": "r"}
+    location = {
+        "order": 1,
+        "kind": "main",
+        "element": "CLAUDE.md",
+        "importance": "gate_mover",
+        "files": ["CLAUDE.md"],
+        "findings": [finding] * 200,
+        "relations": [],
+    }
+    reply = bound_validate_payload(
+        {"files": {}, "workflow": {"targets": {"tokens": ["@main"]}, "locations": [location]}}
+    )
+    assert "findings" not in reply["workflow"]["locations"][0]
+    assert "remedy_brief" in reply["truncated"]["hint"]

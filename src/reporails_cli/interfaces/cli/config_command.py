@@ -25,6 +25,7 @@ KNOWN_KEYS = {
     "default_agent": str,
     "exclude_dirs": list,
     "exclude_files": list,
+    "heal_exclude": list,
     "disabled_rules": list,
 }
 

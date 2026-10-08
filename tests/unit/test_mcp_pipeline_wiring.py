@@ -59,7 +59,7 @@ def test_run_pipeline_scopes_a_single_file_target(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "reporails_cli.interfaces.mcp.tools._assemble_mcp_result",
-        lambda *_a, **_k: (SimpleNamespace(), None),
+        lambda *_a, **_k: (SimpleNamespace(hooks=()), None),
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 
@@ -86,7 +86,7 @@ def test_run_pipeline_does_not_scope_a_directory_target(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "reporails_cli.interfaces.mcp.tools._assemble_mcp_result",
-        lambda *_a, **_k: (SimpleNamespace(), None),
+        lambda *_a, **_k: (SimpleNamespace(hooks=()), None),
     )
     monkeypatch.setattr("reporails_cli.formatters.json.format_combined_result", lambda *_a, **_k: {"files": {}})
 

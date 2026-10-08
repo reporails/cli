@@ -396,3 +396,88 @@ def test_assemble_records_the_agents_whose_rules_ran(tmp_path):
         "claude",
         "cursor",
     )
+
+
+def _archive_project(tmp_path, config: str):
+    """A project with a main file and an archived copy, each holding one served finding."""
+    from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+    from reporails_cli.core.platform.dto.models import LocalFinding
+
+    (tmp_path / ".ails").mkdir()
+    (tmp_path / ".ails" / "config.yml").write_text(config, encoding="utf-8")
+    places = ("AGENTS.md", "archive/AGENTS.md")
+    locations = tuple(
+        WorkflowLocation(
+            order=i,
+            element=place,
+            kind="main",
+            loading="",
+            files=(str(tmp_path / place),),
+            findings=(
+                LocationFinding(
+                    rule="CODEX:E:0001", file=str(tmp_path / place), line=1, pi=None, message="m", remedy="r"
+                ),
+            ),
+        )
+        for i, place in enumerate(places, start=1)
+    )
+    findings = [
+        LocalFinding(file=place, line=1, severity="error", rule="CODEX:E:0001", message="big", check_id="c")
+        for place in places
+    ]
+    lint_result = SimpleNamespace(
+        report=None, hints=(), cross_file_coordinates=(), tier="pro", workflow=RemediationWorkflow(locations=locations)
+    )
+    return assemble_result(
+        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, effective_agent="codex")
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(tmp_path, dev_rules_dir):
+    """`heal_exclude` keeps heal off a path only: its findings stay in the result (and the
+    score), its location leaves the workflow, and its findings are listed with the reason."""
+    result = _archive_project(tmp_path, 'heal_exclude: ["archive/**"]\n')
+
+    assert sorted(f.file for f in result.findings) == ["AGENTS.md", "archive/AGENTS.md"]
+    assert [loc.element for loc in result.workflow.locations] == ["AGENTS.md"]
+    assert [loc.order for loc in result.workflow.locations] == [1]
+    [entry] = result.workflow.listed
+    assert (entry.rule, entry.reason, entry.count) == ("CODEX:E:0001", "excluded", 1)
+    assert entry.why == (
+        "`archive/AGENTS.md` is in `heal_exclude` in your `.ails/config.yml`: "
+        "it is still checked and scored, and heal does not rewrite it."
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_without_heal_exclude_every_location_is_kept(tmp_path, dev_rules_dir):
+    result = _archive_project(tmp_path, "exclude_dirs: [examples]\n")
+
+    assert [loc.order for loc in result.workflow.locations] == [1, 2]
+    assert not result.workflow.listed
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_heal_exclude_naming_several_files_names_them_all_in_one_sentence(tmp_path):
+    from reporails_cli.core.lint.suppression import list_heal_excluded
+    from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
+
+    def loc(order, file):
+        row = {"rule": "CORE:C:0042", "file": file, "line": 1, "pi": 0, "message": "m", "remedy": "r", "members": []}
+        return {"order": order, "element": file, "kind": "main", "loading": "", "files": [file], "findings": [row]}
+
+    files = ["a/x.md", "a/y.md", "b.md"]
+    workflow = deserialize_workflow(
+        {"workflow": {"summary": "s", "locations": [loc(i, f) for i, f in enumerate(files, 1)]}}
+    )
+
+    out = list_heal_excluded(workflow, lambda rel: rel.startswith("a/"), lambda f: f)
+
+    [entry] = out.listed
+    assert entry.count == 2
+    assert entry.why.startswith("`a/x.md`, `a/y.md` are in `heal_exclude`")
+    assert [(x.order, x.element) for x in out.locations] == [(1, "b.md")]

@@ -144,3 +144,13 @@ def prose_text(atom: Any, *, named: bool = False) -> str:
 def prose_words(atom: Any, *, named: bool = False) -> list[str]:
     """`atom`'s lowered words in order, its named constructs left out unless `named`."""
     return [w.lower() for w in WORD_RE.findall(prose_text(atom, named=named))]
+
+
+def word_forms(word: str) -> set[str]:
+    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
+    forms = {word, word + "s", word + "es"}
+    if word.endswith("es"):
+        forms.add(word[:-2])
+    if word.endswith("s"):
+        forms.add(word[:-1])
+    return forms

@@ -63,6 +63,11 @@ _TIER_FROM_WIRE: dict[str, LeverageTier] = {tier.value: tier for tier in Leverag
 _REGIME_FROM_WIRE: dict[str, TriageRegime] = {regime.value: regime for regime in TriageRegime}
 
 
+def resolve_row_leverage(row: dict[str, Any]) -> LeverageTier | None:
+    """The grade a serialized finding row carries (`impact_tier`, or the per-file `leverage`)."""
+    return _TIER_FROM_WIRE.get(row.get("impact_tier") or row.get("leverage") or "")
+
+
 def resolve_leverage(finding: Any) -> LeverageTier | None:
     """The grade the reply carries for a finding, or None when it carries none."""
     return _TIER_FROM_WIRE.get(getattr(finding, "impact_tier", "") or "")

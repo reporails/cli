@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.utils.utils import matches_any_glob
 from reporails_cli.formatters.json import format_notices
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ def _apply_mechanical_fixes(
     outside it (e.g. an in-tree symlink whose real path escapes the target) is skipped.
     `suppressed` maps a resolved file path to the line numbers the author annotated
     with an `ails-disable-line` directive; heal leaves those lines unmodified.
+    A file the project's `heal_exclude` matches is never written.
     """
     if ruleset_map is None:
         return []
@@ -41,6 +44,9 @@ def _apply_mechanical_fixes(
     from reporails_cli.core.heal.mechanical_fixers import apply_mechanical_fixes
 
     allowed = {safe_resolve(p) for p in allowed_files} if allowed_files is not None else None
+    patterns = get_project_config(target).heal_exclude
+    if allowed is not None and patterns:
+        allowed = {p for p in allowed if not matches_any_glob(p, patterns, safe_resolve(target))}
     mech_fixes = apply_mechanical_fixes(
         ruleset_map, target, dry_run=dry_run, allowed_files=allowed, suppressed=suppressed
     )

@@ -156,7 +156,9 @@ def _check_packed_sentences(atoms: list[Atom], filepath: str) -> list[LocalFindi
                 rule=PACKED_SENTENCE_RULE,
                 message=f"This sentence holds {len(instructions)} instructions ({named}) — instructions sharing "
                 "a sentence compete, and some of them are not followed.",
-                fix="Give each instruction its own sentence.",
+                fix="Give each instruction its own sentence that stands on its own: repeat the subject or object "
+                "they share, keep a directive with the bound that limits it, and keep a lead-in with every item "
+                "it introduces.",
                 source="client_check",
             )
         )

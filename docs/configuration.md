@@ -17,6 +17,7 @@ Lives at the root of your repo.
 default_agent: claude              # Which agent's rules to run by default
 exclude_dirs: [examples]           # Extra directory names to skip during discovery (added to the built-in defaults below)
 disabled_rules: [CORE:C:0010]      # Rule IDs to disable entirely
+heal_exclude: ["archive/**"]       # Files that are still checked and scored, but that heal never rewrites
 ```
 
 Set values from the command line instead of editing the file:
@@ -195,6 +196,21 @@ ails check --exclude-files ".claude/skills/**/*" --exclude-files ".claude/agents
 ```
 
 Explicitly targeting an excluded file still scans it — `ails check ./.claude/agents/reviewer.md` overrides the exclusion, since exclusion only applies to discovery.
+
+## Keeping heal off a file
+
+`heal_exclude` keeps the rewrite off files you want checked but never changed, such as an archived copy of an instruction file. Each entry is a glob matched against the file path **relative to the project root**; `**` spans any number of folders.
+
+```yaml
+# PROJECT_ROOT/.ails/config.yml
+heal_exclude:
+  - "archive/**"             # everything under archive/
+  - docs/legacy/CLAUDE.md    # that exact file
+```
+
+The file is still checked and scored: its findings, its score and the project score do not change. `ails check --heal` leaves the file unchanged. Its findings are not offered for a rewrite; they are listed instead, with the reason `excluded` and a note naming the file. Only `.ails/config.yml` and `.ails/config.local.yml` in the project are read for this key; a `heal_exclude` in `~/.reporails/config.yml` has no effect.
+
+To leave a file out of checking altogether, use `exclude_files` above.
 
 ## Per-surface include / exclude
 

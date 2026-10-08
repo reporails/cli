@@ -24,6 +24,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RulesetReport,
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
+from reporails_cli.core.platform.dto.results import HookEntry
 
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
@@ -130,6 +131,9 @@ class CombinedResult:
     # the caller attaches it once it has both the merged result and the funnel
     # outcome (see `interfaces/cli/check_orchestration.py::_dispatch_output`).
     server_error: FunnelError | None = None
+    # The hooks found in the project's agent hook configs, set by the assemble spine from the
+    # features it already computes for the level; empty for a hand-built result.
+    hooks: tuple[HookEntry, ...] = ()
 
 
 def _collect_server_diagnostics(

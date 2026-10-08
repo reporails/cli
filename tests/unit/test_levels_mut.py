@@ -7,6 +7,8 @@ list-valued property branch that test_gates.py does not exercise.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from reporails_cli.core.platform.dto.results import DetectedFeatures
@@ -36,13 +38,13 @@ class TestOrDetectors:
     @pytest.mark.unit
     @pytest.mark.subsys_gates
     def test_governance_fires_on_hooks_alone(self) -> None:
-        features = DetectedFeatures(has_hooks=True)
+        features = DetectedFeatures(hook_files=(Path(".codex/hooks.json"),))
         assert _detect_capability(features, "governance") is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_gates
     def test_governance_absent_without_hooks(self) -> None:
-        features = DetectedFeatures(has_hooks=False)
+        features = DetectedFeatures(hook_files=())
         assert _detect_capability(features, "governance") is False
 
     @pytest.mark.unit

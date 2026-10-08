@@ -170,7 +170,7 @@ FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
     # L5 — Abstracted: sub-agent definitions
     "agents": lambda f: f.has_subagents,
     # L6 — Governed: hooks (enforcement outside the model's context)
-    "governance": lambda f: f.has_hooks,
+    "governance": lambda f: bool(f.hook_files),
     # L7 — Adaptive: auto-memory or self-modifying instruction sources
     "adaptive_memory": lambda f: f.has_auto_memory or f.has_memory_dir,
 }

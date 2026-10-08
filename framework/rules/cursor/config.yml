@@ -322,3 +322,14 @@ excludes:
   - CLAUDE:*
   - CODEX:*
   - CORE:S:0005  # identity-fields-in-frontmatter — Cursor rule frontmatter is description, globs and alwaysApply; it defines no id, name or slug (cursor.com/docs/rules)
+
+# Hook events that run before a file tool and can block it, with the tools of Read/Edit/Write each gates.
+intercept_events:
+  preToolUse: [Read, Edit, Write]
+  beforeReadFile: [Read]
+
+# How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
+subagent_hooks:
+  fire_in_subagents: {value: unconfirmed}
+  identifies_agent: {value: unconfirmed}
+  extension_opt_out: {value: unconfirmed}

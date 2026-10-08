@@ -352,7 +352,7 @@ file_types:
   # scope) must see it. `hooks` keeps the pattern for capability targeting
   # (`ails check hooks`, `ails rules capabilities`) but classifies nothing.
   hooks:
-    # Hooks configured in settings.json, skill/agent frontmatter, plugin hooks/hooks.json
+    # Hooks configured in settings.json (project and ~/.claude), skill/agent frontmatter, plugin hooks/hooks.json
     # 33 events, 5 types (command/HTTP/mcp_tool/prompt/agent).
     source: https://code.claude.com/docs/en/hooks
     format: schema_validated
@@ -365,6 +365,11 @@ file_types:
         patterns: [".claude/settings.json"]
         precedence: project
         vcs: committed
+        maintainer: human
+      user:
+        patterns: ["~/.claude/settings.json"]
+        precedence: user
+        vcs: external
         maintainer: human
       plugin:
         # https://code.claude.com/docs/en/plugins/manifest-reference#standard-layout: "Hooks | `hooks/hooks.json` | Hook configuration"
@@ -513,3 +518,13 @@ excludes:
     # CLAUDE.md, a Claude-only file. The AGENTS.md Claude reads through its `agents-md`
     # plugin is its own `agents_md` / `nested_context` type, which this rule never targets
     # (code.claude.com/docs/en/memory#agents-md).
+
+# Hook events that run before a file tool and can block it, with the tools of Read/Edit/Write each gates.
+intercept_events:
+  PreToolUse: [Read, Edit, Write]
+
+# How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
+subagent_hooks:
+  fire_in_subagents: {value: "yes", source: "https://code.claude.com/docs/en/hooks"}
+  identifies_agent: {value: "yes", fields: [agent_id, agent_type], source: "https://code.claude.com/docs/en/hooks"}
+  extension_opt_out: {value: unconfirmed}

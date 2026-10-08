@@ -138,33 +138,37 @@ def test_the_brief_shapes_files_findings_relations_and_inventory(tmp_path: Path)
 @pytest.mark.subsys_server
 @requires_rules
 @requires_model
-def test_the_full_guide_reconstructs_across_whichever_parts_carry_it(tmp_path: Path) -> None:
-    """The remedy agent is pre-allowed only `validate` and `remedy_brief` — no `explain` — so
-    the full 12-rule guide text (title/statement/pass/antipatterns) must be reachable through
-    `remedy_brief` alone, never cut to a reference. The guide (~17,000 chars) rides its own
-    dedicated part(s), trailing after the location's file part(s); every part names which part
-    number(s) carry it via `ideal_instruction_parts`, and concatenating every part's own
-    `ideal_instruction` slice, in part order, reproduces `ideal_instruction_guide()` exactly."""
+def test_the_brief_no_longer_carries_the_ideal_instruction_guide(tmp_path: Path) -> None:
+    """The guide is the same for every location, so the remedy agent definition carries it
+    (`ideal_instruction_markdown`) and no part of a brief repeats it."""
     (tmp_path / "CLAUDE.md").write_text("# Project\n\nRun tests before committing.\n", encoding="utf-8")
     location = _main_location(["CLAUDE.md"])
 
     first = remedy_brief.remedy_brief_tool(location, tmp_path, part=1)
-    total_parts = first["total_parts"]
-    guide_parts = first["ideal_instruction_parts"]
-    assert guide_parts, "the guide must be reachable somewhere in this brief"
 
-    collected: list[Any] = []
-    for part_number in range(1, total_parts + 1):
+    for part_number in range(1, first.get("total_parts", 1) + 1):
         reply = remedy_brief.remedy_brief_tool(location, tmp_path, part=part_number)
-        assert reply["ideal_instruction_parts"] == guide_parts
-        collected.extend(reply["ideal_instruction"])
-
-    assert collected == remedy_brief.ideal_instruction_guide()
-
-    # Part 1 still carries the file content untouched — an existing caller reading only part 1
-    # (the default) sees the same shape it always did.
+        assert "ideal_instruction" not in reply
+        assert "ideal_instruction_parts" not in reply
     (file_entry,) = first["files"]
     assert file_entry["file"] == "CLAUDE.md"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@requires_rules
+def test_the_guide_renders_as_markdown_in_rule_order_and_the_same_every_time() -> None:
+    markdown = remedy_brief.ideal_instruction_markdown()
+
+    guide = remedy_brief.ideal_instruction_guide()
+    headings = [line for line in markdown.splitlines() if line.startswith("### ")]
+    assert headings == [f"### {g['title']} ({g['id']})" for g in guide]
+    assert [g["id"] for g in guide] == list(remedy_brief.IDEAL_INSTRUCTION_RULE_IDS)
+    for entry in guide:
+        assert entry["pass"] in markdown
+        assert entry["antipatterns"] in markdown
+    assert markdown.count("# The Ideal Instruction\n") == 0, "a rule's own title line is not repeated"
+    assert remedy_brief.ideal_instruction_markdown() == markdown
 
 
 @pytest.mark.unit
@@ -204,20 +208,15 @@ def test_a_large_file_s_brief_pages_under_the_client_limit(tmp_path: Path) -> No
     assert total_parts > 1, "a 700-instruction single-file location must actually page"
 
     collected: list[Any] = []
-    guide_collected: list[Any] = []
     for part_number in range(1, total_parts + 1):
         reply = remedy_brief.remedy_brief_tool(location, tmp_path, part=part_number)
         assert reply["part"] == part_number
         assert reply["total_parts"] == total_parts
         size = len(json.dumps(reply, separators=(",", ":")))
         assert size < 20_000, f"part {part_number} is {size} chars, over the client cap"
-        guide_collected.extend(reply["ideal_instruction"])
         for entry in reply["files"]:
             assert entry["file"] == rel
             collected.extend(entry["instructions"])
-
-    # The guide trails after the file part(s) and still fully reconstructs.
-    assert guide_collected == remedy_brief.ideal_instruction_guide()
 
     assert len(collected) == 700
     assert first["next_part"]
@@ -1125,35 +1124,31 @@ def test_only_relation_lines_of_the_file_are_deletable() -> None:
     assert remedy_brief._relation_lines("CLAUDE.md", relations) == [4]
 
 
-def _synthetic_brief(
-    guide_item_chars: int, instruction_count: int
-) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-    """A hand-built brief: one file of `instruction_count` instructions and a two-entry guide."""
+def _synthetic_brief(instruction_count: int) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    """A hand-built brief: one file of `instruction_count` instructions."""
     location_out = {"order": 1, "element": "CLAUDE.md", "files": ["CLAUDE.md"], "root": "/tmp/project"}
     file_entry = {
         "file": "CLAUDE.md",
         "instructions": [{"text": f"Instruction {i} " + "x" * 120} for i in range(instruction_count)],
         "headings": [],
     }
-    guide = [{"id": f"rule-{i}", "statement": "y" * guide_item_chars} for i in range(2)]
     full = {
         "location": location_out,
         "procedure": "p" * 300,
         "files": [file_entry],
         "findings": [],
         "relations": [],
-        "ideal_instruction": guide,
     }
     return full, [file_entry], location_out
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-@pytest.mark.parametrize(("guide_item_chars", "instruction_count"), [(7_900, 40), (3_000, 118), (7_900, 119)])
-def test_every_part_of_a_paged_brief_stays_under_the_stated_size(guide_item_chars: int, instruction_count: int) -> None:
+@pytest.mark.parametrize("instruction_count", [118, 119, 400])
+def test_every_part_of_a_paged_brief_stays_under_the_stated_size(instruction_count: int) -> None:
     """A part is sized as the whole reply, location and paging fields included, so no part of a
     brief runs past the 16,000-character target."""
-    full, files_out, location_out = _synthetic_brief(guide_item_chars, instruction_count)
+    full, files_out, location_out = _synthetic_brief(instruction_count)
     total = page_reply(full, files_out, location_out, 1)["total_parts"]
     for number in range(1, total + 1):
         reply = page_reply(full, files_out, location_out, number)
@@ -1167,7 +1162,7 @@ def test_every_part_of_a_paged_brief_stays_under_the_stated_size(guide_item_char
 def test_a_part_outside_the_brief_is_an_error_naming_the_valid_range(past_last: int) -> None:
     """Asking for part 0, a negative part or a part past the last one is an error that names
     the valid range, not the last part served again."""
-    full, files_out, location_out = _synthetic_brief(7_900, 40)
+    full, files_out, location_out = _synthetic_brief(400)
     total = page_reply(full, files_out, location_out, 1)["total_parts"]
     part = past_last if past_last <= 0 else total + past_last
     reply = page_reply(full, files_out, location_out, part)
@@ -1209,7 +1204,6 @@ def _real_shaped_brief(
         "files": entries,
         "findings": found,
         "relations": [],
-        "ideal_instruction": [{"id": f"rule-{i}", "statement": "y" * 4_000} for i in range(3)],
         "preservation_contract": "c" * 640,
         "next": "n" * 430,
         "procedure": {
@@ -1233,20 +1227,19 @@ def _part_is_empty(reply: dict[str, Any]) -> bool:
         reply["files"],
         reply["findings"],
         reply["relations"],
-        reply["ideal_instruction"],
         (reply.get("procedure") or {}).get("mechanical_fixes"),
         [k for k in reply if k not in _PART_BOOKKEEPING and k not in ("files", "findings", "relations")],
     )
     return not any(carries)
 
 
-_PART_BOOKKEEPING = ("location", "part", "total_parts", "ideal_instruction_parts", "next_part", "ideal_instruction")
+_PART_BOOKKEEPING = ("location", "part", "total_parts", "next_part")
 
 
 def _reassembled(parts: list[dict[str, Any]], full: dict[str, Any]) -> dict[str, Any]:
     """The brief rebuilt out of its parts: the fixed fields from whichever part holds them, the
     list fields concatenated in part order."""
-    out: dict[str, Any] = {"files": {}, "findings": [], "relations": [], "ideal_instruction": [], "fixes": []}
+    out: dict[str, Any] = {"files": {}, "findings": [], "relations": [], "fixes": []}
     for reply in parts:
         for entry in reply["files"]:
             held = out["files"].setdefault(entry["file"], {"instructions": [], "headings": [], "rest": entry})
@@ -1254,7 +1247,6 @@ def _reassembled(parts: list[dict[str, Any]], full: dict[str, Any]) -> dict[str,
             held["headings"].extend(entry["headings"])
         out["findings"].extend(reply["findings"])
         out["relations"].extend(reply["relations"])
-        out["ideal_instruction"].extend(reply["ideal_instruction"])
         out["fixes"].extend((reply.get("procedure") or {}).get("mechanical_fixes") or [])
         for key in ("preservation_contract", "next", "artifact_rules"):
             if key in reply:
@@ -1268,7 +1260,6 @@ def _reassembled(parts: list[dict[str, Any]], full: dict[str, Any]) -> dict[str,
     assert out["rules"] == full["procedure"]["rules"]
     assert out["fixes"] == full["procedure"]["mechanical_fixes"]
     assert out["findings"] == full["findings"]
-    assert out["ideal_instruction"] == full["ideal_instruction"]
     for entry in full["files"]:
         held = out["files"][entry["file"]]
         assert held["instructions"] == entry["instructions"]
@@ -1301,7 +1292,7 @@ def test_a_paged_real_shaped_brief_has_no_empty_part_stays_in_the_limit_and_lose
     for number, reply in enumerate(parts, 1):
         assert reply["part"] == number
         assert reply["total_parts"] == len(parts)
-        assert "ideal_instruction_parts" in reply
+        assert "ideal_instruction_parts" not in reply and "ideal_instruction" not in reply
         assert not _part_is_empty(reply), f"part {number} of {len(parts)} carries nothing"
         size = len(json.dumps(reply, separators=(",", ":")))
         assert size <= 16_000, f"part {number} of {len(parts)} is {size} characters"
@@ -1314,7 +1305,7 @@ def test_a_root_instruction_file_with_large_fixed_fields_pages_into_a_handful_of
     """A 120-instruction file beside 12,000 characters of artifact rules is a handful of
     parts, in proportion to its content, not one per character of the file."""
     full, files_out, location_out = _real_shaped_brief()
-    content = sum(len(json.dumps(e, separators=(",", ":"))) for e in files_out) + 12_000 + 17_000
+    content = sum(len(json.dumps(e, separators=(",", ":"))) for e in files_out) + 12_000
     assert len(_all_parts(full, files_out, location_out)) <= content // 8_000 + 2
 
 

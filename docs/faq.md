@@ -2,7 +2,7 @@
 title: "FAQ"
 description: "Common questions"
 version: "0.6.1"
-last_updated: 2026-09-20
+last_updated: 2026-10-08
 ---
 
 # FAQ
@@ -34,7 +34,7 @@ Run `ails explain CORE:C:0010` first to read the rule body and pass / fail examp
 
 Signing in is free, and it does not change your limits: an anonymous run and a signed-in free run share the same hourly rate and per-request payload cap. What an account gives you is an identity — you can subscribe, manage the subscription, and use `ails check --heal`, which declines to write files for an anonymous run.
 
-Anonymous and free already show *what's* wrong and *where*: every local finding with its line, and the file-level findings as per-file counts where the line detail belongs to Pro. The deeper diagnostic is what **Pro** adds: the *remedies* (what to change, where, and how), the *exact line* of every cross-file repetition and topic overlap (anonymous and free see which files and how many, not the lines), and the ordered remediation workflow your coding agent runs end to end. The server sends no remedies at all to anonymous or free callers — only the deterministic, local fixes (like wrapping a bare name in backticks) ship free, because those run entirely on your machine. Pro also raises the hourly rate (5 → 1,200) and the payload cap (2 MB → 20 MB).
+Anonymous and free already show *what's* wrong and *where*: every local finding with its line, and the file-level findings as per-file counts where the line detail belongs to Pro. What **Pro** adds is what the server works out for your project: *which* findings to fix first and which to leave alone, and the *exact line* of every cross-file repetition and topic overlap (anonymous and free see which files and how many, not the lines). The ordered remediation workflow hands these to your coding agent as remedies, runs end to end, and checks each file again after it is rewritten. The server sends no remedies at all to anonymous or free callers — only the deterministic, local fixes (like wrapping a bare name in backticks) ship free, because those run entirely on your machine. Pro also raises the hourly rate (5 → 1,200) and the payload cap (2 MB → 20 MB).
 
 Sign in with `ails login`: it prints a link and a short code, opens your browser when it can, and finishes when you approve. The link is valid for 30 seconds; when it runs out, run `ails login` again. You sign in once per machine, and it lasts a year. The sign-in is stored in `~/.reporails/credentials.yml` (`chmod 0600` on POSIX); `ails logout` signs out only that machine. Your plan comes from your account, so any machine you sign in on gets it. For CI, create an API key on [reporails.com/account](https://reporails.com/account).
 

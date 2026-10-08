@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from reporails_cli.core.heal.preservation import conditions, structure
+from reporails_cli.core.heal.preservation.fragments import dangling_fragments
 from reporails_cli.core.heal.preservation.match import added_instructions, instruction_diffs, lost_context
 from reporails_cli.core.heal.preservation.named import (
     invented_named,
@@ -21,6 +22,7 @@ from reporails_cli.core.heal.preservation.snapshot import (
     is_instruction_heading,
     rewritten_atoms,
 )
+from reporails_cli.core.heal.preservation.words import named_key
 from reporails_cli.core.lint.content_queries import atoms_for_file
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
@@ -41,7 +43,7 @@ PRESERVATION_CONTRACT = (
 )
 
 # Findings that are reported but never fail the rewrite.
-_LISTED_ONLY = frozenset({"removed_structure", "made_direct"})
+_LISTED_ONLY = frozenset({"removed_structure", "made_direct", "made_specific"})
 
 
 def _negative_heading_texts(new_map: Any, file_path: str) -> list[str]:
@@ -49,6 +51,20 @@ def _negative_heading_texts(new_map: Any, file_path: str) -> list[str]:
     whatever its markdown style (`##`, underlined, inside a quote)."""
     atoms = atoms_for_file(new_map, file_path) if new_map is not None else ()
     return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
+
+
+def _pair_checks(pairs: list[conditions.Pair], old_by_line: conditions.ByLine, invented: set[str]) -> dict[str, Any]:
+    """The checks that read each matched instruction against its rewrite; `invented` is the lowered
+    names reported as invented."""
+    narrowed = conditions.narrowed_instructions(pairs, old_by_line)
+    return {
+        "dropped_conditions": conditions.dropped_conditions(pairs),
+        "narrowed_instructions": narrowed,
+        "hedge_made_absolute": conditions.hedge_made_absolute(pairs, old_by_line),
+        "made_specific": conditions.made_specific(
+            pairs, old_by_line, {(e["line"], e["new_line"]) for e in narrowed}, invented
+        ),
+    }
 
 
 def _run_checks(
@@ -62,33 +78,33 @@ def _run_checks(
     `new` is the rewrite's instruction atoms, its text and its whole-file atoms; `grounding` is the
     project environment and the original text of the sibling files; `negative_headings` is the snapshot's
     bare negative heading atoms and the rewrite's bare negative heading texts."""
-    new_atoms, new_text, new_all, new_structure = new
+    new_atoms, new_text, new_all = new[:3]
     lost_instructions, polarity_flips, matched_new_for, split_covering_for = instruction_diffs(snap_atoms, new_atoms)
     sentences = (conditions.by_line(snapshot.atoms), conditions.by_line(new_all))
     pairs = conditions.pair_up(snap_atoms, matched_new_for, *sentences)
+    invented = invented_named(snapshot.text, new_atoms, *grounding, snap_atoms)
     return {
         "lost_instructions": lost_instructions,
         "polarity_flips": polarity_flips,
         "added_instructions": added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for),
         "lost_named": lost_named_tokens(snap_atoms, new_text, new_atoms),
-        "invented_named": invented_named(snapshot.text, new_atoms, *grounding, snap_atoms),
+        "invented_named": invented,
         "repeated_named": repeated_named(
             snap_atoms, new_atoms, matched_new_for, split_covering_for, snapshot.text, new_text
         ),
-        "detached_constraints": structure.detached_constraints(snap_atoms, matched_new_for, new_structure),
+        "detached_constraints": structure.detached_constraints(snap_atoms, matched_new_for, new[3]),
         "prohibition_scope_changed": prohibition_scope_changes(snap_atoms, matched_new_for),
         "added_conditions": conditions.added_conditions(snap_atoms, matched_new_for),
-        "dropped_conditions": conditions.dropped_conditions(pairs),
-        "narrowed_instructions": conditions.narrowed_instructions(pairs, sentences[0]),
-        "hedge_made_absolute": conditions.hedge_made_absolute(pairs, sentences[0]),
+        **_pair_checks(pairs, sentences[0], {named_key(e["token"]) for e in invented}),
+        "dangling_fragments": dangling_fragments(snapshot.atoms, new_all),
         "padded_lines": structure.padded_lines(list(snapshot.atoms), new_atoms),
         "made_direct": conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences),
         "relabelled_negative_headings": structure.relabelled_negative_headings(snapshot.text, *negative_headings),
         "lost_context": lost_context(snap_atoms, new_text),
         "moved_list_items": structure.moved_list_items(
-            snap_atoms, matched_new_for, snapshot.structure, new_structure, new_atoms
+            snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms
         ),
-        "removed_structure": structure.removed_structure(snapshot.structure, new_structure, snapshot.relation_lines),
+        "removed_structure": structure.removed_structure(snapshot.structure, new[3], snapshot.relation_lines),
     }
 
 
@@ -133,6 +149,10 @@ def compare(
     shrank — is part of `ok` too, even when the construct in question survives elsewhere in the file.
     `added_conditions` — a matched instruction that was unconditional and now sits in an if /
     when / unless frame carrying words its original line never had — is part of `ok` too.
+    `dangling_fragments` — a sentence of the rewrite that keeps only the first item of a list or clause
+    the original sentence ran on past after a colon or a dash — is part of `ok` too.
+    `made_specific` lists each kept instruction that gained a named construct its line lacked, with its
+    sentence before and after; like `made_direct` it never fails the rewrite.
     `made_direct` lists each hedged instruction the rewrite made direct (`prefer X` -> `use X`) with its
     sentence before and after; it never fails the rewrite. `hedge_made_absolute` — a hedge turned
     into `Never` / `Always` where the line had neither word — `narrowed_instructions` — words added that

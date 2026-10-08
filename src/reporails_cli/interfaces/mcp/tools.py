@@ -12,6 +12,7 @@ from typing import Any
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.config.bootstrap import is_initialized
 from reporails_cli.formatters import mcp as mcp_formatter
+from reporails_cli.formatters.host_hooks import host_hooks_field
 
 logger = logging.getLogger(__name__)
 
@@ -250,12 +251,18 @@ def _lint_discovered(
     payload = json_formatter.format_combined_result(
         result, ruleset_map=ruleset_map, project_root=scan_root, file_type_by_path=file_type_by_path
     )
-    payload = _attach_funnel(payload, funnel_error)
+    payload = with_host_hooks(_attach_funnel(payload, funnel_error), result)
     if mapper_error is not None:
         payload["mapper_error"] = mapper_error
     score = _display_score(result, single_file, scan_root) if single_file is not None else None
     payload = payload if full else mcp_formatter.bound_validate_payload(payload)
     return payload, ruleset_map, score
+
+
+def with_host_hooks(payload: dict[str, Any], result: Any) -> dict[str, Any]:
+    """`payload` plus the `host_hooks` entries of `result`, for the MCP `validate` reply only:
+    `ails check -f json` never lists the machine's own hooks."""
+    return {**payload, **host_hooks_field(result.hooks)}
 
 
 def _mcp_agent_file_pairs(

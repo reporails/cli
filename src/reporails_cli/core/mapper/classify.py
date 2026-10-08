@@ -68,7 +68,12 @@ SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", 
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
 SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "within", "inside", "across", "under"})
 # Words that open a noun phrase (`for the api module`).
-DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those", "each", "every", "all", "any"})
+# Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
+# right after one narrows what the line covers.
+GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
+DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"}) | (
+    GENERAL_QUANTIFIERS - {"no", "one"}
+)
 
 # Phase 3: verb lexicon
 # CORE: high-confidence charged verbs
@@ -775,6 +780,16 @@ def _classify_phase1(
 
 # Words that negate the word before them (`should not`, `must never`, `would n't`, `must cannot`).
 NEGATION_WORDS: frozenset[str] = frozenset({"not", "never", "n't", "cannot"})
+# Lowered words whose presence as a line's first word gives it as an order: absolute and negation
+# cues, constraint words and the modals the classifier reads as a directive.
+DIRECTIVE_CUES: frozenset[str] = (
+    ABSOLUTE_CUES
+    | NEGATION_WORDS
+    | frozenset(w.lower() for w in CONSTRAINT_WORDS)
+    | _MODAL_ABSOLUTE
+    | _MODAL_HEDGED
+    | {"only"}
+)
 
 
 def _modal_result(

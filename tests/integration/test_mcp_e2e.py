@@ -67,6 +67,14 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     return results[0].text
 
 
+def _bounded_reply(path: Path) -> dict[str, Any]:
+    """The bounded `validate` payload as data: a reply with a `preservation` block is served as
+    the text view, so the wiring tests read the payload the view is rendered from."""
+    from reporails_cli.interfaces.mcp.server import _run_validate
+
+    return _run_async(_run_validate(str(path), False))
+
+
 # ---------------------------------------------------------------------------
 # Structured output (mcp 2.x) — validate returns structuredContent, not just text
 # ---------------------------------------------------------------------------
@@ -1254,13 +1262,13 @@ class TestPreservationWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        bounded_before = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_before = _bounded_reply(target)
         assert "preservation" not in bounded_before, "not yet briefed"
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
-        bounded_after = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_after = _bounded_reply(target)
         assert "preservation" in bounded_after
         assert bounded_after["preservation"]["ok"] is True, "nothing changed since the snapshot"
         assert bounded_after["preservation"]["score_before"] == score
@@ -1283,7 +1291,7 @@ class TestPreservationWiring:
         target.write_text(
             "## Test doubles\n\n- Do not use mock objects in tests.\n- Do not use test doubles in the test suite.\n"
         )
-        block = json.loads(_call_tool("validate", {"path": str(target)}))["preservation"]
+        block = _bounded_reply(target)["preservation"]
         assert block["ok"] is False
         assert block["relabelled_negative_headings"] == [{"line": 1, "text": "## Don'ts"}]
 
@@ -1313,11 +1321,11 @@ class TestPreservationWiring:
 
         monkeypatch.setattr(server, "run_pipeline_for_path", counting_run_pipeline_for_path)
 
-        first = json.loads(_call_tool("validate", {"path": str(target)}))
+        first = _bounded_reply(target)
         assert "preservation" in first
         assert calls["n"] == 1, "the first (fresh) validate must run the pipeline exactly once"
 
-        second = json.loads(_call_tool("validate", {"path": str(target)}))
+        second = _bounded_reply(target)
         assert "preservation" in second
         assert calls["n"] == 1, (
             f"a cached-reply preservation check must reuse the stored map, not re-run the "
@@ -1594,13 +1602,13 @@ class TestFeedbackWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        bounded_before = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_before = _bounded_reply(target)
         assert "feedback" not in bounded_before, "not yet briefed"
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
-        bounded_after = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_after = _bounded_reply(target)
         assert "feedback" in bounded_after
         assert isinstance(bounded_after["feedback"], list)
 
@@ -1680,7 +1688,7 @@ class TestFeedbackNewKinds:
 
         _call_tool("validate", {"path": str(tmp_path)})
         target.write_text('# Project\n\nNever commit secrets.\n\napi_key = "sk-live-0000000000000000"\n')
-        reply = json.loads(_call_tool("validate", {"path": str(target)}))
+        reply = _bounded_reply(target)
 
         assert [f["rule"] for f in reply["feedback"]] == ["CORE:G:0002", "A", "B"]
 
@@ -1767,7 +1775,7 @@ class TestFeedbackFiredBefore:
         monkeypatch.setattr(snapshots, "has_snapshot", lambda p: True)
         _call_tool("validate", {"path": str(tmp_path)})
         target.write_text("# Project\n\nNever commit secrets.\n\nedited\n")
-        return json.loads(_call_tool("validate", {"path": str(target)}))
+        return _bounded_reply(target)
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server

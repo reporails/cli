@@ -208,3 +208,44 @@ def test_mechanical_fixes_skip_files_with_imports(tmp_path: object) -> None:
 
     assert f.read_text(encoding="utf-8") == raw, "an @import-bearing file was rewritten"
     assert fixes == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
+    """`ails check --heal` skips every file `heal_exclude` matches: the fixable line in
+    `CLAUDE.md` is rewritten, the same line in `archive/CLAUDE.md` stays byte-identical."""
+    from pathlib import Path
+
+    from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+    from reporails_cli.interfaces.cli.heal import _apply_mechanical_fixes
+
+    base = Path(str(tmp_path))
+    (base / ".ails").mkdir()
+    (base / ".ails" / "config.yml").write_text('heal_exclude: ["archive/**"]\n', encoding="utf-8")
+    (base / "archive").mkdir()
+    kept, archived = base / "CLAUDE.md", base / "archive" / "CLAUDE.md"
+    for path in (kept, archived):
+        path.write_text("# Doc\nRun pyproject.toml here.\n", encoding="utf-8")
+    archived_before = archived.read_bytes()
+    atoms = tuple(
+        Atom(
+            line=2,
+            text="Run pyproject.toml here.",
+            kind="paragraph",
+            charge="NEUTRAL",
+            charge_value=0,
+            modality="none",
+            specificity="abstract",
+            unformatted_code=["pyproject.toml"],
+            file_path=str(path),
+        )
+        for path in (kept, archived)
+    )
+    rmap = RulesetMap(schema_version="1", embedding_model="m", generated_at="now", files=(), atoms=atoms)
+
+    fixes = _apply_mechanical_fixes(rmap, base, False, False, None, [kept, archived])
+
+    assert archived.read_bytes() == archived_before
+    assert "`pyproject.toml`" in kept.read_text(encoding="utf-8")
+    assert {Path(f["file_path"]).resolve() for f in fixes} == {kept.resolve()}

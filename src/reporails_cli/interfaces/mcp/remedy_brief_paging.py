@@ -2,18 +2,11 @@
 oversized brief into numbered parts a caller requests in turn.
 
 An unbounded brief on a large file can exceed the client's cap, with no way for a
-shell-less remedy agent to read the rest. The full `ideal_instruction` guide is
-static across every location's brief and is never cut to fit — the remedy agent is
-pre-allowed only `validate` and `remedy_brief`, so a reference it could not otherwise resolve
-(e.g. pointing at `explain`) would make the guide unreachable. Instead the guide (already
-close to a whole part's budget on its own, at ~17,000 chars) rides its own dedicated part(s)
-after every file part, split by rule entry when it does not fit one part; every part names
-which part number(s) carry it (`ideal_instruction_parts`), so the remedy agent can fetch it
-directly with `remedy_brief(path, location, part=N)` alone. The location's own fixed fields,
-line fixes and `files[]` / `findings` / `relations` come first: a file's own `instructions`,
-and the `findings` / `relations` that name it, are split together (never a file's text split
-from the findings that address it, and never all dumped onto whichever part first mentions
-the file) — a file with many findings is bounded too, not only a `files[]`-many-files
+shell-less remedy agent to read the rest. The location's own fixed fields, line fixes and
+`files[]` / `findings` / `relations` are packed in order: a file's own `instructions`, and the
+`findings` / `relations` that name it, are split together (never a file's text split from the
+findings that address it, and never all dumped onto whichever part first mentions the file) — a
+file with many findings is bounded too, not only a `files[]`-many-files
 location.
 """
 
@@ -110,7 +103,7 @@ def _file_pieces_for(
 _Atom = tuple[str, Any, int]
 
 # Reply keys that are not fixed fields: the location rides every part, the rest are content.
-_CONTENT_KEYS = ("location", "files", "findings", "relations", "ideal_instruction", "procedure")
+_CONTENT_KEYS = ("location", "files", "findings", "relations", "procedure")
 
 
 def _content_atoms(
@@ -194,54 +187,29 @@ def _unpack_part(group: list[_Atom]) -> dict[str, Any]:
     return out
 
 
-def _guide_groups(guide: list[dict[str, Any]], budget: int) -> list[list[dict[str, Any]]]:
-    """The full ideal-instruction guide split into groups under `budget` chars of their own
-    JSON, packed by rule entry — the guide is never dropped or referenced elsewhere, only
-    split, so it always fully reconstructs across whichever parts carry it."""
-    groups: list[list[dict[str, Any]]] = []
-    current: list[dict[str, Any]] = []
-    used = 0
-    for item in guide:
-        size = _json_len(item) + 1  # +1: the comma that joins it to the item before it
-        if current and used + size > budget:
-            groups.append(current)
-            current, used = [], 0
-        current.append(item)
-        used += size
-    if current:
-        groups.append(current)
-    return groups
-
-
-_EMPTY_CONTENT: dict[str, list[Any]] = {"files": [], "findings": [], "relations": []}
-
-
 def _part_fields_len(location_out: dict[str, Any]) -> int:
-    """The characters every part spends on its own envelope, beyond the file or guide content
-    it carries: the location, the empty content keys, and the `part` / `total_parts` /
-    `ideal_instruction_parts` / `next_part` fields, sized for three-digit part numbers and up to
-    ten guide parts. A part's content is packed into the limit minus this, so the whole part
-    stays under the limit."""
-    numbers = list(range(990, 1000))
+    """The characters every part spends on its own envelope, beyond the file content it carries:
+    the location, the empty content keys, and the `part` / `total_parts` / `next_part` fields,
+    sized for three-digit part numbers. A part's content is packed into the limit minus this, so
+    the whole part stays under the limit."""
     envelope = {
         "location": location_out,
-        **_EMPTY_CONTENT,
+        "files": [],
+        "findings": [],
+        "relations": [],
         "procedure": {"mechanical_fixes": []},
-        "ideal_instruction": [],
         "part": 999,
         "total_parts": 999,
-        "ideal_instruction_parts": numbers,
-        "next_part": _next_part_note(999, numbers, 999),
+        "next_part": _next_part_note(999, 999),
     }
     return _json_len(envelope)
 
 
-def _next_part_note(total_parts: int, guide_part_numbers: list[int], next_part: int) -> str:
+def _next_part_note(total_parts: int, next_part: int) -> str:
     return (
-        f"This brief has {total_parts} parts; the ideal-instruction guide is on part(s) "
-        f"{guide_part_numbers}; call remedy_brief again with the same path, location and "
-        f"targets, and part={next_part}, for the rest — every part's `ideal_instruction`, "
-        "`files[]`, `findings`, `relations` and `procedure.mechanical_fixes` together carry the whole brief."
+        f"This brief has {total_parts} parts; call remedy_brief again with the same path, location "
+        f"and targets, and part={next_part}, for the rest — every part's `files[]`, `findings`, "
+        "`relations` and `procedure.mechanical_fixes` together carry the whole brief."
     )
 
 
@@ -251,25 +219,19 @@ def page_reply(
     """Slice `full` (the whole, unbounded reply) into numbered parts when it would exceed
     `_REMEDY_BRIEF_PART_LIMIT`, else return it unchanged.
 
-    The content parts come first, packed in order by size: the reply's fixed fields
-    (`procedure` with its `rules`, `preservation_contract`, `next`, `artifact_rules`), then the
-    deterministic line fixes (`procedure.mechanical_fixes`, one item at a time, so a location
-    with thousands of them pages like its files), then the files' pieces. Part 1 therefore
-    opens with the fixed fields; a fixed field too large to sit beside the content that
-    follows closes its part. `findings` and `relations` are split per file the same way each
-    file's own `instructions` and `headings` are (`_file_pieces`), so a file with many
-    findings is bounded too, not only a `files[]`-many-files location. No part is empty.
+    The parts are packed in order by size: the reply's fixed fields (`procedure` with its
+    `rules`, `preservation_contract`, `next`, `artifact_rules`), then the deterministic line
+    fixes (`procedure.mechanical_fixes`, one item at a time, so a location with thousands of
+    them pages like its files), then the files' pieces. Part 1 therefore opens with the fixed
+    fields; a fixed field too large to sit beside the content that follows closes its part.
+    `findings` and `relations` are split per file the same way each file's own `instructions`
+    and `headings` are (`_file_pieces`), so a file with many findings is bounded too, not only
+    a `files[]`-many-files location. No part is empty.
 
-    The full `ideal_instruction` guide (`full["ideal_instruction"]`, `~17,000 chars` on its
-    own) trails as its own dedicated part(s) after every file part (`_guide_groups`) — never
-    mixed with a file's own content and never cut. Every part names which part number(s)
-    carry the guide (`ideal_instruction_parts`), so the remedy agent (pre-allowed only
-    `validate` and `remedy_brief`) can fetch it directly with `remedy_brief(path, location,
-    part=N)` alone, without needing to page through every file part first. A `part` outside
-    `[1, total_parts]` is an `error` reply naming the valid range. Every part, envelope included,
-    stays under the limit except one whose single item (an instruction, a heading, a finding, a
-    line fix, a guide entry or one fixed field) is larger than the limit on its own: that item ships alone, uncut."""
-    guide = full.get("ideal_instruction") or []
+    A `part` outside `[1, total_parts]` is an `error` reply naming the valid range. Every part,
+    envelope included, stays under the limit except one whose single item (an instruction, a
+    heading, a finding, a line fix or one fixed field) is larger than the limit on its own: that
+    item ships alone, uncut."""
     known_files = {entry["file"] for entry in files_out}
     fallback_file = files_out[0]["file"] if files_out else None
     findings_by_file = _by_file(full.get("findings") or [], known_files, fallback_file)
@@ -278,27 +240,18 @@ def page_reply(
 
     atoms = _content_atoms(full, files_out, findings_by_file, relations_by_file, budget)
     content_parts = _paginate_content(atoms, budget)
-    guide_groups = _guide_groups(guide, budget)
-    total_parts = len(content_parts) + len(guide_groups)
-    if not 1 <= part <= max(total_parts, 1):
+    total_parts = len(content_parts)
+    if not 1 <= part <= total_parts:
         return {
             "error": "part_out_of_range",
             "message": f"This brief has {total_parts} part(s); ask for a part from 1 to {total_parts}.",
         }
-    if total_parts <= 1:
+    if total_parts == 1:
         return full
 
-    guide_part_numbers = list(range(len(content_parts) + 1, total_parts + 1))
-    index = part - 1
-    if index < len(content_parts):
-        reply = {"location": location_out, **_unpack_part(content_parts[index]), "ideal_instruction": []}
-    else:
-        guide_index = index - len(content_parts)
-        reply = {"location": location_out, "ideal_instruction": guide_groups[guide_index], **_EMPTY_CONTENT}
-
-    reply["part"] = index + 1
+    reply = {"location": location_out, **_unpack_part(content_parts[part - 1])}
+    reply["part"] = part
     reply["total_parts"] = total_parts
-    reply["ideal_instruction_parts"] = guide_part_numbers
-    if index + 1 < total_parts:
-        reply["next_part"] = _next_part_note(total_parts, guide_part_numbers, index + 2)
+    if part < total_parts:
+        reply["next_part"] = _next_part_note(total_parts, part + 1)
     return reply

@@ -29,6 +29,7 @@ from typing import Any  # noqa: E402
 from mcp.types import CallToolResult, TextContent, ToolAnnotations  # noqa: E402
 
 from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels  # noqa: E402
+from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices  # noqa: E402
 from reporails_cli.interfaces.mcp import snapshots  # noqa: E402
 from reporails_cli.interfaces.mcp.feedback import file_feedback  # noqa: E402
 from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity  # noqa: E402
@@ -84,6 +85,8 @@ class _CircuitState:
     # snapshot re-commit. A new `validate` for this path clears the whole cache (below), since
     # it may have changed the file set the workflow's locations name.
     remedy_brief_cache: dict[int, Any] = field(default_factory=dict)
+    # The notices a text view already showed for this path: each shows once per run.
+    shown_notices: set[str] = field(default_factory=set)
 
 
 _validate_states: dict[str, _CircuitState] = {}
@@ -207,7 +210,9 @@ def _with_preservation(
         new_text = target.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return payload
-    return {**payload, "preservation": snapshots.check_rewrite(snap, target, ruleset_map, new_text, score, scan_root)}
+    block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score, scan_root)
+    block["introduced"] = snapshots.introduced_count(target, payload)
+    return {**payload, "preservation": block}
 
 
 async def _fresh_validate_payload(
@@ -389,12 +394,21 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
     )
 
 
+def _text_result(text: str) -> CallToolResult:
+    """A reply whose only channel is its text: a client that shows the structured block in place
+    of the text (or drops a structured-only result) still shows the model this view."""
+    return CallToolResult(content=[TextContent(type="text", text=text)])
+
+
 @server.tool(
     name="validate",
     description=(
         "Validate AI instruction files at `path` (directory or single file)."
         " Returns JSON with findings, per-finding fix text, a `quality` score,"
         " tier, per-surface category breakdown, and cross-file analysis."
+        " On a Pro account the default reply is a short text view instead: its lines name the"
+        " reply's fields (`workflow.locations`, `workflow.listed`, `surface_health`, `notices`,"
+        " `preservation`, `feedback`, ...) and `full=true` returns the JSON."
         " The default response is bounded (top findings per file plus whole"
         " `stats` / `surface_health`). On a paid tier the response carries a"
         " `workflow` — the ordered locations to rewrite, each without its findings — and"
@@ -405,11 +419,13 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
         " files, read the way `ails check` reads its targets — `skills`, `skills:<name>`,"
         " `agents:<name>`, `@main`,"
         " a path (the whole project is still diagnosed and its score and stats stay"
-        " whole-project; pass the same `targets` to `remedy_brief`); a targeted view kept down"
-        " to a few locations already carries their findings and relations in this reply. After"
+        " whole-project; pass the same `targets` to `remedy_brief`); a targeted view carries its"
+        " locations' findings and relations in this reply when they fit, and otherwise"
+        " `truncated.hint` names `remedy_brief`, which serves them. After"
         " rewriting a briefed location's files, call"
         " validate again with `path` set to each rewritten file: the reply then carries a"
-        " `preservation` block saying whether the rewrite kept everything the file had, and a"
+        " `preservation` block saying whether the rewrite kept everything the file had and how many findings it"
+        " `introduced`, and a"
         " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
         " introduced listed first."
         " `notices`, when present, are messages for the user about their account (for example a"
@@ -421,7 +437,11 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
 async def validate(path: str = ".", full: bool = False, targets: list[str] | None = None) -> CallToolResult:
     """Validate instruction files; see the tool description for the response shape."""
     touch_activity()
-    return _result(await _run_validate(path, bool(full), targets))
+    payload = await _run_validate(path, bool(full), targets)
+    if not has_text_view(payload, full=bool(full)):
+        return _result(payload)
+    state = _validate_states.setdefault(_state_key(path, _target_tokens(targets)), _CircuitState())
+    return _text_result(render_text_view(unseen_notices(payload, state.shown_notices)))
 
 
 @server.tool(
@@ -432,7 +452,7 @@ async def validate(path: str = ".", full: bool = False, targets: list[str] | Non
         " location's `order` from that reply, `targets` the targets that `validate` call"
         " passed (none for a whole-project reply). Returns each of the location's files with its"
         " current score, every instruction and heading in it, the location's findings and"
-        " relations (with remedy text), a guide of what an ideal instruction looks like, the"
+        " relations (with remedy text), the"
         " rules that govern this kind of file, and the preservation contract the rewrite must"
         " keep. A brief too large for one reply carries `part` / `total_parts` and a `next_part`"
         " note — call again with the same path, location and targets, and that `part` number,"

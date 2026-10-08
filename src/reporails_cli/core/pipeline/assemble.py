@@ -88,7 +88,8 @@ def assemble_result(inp: AssembleInputs) -> Any:
     if inp.ruleset_map is not None:
         memory_findings = validate_memory_files(inp.ruleset_map.files)
 
-    level = determine_level_from_gates(detect_features_filesystem(inp.scan_root, agents=inp.filter_agents))
+    features = detect_features_filesystem(inp.scan_root, agents=inp.filter_agents)
+    level = determine_level_from_gates(features)
 
     all_client_findings = inp.content_findings + inp.client_findings + memory_findings
     report = lint_result.report if lint_result else None
@@ -104,6 +105,7 @@ def assemble_result(inp: AssembleInputs) -> Any:
         level=level,
         tier=lint_result.tier if lint_result else "",
     )
+    result = replace(result, hooks=features.hooks)
     result = _drop_dependent(result, inp)
     result = replace(result, notices=inp.notices)
     # The workflow goes on first, so the suppressions the author wrote apply to what it lists too.

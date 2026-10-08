@@ -405,3 +405,13 @@ excludes:
   - CLAUDE:*
   - CODEX:*
   - CORE:S:0026  # import-references-used — checks Claude-style `@path` imports resolve; Antigravity rules use `@[label](path)` inlines and non-inlining `@filename` references (antigravity.google/docs/rules#file-references), not that import syntax
+
+# Hook events that run before a file tool and can block it, with the tools of Read/Edit/Write each gates.
+intercept_events:
+  PreToolUse: [Read, Edit, Write]
+
+# How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
+subagent_hooks:
+  fire_in_subagents: {value: unconfirmed}
+  identifies_agent: {value: unconfirmed}
+  extension_opt_out: {value: unconfirmed}

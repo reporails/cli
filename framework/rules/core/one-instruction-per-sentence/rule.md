@@ -13,12 +13,15 @@ match: {}
 
 Give each instruction its own sentence. Instructions packed into one sentence compete, and some of them are not followed; the last one tends to win. The joining punctuation does not change that, because a comma, a semicolon, a dash, "and" or "then" packs instructions the same way. A period or a list item of its own is what separates them. When two instructions must share a sentence, put the one that must win last.
 
+After a split, each sentence has to stand on its own. Repeat the subject or object the instructions shared, so no sentence depends on its neighbour for what it acts on. Keep a directive together with the bound that limits it: "Fix the failing test — ask, don't refactor" keeps "ask, don't refactor" with its directive, or each half names its object ("Ask before refactoring the module. Do not refactor the module on your own."). Never leave a lead-in such as "You are a reviewer: you read the diff" holding only the first item of its list; keep the lead-in with every item it introduces, or give each item a sentence that names its own subject.
+
 ## Antipatterns
 
 - **Comma-spliced commands**: "Install dependencies with `uv sync`, run `uv run pytest`, and commit the lockfile." Three instructions share one sentence, and the earlier ones are the likeliest to be dropped. The diagnostic reports the sentence with the number of instructions it holds and names each one.
 - **A prohibition packed with its alternative**: "Do not edit generated files; run `make gen` to regenerate them." The semicolon joins the two as tightly as a comma does. Give the command and the prohibition a sentence each, with the command first.
 - **Commands joined by "and"**: "Update `CHANGELOG.md` and push the release tag." A bare "and" or "then" between two commands packs them into one sentence. An "and" between two objects of one command ("Run the linter and the formatter.") is one instruction and passes.
 - **A list step that packs several actions**: the step "Pull the latest `main`, install dependencies with `uv sync`, then run `uv run pytest`." Each list item is read as a sentence like any other. Give each action its own step.
+- **A split that strands a fragment**: "Run the linter. And the formatter." or "Fix the failing test. Don't refactor." Each sentence has to name its own object and keep its limiting bound, so the second half is read with what it acts on.
 
 ## Pass / Fail
 
