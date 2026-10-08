@@ -161,7 +161,7 @@ class TestClientCheckRuleIds:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_display_rule_id_maps_client_labels(self) -> None:
-        from reporails_cli.formatters.text.display_constants import display_rule_id
+        from reporails_cli.formatters.text.rule_meta import display_rule_id
 
         assert display_rule_id("format") == "CORE:E:0003"
         assert display_rule_id("bold") == "CORE:E:0003"
@@ -181,7 +181,7 @@ class TestClientCheckRuleIds:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_rule_docs_url_maps_agent_and_slug(self) -> None:
-        from reporails_cli.formatters.text.display_constants import rule_docs_url
+        from reporails_cli.formatters.text.rule_meta import rule_docs_url
 
         assert rule_docs_url("CORE:E:0003") == "https://reporails.com/rules/core/formatting-regime"
         assert rule_docs_url("CODEX:E:0001") == "https://reporails.com/rules/codex/agents-md-within-size-limit"
@@ -644,3 +644,46 @@ class TestFileLevelOverlap:
         rows = [r for r in lines if "topic overlap with" in r]
         assert "42% topic overlap with feedback_surface_progress_on_background_work (memory)" in rows[0]
         assert "20% topic overlap with memory/other.md" in rows[1]
+
+
+class TestNeutralFileLevelFinding:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_file_level_finding_prints_without_a_blank_line_cell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A whole-file finding on the neutral card reads as it does on the triaged card: no empty line column."""
+        findings = [_finding("CORE:S:0010", "warning", "File count 1 outside bounds", line=0, impact_tier="")]
+        out = _render(monkeypatch, findings, None)
+        assert "! File count 1 outside bounds" in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_line_level_finding_keeps_its_line_cell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        findings = [_finding("CORE:S:0010", "warning", "File count 1 outside bounds", line=7, impact_tier="")]
+        assert "! L7    File count 1 outside bounds" in _render(monkeypatch, findings, None)
+
+
+class TestProDiagnosticsCount:
+    @staticmethod
+    def _hint(count: int, errors: int):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(count=count, error_count=errors, severity="error", diagnostic_type="CORE:C:0044")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    @pytest.mark.parametrize(
+        ("count", "errors", "expected"),
+        [
+            (1, 1, "⊕ 1 Pro diagnostic (1 error)"),
+            (3, 2, "⊕ 3 Pro diagnostics (2 errors)"),
+            (1, 0, "⊕ 1 Pro diagnostic"),
+        ],
+    )
+    def test_card_line_agrees_in_number(
+        self, monkeypatch: pytest.MonkeyPatch, count: int, errors: int, expected: str
+    ) -> None:
+        lines: list[str] = []
+        monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
+        triage_view._print_inline_hints([self._hint(count, errors)], "│")
+        assert expected in lines[0]
+        assert "Pro diagnostics (1 error)" not in lines[0]

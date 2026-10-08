@@ -393,7 +393,7 @@ def _finding_entry(f: Any) -> dict[str, Any]:
     stability. `convention` marks a finding that only names a documentation convention the file
     does not follow, so a reader can collapse the group the way the text output does.
     """
-    from reporails_cli.formatters.text.display_constants import display_rule_id
+    from reporails_cli.formatters.text.rule_meta import display_rule_id
     from reporails_cli.formatters.triage import resolve_leverage
 
     canonical = display_rule_id(f.rule)
@@ -539,7 +539,7 @@ def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]
     counts, so a consumer never has to infer them from the worst-severity label. Used by
     both the JSON envelope and the text scorecard so the aggregation has one source of truth.
     """
-    from reporails_cli.formatters.text.display_constants import display_rule_id
+    from reporails_cli.formatters.text.rule_meta import display_rule_id
 
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     buckets: dict[str, dict[str, Any]] = {}

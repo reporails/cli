@@ -15,7 +15,7 @@ Import chains in root instruction files should be bounded. Deep import hierarchi
 
 ## Antipatterns
 
-- **Transitive chaining.** `CLAUDE.md` imports `docs/setup.md`, which imports `docs/details/config.md`, which imports `docs/details/advanced/tuning.md`, which imports a deeper file, hitting the 4-hop limit. Any broken link past depth 4 is silently dropped.
+- **Transitive chaining.** `CLAUDE.md` imports `docs/setup.md`, which imports `docs/details/config.md`, which imports `docs/details/advanced/tuning.md`, which imports a deeper file, hitting Claude's 4-hop limit. Any broken link past depth 4 is silently dropped by Claude.
 - **Circular imports.** File A imports B, B imports C, C imports A. The resolver must detect and break the cycle, but the author likely didn't intend it.
 - **Import as organization substitute.** Using `@import` chains to simulate a file hierarchy instead of structuring content into focused files that the agent loads directly.
 
@@ -43,8 +43,8 @@ Use `conftest.py` for shared setup.
 ~~~~markdown
 <!-- CLAUDE.md (depth 0) -->
 @import docs/overview.md
-<!-- docs/overview.md → docs/details.md → docs/internals.md →
-     docs/deep/a.md → docs/deep/b.md → docs/deep/c.md  ← depth 6, exceeds Claude's 4 -->
+<!-- Each file imports the next: overview.md → a.md → b.md → c.md → d.md →
+     e.md → f.md → g.md → h.md → i.md → j.md  ← depth 11, exceeds the ceiling of 10 -->
 ~~~~
 
 ## Limitations

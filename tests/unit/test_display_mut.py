@@ -24,9 +24,8 @@ from reporails_cli.core.platform.runtime.merger import (
     CombinedStats,
     FindingItem,
 )
-from reporails_cli.formatters.text import display
+from reporails_cli.formatters.text import display, file_groups
 from reporails_cli.formatters.text.display import (
-    _build_file_groups,
     _CardContext,
     _count_atoms,
     _detect_agent_name,
@@ -39,6 +38,7 @@ from reporails_cli.formatters.text.display import (
     filter_ruleset_map_to_paths,
 )
 from reporails_cli.formatters.text.display_constants import get_sev_icons
+from reporails_cli.formatters.text.file_groups import build_file_groups
 
 
 def _rmap(*records: FileRecord, atoms: tuple[Atom, ...] = ()) -> RulesetMap:
@@ -458,7 +458,7 @@ class TestDetectAgentName:
         assert _detect_agent_name(None) == ""
 
 
-# ── _build_file_groups: root used for file-type routing (L241) ─────────
+# ── build_file_groups: root used for file-type routing (L241) ─────────
 
 
 class TestBuildFileGroupsRoot:
@@ -471,7 +471,7 @@ class TestBuildFileGroupsRoot:
         # file_type keyed by the project-root-relative path; only resolvable when the
         # normalization root is `project_root` (not cwd) -> routes into the "imported" group.
         ft_by_path = {"x.md": "generic"}
-        groups = _build_file_groups(result, ft_by_path, tmp_path)
+        groups = build_file_groups(result, ft_by_path, tmp_path)
         # `or -> and` makes root=cwd; the absolute path then normalizes off "x.md" and the
         # generic routing is lost, so the file lands outside "imported".
         assert "imported" in groups  # kills L241 `or -> and`
@@ -515,7 +515,7 @@ class TestPrintTextResultHasQuality:
     def test_generic_file_type_routes_to_imported_group(self, tmp_path) -> None:
         # A generic-classified file routes into the "Imported" group. That routing needs
         # both the scan root (L361: project_root, not cwd) to normalize the finding key AND
-        # the file_type_by_path map to reach _build_file_groups intact (L374: the map, not {}).
+        # the file_type_by_path map to reach build_file_groups intact (L374: the map, not {}).
         abs_file = str(tmp_path / "x.md")
         finding = FindingItem(file=abs_file, line=1, severity="warning", rule="R", message="m")
         result = CombinedResult(findings=(finding,), quality=None)
@@ -599,3 +599,106 @@ class TestElementNamerBuiltOnce:
                 project_root=tmp_path,
             )
         assert calls == []
+
+
+# ── Alias files render as one card, the header states the scanned count, the Cross-file list is capped ──
+
+
+def _finding(path: str, line: int = 1, rule: str = "CORE:C:0042", message: str = "Vague") -> FindingItem:
+    return FindingItem(file=path, line=line, severity="warning", rule=rule, message=message)
+
+
+class TestAliasFilesRenderOneCard:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_identical_agents_and_claude_files_share_one_card(self, tmp_path, capsys) -> None:
+        (tmp_path / "AGENTS.md").write_text("# Proj\n\nRun `uv run pytest` before committing.\n")
+        (tmp_path / "CLAUDE.md").write_text("# Proj\n\nRun `uv run pytest` before committing.\n")
+        shared = {"line": 3, "rule": "CORE:C:0042", "message": "Vague"}
+        result = CombinedResult(
+            findings=(
+                _finding("AGENTS.md", **shared),
+                _finding("CLAUDE.md", **shared),
+                _finding("CLAUDE.md", line=1, rule="CLAUDE:S:0012", message="No frontmatter block found"),
+            ),
+            quality=None,
+        )
+        display.print_text_result(result, elapsed_ms=0, ascii_mode=True, verbose=False, project_root=tmp_path)
+        out = capsys.readouterr().out
+        assert "AGENTS.md (+CLAUDE.md)" in out
+        # One card: the alias has no card of its own, and its footer counts the findings rendered.
+        assert out.count("CLAUDE.md") == 1
+        assert "2 findings" in out
+        # The finding only CLAUDE.md carried still shows, on the shared card.
+        assert "No frontmatter block found" in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_alias_hints_fold_into_the_canonical_card_once(self, tmp_path) -> None:
+        from reporails_cli.core.platform.dto.diagnostics import Hint
+
+        hint = {"diagnostic_type": "CORE:C:0044", "count": 1, "severity": "warning", "warning_count": 1}
+        hints = [Hint(file="AGENTS.md", **hint), Hint(file="CLAUDE.md", **hint)]
+        folded = file_groups.build_hints_by_file(hints, tmp_path, {"AGENTS.md": ["CLAUDE.md"]})
+        assert list(folded) == ["AGENTS.md"]
+        assert len(folded["AGENTS.md"]) == 1
+
+
+class TestGroupHeaderStatesScannedCount:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_header_matches_the_summary_surface_row(self, tmp_path, capsys) -> None:
+        # Three rule files scanned, one with a finding; a Main file keeps a second surface so the Summary rows render.
+        rmap = _rmap(
+            _frec("CLAUDE.md"),
+            _frec(".claude/rules/a.md"),
+            _frec(".claude/rules/b.md"),
+            _frec(".claude/rules/c.md"),
+        )
+        result = CombinedResult(
+            findings=(_finding(".claude/rules/a.md"), _finding("CLAUDE.md")), quality=QualityResult()
+        )
+        display.print_text_result(
+            result, elapsed_ms=0, ascii_mode=True, verbose=False, ruleset_map=rmap, project_root=tmp_path
+        )
+        out = capsys.readouterr().out
+        assert "Rules (3):" in out  # the Summary surface row
+        assert "Rules (3)" in out.split("Summary")[0]  # the card group header says the same
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_header_without_scanned_set_counts_files_with_findings(self, tmp_path) -> None:
+        group = [("a.md", [_finding("a.md")]), ("b.md", [_finding("b.md")])]
+        with display.console.capture() as cap:
+            display._render_group_header("file", group, None, tmp_path)
+        assert "(2)" in cap.get()
+
+
+class TestCrossFileListIsCapped:
+    @staticmethod
+    def _result(n: int) -> SimpleNamespace:
+        coords = tuple(
+            SimpleNamespace(count=i + 1, file_1=f"a{i}.md", file_2=f"b{i}.md", finding_type="overlap") for i in range(n)
+        )
+        return SimpleNamespace(cross_file_coordinates=coords)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_names_the_highest_counts_and_counts_the_rest(self) -> None:
+        with display.console.capture() as cap:
+            _render_cross_file_coordinates(self._result(6), get_sev_icons(True))
+        out = cap.get()
+        assert out.count("↔") == 3
+        assert "a5.md" in out and "a4.md" in out and "a3.md" in out  # counts 6, 5, 4
+        assert "a0.md" not in out
+        assert "+3 more pairs" in out
+        assert "ails check -v" in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_verbose_names_every_pair(self) -> None:
+        with display.console.capture() as cap:
+            _render_cross_file_coordinates(self._result(6), get_sev_icons(True), verbose=True)
+        out = cap.get()
+        assert out.count("↔") == 6
+        assert "more pair" not in out

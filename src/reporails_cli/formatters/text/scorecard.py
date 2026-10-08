@@ -17,20 +17,20 @@ from rich.text import Text
 from reporails_cli.core.discovery.features import agent_main_literal_paths, agent_rule_surface_markers
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
+    NAMED_OVERLAP_PAIRS,
     Element,
-    display_rule_id,
+    counted,
     element_namer,
     get_term_width,
     group_element_pairs,
+    more_pairs_line,
     partner_list,
     path_tag,
-    rule_docs_url,
-    rule_title,
     skill_lookup,
 )
+from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url, rule_title
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.verdict import (
-    _plural,
     _render_verdict_block,
     _score_bar,
     compute_score,
@@ -279,7 +279,7 @@ def _count_tag(s: SurfaceHealth, count_width: int = 0) -> str:
     count = f"{s.finding_count:,}".rjust(count_width)
     tag = f"  [dim]{count} finding{'' if s.finding_count == 1 else 's'}[/dim]"
     if s.errors:
-        tag += f"[dim] · [/dim][red]{_plural(s.errors, 'error')}[/red]"
+        tag += f"[dim] · [/dim][red]{counted(s.errors, 'error')}[/red]"
     return tag
 
 
@@ -340,10 +340,6 @@ def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
             console.print(f"                  {extra}")
 
 
-_NAMED_OVERLAP_PAIRS = 3  # element lines the scorecard names; the rest are counted
-_OVERLAP_HINT = "ails check -v shows each file's overlaps"
-
-
 def _render_cross_file_counts(
     result: Any, project_root: Path | None = None, element_of: Callable[[str], Element] | None = None
 ) -> None:
@@ -367,11 +363,11 @@ def _render_cross_file_counts(
             return
     noun = "pair overlaps" if n_pairs == 1 else "pairs overlap"
     console.print(f"  {n_pairs} element {noun} in topic \u2014 keep each topic in one file")
-    width = max((len(head) for head, _ in groups[:_NAMED_OVERLAP_PAIRS]), default=0)
-    for head, partners in groups[:_NAMED_OVERLAP_PAIRS]:
+    width = max((len(head) for head, _ in groups[:NAMED_OVERLAP_PAIRS]), default=0)
+    for head, partners in groups[:NAMED_OVERLAP_PAIRS]:
         console.print(f"    [dim]{head:<{width}} \u2194 {partner_list(partners)}[/dim]")
-    if hidden := sum(len(partners) for _head, partners in groups[_NAMED_OVERLAP_PAIRS:]):
-        console.print(f"    [dim]+{hidden} more pair{'s' * (hidden != 1)} \u00b7 {_OVERLAP_HINT}[/dim]")
+    if hidden := sum(len(partners) for _head, partners in groups[NAMED_OVERLAP_PAIRS:]):
+        console.print(f"    [dim]{more_pairs_line(hidden)}[/dim]")
 
 
 _RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
@@ -496,11 +492,11 @@ def _render_results_summary(
         console.print()
         pro_parts = []
         if hint_errors:
-            pro_parts.append(f"[red]{hint_errors} errors[/red]")
+            pro_parts.append(f"[red]{counted(hint_errors, 'error')}[/red]")
         if hint_warnings:
-            pro_parts.append(f"{hint_warnings} warnings")
+            pro_parts.append(counted(hint_warnings, "warning"))
         pro_detail = f" ({' \u00b7 '.join(pro_parts)})" if pro_parts else ""
-        console.print(f"  [dim]+ {pro_total} Pro diagnostics{pro_detail}[/dim]")
+        console.print(f"  [dim]+ {counted(pro_total, 'Pro diagnostic')}{pro_detail}[/dim]")
 
     _render_cross_file_counts(result, project_root, element_of)
 

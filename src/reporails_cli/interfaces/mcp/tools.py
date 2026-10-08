@@ -341,7 +341,7 @@ def _build_assemble_inputs(
     """The shared `AssembleInputs` for `_assemble_mcp_result`, built from the local M-probe /
     content / client finding lists."""
     from reporails_cli.core.pipeline.assemble import AssembleInputs
-    from reporails_cli.formatters.text.display_constants import rule_aliases
+    from reporails_cli.formatters.text.rule_meta import rule_aliases
 
     m_findings, content_findings, client_findings = local
     return AssembleInputs(

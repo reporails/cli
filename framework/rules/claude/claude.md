@@ -53,7 +53,7 @@ registry: framework/rules/claude/config.yml
 
 - [Memory & CLAUDE.md](https://code.claude.com/docs/en/memory) — CLAUDE.md hierarchy, auto memory, imports, path-scoped rules, user/managed rules
 - [Skills](https://code.claude.com/docs/en/skills) — SKILL.md spec, frontmatter fields, discovery paths, invocation control, commands merge
-- [Hooks](https://code.claude.com/docs/en/hooks) — 31 hook events (expanded from 27, 2026-06), 5 hook types (command/HTTP/mcp_tool/prompt/agent), skill/agent frontmatter hooks, plugin `hooks/hooks.json`
+- [Hooks](https://code.claude.com/docs/en/hooks) — 33 hook events, 5 hook types (command/HTTP/mcp_tool/prompt/agent), skill/agent frontmatter hooks, plugin `hooks/hooks.json`
 - [Sub-agents](https://code.claude.com/docs/en/sub-agents) — .claude/agents/*.md, frontmatter (description, model, allowed-tools, skills, effort, hooks), persistent memory, agent teams
 - [Permissions](https://code.claude.com/docs/en/permissions) — Managed settings, MDM (macOS/Windows), permission modes, tool allow/deny rules
 - [Output Styles](https://code.claude.com/docs/en/output-styles) — System prompt replacement (role, tone, format)

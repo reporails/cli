@@ -23,21 +23,21 @@ from reporails_cli.formatters.text.display_constants import (
     AGGREGATE_KEY,
     AGGREGATE_LABELS,
     AGGREGATE_RULES,
-    HINT_SEV_ORDER,
     HINT_TYPE_LABELS,
     SEV_WEIGHT,
     Element,
     conventions_phrase,
+    counted,
     element_labels,
     element_namer,
     friendly_name,
     get_term_width,
-    linked_rule_id,
     path_tag,
     per_file_stats,
     short_path,
     truncate,
 )
+from reporails_cli.formatters.text.rule_meta import linked_rule_id
 from reporails_cli.formatters.triage import Regime, TriageFinding, is_triaged, split_conventions, triage
 
 console = Console()
@@ -50,8 +50,8 @@ def _print_inline_hints(file_hints: list[Any], border: str) -> None:
     """Render inline Pro diagnostic counts inside a file card (free tier)."""
     pro_total = sum(h.count for h in file_hints)
     pro_errors = sum(getattr(h, "error_count", 0) for h in file_hints)
-    err_str = f" ({pro_errors} error{'s' if pro_errors != 1 else ''})" if pro_errors else ""
-    sorted_hints = sorted(file_hints, key=lambda h: HINT_SEV_ORDER.get(getattr(h, "severity", "warning"), 9))
+    err_str = f" ({counted(pro_errors, 'error')})" if pro_errors else ""
+    sorted_hints = sorted(file_hints, key=lambda h: SEV_WEIGHT.get(getattr(h, "severity", "warning"), 9))
     categories: list[str] = []
     seen: set[str] = set()
     for h in sorted_hints:
@@ -62,7 +62,7 @@ def _print_inline_hints(file_hints: list[Any], border: str) -> None:
         if len(categories) >= 2:
             break
     cat_str = f" — {', '.join(categories)}" if categories else ""
-    console.print(f"  [dim]{border}     ⊕ {pro_total} Pro diagnostics{err_str}{cat_str}[/dim]")
+    console.print(f"  [dim]{border}     ⊕ {counted(pro_total, 'Pro diagnostic')}{err_str}{cat_str}[/dim]")
 
 
 # ── Packed sentences ──────────────────────────────────────────────────
@@ -115,6 +115,11 @@ def _group_plain(findings: list[Any]) -> list[tuple[str, str, str, int]]:
 # ── Neutral (non-triaged) renderers ───────────────────────────────────
 
 
+def _line_cell(line: int) -> str:
+    """The `L12   ` cell in front of a finding's message; a whole-file finding (line 0 or 1) has none."""
+    return f"L{line:<4d} " if line > 1 else ""
+
+
 def _render_structural_findings(
     structural: list[Any],
     sev_icons: dict[str, str],
@@ -129,9 +134,8 @@ def _render_structural_findings(
         icon = sev_icons.get(f.severity, " ")
         raw = f.message or ""
         msg = truncate(raw, msg_width).replace("[", "\\[")
-        line_ref = f"L{f.line:<4d} " if f.line > 1 else "      "
         rule_id = linked_rule_id(f.rule)
-        console.print(f"  [dim]{border}[/dim]   {icon} {line_ref}{msg}  [dim]{rule_id}[/dim]")
+        console.print(f"  [dim]{border}[/dim]   {icon} {_line_cell(f.line)}{msg}  [dim]{rule_id}[/dim]")
     if len(structural) > limit:
         console.print(f"  [dim]{border}     ... and {len(structural) - limit} more[/dim]")
 
@@ -156,7 +160,7 @@ def _render_quality_verbose(
         key = (f.line, msg, f.rule)
         seen_q[key] = seen_q.get(key, 0) + 1
     for (line, msg, rule), count in seen_q.items():
-        line_ref = f"L{line:<4d} " if line > 1 else "      "
+        line_ref = _line_cell(line)
         suffix = f" ({count}\u00d7)" if count > 1 else ""
         console.print(
             f"  [dim]{border}     {line_ref}{truncate(f'{msg}{suffix}', msg_width)}  {linked_rule_id(rule)}[/dim]"

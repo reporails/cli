@@ -17,7 +17,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
 from reporails_cli.formatters.json import format_combined_result
-from reporails_cli.formatters.text.display_constants import rule_aliases
+from reporails_cli.formatters.text.rule_meta import rule_aliases
 from reporails_cli.interfaces.mcp import remedy_brief, tools
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_diagnostic]

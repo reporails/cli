@@ -107,12 +107,6 @@ def test_single_file_scan_finds_violations(tmp_path: Path, monkeypatch) -> None:
     assert _claude_findings(data) > 0, "single-file scan surfaced no findings for a non-clean CLAUDE.md"
 
 
-@pytest.mark.xfail(
-    reason="Compares a cwd-nested single-file scan against a dir-target that reroots at the "
-    "subdir (classifying its CLAUDE.md as main). Under the cwd-is-project-root principle the "
-    "dir-target rerooting is the deviation; tracked in signal 2026-06-15-target-rooting-cwd-relative.",
-    strict=False,
-)
 @pytest.mark.e2e
 @pytest.mark.subsys_cli_ux
 def test_single_file_scan_matches_whole_project(tmp_path: Path) -> None:
@@ -128,6 +122,113 @@ def test_single_file_scan_matches_whole_project(tmp_path: Path) -> None:
     assert whole.exit_code == 0, whole.output
 
     assert _claude_findings(json.loads(single.output)) == _claude_findings(json.loads(whole.output))
+
+
+def _nested_project(tmp_path: Path, *, sub_has_config_dir: bool) -> Path:
+    """A project with a root `CLAUDE.md` + `.claude/` and a `sub/CLAUDE.md` (optionally with its own `.claude/`)."""
+    project = tmp_path / "b3proj"
+    (project / ".git").mkdir(parents=True)
+    (project / ".claude" / "rules").mkdir(parents=True)
+    (project / "CLAUDE.md").write_text(
+        "# Project\n\nRun `uv run pytest tests/` before every commit.\n", encoding="utf-8"
+    )
+    (project / ".claude" / "rules" / "style.md").write_text(
+        '---\npaths: ["**/*.py"]\n---\n# Style\n\nUse type hints.\n', encoding="utf-8"
+    )
+    sub = project / "sub"
+    sub.mkdir()
+    (sub / "CLAUDE.md").write_text(_VIOLATION_LADEN, encoding="utf-8")
+    if sub_has_config_dir:
+        (sub / ".claude").mkdir()
+    return project
+
+
+def _classification(data: dict) -> tuple[list[str], list[tuple[str, int]], str, dict[str, list[tuple]]]:
+    """File keys, surfaces, level and per-file findings of a check JSON payload."""
+    findings = {
+        key: sorted((f["rule"], f["line"], f["severity"], f["message"]) for f in entry["findings"])
+        for key, entry in data["files"].items()
+    }
+    surfaces = [(s["name"], s["file_count"]) for s in data["surface_health"]]
+    return sorted(data["files"]), surfaces, data["level"], findings
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
+@pytest.mark.parametrize("mode", ["relative", "absolute", "outside-cwd", "parent-cwd"])
+def test_subdir_target_classifies_its_main_file_like_the_file_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Naming `sub/` and naming `sub/CLAUDE.md` read the same file the same way.
+
+    `sub/` carries a `CLAUDE.md` but no `.claude/` of its own, so it is a slice of the project, not a
+    root: the directory target must keep the project anchor (key `sub/CLAUDE.md`, a Nested surface,
+    the nested level) instead of rerooting at `sub/` and reading its `CLAUDE.md` as the project's main file.
+    The same holds when the command runs from a folder outside the project (`outside-cwd`) or from
+    a parent folder that is no project (`parent-cwd`).
+    """
+    project = _nested_project(tmp_path, sub_has_config_dir=False)
+    if mode == "outside-cwd":
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+    elif mode == "parent-cwd":
+        monkeypatch.chdir(tmp_path)
+    else:
+        monkeypatch.chdir(project)
+    dir_target, file_target = (
+        ("sub", "sub/CLAUDE.md") if mode == "relative" else (str(project / "sub"), str(project / "sub" / "CLAUDE.md"))
+    )
+
+    by_dir = runner.invoke(app, ["check", dir_target, "--agent", "claude", "-f", "json"])
+    by_file = runner.invoke(app, ["check", file_target, "--agent", "claude", "-f", "json"])
+    assert by_dir.exit_code == 0, by_dir.output
+    assert by_file.exit_code == 0, by_file.output
+
+    dir_view, file_view = _classification(json.loads(by_dir.output)), _classification(json.loads(by_file.output))
+    assert file_view[0] == ["sub/CLAUDE.md"], file_view[0]
+    assert file_view[1] == [("Nested", 1)], file_view[1]
+    assert dir_view == file_view
+    assert file_view[3]["sub/CLAUDE.md"], "the violation-laden sub/CLAUDE.md surfaced no findings"
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
+def test_subdir_with_its_own_config_dir_is_its_own_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Contrast: `sub/` holding `CLAUDE.md` AND `.claude/` is a project root of its own, so the
+    directory target keeps `sub/` path keys and reads its `CLAUDE.md` as the main file."""
+    project = _nested_project(tmp_path, sub_has_config_dir=True)
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["check", "sub", "--agent", "claude", "-f", "json"])
+    assert result.exit_code == 0, result.output
+
+    keys, surfaces, _level, _findings = _classification(json.loads(result.output))
+    assert keys == ["CLAUDE.md"], keys
+    assert surfaces == [("Main", 1)], surfaces
+
+
+@pytest.mark.e2e
+@pytest.mark.subsys_cli_ux
+@pytest.mark.requires_model
+def test_subdir_with_its_own_config_dir_named_from_outside_is_its_own_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Contrast: from a folder outside the project, a `sub/` holding `CLAUDE.md` AND `.claude/`
+    still keeps `sub/` path keys and reads its `CLAUDE.md` as the main file."""
+    project = _nested_project(tmp_path, sub_has_config_dir=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    result = runner.invoke(app, ["check", str(project / "sub"), "--agent", "claude", "-f", "json"])
+    assert result.exit_code == 0, result.output
+
+    keys, surfaces, _level, _findings = _classification(json.loads(result.output))
+    assert keys == ["CLAUDE.md"], keys
+    assert surfaces == [("Main", 1)], surfaces
 
 
 @pytest.mark.e2e

@@ -5,7 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.cache import ProjectCache, content_hash, structural_hash
-from reporails_cli.core.platform.dto.models import Category, ClassifiedFile, JudgmentRequest, Rule, Severity, Violation
+from reporails_cli.core.platform.dto.models import (
+    SEVERITY_ORDER,
+    Category,
+    ClassifiedFile,
+    JudgmentRequest,
+    Rule,
+    Severity,
+    Violation,
+)
 from reporails_cli.core.platform.dto.results import CategoryStats
 
 # Project-root marker directories that signal "this is a project". Used by
@@ -72,13 +80,6 @@ def _find_project_root(target: Path) -> Path:
     return first_git or first_marker or target
 
 
-_SEVERITY_ORDER = {
-    Severity.CRITICAL: 0,
-    Severity.HIGH: 1,
-    Severity.MEDIUM: 2,
-    Severity.LOW: 3,
-}
-
 # Category enum → single-letter display code
 _CATEGORY_CODE: dict[Category, str] = {
     Category.STRUCTURE: "S",
@@ -128,7 +129,7 @@ def _compute_category_summary(
         if code not in failed:
             failed[code] = set()
         failed[code].add(v.rule_id)
-        if code not in worst or _SEVERITY_ORDER[v.severity] < _SEVERITY_ORDER[worst[code]]:
+        if code not in worst or SEVERITY_ORDER[v.severity] < SEVERITY_ORDER[worst[code]]:
             worst[code] = v.severity
 
     stats = []

@@ -14,7 +14,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     WorkflowLocation,
 )
 from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem, merge_results
-from reporails_cli.formatters.text.display_constants import rule_aliases
+from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 STYLE = "# Style\n\nKeep diffs small.{a}\n\nUse tabs.{b}\n\nPrefer clarity.{c}\n"
 

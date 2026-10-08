@@ -161,28 +161,31 @@ def _has_project_markers(directory: Path) -> bool:
     return _has_any_main_file(directory)
 
 
+def _enclosing_project(path: Path, project_root: Path) -> Path:
+    """The project a FILE or FOLDER target sits in: `project_root` (the cwd's project) when the
+    target lies inside it, so a nested target stays scoped to the whole project it belongs to,
+    never re-rooted onto its own package/skill folder. A target OUTSIDE `project_root` walks up
+    from itself (`resolve_project_root_for_file`, the same function MCP's `validate` tool uses)
+    to find its own real project, since `project_root` there is not that project at all. When
+    `project_root` is no project (a parent holding several checkouts, a temp folder, `/`), a
+    real project root found above the target scopes the run, never the unrelated folder around it."""
+    if not path.is_relative_to(project_root):
+        return resolve_project_root_for_file(path)
+    if _has_project_markers(project_root):
+        return project_root
+    own = resolve_project_root_for_file(path)
+    if own != project_root and own.is_relative_to(project_root) and _is_own_project(own):
+        return own
+    return project_root
+
+
 def _file_target_root(single_file: Path, project_root: Path) -> Path:
-    """Root for a lone FILE target: `project_root` (the cwd's project) when the file already
-    lies inside it — a nested child file stays scoped to the whole project it belongs to,
-    never re-rooted onto its own package/skill folder. Only a file OUTSIDE `project_root`
-    walks up from itself (`resolve_project_root_for_file`, the same function MCP's
-    `validate` tool uses) to find its own real project, since `project_root` there is not
-    that project at all. A file in the user's own agent folder (`~/.claude`) roots on that
-    folder alone, wherever the command runs from."""
+    """Root for a lone FILE target: its enclosing project (`_enclosing_project`). A file in the
+    user's own agent folder (`~/.claude`) roots on that folder alone, wherever the command runs from."""
     user_dir = user_level_agent_dir(single_file)
     if user_dir is not None:
         return user_dir
-    if single_file.is_relative_to(project_root):
-        if _has_project_markers(project_root):
-            return project_root
-        # A terminal sitting in a folder that is no project (a parent holding several
-        # checkouts, a temp folder): the file's own project root — a real root found
-        # above the file — scopes the run, never the unrelated folder around it.
-        own = resolve_project_root_for_file(single_file)
-        if own != project_root and own.is_relative_to(project_root) and _is_own_project(own):
-            return own
-        return project_root
-    return resolve_project_root_for_file(single_file)
+    return _enclosing_project(single_file, project_root)
 
 
 def _is_own_project(directory: Path) -> bool:
@@ -222,23 +225,26 @@ def _scan_root(single_path: Path | None, single_file: Path | None, project_root:
     (`resolve_project_root_for_file`, the same function MCP's `validate` tool uses) to
     find that file's real project, since `project_root` there is not that project at all.
 
-    A lone DIRECTORY target resolves by one question — is it a project root of its own?
+    A lone DIRECTORY target resolves by one question — is it a project root of its own? —
+    asked against the project it sits in (`_enclosing_project`, the walk a file target
+    takes), so a folder named from a terminal outside its project reads the same as when named
+    from within.
 
-    * A root (another checkout outside the project, or a monorepo package carrying its
-      own `.ails/` or `CLAUDE.md` + `.claude/`) is anchored as its own scan root and
-      keeps its own path keys and level. So is any directory outside the project root:
-      nothing else could anchor it.
+    * A root (another checkout, or a monorepo package carrying its own `.ails/` or
+      `CLAUDE.md` + `.claude/`) is anchored as its own scan root and keeps its own path
+      keys and level. So is a folder that is its own project (the current folder, or the
+      walk up from it ends at the folder itself).
     * A directory holding any project marker (a bare main instruction file, an agent
       config directory without a main file, an `.ails/`) is ALSO anchored as its own root
-      when the enclosing project root carries no project marker of its own (no `.ails/`,
+      when the enclosing project carries no project marker of its own (no `.ails/`,
       no agent config directory, no main file —
       `_has_project_markers`, mirroring `_is_project_root`'s own marker check) —
       anchoring at that enclosing root would detect no agent at all and silently drop
       the target, the same way a lone `CLAUDE.md` repo checked from its parent must
-      still be found. An enclosing root that already carries a marker of its own (an
+      still be found. An enclosing project that already carries a marker of its own (an
       `.ails`- or `.claude/rules/`-anchored project, say) keeps the folder as
       a slice instead, so its own rules and skills are not split off from it.
-    * Anything else inside the project is a SLICE of this project. Discovery finds an
+    * Anything else inside the enclosing project is a SLICE of it. Discovery finds an
       agent's surfaces (`.claude/rules/`, `.claude/skills/`) only relative to the
       project root, so the scan stays anchored there and is narrowed to the subtree —
       `subtree` names it for the caller.
@@ -259,11 +265,12 @@ def _scan_root(single_path: Path | None, single_file: Path | None, project_root:
         return None, project_root
     if single_file is not None:
         return None, _file_target_root(single_file, project_root)
-    if single_path == project_root or not single_path.is_relative_to(project_root):
+    enclosing = _enclosing_project(single_path, project_root)
+    if single_path == enclosing or not single_path.is_relative_to(enclosing):
         return None, single_path
-    if _is_project_root(single_path) or (not _has_project_markers(project_root) and _has_project_markers(single_path)):
+    if _is_project_root(single_path) or (not _has_project_markers(enclosing) and _has_project_markers(single_path)):
         return None, single_path
-    return single_path, project_root
+    return single_path, enclosing
 
 
 def _existing_target_root(token: str, project_root: Path) -> Path | None:

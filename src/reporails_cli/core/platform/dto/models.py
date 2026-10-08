@@ -64,6 +64,15 @@ class Severity(str, Enum):
     INFO = "info"
 
 
+# Registry severity order, most severe first; INFO is not ranked.
+SEVERITY_ORDER: dict[Severity, int] = {
+    Severity.CRITICAL: 0,
+    Severity.HIGH: 1,
+    Severity.MEDIUM: 2,
+    Severity.LOW: 3,
+}
+
+
 class PatternConfidence(str, Enum):
     """How reliable a rule's detection pattern is."""
 
@@ -290,6 +299,7 @@ class JudgmentResponse:
 
 __all__ = [
     "CATEGORY_CODES",
+    "SEVERITY_ORDER",
     "Category",
     "Check",
     "ClassifiedFile",

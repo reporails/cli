@@ -12,15 +12,12 @@ from typing import Any
 
 from rich.console import Console
 
-from reporails_cli.formatters.text.display_constants import (
-    conventions_phrase,
-    display_rule_id,
-    get_term_width,
-    rule_docs_url,
-)
+from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Severity
+from reporails_cli.formatters.text.display_constants import conventions_phrase, counted, get_term_width
 from reporails_cli.formatters.text.funnel_cta import no_score_reason
+from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url, rule_severity
 from reporails_cli.formatters.text.score import score_color
-from reporails_cli.formatters.triage import split_conventions
+from reporails_cli.formatters.triage import LeverageTier, resolve_leverage, split_conventions
 
 console = Console()
 
@@ -38,11 +35,6 @@ def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float | N
         score = result.quality.display_score
         return float(score) if score is not None else None
     return 0.0
-
-
-def _plural(n: int, noun: str) -> str:
-    """`1 error` / `2 errors`, thousands grouped."""
-    return f"{n:,} {noun}{'' if n == 1 else 's'}"
 
 
 def _score_bar(score: float, bar_width: int, color: str) -> str:
@@ -108,11 +100,33 @@ def _render_verdict_block(
     _render_findings_line(len(listed), verbose, len(conventions))
 
 
+# Lower ranks first: the strongest grade a reply put on a rule's errors, then the registry severity.
+_GRADE_RANK = {LeverageTier.GATE_MOVER: 0, LeverageTier.CONDITIONAL: 1, LeverageTier.COSMETIC: 2}
+_UNGRADED_RANK = len(_GRADE_RANK)
+
+
+def _severity_rank(rule_id: str) -> int:
+    """The registry severity rank of a rule (most severe lowest); after every ranked severity when none is known."""
+    severity = rule_severity(rule_id)
+    return SEVERITY_ORDER[Severity(severity)] if severity else len(SEVERITY_ORDER)
+
+
 def _top_error_rule(errors: list[Any]) -> tuple[str, int]:
-    """The rule id with the most error findings and its count; ties break on rule id."""
-    counts: Counter[str] = Counter(display_rule_id(f.rule or "") for f in errors)
-    rule, n = min(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    return rule, n
+    """The rule id with the most error findings and its count.
+
+    Ties break on the strongest grade the reply put on the rule's errors (`gate_mover`, then
+    `conditional`, then `cosmetic`, then ungraded), then on the rule's registry severity
+    (`critical` down to `low`), then on rule id.
+    """
+    counts: Counter[str] = Counter()
+    grade: dict[str, int] = {}
+    for f in errors:
+        rule = display_rule_id(f.rule or "")
+        counts[rule] += 1
+        tier = resolve_leverage(f)
+        grade[rule] = min(grade.get(rule, _UNGRADED_RANK), _GRADE_RANK[tier] if tier else _UNGRADED_RANK)
+    rule = min(counts, key=lambda r: (-counts[r], grade[r], _severity_rank(r), r))
+    return rule, counts[rule]
 
 
 def _render_fix_now(errors: list[Any], hint_errors: int) -> None:
@@ -128,9 +142,9 @@ def _render_fix_now(errors: list[Any], hint_errors: int) -> None:
     rule, n = _top_error_rule(errors)
     url = rule_docs_url(rule)
     rule_cell = f"[link={url}]{rule}[/link]" if url else rule
-    count = f" ({_plural(n, 'error')})" if n > 1 else ""
+    count = f" ({counted(n, 'error')})" if n > 1 else ""
     console.print(
-        f"  {'Fix now':<{_VERDICT_LABEL_W}}[red]{_plural(len(errors), 'error')}[/red]{gated}. "
+        f"  {'Fix now':<{_VERDICT_LABEL_W}}[red]{counted(len(errors), 'error')}[/red]{gated}. "
         f"Start with {rule_cell}{count}."
     )
 

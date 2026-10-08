@@ -468,9 +468,7 @@ def test_a_rewrite_that_adds_no_restricting_word_does_not_narrow(tmp_path, befor
     assert result["narrowed_instructions"] == []
 
 
-_PUNCT_BEFORE = (
-    "Pass `--scope` (incl. `.`) to override the default. Run it with `make` and `lint`, then check `out`.\n"
-)
+_PUNCT_BEFORE = "Pass `--scope` (incl. `.`) to override the default. Run it with `make` and `lint`, then check `out`.\n"
 _PUNCT_SPLIT = (
     "Pass `--scope` (incl. `.`) to override the default. Run it with `make`. Run it with `lint`. Then check `out`.\n"
 )

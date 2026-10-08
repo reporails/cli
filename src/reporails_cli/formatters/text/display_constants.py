@@ -9,7 +9,6 @@ from __future__ import annotations
 import shutil
 from collections import Counter
 from collections.abc import Callable, Iterable
-from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
 
@@ -115,103 +114,6 @@ HINT_TYPE_LABELS = {
     "CORE:C:0040": "repetition",
     "CORE:C:0059": "ambiguous phrasing",
 }
-
-HINT_SEV_ORDER = {"error": 0, "warning": 1, "info": 2}
-
-# Client-check labels map to their canonical rule ID so local findings display the ID like
-# server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
-CLIENT_CHECK_RULE_ID = {
-    "format": "CORE:E:0003",
-    "bold": "CORE:E:0003",
-    "heading_instruction": "CORE:S:0039",
-}
-
-
-def display_rule_id(rule: str) -> str:
-    """Canonical rule ID for a finding's rule token; unmapped tokens pass through."""
-    return CLIENT_CHECK_RULE_ID.get(rule, rule)
-
-
-_RULE_DOCS_BASE = "https://reporails.com/rules"
-
-
-@lru_cache(maxsize=1)
-def _rule_slug_map() -> dict[str, str]:
-    """`{rule_id: slug}` from the bundled framework registry, loaded once per process."""
-    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
-
-    try:
-        return {r.id: r.slug for r in load_all_rules() if r.slug}
-    except (OSError, ValueError):
-        return {}
-
-
-def rule_docs_url(rule_id: str) -> str | None:
-    """Public docs URL (`/rules/<agent|core>/<slug>`) for a canonical rule ID, or None."""
-    parts = rule_id.split(":")
-    if len(parts) != 3:
-        return None
-    slug = _rule_slug_map().get(rule_id)
-    if not slug:
-        return None
-    agent = "core" if parts[0] == "CORE" else parts[0].lower()
-    return f"{_RULE_DOCS_BASE}/{agent}/{slug}"
-
-
-@lru_cache(maxsize=1)
-def _rule_title_map() -> dict[str, str]:
-    """`{rule_id: title}` from the bundled framework registry, loaded once per process."""
-    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
-
-    try:
-        return {r.id: r.title for r in load_all_rules() if r.title}
-    except (OSError, ValueError):
-        return {}
-
-
-def rule_title(rule_id: str) -> str:
-    """The registry title of a canonical rule ID, or an empty string when none is known."""
-    return _rule_title_map().get(rule_id, "")
-
-
-def rule_label(rule_id: str) -> dict[str, str] | None:
-    """`{"title": ..., "url": ...}` for a canonical rule ID — a coding agent's label for a
-    bare rule code. `url` is omitted when unresolvable; `None` when neither title nor url
-    resolves (e.g. an unknown/retired rule ID)."""
-    title = _rule_title_map().get(rule_id)
-    url = rule_docs_url(rule_id)
-    if not title and not url:
-        return None
-    entry: dict[str, str] = {}
-    if title:
-        entry["title"] = title
-    if url:
-        entry["url"] = url
-    return entry
-
-
-def linked_rule_id(rule: str) -> str:
-    """Rule token as a Rich hyperlink to its docs page; plain canonical ID if unresolvable."""
-    rule_id = display_rule_id(rule)
-    url = rule_docs_url(rule_id)
-    return f"[link={url}]{rule_id}[/link]" if url else rule_id
-
-
-# A rule a suppression directive may also name by its short token, as it has always been written.
-SHORT_TOKEN = {"CORE:S:0039": "heading_instruction"}
-
-
-def rule_aliases(rule: str) -> set[str]:
-    """Every name a suppression directive may use for a finding's rule: raw token, canonical ID, slug."""
-    canon = display_rule_id(rule)
-    names = {rule, canon}
-    if canon in SHORT_TOKEN:
-        names.add(SHORT_TOKEN[canon])
-    slug = _rule_slug_map().get(canon)
-    if slug:
-        names.add(slug)
-    return names
-
 
 # ── File classification lookup tables ─────────────────────────────────
 
@@ -593,6 +495,20 @@ def group_stats_line(atoms: list[Any]) -> str:
     return f"{instr_str} \u00b7 {prose_pct}% prose"
 
 
+def counted(n: int, noun: str) -> str:
+    """`1 error` / `2 errors`, thousands grouped."""
+    return f"{n:,} {noun}{'' if n == 1 else 's'}"
+
+
+NAMED_OVERLAP_PAIRS = 3  # pair lines a Cross-file list names (Summary and free-tier section); the rest are counted
+OVERLAP_HINT = "ails check -v shows each file's overlaps"
+
+
+def more_pairs_line(hidden: int) -> str:
+    """The count of Cross-file pairs a list does not name, with the hint that lists them."""
+    return f"+{counted(hidden, 'more pair')} \u00b7 {OVERLAP_HINT}"
+
+
 def conventions_phrase(n: int) -> str:
     """The counted line for the findings that only ask a file to document something."""
-    return f"{n:,} documentation convention{'s' if n != 1 else ''} not present"
+    return f"{counted(n, 'documentation convention')} not present"

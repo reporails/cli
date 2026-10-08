@@ -31,8 +31,10 @@ from reporails_cli.core.mapper.annotate import check_specificity
 from reporails_cli.core.mapper.classify import (
     _ALL_VERBS,
     _CLASSIFY_WORD_RE,
+    best_to_sign,
     classify_charge,
     hedges_with_lead,
+    hedges_with_phrase,
     hedges_with_should,
     is_terse_no_prohibition,
     starts_bare_no_status,
@@ -1335,18 +1337,24 @@ def _apply_structural_neutral_floor(atoms: list[Atom]) -> None:
 
 
 def _apply_hedged_should_floor(atoms: list[Atom]) -> None:
-    """Read an instruction given with `should`, or opening with a hedge word (`Prefer …`, `Try
-    to …`, `Perhaps …`), as hedged.
+    """Read an instruction given with `should`, opening with a hedge word (`Prefer …`, `Try
+    to …`, `Perhaps …`), or carrying `where possible` / `It's best (not) to …`, as hedged.
 
-    `You should run the linter first` recommends rather than requires, and the lexical
-    classifier reads its `should` that way (:func:`~reporails_cli.core.mapper.classify.hedges_with_should`);
-    the span decoder reads the same line as a direct instruction, so the hedge is re-imposed
-    after it. Only an atom that already carries a charge is touched, and only its modality —
-    never its charge or text. `might` and `could` keep the modality the span decoder gives them.
+    `You should run the linter first` recommends rather than requires, so a charged atom whose text
+    hedges that way (:func:`~reporails_cli.core.mapper.classify.hedges_with_should`, a hedge lead,
+    `where possible`, `It's best (not) to …`) takes modality `hedged`. `might` and `could` keep the
+    modality the atom has. The one charge it sets is on a running-text `It's best to <verb> …` (or
+    `… best not to …`) atom that carries none: that lead is an instruction, so it takes its direction.
     """
     for atom in atoms:
         text = atom.plain_text or atom.text
-        if atom.charge_value != 0 and (hedges_with_should(text) or hedges_with_lead(text)):
+        sign = best_to_sign(atom.text)
+        if sign and atom.charge_value == 0 and atom.kind != "heading" and not _is_structural(atom.text, atom.format):
+            atom.charge, atom.charge_value = ("DIRECTIVE", 1) if sign > 0 else ("CONSTRAINT", -1)
+            atom.modality = "hedged"
+        if atom.charge_value != 0 and (
+            hedges_with_should(text) or hedges_with_lead(text) or hedges_with_phrase(atom.text)
+        ):
             atom.modality = "hedged"
 
 

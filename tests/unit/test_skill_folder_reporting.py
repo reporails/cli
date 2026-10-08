@@ -11,7 +11,7 @@ from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
 from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
-from reporails_cli.formatters.text import display, item_scorecard, scorecard, triage_view
+from reporails_cli.formatters.text import display, file_groups, item_scorecard, scorecard, triage_view
 from reporails_cli.formatters.text.display_constants import file_type_summary, skill_lookup
 from reporails_cli.formatters.text.item_scorecard import _display_name_for_path, compute_item_scores
 from reporails_cli.formatters.text.scorecard import _surface_key, compute_surface_scores
@@ -260,7 +260,7 @@ class TestSkillFolderCounting:
         rel = ".claude/skills/group/child/SKILL.md"
         assert skill_of == {}
         assert _surface_key(rel, {}, skill_of) != "skills"
-        assert display._group_key(rel, {}, tmp_path, skill_of) != "skills"
+        assert file_groups.group_key(rel, {}, tmp_path, skill_of) != "skills"
         assert "skill" not in file_type_summary({rel}, skill_of)
         assert _display_name_for_path(rel, skill_of) == rel
         surfaces = compute_surface_scores(
@@ -277,7 +277,7 @@ class TestSkillFolderCounting:
         rel = ".claude/skills/foo/SKILL.md"
         assert skill_lookup(None, tmp_path) is None
         assert _surface_key(rel, {}, None) == "skills"
-        assert display._group_key(rel, {}, tmp_path, None) == "skills"
+        assert file_groups.group_key(rel, {}, tmp_path, None) == "skills"
         assert file_type_summary({rel}, None) == "1 skill"
 
     @pytest.mark.unit
@@ -289,7 +289,7 @@ class TestSkillFolderCounting:
         result = CombinedResult(findings=(_finding(rel),), quality=QualityResult())
         assert skill_of == {}
         assert all(s.name != "Skills" for s in compute_surface_scores(result, ruleset_map=rmap, project_root=tmp_path))
-        assert list(display._build_file_groups(result, {}, tmp_path, skill_of)) != ["skills"]
+        assert list(file_groups.build_file_groups(result, {}, tmp_path, skill_of)) != ["skills"]
         assert "skill" not in file_type_summary({rel}, skill_of)
 
     @pytest.mark.unit
@@ -315,7 +315,7 @@ class TestSkillFolderCounting:
         rel = ".claude/skills/foo/ref.md"
         ft = {rel: file_type}
         result = CombinedResult(findings=(_finding(rel),), quality=QualityResult())
-        assert list(display._build_file_groups(result, ft, tmp_path, skill_of)) == ["skills"]
+        assert list(file_groups.build_file_groups(result, ft, tmp_path, skill_of)) == ["skills"]
         surfaces = compute_surface_scores(result, ruleset_map=rmap, project_root=tmp_path, file_type_by_path=ft)
         assert [(s.name, s.item_count, s.finding_count) for s in surfaces] == [("Skills", 1, 1)]
         assert file_type_summary({rel, ".claude/skills/foo/SKILL.md"}, skill_of) == "1 skill"
@@ -343,7 +343,7 @@ class TestSkillFolderCounting:
     @pytest.mark.subsys_cli_ux
     def test_findings_in_supporting_files_group_under_skills(self, tmp_path: Path) -> None:
         rmap = _map(tmp_path, *_skill(tmp_path, ".claude/skills/foo", "ref.md"))
-        groups = display._build_file_groups(
+        groups = file_groups.build_file_groups(
             CombinedResult(findings=(_finding(".claude/skills/foo/ref.md"),), quality=QualityResult()),
             {},
             tmp_path,

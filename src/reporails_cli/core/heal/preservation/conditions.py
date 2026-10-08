@@ -112,7 +112,7 @@ def pair_up(
 def _hedged(atom: Any) -> bool:
     """Whether `atom` gives its instruction as a suggestion: the mapper reads a charged atom's
     modality; a line it read as plain prose shows a hedge word."""
-    return atom.modality == "hedged" if atom.charge_value != 0 else has_hedge_cue(atom.plain_text)
+    return atom.modality == "hedged" if atom.charge_value != 0 else has_hedge_cue(atom.text)
 
 
 def made_direct(

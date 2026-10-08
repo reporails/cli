@@ -83,6 +83,18 @@ _SHIPPED_PATH_CASES: list[tuple[str, int, str]] = [
     ("No changes needed here.", 0, "none"),  # a bare status stays neutral
     ("`make test` — run it before every commit.", +1, "imperative"),
     ("`make test` — runs the whole suite.", 0, "none"),  # a command reference stays neutral
+    ("Regenerate `dist/` with `make build` after source changes where possible.", +1, "hedged"),
+    ("Regenerate `dist/` with `make build` after source changes if possible.", +1, "hedged"),
+    ("Regenerate `dist/` with `make build` after source changes whenever possible.", +1, "hedged"),
+    ("Regenerate `dist/` with `make build` after source changes when possible.", +1, "hedged"),
+    ("Regenerate `dist/` with `make build` as soon as possible.", +1, "imperative"),  # urgency, not a hedge
+    ("It's best not to edit files under `dist/` by hand.", -1, "hedged"),
+    ("It is best not to edit files under `dist/` by hand.", -1, "hedged"),
+    ("It's best to regenerate `dist/` with `make build` after source changes.", +1, "hedged"),
+    ("It is best to regenerate `dist/` with `make build` after source changes.", +1, "hedged"),
+    ("Set theory underlies the proof in this chapter.", 0, "none"),
+    ("Cache misses slow the build down.", 0, "none"),
+    ("Build artifacts with `make`.", +1, "imperative"),
 ]
 
 
@@ -98,3 +110,32 @@ def test_shipped_path_charge(text: str, charge: int, modality: str) -> None:
     assert len(atoms) == 1, [a.text for a in atoms]
     assert atoms[0].charge_value == charge, f"got {atoms[0].charge} on {text!r}"
     assert atoms[0].modality == modality
+
+
+# Whole-pipeline cases (structure-aware tokenize, then the charge decode): (line, signed charge, modality).
+# A hedge phrase inside a code span is a command's text, not the author's wording; a pronoun or wh-word
+# after an ambiguous opening verb ends the subject, so the line is an order.
+_PIPELINE_CASES: list[tuple[str, int, str]] = [
+    ("- Run `make where possible`.", +1, "imperative"),
+    ("- `It's best to` is a phrase we flag.", 0, "none"),
+    ("- Regenerate `dist/` with `make build` after source changes where possible.", +1, "hedged"),
+    ("- `make test` — fix flaky tests you can reproduce", +1, "imperative"),
+    ("- **pytest** — test changes you can reproduce locally", +1, "imperative"),
+    ("- `ails check` — remove whatever is unused", +1, "imperative"),
+    ("- `make test` — fix the broken tests first", +1, "imperative"),
+]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+@pytest.mark.parametrize(("line", "charge", "modality"), _PIPELINE_CASES)
+def test_pipeline_reads_code_span_hedges_and_pronoun_subjects(line: str, charge: int, modality: str) -> None:
+    from reporails_cli.core.mapper.bio_pipeline import apply_multislot
+    from reporails_cli.core.mapper.parse import tokenize
+
+    atoms = apply_multislot(tokenize(line + "\n", "structure-aware"))
+    assert len(atoms) == 1, [a.text for a in atoms]
+    assert (atoms[0].charge_value, atoms[0].modality) == (charge, modality), (
+        f"{line!r}: got {atoms[0].charge} {atoms[0].modality!r}"
+    )

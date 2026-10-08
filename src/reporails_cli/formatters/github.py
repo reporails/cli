@@ -160,7 +160,7 @@ def format_combined_annotations(
     if not isinstance(result, CombinedResult):
         return ""
 
-    from reporails_cli.formatters.text.display_constants import display_rule_id
+    from reporails_cli.formatters.text.rule_meta import display_rule_id
 
     lines: list[str] = []
     server_error = json_formatter.format_server_error(getattr(result, "server_error", None))

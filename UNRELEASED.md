@@ -15,6 +15,8 @@
 - Docs: the tier pages describe Pro as what the server works out for your project — which findings to fix first and which to leave alone, the exact line of each cross-file repetition and overlap, and a re-check of each rewritten file.
 - MCP: a `validate` call narrowed with `targets` stays small: it carries its locations' findings while they fit and otherwise points to the rewrite brief.
 - MCP: the rewrite brief each remedy agent fetches is smaller; the guide to writing an ideal instruction now comes with the remedy agent itself, so use the reporails plugin release that matches this cli.
+- Check: an instruction hedged with "where possible", "wherever possible", "if possible", "when possible" or "whenever possible" at the end of a clause, or opening with "it's best to" or "it's best not to" (including "it's best to avoid …"), is now reported as weakly worded (CORE:C:0043), so files that use these phrasings can score lower. "As soon as possible", "if possible duplicates exist" and the same words inside a code span are unchanged.
+- Check: a line that describes something and opens with a word that can also be a verb, such as "Set theory underlies the proof", is read as an instruction less often, so it can draw fewer instruction findings (such as vague CORE:C:0042 or too brief CORE:E:0004), and its file's score can move either way.
 
 ### Fixed
 
@@ -26,6 +28,14 @@
 - Docs: the configuration guide's list of folders that are always skipped no longer includes `.vscode`, which is checked (GitHub Copilot keeps its settings there).
 - MCP: the `compression` line of a `validate` reply counts each finding once, so the findings it reports are the per-file and cross-file findings, split into those that move your score and the cosmetic rest.
 - Docs: the tier table lists the remedy among the Pro cross-file details.
+- Check: a whole-file finding on a file card without a triage read no longer leaves a blank column where the line number goes.
+- Check: when several rules have the same number of errors, "Fix now" starts with the one most likely to move your score, then the more severe one, instead of the lowest rule number.
+- Check: the Pro diagnostics line reads "1 Pro diagnostic (1 warning)" at a count of one, on the file card and in the summary.
+- Rules: the hook-event counts the Claude Code, GitHub Copilot and Cursor pages state are now the numbers their checks accept: 33, 14 GitHub events and 21. The import-depth rule's Fail example now chains 11 imports, so it exceeds the ceiling of 10 it describes.
+- Check: two files with the same content in one folder (for example `AGENTS.md` and `CLAUDE.md`) now show as one file card, `AGENTS.md (+CLAUDE.md)`, instead of the same card twice; a finding only one of them has still shows on that card.
+- Check: the file group header ("Memory (29)") now states the same number of files as the matching row in the Summary, instead of counting only the files that have findings.
+- Check: the Cross-file list on a free or signed-out run names the three pairs with the most overlaps or repetitions and counts the rest on one "+N more pairs" line; `-v` still lists every pair.
+- Check: a folder inside a project named from outside it (`ails check /path/to/project/docs`) is checked as part of that project, so its files are classified the same as when you name the file itself.
 
 ### Removed
 

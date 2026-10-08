@@ -442,7 +442,7 @@ def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> N
 def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
     """The shared assemble spine's inputs from the check state (`lint_result` None before the lint)."""
     from reporails_cli.core.pipeline.assemble import AssembleInputs
-    from reporails_cli.formatters.text.display_constants import rule_aliases
+    from reporails_cli.formatters.text.rule_meta import rule_aliases
 
     return AssembleInputs(
         m_findings=state.pipeline.m_findings,

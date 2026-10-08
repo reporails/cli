@@ -85,7 +85,7 @@ def rules_block(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
     shows. A rule id with neither a resolvable title nor a docs url is omitted. The key set is
     sorted for stability.
     """
-    from reporails_cli.formatters.text.display_constants import display_rule_id, rule_label
+    from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_label
 
     raw_ids: set[str] = set()
     _collect_rule_ids(payload, raw_ids)
