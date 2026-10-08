@@ -92,6 +92,7 @@ def test_heal_dot_plus_token_still_refused(second: str, tmp_path: Path, monkeypa
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_heal_leaves_files_in_heal_exclude_unchanged(tmp_path: object) -> None:
     """`ails check --heal` skips every file `heal_exclude` matches: the fixable line in
     `CLAUDE.md` is rewritten, the same line in `archive/CLAUDE.md` stays byte-identical."""

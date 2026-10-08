@@ -66,6 +66,7 @@ def _pi(m: Any, line: int) -> int | None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_bold_on_a_directive_becomes_italic_and_is_not_reported_again(tmp_path: Path) -> None:
     res, path = _run(tmp_path, (3, "unbold", "bold"), (7, "code", "format"))
     assert "Always run the *linter* before" in path.read_text()
@@ -76,6 +77,7 @@ def test_bold_on_a_directive_becomes_italic_and_is_not_reported_again(tmp_path: 
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_format_row_wraps_only_its_own_line(tmp_path: Path) -> None:
     res, path = _run(tmp_path, (7, "code", "format"))
     lines = path.read_text().splitlines()
@@ -87,6 +89,7 @@ def test_format_row_wraps_only_its_own_line(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_bold_on_a_constraint_is_fixed(tmp_path: Path) -> None:
     res, path = _run(tmp_path, (5, "unbold", "CORE:C:0058"))
     assert "Never edit *generated* files" in path.read_text()
@@ -95,6 +98,7 @@ def test_bold_on_a_constraint_is_fixed(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_no_workflow_writes_nothing(tmp_path: Path) -> None:
     path = tmp_path / "CLAUDE.md"
     path.write_text(DOC)
@@ -105,6 +109,7 @@ def test_no_workflow_writes_nothing(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_second_run_changes_nothing_and_dry_run_writes_nothing(tmp_path: Path) -> None:
     path = tmp_path / "CLAUDE.md"
     path.write_bytes(DOC.replace("\n", "\r\n").encode())
@@ -120,6 +125,7 @@ def test_second_run_changes_nothing_and_dry_run_writes_nothing(tmp_path: Path) -
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_suppressed_line_and_files_outside_the_heal_set_are_untouched(tmp_path: Path) -> None:
     path = tmp_path / "CLAUDE.md"
     path.write_text(DOC)
@@ -137,6 +143,7 @@ def test_suppressed_line_and_files_outside_the_heal_set_are_untouched(tmp_path: 
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_split_is_written_and_a_category_op_is_a_decision(tmp_path: Path) -> None:
     text = "# Demo\n\nRun the tests; update the docs.\n\nKeep the code clear.\n"
     res, path = _run(tmp_path, (3, "split", "CORE:C:0058"), (5, "category", "CORE:C:0001"), text=text)
@@ -148,6 +155,7 @@ def test_split_is_written_and_a_category_op_is_a_decision(tmp_path: Path) -> Non
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_a_file_that_departs_from_its_plan_is_put_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The write also touches an unplanned line; the file is restored byte for byte."""
     import reporails_cli.core.heal.keyed as keyed
@@ -308,6 +316,7 @@ def _hand_map(*files: Path) -> tuple[Any, RemediationWorkflow]:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_a_config_surface_file_is_never_written(tmp_path: Path) -> None:
     """A finding on a config surface (`.claude/settings.json`) gets no fix; the same row on `CLAUDE.md` does."""
     kept = tmp_path / "CLAUDE.md"
@@ -325,6 +334,7 @@ def test_a_config_surface_file_is_never_written(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_a_file_whose_imports_expand_is_never_written(tmp_path: Path) -> None:
     """Atom lines of an `@import`-bearing file count the imported lines, so a write would land on the wrong line."""
     kept = tmp_path / "CLAUDE.md"

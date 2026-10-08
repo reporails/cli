@@ -51,6 +51,7 @@ def _call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_workflow: bool =
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_heal_apply_writes_every_fix_and_reports_them(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     text = _call(tmp_path, monkeypatch)
     lines = text.splitlines()
@@ -62,6 +63,7 @@ def test_heal_apply_writes_every_fix_and_reports_them(tmp_path: Path, monkeypatc
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_heal_apply_puts_back_a_file_that_departs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import reporails_cli.core.heal.keyed as keyed
 
@@ -81,6 +83,7 @@ def test_heal_apply_puts_back_a_file_that_departs(tmp_path: Path, monkeypatch: p
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
+@pytest.mark.requires_model
 def test_heal_apply_without_a_workflow_writes_nothing_and_says_pro(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
