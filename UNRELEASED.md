@@ -13,7 +13,7 @@
 - MCP: on a Pro account, `validate` returns a short text view (status, surfaces, the locations to rewrite, what stays listed and the rewrite check) instead of the full JSON; pass `full=true` for the JSON.
 - Docs: the tier pages describe Pro as what the server works out for your project — which findings to fix first and which to leave alone, the exact line of each cross-file repetition and overlap, and a re-check of each rewritten file.
 - MCP: a `validate` call narrowed with `targets` stays small: it carries its locations' findings while they fit and otherwise points to the rewrite brief.
-- MCP: the rewrite brief each remedy agent fetches is smaller, so heal spends less time per location.
+- MCP: the rewrite brief each remedy agent fetches is smaller; the guide to writing an ideal instruction now comes with the remedy agent itself, so use the reporails plugin release that matches this cli.
 
 ### Fixed
 
