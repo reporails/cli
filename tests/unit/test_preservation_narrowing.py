@@ -466,3 +466,81 @@ def test_a_rewrite_that_adds_no_restricting_word_does_not_narrow(tmp_path, befor
     ground = "\n\nThe `pytest` and `ruff` tools exist.\n"
     result = _compare_edit(tmp_path, before + ground, after + ground)
     assert result["narrowed_instructions"] == []
+
+
+_PUNCT_BEFORE = (
+    "Pass `--scope` (incl. `.`) to override the default. Run it with `make` and `lint`, then check `out`.\n"
+)
+_PUNCT_SPLIT = (
+    "Pass `--scope` (incl. `.`) to override the default. Run it with `make`. Run it with `lint`. Then check `out`.\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_sentence_split_does_not_repeat_a_punctuation_only_construct(tmp_path) -> None:
+    result = _compare_edit(tmp_path, _PUNCT_BEFORE, _PUNCT_SPLIT)
+    assert result["repeated_named"] == []
+    assert result["lost_named"] == []
+    assert result["invented_named"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_dropped_punctuation_only_construct_is_lost_and_an_added_one_is_invented(tmp_path) -> None:
+    dropped = _compare_edit(tmp_path, _PUNCT_BEFORE, _PUNCT_SPLIT.replace(" (incl. `.`)", ""))
+    assert dropped["lost_named"] == ["."]
+    added = _compare_edit(
+        tmp_path, "Join the keys with a plain :: between them.\n", "Join the keys with a plain `::` between them.\n"
+    )
+    assert [e["token"] for e in added["invented_named"]] == ["::"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_real_construct_mentioned_beyond_its_allowance_is_still_repeated(tmp_path) -> None:
+    before = "Run `ruff` before you push.\n\nKeep the suite fast.\n"
+    after = (
+        "Run `ruff` before you push.\n\nKeep the suite fast.\n\nAlso always run `ruff` twice, since `ruff` matters.\n"
+    )
+    result = _compare_edit(tmp_path, before, after)
+    assert [e["token"] for e in result["repeated_named"]] == ["`ruff`"]
+
+
+_INTENT = (
+    "- [Workflow vision since 2025-11](user_workflow_vision_since_2025_11.md) — the user dreamed/designed "
+    "this build/release workflow since Nov 2025; "
+    "treat the architecture as deliberate intent — ask, don't refactor.\n"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_lead_in_sentence_with_every_item_as_its_own_sentence_is_no_fragment(tmp_path) -> None:
+    after = _INTENT.replace(
+        "deliberate intent — ask, don't refactor.",
+        "deliberate intent. Ask the user about the architecture. *Do not refactor the architecture.*",
+    )
+    result = _compare_edit(tmp_path, _INTENT, after)
+    assert result["dangling_fragments"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_lead_in_with_only_its_first_item_is_still_a_fragment(tmp_path) -> None:
+    after = _INTENT.replace("deliberate intent — ask, don't refactor.", "deliberate intent — ask.")
+    assert _compare_edit(tmp_path, _INTENT, after)["dangling_fragments"]
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_rephrased_lead_in_with_bare_imperatives_is_still_a_fragment(tmp_path) -> None:
+    before = "You are the intake agent: you read the intent, classify it, and write the entry.\n"
+    after = "You are the intake agent: you read the intent.\n\nClassify it.\n\nWrite the entry.\n"
+    assert _compare_edit(tmp_path, before, after)["dangling_fragments"]

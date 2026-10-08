@@ -226,7 +226,7 @@ def _cuts_coverage(word: str, tail: list[str], known: set[str]) -> bool:
     rule = COVERAGE_RESTRICTORS.get(word)
     if rule is None or rule.already & known:
         return False
-    return not rule.next_words or bool(tail[:1]) and tail[0] in rule.next_words
+    return not rule.next_words or (bool(tail[:1]) and tail[0] in rule.next_words)
 
 
 def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:

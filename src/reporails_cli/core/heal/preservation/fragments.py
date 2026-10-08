@@ -196,6 +196,22 @@ def _series_cut(old_text: str, new: str, new_sentences: list[str]) -> bool:
     return True
 
 
+def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> bool:
+    """Whether the rewrite sentence `new` is exactly the author's sentence up to an opener, whole
+    and carrying none of the items after it, and every one of those items stands in a sentence of
+    the rewrite of its own: a lead-in kept as a complete sentence, each item split off as one more
+    (`... deliberate intent — ask, don't refactor.` -> `... deliberate intent. Ask ... Do not
+    refactor ...`), which is no fragment."""
+    rest = set().union(*(_words_of(n) for n in new_sentences if n is not new))
+    for match in _OPENER_RE.finditer(old_text):
+        if _normal(old_text[: match.start()]) != _normal(new):
+            continue
+        words = [content_words(i) for i in _items(old_text[match.end() :])]
+        if any(words) and all(_shares(w, rest) for w in words if w):
+            return True
+    return False
+
+
 def _source_of_cut(new: str, olds: list[Any], wholes: list[str], new_sentences: list[str]) -> Any | None:
     """The author's sentence the whole rewrite sentence `new` is what a split left behind of, when
     it is one: it keeps the lead-in verbatim with the first item, or rephrases it with the first
@@ -203,6 +219,8 @@ def _source_of_cut(new: str, olds: list[Any], wholes: list[str], new_sentences: 
     if _normal(new) in {_normal(w) for w in wholes}:
         return None
     for old, whole in zip(olds, wholes, strict=True):
+        if _lead_stands_alone(whole, new, new_sentences):
+            continue
         if any(_cut_short(whole, lead, tail, new_sentences) for lead, tail in _openers(new)):
             return old
         if _rephrased_cut(whole, new, new_sentences) or _series_cut(whole, new, new_sentences):
