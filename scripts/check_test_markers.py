@@ -28,10 +28,10 @@ SUBSYS_PREFIX = "subsys_"
 # the "at least one subsys_* marker" requirement.
 SUBSYS_EXEMPT_LANES = {"architecture", "contract"}
 
-# Names that run the real mapper (and so need the in-tree model set): the pipeline entry points,
-# plus the heal pass that re-maps every file it writes. A test that reaches one, directly or
-# through a helper of its own module, must carry `requires_model`, or CI without the model fails.
-MAPPER_ENTRIES = {"map_instruction_files", "map_ruleset", "_apply_keyed_fixes"}
+# Owners that run the real mapper. A unit test that runs the mapper must carry `requires_model`,
+# so a runner without the model set skips it.
+MAPPER_ENTRIES = {"map_instruction_files", "map_ruleset", "apply_keyed_heal"}
+INTERFACES = ROOT / "src" / "reporails_cli" / "interfaces"
 MODEL_MARKER = "requires_model"
 MAPPER_MODULES = (".core.mapper.", ".core.pipeline.")
 MAPPER_ALIASES = {"pl", "mapping", "pipeline"}
@@ -57,8 +57,8 @@ def _load_subsys_markers() -> set[str]:
     return out
 
 
-def _markers_on(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    """Return the set of `pytest.mark.<name>` decorators on a function node."""
+def _markers_on(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> set[str]:
+    """Return the set of `pytest.mark.<name>` decorators on a function or class node."""
     out: set[str] = set()
     for dec in node.decorator_list:
         target = dec.func if isinstance(dec, ast.Call) else dec
@@ -77,8 +77,8 @@ def _markers_on(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     return out
 
 
-def _called_names(node: ast.AST) -> set[str]:
-    """Names of the functions called anywhere inside `node` (`f(...)` or `mod.f(...)`)."""
+def _called_names(node: ast.AST, *, bare_only: bool = False) -> set[str]:
+    """Names of the functions called anywhere inside `node`: `f(...)`, and `mod.f(...)` unless `bare_only`."""
     out: set[str] = set()
     for sub in ast.walk(node):
         if not isinstance(sub, ast.Call):
@@ -86,7 +86,7 @@ def _called_names(node: ast.AST) -> set[str]:
         func = sub.func
         if isinstance(func, ast.Name):
             out.add(func.id)
-        elif isinstance(func, ast.Attribute):
+        elif isinstance(func, ast.Attribute) and not bare_only:
             out.add(func.attr)
     return out
 
@@ -112,30 +112,58 @@ def _stubs_mapper(node: ast.AST) -> bool:
     return False
 
 
-def _module_markers(tree: ast.Module) -> set[str]:
-    """Marker names set by a module-level `pytestmark = [...]`."""
+def _pytestmark_names(body: list[ast.stmt]) -> set[str]:
+    """Marker names set by a `pytestmark = [...]` assignment in a module or class body."""
     out: set[str] = set()
-    for stmt in tree.body:
+    for stmt in body:
         if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in stmt.targets):
             out.update(n.attr for n in ast.walk(stmt.value) if isinstance(n, ast.Attribute))
     return out
 
 
-def _mapper_reaching(tree: ast.Module) -> set[str]:
-    """Module-level function names that reach a mapper entry, directly or through each other."""
-    funcs = {n.name: _called_names(n) for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    reaching = {name for name, calls in funcs.items() if calls & MAPPER_ENTRIES}
+def _functions(body: list[ast.stmt]) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    return [n for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+
+def _reaching(body: list[ast.stmt], entries: set[str]) -> set[str]:
+    """Function names in `body` that reach an entry, directly or through each other.
+
+    Entries match by name, called bare or as `mod.f(...)`; other functions of the body are
+    followed only through bare-name calls, so `obj._run(...)` never matches a helper `_run`."""
+    funcs = _functions(body)
+    reaching = {f.name for f in funcs if _called_names(f) & entries}
     grew = True
     while grew:
         grew = False
-        for name, calls in funcs.items():
-            if name not in reaching and calls & reaching:
-                reaching.add(name)
+        for f in funcs:
+            if f.name not in reaching and _called_names(f, bare_only=True) & reaching:
+                reaching.add(f.name)
                 grew = True
     return reaching
 
 
-def _audit_file(path: Path, allowed_subsys: set[str]) -> list[tuple[str, str]]:
+def _src_entries() -> set[str]:
+    """The mapper owners plus the interface functions that call one directly, so a test that goes through
+    an interface wrapper is covered."""
+    entries = set(MAPPER_ENTRIES)
+    for path in sorted(INTERFACES.rglob("*.py")):
+        try:
+            body = ast.parse(path.read_text(encoding="utf-8")).body
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        entries |= {f.name for f in _functions(body) if _called_names(f, bare_only=True) & MAPPER_ENTRIES}
+    return entries
+
+
+def _tests(body: list[ast.stmt], inherited: set[str]) -> list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, set[str]]]:
+    """Test functions of a module or class body with the markers their enclosing classes set."""
+    out = [(f, inherited) for f in _functions(body) if f.name.startswith("test_")]
+    for cls in (n for n in body if isinstance(n, ast.ClassDef)):
+        out.extend(_tests(cls.body, inherited | _markers_on(cls) | _pytestmark_names(cls.body)))
+    return out
+
+
+def _audit_file(path: Path, allowed_subsys: set[str], entries: set[str]) -> list[tuple[str, str]]:
     """Return list of `(function_label, reason)` for tagging gaps."""
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -144,22 +172,15 @@ def _audit_file(path: Path, allowed_subsys: set[str]) -> list[tuple[str, str]]:
 
     gaps: list[tuple[str, str]] = []
     in_unit = "unit" in path.relative_to(TESTS).parts[:1]
-    module_markers = _module_markers(tree)
-    reaching = _mapper_reaching(tree) | MAPPER_ENTRIES
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not node.name.startswith("test_"):
-            continue
+    helpers = _reaching(tree.body, entries)
+    module_markers = _pytestmark_names(tree.body)
+    for node, inherited in _tests(tree.body, set()):
         markers = _markers_on(node)
-        if (
-            in_unit
-            and _called_names(node) & reaching
-            and not _stubs_mapper(node)
-            and MODEL_MARKER not in markers | module_markers
-        ):
+        reaches = _called_names(node) & entries or _called_names(node, bare_only=True) & helpers
+        if in_unit and reaches and not _stubs_mapper(node) and MODEL_MARKER not in markers | inherited | module_markers:
             gaps.append((f"{path.relative_to(ROOT)}::{node.name}", "runs the mapper without requires_model"))
         label = f"{path.relative_to(ROOT)}::{node.name}"
+        markers = markers | inherited
         lanes = markers & LANE_MARKERS
         subsys = {m for m in markers if m.startswith(SUBSYS_PREFIX)}
         if not lanes:
@@ -219,8 +240,9 @@ def main() -> int:
     test_files = _walk_test_files()
     gaps: list[tuple[str, str]] = []
     total_tests = 0
+    entries = _src_entries()
     for path in test_files:
-        gaps.extend(_audit_file(path, allowed_subsys))
+        gaps.extend(_audit_file(path, allowed_subsys, entries))
         total_tests += _count_tests(path)
 
     if not gaps:

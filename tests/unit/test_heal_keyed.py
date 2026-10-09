@@ -222,18 +222,11 @@ def test_output_lists_decisions_and_put_back() -> None:
 
 
 def _heal_cli(tmp_path: Path) -> Any:
-    import logging
-
     from typer.testing import CliRunner
 
     from reporails_cli.interfaces.cli.main import app
 
-    levels = {n: lg.level for n, lg in logging.root.manager.loggerDict.items() if isinstance(lg, logging.Logger)}
-    try:
-        return CliRunner().invoke(app, ["check", str(tmp_path), "--heal"])
-    finally:  # the check run quiets the mapper's loggers; give them back
-        for name, level in levels.items():
-            logging.getLogger(name).setLevel(level)
+    return CliRunner().invoke(app, ["check", str(tmp_path), "--heal"])
 
 
 @pytest.mark.unit

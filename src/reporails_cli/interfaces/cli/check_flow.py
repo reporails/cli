@@ -342,7 +342,6 @@ def _flow_pipeline(state: CheckState) -> None:
     from reporails_cli.core.lint.rule_runner import run_m_probes_over_pairs
     from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
 
-    _quiet_mapper_logs()
     state.pipeline.start_time = time.perf_counter()
     import os
 
@@ -569,10 +568,11 @@ def run_check_flow(state: CheckState) -> None:
     # Fetch the model only once there are files to map: a mistyped path or an empty
     # scope exits above without downloading it.
     _ensure_model_or_exit()
-    _flow_pipeline(state)
-    _flow_assemble(state)
-    _flow_render(state)
-    _flow_heal(state)
+    with _quiet_mapper_logs():
+        _flow_pipeline(state)
+        _flow_assemble(state)
+        _flow_render(state)
+        _flow_heal(state)
     if _should_exit_strict(
         state.inputs.strict,
         state.render.capability_paths,

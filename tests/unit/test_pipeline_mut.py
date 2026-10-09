@@ -31,7 +31,7 @@ def test_warn_finding_logs_warning_not_error(monkeypatch, caplog):
     """A 'warn' finding logs at WARNING, never ERROR (L121/L123 `==`)."""
     monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warn")])
     ruleset = SimpleNamespace(atoms=())
-    with caplog.at_level("WARNING", logger=pl.logger.name):
+    with caplog.at_level("WARNING"):
         pl._validate_and_log(ruleset)  # no error findings -> no raise
     levels = {r.levelname for r in caplog.records}
     assert "WARNING" in levels

@@ -28,7 +28,7 @@
 - MCP: the rewrite brief now lists the exact edits to apply and the few lines that need a decision, each with its rule's own example, and checking a rewritten file reports whether every listed change was made and nothing else changed. The brief is no longer split into parts.
 - MCP: the rewrite brief each remedy agent fetches is much smaller; use the reporails plugin release that matches this cli.
 - Check: an instruction hedged with "where possible", "wherever possible", "if possible", "when possible" or "whenever possible" at the end of a clause, or opening with "it's best to" or "it's best not to" (including "it's best to avoid …"), is now reported as weakly worded (CORE:C:0043), so files that use these phrasings can score lower. "As soon as possible", "if possible duplicates exist" and the same words inside a code span are unchanged.
-- Check: an earlier version of reporails is now told to run `ails update` when it checks a project, instead of showing a score without the server's findings.
+- Check: an earlier version of reporails now asks you to run `ails update` instead of showing an incomplete report.
 - Check: a line that describes something and opens with a word that can also be a verb, such as "Set theory underlies the proof", is read as an instruction less often, so it can draw fewer instruction findings (such as vague CORE:C:0042 or too brief CORE:E:0004), and its file's score can move either way.
 - Check: an instruction repeated in two files is offered for removal only from the file that never loads without the other, and an instruction repeated in two files that never load together is listed with the one file that loads wherever both do, so you can keep a single copy there.
 
@@ -57,4 +57,4 @@
 ### Internal
 
 - Tests: the listed-reason check reads the server's reason list as it now ships; `ails check --heal`, its sentence splits and the MCP `heal_apply` tool are covered for leaving settings files and files whose `@` imports expand unchanged, and for a signed-out run and an unreachable server independent of the developer's own login.
-- Tests: the heal tests that map files are skipped where the bundled model set is absent, and the test-marker check reports a unit test that maps files without the model marker.
+- Tests: unit tests that map files carry the `requires_model` marker and are skipped where the model set is absent, and the test-marker check reports one that lacks it.

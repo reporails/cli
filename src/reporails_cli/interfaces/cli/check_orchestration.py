@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 import time
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
@@ -498,8 +499,8 @@ def _should_exit_strict(
     return bool(result.findings)
 
 
-def _quiet_mapper_logs() -> None:
-    """Keep the mapper's info-level logs off stderr during a check."""
-    import logging as _logging
+def _quiet_mapper_logs() -> AbstractContextManager[None]:
+    """Keep the mapper's info-level logs off stderr for the duration of a check."""
+    from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 
-    _logging.getLogger("reporails_cli.core.mapper").setLevel(_logging.ERROR)
+    return quiet_loggers(("reporails_cli.core.mapper",))

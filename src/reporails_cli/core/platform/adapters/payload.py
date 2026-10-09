@@ -59,7 +59,7 @@ def _project_soas_span(slots: Any) -> dict[str, Any] | None:
 
 
 def _project_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
-    """Project a single Atom to the v4 wire shape."""
+    """Project a single Atom to its wire shape."""
     d: dict[str, Any] = {
         "line": a.line,
         "t": _KIND_ENC.get(a.kind, 1),
@@ -125,7 +125,7 @@ def _relativize(path: str, root: Path) -> str:
 
 
 def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
-    """Project file records to v4 — path relative to the scan root, never the frontmatter
+    """Project file records to the wire shape — path relative to the scan root, never the frontmatter
     `description` prose (only its embedding, `de`, is projected)."""
     out: list[dict[str, Any]] = []
     for f in ruleset_map.files:
