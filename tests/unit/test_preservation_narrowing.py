@@ -177,7 +177,6 @@ def test_a_split_that_leaves_a_fragment_behind_is_dangling(tmp_path, before, aft
             "(per `docs/changes.md`).\n\n"
             "You are a release author who writes or updates the matching entry at its canonical path.",
         ),
-        ("Run the tests, then commit the result.", "Run the tests. Then commit the result."),
         (
             "Prepare the release \u2014 collect the changed files, sort them by owner "
             "(at most one or two per team), name each file and why, then publish the notes per the template.",
@@ -571,3 +570,82 @@ def test_a_qualifier_on_a_general_noun_narrows_even_when_the_line_uses_its_words
     result = _compare_edit(tmp_path, before + ground, after + ground)
     assert result["narrowed_instructions"]
     assert result["ok"] is False
+
+
+_THEN_BEFORE = (
+    "*Do not silently skip an entry that fails to load \u2014 name the missing key and the paths tried, "
+    "then ask the maintainer; do not add a fallback path \u2014 the loader is strict.*\n"
+)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_sentence_that_starts_with_then_is_a_fragment_of_the_sentence_it_continued() -> None:
+    from reporails_cli.core.heal.preservation.fragments import rewrite_cut
+
+    before = _THEN_BEFORE.strip()
+    cut = before.replace("tried, then", "tried.* *Then").replace("maintainer;", "maintainer.*").replace("; do", " do")
+    assert rewrite_cut(before, cut.replace("maintainer.* do", "maintainer.* *Do")) == "step"
+    assert rewrite_cut("Run the tests, then fix every failure.", "Run the tests. Then fix every failure.") == "step"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_then_sentence_the_author_already_wrote_alone_is_no_fragment() -> None:
+    from reporails_cli.core.heal.preservation.fragments import rewrite_cut
+
+    same = "Run the tests. Then fix every failure."
+    assert rewrite_cut(same, same) == ""
+    assert rewrite_cut(same, "Run the tests.  Then fix every failure.") == ""
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_rewrite_that_cuts_a_then_step_into_its_own_sentence_is_reported(tmp_path) -> None:
+    before = "Run the tests, then fix every failure.\n"
+    result = _compare_edit(tmp_path, before, "Run the tests. Then fix every failure.\n")
+    assert result["dangling_fragments"]
+    unchanged = "Run the tests. Then fix every failure.\n"
+    assert _compare_edit(tmp_path, unchanged, unchanged)["dangling_fragments"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_an_unchanged_then_clause_is_kept_when_another_line_changes(tmp_path) -> None:
+    before = "Run the tests, then fix every failure.\n\nNever push to main.\n"
+    after = "Run the tests, then fix every failure.\n\nDo not push to main.\n"
+    assert _compare_edit(tmp_path, before, after)["dangling_fragments"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+def test_a_then_sentence_the_author_wrote_alone_is_kept_beside_the_same_step_in_a_clause(tmp_path) -> None:
+    before = "Build the image, then commit.\n\nStage the files. Then commit.\n\nNever push to main.\n"
+    after = before.replace("Never push", "Do not push")
+    assert _compare_edit(tmp_path, before, after)["dangling_fragments"] == []
+    assert rewrite_cut_of("Build the image, then commit. Stage the files. Then commit.") == ""
+
+
+def rewrite_cut_of(line: str) -> str:
+    from reporails_cli.core.heal.preservation.fragments import rewrite_cut
+
+    return rewrite_cut(line, line)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.parametrize(
+    "after",
+    [
+        "Run the tests. Then, fix every failure.",
+        "Run the tests. And then fix every failure.",
+    ],
+)
+def test_a_then_step_with_a_comma_or_and_is_still_a_step(after: str) -> None:
+    from reporails_cli.core.heal.preservation.fragments import rewrite_cut
+
+    assert rewrite_cut("Run the tests, and then fix every failure.", after) == "step"
+    assert rewrite_cut("Run the tests, then fix every failure.", after) == "step"

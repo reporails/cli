@@ -50,7 +50,10 @@ class Edit:
 
 @dataclass(frozen=True)
 class Slot:
-    """A spot a rewrite fills, bound to its line or its section."""
+    """A spot a rewrite fills, bound to its line or its section.
+
+    `change` is the one change a refused split allows (`split-keep-lead-in`, `split-repeat:<object>`,
+    `split-series`, `split-keep-condition`, `split-keep-sequence`); empty for any other slot."""
 
     file: str
     line: int
@@ -59,6 +62,7 @@ class Slot:
     rule: str
     text: str
     bound: Literal["line", "section"]
+    change: str = ""
 
 
 @dataclass(frozen=True)

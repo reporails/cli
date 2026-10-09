@@ -183,7 +183,7 @@ def test_a_split_that_ends_a_sentence_partway_through_its_series_is_put_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The write follows its plan, but the rewrite check finds a sentence cut off its series."""
-    import reporails_cli.core.heal.transforms as transforms
+    import reporails_cli.core.heal.plan as plan
     from reporails_cli.core.platform.dto.heal_plan import Edit
 
     line = json.loads((Path(__file__).parents[1] / "fixtures" / "heal_split_defect_lines.json").read_text())[
@@ -194,7 +194,7 @@ def test_a_split_that_ends_a_sentence_partway_through_its_series_is_put_back(
         before = lines[op.line - 1].rstrip("\r\n")
         return Edit(op.file, op.line, before, before.replace("`), and write", "`). And write"), op.op, op.rule)
 
-    monkeypatch.setitem(transforms.TRANSFORMS, "split", series_cut)
+    monkeypatch.setattr(plan, "split_or_reason", series_cut)
     text = f"# Demo\n\n{line}\n"
     res, path = _run(tmp_path, (3, "split", "CORE:C:0058"), text=text)
     assert path.read_text() == text

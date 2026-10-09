@@ -19,7 +19,7 @@ from typing import Any
 
 from reporails_cli.core.heal.file_io import imports_expand
 from reporails_cli.core.heal.keyed import mapped_path_resolver, resolve_expect
-from reporails_cli.core.heal.op_guide import op_lines
+from reporails_cli.core.heal.op_guide import change_lines, op_lines
 from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
@@ -395,6 +395,8 @@ def _slot_entries(
     for entry, slot in zip(out, plan.slots, strict=True):
         expect = expects.get((slot.rule, slot.file, slot.line, slot.pi, slot.op), {})
         to, also = _coordinate(expect.get("to"), scan_root), _coordinate(expect.get("also"), scan_root)
+        if slot.change:
+            entry["change"] = slot.change
         if to:
             entry["to"] = to[0]
         if also:
@@ -504,7 +506,7 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
         edits=_edit_entries(plan, lines_by_file, names),
         slots=slots,
         guides=_guides({s["rule"] for s in slots}),
-        ops=op_lines({s["op"] for s in slots}),
+        ops={**op_lines({s["op"] for s in slots}), **change_lines({s["change"] for s in slots if "change" in s})},
         refused=_refused_entries(plan, names),
         preservation_contract=PRESERVATION_CONTRACT,
     )

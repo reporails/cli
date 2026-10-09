@@ -9,10 +9,26 @@ import pytest
 
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.plan import apply_edits, build_plan
-from reporails_cli.core.heal.transforms import code, dedupe, direct, italic, move, negation_form, split, unbold
+from reporails_cli.core.heal.transforms import (
+    code,
+    dedupe,
+    direct,
+    italic,
+    move,
+    negation_form,
+    split_or_reason,
+    unbold,
+)
 from reporails_cli.core.mapper.annotate import check_specificity
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
+
+
+def _split_edit(op: PlanOp, atoms: Any, lines: Any) -> Edit | None:
+    """The edit `split_or_reason` makes, or None when it refuses."""
+    outcome = split_or_reason(op, atoms, lines)
+    return outcome if isinstance(outcome, Edit) else None
+
 
 F = "a.md"
 
@@ -110,7 +126,7 @@ def _pieces(*texts: str, fmt: str = "prose", predicate: bool = True, objects: bo
 )
 def test_split_writes_each_instruction_atom_as_its_own_sentence(line: str, texts: tuple[str, ...], after: str) -> None:
     atoms = _pieces(*texts, fmt="list" if line.startswith("- ") else "prose")
-    edit = split(_op("split"), atoms, _lines(line))
+    edit = _split_edit(_op("split"), atoms, _lines(line))
     assert edit is not None
     assert (edit.before, edit.after) == (line, after)
 
@@ -129,7 +145,7 @@ def test_split_writes_each_instruction_atom_as_its_own_sentence(line: str, texts
 def test_split_leaves_a_piece_without_its_own_predicate_or_a_bare_joint_to_a_decision(
     line: str, texts: tuple[str, ...], flags: dict[str, bool]
 ) -> None:
-    assert split(_op("split"), _pieces(*texts, **flags), _lines(line)) is None
+    assert _split_edit(_op("split"), _pieces(*texts, **flags), _lines(line)) is None
 
 
 @pytest.mark.unit
@@ -138,7 +154,7 @@ def test_split_leaves_a_piece_sharing_its_siblings_object_to_a_decision() -> Non
     line = "Run the tests; fix every failure."
     first, second = _pieces("Run the tests;", "fix every failure.")
     second.slots = AtomSlots(predicate_span=(0, 1))
-    assert split(_op("split"), [first, second], _lines(line)) is None
+    assert _split_edit(_op("split"), [first, second], _lines(line)) is None
 
 
 @pytest.mark.unit
@@ -146,7 +162,7 @@ def test_split_leaves_a_piece_sharing_its_siblings_object_to_a_decision() -> Non
 def test_split_leaves_a_neutral_atom_of_the_sentence_to_a_decision() -> None:
     line = "Run the tests; fix every failure."
     atoms = [_atom("Run the tests;", pi=0, slots=_pieces("x")[0].slots), _atom("fix every failure.", charge=0, pi=1)]
-    assert split(_op("split"), atoms, _lines(line)) is None
+    assert _split_edit(_op("split"), atoms, _lines(line)) is None
 
 
 @pytest.mark.unit
@@ -154,7 +170,74 @@ def test_split_leaves_a_neutral_atom_of_the_sentence_to_a_decision() -> None:
 def test_split_refuses_a_lead_in() -> None:
     line = "Run the tests; fix every failure:"
     atoms = _pieces("Run the tests;", "fix every failure:", lead_in=True)
-    assert split(_op("split"), atoms, _lines(line)) is None
+    assert _split_edit(_op("split"), atoms, _lines(line)) is None
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_split_keeps_a_step_that_starts_with_then_with_the_step_before_it() -> None:
+    line = "Run the tests, then fix every failure."
+    assert _split_edit(_op("split"), _pieces("Run the tests,", "then fix every failure."), _lines(line)) is None
+    plan = build_plan([_op("split")], {F: _pieces("Run the tests,", "then fix every failure.")}, {F: _lines(line)})
+    assert plan.edits == () and [s.change for s in plan.slots] == ["split-keep-sequence"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_split_still_cuts_two_independent_prohibitions_apart() -> None:
+    line = "*Never commit generated files; never push to the main branch.*"
+    atoms = _pieces("*Never commit generated files;*", "*never push to the main branch.*")
+    edit = _split_edit(_op("split"), atoms, _lines(line))
+    assert edit is not None
+    assert edit.after == "*Never commit generated files.* *Never push to the main branch.*"
+
+
+def _slot_change(atoms: list[Atom], line: str) -> str:
+    plan = build_plan([_op("split")], {F: atoms}, {F: _lines(line)})
+    assert plan.edits == ()
+    (slot,) = plan.slots
+    return slot.change
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_refused_split_of_a_lead_in_allows_keeping_the_lead_in() -> None:
+    atoms = _pieces("Run the tests;", "fix every failure:", lead_in=True)
+    assert _slot_change(atoms, "Run the tests; fix every failure:") == "split-keep-lead-in"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_refused_split_of_pieces_sharing_an_object_allows_repeating_it() -> None:
+    first, second = _pieces("Run the tests;", "fix every failure.")
+    first.slots = AtomSlots(predicate_span=(0, 3), object_span=(1, 3), object="the tests")
+    second.slots = AtomSlots(predicate_span=(0, 3))
+    assert _slot_change([first, second], "Run the tests; fix every failure.") == "split-repeat:the tests"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_refused_split_with_an_unreadable_object_allows_no_change() -> None:
+    first, second = _pieces("Run the tests;", "fix every failure.")
+    second.slots = AtomSlots(predicate_span=(0, 1))
+    assert _slot_change([first, second], "Run the tests; fix every failure.") == ""
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_refused_split_inside_a_list_allows_giving_each_item_its_verb() -> None:
+    line = "Read the file, sort it, run the tests."
+    atoms = _pieces("Read the file, sort it,", "run the tests.")
+    assert _slot_change(atoms, line) == "split-series"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_refused_split_that_drops_a_scope_allows_repeating_the_condition() -> None:
+    line = "When the build fails, run the tests; never push."
+    first, second = _pieces("When the build fails, run the tests;", "never push.")
+    first.slots = AtomSlots(predicate_span=(0, 1), object_span=(1, 3), scope_span=(0, 1))
+    assert _slot_change([first, second], line) == "split-keep-condition"
 
 
 def _mapped(tmp_path: Path, text: str) -> tuple[Path, list[Atom], list[str], Any]:
@@ -206,6 +289,35 @@ def test_split_cuts_a_real_packed_line_at_its_atoms_and_keeps_every_instruction(
     _, new_atoms, new_lines, new_map = _mapped(tmp_path, new_text)
     assert check_plan(plan, {name: lines}, {name: new_lines}, {name: new_atoms}) == []
     assert compare(snap, new_map, new_text, 5.0)["ok"] is True
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_a_refused_split_of_a_real_line_names_the_object_to_repeat(tmp_path: Path) -> None:
+    _, atoms, lines, _ = _mapped(tmp_path, "# Loader\n\nRead the config file first; restart afterwards.\n")
+    name = atoms[0].file_path
+    plan = build_plan([PlanOp("CORE:C:0058", name, 3, None, "split", {})], {name: atoms}, {name: lines})
+    assert plan.edits == ()
+    assert [s.change for s in plan.slots] == ["split-repeat:the config file first"]
+
+
+_THEN_LINE = (
+    "*Do not silently skip an entry that fails to load \u2014 name the missing key and the paths tried, "
+    "then ask the maintainer; do not add a fallback path \u2014 the loader is strict.*"
+)
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+@pytest.mark.parametrize("line", [_THEN_LINE, "Run the tests, then fix every failure."])
+def test_split_keeps_a_real_then_step_with_the_step_before_it(tmp_path: Path, line: str) -> None:
+    _, atoms, lines, _ = _mapped(tmp_path, f"# Loader\n\n{line}\n")
+    name = atoms[0].file_path
+    plan = build_plan([PlanOp("CORE:C:0058", name, 3, None, "split", {})], {name: atoms}, {name: lines})
+    assert plan.edits == ()
+    assert [(s.line, s.op) for s in plan.slots] == [(3, "split")]
 
 
 @pytest.mark.unit

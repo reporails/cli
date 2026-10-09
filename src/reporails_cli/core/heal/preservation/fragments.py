@@ -10,6 +10,7 @@ inside a code span opens nothing, and an item that begins with `then` is a next 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 from typing import Any
 
@@ -219,6 +220,69 @@ def _lead_stands_alone(old_text: str, new: str, new_sentences: list[str]) -> boo
     return False
 
 
+def _ends_sentence(text: str) -> bool:
+    """Whether `text` ends on a sentence mark (closing quotes, brackets and emphasis marks skipped)."""
+    return text.rstrip(" \t*_)\"'`").endswith((".", "!", "?"))
+
+
+_STEP_RE = re.compile(r"(?:and\s+)?then,?\s+")
+
+
+def _step_body(sentence: str) -> str | None:
+    """What a sentence that opens with `then`, `then,` or `and then` goes on to say; None for any other."""
+    text = _normal(sentence).lstrip("*_- ")
+    found = _STEP_RE.match(text)
+    return text[found.end() :] if found else None
+
+
+def _continues(whole: str, body: str) -> bool:
+    """Whether the author's sentence `whole` carries on into the step `body` after something, with
+    `then`, `then,` or `and then` (not at the start of a sentence)."""
+    old = _normal(whole)
+    for found in re.finditer(rf"(?<!\w)(?:and\s+)?then,?\s+{re.escape(body)}", old):
+        if found.start() > 0 and old[: found.start()].rstrip()[-1:] not in ".!?:":
+            return True
+    return False
+
+
+def _marks(sentences: list[str], opens: list[bool], follows: list[bool]) -> list[tuple[str | None, bool, bool]]:
+    """Each sentence's step body (if it opens with `then`), whether it opens its line and whether it
+    follows a sentence that ended on its line."""
+    return [(_step_body(s), o, f) for s, o, f in zip(sentences, opens, follows, strict=True)]
+
+
+def _atom_marks(atoms: list[Any], sentences: list[str]) -> list[tuple[str | None, bool, bool]]:
+    """`_marks` for the atoms of a file, each sentence read with the line and the atom before it."""
+    opens = [i == 0 or atoms[i - 1].line != a.line for i, a in enumerate(atoms)]
+    follows = [not o and _ends_sentence(_plain(atoms[i - 1])) for i, o in enumerate(opens)]
+    return _marks(sentences, opens, follows)
+
+
+def _line_marks(sentences: list[str]) -> list[tuple[str | None, bool, bool]]:
+    """`_marks` for the sentences of one line."""
+    return _marks(sentences, [i == 0 for i in range(len(sentences))], [i > 0 for i in range(len(sentences))])
+
+
+def _step_cuts(
+    wholes: list[str], old: list[tuple[str | None, bool, bool]], new: list[tuple[str | None, bool, bool]]
+) -> dict[int, int]:
+    """Each sentence of the rewrite that is a step cut off its sentence, with the index of the author's
+    sentence it was cut from. A rewrite sentence that opens with `then` right after a sentence of its line
+    and goes on with a step the author carried on into inside one sentence is a cut, past as many as the
+    author already wrote as sentences of their own (opening a line, or after a sentence that ended)."""
+    written = Counter(body for body, opens, follows in old if body and (opens or follows))
+    seen: Counter[str] = Counter()
+    cuts: dict[int, int] = {}
+    for j, (body, _, follows) in enumerate(new):
+        source = next((k for k, w in enumerate(wholes) if body and follows and _continues(w, body)), None)
+        if source is None or body is None:
+            continue
+        seen[body] += 1
+        if seen[body] > written[body]:
+            cuts[j] = source
+    return cuts
+
+
 def _source_of_cut(new: str, olds: list[Any], wholes: list[str], new_sentences: list[str]) -> Any | None:
     """The author's sentence the whole rewrite sentence `new` is what a split left behind of, when
     it is one: it keeps the lead-in verbatim with the first item, or rephrases it with the first
@@ -245,18 +309,24 @@ def dangling_fragments(old_atoms: Iterable[Any], new_atoms: Iterable[Any]) -> li
     olds = [a for a in old_atoms if a.plain_text]
     news = [a for a in new_atoms if a.plain_text]
     wholes, new_sentences = _wholes(olds), _wholes(news)
+    steps = _step_cuts(wholes, _atom_marks(olds, wholes), _atom_marks(news, new_sentences))
     out: list[dict[str, Any]] = []
-    for new, sentence in zip(news, new_sentences, strict=True):
-        old = _source_of_cut(sentence, olds, wholes, new_sentences)
+    for i, (new, sentence) in enumerate(zip(news, new_sentences, strict=True)):
+        old = olds[steps[i]] if i in steps else _source_of_cut(sentence, olds, wholes, new_sentences)
         if old is not None:
             text = new.text if sentence == _plain(new) else _unmasked(sentence)
             out.append({"line": old.line, "text": old.text, "new_line": new.line, "new_text": text})
     return out
 
 
-def leaves_fragment(before: str, after: str) -> bool:
-    """Whether the line `after`, a rewrite of the line `before`, holds a sentence that is what a split left
-    behind of one of `before` (the same reading `dangling_fragments` gives whole files)."""
-    wholes = [_masked_plain(without_list_marker(before))]
+def rewrite_cut(before: str, after: str) -> str:
+    """What the line `after`, a rewrite of the line `before`, leaves behind of a split: `"step"` when a
+    sentence opens with `then` where `before` carried on into that step within one sentence, `"fragment"`
+    when a sentence is what a split left of a lead-in or a list (the same reading `dangling_fragments`
+    gives whole files), `""` when neither."""
+    whole = _masked_plain(without_list_marker(before))
     sentences = split_prose_sentences(_masked_plain(without_list_marker(after)), [])
-    return any(_source_of_cut(new, [True], wholes, sentences) is not None for new in sentences)
+    old = split_prose_sentences(whole, [])
+    if _step_cuts([whole], _line_marks(old), _line_marks(sentences)):
+        return "step"
+    return "fragment" if any(_source_of_cut(n, [True], [whole], sentences) is not None for n in sentences) else ""

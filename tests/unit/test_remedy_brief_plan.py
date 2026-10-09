@@ -209,3 +209,28 @@ def test_a_deleting_edit_removes_its_line_break_too(text: str, edit_before: str,
     (entry,) = remedy_brief._edit_entries(plan, {"f.md": lines}, {})
     assert entry["before"] in text
     assert text.replace(entry["before"], entry["after"], 1) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@requires_model
+def test_a_refused_split_slot_carries_its_one_change_and_its_guide_line(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text(
+        "# Rules\n\nRun the tests, then fix every failure.\n\nHandle errors.\n", encoding="utf-8"
+    )
+    location = _location()
+    location["findings"] = [
+        _finding(C58, 3, "split"),
+        _finding(C42, 5, "elaborate", members=[_finding(C42, 5, "together")]),
+    ]
+
+    reply = remedy_brief.build_remedy_brief(location, tmp_path)
+
+    split, plain = reply["slots"]
+    assert (split["op"], split["change"]) == ("split", "split-keep-sequence")
+    assert "change" not in plain
+    assert (
+        reply["ops"]["split-keep-sequence"]
+        == "Keep a step that starts with then in one sentence with the step before it."
+    )
+    assert set(reply["ops"]) == {"split", "elaborate", "split-keep-sequence"}

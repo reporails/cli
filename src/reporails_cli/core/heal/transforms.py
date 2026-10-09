@@ -20,8 +20,9 @@ from reporails_cli.core.heal.mechanical_fixers import (
     fix_unformatted_code,
 )
 from reporails_cli.core.heal.preservation.conditions import conditional
-from reporails_cli.core.heal.preservation.fragments import leaves_fragment
+from reporails_cli.core.heal.preservation.fragments import rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
+from reporails_cli.core.mapper.bio_tagger import words_between
 from reporails_cli.core.mapper.classify import HEDGE_LEADS, hedges_with_should
 from reporails_cli.core.mapper.instructions import holds_comma_series, opens_command, without_joining_word
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
@@ -39,6 +40,7 @@ _HEDGE_RE = re.compile(
     re.IGNORECASE,
 )
 _RUNNING_FORMATS = frozenset({"prose", "list", "numbered"})
+_OBJECT_TRIM = " \t.,;:!?*_"
 
 
 def _body(line: str) -> str:
@@ -68,26 +70,43 @@ def _upper_first(text: str) -> str | None:
 # ── split ───────────────────────────────────────────────────────────────
 
 
-def _packed_sentences(atoms: Sequence[Atom], op: PlanOp) -> list[list[Atom]] | None:
+def _packed_sentences(atoms: Sequence[Atom], op: PlanOp) -> list[list[Atom]] | str:
     """The sentences on the op's line that hold more than one instruction atom, in order (the op's own when it
-    names a position); None when there are none, or one runs past the line, is a lead-in or is not running text."""
+    names a position); a refusal code when there are none, or one runs past the line or is not running text
+    (`""`), or is a lead-in to items (`split-keep-lead-in`)."""
     held = [
         s
         for s in running_sentences(list(atoms))
         if len(s) >= 2 and any(a.line == op.line and (op.pi is None or a.position_index == op.pi) for a in s)
     ]
-    if not held or any(a.line != op.line or a.lead_in or a.format not in _RUNNING_FORMATS for s in held for a in s):
-        return None
+    if not held or any(a.line != op.line or a.format not in _RUNNING_FORMATS for s in held for a in s):
+        return ""
+    if any(a.lead_in for s in held for a in s):
+        return "split-keep-lead-in"
     return held
 
 
-def _stands_alone(sentence: Sequence[Atom]) -> bool:
-    """Whether every atom of the sentence is a charged instruction with its own predicate and no object it
-    shares with a sibling."""
+def _object_text(atom: Atom) -> str | None:
+    """The object the atom's word span names, when it reads exactly as the object the mapper gave."""
+    slots = atom.slots
+    if slots is None or slots.object_span is None:
+        return None
+    text = words_between(atom.text, *slots.object_span).strip(_OBJECT_TRIM)
+    return text if text and text == slots.object.strip(_OBJECT_TRIM) else None
+
+
+def _unalone(sentence: Sequence[Atom]) -> str | None:
+    """None when every atom of the sentence is a charged instruction with its own predicate and no object it
+    shares with a sibling; else a refusal code: `split-repeat:<object>` when some atoms have an object and
+    the others do not, `""` otherwise."""
     if any(a.charge_value == 0 or a.slots is None or a.slots.predicate_span is None for a in sentence):
-        return False
-    objects = [a.slots.object_span is not None for a in sentence if a.slots is not None]
-    return all(objects) or not any(objects)
+        return ""
+    held = [a for a in sentence if a.slots is not None and a.slots.object_span is not None]
+    if not held or len(held) == len(sentence):
+        return None
+    objects = {_object_text(a) for a in held}
+    only = next(iter(objects))
+    return f"split-repeat:{only}" if len(objects) == 1 and only is not None else ""
 
 
 def _starts(content: str, sentences: Sequence[Sequence[Atom]]) -> list[int] | None:
@@ -161,30 +180,20 @@ def _cuts_series(content: str, sentence: Sequence[Atom], starts: Sequence[int]) 
     return False
 
 
-def _keeps_whole(content: str, sentences: Sequence[Sequence[Atom]], starts: Sequence[int]) -> bool:
-    """Whether no cut ends a series partway or separates a piece from the condition the atom before it sets."""
+def _hazard(content: str, sentences: Sequence[Sequence[Atom]], starts: Sequence[int]) -> str | None:
+    """The refusal code of a cut that ends a series partway (`split-series`) or separates a piece from the
+    condition the atom before it sets (`split-keep-condition`); None when no cut does."""
     for sentence, at in zip(sentences, _offsets(sentences), strict=True):
         if _cuts_series(content, sentence, starts[at : at + len(sentence)]):
-            return False
+            return "split-series"
         if any(_detaches(a, b) for a, b in pairwise(sentence)):
-            return False
-    return True
+            return "split-keep-condition"
+    return None
 
 
-def split(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | None:
-    """Give each instruction atom of a packed sentence its own sentence, cut where the mapper cut it.
-
-    None unless every atom of each packed sentence on the line is a charged instruction with its own
-    predicate and no object shared with a sibling, no such sentence is a lead-in, and a joint mark ends the
-    text before each cut.
-    """
-    sentences = _packed_sentences(atoms, op)
-    if sentences is None or not all(_stands_alone(s) for s in sentences) or not 0 < op.line <= len(lines):
-        return None
-    content = _body(lines[op.line - 1])
-    starts = _starts(content, sentences)
-    if starts is None or not _keeps_whole(content, sentences, starts):
-        return None
+def _cut_sentences(op: PlanOp, content: str, sentences: Sequence[Sequence[Atom]], starts: Sequence[int]) -> Edit | str:
+    """The edit that cuts the line at the joint before each atom after the first of its sentence, or the
+    refusal code when a joint cannot be cut, the cut changes a word or leaves a fragment."""
     cuts = [
         c
         for sentence, at in zip(sentences, _offsets(sentences), strict=True)
@@ -194,17 +203,37 @@ def split(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | Non
     for start in reversed(cuts):
         cut = _cut_at(text, start)
         if cut is None:
-            return None
+            return ""
         text, more, gone = cut
         reopened += more
         dropped += gone
     if (
         not _only_joints_dropped(content, text, dropped)
         or len(emphasis_runs(text)) != len(emphasis_runs(content)) + reopened
-        or leaves_fragment(content, text)
     ):
-        return None
+        return ""
+    left = rewrite_cut(content, text)
+    if left:
+        return "split-keep-sequence" if left == "step" else ""
     return Edit(op.file, op.line, content, text, op.op, op.rule)
+
+
+def split_or_reason(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | str:
+    """The edit `split` makes, or the code of the one change a rewrite may make when it refuses: `""` (no
+    specific one), `split-keep-lead-in`, `split-repeat:<object>`, `split-series`, `split-keep-condition` or
+    `split-keep-sequence`."""
+    sentences = _packed_sentences(atoms, op)
+    if isinstance(sentences, str) or not 0 < op.line <= len(lines):
+        return sentences if isinstance(sentences, str) else ""
+    for sentence in sentences:
+        reason = _unalone(sentence)
+        if reason is not None:
+            return reason
+    content = _body(lines[op.line - 1])
+    starts = _starts(content, sentences)
+    if starts is None:
+        return ""
+    return _hazard(content, sentences, starts) or _cut_sentences(op, content, sentences, starts)
 
 
 # ── direct / negation-form ──────────────────────────────────────────────
@@ -386,7 +415,6 @@ def code(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | None
 
 
 TRANSFORMS: dict[str, Callable[..., Edit | None]] = {
-    "split": split,
     "direct": direct,
     "negation-form": negation_form,
     "move": move,

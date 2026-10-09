@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from reporails_cli.core.heal.transforms import TRANSFORMS, atoms_at, dedupe
+from reporails_cli.core.heal.transforms import TRANSFORMS, atoms_at, dedupe, split_or_reason
 from reporails_cli.core.platform.dto.heal_plan import SCRIPTABLE_OPS, Edit, Plan, PlanOp, Refusal, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 PartnerKey = tuple[str, int]
 
 
-def _slot(op: PlanOp, found: Sequence[Atom]) -> Slot:
+def _slot(op: PlanOp, found: Sequence[Atom], change: str = "") -> Slot:
     return Slot(
         file=op.file,
         line=op.line,
@@ -20,7 +20,20 @@ def _slot(op: PlanOp, found: Sequence[Atom]) -> Slot:
         rule=op.rule,
         text=" ".join(a.text for a in found),
         bound="section" if op.op == "elaborate" else "line",
+        change=change,
     )
+
+
+def _scripted(
+    op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str], partner_atoms: Mapping[PartnerKey, Atom] | None
+) -> tuple[Edit | None, str]:
+    """The edit a script makes for the op, or None with the one change a refused split allows ("" for any other)."""
+    if op.op == "dedupe":
+        return dedupe(op, atoms, lines, _partner(op, partner_atoms)), ""
+    if op.op == "split":
+        outcome = split_or_reason(op, atoms, lines)
+        return (outcome, "") if isinstance(outcome, Edit) else (None, outcome)
+    return TRANSFORMS[op.op](op, atoms, lines), ""
 
 
 def _partner(op: PlanOp, partner_atoms: Mapping[PartnerKey, Atom] | None) -> Atom | None:
@@ -61,16 +74,13 @@ def build_plan(
         if not found or not 0 < op.line <= len(lines):
             refused.append(Refusal(op, "stale map"))
             continue
-        edit = None
+        edit, change = None, ""
         if op.op in SCRIPTABLE_OPS and op.line not in touched.get(op.file, set()):
-            if op.op == "dedupe":
-                edit = dedupe(op, atoms, lines, _partner(op, partner_atoms))
-            else:
-                edit = TRANSFORMS[op.op](op, atoms, lines)
+            edit, change = _scripted(op, atoms, lines, partner_atoms)
         if edit is not None and _touched(edit) & touched.get(op.file, set()):
-            edit = None
+            edit, change = None, ""
         if edit is None:
-            slots.append(_slot(op, found))
+            slots.append(_slot(op, found, change))
             continue
         touched.setdefault(op.file, set()).update(_touched(edit))
         edits.append(edit)
