@@ -35,7 +35,7 @@ def test_single_file_target_does_not_surface_user_scope(tmp_path: Path) -> None:
     target = project / "CLAUDE.md"
     result = runner.invoke(app, ["check", str(target), "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
 
     # capability_paths echo back the narrowed display set.
     paths = data.get("capability_paths", [])
@@ -60,7 +60,7 @@ def test_single_file_target_reconciles_summary_and_panel_counts(tmp_path: Path) 
     target = project / "CLAUDE.md"
     result = runner.invoke(app, ["check", str(target), "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
 
     summary_total = int(data.get("stats", {}).get("total_findings", 0))
     per_file_total = sum(len(v.get("findings", [])) for v in data.get("files", {}).values())
@@ -103,7 +103,7 @@ def test_single_file_scan_finds_violations(tmp_path: Path, monkeypatch) -> None:
 
     result = runner.invoke(app, ["check", "CLAUDE.md", "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert _claude_findings(data) > 0, "single-file scan surfaced no findings for a non-clean CLAUDE.md"
 
 
@@ -121,7 +121,7 @@ def test_single_file_scan_matches_whole_project(tmp_path: Path) -> None:
     assert single.exit_code == 0, single.output
     assert whole.exit_code == 0, whole.output
 
-    assert _claude_findings(json.loads(single.output)) == _claude_findings(json.loads(whole.output))
+    assert _claude_findings(json.loads(single.stdout)) == _claude_findings(json.loads(whole.stdout))
 
 
 def _nested_project(tmp_path: Path, *, sub_has_config_dir: bool) -> Path:
@@ -205,7 +205,7 @@ def test_subdir_with_its_own_config_dir_is_its_own_root(tmp_path: Path, monkeypa
     result = runner.invoke(app, ["check", "sub", "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
 
-    keys, surfaces, _level, _findings = _classification(json.loads(result.output))
+    keys, surfaces, _level, _findings = _classification(json.loads(result.stdout))
     assert keys == ["CLAUDE.md"], keys
     assert surfaces == [("Main", 1)], surfaces
 
@@ -226,7 +226,7 @@ def test_subdir_with_its_own_config_dir_named_from_outside_is_its_own_root(
     result = runner.invoke(app, ["check", str(project / "sub"), "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
 
-    keys, surfaces, _level, _findings = _classification(json.loads(result.output))
+    keys, surfaces, _level, _findings = _classification(json.loads(result.stdout))
     assert keys == ["CLAUDE.md"], keys
     assert surfaces == [("Main", 1)], surfaces
 
@@ -257,7 +257,7 @@ def test_explicit_subagent_memory_target_reaches_user_scope(tmp_path: Path, monk
     result = runner.invoke(app, ["check", "subagent_memory", "--agent", "claude", "-f", "json"])
     assert result.exit_code == 0, result.output
     assert "No instruction files found" not in result.output
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     paths = data.get("capability_paths", [])
     assert any("agent-memory" in p for p in paths), f"global subagent_memory not reached: {paths}"
 

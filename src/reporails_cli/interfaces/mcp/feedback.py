@@ -101,9 +101,15 @@ def _new_kind_findings(
     error_rules = {str(f.get("rule") or "") for f in per_file_raw if f.get("severity") == "error"}
     found: list[dict[str, Any]] = []
     seen: set[tuple[str, Any, str]] = set()
-    for c in [_shaped(f) for f in workflow_raw] + [_shaped(f) for f in per_file_raw]:
+    for raw in workflow_raw + per_file_raw:
+        c = _shaped(raw)
         key = (str(c["rule"]), c["line"], str(c["message"]))
-        if str(c["rule"]) in fired_before or key in seen or (not c["message"] and str(c["rule"]) not in error_rules):
+        # "No message" is read from the raw finding: `_shaped` fills it with the rule's title.
+        if (
+            str(c["rule"]) in fired_before
+            or key in seen
+            or (not raw.get("message") and str(c["rule"]) not in error_rules)
+        ):
             continue
         seen.add(key)
         found.append(c)

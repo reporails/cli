@@ -91,6 +91,7 @@ def test_fingerprint_reads_the_user_scope_of_a_surface(tmp_path: Path, monkeypat
     home = tmp_path / "home"
     _write(home, ".cursor/hooks.json", {"version": 1, "hooks": {"preToolUse": [{"command": "u.sh"}]}})
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     _write(
         project, ".cursor/hooks.json", {"version": 1, "hooks": {"preToolUse": [{"command": "p.sh", "matcher": "Read"}]}}
@@ -111,6 +112,7 @@ def test_a_claude_user_level_hook_is_listed_but_does_not_raise_the_level(
     user_hooks = {"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "u.sh"}]}]}}
     _write(home, ".claude/settings.json", user_hooks)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() reads USERPROFILE on Windows
     project = tmp_path / "proj"
     _write(project, "CLAUDE.md", "# Project\n")
     features = detect_features_filesystem(project, agents=detect_agents(project))

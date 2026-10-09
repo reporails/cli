@@ -1189,6 +1189,7 @@ class TestHealCommand:
     def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--heal is an authenticated affordance; authenticate so the fix path runs."""
         monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+        monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")  # never the hosted service
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1226,17 +1227,20 @@ class TestHealCommand:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
-    def test_heal_json_output(self, tmp_path: Path) -> None:
-        """heal -f json must produce valid JSON with expected keys."""
+    def test_heal_json_output(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Anonymous `--heal -f json` keeps the diagnosis JSON, reports `heal_requires_auth`, changes nothing."""
+        _go_anonymous(monkeypatch, tmp_path)
         project = tmp_path / "project"
         project.mkdir()
-        (project / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+        original = "# My Project\n\nA project.\n"
+        (project / "CLAUDE.md").write_text(original)
 
         result = runner.invoke(app, ["check", str(project), "--heal", "-f", "json"])
         assert result.exit_code in (0, None), f"heal json failed:\n{result.output}"
-        data = json.loads(result.stdout)
-        assert "auto_fixed" in data
-        assert "summary" in data
+        data = json.loads(result.stdout)  # the diagnosis alone; the withheld notice goes to stderr
+        assert "files" in data and "auto_fixed" not in data
+        assert "heal_requires_auth" in result.stderr
+        assert (project / "CLAUDE.md").read_text() == original
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1512,6 +1516,30 @@ _HEALABLE = (
 )
 
 
+def _go_anonymous(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """No sign-in and no reachable server: an empty home, no key, and a closed local port."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.delenv("AILS_API_KEY", raising=False)
+    monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("AILS_PLATFORM_URL", "http://127.0.0.1:9")
+
+
+def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
+    """Stand in for a Pro server's fix list: an `unbold` fix on the bold line of `_HEALABLE`."""
+    from reporails_cli.core.pipeline.mapping import map_instruction_files
+    from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+    from reporails_cli.interfaces.cli import check_flow
+
+    path = project / "CLAUDE.md"
+    mapped = map_instruction_files(project, [path], spawn_daemon=False)
+    line = next(i for i, t in enumerate(path.read_text().splitlines(), 1) if "**IMPORTANT**" in t)
+    pi = next(a.position_index for a in mapped.atoms if a.line == line)
+    items = (LocationFinding("bold", str(path), line, pi, "unbold"),)
+    workflow = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
+    monkeypatch.setattr(check_flow, "_heal_workflow", lambda state: workflow)
+
+
 @pytest.mark.e2e
 class TestHealDryRun:
     """--heal --dry-run previews fixes without mutating files."""
@@ -1520,6 +1548,7 @@ class TestHealDryRun:
     def _authed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--heal preview is an authenticated affordance; authenticate so the preview path runs."""
         monkeypatch.setenv("AILS_API_KEY", "test-key-heal")
+        monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")  # never the hosted service
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1545,48 +1574,48 @@ class TestHealDryRun:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
-    @requires_model
-    def test_dry_run_previews_fixes(self, tmp_path: Path) -> None:
-        """--dry-run reports the fixes it WOULD apply (preview, not silence).
-
-        Mechanical fixers read atoms off the ruleset map, which needs the
-        bundled mapper model — hence `requires_model`. The model-free safety
-        contract (no mutation) is pinned by `test_dry_run_does_not_mutate`.
-        """
+    def test_dry_run_anonymous_withholds_and_changes_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Anonymous `--heal --dry-run -f json` keeps the diagnosis, reports `heal_requires_auth`, writes nothing."""
+        _go_anonymous(monkeypatch, tmp_path)
         project = tmp_path / "project"
         project.mkdir()
         (project / "CLAUDE.md").write_text(_HEALABLE)
 
         result = runner.invoke(app, ["check", str(project), "--heal", "--dry-run", "-f", "json", "--agent", "claude"])
         assert result.exit_code in (0, None), f"dry-run heal json failed:\n{result.output}"
-        data = json.loads(result.stdout)
-        assert len(data.get("auto_fixed", [])) > 0, "dry-run should still list the fixes it would make"
+        data = json.loads(result.stdout)  # the diagnosis alone; the withheld notice goes to stderr
+        assert "files" in data and "auto_fixed" not in data
+        assert "heal_requires_auth" in result.stderr
+        assert (project / "CLAUDE.md").read_text() == _HEALABLE
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @requires_rules
     @requires_model
-    def test_dry_run_matches_real_fix_set(self, tmp_path: Path) -> None:
-        """Real heal mutates and applies the same fix count dry-run only previews.
-
-        Both arms need real fixes (mechanical, atom-level) — `requires_model`.
-        """
-        # Dry-run project — must stay unchanged.
+    def test_dry_run_matches_real_fix_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With the server's fix list faked (Pro), real heal writes the planned fixes and `--dry-run` only
+        previews the same count."""
         dry = tmp_path / "dry"
         dry.mkdir()
         (dry / "CLAUDE.md").write_text(_HEALABLE)
+        _serve_fixes(monkeypatch, dry)
         dry_result = runner.invoke(app, ["check", str(dry), "--heal", "--dry-run", "-f", "json", "--agent", "claude"])
-        dry_data = json.loads(dry_result.stdout)
+        dry_data = json.JSONDecoder().raw_decode(dry_result.stdout[dry_result.stdout.index('{\n  "auto_fixed"') :])[0]
         assert (dry / "CLAUDE.md").read_text() == _HEALABLE, "dry-run mutated the file"
+        assert len(dry_data["auto_fixed"]) > 0, "dry-run should still list the fixes it would make"
 
-        # Real project — must change and apply the same fixes.
         real = tmp_path / "real"
         real.mkdir()
         (real / "CLAUDE.md").write_text(_HEALABLE)
+        _serve_fixes(monkeypatch, real)
         real_result = runner.invoke(app, ["check", str(real), "--heal", "-f", "json", "--agent", "claude"])
-        real_data = json.loads(real_result.stdout)
+        real_data = json.JSONDecoder().raw_decode(real_result.stdout[real_result.stdout.index('{\n  "auto_fixed"') :])[
+            0
+        ]
         assert (real / "CLAUDE.md").read_text() != _HEALABLE, "real heal should mutate the file"
-        assert len(dry_data.get("auto_fixed", [])) == len(real_data.get("auto_fixed", [])), (
+        assert len(dry_data["auto_fixed"]) == len(real_data["auto_fixed"]), (
             "dry-run preview count must match the real applied count"
         )
 

@@ -132,12 +132,12 @@ class TestListTools:
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
-        """list_tools should return the current surface: validate, remedy_brief, preflight, explain."""
+        """list_tools should return the current surface: validate, remedy_brief, heal_apply, preflight, explain."""
         from reporails_cli.interfaces.mcp.server import list_tools
 
         tools = _run_async(list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "remedy_brief", "preflight", "explain"}
+        assert names == {"validate", "remedy_brief", "heal_apply", "preflight", "explain"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1205,7 +1205,7 @@ class TestRemedyBrief:
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     @requires_rules
-    def test_a_brief_returns_the_location_findings_and_the_preservation_contract(
+    def test_a_brief_returns_the_location_edits_slots_and_the_preservation_contract(
         self, monkeypatch, tmp_path: Path
     ) -> None:
         from types import SimpleNamespace
@@ -1221,17 +1221,12 @@ class TestRemedyBrief:
         reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
 
         assert reply["location"]["order"] == 1 and reply["location"]["kind"] == "main"
-        assert reply["findings"] == [self._payload()["workflow"]["locations"][0]["findings"][0]]
-        assert reply["files"] == [
-            {
-                "file": "CLAUDE.md",
-                "path": str((tmp_path / "CLAUDE.md").resolve()),
-                "loading": "session_start",
-                "score": None,
-                "instructions": [],
-                "headings": [],
-            }
-        ]
+        # The 0.6.2 brief carries the exact edits, the slots that need a decision, and the
+        # guide per rule; the finding prose and the per-file inventory are gone.
+        assert {"edits", "slots", "ops", "guides", "location", "next", "preservation_contract", "refused"} <= set(reply)
+        assert "findings" not in reply and "files" not in reply
+        assert reply["location"]["root"] == str(tmp_path)
+        assert reply["edits"] == [] and reply["slots"] == []
         assert "Keep every instruction" in reply["preservation_contract"]
         assert reply["next"]
 
@@ -1366,7 +1361,7 @@ class TestFileFeedback:
                                 "line": 3,
                                 "pi": 0,
                                 "message": "cosmetic issue",
-                                "remedy": "r1",
+                                "op": "rewrite",
                                 "impact_tier": "cosmetic",
                             },
                             {
@@ -1375,7 +1370,7 @@ class TestFileFeedback:
                                 "line": 8,
                                 "pi": 1,
                                 "message": "gate issue",
-                                "remedy": "r2",
+                                "op": "split",
                                 "impact_tier": "gate_mover",
                             },
                             {
@@ -1384,7 +1379,7 @@ class TestFileFeedback:
                                 "line": 1,
                                 "pi": 0,
                                 "message": "other file",
-                                "remedy": "r3",
+                                "op": "split",
                                 "impact_tier": "gate_mover",
                             },
                         ],
@@ -1394,8 +1389,8 @@ class TestFileFeedback:
         }
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
         assert feedback == [
-            {"rule": "B", "line": 8, "message": "gate issue", "remedy": "r2", "impact_tier": "gate_mover"},
-            {"rule": "A", "line": 3, "message": "cosmetic issue", "remedy": "r1", "impact_tier": "cosmetic"},
+            {"rule": "B", "line": 8, "message": "gate issue", "op": "split", "impact_tier": "gate_mover"},
+            {"rule": "A", "line": 3, "message": "cosmetic issue", "op": "rewrite", "impact_tier": "cosmetic"},
         ]
 
     @pytest.mark.e2e
@@ -1418,8 +1413,8 @@ class TestFileFeedback:
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
         # No `impact_tier`, so weight ties and the line number decides.
         assert feedback == [
-            {"rule": "Y", "line": 2, "message": "m2", "remedy": "", "impact_tier": ""},
-            {"rule": "X", "line": 5, "message": "m1", "remedy": "fix1", "impact_tier": ""},
+            {"rule": "Y", "line": 2, "message": "m2", "impact_tier": ""},
+            {"rule": "X", "line": 5, "message": "m1", "fix": "fix1", "impact_tier": ""},
         ]
 
     def setup_method(self) -> None:
@@ -1497,7 +1492,6 @@ class TestFileFeedback:
                 "rule": "CORE:C:0042",
                 "line": 3,
                 "message": "Vague instruction.",
-                "remedy": "Name it.",
                 "impact_tier": "cosmetic",
             }
         ]
@@ -1537,7 +1531,7 @@ class TestFileFeedback:
 
         feedback = feedback.file_feedback(single_file_payload, Path("/proj/CLAUDE.md"), Path("/proj"))
 
-        assert feedback == [{"rule": "X", "line": 5, "message": "m1", "remedy": "fix1", "impact_tier": ""}]
+        assert feedback == [{"rule": "X", "line": 5, "message": "m1", "fix": "fix1", "impact_tier": ""}]
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
@@ -1559,7 +1553,13 @@ class TestFileFeedback:
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
 
         assert feedback == [
-            {"rule": "CORE:S:0002", "line": 0, "message": "", "remedy": "Add headings.", "impact_tier": ""}
+            {
+                "rule": "CORE:S:0002",
+                "line": 0,
+                "message": "Section Headers Present",
+                "fix": "Add headings.",
+                "impact_tier": "",
+            }
         ]
 
     @pytest.mark.e2e
