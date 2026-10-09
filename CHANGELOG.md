@@ -58,8 +58,11 @@
 - Check: a folder inside a project named from outside it (`ails check /path/to/project/docs`) is checked as part of that project, so its files are classified the same as when you name the file itself.
 - Check: after a free sign-in, and in the docs, `--heal` is no longer described as working on a free account; it writes fixes on a Pro account only, and anonymous and free runs get the full diagnosis and no changes.
 - Check: `-f json` and the full MCP `validate` reply name the file an overlap finding overlaps with (`partner_file`), its line and the share of overlap when the server sends them.
+- MCP: checking a single file during heal no longer reports a whole-file finding (such as missing headings) that the file does not draw in your project, so the remedy agent is not asked to add it.
 
 ### Internal
+
+- Tests: the MCP, single-file and host-hook tests check the 0.6.2 behavior and no longer depend on the machine's home folder or sign-in.
 
 ## 0.6.1
 
