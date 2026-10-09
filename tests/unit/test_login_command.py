@@ -339,6 +339,8 @@ def test_free_login_prints_the_upgrade_lines(site: _Site) -> None:
     out = runner.invoke(app, ["login"]).output
     assert "Pro adds the remedies and the order to apply them." in out
     assert "Upgrade to Pro" in out
+    assert "writes fixes on a Pro account only" in out
+    assert "now applies" not in out
     assert "/reporails:ails heal" not in out
     assert "ask it to run the reporails heal" not in out
 

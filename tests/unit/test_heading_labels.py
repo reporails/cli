@@ -46,3 +46,13 @@ def test_a_non_heading_atom_is_no_label() -> None:
     atom = _heading("Keep — notes")
     atom.kind = "prose"
     assert is_label_heading(atom) is False
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.parametrize("text", ["Avoid — global state", "Forbid: global state"])
+def test_a_heading_read_as_a_prohibition_is_no_label(text: str) -> None:
+    atom = _heading(text)
+    assert is_label_heading(atom) is True
+    atom.charge_value = -1
+    assert is_label_heading(atom) is False

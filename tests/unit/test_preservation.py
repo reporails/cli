@@ -100,6 +100,7 @@ def _new_atom(
         scope_conditional=scope_conditional,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
+        imported_from="",
     )
 
 
@@ -427,8 +428,16 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
         "relabelled_negative_headings": [],
         "lost_context": [],
         "moved_list_items": [],
-        "removed_structure": {"table_rows": 0, "list_items": 0, "headings": 0, "fences": 0, "links": 0},
-        "kept": {"instructions": 2, "table_rows": 1, "list_items": 1, "headings": 2, "fences": 1, "links": 1},
+        "removed_structure": {"table_rows": 0, "list_items": 0, "headings": 0, "fences": 0, "links": 0, "imports": 0},
+        "kept": {
+            "instructions": 2,
+            "table_rows": 1,
+            "list_items": 1,
+            "headings": 2,
+            "fences": 1,
+            "links": 1,
+            "imports": 0,
+        },
     }
 
 
@@ -2231,6 +2240,7 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             format="heading",
             heading_context="",
             scope_conditional=False,
+            imported_from="",
         )
         for n, line in enumerate(text.split("\n"), start=1)
         if line.startswith("#")

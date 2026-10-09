@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.heal.conformance import check_plan
+from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.preservation import Snapshot, take_snapshot
 from reporails_cli.core.heal.preservation import check_rewrite as judge_rewrite
 from reporails_cli.core.lint.content_queries import atoms_for_file
@@ -153,7 +154,7 @@ def check_conformance(
         return None
     key = snap.file_path
     atoms = atoms_for_file(ruleset_map, key) if ruleset_map is not None else []
-    found = check_plan(plan, {key: snap.text.splitlines()}, {key: new_text.splitlines()}, {key: atoms})
+    found = check_plan(plan, {key: split_lines(snap.text)[0]}, {key: split_lines(new_text)[0]}, {key: atoms})
     deviations = [
         {
             "file": normalize_finding_path(d.file, scan_root) if scan_root is not None else d.file,

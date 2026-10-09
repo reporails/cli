@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_right
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 from reporails_cli.core.heal.preservation.conditions import by_line
@@ -73,11 +74,15 @@ def relabelled_negative_headings(
 
 
 def removed_structure(
-    before: DocumentStructure, after: DocumentStructure, relation_lines: frozenset[int]
+    before: DocumentStructure,
+    after: DocumentStructure,
+    relation_lines: frozenset[int],
+    imports: tuple[Sequence[str], Sequence[str]],
 ) -> dict[str, int]:
     """The `removed_structure` block: table rows / list items / headings / fences / links the
     snapshot had that the current text no longer does. Relation-allowed lines are dropped from
-    the "before" side first, so an allowed deletion never counts as a loss."""
+    the "before" side first, so an allowed deletion never counts as a loss. `imports` holds the `@import`
+    references written in the snapshot's text and in the current text: one dropped is a lost import."""
     return {
         "table_rows": _removed_multiset(
             _row_keys(before.table_rows, relation_lines), _row_keys(after.table_rows, frozenset())
@@ -88,10 +93,13 @@ def removed_structure(
             [_fence_key(b) for b in _live(before.fences, relation_lines)], [_fence_key(b) for _n, b in after.fences]
         ),
         "links": _removed_multiset(_live(before.links, relation_lines), [t for _n, t in after.links]),
+        "imports": _removed_multiset(list(imports[0]), list(imports[1])),
     }
 
 
-def structure_totals(before: DocumentStructure, relation_lines: frozenset[int]) -> dict[str, int]:
+def structure_totals(
+    before: DocumentStructure, relation_lines: frozenset[int], imports: Sequence[str]
+) -> dict[str, int]:
     """The snapshot's OWN structure counts - table rows / list items / headings / fences /
     links - with relation-allowed lines excluded first, the same filtering `removed_structure`
     applies to its "before" side. Exposed separately so `kept` (total minus removed) never
@@ -102,6 +110,7 @@ def structure_totals(before: DocumentStructure, relation_lines: frozenset[int]) 
         "headings": len([n for n in before.headings if n not in relation_lines]),
         "fences": len(_live(before.fences, relation_lines)),
         "links": len(_live(before.links, relation_lines)),
+        "imports": len(imports),
     }
 
 

@@ -30,10 +30,8 @@ from reporails_cli.core.pipeline.mapping import discover_scope
 from reporails_cli.interfaces.cli.check_notices import (
     _agent_is_pinned,
     _emit_empty_run,
-    _emit_heal_auth_required,
-    _emit_heal_no_fixes,
-    _emit_heal_pro_required,
     _emit_heal_scope_refusal,
+    _emit_heal_withheld,
     _notify_heal_scope_skips,
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
@@ -532,13 +530,12 @@ def _flow_heal(state: CheckState) -> None:
     if not state.render.heal_authed:
         if getattr(state.pipeline.funnel_error, "still_reaching", False):
             return
-        if _heal_authed(state.pipeline.funnel_error):
-            if state.pipeline.lint_result is None:
-                _emit_heal_no_fixes(state.targets.output_format)
-                return
-            _emit_heal_pro_required(state.targets.output_format)
-        else:
-            _emit_heal_auth_required(state.targets.output_format)
+        _emit_heal_withheld(
+            state.targets.output_format,
+            funnel_error=state.pipeline.funnel_error,
+            tier=getattr(state.render.result, "tier", None),
+            server_replied=state.pipeline.lint_result is not None,
+        )
         return
     heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
     candidate = (

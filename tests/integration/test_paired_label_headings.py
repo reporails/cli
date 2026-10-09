@@ -116,3 +116,17 @@ def test_paired_headings_with_an_instruction_after_the_dash_still_raise_the_find
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert "CORE:S:0039" in _check(tmp_path, monkeypatch, INSTRUCTION_TAIL_PAIR)
+
+
+PROHIBITION_PAIR = (
+    "# Style\n\n## Avoid — global state\n\nIt hides coupling.\n\n## Prefer — composition\n\nIt keeps types small.\n"
+)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+def test_a_prohibition_heading_beside_a_label_keeps_its_charge() -> None:
+    atoms = bio_pipeline.apply_multislot(tokenize(PROHIBITION_PAIR))
+    labels = [a for a in atoms if a.kind == "heading" and a.depth == 2]
+    assert [a.charge_value for a in labels] == [-1, 0]

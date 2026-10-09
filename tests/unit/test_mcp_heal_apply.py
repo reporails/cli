@@ -34,11 +34,11 @@ def _wire(tmp_path: Path, m: Any, rows: tuple[tuple[int, str, str], ...]) -> dic
     return {"summary": "", "locations": [{**loc, "importance": "", "findings": findings, "relations": []}]}
 
 
-def _call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_workflow: bool = True) -> str:
+def _call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_workflow: bool = True, tier: str = "pro") -> str:
     path = tmp_path / "CLAUDE.md"
     path.write_text(DOC)
     m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
-    payload: dict[str, Any] = {"tier": "pro", "files": {"CLAUDE.md": {"count": 3, "findings": []}}}
+    payload: dict[str, Any] = {"tier": tier, "files": {"CLAUDE.md": {"count": 3, "findings": []}}}
     if with_workflow:
         payload["workflow"] = _wire(tmp_path, m, ((3, "unbold", "bold"), (7, "code", "format")))
     server._validate_states.clear()
@@ -87,6 +87,80 @@ def test_heal_apply_puts_back_a_file_that_departs(tmp_path: Path, monkeypatch: p
 def test_heal_apply_without_a_workflow_writes_nothing_and_says_pro(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    text = _call(tmp_path, monkeypatch, with_workflow=False)
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+    text = _call(tmp_path, monkeypatch, with_workflow=False, tier="free")
     assert "Applying fixes needs a Pro account." in text
     assert (tmp_path / "CLAUDE.md").read_text() == DOC
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"offline": True, "server_error": None},
+        {"offline": False, "server_error": {"error": "rate_limited"}},
+        {"tier": "pro", "funnel": {"retryable": True}},
+    ],
+)
+def test_heal_apply_with_a_key_and_no_server_reply_does_not_say_pro(
+    payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message
+
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+    text = heal_apply_message(payload)
+    assert "Pro account" not in text
+    assert text == "heal_apply: The server sent no fixes, so nothing was changed."
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_apply_with_a_key_and_a_clean_reply_without_fixes_says_pro(monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message
+
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+    assert "Applying fixes needs a Pro account." in heal_apply_message({"tier": "free"})
+    assert "no fixes" in heal_apply_message({"tier": "pro"}, mapped=False)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_apply_without_a_key_points_at_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.core.heal.apply import HEAL_SIGN_IN
+    from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message
+
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: False)
+    assert HEAL_SIGN_IN in heal_apply_message({"offline": True})
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_put_back_line_names_the_failed_check_when_no_op_is_named() -> None:
+    from reporails_cli.formatters.mcp_view import render_heal_apply
+
+    entry = {"file": "A.md", "op": "", "rule": "", "line": 5, "check": "preservation:order"}
+    text = render_heal_apply([], [], [entry], Path("."))
+    assert "put back: A.md (preservation:order line 5)" in text
+    named = {"file": "A.md", "op": "bold", "rule": "CORE:S:0001", "line": 3, "check": "conformance"}
+    assert "put back: A.md (bold CORE:S:0001 line 3)" in render_heal_apply([], [], [named], Path("."))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_apply_for_a_paid_reply_without_fixes_does_not_say_pro(monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message
+
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+    assert "Pro account" not in heal_apply_message({"tier": "pro"})
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_heal_apply_for_a_rejected_key_points_at_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.core.heal.apply import HEAL_SIGN_IN
+    from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message
+
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+    payload = {"offline": True, "funnel": {"error": "invalid_api_key", "tier": "anonymous"}}
+    assert HEAL_SIGN_IN in heal_apply_message(payload)

@@ -24,7 +24,8 @@ from reporails_cli.core.heal.preservation.snapshot import (
     rewritten_atoms,
 )
 from reporails_cli.core.heal.preservation.words import named_key
-from reporails_cli.core.lint.content_queries import atoms_for_file
+from reporails_cli.core.lint.content_queries import own_atoms_for_file
+from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
@@ -53,7 +54,7 @@ _NOT_CHECKS = frozenset({"ok", "score_before", "score_after", "kept"})
 def _negative_heading_texts(new_map: Any, file_path: str) -> list[str]:
     """The text of each bare negative heading the mapper reads in `new_map`'s `file_path`,
     whatever its markdown style (`##`, underlined, inside a quote)."""
-    atoms = atoms_for_file(new_map, file_path) if new_map is not None else ()
+    atoms = own_atoms_for_file(new_map, file_path) if new_map is not None else ()
     return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
 
 
@@ -108,7 +109,9 @@ def _run_checks(
         "moved_list_items": structure.moved_list_items(
             snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms
         ),
-        "removed_structure": structure.removed_structure(snapshot.structure, new[3], snapshot.relation_lines),
+        "removed_structure": structure.removed_structure(
+            snapshot.structure, new[3], snapshot.relation_lines, (snapshot.imports, import_refs(new_text))
+        ),
     }
 
 
@@ -120,7 +123,7 @@ def _kept_counts(snap_atoms: list[SnapshotAtom], snapshot: Snapshot, checks: dic
     Never negative — `max(0, ...)` guards a check that (in principle) over-counts a removal past
     the snapshot's own total."""
     total_instructions = sum(1 for sa in snap_atoms if sa.charge_value != 0)
-    totals = structure.structure_totals(snapshot.structure, snapshot.relation_lines)
+    totals = structure.structure_totals(snapshot.structure, snapshot.relation_lines, snapshot.imports)
     removed = checks["removed_structure"]
     return {
         "instructions": max(0, total_instructions - len(checks["lost_instructions"])),
@@ -170,7 +173,7 @@ def compare(
     live = [a for a in snapshot.atoms if a.line not in snapshot.relation_lines]
     snap_atoms = [a for a in live if (not a.heading or is_instruction_heading(a)) and not is_hedge_fragment(a)]
     new_atoms = rewritten_atoms(new_map, snapshot.file_path)
-    new_all = atoms_for_file(new_map, snapshot.file_path) if new_map is not None else []
+    new_all = own_atoms_for_file(new_map, snapshot.file_path) if new_map is not None else []
     negative_headings = (
         [a for a in live if a.heading and is_negative_heading(a.text)],
         _negative_heading_texts(new_map, snapshot.file_path),

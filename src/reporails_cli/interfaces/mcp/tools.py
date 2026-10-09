@@ -451,13 +451,12 @@ def unpaid_signed_in_reply(payload: dict[str, Any]) -> bool:
     """True when a signed-in user's reply carries a non-paid tier (reported, or named by a funnel
     rejection). Anonymous replies and paid replies are False."""
     from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, UNENTITLED_TIERS
+    from reporails_cli.core.platform.dto.diagnostics import tiers_unpaid
 
     if not has_api_key():
         return False
     funnel = payload.get("funnel")
-    tiers = {payload.get("tier"), funnel.get("tier") if isinstance(funnel, dict) else None}
-    return bool(tiers & UNENTITLED_TIERS) and not tiers & ENTITLED_TIERS
+    return tiers_unpaid(payload.get("tier"), funnel.get("tier") if isinstance(funnel, dict) else None)
 
 
 def _rules_missing_payload() -> dict[str, Any]:

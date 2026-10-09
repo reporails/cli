@@ -13,17 +13,17 @@ earlier file's existing snapshot.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.heal.file_io import imports_expand
+from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.keyed import mapped_path_resolver, resolve_expect
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
-from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan
+from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, deduped_lines
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
-from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp, Refusal
+from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
 from reporails_cli.core.platform.dto.ruleset import Atom
 from reporails_cli.interfaces.mcp import snapshots
 
@@ -116,12 +116,6 @@ def _sorted_findings(findings: list[Any]) -> list[Any]:
     return sorted(findings, key=_finding_sort_key)
 
 
-def _relation_lines(rel: str, relations: list[Any]) -> list[Any]:
-    """The lines of this file that a relation names as true duplicates: the only lines its
-    preservation checks treat as deletable."""
-    return [r.get("line") for r in relations if r.get("file") == rel]
-
-
 # The generic cause when a pipeline run yields no map and no more specific reason is on the
 # payload — a single named constant, so the caller that wraps it in a sentence never repeats it.
 _NO_MAP_FALLBACK = "its pipeline run produced no map"
@@ -175,7 +169,7 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     except OSError:
         text = ""  # no lines to plan on; the snapshot step reports the unreadable file
     return _BuiltFile(
-        rel, abs_file, ruleset_map, score, snapshots.file_rule_counts(payload), text.splitlines(keepends=True), text
+        rel, abs_file, ruleset_map, score, snapshots.file_rule_counts(payload), split_lines(text)[0], text
     )
 
 
@@ -262,14 +256,10 @@ def _block(edits: list[Edit], lines: list[str]) -> tuple[int, int, str, str]:
     last = max(max(e.line + e.span - 1, e.move_after or 0) for e in edits)
     sub = [line.rstrip("\r\n") for line in lines[first - 1 : last]]
     shifted = [
-        Edit(
-            e.file,
-            e.line - first + 1,
-            e.before,
-            e.after,
-            e.op,
-            e.rule,
-            None if e.move_after is None else e.move_after - first + 1,
+        replace(
+            e,
+            line=e.line - first + 1,
+            move_after=None if e.move_after is None else e.move_after - first + 1,
         )
         for e in edits
     ]
@@ -353,6 +343,7 @@ def _file_edit_entries(
                 "line_start": start,
                 "line_end": end,
                 "op": lead.op,
+                "ops": [carried.op for e in group for carried in e.ops],
                 "rule": lead.rule,
                 "before": before,
                 "after": after,
@@ -456,15 +447,13 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
     if isinstance(built, dict):
         return built
     ops, names = _location_ops(location, scan_root, [str(f.abs_file) for f in built])
-    # A file whose `@imports` expand has atom lines that count the imported lines: no exact edit
-    # can be placed on it, so its ops are refused. A file already briefed and edited since keeps
-    # its stored baseline and plan, shown against the text they were made from.
-    expanding = {str(f.abs_file) for f in built if imports_expand(f.abs_file, f.text)}
+    # A file already briefed and edited since keeps its stored baseline and plan, shown against the text
+    # they were made from.
     held = {str(f.abs_file): h for f in built if (h := snapshots.held_brief(f.abs_file, f.text)) is not None}
-    skipped = expanding | set(held)
+    skipped = set(held)
     atoms_by_file = {str(f.abs_file): atoms_for_file(f.ruleset_map, str(f.abs_file)) for f in built}
     lines_by_file = {str(f.abs_file): f.lines for f in built}
-    lines_by_file.update({name: text.splitlines(keepends=True) for name, (text, _) in held.items()})
+    lines_by_file.update({name: split_lines(text)[0] for name, (text, _) in held.items()})
     maps = [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
     planned = build_plan(
         [o for o in ops if o.file not in skipped], atoms_by_file, lines_by_file, _partner_atoms(ops, scan_root, maps)
@@ -475,16 +464,12 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
         tuple(
             sorted((*planned.slots, *(s for p in stored for s in p.slots)), key=lambda s: (s.file, s.line, s.pi or 0))
         ),
-        (
-            *planned.refused,
-            *(Refusal(o, "imports_expand") for o in ops if o.file in expanding),
-        ),
+        planned.refused,
     )
     names.update({str(f.abs_file): f.rel for f in built})
 
     # Every file built: commit the snapshots together, so a brief that IS delivered is the
     # only thing that ever replaces an earlier baseline.
-    relations = location.get("relations") or []
     for f in built:
         own = Plan(
             tuple(e for e in plan.edits if e.file == str(f.abs_file)),
@@ -492,9 +477,7 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
         )
         if str(f.abs_file) in held:
             continue
-        snapshots.snapshot_file(
-            f.abs_file, f.ruleset_map, f.score, _relation_lines(f.rel, relations), f.rule_counts, own
-        )
+        snapshots.snapshot_file(f.abs_file, f.ruleset_map, f.score, deduped_lines(own), f.rule_counts, own)
 
     slots = _slot_entries(plan, names, ops, scan_root, lines_by_file)
     location_out = {

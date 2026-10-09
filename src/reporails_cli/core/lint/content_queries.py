@@ -7,6 +7,7 @@ Each query inspects the mapper's AST-derived atoms — no regex on raw text.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -51,10 +52,23 @@ def atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
     return [a for a in rm.atoms if _norm_key(a.file_path) == key]
 
 
-def instruction_atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+def own_atoms(atoms: Iterable[Atom]) -> list[Atom]:
+    """The atoms written in the file itself: an atom an `@import` brings in sits on the `@` line and is not in
+    the file's text."""
+    return [a for a in atoms if not a.imported_from]
+
+
+def own_atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+    """`atoms_for_file` without the atoms an `@import` brings in."""
+    return own_atoms(atoms_for_file(rm, file_path))
+
+
+def instruction_atoms_for_file(rm: RulesetMap, file_path: str, *, own: bool = False) -> list[Atom]:
     """`file_path`'s atoms without the list items read as an instruction's object
-    (`LIST_OBJECT_ROLE`), which take no place of their own among the file's instructions."""
-    return [a for a in atoms_for_file(rm, file_path) if a.role != LIST_OBJECT_ROLE]
+    (`LIST_OBJECT_ROLE`), which take no place of their own among the file's instructions; `own` also leaves
+    out the atoms an `@import` brings in."""
+    atoms = own_atoms_for_file(rm, file_path) if own else atoms_for_file(rm, file_path)
+    return [a for a in atoms if a.role != LIST_OBJECT_ROLE]
 
 
 def _all_file_paths(rm: RulesetMap) -> set[str]:

@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.formatters.json import format_notices
 
 logger = logging.getLogger(__name__)
@@ -169,8 +170,7 @@ def _output_heal_results(
 def _print_decisions(decisions: list[dict[str, Any]], put_back: list[dict[str, Any]], console: Any) -> None:
     """The files put back, then one line per place that needs a decision: `file:line  op  rule title`."""
     for pb in put_back:
-        why = f"{pb['op']} {pb['rule']}" if pb["op"] else pb.get("check", "")
-        console.print(f"[yellow]put back: {pb['file']} ({why} line {pb['line']})[/yellow]")
+        console.print(f"[yellow]{put_back_line(pb)}[/yellow]")
     if not decisions:
         return
     from reporails_cli.core.lint.rule_pages import rule_title

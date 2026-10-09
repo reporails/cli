@@ -12,6 +12,7 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
+from reporails_cli.core.heal.apply import heal_withheld_for_run
 from reporails_cli.interfaces.cli.check_orchestration import _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
 
@@ -33,52 +34,20 @@ def _notify_heal_scope_skips(n_skipped: int, output_format: str) -> None:
     )
 
 
-def _emit_heal_auth_required(output_format: str) -> None:
-    """Emit the --heal auth-required notice in the active output format (anon gets diagnosis, not fix).
+def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str | None, server_replied: bool) -> None:
+    """Emit why --heal wrote nothing, in the active output format; the diagnosis is still complete.
 
-    Under json/github the diagnosis already occupies stdout (anon still gets the free
-    diagnosis), so the auth notice goes to stderr — stdout stays a single valid JSON
-    object the consumer can parse, instead of two concatenated objects.
+    Under json/github the diagnosis owns stdout, so the notice goes to stderr — stdout stays a
+    single valid JSON object the consumer can parse.
     """
-    if output_format in ("json", "github"):
-        print(
-            json.dumps(
-                {
-                    "error": "heal_requires_auth",
-                    "message": "Applying fixes (--heal) needs a Pro account. Run `ails login`.",
-                }
-            ),
-            file=sys.stderr,
-        )
-        return
-    console.print(
-        "[yellow]Applying fixes needs a Pro account.[/yellow]\n"
-        "  Run [bold]ails login[/bold] to enable [bold]--heal[/bold]."
+    code, message = heal_withheld_for_run(
+        error=getattr(funnel_error, "error", None),
+        tier=tier,
+        funnel_tier=getattr(funnel_error, "tier", None),
+        server_replied=server_replied,
     )
-
-
-def _emit_heal_pro_required(output_format: str) -> None:
-    """Emit the notice for a signed-in run whose server reply carries no fixes (the free tier).
-
-    Under json/github the diagnosis owns stdout, so the notice goes to stderr.
-    """
     if output_format in ("json", "github"):
-        print(
-            json.dumps({"error": "heal_requires_pro", "message": "Applying fixes (--heal) needs a Pro account."}),
-            file=sys.stderr,
-        )
-        return
-    console.print("[yellow]Applying fixes needs a Pro account.[/yellow] --heal changed nothing.")
-
-
-def _emit_heal_no_fixes(output_format: str) -> None:
-    """Emit the notice for a signed-in run whose server sent no reply (unreachable or errored).
-
-    Under json/github the diagnosis owns stdout, so the notice goes to stderr.
-    """
-    message = "The server sent no fixes, so --heal changed nothing."
-    if output_format in ("json", "github"):
-        print(json.dumps({"error": "heal_no_fixes", "message": message}), file=sys.stderr)
+        print(json.dumps({"error": code, "message": message}), file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]")
 

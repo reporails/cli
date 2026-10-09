@@ -234,3 +234,37 @@ def test_a_refused_split_slot_carries_its_one_change_and_its_guide_line(tmp_path
         == "Keep a step that starts with then in one sentence with the step before it."
     )
     assert set(reply["ops"]) == {"split", "elaborate", "split-keep-sequence"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@pytest.mark.requires_model
+@requires_model
+def test_a_unicode_line_separator_does_not_shift_the_plan_or_its_check(tmp_path: Path) -> None:
+    """A U+2028 inside an item is no line break: the dedupe lands on its own line and the check agrees."""
+    from reporails_cli.core.pipeline.mapping import map_instruction_files
+
+    file, other = tmp_path / "CLAUDE.md", tmp_path / "AGENTS.md"
+    file.write_text(
+        "# Demo\n\n- Run `pytest` before you commit.\u2028Keep it green.\n- Keep `main` deployable.\n"
+        "- Use `ruff` for linting.\n- Write small modules.\n",
+        encoding="utf-8",
+    )
+    other.write_text("# Other\n\n- Use `ruff` for linting.\n", encoding="utf-8")
+    relation = {
+        "rule": "CORE:C:0040",
+        "file": "CLAUDE.md",
+        "line": 5,
+        "op": "dedupe",
+        "expect": {"keep": ["AGENTS.md", 3]},
+    }
+    location = {**_location(), "findings": [], "relations": [relation]}
+    project_map = map_instruction_files(tmp_path, [file, other], spawn_daemon=False)
+
+    reply = remedy_brief.build_remedy_brief(location, tmp_path, project_map)
+
+    assert [(e["line_start"], e["before"]) for e in reply["edits"]] == [(5, "- Use `ruff` for linting.\n")]
+    text = file.read_text(encoding="utf-8").replace("- Use `ruff` for linting.\n", "")
+    file.write_text(text, encoding="utf-8")
+    fresh = map_instruction_files(tmp_path, [file], spawn_daemon=False)
+    assert snapshots.check_conformance(file, fresh, text, tmp_path) == {"ok": True, "deviations": []}

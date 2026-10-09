@@ -44,7 +44,11 @@ def _paid_payload() -> dict[str, Any]:
             "targets": {"tokens": ["@main"], "locations": 1, "of": 4},
             "locations": [_location(1)],
             "listed": [
-                {"reason": "Kept as is.", "rules": [{"rule": "CORE:C:0001", "count": 3}, {"rule": "X:1", "count": 1}]}
+                {
+                    "code": "leave-it",
+                    "reason": "Kept as is.",
+                    "rules": [{"rule": "CORE:C:0001", "count": 3}, {"rule": "X:1", "count": 1}],
+                }
             ],
         },
         "rules": RULES,
@@ -64,6 +68,8 @@ def test_paid_view_renders_every_section_in_order() -> None:
     assert "workflow.summary: Rewrite 1 location." in lines
     assert "workflow.targets: @main · 1 of 4 locations" in lines
     assert "  1 | main | dir1/CLAUDE.md | gate_mover | 12 | dir1/CLAUDE.md" in lines
+    assert "  - code: leave-it" in lines and "    reason: Kept as is." in lines
+    assert lines.index("    reason: Kept as is.") == lines.index("  - code: leave-it") + 1
     assert "    rules: Vague wording ([CORE:C:0001](https://docs.example/c1)) \u00d73; X:1 \u00d71" in lines
     assert lines[-1] == "truncated.hint: Call remedy_brief."
     order = [

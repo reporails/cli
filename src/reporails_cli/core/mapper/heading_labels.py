@@ -3,7 +3,7 @@
 `## Keep — maintainer-ordered notes` beside `## Partial — docs cover most` groups a file's entries.
 Read alone, a label's leading word can sound like an imperative; set beside a sibling label
 of the same shape it organizes content. A leading word that is itself an order (`Always`,
-`Never`, `Must`) or text after the dash that gives an instruction (`Never — force-push to main`)
+`Never`, `Must`, `Avoid`) or text after the dash that gives an instruction (`Never — force-push to main`)
 keeps the heading an instruction.
 """
 
@@ -24,11 +24,12 @@ PAIRED_LABEL_RULE = "paired_label_heading"
 
 def is_label_heading(atom: Atom) -> bool:
     """Whether a heading is one leading word set off by a dash or a colon (`Keep — …`) that is
-    no order: the word is not a directive cue and the text after it carries no charge."""
+    no order: the word is neither a directive cue nor a prohibition (`Avoid`, `Forbid`) and the
+    text after it carries no charge."""
     if atom.kind != "heading":
         return False
     match = _LABEL_RE.match(atom.plain_text or atom.text)
-    if match is None or match.group(1).lower() in DIRECTIVE_CUES:
+    if match is None or match.group(1).lower() in DIRECTIVE_CUES or atom.charge_value < 0:
         return False
     rest = match.group(2).strip()
     return not rest or classify_charge(rest)[1] == 0

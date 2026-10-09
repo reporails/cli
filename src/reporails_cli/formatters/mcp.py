@@ -115,11 +115,11 @@ def with_rule_labels(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _group_listed(listed: Any) -> Any:
     """`workflow.listed` grouped by its reason code, one group per distinct code in
-    first-seen order: `{"reason": <sentence>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
+    first-seen order: `{"code": <code>, "reason": <sentence>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
     The sentence is the cli's own wording for the code (`listed_reason_text`); several rules
     commonly share one reason, so grouping them removes the repeated text instead of
-    repeating it once per rule. The code itself keeps riding on the ungrouped shape
-    everywhere else (`-f json`, `full=true`)."""
+    repeating it once per rule. The code stays on each group, so a reader can act on it without
+    matching the sentence."""
     if not isinstance(listed, list):
         return listed
     order: list[str] = []
@@ -129,7 +129,7 @@ def _group_listed(listed: Any) -> Any:
             continue
         code = str(entry.get("reason") or "")
         if code not in groups:
-            groups[code] = {"reason": listed_reason_text(code), "rules": []}
+            groups[code] = {"code": code, "reason": listed_reason_text(code), "rules": []}
             order.append(code)
         groups[code]["rules"].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
     return [groups[code] for code in order]

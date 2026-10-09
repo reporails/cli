@@ -9,7 +9,7 @@ This gate fails the build if any ``framework/rules/**/rule.md`` carries either.
 Run via ``poe arch`` alongside the other structural gates.
 
 A second, content-level check runs when a remedy catalog is available on the machine
-running this gate (``AILS_REMEDIES_PATH``, or the default location): it flags rule
+running this gate (``AILS_REMEDIES_PATH``, or a local `.env` file): it flags rule
 prose, a changelog entry, the README or a docs page sharing a long word-for-word run
 with a remedy's action sentence, which the structural check cannot see because the
 words never pass through a ``fix:`` key or a ``## Fix`` heading. The check is skipped,
@@ -30,11 +30,11 @@ RULES_ROOT = REPO_ROOT / "framework" / "rules"
 # A `fix:` frontmatter key at line start, or a `## Fix` body heading.
 _FIX_LINE = re.compile(r"^(fix:|## Fix)", re.MULTILINE)
 
-# Where this gate looks for the private remedy catalog, in order: an explicit
-# override, then the conventional sibling-repo checkout. Neither is required —
-# see the module docstring.
+# Where this gate looks for the remedy catalog, in order: the environment, then an
+# `AILS_REMEDIES_PATH=<path>` line in a local `.env` file at the repo root (a relative
+# path resolves against the repo root). Neither is required — see the module docstring.
 _REMEDIES_PATH_ENV = "AILS_REMEDIES_PATH"
-_REMEDIES_DEFAULT_RELPATH = Path("../api/src/reporails_api/core/diagnostics/remedies.yml")
+_ENV_FILE = ".env"
 
 # A run this long shared between a rule's prose and a remedy's action sentence
 # is not a coincidence of shared vocabulary.
@@ -53,14 +53,26 @@ def find_public_fix(rules_root: Path) -> list[Path]:
     return offenders
 
 
+def _env_file_value(key: str) -> str | None:
+    """The value of ``key`` in the repo root's ``.env`` (comments and blanks ignored, quotes stripped)."""
+    env_file = REPO_ROOT / _ENV_FILE
+    if not env_file.is_file():
+        return None
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        if name.strip() == key:
+            return value.strip().strip("'\"") or None
+    return None
+
+
 def _resolve_remedies_path() -> Path | None:
     """Return the local remedy catalog path this gate can read, or ``None``."""
-    override = os.environ.get(_REMEDIES_PATH_ENV)
-    candidates = [Path(override)] if override else []
-    candidates.append((REPO_ROOT / _REMEDIES_DEFAULT_RELPATH).resolve())
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+    configured = os.environ.get(_REMEDIES_PATH_ENV) or _env_file_value(_REMEDIES_PATH_ENV)
+    if configured and (candidate := REPO_ROOT / configured).is_file():
+        return candidate.resolve()
     return None
 
 

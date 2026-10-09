@@ -25,6 +25,12 @@ UNENTITLED_TIERS = frozenset({"anonymous", "free"})
 ACCOUNT_TIERS = (ENTITLED_TIERS | UNENTITLED_TIERS) - {"anonymous"}
 
 
+def tiers_unpaid(*tiers: str | None) -> bool:
+    """True when the named tiers include an unpaid one and no paid one."""
+    named = set(tiers)
+    return bool(named & UNENTITLED_TIERS) and not named & ENTITLED_TIERS
+
+
 def tier_label(tier: str) -> str:
     """`Pro` for an account tier (Free, Pro, Team); "" for anything else."""
     return tier.capitalize() if tier in ACCOUNT_TIERS else ""

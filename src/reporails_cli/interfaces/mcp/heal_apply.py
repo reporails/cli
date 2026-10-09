@@ -10,16 +10,23 @@ from reporails_cli.formatters.mcp_view import render_heal_apply
 from reporails_cli.interfaces.mcp import snapshots
 
 
-def heal_apply_message(payload: dict[str, Any]) -> str:
-    """Why `heal_apply` wrote nothing, in the words `ails check --heal` uses."""
-    from reporails_cli.core.heal.apply import HEAL_PRO_REQUIRED, HEAL_SIGN_IN
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
+def heal_apply_message(payload: dict[str, Any], *, mapped: bool = True) -> str:
+    """Why `heal_apply` wrote nothing, in the words `ails check --heal` uses.
+
+    A reply that is offline, carries a server error or funnel rejection, or came with no map to fix
+    (`mapped` false) is "no fixes came"; only a clean reply without fixes means the account is not Pro.
+    """
+    from reporails_cli.core.heal.apply import heal_withheld_for_run
 
     if "error" in payload:
         return f"heal_apply: {payload.get('message') or payload['error']}"
-    if not has_api_key():
-        return f"heal_apply: {HEAL_PRO_REQUIRED} {HEAL_SIGN_IN}"
-    return f"heal_apply: {HEAL_PRO_REQUIRED} Nothing was changed."
+    funnel = payload.get("funnel")
+    funnel = funnel if isinstance(funnel, dict) else {}
+    replied = mapped and not (payload.get("offline") or payload.get("server_error") or funnel)
+    _, message = heal_withheld_for_run(
+        error=funnel.get("error"), tier=payload.get("tier"), funnel_tier=funnel.get("tier"), server_replied=replied
+    )
+    return f"heal_apply: {message}"
 
 
 def heal_apply_write(ruleset_map: Any, workflow: dict[str, Any], target: Path, scan_root: Path) -> str:

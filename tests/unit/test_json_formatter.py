@@ -9,7 +9,7 @@ import pytest
 
 from reporails_cli.core.platform.dto.diagnostics import CrossFileCoordinate, FunnelError, Hint, QualityResult
 from reporails_cli.core.platform.dto.models import Level
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
 from reporails_cli.formatters.json import format_combined_result
 
 
@@ -544,3 +544,33 @@ class TestConventionMarker:
         assert len(rows) == 2
         assert [r.get("convention", False) for r in rows] == [True, False]
         assert data["stats"]["total_findings"] == 2
+
+
+class TestOverlapPartner:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_overlap_finding_names_its_partner_file(self, tmp_path: Path) -> None:
+        item = FindingItem(
+            file="CLAUDE.md",
+            line=3,
+            severity="warning",
+            rule="CORE:C:0001",
+            message="Overlapping instructions",
+            source="server",
+            partner_file=str(tmp_path / "docs" / "AGENTS.md"),
+            partner_line=7,
+            overlap_pct=40,
+        )
+        data = format_combined_result(_result(findings=(item,)), project_root=tmp_path)
+        entry = data["files"]["CLAUDE.md"]["findings"][0]
+        assert entry["partner_file"] == "docs/AGENTS.md"
+        assert entry["partner_line"] == 7
+        assert entry["overlap_pct"] == 40
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_finding_without_a_partner_carries_no_partner_keys(self, tmp_path: Path) -> None:
+        item = FindingItem(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0001", message="m")
+        data = format_combined_result(_result(findings=(item,)), project_root=tmp_path)
+        entry = data["files"]["CLAUDE.md"]["findings"][0]
+        assert not {"partner_file", "partner_line", "overlap_pct"} & entry.keys()

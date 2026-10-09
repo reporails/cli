@@ -11,8 +11,8 @@ from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
-from reporails_cli.core.heal.file_io import imports_expand, read_lines
-from reporails_cli.core.heal.plan import apply_edits, build_plan
+from reporails_cli.core.heal.file_io import read_lines
+from reporails_cli.core.heal.plan import apply_edits, build_plan, deduped_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
@@ -138,7 +138,7 @@ def _readable(path: Path) -> tuple[list[str], list[str]] | None:
     except (UnicodeDecodeError, OSError):
         logger.warning("%s is not readable UTF-8 text, so heal left it unchanged.", path)
         return None
-    return (lines, endings) if not imports_expand(path, "".join(lines)) else None
+    return lines, endings
 
 
 def keyed_heal(
@@ -166,7 +166,7 @@ def keyed_heal(
     ]
     originals = {} if dry_run else _write(plan, raw)
     result.put_back = _put_back(plan, raw, remap, originals, ruleset_map, target) if originals else []
-    result.fixes = [_fix(e) for e in plan.edits if e.file not in {b["file"] for b in result.put_back}]
+    result.fixes = [f for e in plan.edits if e.file not in {b["file"] for b in result.put_back} for f in _fixes(e)]
     return result
 
 
@@ -203,13 +203,17 @@ def _write(plan: Plan, raw: Mapping[str, tuple[list[str], list[str]]]) -> dict[s
     return originals
 
 
-def _fix(edit: Edit) -> dict[str, Any]:
-    return {
-        "rule_id": edit.rule,
-        "file_path": edit.file,
-        "line": edit.line,
-        "description": _DESCRIPTIONS.get(edit.op, edit.op),
-    }
+def _fixes(edit: Edit) -> list[dict[str, Any]]:
+    """One fix per op the edit carries: its own and each op folded into it."""
+    return [
+        {
+            "rule_id": carried.rule,
+            "file_path": edit.file,
+            "line": edit.line,
+            "description": _DESCRIPTIONS.get(carried.op, carried.op),
+        }
+        for carried in edit.ops
+    ]
 
 
 def _first_line(block: Mapping[str, Any], check: str) -> int:
@@ -219,10 +223,13 @@ def _first_line(block: Mapping[str, Any], check: str) -> int:
     return int(entries[0].get("line", 0)) if entries and isinstance(entries[0], dict) else 0
 
 
-def _rewrite_failure(file: str, original: bytes, ruleset_map: Any, fresh: Any, target: Path) -> dict[str, Any] | None:
-    """The put-back entry for `file` when the preservation check fails its written text against its original."""
+def _rewrite_failure(
+    file: str, original: bytes, ruleset_map: Any, fresh: Any, target: Path, deduped: Iterable[int] = ()
+) -> dict[str, Any] | None:
+    """The put-back entry for `file` when the preservation check fails its written text against its original;
+    the lines in `deduped` are repeats the plan removes, so their going is no loss."""
     text = original.decode("utf-8", errors="replace")
-    snapshot = take_snapshot(file, text, ruleset_map, None)
+    snapshot = take_snapshot(file, text, ruleset_map, None, deduped)
     written = Path(file).read_text(encoding="utf-8", errors="replace")
     block = check_rewrite(snapshot, Path(file), fresh, written, None, target)
     failed = failed_checks(block)
@@ -235,6 +242,13 @@ def _rewrite_failure(file: str, original: bytes, ruleset_map: Any, fresh: Any, t
         "line": _first_line(block, failed[0]),
         "check": f"preservation:{failed[0]}",
     }
+
+
+def put_back_line(entry: Mapping[str, Any], file: str | None = None) -> str:
+    """The line that names a file put back: `put back: <file> (<reason> line <n>)`, the reason being the
+    plan's `<op> <rule>` it departed from, else the check that failed. `file` overrides the entry's path."""
+    reason = f"{entry['op']} {entry['rule']}" if entry.get("op") else str(entry.get("check", ""))
+    return f"put back: {file if file is not None else entry.get('file', '')} ({reason} line {entry.get('line', '')})"
 
 
 def _put_back(
@@ -258,7 +272,7 @@ def _put_back(
         failure = (
             {"file": file, "op": found[0].op, "rule": found[0].rule, "line": found[0].line, "check": "conformance"}
             if found
-            else _rewrite_failure(file, originals[file], ruleset_map, fresh_map, target)
+            else _rewrite_failure(file, originals[file], ruleset_map, fresh_map, target, deduped_lines(one))
         )
         if failure is not None:
             Path(file).write_bytes(originals[file])

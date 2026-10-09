@@ -371,10 +371,11 @@ def test_envelope_groups_listed_rules_sharing_one_reason_code():
 
     assert listed == [
         {
+            "code": "no-gain",
             "reason": listed_reason_text("no-gain"),
             "rules": [{"rule": "CORE:E:0004", "count": 40}, {"rule": "CORE:C:0005", "count": 1}],
         },
-        {"reason": listed_reason_text("unbacked"), "rules": [{"rule": "CORE:S:0002", "count": 2}]},
+        {"code": "unbacked", "reason": listed_reason_text("unbacked"), "rules": [{"rule": "CORE:S:0002", "count": 2}]},
     ]
 
 
@@ -394,6 +395,7 @@ def test_envelope_groups_listed_when_no_location_is_left():
 
     assert listed == [
         {
+            "code": "no-gain",
             "reason": listed_reason_text("no-gain"),
             "rules": [{"rule": "CORE:E:0004", "count": 40}, {"rule": "CORE:C:0005", "count": 1}],
         }
@@ -408,7 +410,13 @@ def test_envelope_gives_an_unknown_reason_code_the_neutral_sentence():
 
     listed = bound_validate_payload(payload)["workflow"]["listed"]
 
-    assert listed == [{"reason": listed_reason_text("brand-new-code"), "rules": [{"rule": "CORE:E:0004", "count": 4}]}]
+    assert listed == [
+        {
+            "code": "brand-new-code",
+            "reason": listed_reason_text("brand-new-code"),
+            "rules": [{"rule": "CORE:E:0004", "count": 4}],
+        }
+    ]
     assert listed_reason_text("brand-new-code") == listed_reason_text("another-new-code")
     assert listed_reason_text("brand-new-code") != listed_reason_text("no-gain")
 
@@ -426,6 +434,7 @@ def test_envelope_groups_listed_in_first_seen_reason_order():
 
     listed = bound_validate_payload(payload)["workflow"]["listed"]
 
+    assert [group["code"] for group in listed] == ["unbacked", "convention"]
     assert [group["reason"] for group in listed] == [listed_reason_text("unbacked"), listed_reason_text("convention")]
     assert [row["rule"] for row in listed[0]["rules"]] == ["CORE:S:0001", "CORE:S:0003"]
 

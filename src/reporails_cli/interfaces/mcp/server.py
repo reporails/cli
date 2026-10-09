@@ -367,7 +367,7 @@ async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
     payload, ruleset_map, _score = result
     workflow = payload.get("workflow")
     if ruleset_map is None or not isinstance(workflow, dict):
-        return heal_apply_message(payload)
+        return heal_apply_message(payload, mapped=ruleset_map is not None)
     try:
         return await asyncio.to_thread(heal_apply_write, ruleset_map, workflow, target, scan_root)
     finally:
@@ -483,8 +483,9 @@ async def remedy_brief(
 @server.tool(
     name="heal_apply",
     description=(
-        "Make every fix that needs no judgment across the project at `path` in one call, then list what"
-        " is left for a decision. Pro only: without a Pro account it changes nothing and says so."
+        "Make every fix that needs no judgment across the project at `path` in one call, then count what"
+        " is left for a decision (it counts them and does not list them)."
+        " Pro only: without a Pro account it changes nothing and says so."
         " Each file it writes is checked and put back if it departs from the plan."
         " `targets` narrows the files, read the way `validate` reads them. Run it before rewriting"
         " locations by hand, then call `validate` again. Returns text: a count line"

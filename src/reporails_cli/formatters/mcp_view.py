@@ -301,7 +301,8 @@ def _listed_lines(listed: Any, rules: dict[str, Any]) -> list[str]:
             for r in group.get("rules") or ()
             if isinstance(r, dict)
         )
-        lines.append(f"  - reason: {group.get('reason', '')}")
+        lines.append(f"  - code: {group.get('code', '')}")
+        lines.append(f"    reason: {group.get('reason', '')}")
         lines.append(f"    rules: {entries}")
     return lines
 
@@ -399,6 +400,8 @@ def render_heal_apply(
 ) -> str:
     """The `heal_apply` reply: a count line, one line per changed file, one line per file put back."""
 
+    from reporails_cli.core.heal.keyed import put_back_line
+
     def rel(file: str) -> str:
         try:
             return str(Path(file).resolve().relative_to(project_root.resolve()))
@@ -415,8 +418,5 @@ def render_heal_apply(
         )
     ]
     lines += [f"{name}  {count} fixed" for name, count in sorted(per_file.items())]
-    lines += [
-        f"put back: {rel(str(b.get('file', '')))} ({b.get('op', '')} {b.get('rule', '')} line {b.get('line', '')})"
-        for b in put_back
-    ]
+    lines += [put_back_line(b, rel(str(b.get("file", "")))) for b in put_back]
     return "\n".join(lines)

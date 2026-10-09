@@ -11,6 +11,7 @@ from typing import Any
 
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, content_words
 from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
+from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.dto.ruleset import Atom
 from reporails_cli.core.platform.dto.structure import DocumentStructure
@@ -44,10 +45,12 @@ class Snapshot:
     score: float | None
     relation_lines: frozenset[int] = field(default_factory=frozenset)
     structure: DocumentStructure = field(init=False)
+    imports: tuple[str, ...] = field(init=False)
 
     def __post_init__(self) -> None:
         # The block structure of `text`, read once with the baseline.
         object.__setattr__(self, "structure", read_structure(self.text))
+        object.__setattr__(self, "imports", tuple(import_refs(self.text)))
 
 
 def is_instruction_heading(atom: Any) -> bool:
@@ -81,8 +84,8 @@ def take_snapshot(
             plain_text=a.plain_text,
             modality=a.modality,
         )
-        for a in (instruction_atoms_for_file(ruleset_map, file_path) if ruleset_map is not None else ())
-        if a.kind != "heading" or a.charge_value != 0 or is_negative_heading(a.text)
+        for a in (instruction_atoms_for_file(ruleset_map, file_path, own=True) if ruleset_map is not None else ())
+        if (a.kind != "heading" or a.charge_value != 0 or is_negative_heading(a.text))
     )
     return Snapshot(file_path=file_path, text=text, atoms=atoms, score=score, relation_lines=frozenset(relation_lines))
 
@@ -92,7 +95,7 @@ def rewritten_atoms(new_map: Any, file_path: str) -> list[Atom]:
     instruction heading included), in file order."""
     atoms = (
         a
-        for a in (instruction_atoms_for_file(new_map, file_path) if new_map is not None else ())
+        for a in (instruction_atoms_for_file(new_map, file_path, own=True) if new_map is not None else ())
         if (a.kind != "heading" or is_instruction_heading(a)) and not is_hedge_fragment(a)
     )
     return sorted(atoms, key=lambda a: (a.line, a.position_index))

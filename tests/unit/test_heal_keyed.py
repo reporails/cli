@@ -276,7 +276,7 @@ def test_heal_for_a_free_tier_reply_prints_the_pro_line(
     state = SimpleNamespace(
         inputs=SimpleNamespace(heal=True),
         pipeline=SimpleNamespace(lint_result=SimpleNamespace(workflow=None), funnel_error=None),
-        render=SimpleNamespace(heal_authed=False),
+        render=SimpleNamespace(heal_authed=False, result=SimpleNamespace(tier="free")),
         targets=SimpleNamespace(output_format="text"),
     )
     check_flow._flow_heal(state)
@@ -328,22 +328,25 @@ def test_a_config_surface_file_is_never_written(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 @pytest.mark.requires_model
-def test_a_file_whose_imports_expand_is_never_written(tmp_path: Path) -> None:
-    """Atom lines of an `@import`-bearing file count the imported lines, so a write would land on the wrong line."""
-    kept = tmp_path / "CLAUDE.md"
-    kept.write_text("# Doc\nRun build.sh before every commit.\n")
-    (tmp_path / "frag.md").write_text("imported one\nimported two\n")
-    sub = tmp_path / "sub"
-    sub.mkdir()
-    (sub / "frag.md").write_text("imported one\nimported two\n")
-    importing = sub / "CLAUDE.md"
-    importing.write_text("@frag.md\nRun build.sh before every commit.\n")
-    before = importing.read_bytes()
-    rmap, wf = _hand_map(kept, importing)
-    res = _apply_keyed_fixes(rmap, tmp_path, wf, False, False, _Console(), [kept, importing], {})
-    assert importing.read_bytes() == before
-    assert "`build.sh`" in kept.read_text()
-    assert [f["file_path"] for f in res.fixes] == [str(kept)]
+def test_a_file_whose_imports_expand_is_fixed_on_its_own_lines_only(tmp_path: Path) -> None:
+    """The line of its own is fixed; an instruction written in the imported file is left where it is."""
+    main, imported = tmp_path / "CLAUDE.md", tmp_path / "README.md"
+    main.write_text("@README.md\n\nRun build.sh before every commit.\n")
+    imported.write_text("Open settings.json and edit it.\nKeep notes short.\n")
+    before = imported.read_bytes()
+    m = map_instruction_files(tmp_path, [main], spawn_daemon=False)
+    own = next(a for a in m.atoms if not a.imported_from)
+    taken = next(a for a in m.atoms if a.imported_from and a.unformatted_code)
+    items = (
+        LocationFinding("format", str(main), own.line, own.position_index, "code"),
+        LocationFinding("format", str(main), taken.line, taken.position_index, "code"),
+    )
+    wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(main),), "", items),))
+    res = _apply_keyed_fixes(m, tmp_path, wf, False, False, _Console(), [main], {})
+    assert main.read_text() == "@README.md\n\nRun `build.sh` before every commit.\n"
+    assert imported.read_bytes() == before
+    assert [f["line"] for f in res.fixes] == [3]
+    assert res.decisions == [] and res.put_back == []
 
 
 @pytest.mark.unit
@@ -377,3 +380,122 @@ def test_heal_takes_its_fixes_from_the_workflow_the_report_showed(
     )
     check_flow._flow_heal(state)
     assert seen == [shown]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_a_repeated_line_is_removed_and_the_file_is_not_put_back(tmp_path: Path) -> None:
+    """The deleted copy is the planned dedupe, not a lost instruction."""
+    from reporails_cli.core.platform.dto.diagnostics import LocationRelation
+
+    a, b = tmp_path / "CLAUDE.md", tmp_path / "AGENTS.md"
+    a.write_text(
+        "# Demo\n\nRun `uv run pytest` before you commit.\n\nUse `ruff` for linting.\n\nKeep functions short.\n"
+    )
+    b.write_text("# Other\n\nUse `ruff` for linting.\n\nWrite tests first.\n")
+    m = map_instruction_files(tmp_path, [a, b], spawn_daemon=False)
+    rel = LocationRelation("CORE:C:0044", str(a), 5, str(b), 3, op="dedupe", expect={})
+    wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(a),), "", (), (rel,)),))
+    res = _apply_keyed_fixes(m, tmp_path, wf, False, False, _Console(), [a, b], {})
+    assert res.put_back == []
+    assert [f["line"] for f in res.fixes] == [5]
+    assert "Use `ruff`" not in a.read_text()
+    assert "Keep functions short." in a.read_text()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_a_fix_on_one_instruction_is_not_judged_by_another_on_its_line(tmp_path: Path) -> None:
+    """A hedge dropped from the addressed sentence holds although the next sentence is still hedged."""
+    path = tmp_path / "CLAUDE.md"
+    path.write_text(
+        "# Demo\n\nRun build.sh before every commit.\n\nTry to keep functions short. Prefer small modules.\n"
+    )
+    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    first = next(a.position_index for a in m.atoms if a.line == 5)
+    items = (
+        LocationFinding("CORE:C:0043", str(path), 5, first, "direct"),
+        LocationFinding("format", str(path), 3, _pi(m, 3), "code"),
+    )
+    wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
+    res = _apply_keyed_fixes(m, tmp_path, wf, False, False, _Console(), [path], {})
+    assert res.put_back == []
+    text = path.read_text()
+    assert "Keep functions short. Prefer small modules." in text
+    assert "`build.sh`" in text
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_two_fixes_on_one_line_are_both_applied(tmp_path: Path) -> None:
+    """Bold turned to italic and a bare file name wrapped on one line need no decision."""
+    path = tmp_path / "CLAUDE.md"
+    path.write_text("# Demo\n\nAlways run the **linter** with build.sh before you commit.\n")
+    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    pi = _pi(m, 3)
+    items = (LocationFinding("bold", str(path), 3, pi, "unbold"), LocationFinding("format", str(path), 3, pi, "code"))
+    wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
+    res = _apply_keyed_fixes(m, tmp_path, wf, False, False, _Console(), [path], {})
+    assert res.decisions == []
+    assert res.put_back == []
+    assert "*linter* with `build.sh`" in path.read_text()
+    assert sorted(f["description"] for f in res.fixes) == ["Replaced bold with italic", "Wrapped code in backticks"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_a_rewrite_that_drops_an_import_line_fails_the_rewrite_check(tmp_path: Path) -> None:
+    """The imported instructions are not in the file's text, but the `@import` that brings them is kept."""
+    from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
+
+    main = tmp_path / "CLAUDE.md"
+    (tmp_path / "rules.md").write_text("Use `ruff` for linting.\nKeep notes short.\n")
+    before = "# Doc\n\n@rules.md\n\nRun `pytest` before you commit.\n"
+    main.write_text(before)
+    snap = take_snapshot(str(main), before, map_instruction_files(tmp_path, [main], spawn_daemon=False), None)
+    after = "# Doc\n\nRun `pytest` before you commit.\n"
+    main.write_text(after)
+    fresh = map_instruction_files(tmp_path, [main], spawn_daemon=False)
+    block = check_rewrite(snap, main, fresh, after, None, tmp_path)
+    assert failed_checks(block) == ["removed_structure"]
+    assert block["removed_structure"]["imports"] == 1
+    kept = check_rewrite(snap, main, fresh, before, None, tmp_path)
+    assert kept["kept"]["imports"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_a_repeated_line_is_not_removed_when_its_only_other_copy_is_an_import_of_it(tmp_path: Path) -> None:
+    from reporails_cli.core.platform.dto.diagnostics import LocationRelation
+
+    rules, main = tmp_path / "AGENTS.md", tmp_path / "CLAUDE.md"
+    rules.write_text("# Rules\n\nKeep functions short.\n\nUse `ruff` for linting.\n")
+    main.write_text("@AGENTS.md\n")
+    m = map_instruction_files(tmp_path, [rules, main], spawn_daemon=False)
+    rel = LocationRelation("CORE:C:0044", str(rules), 5, str(main), 1, op="dedupe", expect={})
+    wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(rules),), "", (), (rel,)),))
+    res = _apply_keyed_fixes(m, tmp_path, wf, False, False, _Console(), [rules, main], {})
+    assert "Use `ruff`" in rules.read_text()
+    assert res.fixes == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+@pytest.mark.parametrize("ops", [("code", "direct"), ("direct", "code"), ("unbold", "direct"), ("direct", "unbold")])
+def test_ops_folded_on_one_line_apply_in_any_order(tmp_path: Path, ops: tuple[str, str]) -> None:
+    path = tmp_path / "CLAUDE.md"
+    path.write_text("# Demo\n\nTry to run the **linter** with build.sh before you commit.\n")
+    m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
+    pi = _pi(m, 3)
+    rules = {"code": "format", "direct": "CORE:C:0043", "unbold": "bold"}
+    items = tuple(LocationFinding(rules[o], str(path), 3, pi, o) for o in ops)
+    wf = RemediationWorkflow(locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items),))
+    res = _apply_keyed_fixes(m, tmp_path, wf, False, False, _Console(), [path], {})
+    assert res.decisions == [] and res.put_back == []
+    assert len(res.fixes) == 2

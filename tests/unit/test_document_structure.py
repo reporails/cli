@@ -75,9 +75,9 @@ def test_a_list_after_a_paragraph_is_a_new_list() -> None:
 def test_removed_structure_counts_what_the_rewrite_dropped() -> None:
     before = read_structure(_DOC)
     after = read_structure("# Title\n\nIntro.\n\n- top\n")
-    removed = structure.removed_structure(before, after, frozenset())
-    assert removed == {"table_rows": 2, "list_items": 4, "headings": 1, "fences": 1, "links": 2}
-    assert structure.structure_totals(before, frozenset())["table_rows"] == 2
+    removed = structure.removed_structure(before, after, frozenset(), ((), ()))
+    assert removed == {"table_rows": 2, "list_items": 4, "headings": 1, "fences": 1, "links": 2, "imports": 0}
+    assert structure.structure_totals(before, frozenset(), ())["table_rows"] == 2
 
 
 @pytest.mark.unit
@@ -85,7 +85,7 @@ def test_removed_structure_counts_what_the_rewrite_dropped() -> None:
 def test_relation_lines_are_not_counted_as_lost() -> None:
     before = read_structure("# T\n\n- keep it\n- drop it\n")
     after = read_structure("# T\n\n- keep it\n")
-    assert structure.removed_structure(before, after, frozenset({4}))["list_items"] == 0
+    assert structure.removed_structure(before, after, frozenset({4}), ((), ()))["list_items"] == 0
 
 
 @pytest.mark.unit

@@ -368,9 +368,12 @@ def _paragraph_line_removal(op: PlanOp, lines: Sequence[str]) -> Edit | None:
 
 def dedupe(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str], partner: Atom | None = None) -> Edit | None:
     """Delete the target's whole line when it is the line's only atom and names the same backticked tokens as
-    its partner; a paragraph line also takes one blank line beside it."""
+    its partner (a copy the partner's file only imports from the target's is no second copy); a paragraph
+    line also takes one blank line beside it."""
     atom = _whole_line_atom(atoms, op.line)
     if atom is None or partner is None or not 0 < op.line <= len(lines) or atom.format not in _RUNNING_FORMATS:
+        return None
+    if partner.imported_from:  # a copy the partner's file only imports from this one is no second copy
         return None
     if not _named(atom) or _named(atom) != _named(partner):
         return None

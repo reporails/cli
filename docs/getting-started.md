@@ -65,7 +65,7 @@ npm install -g @reporails/cli
 
 `ails install` then ensures the binary is on PATH. After it runs, `ails check` works from anywhere without the `npx` / `uvx` prefix.
 
-**2. Add the reporails plugin to your agent.** The plugin carries the `ails` skill and the MCP server; installing it registers both in one step — no per-agent config editing. The per-agent install commands are listed in [Agent Support](agent-support.md#plugin-support); `ails install` runs them for Claude Code and Codex and prints the rest. Add `--project` to install the plugin for the current repository only, shared with collaborators (Codex installs for your user); `ails update` refreshes the plugin in each agent that has it. What the plugin needs to start is stated there. Without the plugin, `ails check` in your terminal scores your instruction files and applies formatting fixes; rewriting them needs the plugin and Pro (`/reporails:ails heal` in Claude Code).
+**2. Add the reporails plugin to your agent.** The plugin carries the `ails` skill and the MCP server; installing it registers both in one step — no per-agent config editing. The per-agent install commands are listed in [Agent Support](agent-support.md#plugin-support); `ails install` runs them for Claude Code and Codex and prints the rest. Add `--project` to install the plugin for the current repository only, shared with collaborators (Codex installs for your user); `ails update` refreshes the plugin in each agent that has it. What the plugin needs to start is stated there. Without the plugin, `ails check` in your terminal scores your instruction files, and `--heal` applies fixes on a Pro account; rewriting them needs the plugin and Pro (`/reporails:ails heal` in Claude Code).
 
 ## Configure (optional)
 
@@ -79,7 +79,7 @@ Per-repo settings, rule thresholds, and rule disables live in `.ails/config.yml`
 
 ## Authenticate (optional, free)
 
-The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription) and `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail (the remedies, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
+The anonymous tier works without an account and is enough to see whether your instructions are working — the full diagnosis, every finding, and the score. Signing in is free and does not change your rate or payload caps — anonymous and signed-in free accounts share the same limits. What an account gives you is an identity (so you can subscribe and manage the subscription); `ails check --heal` writes fixes on a Pro account only, and an anonymous or free run gets the full diagnosis and no changes. Raising the caps and unlocking the full diagnostic detail (the remedies, and the exact line of each cross-file repetition and topic overlap) is what Pro adds:
 
 ```bash
 ails login    # sign this machine in through your browser
@@ -106,13 +106,13 @@ ails check -f github        # GitHub Actions inline annotations
                             #  other value is a usage error)
 ails check --strict              # exit code 1 if any finding fires
 ails check --agent claude        # only run rules scoped to one agent
-ails check CLAUDE.md --heal      # apply deterministic auto-fixes to one target (needs an account)
+ails check CLAUDE.md --heal      # apply the listed fixes to one target (Pro)
 ails check CLAUDE.md --fix       # alias for --heal (eslint / ruff convention)
-ails check CLAUDE.md --heal --dry-run  # preview fixes without writing (needs an account)
+ails check CLAUDE.md --heal --dry-run  # preview fixes without writing (Pro)
 ails check --heal --cwd          # with --heal: opt into rewriting the whole project instead of naming a target
 ```
 
-`--heal` needs an explicit target — a path or a capability like `skills` — or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. It also needs an account: run `ails login` first — a free account is enough, and Pro is not required. Without stored credentials (or an `AILS_API_KEY` in the environment) the run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs an account.` and applies nothing. See [Tiers and Limits](tiers.md).
+`--heal` needs an explicit target — a path or a capability like `skills` — or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. It also needs a Pro account: run `ails login` with one. Without one (anonymous, or signed in on a free account) the run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs a Pro account.` and applies nothing. See [Tiers and Limits](tiers.md).
 
 The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats`, a `notices` list of messages about your account, and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
 

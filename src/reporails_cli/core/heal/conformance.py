@@ -27,36 +27,53 @@ def _emphasis(line: str) -> tuple[int, int]:
 
 
 _Found = tuple[str, str] | None
+_Atoms = Sequence[Atom]
+_Nth = int | None
 
 
-def _split_met(edit: Edit, new_line: int, text: str, atoms: Sequence[Atom]) -> _Found:  # noqa: ARG001
+def _line_atoms(atoms: Sequence[Atom], new_line: int, nth: int | None) -> list[Atom]:
+    """The atoms of the new line the op addressed: the `nth` one of the line, or all of them.
+
+    `direct` and `negation-form` change the words of one atom and `split` only breaks sentences, so the line's
+    atoms stay in their order and the addressed atom keeps its place on the line (`split` addresses the
+    sentences that hold it). A place the new line no longer has reads the whole line."""
+    on_line = sorted((a for a in atoms if a.line == new_line), key=lambda a: a.position_index)
+    return [on_line[nth]] if nth is not None and nth < len(on_line) else on_line
+
+
+def _split_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+    """The sentences that hold an addressed atom each hold one instruction: a split cuts the sentences that held
+    the op's atom (all the line's when it names none) and no other."""
+    addressed = {id(a) for a in _line_atoms(atoms, new_line, nth)}
     packed = [
-        len(sentence_instructions(s)) for s in running_sentences(list(atoms)) if any(a.line == new_line for a in s)
+        len(sentence_instructions(s)) for s in running_sentences(list(atoms)) if any(id(a) in addressed for a in s)
     ]
     worst = max(packed, default=1)
     return ("instr:1", f"instr:{worst}") if worst > 1 else None
 
 
-def _direct_met(edit: Edit, new_line: int, text: str, atoms: Sequence[Atom]) -> _Found:  # noqa: ARG001
-    hedged = any(a.modality == "hedged" for a in atoms if a.line == new_line)
+def _direct_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+    """The addressed atom is no longer hedged: the dropped hedge opened that atom's own text."""
+    hedged = any(a.modality == "hedged" for a in _line_atoms(atoms, new_line, nth))
     return ("mod:direct", "mod:hedged") if hedged else None
 
 
-def _negation_met(edit: Edit, new_line: int, text: str, atoms: Sequence[Atom]) -> _Found:  # noqa: ARG001
-    held = any(a.charge_value == -1 for a in atoms if a.line == new_line)
+def _negation_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+    """The addressed atom is still a prohibition after `Never` became `Do not`."""
+    held = any(a.charge_value == -1 for a in _line_atoms(atoms, new_line, nth))
     return None if held else ("charge:-1", "charge:other")
 
 
-def _italic_met(edit: Edit, new_line: int, text: str, atoms: Sequence[Atom]) -> _Found:  # noqa: ARG001
-    return None if _emphasis(text)[0] > _emphasis(edit.before)[0] else ("italic:+1", "italic:same")
+def _italic_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+    return None if _emphasis(text)[0] > _emphasis(before)[0] else ("italic:+1", "italic:same")
 
 
-def _unbold_met(edit: Edit, new_line: int, text: str, atoms: Sequence[Atom]) -> _Found:  # noqa: ARG001
-    return None if _emphasis(text)[1] < _emphasis(edit.before)[1] else ("bold:-1", "bold:same")
+def _unbold_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+    return None if _emphasis(text)[1] < _emphasis(before)[1] else ("bold:-1", "bold:same")
 
 
-def _code_met(edit: Edit, new_line: int, text: str, atoms: Sequence[Atom]) -> _Found:  # noqa: ARG001
-    more = len(code_spans(text)) > len(code_spans(edit.before))
+def _code_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+    more = len(code_spans(text)) > len(code_spans(before))
     return None if more else ("code:+1", "code:same")
 
 
@@ -162,8 +179,16 @@ def _check_edit(
         if anchor is None or anchor not in mapped:
             return dev("after:anchor", "changed")
         return [] if mapped[here] > mapped[anchor] else dev("order:after", "order:before")
-    check = _OP_CHECKS.get(edit.op)
     first = mapped[here]
     text = "\n".join(new[first : first + (edit.after or "").count("\n") + 1])
-    found = check(edit, first + 1, text, atoms) if check else None
-    return dev(*found) if found else []
+    return _ops_unmet(edit, file, first + 1, text, atoms)
+
+
+def _ops_unmet(edit: Edit, file: str, new_line: int, text: str, atoms: _Atoms) -> list[Deviation]:
+    """The first op the edit carries that does not hold on its new line, as a deviation."""
+    for carried in edit.ops:
+        check = _OP_CHECKS.get(carried.op)
+        found = check(edit.before, new_line, text, atoms, carried.nth) if check else None
+        if found:
+            return [Deviation(file, edit.line, carried.op, carried.rule, *found)]
+    return []

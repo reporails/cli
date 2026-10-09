@@ -107,7 +107,7 @@ _SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_spa
 
 # Bump when the cached atom shape or the way atoms are read changes: every entry
 # stored under an older version then misses and is rebuilt on the next run.
-_CACHE_VERSION = 39
+_CACHE_VERSION = 40
 _MAX_CACHE_ENTRIES = 5000  # global cache serves all projects
 _STALE_IDENTITY_DAYS = 30  # a sibling configuration's folder unused this long is removed
 

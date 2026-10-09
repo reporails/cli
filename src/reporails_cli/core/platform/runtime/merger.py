@@ -85,8 +85,9 @@ class FindingItem:
     )
     # The instruction's place in its file, when the finding is on one; never part of a finding's identity.
     pi: int | None = field(default=None, compare=False)
-    # A per-file overlap finding's partner file and shared percentage, when the reply names them.
+    # A per-file overlap finding's partner file, its line and shared percentage, when the reply names them.
     partner_file: str | None = field(default=None, compare=False)
+    partner_line: int | None = field(default=None, compare=False)
     overlap_pct: int | None = field(default=None, compare=False)
 
 
@@ -189,6 +190,7 @@ def _collect_server_diagnostics(
                     impact_tier=getattr(diag, "impact_tier", ""),
                     pi=getattr(diag, "pi", None),
                     partner_file=diag.partner_file,
+                    partner_line=diag.partner_line,
                     overlap_pct=diag.overlap_pct,
                 )
             )

@@ -292,6 +292,7 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         scope_conditional=False,
         plain_text="The api runs on port 8001 and reloads from the source tree on every edit.",
         modality="none",
+        imported_from="",
     )
     control = SimpleNamespace(
         line=5,
@@ -309,6 +310,7 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         scope_conditional=False,
         plain_text="The build uses a local cache that survives restarts.",
         modality="none",
+        imported_from="",
     )
     fake_map = SimpleNamespace(atoms=(trimmable, control), files=())
     monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
@@ -555,9 +557,15 @@ def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(m
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_only_relation_lines_of_the_file_are_deletable() -> None:
-    relations = [{"file": "CLAUDE.md", "line": 4}, {"file": "OTHER.md", "line": 9}]
-    assert remedy_brief._relation_lines("CLAUDE.md", relations) == [4]
+def test_only_the_lines_a_dedupe_removes_are_deletable() -> None:
+    from reporails_cli.core.heal.plan import deduped_lines
+    from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, Slot
+
+    plan = Plan(
+        (Edit("a.md", 4, "x", None, "dedupe", "R"), Edit("a.md", 6, "y", "z", "code", "R")),
+        (Slot("a.md", 8, None, "dedupe", "R", "w", "line"),),
+    )
+    assert deduped_lines(plan) == {4, 8}
 
 
 # ── findings from review: the real brief path ────────────────────────────
@@ -582,6 +590,8 @@ def _atom(file: Path, line: int, text: str, pi: int = 0, fmt: str = "prose") -> 
         modality="none",
         lead_in="",
         list_depth=0,
+        imported_from="",
+        imported_line=0,
     )
 
 
@@ -630,15 +640,20 @@ def test_a_named_move_becomes_an_exact_edit(monkeypatch, tmp_path: Path) -> None
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_a_file_whose_imports_expand_gets_no_exact_edits(monkeypatch, tmp_path: Path) -> None:
+def test_a_file_whose_imports_expand_gets_edits_for_its_own_lines_only(monkeypatch, tmp_path: Path) -> None:
     (tmp_path / "extra.md").write_text("Imported `foo` one.\nImported two.\n", encoding="utf-8")
     text = "@extra.md\n\nDup `foo` line.\n\nKeep `foo`.\n"
     file = tmp_path / "CLAUDE.md"
-    # atom lines count the imported lines, so the dup sits at expanded line 5
-    atoms = [_atom(file, 5, "Dup `foo` line."), _atom(file, 7, "Keep `foo`.")]
-    reply = _brief_with(monkeypatch, tmp_path, text, atoms, _op_location("dedupe", 5, {"keep": ["CLAUDE.md", 7]}))
-    assert reply["edits"] == []
-    assert [r["reason"] for r in reply["refused"]] == ["imports_expand"]
+    # an atom written in the imported file sits on the `@import` line; the file's own atoms keep their own lines
+    imported = _atom(file, 1, "Imported `foo` one.")
+    imported.imported_from, imported.imported_line = "extra.md", 1
+    atoms = [imported, _atom(file, 3, "Dup `foo` line."), _atom(file, 5, "Keep `foo`.")]
+    location = _op_location("dedupe", 3, {"keep": ["CLAUDE.md", 5]})
+    location["findings"].append({**location["findings"][0], "line": 1, "pi": 0})
+    reply = _brief_with(monkeypatch, tmp_path, text, atoms, location)
+    (edit,) = reply["edits"]
+    assert text.replace(edit["before"], edit["after"], 1) == "@extra.md\n\nKeep `foo`.\n"
+    assert [(r["line"], r["reason"]) for r in reply["refused"]] == [(1, "imports_expand")]
 
 
 @pytest.mark.unit
