@@ -235,6 +235,11 @@ def _step_body(sentence: str) -> str | None:
     return text[found.end() :] if found else None
 
 
+def opens_step(text: str) -> bool:
+    """Whether `text` opens with `then`, `then,` or `and then`: a step that goes on from the one before it."""
+    return _step_body(text) is not None
+
+
 def _continues(whole: str, body: str) -> bool:
     """Whether the author's sentence `whole` carries on into the step `body` after something, with
     `then`, `then,` or `and then` (not at the start of a sentence)."""

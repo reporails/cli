@@ -20,7 +20,7 @@ from reporails_cli.core.heal.mechanical_fixers import (
     fix_unformatted_code,
 )
 from reporails_cli.core.heal.preservation.conditions import conditional
-from reporails_cli.core.heal.preservation.fragments import rewrite_cut
+from reporails_cli.core.heal.preservation.fragments import opens_step, rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
 from reporails_cli.core.mapper.bio_tagger import words_between
 from reporails_cli.core.mapper.classify import HEDGE_LEADS, hedges_with_should
@@ -161,13 +161,16 @@ def _scoped(atom: Atom) -> bool:
     return atom.slots is not None and atom.slots.scope_span is not None
 
 
-def _detaches(before: Atom, piece: Atom) -> bool:
-    """Whether cutting `piece` off `before` leaves it without a condition `before` sets: `before` holds a
-    scope or a condition the piece lacks, and the piece is the other polarity (a fallback to a prohibition
-    bounded by a condition, not one more rule beside it)."""
+def _detaches(before: Atom, piece: Atom) -> str | None:
+    """Whether cutting `piece` off `before` leaves it without what `before` sets, as a refusal code: `""` when
+    `before` holds a scope the piece lacks, `split-keep-condition` when `before` holds a condition the piece
+    lacks and the piece is the other polarity (a fallback to a prohibition bounded by a condition, not one
+    more rule beside it); None when it does not."""
     if _scoped(before) and not _scoped(piece):
-        return True
-    return before.charge_value != piece.charge_value and conditional(before) and not conditional(piece)
+        return ""
+    if before.charge_value != piece.charge_value and conditional(before) and not conditional(piece):
+        return "split-keep-condition"
+    return None
 
 
 def _cuts_series(content: str, sentence: Sequence[Atom], starts: Sequence[int]) -> bool:
@@ -181,13 +184,15 @@ def _cuts_series(content: str, sentence: Sequence[Atom], starts: Sequence[int]) 
 
 
 def _hazard(content: str, sentences: Sequence[Sequence[Atom]], starts: Sequence[int]) -> str | None:
-    """The refusal code of a cut that ends a series partway (`split-series`) or separates a piece from the
-    condition the atom before it sets (`split-keep-condition`); None when no cut does."""
+    """The refusal code of a cut that ends a series partway (`split-series`) or separates a piece from what
+    the atom before it sets (`split-keep-condition` for a condition, `""` for a scope); None when no cut does."""
     for sentence, at in zip(sentences, _offsets(sentences), strict=True):
         if _cuts_series(content, sentence, starts[at : at + len(sentence)]):
             return "split-series"
-        if any(_detaches(a, b) for a, b in pairwise(sentence)):
-            return "split-keep-condition"
+        for before, piece in pairwise(sentence):
+            reason = _detaches(before, piece)
+            if reason is not None:
+                return reason
     return None
 
 
@@ -233,7 +238,10 @@ def split_or_reason(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> 
     starts = _starts(content, sentences)
     if starts is None:
         return ""
-    return _hazard(content, sentences, starts) or _cut_sentences(op, content, sentences, starts)
+    if any(opens_step(a.text) for s in sentences for a in s[1:]):
+        return "split-keep-sequence"
+    hazard = _hazard(content, sentences, starts)
+    return _cut_sentences(op, content, sentences, starts) if hazard is None else hazard
 
 
 # ── direct / negation-form ──────────────────────────────────────────────

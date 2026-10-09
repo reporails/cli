@@ -233,11 +233,53 @@ def test_a_refused_split_inside_a_list_allows_giving_each_item_its_verb() -> Non
 
 @pytest.mark.unit
 @pytest.mark.subsys_heal
-def test_a_refused_split_that_drops_a_scope_allows_repeating_the_condition() -> None:
+def test_a_refused_split_that_drops_a_condition_allows_repeating_it() -> None:
     line = "When the build fails, run the tests; never push."
     first, second = _pieces("When the build fails, run the tests;", "never push.")
-    first.slots = AtomSlots(predicate_span=(0, 1), object_span=(1, 3), scope_span=(0, 1))
+    first.charge, first.charge_value, first.scope_conditional = "DIRECTIVE", 1, True
     assert _slot_change([first, second], line) == "split-keep-condition"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_refused_split_that_drops_only_a_scope_allows_no_change() -> None:
+    line = "Review the notes before opinions form; never push."
+    first, second = _pieces("Review the notes before opinions form;", "never push.")
+    first.slots = AtomSlots(predicate_span=(0, 1), object_span=(1, 3), scope_span=(3, 6))
+    assert _slot_change([first, second], line) == ""
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+def test_a_then_step_after_a_list_allows_keeping_the_step_not_repeating_verbs() -> None:
+    line = "Brief each reviewer to load its notes, read the source completely, then apply its bar."
+    atoms = _pieces("Brief each reviewer to load its notes,", "read the source completely,", "then apply its bar.")
+    assert _slot_change(atoms, line) == "split-keep-sequence"
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+@pytest.mark.parametrize(
+    ("line", "change"),
+    [
+        (
+            "Seed that data into a cross-team review before opinions form, and read a failing check as a broken "
+            "tool to fix per `check-guide` and `review-guide`.",
+            "",
+        ),
+        (
+            "Brief each reviewer to `/load` its notes, read the source completely, then apply its bar to the source.",
+            "split-keep-sequence",
+        ),
+    ],
+)
+def test_a_refused_real_split_names_only_the_change_that_fits(tmp_path: Path, line: str, change: str) -> None:
+    _, atoms, lines, _ = _mapped(tmp_path, f"# Notes\n\n{line}\n")
+    name = atoms[0].file_path
+    plan = build_plan([PlanOp("CORE:C:0058", name, 3, None, "split", {})], {name: atoms}, {name: lines})
+    assert plan.edits == ()
+    assert [s.change for s in plan.slots] == [change]
 
 
 def _mapped(tmp_path: Path, text: str) -> tuple[Path, list[Atom], list[str], Any]:
