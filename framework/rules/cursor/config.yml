@@ -59,15 +59,16 @@ file_types:
 
   rules:
     # .cursor/rules/ with MDC frontmatter — 4 activation modes per file:
-    # alwaysApply (always loaded), intelligent (agent decides), globs (file-scoped),
-    # manual (@-mention only). globs frontmatter makes this path_scoped — the
-    # path filter is in-file, not just at the surface level.
+    # alwaysApply (session_start), globs (on_demand, path_scoped), a description with
+    # neither (on_invocation: the agent decides), none of the three (on_demand: manual
+    # @-mention only). The activation keys below are read from the file's frontmatter.
     # https://cursor.com/docs/rules#project-rules: "A plain `.md` file in `.cursor/rules` is ignored by the rules system"
     source: https://cursor.com/docs/rules
     format: [frontmatter, freeform]
     scope: path_scoped
     path_key: globs
     always_key: alwaysApply
+    description_key: description
     cardinality: collection
     lifecycle: static
     loading: on_demand
@@ -322,3 +323,14 @@ excludes:
   - CLAUDE:*
   - CODEX:*
   - CORE:S:0005  # identity-fields-in-frontmatter — Cursor rule frontmatter is description, globs and alwaysApply; it defines no id, name or slug (cursor.com/docs/rules)
+
+# Hook events that run before a file tool and can block it, with the tools of Read/Edit/Write each gates.
+intercept_events:
+  preToolUse: [Read, Edit, Write]
+  beforeReadFile: [Read]
+
+# How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
+subagent_hooks:
+  fire_in_subagents: {value: unconfirmed}
+  identifies_agent: {value: unconfirmed}
+  extension_opt_out: {value: unconfirmed}

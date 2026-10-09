@@ -18,17 +18,23 @@ from rich.console import Console
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
-    SEV_WEIGHT,
+    NAMED_OVERLAP_PAIRS,
     Element,
     element_namer,
     file_type_summary,
     get_group_atoms,
     get_sev_icons,
     group_stats_line,
-    partner_resolver,
-    path_tag,
+    more_pairs_line,
+    partner_lookup,
     short_path,
     skill_lookup,
+)
+from reporails_cli.formatters.text.file_groups import (
+    build_aliases_by_file,
+    build_file_groups,
+    build_hints_by_file,
+    build_regime_by_file,
 )
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
@@ -64,15 +70,20 @@ def _render_group_header(
     project_root: Path,
     atoms_by_path: dict[str, list[Any]] | None = None,
     skill_of: dict[str, str] | None = None,
+    scanned_items: int | None = None,
 ) -> None:
-    """Print group header with optional atom stats."""
+    """Print group header with optional atom stats.
+
+    The count is the surface's scanned item count when the run has one (the number the Summary's
+    surface row states), else the items in the group that carry findings.
+    """
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     group_atoms = get_group_atoms(gkey, group_files, ruleset_map, project_root, atoms_by_path)
     stats = f"  [dim]{group_stats_line(group_atoms)}[/dim]" if group_atoms else ""
     label = _GROUP_LABELS.get(gkey, gkey.title())
     norms = [normalize_finding_path(fp, project_root) for fp, _ in group_files]
-    n_items = len({(skill_of or {}).get(norm, norm) for norm in norms})
+    n_items = scanned_items if scanned_items is not None else len({(skill_of or {}).get(norm, norm) for norm in norms})
     console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({n_items})[/dim]{stats}")
 
 
@@ -90,14 +101,24 @@ class _CardContext:
     atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
     skill_of: dict[str, str] | None = None
     element_of: Callable[[str], Element] | None = None
-    partner_of: Callable[[str, str], str] | None = None
+    partners_of: Callable[[str], list[str]] | None = None
+    # Scanned item count per surface label, as the Summary's surface rows state it.
+    scanned_items: dict[str, int] = field(default_factory=dict)
 
 
 def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: _CardContext) -> None:
     """Render a single file group: header, file cards, footer."""
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    _render_group_header(gkey, group_files, ctx.ruleset_map, ctx.project_root, ctx.atoms_by_path, ctx.skill_of)
+    _render_group_header(
+        gkey,
+        group_files,
+        ctx.ruleset_map,
+        ctx.project_root,
+        ctx.atoms_by_path,
+        ctx.skill_of,
+        ctx.scanned_items.get(_GROUP_LABELS.get(gkey, gkey.title())),
+    )
     max_cards = 3 if not ctx.verbose else 999
 
     for i, (filepath, findings) in enumerate(group_files):
@@ -118,7 +139,7 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
             atoms_by_path=ctx.atoms_by_path,
             skill_of=ctx.skill_of,
             element_of=ctx.element_of,
-            partner_of=ctx.partner_of,
+            partners_of=ctx.partners_of,
         )
 
     shown = sum(len(split_conventions(fs, ctx.verbose)[0]) for _, fs in group_files)
@@ -151,21 +172,26 @@ def _render_detail_cta() -> None:
         )
 
 
-def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str]) -> None:
+def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str], verbose: bool = False) -> None:
     """Render the cross-file coordinates section (free tier).
 
     Only `repetition` and `overlap` coordinates reach here \u2014 `merge_results`
-    drops `conflict` entries.
+    drops `conflict` entries. A run names the pairs with the highest counts and counts
+    the rest on one line; `-v` names every pair.
     """
     if not result.cross_file_coordinates:
         return
     console.print(f"  [dim]\u2500\u2500 Cross-file {HRULE}[/dim]\n")
-    for coord in result.cross_file_coordinates:
+    ranked = sorted(result.cross_file_coordinates, key=lambda c: -c.count)
+    named, hidden = (ranked, 0) if verbose else (ranked[:NAMED_OVERLAP_PAIRS], len(ranked[NAMED_OVERLAP_PAIRS:]))
+    for coord in named:
         icon = sev_icons.get("warning", "\u25cf")
         s = "s" if coord.count != 1 else ""
         short_1 = short_path(coord.file_1)
         short_2 = short_path(coord.file_2)
         console.print(f"  {icon}  {short_1} \u2194 {short_2} \u2014 {coord.count} {coord.finding_type}{s}")
+    if hidden:
+        console.print(f"  [dim]{more_pairs_line(hidden)}[/dim]")
     _render_detail_cta()
     console.print()
 
@@ -277,115 +303,6 @@ def _detect_tier(result: Any, has_quality: bool) -> str:
     return "free"
 
 
-def _group_key(filepath: str, ft: dict[str, str], root: Path, skill_of: dict[str, str] | None) -> str:
-    """File-group key for a path: `skills` for a file inside a skill folder first, then `imported` /
-    `referenced` by classifier type, else the path-based tag (a `SKILL.md` outside every skill
-    folder is a plain file whenever a skill lookup exists)."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
-    norm = normalize_finding_path(filepath, root)
-    if skill_of is not None and norm in skill_of:
-        return "skills"
-    file_type = ft.get(norm, "")
-    if file_type in ("generic", "referenced"):
-        return "imported" if file_type == "generic" else "referenced"
-    return path_tag(filepath, skill_of, norm).split(":")[0]
-
-
-def _build_file_groups(
-    result: Any,
-    file_type_by_path: dict[str, str] | None = None,
-    project_root: Path | None = None,
-    skill_of: dict[str, str] | None = None,
-) -> dict[str, list[tuple[str, list[Any]]]]:
-    """Group findings by file type, sorted worst-first within each group.
-
-    Generic-scanned files route by classifier `file_type`: `@`-import (`generic`) → the
-    `imported` group, markdown-link (`referenced`) → the `referenced` group. Everything else
-    falls back to the path-based `classify_file` tag; a file inside a skill folder (`skill_of`)
-    goes to the `skills` group.
-    """
-    ft = file_type_by_path or {}
-    root = project_root or Path.cwd()
-    by_file: dict[str, list[Any]] = {}
-    for f in result.findings:
-        by_file.setdefault(f.file, []).append(f)
-
-    groups: dict[str, list[tuple[str, list[Any]]]] = {}
-    for filepath, findings in by_file.items():
-        if filepath in (".", ".:0"):
-            continue
-        group_key = _group_key(filepath, ft, root, skill_of)
-        groups.setdefault(group_key, []).append((filepath, findings))
-
-    for group_files in groups.values():
-        group_files.sort(key=lambda x: (min(SEV_WEIGHT.get(f.severity, 9) for f in x[1]), -len(x[1])))
-
-    return groups
-
-
-def _build_hints_by_file(hints: Any, project_root: Path) -> dict[str, list[Any]]:
-    """Build a file-keyed index of hints for inline display."""
-    result: dict[str, list[Any]] = {}
-    if hints:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
-        for h in hints:
-            norm = normalize_finding_path(h.file, project_root)
-            result.setdefault(norm, []).append(h)
-    return result
-
-
-def _build_regime_by_file(result: Any, project_root: Path) -> dict[str, Any]:
-    """Build a file-keyed index of per-file regimes from server analysis stats.
-
-    Empty for offline runs (no `per_file_analysis`) — callers then render the
-    neutral findings view.
-    """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-    from reporails_cli.formatters.triage import classify_regime
-
-    regimes: dict[str, Any] = {}
-    for fa in result.per_file_analysis:
-        regime = classify_regime(fa.stats)
-        if regime is not None:
-            regimes[normalize_finding_path(fa.file, project_root)] = regime
-    return regimes
-
-
-def _build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str]]:
-    """Combine discovery-time symlink aliases with display-time same-dir content aliases.
-
-    `get_file_aliases` returns paths the discovery layer already collapsed
-    (symlinks to one inode). `compute_same_dir_content_aliases` runs against
-    the union of files referenced by findings — catches manual AGENTS.md /
-    CLAUDE.md pairs that classify under different agents but should render as
-    one row. Both alias sources are returned as project-relative posix strings
-    so `_print_file_card` can do a plain dict lookup.
-    """
-    from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
-    out: dict[str, list[str]] = {}
-    for canonical, alias_paths in get_file_aliases(project_root).items():
-        key = normalize_finding_path(str(canonical), project_root)
-        values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
-        if values:
-            out[key] = values
-
-    finding_paths: set[Path] = set()
-    if result.findings:
-        for f in result.findings:
-            p = Path(f.file)
-            finding_paths.add(p if p.is_absolute() else (project_root / p))
-    for canonical, alias_paths in compute_same_dir_content_aliases(finding_paths).items():
-        key = normalize_finding_path(str(canonical), project_root)
-        values = [normalize_finding_path(str(a), project_root) for a in alias_paths]
-        if values:
-            out.setdefault(key, []).extend(values)
-    return out
-
-
 # ── Master display function ───────────────────────────────────────────
 
 
@@ -481,26 +398,11 @@ def _render_findings_and_scorecard(
         result.cross_file or result.cross_file_coordinates or any(f.rule == "CORE:C:0044" for f in result.findings)
     )
     element_of = element_namer(ruleset_map, project_root) if names_elements else None
-    partner_of = partner_resolver(result, project_root) if names_elements else None
+    partners_of = partner_lookup(result, project_root) if names_elements else None
     atoms_by_path = (
         index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
     )
-    ctx = _CardContext(
-        sev_icons=sev_icons,
-        verbose=verbose,
-        project_root=project_root,
-        ruleset_map=ruleset_map,
-        hints_by_file=_build_hints_by_file(result.hints, project_root),
-        aliases_by_file=_build_aliases_by_file(project_root, result),
-        regime_by_file=_build_regime_by_file(result, project_root),
-        atoms_by_path=atoms_by_path,
-        skill_of=skill_of,
-        element_of=element_of,
-        partner_of=partner_of,
-    )
-    _render_file_groups(_build_file_groups(result, file_type_by_path, project_root, skill_of), ctx)
-    _render_cross_file_coordinates(result, sev_icons)
-
+    aliases_by_file = build_aliases_by_file(project_root, result)
     surfaces = compute_surface_scores(
         result,
         ruleset_map=ruleset_map,
@@ -508,6 +410,23 @@ def _render_findings_and_scorecard(
         file_type_by_path=file_type_by_path,
         skill_of=skill_of,
     )
+    ctx = _CardContext(
+        sev_icons=sev_icons,
+        verbose=verbose,
+        project_root=project_root,
+        ruleset_map=ruleset_map,
+        hints_by_file=build_hints_by_file(result.hints, project_root, aliases_by_file),
+        aliases_by_file=aliases_by_file,
+        regime_by_file=build_regime_by_file(result, project_root),
+        atoms_by_path=atoms_by_path,
+        skill_of=skill_of,
+        element_of=element_of,
+        partners_of=partners_of,
+        scanned_items={s.name: s.item_count for s in surfaces},
+    )
+    _render_file_groups(build_file_groups(result, file_type_by_path, project_root, skill_of, aliases_by_file), ctx)
+    _render_cross_file_coordinates(result, sev_icons, verbose)
+
     item_health = None
     if len(surfaces) == 1 and surfaces[0].item_count > 1:
         item_health = compute_item_scores(result, ruleset_map=ruleset_map, project_root=project_root, skill_of=skill_of)

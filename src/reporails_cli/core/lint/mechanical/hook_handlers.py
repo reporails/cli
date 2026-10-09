@@ -8,7 +8,6 @@ the rule's requirement on the line where that handler starts.
 
 from __future__ import annotations
 
-import json
 import re
 import tomllib
 from collections.abc import Callable, Iterator
@@ -18,66 +17,15 @@ from typing import Any
 from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets, get_target_files
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
-
-# A config file larger than this is not read.
-_MAX_FILE_SIZE = 1_048_576
-
-# A data path from the top of the parsed file to one handler: keys and list positions.
-_Path = tuple[str | int, ...]
+from reporails_cli.core.platform.utils.hook_config import HookPath, read_hook_config, value_at, walk_hooks
 
 _REQUIRE_FORMS = ("type", "non_empty", "matches", "not_matches")
 
 
-class _Located(dict[str, Any]):
-    """A parsed JSON object that remembers the line its opening brace is on."""
-
-    line: int = 0
-
-
-_JSON_TOKEN_RE = re.compile(r'"(?:[^"\\]|\\.)*"|[{}\n]')
 _LINE_RE = re.compile(r"[^\n]*\n|[^\n]+")
 
 
-def _object_lines(text: str) -> Iterator[int]:
-    """The line of each JSON object's opening brace, in the order the objects close."""
-    line = 1
-    open_lines: list[int] = []
-    for token in _JSON_TOKEN_RE.finditer(text):
-        char = token.group()
-        if char == "\n":
-            line += 1
-        elif char == "{":
-            open_lines.append(line)
-        elif char == "}" and open_lines:
-            yield open_lines.pop()
-
-
-def _load_json(text: str) -> Any:
-    """Parse JSON; every object in the result knows the line it starts on."""
-    lines = _object_lines(text)
-
-    def located(pairs: list[tuple[str, Any]]) -> _Located:
-        # The decoder completes objects in the order their closing braces appear.
-        obj = _Located(pairs)
-        obj.line = next(lines, 0)
-        return obj
-
-    return json.loads(text, object_pairs_hook=located)
-
-
-def _at(data: Any, path: _Path) -> Any:
-    """The value at ``path`` in parsed data, or None when the path does not exist."""
-    for step in path:
-        if not isinstance(data, list if isinstance(step, int) else dict):
-            return None
-        try:
-            data = data[step]
-        except (KeyError, IndexError):
-            return None
-    return data
-
-
-def _toml_line(text: str, path: _Path) -> int:
+def _toml_line(text: str, path: HookPath) -> int:
     """The line where the TOML table at ``path`` starts.
 
     That is the first line by which the table exists: its ``[[...]]`` header, or the
@@ -88,7 +36,7 @@ def _toml_line(text: str, path: _Path) -> int:
     def exists_by(count: int) -> bool | None:
         """Whether the first ``count`` lines define the table; None when they do not parse alone."""
         try:
-            return _at(tomllib.loads("".join(lines[:count])), path) is not None
+            return value_at(tomllib.loads("".join(lines[:count])), path) is not None
         except tomllib.TOMLDecodeError:
             return None
 
@@ -107,57 +55,29 @@ def _toml_line(text: str, path: _Path) -> int:
     return low
 
 
-def _parse(path: Path) -> tuple[Any, Callable[[dict[str, Any], _Path], int]] | None:
+def _parse(path: Path) -> tuple[Any, Callable[[dict[str, Any], HookPath], int]] | None:
     """Parse a config file; return its data and a function giving a handler's line.
 
     None when the file is unreadable, too large, or not valid JSON / TOML.
     """
-    try:
-        if path.stat().st_size > _MAX_FILE_SIZE:
-            return None
-        text = path.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError):
+    config = read_hook_config(path)
+    if config is None:
         return None
-    try:
-        if path.suffix == ".toml":
-            return tomllib.loads(text), lambda _handler, where: _toml_line(text, where)
-        return _load_json(text), lambda handler, _where: getattr(handler, "line", 0)
-    except (ValueError, RecursionError):
-        return None
+    if path.suffix == ".toml":
+        return config.data, lambda _handler, where: _toml_line(config.text, where)
+    return config.data, lambda handler, _where: getattr(handler, "line", 0)
 
 
-def _handlers(data: Any, args: dict[str, Any]) -> Iterator[tuple[dict[str, Any], _Path]]:
+def _handlers(data: Any, args: dict[str, Any]) -> Iterator[tuple[dict[str, Any], HookPath]]:
     """Each hook handler the file declares, with its data path."""
-    block_key = str(args.get("block") or "")
-    where: _Path = (block_key,) if block_key else ()
-    block = _at(data, where)
-    if not isinstance(block, dict):
-        return
-    if args.get("named_hooks"):
-        event_maps = [((*where, name), events) for name, events in block.items()]
-    else:
-        event_maps = [(where, block)]
-    grouped = args.get("handlers") == "grouped"
-    for map_path, events in event_maps:
-        if not isinstance(events, dict):
-            continue
-        for event, entries in events.items():
-            if isinstance(entries, list):
-                yield from _event_handlers(entries, (*map_path, event), grouped)
-
-
-def _event_handlers(entries: list[Any], where: _Path, grouped: bool) -> Iterator[tuple[dict[str, Any], _Path]]:
-    """The handlers one event lists: its entries, or the members of each entry's ``hooks`` list."""
-    for index, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            continue
-        members = entry.get("hooks") if grouped else None
-        if not isinstance(members, list):
-            yield entry, (*where, index)
-            continue
-        for position, member in enumerate(members):
-            if isinstance(member, dict):
-                yield member, (*where, index, "hooks", position)
+    sites = walk_hooks(
+        data,
+        block=str(args.get("block") or ""),
+        named_hooks=bool(args.get("named_hooks")),
+        grouped=args.get("handlers") == "grouped",
+    )
+    for site in sites:
+        yield site.handler, site.path
 
 
 def _type_of(handler: dict[str, Any], args: dict[str, Any]) -> Any:

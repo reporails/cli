@@ -194,7 +194,9 @@ def test_embed_descriptions_skips_encoder_when_none_need_one():
 def test_on_invocation_file_gets_description(monkeypatch, tmp_path):
     """An on_invocation file must carry its parsed description (L156 `==`)."""
     monkeypatch.setattr(
-        pl, "_detect_file_loading", lambda path, root, reg: ("on_invocation", "global", (), "claude", "skills")
+        pl,
+        "_detect_file_activation",
+        lambda path, root, reg: ("on_invocation", "global", (), "claude", "skills", "invoked"),
     )
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "DESC")
@@ -206,7 +208,9 @@ def test_on_invocation_file_gets_description(monkeypatch, tmp_path):
 @pytest.mark.subsys_map
 def test_non_invocation_file_has_empty_description(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        pl, "_detect_file_loading", lambda path, root, reg: ("session_start", "global", (), "claude", "main")
+        pl,
+        "_detect_file_activation",
+        lambda path, root, reg: ("session_start", "global", (), "claude", "main", "always"),
     )
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "DESC")
@@ -233,9 +237,9 @@ def test_a_skills_supporting_file_takes_the_skill_s_type(monkeypatch, tmp_path):
 
     def _loading(path, root, reg):
         file_type = "skills" if path == skill_md else "generic"
-        return ("session_start", "global", (), "claude", file_type)
+        return ("session_start", "global", (), "claude", file_type, "always")
 
-    monkeypatch.setattr(pl, "_detect_file_loading", _loading)
+    monkeypatch.setattr(pl, "_detect_file_activation", _loading)
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
@@ -269,10 +273,10 @@ def test_a_retyped_skill_supporting_file_inherits_the_skill_s_loading_and_scope(
 
     def _loading(path, root, reg):
         if path == skill_md:
-            return ("on_invocation", "global", ("digest/**",), "claude", "skills")
-        return ("session_start", "global", (), "generic", "generic")
+            return ("on_invocation", "global", ("review/**",), "claude", "skills", "invoked")
+        return ("session_start", "global", (), "generic", "generic", "always")
 
-    monkeypatch.setattr(pl, "_detect_file_loading", _loading)
+    monkeypatch.setattr(pl, "_detect_file_activation", _loading)
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
@@ -289,7 +293,7 @@ def test_a_retyped_skill_supporting_file_inherits_the_skill_s_loading_and_scope(
     assert ref_rec.type == "skills"
     assert ref_rec.loading == skill_rec.loading == "on_invocation"
     assert ref_rec.scope == skill_rec.scope == "global"
-    assert ref_rec.globs == skill_rec.globs == ("digest/**",)
+    assert ref_rec.globs == skill_rec.globs == ("review/**",)
     assert ref_rec.agent == skill_rec.agent == "claude"
     assert other_rec.type == "generic"
     assert other_rec.loading == "session_start"

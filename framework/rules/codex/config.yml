@@ -64,13 +64,13 @@ file_types:
         maintainer: human
 
   nested_context:
-    # Per-package AGENTS.md in subdirectories below cwd. Codex's chain walk goes
-    # project-root → cwd, so files BELOW cwd aren't eagerly loaded — but a user
-    # who cd's into those subdirectories will pick them up. scope: nested
-    # captures the subtree-by-location semantic without overloading `global`.
+    # Per-package AGENTS.md in subdirectories below cwd. "Codex builds an instruction chain when
+    # it starts (once per run...)" and stops at the current directory, so files below cwd are
+    # not loaded and nothing loads mid-run. scope: nested keeps them by location, not frontmatter.
     source: https://learn.chatgpt.com/docs/agent-configuration/agents-md
     format: freeform
     scope: nested
+    activation: launch_subtree
     cardinality: hierarchical
     lifecycle: static
     loading: on_demand
@@ -313,3 +313,13 @@ excludes:
   - CORE:S:0014  # descriptive-filenames — Codex's only `rules` surface is `.codex/rules/*.rules`, Starlark (schema_validated), not the md/yml/yaml prose files this naming convention targets (learn.chatgpt.com/docs/agent-configuration/rules)
   - CORE:S:0026  # import-references-used — Codex has no path-scoped instruction surface; `.codex/rules/*.rules` are Starlark with no @path import syntax documented (learn.chatgpt.com/docs/agent-configuration/rules)
   - CORE:S:0033  # import-depth-within-limit — Codex AGENTS.md does not support chained @import
+
+# Hook events that run before a file tool and can block it, with the tools of Read/Edit/Write each gates.
+intercept_events:
+  PreToolUse: [Read, Edit, Write]
+
+# How this agent's hooks reach a sub-agent it starts, from the agent's own docs.
+subagent_hooks:
+  fire_in_subagents: {value: unconfirmed}
+  identifies_agent: {value: unconfirmed}
+  extension_opt_out: {value: unconfirmed}

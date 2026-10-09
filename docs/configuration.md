@@ -17,6 +17,7 @@ Lives at the root of your repo.
 default_agent: claude              # Which agent's rules to run by default
 exclude_dirs: [examples]           # Extra directory names to skip during discovery (added to the built-in defaults below)
 disabled_rules: [CORE:C:0010]      # Rule IDs to disable entirely
+heal_exclude: ["archive/**"]       # Files that are still checked and scored, but that heal never rewrites
 ```
 
 Set values from the command line instead of editing the file:
@@ -40,9 +41,11 @@ Reporails always skips these directory names during discovery, no matter where t
 | Build output | `dist`, `build`, `target`, `out`                                                             |
 | Data         | `data`, `datasets`                                                                           |
 | Vendored     | `vendor`                                                                                     |
-| IDE / OS     | `.idea`, `.vscode`                                                                           |
+| IDE / OS     | `.idea`                                                                                      |
 
 Anything you add to `exclude_dirs` is *additional* — the built-ins always apply.
+
+When your project is a git repository, a separate repository inside it is skipped as well: a folder with its own `.git` folder (a repository you cloned into the project) or a git worktree (such as the ones Claude Code keeps under `.claude/worktrees/`). Its instruction files belong to that repository, not yours; run `ails check <folder>` to check it on its own. Git submodules are part of your project and are checked, and so is a skill or agent you cloned into your own `.claude/skills/` or `.claude/agents/` folder.
 
 ## Global config — `~/.reporails/config.yml`
 
@@ -194,6 +197,21 @@ ails check --exclude-files ".claude/skills/**/*" --exclude-files ".claude/agents
 
 Explicitly targeting an excluded file still scans it — `ails check ./.claude/agents/reviewer.md` overrides the exclusion, since exclusion only applies to discovery.
 
+## Keeping heal off a file
+
+`heal_exclude` keeps the rewrite off files you want checked but never changed, such as an archived copy of an instruction file. Each entry is a glob matched against the file path **relative to the project root**; `**` spans any number of folders.
+
+```yaml
+# PROJECT_ROOT/.ails/config.yml
+heal_exclude:
+  - "archive/**"             # everything under archive/
+  - docs/legacy/CLAUDE.md    # that exact file
+```
+
+The file is still checked and scored: its findings, its score and the project score do not change. `ails check --heal` leaves the file unchanged. Its findings are not offered for a rewrite; they are listed instead, with the reason `excluded` and a note naming the file. Only `.ails/config.yml` and `.ails/config.local.yml` in the project are read for this key; a `heal_exclude` in `~/.reporails/config.yml` has no effect.
+
+To leave a file out of checking altogether, use `exclude_files` above.
+
 ## Per-surface include / exclude
 
 Each agent has a set of *surfaces* — `main` (the primary instruction file), `nested_context` (subdirectory variants), `rules`, `skills`, `agents`, etc. The `surfaces` key lets you adjust the glob patterns each surface scans, without modifying the bundled framework configs:
@@ -304,7 +322,7 @@ When `min-score` is set, the gate fails CLOSED if the diagnostics server rejecte
 
 ## Authentication
 
-The anonymous tier requires no account, and signing in is free. A free account does not raise your rate or payload caps — anonymous and signed-in free accounts share the same limits. Signing in gives you an identity (so you can subscribe and manage the subscription) and enables `ails check --heal`, which refuses to write files for an anonymous run. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
+The anonymous tier requires no account, and signing in is free. A free account does not raise your rate or payload caps — anonymous and signed-in free accounts share the same limits. Signing in gives you an identity (so you can subscribe and manage the subscription). `ails check --heal` writes fixes on a Pro account only; an anonymous or free run gets the full diagnosis and no changes. Raising the caps and unlocking the full diagnostic detail is what a Pro subscription adds — see [Tiers and Limits](tiers.md).
 
 ```bash
 ails login        # sign this machine in through your browser

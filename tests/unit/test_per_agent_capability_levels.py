@@ -17,8 +17,8 @@ import pytest
 
 from reporails_cli.core.discovery.agents import detect_agents, detect_single_agent
 from reporails_cli.core.discovery.features import (
-    _agent_has_hooks,
     _agent_has_surface,
+    _agent_hook_files,
     detect_features_filesystem,
 )
 from reporails_cli.core.platform.dto.models import Level
@@ -86,7 +86,7 @@ class TestClaudeLevelPinned:
         _write(tmp_path, ".claude/settings.json", '{"permissions": {"deny": ["Read(./.env)"]}}')
         agents = detect_agents(tmp_path)
         features = detect_features_filesystem(tmp_path, agents=agents)
-        assert features.has_hooks is False
+        assert features.hook_files == ()
 
 
 class TestLevelCreditsHighestPresent:
@@ -266,7 +266,7 @@ class TestPerAgentSurfaceHelpers:
         """Codex's hooks live in their own `.codex/hooks.json` — never read by the
         old Claude-only `.claude/hooks` / `.githooks` / settings.json check."""
         _write(tmp_path, ".codex/hooks.json", '{"hooks": {"PreToolUse": [{"matcher": "Bash"}]}}')
-        assert _agent_has_hooks(tmp_path, "codex") is True
+        assert _agent_hook_files(tmp_path, "codex") == [tmp_path / ".codex/hooks.json"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_gates
@@ -274,7 +274,7 @@ class TestPerAgentSurfaceHelpers:
         """Antigravity's hooks live at `.agents/hooks.json` — a different file from
         its own `.gemini/settings.json` config, and from Claude's hooks path."""
         _write(tmp_path, ".agents/hooks.json", '{"hooks": {"BeforeTool": [{"matcher": "run_shell_command"}]}}')
-        assert _agent_has_hooks(tmp_path, "antigravity") is True
+        assert _agent_hook_files(tmp_path, "antigravity") == [tmp_path / ".agents/hooks.json"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_gates
@@ -285,7 +285,7 @@ class TestPerAgentSurfaceHelpers:
     @pytest.mark.unit
     @pytest.mark.subsys_gates
     def test_agent_with_no_hooks_surface_declared_is_false(self, tmp_path: Path) -> None:
-        assert _agent_has_hooks(tmp_path, "not-a-real-agent") is False
+        assert _agent_hook_files(tmp_path, "not-a-real-agent") == []
 
 
 class TestLevelFollowsTheCheckedAgent:
@@ -305,7 +305,7 @@ class TestLevelFollowsTheCheckedAgent:
         _write(tmp_path, ".claude/hooks/x.sh", "#!/bin/sh\nexit 0\n")
         codex_only = [detect_single_agent(tmp_path, "codex")]
         features = detect_features_filesystem(tmp_path, agents=codex_only)
-        assert features.has_hooks is False
+        assert features.hook_files == ()
         assert determine_level_from_gates(features) != Level.L6
 
     @pytest.mark.unit

@@ -134,6 +134,47 @@ class TestFixNowLine:
         assert "Fix now   3 errors (43 more in Pro). Start with CORE:C:0042 (2 errors)." in out
 
 
+class TestFixNowTieBreak:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_equal_counts_start_with_the_stronger_graded_rule(self) -> None:
+        out = _verdict(_result([_f("CORE:C:0011", "error", "cosmetic"), _f("CORE:C:0042", "error", "gate_mover")]))
+        assert "Start with CORE:C:0042." in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_equal_grades_start_with_the_more_severe_rule(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from reporails_cli.formatters.text import verdict
+
+        monkeypatch.setattr(verdict, "rule_severity", {"CORE:C:0011": "low", "CORE:C:0042": "critical"}.get)
+        out = _verdict(_result([_f("CORE:C:0011", "error"), _f("CORE:C:0042", "error")]))
+        assert "Start with CORE:C:0042." in out
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_count_still_leads_the_grade(self) -> None:
+        errors = [_f("CORE:C:0011", "error", "cosmetic", line=1), _f("CORE:C:0011", "error", "cosmetic", line=2)]
+        out = _verdict(_result([*errors, _f("CORE:C:0042", "error", "gate_mover")]))
+        assert "Start with CORE:C:0011 (2 errors)." in out
+
+
+class TestProLineNumber:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.parametrize(
+        ("count", "errors", "warnings", "expected"),
+        [
+            (1, 0, 1, "+ 1 Pro diagnostic (1 warning)"),
+            (3, 1, 2, "+ 3 Pro diagnostics (1 error · 2 warnings)"),
+        ],
+    )
+    def test_nouns_agree_with_their_counts(self, count: int, errors: int, warnings: int, expected: str) -> None:
+        result = _result([], hints=(_Hint(count=count, error_count=errors, warning_count=warnings),))
+        with scorecard.console.capture() as cap:
+            scorecard._render_results_summary(result, errors, warnings)
+        assert expected in _plain(cap.get())
+
+
 class TestCaption:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

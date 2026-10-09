@@ -125,22 +125,37 @@ def named_key(token: str) -> str:
     return token.strip("`").lower()
 
 
-def blank_named(text: str, tokens: Any) -> str:
-    """`text` with each named token (backticks stripped) blanked, the longest first so a token
-    inside a longer one (`reporails` in `reporails__explain`) leaves none of the longer one behind."""
+# Marks a blanked token until every token is done, so a shorter token never matches inside the fill.
+_BLANKED = "\ue010"
+
+
+def blank_named(text: str, tokens: Any, fill: str = " ") -> str:
+    """`text` with each named token (backticks stripped) blanked, or replaced by `fill`, the longest
+    first so a token inside a longer one (`reporails` in `reporails__explain`) leaves none of the
+    longer one behind."""
     for token in sorted((t.strip("`") for t in tokens), key=len, reverse=True):
         if token:
-            text = text.replace(token, " ")
-    return text
+            text = text.replace(token, _BLANKED)
+    return text.replace(_BLANKED, fill)
 
 
-def prose_text(atom: Any, *, named: bool = False) -> str:
-    """`atom`'s plain text with its named constructs (backticked in the source) blanked out, or
-    kept when `named` (a word reads the same backticked or not)."""
+def prose_text(atom: Any, *, named: bool = False, fill: str = " ") -> str:
+    """`atom`'s plain text with its named constructs (backticked in the source) blanked out (or
+    replaced by `fill`), or kept when `named` (a word reads the same backticked or not)."""
     text: str = atom.plain_text
-    return text if named else blank_named(text, atom.named_tokens)
+    return text if named else blank_named(text, atom.named_tokens, fill)
 
 
 def prose_words(atom: Any, *, named: bool = False) -> list[str]:
     """`atom`'s lowered words in order, its named constructs left out unless `named`."""
     return [w.lower() for w in WORD_RE.findall(prose_text(atom, named=named))]
+
+
+def word_forms(word: str) -> set[str]:
+    """`word` with its plain singular and plural spellings (`test` / `tests`, `match` / `matches`)."""
+    forms = {word, word + "s", word + "es"}
+    if word.endswith("es"):
+        forms.add(word[:-2])
+    if word.endswith("s"):
+        forms.add(word[:-1])
+    return forms

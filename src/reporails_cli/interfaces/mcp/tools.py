@@ -12,6 +12,7 @@ from typing import Any
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.config.bootstrap import is_initialized
 from reporails_cli.formatters import mcp as mcp_formatter
+from reporails_cli.formatters.host_hooks import host_hooks_field
 
 logger = logging.getLogger(__name__)
 
@@ -250,12 +251,18 @@ def _lint_discovered(
     payload = json_formatter.format_combined_result(
         result, ruleset_map=ruleset_map, project_root=scan_root, file_type_by_path=file_type_by_path
     )
-    payload = _attach_funnel(payload, funnel_error)
+    payload = with_host_hooks(_attach_funnel(payload, funnel_error), result)
     if mapper_error is not None:
         payload["mapper_error"] = mapper_error
     score = _display_score(result, single_file, scan_root) if single_file is not None else None
     payload = payload if full else mcp_formatter.bound_validate_payload(payload)
     return payload, ruleset_map, score
+
+
+def with_host_hooks(payload: dict[str, Any], result: Any) -> dict[str, Any]:
+    """`payload` plus the `host_hooks` entries of `result`, for the MCP `validate` reply only:
+    `ails check -f json` never lists the machine's own hooks."""
+    return {**payload, **host_hooks_field(result.hooks)}
 
 
 def _mcp_agent_file_pairs(
@@ -334,7 +341,7 @@ def _build_assemble_inputs(
     """The shared `AssembleInputs` for `_assemble_mcp_result`, built from the local M-probe /
     content / client finding lists."""
     from reporails_cli.core.pipeline.assemble import AssembleInputs
-    from reporails_cli.formatters.text.display_constants import rule_aliases
+    from reporails_cli.formatters.text.rule_meta import rule_aliases
 
     m_findings, content_findings, client_findings = local
     return AssembleInputs(
@@ -444,13 +451,12 @@ def unpaid_signed_in_reply(payload: dict[str, Any]) -> bool:
     """True when a signed-in user's reply carries a non-paid tier (reported, or named by a funnel
     rejection). Anonymous replies and paid replies are False."""
     from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, UNENTITLED_TIERS
+    from reporails_cli.core.platform.dto.diagnostics import tiers_unpaid
 
     if not has_api_key():
         return False
     funnel = payload.get("funnel")
-    tiers = {payload.get("tier"), funnel.get("tier") if isinstance(funnel, dict) else None}
-    return bool(tiers & UNENTITLED_TIERS) and not tiers & ENTITLED_TIERS
+    return tiers_unpaid(payload.get("tier"), funnel.get("tier") if isinstance(funnel, dict) else None)
 
 
 def _rules_missing_payload() -> dict[str, Any]:

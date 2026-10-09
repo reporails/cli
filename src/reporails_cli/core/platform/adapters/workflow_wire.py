@@ -42,6 +42,11 @@ def _strs(raw: Any) -> tuple[str, ...]:
     return ()
 
 
+def _expect(raw: Any) -> dict[str, Any]:
+    """The `expect` coordinates of a finding or relation; empty for anything but a dict."""
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
 def _finding(d: Any) -> LocationFinding | None:
     """One `findings[]` entry, with its `members` read the same way; `None` when it is not a dict."""
     if not isinstance(d, dict):
@@ -55,8 +60,8 @@ def _finding(d: Any) -> LocationFinding | None:
         file=str(d.get("file") or ""),
         line=_as_int(d.get("line"), 0),
         pi=_opt_int(d.get("pi")),
-        message=str(d.get("message") or ""),
-        remedy=str(d.get("remedy") or ""),
+        op=str(d.get("op") or ""),
+        expect=_expect(d.get("expect")),
         impact_tier=str(d.get("impact_tier") or ""),
         members=members,
     )
@@ -72,8 +77,8 @@ def _relation(d: Any) -> LocationRelation | None:
         line=_as_int(d.get("line"), 0),
         partner_file=str(d.get("partner_file") or ""),
         partner_line=_as_int(d.get("partner_line"), 0),
-        message=str(d.get("message") or ""),
-        remedy=str(d.get("remedy") or ""),
+        op=str(d.get("op") or ""),
+        expect=_expect(d.get("expect")),
     )
 
 
@@ -112,7 +117,6 @@ def _listed(d: Any) -> ListedFinding | None:
         rule=str(d.get("rule") or ""),
         reason=str(d.get("reason") or ""),
         count=_as_int(d.get("count"), 0),
-        why=str(d.get("why") or ""),
     )
 
 
@@ -138,6 +142,5 @@ def deserialize_workflow(data: dict[str, Any]) -> RemediationWorkflow | None:
     return RemediationWorkflow(
         locations=tuple(locations),
         listed=listed,
-        escape=str(wf.get("escape", "")),
         summary=str(wf.get("summary", "")),
     )

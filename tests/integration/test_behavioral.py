@@ -574,6 +574,9 @@ class TestHealCommand:
     @requires_rules
     def test_heal_anonymous_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Anonymous (no key) gets the diagnosis but not the fix — `--heal` returns an auth notice."""
+        monkeypatch.delenv("AILS_API_KEY", raising=False)  # the class-level `_authed` fixture sets one
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))  # and no stored sign-in is read either
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
@@ -627,19 +630,42 @@ class TestHealCommand:
     @pytest.mark.subsys_diagnostic
     @requires_model
     @requires_rules
-    def test_heal_json_output(self, tmp_path: Path) -> None:
-        """Invoke with -f json, parse JSON, assert keys."""
+    def test_heal_json_signed_out_asks_for_login(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Signed out, `--heal -f json` changes nothing and names the sign-in requirement."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.delenv("AILS_API_KEY", raising=False)
+        monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")
         p = tmp_path / "proj"
         p.mkdir()
         (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
 
         result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
 
-        assert result.exit_code in (0, None), f"heal failed: {result.output}"
-        data = json.loads(result.output)
-        assert "auto_fixed" in data
-        assert "summary" in data
-        assert "auto_fixed_count" in data["summary"]
+        assert "heal_requires_auth" in result.output
+        assert (p / "CLAUDE.md").read_text() == "# My Project\n\nA project.\n"
+
+    @pytest.mark.integration
+    @pytest.mark.subsys_lint
+    @pytest.mark.subsys_diagnostic
+    @requires_model
+    @requires_rules
+    def test_heal_json_with_the_server_unreachable_says_no_fixes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Signed in but with no server reply, `--heal -f json` changes nothing and says no fixes arrived."""
+        monkeypatch.setenv("AILS_API_KEY", "k")
+        monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")
+        p = tmp_path / "proj"
+        p.mkdir()
+        (p / "CLAUDE.md").write_text("# My Project\n\nA project.\n")
+
+        result = runner.invoke(app, ["check", str(p), "--heal", "-f", "json"])
+
+        assert "heal_no_fixes" in result.output
+        assert "heal_requires_pro" not in result.output
+        assert (p / "CLAUDE.md").read_text() == "# My Project\n\nA project.\n"
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint

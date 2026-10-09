@@ -2,7 +2,7 @@
 title: "Score Guide"
 description: "How the score is built and what it tells you"
 version: "0.6.1"
-last_updated: 2026-09-20
+last_updated: 2026-10-08
 ---
 
 # Score Guide
@@ -57,7 +57,7 @@ Findings are sorted by severity; on a Pro run, findings of the same severity are
 
 In supporting terminals the rule IDs in the text output are clickable links to their docs page.
 
-Anonymous runs show summary findings and cross-file repetition and topic-overlap counts — enough to see whether your instructions are working. Pro adds the exact location of each cross-file repetition and overlap, and hands your coding agent the remedies: what to change, where, and how. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
+Anonymous runs show summary findings and cross-file repetition and topic-overlap counts — enough to see whether your instructions are working. Pro adds what the server works out for your project: which findings to fix first and which to leave alone, and the exact location of each cross-file repetition and overlap. Your coding agent gets these as remedies and checks each file again after rewriting it. See [Tiers and Limits](tiers.md) for the side-by-side breakdown of what each mode includes.
 
 ## How findings are ordered by score effect
 

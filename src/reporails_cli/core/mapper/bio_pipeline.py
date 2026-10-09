@@ -29,6 +29,7 @@ from reporails_cli.core.mapper.classify import (
     is_terse_no_prohibition,
     opens_conditional_clause,
 )
+from reporails_cli.core.mapper.heading_labels import neutralize_paired_label_headings
 from reporails_cli.core.mapper.instructions import fold_lead_ins, instruction_texts, without_joining_word
 from reporails_cli.core.mapper.markers import reformat_spans
 from reporails_cli.core.mapper.multislot_frames import (
@@ -352,6 +353,9 @@ def _reconstruct_atoms(texts: list[str], plan: list[tuple[Any, ...]], decoded: l
     _apply_structural_neutral_floor(result)
     _apply_deontic_floor(result)
     _apply_hedged_should_floor(result)
+    # A category-label heading beside a sibling label gives no instruction; decided last so no
+    # decode charges it back.
+    neutralize_paired_label_headings(result)
     # An instruction that introduces a list is read together with it, once every charge is final;
     # the list's items then take no place of their own.
     result = fold_lead_ins(result)

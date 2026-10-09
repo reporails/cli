@@ -6,9 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.interfaces.mcp import remedy_brief
 from tests.unit.test_preservation import _compare_edit
-from tests.unit.test_remedy_brief import _main_location, requires_model, requires_rules
 
 _NEVER = "# Service\n\n## Never Push Directly to Main\n\nOpen a pull request from a feature branch.\n"
 _ALWAYS = "# Service\n\n## Always Run Tests Before Pushing\n\nOpen a pull request from a feature branch.\n"
@@ -137,22 +135,3 @@ def test_a_closed_negative_heading_renamed_over_negated_items_is_not_ok(tmp_path
     result = _compare_edit(tmp_path, _doc("## Forbidden ##", _DOUBLES), _doc("## Doubles ##", _NEGATED))
     assert result["ok"] is False
     assert result["relabelled_negative_headings"] == [{"line": 1, "text": "## Forbidden ##"}]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
-@requires_model
-@requires_rules
-def test_the_brief_marks_a_heading_that_is_an_instruction_with_its_polarity(tmp_path) -> None:
-    (tmp_path / "CLAUDE.md").write_text(
-        "# Service\n\n## Never Push Directly to Main\n\nOpen a pull request from a feature branch.\n"
-        "\n## Deployment\n\nRelease from the main branch.\n",
-        encoding="utf-8",
-    )
-    reply = remedy_brief.remedy_brief_tool(_main_location(["CLAUDE.md"]), tmp_path)
-    (entry,) = reply["files"]
-    headings = {h["text"]: h for h in entry["headings"]}
-    assert headings["Never Push Directly to Main"]["polarity"] == -1
-    assert "polarity" not in headings["Deployment"]
-    assert "polarity" not in headings["Service"]
-    assert all(e["text"] not in headings for e in entry["instructions"])

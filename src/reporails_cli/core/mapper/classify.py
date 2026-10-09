@@ -10,9 +10,10 @@ Public entry point: `classify_charge(md_text, plain_text=...)`.
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
-from reporails_cli.core.mapper.md_parser import leading_bold_run
+from reporails_cli.core.mapper.md_parser import leading_bold_run, replace_code_spans
 
 # ──────────────────────────────────────────────────────────────────
 # RULE-BASED CHARGE CLASSIFIER
@@ -62,13 +63,18 @@ AFFIRMATIVE_ABSOLUTES: frozenset[str] = ABSOLUTE_CUES - {"never"}
 CONSTRAINT_WORDS: frozenset[str] = frozenset({"MUST", "NEVER", "ALWAYS", "IMPORTANT"})
 _ABSOLUTE_ADVERBS: frozenset[str] = AFFIRMATIVE_ABSOLUTES | {"only"}
 # Words that narrow where, when or to what an instruction applies, whatever follows them ...
-SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", "outside"}) | (
+SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", "outside", "absent"}) | (
     _ABSOLUTE_ADVERBS - {"always"}
 )
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
 SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "within", "inside", "across", "under"})
 # Words that open a noun phrase (`for the api module`).
-DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those", "each", "every", "all", "any"})
+# Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
+# right after one narrows what the line covers.
+GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
+DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"}) | (
+    GENERAL_QUANTIFIERS - {"no", "one"}
+)
 
 # Phase 3: verb lexicon
 # CORE: high-confidence charged verbs
@@ -537,6 +543,32 @@ _NO_DESCRIPTIVE_PREPS = frozenset(
     }
 )
 
+
+class CoverageRestrictor(NamedTuple):
+    """When a word cuts a rule's coverage down: it must be followed by one of `next_words` (any word
+    when empty), and the author's line must hold none of `already` (the senses it already carries)."""
+
+    next_words: frozenset[str]
+    already: frozenset[str]
+
+
+# Words that cut a rule's coverage down to part of what it named (`the rest of the output`,
+# `the remaining tests`); read only as narrowing, since they open no condition. `rest` cuts only as
+# `rest of` (`the REST API` and `rest between retries` cut nothing); `remaining` cuts unless the
+# author's line already carries the sense (`the time left` -> `the remaining time`).
+COVERAGE_RESTRICTORS: dict[str, CoverageRestrictor] = {
+    "rest": CoverageRestrictor(frozenset({"of"}), frozenset({"rest"})),
+    "remaining": CoverageRestrictor(frozenset(), frozenset({"remaining", "rest", "left"})),
+}
+# Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`): the
+# scope prepositions and the prepositions above less the words that open a clause rather than a phrase
+# (`unless`, `when`, `while`, `except`, `since`; `before` / `after` stay, opening a time phrase), with a few more.
+PHRASE_PREPOSITIONS: frozenset[str] = (
+    SCOPE_PREPOSITIONS
+    | (_NO_DESCRIPTIVE_PREPS - {"unless", "when", "while", "except", "since"})
+    | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
+)
+
 # The noun phrases a `No <NP>` STATUS report names. A status line reports a count
 # or a verdict; anything else a two-word `No <NP>` names is the forbidden thing
 # itself (`No console.log`, `No blank lines`), so the status reading is a closed
@@ -775,6 +807,16 @@ def _classify_phase1(
 
 # Words that negate the word before them (`should not`, `must never`, `would n't`, `must cannot`).
 NEGATION_WORDS: frozenset[str] = frozenset({"not", "never", "n't", "cannot"})
+# Lowered words whose presence as a line's first word gives it as an order: absolute and negation
+# cues, constraint words and the modals the classifier reads as a directive.
+DIRECTIVE_CUES: frozenset[str] = (
+    ABSOLUTE_CUES
+    | NEGATION_WORDS
+    | frozenset(w.lower() for w in CONSTRAINT_WORDS)
+    | _MODAL_ABSOLUTE
+    | _MODAL_HEDGED
+    | {"only"}
+)
 
 
 def _modal_result(
@@ -866,6 +908,56 @@ _DECLARATIVE_STARTS: frozenset[str] = frozenset(
 )
 
 
+# Verbs that read as a noun at the head of a subject (`Set theory underlies …`): the ambiguous verbs
+# and `set`, which stays among the core verbs so `Set NODE_ENV to production` reads as an order.
+_SUBJECT_HOMOGRAPHS: frozenset[str] = frozenset(_VERBS_AMBIGUOUS | {"set"})
+# Finite verbs that follow a subject noun phrase (`Build artifacts live under …`): the modals, the
+# auxiliaries and the plain and `-s` forms of verbs that describe rather than order.
+_FINITE_AFTER_SUBJECT: frozenset[str] = (
+    _MODAL_HEDGED
+    | _DESCRIPTIVE_NO_COPULAS
+    | frozenset(_MODAL_ABSOLUTE)
+    | frozenset(
+        {
+            "can", "will", "may", "would", "need", "needs",
+            "live", "lives", "underlie", "underlies", "slow", "slows", "exist", "exists", "reside",
+            "resides", "contain", "contains", "cause", "causes", "depend", "depends", "belong",
+            "belongs", "appear", "appears", "remain", "remains", "mean", "means",
+        }
+    )
+)  # fmt: skip
+# Personal pronouns: after an ambiguous opening verb they start a clause of their own (`Fix tests you can reproduce`).
+_SUBJECT_PRONOUNS: frozenset[str] = frozenset({"you", "i", "we", "they", "he", "she", "it"})
+# Words that end a subject noun phrase before any verb: determiners, prepositions, conjunctions,
+# pronouns and the words that open a condition or a relative clause (`once tests exist`, `whose names`).
+_SUBJECT_ENDS: frozenset[str] = (
+    _VERB_NOUN_DETERMINERS
+    | PHRASE_PREPOSITIONS
+    | CONDITIONAL_MARKERS
+    | CONDITION_CONJUNCTIONS
+    | _DECLARATIVE_STARTS
+    | _SUBJECT_PRONOUNS
+    | frozenset({"but", "then", "as", "whose", "which", "who", "what", "whatever", "whoever", "whichever", "how"})
+)
+_SUBJECT_REACH = 5  # a subject noun phrase of up to three words before its finite verb
+
+
+def starts_noun_subject(text: str) -> bool:
+    """True when `text` opens with a word that is also a noun and that starts the subject of a
+    later finite verb (`Set theory underlies the proof`, `Cache misses slow the build`, `Build
+    artifacts live under dist/`) -- a statement, not an order."""
+    lowers = words_of(text)
+    if len(lowers) < 3 or lowers[0] not in _SUBJECT_HOMOGRAPHS or lowers[1] in _SUBJECT_ENDS:
+        return False
+    for i in range(2, min(len(lowers), _SUBJECT_REACH)):
+        word = lowers[i]
+        if word in _FINITE_AFTER_SUBJECT:
+            return True
+        if word in _SUBJECT_ENDS:
+            return False
+    return False
+
+
 def _classify_phase3e_break(
     clean: str,
 ) -> tuple[str, int, str, str, bool] | None:
@@ -946,6 +1038,8 @@ def _classify_phase3_lexicon(
     """
     # 3c: Verb at position 0
     if verb_idx == 0:
+        if starts_noun_subject(clean):
+            return "NEUTRAL", 0, "none", "p3c_noun_subject", False
         verb = lowers[0]
         amb = ""
         if verb in _VERBS_AMBIGUOUS:
@@ -1033,10 +1127,60 @@ def hedges_with_lead(text: str) -> bool:
     return start < len(lowers) and lowers[start] in HEDGE_LEADS
 
 
+# `possible` after one of these, ending its clause, hedges an instruction (`Run it where possible`);
+# `as soon as possible` is urgency and `if possible duplicates exist` uses the adjective.
+_HEDGE_POSSIBLE_LEADS: frozenset[str] = frozenset({"if", "when", "where"}) | {"whenever", "wherever"}
+_HEDGE_POSSIBLE_RE = re.compile(
+    rf"\b(?:{'|'.join(sorted(_HEDGE_POSSIBLE_LEADS))})\s+possible\s*(?:$|[.,;:!?)\]\u2014])",
+    re.IGNORECASE,
+)
+# `it's` / `it is` / `it s` (a curly apostrophe splits the word) in front of `best`.
+_IT_IS_FORMS: tuple[tuple[str, ...], ...] = (("it's",), ("it", "is"), ("it", "s"))
+
+
+def _prose(text: str) -> str:
+    """`text` with each code span replaced by a placeholder word, so what a command or path contains
+    is not read as the author's wording."""
+    return replace_code_spans(text, "x")
+
+
+def hedges_with_possible(text: str) -> bool:
+    """True when `text` carries `where possible`, `wherever possible`, `if possible`, `when possible`
+    or `whenever possible` as a closing phrase, outside code spans. Takes the markdown, so a code
+    span is still marked when it is masked."""
+    return _HEDGE_POSSIBLE_RE.search(_strip_md_for_classify(_prose(text))) is not None
+
+
+def best_to_sign(text: str) -> int:
+    """`+1` for `It's best to <verb> …`, `-1` for `It's best not to <verb> …` or `It's best to
+    avoid / never / not <verb> …`, else `0`: the lead is a suggestion, and the sign is the direction
+    of the instruction it gives."""
+    lowers = words_of(_prose(text))
+    for form in _IT_IS_FORMS:
+        if tuple(lowers[: len(form)]) != form:
+            continue
+        rest = lowers[len(form) :]
+        if rest[:1] != ["best"]:
+            return 0
+        negated = rest[1:2] == ["not"]
+        after = rest[2:] if negated else rest[1:]
+        if after[:1] != ["to"] or not after[1:] or after[1] in _SUBJECT_ENDS:
+            return 0
+        act = after[1:]
+        return -1 if negated or act[0] == "not" or leading_prohibition(" ".join(act)) else 1
+    return 0
+
+
+def hedges_with_phrase(text: str) -> bool:
+    """True when markdown `text` gives its instruction as `where possible` (and its kin) or `It's best (not) to …`."""
+    return hedges_with_possible(text) or best_to_sign(text) != 0
+
+
 def has_hedge_cue(text: str) -> bool:
     """True when any word of `text` is a hedge word — how a line the mapper read as plain prose
-    (`You might want to run the linter`) shows it was a suggestion."""
-    return any(w in HEDGE_WORDS for w in words_of(text))
+    (`You might want to run the linter`) shows it was a suggestion; so is `where possible` or
+    `It's best (not) to …`. A phrase inside a code span of the markdown `text` is not read."""
+    return any(w in HEDGE_WORDS for w in words_of(text)) or hedges_with_phrase(text)
 
 
 def leading_prohibition(text: str) -> re.Match[str] | None:
@@ -1052,6 +1196,27 @@ def absolute_cues(text: str) -> set[str]:
 
 
 def classify_charge(
+    md_text: str,
+    *,
+    plain_text: str | None = None,
+    _shallow: bool = False,
+) -> tuple[str, int, str, str, bool]:
+    """Classify an atom's charge and modality using deterministic rules (:func:`_classify_lexical`),
+    then read `where possible` (and its kin) and `It's best (not) to …` as the hedges they are."""
+    result = _classify_lexical(md_text, plain_text=plain_text, _shallow=_shallow)
+    low = md_text.lower()
+    if "possible" not in low and "best" not in low:
+        return result
+    charge, charge_value, modality, trace, scope = result
+    sign = best_to_sign(md_text)
+    if sign:
+        return ("DIRECTIVE" if sign > 0 else "CONSTRAINT"), sign, "hedged", "p2_hedged_best_to", scope
+    if charge_value != 0 and modality != "hedged" and hedges_with_possible(md_text):
+        return charge, charge_value, "hedged", trace, scope
+    return result
+
+
+def _classify_lexical(
     md_text: str,
     *,
     plain_text: str | None = None,

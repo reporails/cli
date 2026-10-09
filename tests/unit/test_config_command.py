@@ -192,6 +192,19 @@ class TestConfigEdgeCases:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
+    def test_heal_exclude_is_read_from_the_project_and_local_files_only(self, tmp_path: Path) -> None:
+        """`heal_exclude` set from the command line persists, and the loader combines the
+        project file with the local file."""
+        from reporails_cli.core.platform.config.config import get_project_config
+
+        result = runner.invoke(config_app, ["set", "heal_exclude", "archive/**", "--path", str(tmp_path)])
+        assert result.exit_code == 0, result.output
+        (tmp_path / ".ails" / "config.local.yml").write_text("heal_exclude: [drafts/**]\n", encoding="utf-8")
+
+        assert get_project_config(tmp_path).heal_exclude == ["archive/**", "drafts/**"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
     def test_malformed_global_config_handled(self, tmp_path: Path) -> None:
         """Malformed YAML in global config should not crash config list."""
         global_home = tmp_path / ".reporails"

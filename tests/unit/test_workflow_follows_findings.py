@@ -17,7 +17,7 @@ from reporails_cli.core.lint.suppression import apply_suppressions, apply_surfac
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.dto.diagnostics import RemediationWorkflow
 from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
-from reporails_cli.formatters.text.display_constants import rule_aliases
+from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 E4 = "CORE:E:0004"
 D3 = "CORE:D:0003"

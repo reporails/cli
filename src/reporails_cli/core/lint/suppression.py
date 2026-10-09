@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import (
     ListedFinding,
     subtree_tier_rank,
@@ -37,6 +38,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     workflow_summary,
 )
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, rebuild_severity_stats
+from reporails_cli.core.platform.utils.utils import matches_any_glob
 
 # Canonical form is an inline HTML comment, invisible when the file renders.
 _DIRECTIVE_RE = re.compile(r"<!--\s*ails-disable-line\b(?P<rules>[^>]*?)-->")
@@ -238,14 +240,33 @@ def _listed_without(workflow: Any, dropped: Sequence[Any], kept: Sequence[Any]) 
     return tuple(entry for entry in workflow.listed if entry.rule not in removed)
 
 
+def _pruned_location(
+    loc: Any, gone: Callable[[Any], bool], relation_gone: Callable[[Any], bool] | None, norm: Callable[[str], str]
+) -> Any:
+    """`loc` without the rows `gone` and the relations `relation_gone` name, a file it listed
+    only for them dropped; `loc` itself when nothing is removed, `None` when nothing is left."""
+    rows = [row for f in loc.findings for row in _surviving(f, gone)]
+    relations = tuple(r for r in loc.relations if relation_gone is None or not relation_gone(r))
+    if tuple(rows) == loc.findings and relations == loc.relations:
+        return loc
+    findings = tuple(sorted(rows, key=_row_key))
+    if not findings and not relations:
+        return None
+    still = {norm(x) for x in _location_files(replace(loc, findings=findings, relations=relations))}
+    files = tuple(x for x in loc.files if norm(x) in still)
+    return replace(loc, findings=findings, relations=relations, files=files)
+
+
 def prune_workflow(
     workflow: Any,
     gone: Callable[[Any], bool],
     norm: Callable[[str], str],
     dropped: Sequence[Any] = (),
     kept_findings: Sequence[Any] = (),
+    relation_gone: Callable[[Any], bool] | None = None,
 ) -> Any:
-    """`workflow` without the rows `gone` names and the findings `dropped`; every field agrees.
+    """`workflow` without the rows `gone` and the relations `relation_gone` name and the findings
+    `dropped`; every field agrees.
 
     Removal applies to a finding's members as to the rows themselves (`_surviving`). A
     location left with neither findings nor relations is removed and the rest are
@@ -256,17 +277,10 @@ def prune_workflow(
     changed = False
     kept: list[Any] = []
     for loc in workflow.locations:
-        rows = [row for f in loc.findings for row in _surviving(f, gone)]
-        if tuple(rows) == loc.findings:
-            kept.append(loc)
-            continue
-        changed = True
-        findings = tuple(sorted(rows, key=_row_key))
-        if not findings and not loc.relations:
-            continue
-        still = {norm(x) for x in _location_files(replace(loc, findings=findings))}
-        files = tuple(x for x in loc.files if norm(x) in still)
-        kept.append(replace(loc, findings=findings, files=files))
+        pruned = _pruned_location(loc, gone, relation_gone, norm)
+        changed = changed or pruned is not loc
+        if pruned is not None:
+            kept.append(pruned)
     listed = _listed_without(workflow, dropped, kept_findings)
     if listed != workflow.listed:
         changed = True
@@ -277,10 +291,6 @@ def prune_workflow(
 
 
 CONFIG_LISTED_REASON = "config-file"
-CONFIG_LISTED_WHY = (
-    "Settings, hook and MCP config files are not rewritten automatically; "
-    "review these findings and edit the file by hand."
-)
 
 
 def _is_config_location(loc: Any, norm: Callable[[str], str]) -> bool:
@@ -306,15 +316,43 @@ def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
     for rule, n in counts.items():
         at = next((i for i, e in enumerate(listed) if e.rule == rule), None)
         if at is None:
-            listed.append(ListedFinding(rule=rule, reason=CONFIG_LISTED_REASON, count=n, why=CONFIG_LISTED_WHY))
+            listed.append(ListedFinding(rule=rule, reason=CONFIG_LISTED_REASON, count=n))
         else:
             listed[at] = replace(listed[at], count=listed[at].count + n)
     kept = tuple(renumbered([loc for loc in workflow.locations if loc not in moved]))
     return replace(workflow, locations=kept, listed=tuple(listed), summary=workflow_summary(kept, listed))
 
 
+HEAL_EXCLUDED_REASON = "excluded"
+
+
+def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Callable[[str], str]) -> Any:
+    """`workflow` with the findings and relations on `excluded` files moved into `listed`.
+
+    The rows leave their location (`prune_workflow`: a location left with nothing is dropped,
+    the rest are numbered again from 1). Each rule that fired on an excluded file is listed once
+    with its row count.
+    """
+    counts: dict[str, int] = {}
+    for loc in workflow.locations:
+        for f in (*walk_findings(loc.findings), *loc.relations):
+            if excluded(norm(f.file)):
+                counts[f.rule] = counts.get(f.rule, 0) + 1
+    if not counts:
+        return workflow
+    pruned = prune_workflow(
+        workflow, lambda f: excluded(norm(f.file)), norm, relation_gone=lambda r: excluded(norm(r.file))
+    )
+    listed = (
+        *pruned.listed,
+        *(ListedFinding(rule=rule, reason=HEAL_EXCLUDED_REASON, count=n) for rule, n in counts.items()),
+    )
+    return replace(pruned, listed=listed, summary=workflow_summary(pruned.locations, listed))
+
+
 def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
-    """`result` whose workflow lists config-format files' findings instead of locating them."""
+    """`result` whose workflow lists config-format files' findings, and those of files in the
+    project's `heal_exclude`, instead of locating them. Findings, scores and stats stay as they are."""
     workflow = result.workflow
     if getattr(workflow, "locations", None) is None:
         return result
@@ -323,6 +361,11 @@ def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
         return normalize_finding_path(file, project_root)
 
     projected = list_config_locations(workflow, norm)
+    patterns = get_project_config(project_root).heal_exclude if project_root is not None else []
+    if patterns and project_root is not None:
+        projected = list_heal_excluded(
+            projected, lambda rel: matches_any_glob(project_root / rel, patterns, project_root), norm
+        )
     return result if projected is workflow else replace(result, workflow=projected)
 
 

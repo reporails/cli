@@ -18,7 +18,7 @@ from reporails_cli.core.pipeline.assemble import AssembleInputs, lint_request_lo
 from reporails_cli.core.platform.adapters.payload import project_local
 from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
-from reporails_cli.formatters.text.display_constants import rule_aliases
+from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 _MAIN = (
     "# Project\n\nRun `pytest tests/` before committing a parser change.\n\n"

@@ -134,3 +134,18 @@ def test_live_public_docs_are_clean() -> None:
     if remedies is None:
         pytest.skip("remedy catalog not reachable")
     assert _gate.find_doc_overlap(_gate.public_doc_files(_gate.REPO_ROOT), remedies) == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_catalog_path_comes_from_the_env_then_a_local_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_gate, "REPO_ROOT", tmp_path)
+    monkeypatch.delenv("AILS_REMEDIES_PATH", raising=False)
+    assert _gate._resolve_remedies_path() is None
+    catalog = _catalog(tmp_path)
+    (tmp_path / ".env").write_text(f"# local\n\nOTHER=1\nAILS_REMEDIES_PATH='{catalog.name}'\n", encoding="utf-8")
+    assert _gate._resolve_remedies_path() == catalog.resolve()
+    other = tmp_path / "other.yml"
+    other.write_text("levers: {}\n", encoding="utf-8")
+    monkeypatch.setenv("AILS_REMEDIES_PATH", str(other))
+    assert _gate._resolve_remedies_path() == other

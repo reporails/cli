@@ -19,7 +19,7 @@ from reporails_cli.core.mapper.embed import _embed_atoms_deduped, _embed_file_de
 from reporails_cli.core.mapper.granularity import audit_over_merged
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.mapper.inspect import (
-    _detect_file_loading,
+    _detect_file_activation,
     _load_registry,
     _parse_frontmatter_description,
 )
@@ -253,7 +253,7 @@ def _classify_one_file(
     segmentation: str,
 ) -> FileRecord:
     """Classify one instruction file, appending its atoms to the shared lists."""
-    loading, scope, globs, agent, file_type = _detect_file_loading(path, root, registry)
+    loading, scope, globs, agent, file_type, activation = _detect_file_activation(path, root, registry)
     chash = _classify_file(path, map_cache, all_atoms, atoms_needing_embed, segmentation)
     description = _parse_frontmatter_description(path) if loading == "on_invocation" else ""
     return FileRecord(
@@ -264,6 +264,7 @@ def _classify_one_file(
         globs=globs,
         agent=agent,
         type=file_type,
+        activation=activation,
         description=description,
         description_embedding=map_cache.description_embedding(path) if map_cache and description else None,
     )

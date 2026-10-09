@@ -259,7 +259,7 @@ def _file_entry(findings: list[dict[str, Any]], regime: dict[str, Any] | None) -
     return entry
 
 
-def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[str, Any]:
+def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
     """Serialize the remediation location index for agent consumption.
 
     Each location is a harness element (the root main file, a skill dir, an agent file, a
@@ -268,35 +268,33 @@ def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[st
     repetition) folded onto it. Paths (`files`, `element` when it names one, and each
     finding's / relation's `file` / `partner_file`) are relativized to project-relative (or
     `~/` for external surfaces) via the finding path-normalizer, so they read like the
-    findings. An empty finding `message` is filled from the client's own finding at the
-    same (file, line, rule) when one exists — the server may not repeat a message the
-    client already has. Each finding carries its own `impact_tier` ("gate_mover" |
+    findings. Each finding carries its `op` and `expect` coordinates (their file paths
+    relativized the same way) and its own `impact_tier` ("gate_mover" |
     "conditional" | "cosmetic" | "") — distinct from the location's own `importance` — so a
     caller can weigh findings within one location. Each finding also carries `members`, the
-    findings it owns, in the same shape and treatment (`[]` when it owns none). `listed` names every firing rule that
-    takes no location, with the reason, how many rows it covers, and one user-facing `why`
-    sentence.
+    findings it owns, in the same shape and treatment (`[]` when it owns none). `listed` names
+    every firing rule that takes no location, with its reason code and how many rows it covers.
     """
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
-    found: dict[tuple[str, int, str], str] = {}
-    for f in findings:
-        key = (normalize_finding_path(f.file, project_root), f.line, f.rule)
-        found.setdefault(key, f.message)
 
     def _rel(path: str) -> str:
         return normalize_finding_path(path, project_root) if path else path
 
+    def _expect(expect: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: [_rel(v[0]), *v[1:]] if isinstance(v, list) and v and isinstance(v[0], str) else v
+            for key, v in expect.items()
+        }
+
     def _finding(lf: Any) -> dict[str, Any]:
         file = _rel(lf.file)
-        message = lf.message or found.get((file, lf.line, lf.rule), "")
         return {
             "rule": lf.rule,
             "file": file,
             "line": lf.line,
             "pi": lf.pi,
-            "message": message,
-            "remedy": lf.remedy,
+            "op": lf.op,
+            "expect": _expect(lf.expect),
             "impact_tier": lf.impact_tier,
             "members": [_finding(m) for m in lf.members],
         }
@@ -308,8 +306,8 @@ def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[st
             "line": lr.line,
             "partner_file": _rel(lr.partner_file),
             "partner_line": lr.partner_line,
-            "message": lr.message,
-            "remedy": lr.remedy,
+            "op": lr.op,
+            "expect": _expect(lr.expect),
         }
 
     def _location(loc: Any) -> dict[str, Any]:
@@ -326,11 +324,10 @@ def _format_workflow(wf: Any, project_root: Path, findings: Any = ()) -> dict[st
 
     out: dict[str, Any] = {
         "summary": wf.summary,
-        "escape": wf.escape,
         "locations": [_location(loc) for loc in wf.locations],
     }
     if wf.listed:
-        out["listed"] = [{"rule": e.rule, "reason": e.reason, "count": e.count, "why": e.why} for e in wf.listed]
+        out["listed"] = [{"rule": e.rule, "reason": e.reason, "count": e.count} for e in wf.listed]
     return out
 
 
@@ -384,16 +381,19 @@ def empty_result_payload(project_root: Path | None = None) -> dict[str, Any]:
 _MAP_NOT_STATED: Any = object()
 
 
-def _finding_entry(f: Any) -> dict[str, Any]:
+def _finding_entry(f: Any, project_root: Path) -> dict[str, Any]:
     """One finding as its per-file JSON entry.
 
     `leverage` is additive (raw `severity` is unchanged — the machine baseline); it appears only
     on a finding the reply graded. `rule` is the canonical `<NS>:<CAT>:<SLOT>` id (same as text
     output); the raw client-check token, when it differs, is preserved under `label` for baseline
     stability. `convention` marks a finding that only names a documentation convention the file
-    does not follow, so a reader can collapse the group the way the text output does.
+    does not follow, so a reader can collapse the group the way the text output does. A per-file
+    overlap finding names the file it overlaps (`partner_file`, relative to the project), its line
+    and the share that overlaps, when the reply names them.
     """
-    from reporails_cli.formatters.text.display_constants import display_rule_id
+    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+    from reporails_cli.formatters.text.rule_meta import display_rule_id
     from reporails_cli.formatters.triage import resolve_leverage
 
     canonical = display_rule_id(f.rule)
@@ -413,7 +413,56 @@ def _finding_entry(f: Any) -> dict[str, Any]:
         entry["fix"] = f.fix
     if f.convention:
         entry["convention"] = True
+    if f.partner_file:
+        entry["partner_file"] = normalize_finding_path(f.partner_file, project_root)
+    if f.partner_line is not None:
+        entry["partner_line"] = f.partner_line
+    if f.overlap_pct is not None:
+        entry["overlap_pct"] = f.overlap_pct
     return entry
+
+
+def _cross_file_blocks(result: Any) -> dict[str, Any]:
+    """The `cross_file` and `cross_file_coordinates` entries of a combined result, each only when it has rows."""
+    out: dict[str, Any] = {}
+    if result.cross_file:
+        out["cross_file"] = [
+            {
+                "file_1": cf.file_1,
+                "file_2": cf.file_2,
+                "line_1": cf.line_1,
+                "line_2": cf.line_2,
+                "type": cf.finding_type,
+            }
+            for cf in result.cross_file
+        ]
+    if result.cross_file_coordinates:
+        out["cross_file_coordinates"] = [
+            {"file_1": c.file_1, "file_2": c.file_2, "type": c.finding_type, "count": c.count}
+            for c in result.cross_file_coordinates
+        ]
+    return out
+
+
+def _surface_health(
+    result: Any, ruleset_map: Any, root: Path, file_type_by_path: dict[str, str] | None
+) -> list[dict[str, Any]]:
+    """The per-surface score rows of a combined result."""
+    from reporails_cli.formatters.text.scorecard import compute_surface_scores
+
+    surfaces = compute_surface_scores(
+        result, ruleset_map=ruleset_map, project_root=root, file_type_by_path=file_type_by_path
+    )
+    return [
+        {
+            "name": s.name,
+            "score": s.score,
+            "file_count": s.file_count,
+            "finding_count": s.finding_count,
+            "category_breakdown": dict(s.category_breakdown),
+        }
+        for s in surfaces
+    ]
 
 
 def format_combined_result(
@@ -443,11 +492,12 @@ def format_combined_result(
         return {"error": "Invalid result type"}
 
     # Group findings by file for agent consumption — agents work file-by-file.
+    root = project_root or Path.cwd()
     by_file: dict[str, list[dict[str, Any]]] = {}
     for f in result.findings:
-        by_file.setdefault(f.file, []).append(_finding_entry(f))
+        by_file.setdefault(f.file, []).append(_finding_entry(f, root))
 
-    regime_by_file = _regime_by_file(result, project_root or Path.cwd())
+    regime_by_file = _regime_by_file(result, root)
     from reporails_cli.core.mapper.bio_tagger import multislot_available
 
     # A project with no instruction files (level L0) has nothing to map: that is an empty run,
@@ -478,45 +528,12 @@ def format_combined_result(
         },
         "stats": {k: v for k, v in asdict(result.stats).items() if k != "agents"},  # `agents` is text-summary only
     }
-    if result.cross_file:
-        data["cross_file"] = [
-            {
-                "file_1": cf.file_1,
-                "file_2": cf.file_2,
-                "line_1": cf.line_1,
-                "line_2": cf.line_2,
-                "type": cf.finding_type,
-            }
-            for cf in result.cross_file
-        ]
+    data.update(_cross_file_blocks(result))
     if result.hints:
         data["pro"] = _pro_summary(result.hints)
-    if result.cross_file_coordinates:
-        data["cross_file_coordinates"] = [
-            {
-                "file_1": c.file_1,
-                "file_2": c.file_2,
-                "type": c.finding_type,
-                "count": c.count,
-            }
-            for c in result.cross_file_coordinates
-        ]
-    from reporails_cli.formatters.text.scorecard import compute_surface_scores
-
-    surfaces = compute_surface_scores(
-        result, ruleset_map=ruleset_map, project_root=project_root or Path.cwd(), file_type_by_path=file_type_by_path
-    )
+    surfaces = _surface_health(result, ruleset_map, project_root or Path.cwd(), file_type_by_path)
     if surfaces:
-        data["surface_health"] = [
-            {
-                "name": s.name,
-                "score": s.score,
-                "file_count": s.file_count,
-                "finding_count": s.finding_count,
-                "category_breakdown": dict(s.category_breakdown),
-            }
-            for s in surfaces
-        ]
+        data["surface_health"] = surfaces
     data["top_rules"] = _aggregate_top_rules(result.findings)
     # The remediation location index — present only when the paid server emitted it;
     # absent (anon / offline / older server) it is simply omitted. Rendered whenever the
@@ -524,7 +541,7 @@ def format_combined_result(
     # paid result ("nothing to rewrite"), not the absence of the paid feature.
     workflow = getattr(result, "workflow", None)
     if workflow is not None:
-        data["workflow"] = _format_workflow(workflow, project_root or Path.cwd(), result.findings)
+        data["workflow"] = _format_workflow(workflow, project_root or Path.cwd())
     return data
 
 
@@ -539,7 +556,7 @@ def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]
     counts, so a consumer never has to infer them from the worst-severity label. Used by
     both the JSON envelope and the text scorecard so the aggregation has one source of truth.
     """
-    from reporails_cli.formatters.text.display_constants import display_rule_id
+    from reporails_cli.formatters.text.rule_meta import display_rule_id
 
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     buckets: dict[str, dict[str, Any]] = {}

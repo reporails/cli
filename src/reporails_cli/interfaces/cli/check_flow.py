@@ -30,8 +30,8 @@ from reporails_cli.core.pipeline.mapping import discover_scope
 from reporails_cli.interfaces.cli.check_notices import (
     _agent_is_pinned,
     _emit_empty_run,
-    _emit_heal_auth_required,
     _emit_heal_scope_refusal,
+    _emit_heal_withheld,
     _notify_heal_scope_skips,
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
@@ -340,7 +340,6 @@ def _flow_pipeline(state: CheckState) -> None:
     from reporails_cli.core.lint.rule_runner import run_m_probes_over_pairs
     from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
 
-    _quiet_mapper_logs()
     state.pipeline.start_time = time.perf_counter()
     import os
 
@@ -442,7 +441,7 @@ def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> N
 def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
     """The shared assemble spine's inputs from the check state (`lint_result` None before the lint)."""
     from reporails_cli.core.pipeline.assemble import AssembleInputs
-    from reporails_cli.formatters.text.display_constants import rule_aliases
+    from reporails_cli.formatters.text.rule_meta import rule_aliases
 
     return AssembleInputs(
         m_findings=state.pipeline.m_findings,
@@ -493,7 +492,7 @@ def _flow_assemble(state: CheckState) -> None:
 def _flow_render(state: CheckState) -> None:
     """Dispatch the diagnosis output (unless an authed JSON heal replaces it) + timing + hint."""
     if state.inputs.heal:
-        state.render.heal_authed = _heal_authed(state.pipeline.funnel_error)
+        state.render.heal_authed = _heal_authed(state.pipeline.funnel_error) and _heal_workflow(state) is not None
 
     if not (state.render.heal_authed and state.targets.output_format == "json"):
         _dispatch_output(
@@ -519,6 +518,11 @@ def _flow_render(state: CheckState) -> None:
     )
 
 
+def _heal_workflow(state: CheckState) -> Any:
+    """The remediation workflow the report was drawn from (after suppressions); None when the reply carries none."""
+    return getattr(state.render.result, "workflow", None)
+
+
 def _flow_heal(state: CheckState) -> None:
     """Apply (or gate) the heal pass after the diagnosis is rendered."""
     if not state.inputs.heal:
@@ -526,7 +530,12 @@ def _flow_heal(state: CheckState) -> None:
     if not state.render.heal_authed:
         if getattr(state.pipeline.funnel_error, "still_reaching", False):
             return
-        _emit_heal_auth_required(state.targets.output_format)
+        _emit_heal_withheld(
+            state.targets.output_format,
+            funnel_error=state.pipeline.funnel_error,
+            tier=getattr(state.render.result, "tier", None),
+            server_replied=state.pipeline.lint_result is not None,
+        )
         return
     heal_scope = state.targets.single_path if state.targets.single_path is not None else state.targets.target
     candidate = (
@@ -544,6 +553,7 @@ def _flow_heal(state: CheckState) -> None:
         state.inputs.dry_run,
         state.targets.output_format,
         state.render.result.notices,
+        _heal_workflow(state),
     )
 
 
@@ -555,10 +565,11 @@ def run_check_flow(state: CheckState) -> None:
     # Fetch the model only once there are files to map: a mistyped path or an empty
     # scope exits above without downloading it.
     _ensure_model_or_exit()
-    _flow_pipeline(state)
-    _flow_assemble(state)
-    _flow_render(state)
-    _flow_heal(state)
+    with _quiet_mapper_logs():
+        _flow_pipeline(state)
+        _flow_assemble(state)
+        _flow_render(state)
+        _flow_heal(state)
     if _should_exit_strict(
         state.inputs.strict,
         state.render.capability_paths,

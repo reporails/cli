@@ -67,6 +67,14 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     return results[0].text
 
 
+def _bounded_reply(path: Path) -> dict[str, Any]:
+    """The bounded `validate` payload as data: a reply with a `preservation` block is served as
+    the text view, so the wiring tests read the payload the view is rendered from."""
+    from reporails_cli.interfaces.mcp.server import _run_validate
+
+    return _run_async(_run_validate(str(path), False))
+
+
 # ---------------------------------------------------------------------------
 # Structured output (mcp 2.x) — validate returns structuredContent, not just text
 # ---------------------------------------------------------------------------
@@ -124,12 +132,12 @@ class TestListTools:
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
-        """list_tools should return the current surface: validate, remedy_brief, preflight, explain."""
+        """list_tools should return the current surface: validate, remedy_brief, heal_apply, preflight, explain."""
         from reporails_cli.interfaces.mcp.server import list_tools
 
         tools = _run_async(list_tools())
         names = {t.name for t in tools}
-        assert names == {"validate", "remedy_brief", "preflight", "explain"}
+        assert names == {"validate", "remedy_brief", "heal_apply", "preflight", "explain"}
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -386,12 +394,15 @@ class TestValidateTargets:
         from reporails_cli.interfaces.mcp import server
 
         _run_async(server._run_validate(str(project), True, ["skills"]))
-        brief = server._serve_remedy_brief(str(project), 1, ["skills"])
+        brief = server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)
         assert brief["location"]["element"] == "the `backlog` skill"
-        assert server._serve_remedy_brief(str(project), 1)["error"] == "no_workflow"
+        assert server._serve_remedy_brief(str(project), 1, has_guide=True)["error"] == "no_workflow"
         _run_async(server._run_validate(str(project), True))
-        assert server._serve_remedy_brief(str(project), 1)["location"]["element"] == "CLAUDE.md"
-        assert server._serve_remedy_brief(str(project), 1, ["skills"])["location"]["element"] == "the `backlog` skill"
+        assert server._serve_remedy_brief(str(project), 1, has_guide=True)["location"]["element"] == "CLAUDE.md"
+        assert (
+            server._serve_remedy_brief(str(project), 1, ["skills"], has_guide=True)["location"]["element"]
+            == "the `backlog` skill"
+        )
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
@@ -737,7 +748,7 @@ class TestCircuitBreaker:
             assert data.get("error") != "circuit_breaker", data
 
         # A served remedy_brief resets call_count for this path before the next tier's round.
-        brief = server._serve_remedy_brief(str(tmp_path), 1)
+        brief = server._serve_remedy_brief(str(tmp_path), 1, has_guide=True)
         assert "error" not in brief, brief
 
         # Round 2: 5 more validate calls (11 total across the run) must not trip.
@@ -1152,7 +1163,7 @@ class TestRemedyBrief:
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     def test_a_brief_before_any_validate_is_a_structured_error(self, tmp_path: Path) -> None:
-        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1}))
+        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
         assert data["error"] == "no_workflow"
 
     @pytest.mark.e2e
@@ -1164,7 +1175,7 @@ class TestRemedyBrief:
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
 
-        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 9}))
+        data = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 9, "has_guide": True}))
         assert data["error"] == "location_not_found"
 
     @pytest.mark.e2e
@@ -1186,7 +1197,7 @@ class TestRemedyBrief:
         unchanged_before = state_before.consecutive_unchanged
 
         for _ in range(5):
-            reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1}))
+            reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
             assert "error" not in reply, reply
             state_after = server._validate_states[str(tmp_path.resolve())]
             assert (state_after.call_count, state_after.consecutive_unchanged) == (0, unchanged_before)
@@ -1194,7 +1205,7 @@ class TestRemedyBrief:
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     @requires_rules
-    def test_a_brief_returns_the_location_findings_and_the_preservation_contract(
+    def test_a_brief_returns_the_location_edits_slots_and_the_preservation_contract(
         self, monkeypatch, tmp_path: Path
     ) -> None:
         from types import SimpleNamespace
@@ -1207,20 +1218,15 @@ class TestRemedyBrief:
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
 
-        reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1}))
+        reply = json.loads(_call_tool("remedy_brief", {"path": str(tmp_path), "location": 1, "has_guide": True}))
 
         assert reply["location"]["order"] == 1 and reply["location"]["kind"] == "main"
-        assert reply["findings"] == [self._payload()["workflow"]["locations"][0]["findings"][0]]
-        assert reply["files"] == [
-            {
-                "file": "CLAUDE.md",
-                "path": str((tmp_path / "CLAUDE.md").resolve()),
-                "loading": "session_start",
-                "score": None,
-                "instructions": [],
-                "headings": [],
-            }
-        ]
+        # The 0.6.2 brief carries the exact edits, the slots that need a decision, and the
+        # guide per rule; the finding prose and the per-file inventory are gone.
+        assert {"edits", "slots", "ops", "guides", "location", "next", "preservation_contract", "refused"} <= set(reply)
+        assert "findings" not in reply and "files" not in reply
+        assert reply["location"]["root"] == str(tmp_path)
+        assert reply["edits"] == [] and reply["slots"] == []
         assert "Keep every instruction" in reply["preservation_contract"]
         assert reply["next"]
 
@@ -1254,13 +1260,13 @@ class TestPreservationWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        bounded_before = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_before = _bounded_reply(target)
         assert "preservation" not in bounded_before, "not yet briefed"
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
-        bounded_after = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_after = _bounded_reply(target)
         assert "preservation" in bounded_after
         assert bounded_after["preservation"]["ok"] is True, "nothing changed since the snapshot"
         assert bounded_after["preservation"]["score_before"] == score
@@ -1283,7 +1289,7 @@ class TestPreservationWiring:
         target.write_text(
             "## Test doubles\n\n- Do not use mock objects in tests.\n- Do not use test doubles in the test suite.\n"
         )
-        block = json.loads(_call_tool("validate", {"path": str(target)}))["preservation"]
+        block = _bounded_reply(target)["preservation"]
         assert block["ok"] is False
         assert block["relabelled_negative_headings"] == [{"line": 1, "text": "## Don'ts"}]
 
@@ -1313,11 +1319,11 @@ class TestPreservationWiring:
 
         monkeypatch.setattr(server, "run_pipeline_for_path", counting_run_pipeline_for_path)
 
-        first = json.loads(_call_tool("validate", {"path": str(target)}))
+        first = _bounded_reply(target)
         assert "preservation" in first
         assert calls["n"] == 1, "the first (fresh) validate must run the pipeline exactly once"
 
-        second = json.loads(_call_tool("validate", {"path": str(target)}))
+        second = _bounded_reply(target)
         assert "preservation" in second
         assert calls["n"] == 1, (
             f"a cached-reply preservation check must reuse the stored map, not re-run the "
@@ -1355,7 +1361,7 @@ class TestFileFeedback:
                                 "line": 3,
                                 "pi": 0,
                                 "message": "cosmetic issue",
-                                "remedy": "r1",
+                                "op": "rewrite",
                                 "impact_tier": "cosmetic",
                             },
                             {
@@ -1364,7 +1370,7 @@ class TestFileFeedback:
                                 "line": 8,
                                 "pi": 1,
                                 "message": "gate issue",
-                                "remedy": "r2",
+                                "op": "split",
                                 "impact_tier": "gate_mover",
                             },
                             {
@@ -1373,7 +1379,7 @@ class TestFileFeedback:
                                 "line": 1,
                                 "pi": 0,
                                 "message": "other file",
-                                "remedy": "r3",
+                                "op": "split",
                                 "impact_tier": "gate_mover",
                             },
                         ],
@@ -1383,8 +1389,8 @@ class TestFileFeedback:
         }
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
         assert feedback == [
-            {"rule": "B", "line": 8, "message": "gate issue", "remedy": "r2", "impact_tier": "gate_mover"},
-            {"rule": "A", "line": 3, "message": "cosmetic issue", "remedy": "r1", "impact_tier": "cosmetic"},
+            {"rule": "B", "line": 8, "message": "gate issue", "op": "split", "impact_tier": "gate_mover"},
+            {"rule": "A", "line": 3, "message": "cosmetic issue", "op": "rewrite", "impact_tier": "cosmetic"},
         ]
 
     @pytest.mark.e2e
@@ -1407,8 +1413,8 @@ class TestFileFeedback:
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
         # No `impact_tier`, so weight ties and the line number decides.
         assert feedback == [
-            {"rule": "Y", "line": 2, "message": "m2", "remedy": "", "impact_tier": ""},
-            {"rule": "X", "line": 5, "message": "m1", "remedy": "fix1", "impact_tier": ""},
+            {"rule": "Y", "line": 2, "message": "m2", "impact_tier": ""},
+            {"rule": "X", "line": 5, "message": "m1", "fix": "fix1", "impact_tier": ""},
         ]
 
     def setup_method(self) -> None:
@@ -1486,7 +1492,6 @@ class TestFileFeedback:
                 "rule": "CORE:C:0042",
                 "line": 3,
                 "message": "Vague instruction.",
-                "remedy": "Name it.",
                 "impact_tier": "cosmetic",
             }
         ]
@@ -1526,7 +1531,7 @@ class TestFileFeedback:
 
         feedback = feedback.file_feedback(single_file_payload, Path("/proj/CLAUDE.md"), Path("/proj"))
 
-        assert feedback == [{"rule": "X", "line": 5, "message": "m1", "remedy": "fix1", "impact_tier": ""}]
+        assert feedback == [{"rule": "X", "line": 5, "message": "m1", "fix": "fix1", "impact_tier": ""}]
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
@@ -1548,7 +1553,13 @@ class TestFileFeedback:
         feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
 
         assert feedback == [
-            {"rule": "CORE:S:0002", "line": 0, "message": "", "remedy": "Add headings.", "impact_tier": ""}
+            {
+                "rule": "CORE:S:0002",
+                "line": 0,
+                "message": "Section Headers Present",
+                "fix": "Add headings.",
+                "impact_tier": "",
+            }
         ]
 
     @pytest.mark.e2e
@@ -1594,13 +1605,13 @@ class TestFeedbackWiring:
         target = tmp_path / "CLAUDE.md"
         target.write_text("# Project\n\nNever commit secrets.\n")
 
-        bounded_before = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_before = _bounded_reply(target)
         assert "feedback" not in bounded_before, "not yet briefed"
 
         _payload, ruleset_map, score = tools.run_pipeline_for_path(str(target), True)
         snapshots.snapshot_file(target, ruleset_map, score, [])
 
-        bounded_after = json.loads(_call_tool("validate", {"path": str(target)}))
+        bounded_after = _bounded_reply(target)
         assert "feedback" in bounded_after
         assert isinstance(bounded_after["feedback"], list)
 
@@ -1680,7 +1691,7 @@ class TestFeedbackNewKinds:
 
         _call_tool("validate", {"path": str(tmp_path)})
         target.write_text('# Project\n\nNever commit secrets.\n\napi_key = "sk-live-0000000000000000"\n')
-        reply = json.loads(_call_tool("validate", {"path": str(target)}))
+        reply = _bounded_reply(target)
 
         assert [f["rule"] for f in reply["feedback"]] == ["CORE:G:0002", "A", "B"]
 
@@ -1767,7 +1778,7 @@ class TestFeedbackFiredBefore:
         monkeypatch.setattr(snapshots, "has_snapshot", lambda p: True)
         _call_tool("validate", {"path": str(tmp_path)})
         target.write_text("# Project\n\nNever commit secrets.\n\nedited\n")
-        return json.loads(_call_tool("validate", {"path": str(target)}))
+        return _bounded_reply(target)
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server

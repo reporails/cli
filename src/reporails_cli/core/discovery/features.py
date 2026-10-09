@@ -34,7 +34,8 @@ from reporails_cli.core.discovery.agents import (
 from reporails_cli.core.discovery.walk import is_symlink_loop_error, is_under, safe_resolve
 from reporails_cli.core.mapper.classify import CONSTRAINT_WORDS
 from reporails_cli.core.mapper.imports import import_refs
-from reporails_cli.core.platform.dto.results import DetectedFeatures
+from reporails_cli.core.platform.dto.results import DetectedFeatures, HookEntry
+from reporails_cli.core.platform.utils.hook_config import HookConfig, hook_sites, read_hook_config
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
 logger = logging.getLogger(__name__)
@@ -191,7 +192,8 @@ def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None 
 
     # L6 capability — hooks, per detected agent's own config.yml. A folder of
     # plain git hooks is not an agent surface and adds no level.
-    features.has_hooks = any(_agent_has_hooks(target, agent_id, scan) for agent_id in agent_ids)
+    features.hook_files = tuple(f for agent_id in sorted(agent_ids) for f in _agent_hook_files(target, agent_id, scan))
+    features.hooks = tuple(e for agent_id in sorted(agent_ids) for e in _agent_hook_entries(target, agent_id, scan))
 
     # L7 capabilities — adaptive: each detected agent's own repo-scoped memory
     # surfaces, plus Claude's user-scope auto-memory when Claude is detected.
@@ -208,17 +210,10 @@ def detect_features_filesystem(target: Path, agents: list[DetectedAgent] | None 
     return features
 
 
-def _has_hooks_setting(settings_path: Path) -> bool:
-    """True when `settings.json` declares a `hooks` block."""
-    if not settings_path.exists():
-        return False
-    try:
-        import json
-
-        data = json.loads(settings_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    return isinstance(data, dict) and bool(data.get("hooks"))
+def _hooks_key_is_set(settings_path: Path, scan: _SurfaceScan) -> bool:
+    """True when the file declares a non-empty `hooks` block."""
+    config = scan.hook_config(settings_path)
+    return config is not None and isinstance(config.data, dict) and bool(config.data.get("hooks"))
 
 
 def _repo_scoped_patterns(patterns: list[str]) -> list[str]:
@@ -235,6 +230,13 @@ class _SurfaceScan:
 
     exclude_dirs: frozenset[str]
     roots_by_marker: dict[str, list[Path]] = field(default_factory=dict)
+    hook_configs: dict[Path, HookConfig | None] = field(default_factory=dict)
+
+    def hook_config(self, path: Path) -> HookConfig | None:
+        """The hook config at `path`, read the first time it is asked for and kept for this detection."""
+        if path not in self.hook_configs:
+            self.hook_configs[path] = read_hook_config(path)
+        return self.hook_configs[path]
 
     @classmethod
     def for_target(cls, target: Path) -> _SurfaceScan:
@@ -248,15 +250,18 @@ def _scan_for(target: Path, scan: _SurfaceScan | None) -> _SurfaceScan:
     return scan if scan is not None else _SurfaceScan.for_target(target)
 
 
-def _surface_patterns(target: Path, spec: dict[str, Any], scan: _SurfaceScan | None = None) -> list[str]:
+def _surface_patterns(
+    target: Path, spec: dict[str, Any], scan: _SurfaceScan | None = None, *, repo_only: bool = True
+) -> list[str]:
     """A file type's project-level patterns, with plugin-root patterns expanded against the
     plugin roots found under `target` exactly as discovery expands them (excluded folders
-    are not searched)."""
+    are not searched). `repo_only=False` keeps the user-scope (`~/...`) and absolute patterns too."""
     from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 
     scan = _scan_for(target, scan)
+    patterns = _extract_patterns(spec)
     return expand_plugin_patterns(
-        _repo_scoped_patterns(_extract_patterns(spec)), target, scan.exclude_dirs, scan.roots_by_marker
+        _repo_scoped_patterns(patterns) if repo_only else patterns, target, scan.exclude_dirs, scan.roots_by_marker
     )
 
 
@@ -287,8 +292,43 @@ def _agent_has_surface(target: Path, agent_id: str, surface_name: str, scan: _Su
     return bool(_agent_surface_files(target, agent_id, surface_name, scan))
 
 
-def _agent_has_hooks(target: Path, agent_id: str, scan: _SurfaceScan | None = None) -> bool:
-    """True when `agent_id`'s hooks surface carries a real hook entry.
+def _hooks_spec(agent_id: str) -> dict[str, Any] | None:
+    """`agent_id`'s `hooks` file type from its own `config.yml`; None when it declares none."""
+    file_types = load_config_file_types(agent_id)
+    spec = file_types.get("hooks") if file_types else None
+    return spec if isinstance(spec, dict) else None
+
+
+def _hook_scope_matches(target: Path, agent_id: str, scan: _SurfaceScan, *, repo_only: bool) -> list[tuple[str, Path]]:
+    """Each file of `agent_id`'s hooks surface with the scope of that surface it sits in.
+
+    Every scope the surface models is read (project, local, user, plugin, managed), or only
+    the repo-scoped patterns when `repo_only`. A file two scopes both match is listed once,
+    under the first.
+    """
+    spec = _hooks_spec(agent_id)
+    if spec is None:
+        return []
+    scopes = spec.get("scopes")
+    by_scope = scopes if isinstance(scopes, dict) else {"project": spec}
+    props = _extract_properties(spec)
+    seen: set[Path] = set()
+    found: list[tuple[str, Path]] = []
+    for scope, scope_spec in by_scope.items():
+        if not isinstance(scope_spec, dict):
+            continue
+        patterns = _surface_patterns(
+            target, {"scopes": {scope: scope_spec}} if scopes else spec, scan, repo_only=repo_only
+        )
+        for match in glob_file_type_patterns(target, patterns, props, scan.exclude_dirs):
+            if match not in seen:
+                seen.add(match)
+                found.append((scope, match))
+    return found
+
+
+def _agent_hook_files(target: Path, agent_id: str, scan: _SurfaceScan | None = None) -> list[Path]:
+    """The repo-scoped files of `agent_id`'s hooks surface that carry a real hook entry.
 
     A hooks surface that shares its file with the agent's general config file
     (Claude nests hooks inside `.claude/settings.json`, which also carries
@@ -299,28 +339,42 @@ def _agent_has_hooks(target: Path, agent_id: str, scan: _SurfaceScan | None = No
     `.agents/hooks.json`) counts on existence, matching every other surface check.
     """
     scan = _scan_for(target, scan)
-    file_types = load_config_file_types(agent_id)
-    if not file_types:
-        return False
-    hooks_spec = file_types.get("hooks")
-    if not isinstance(hooks_spec, dict):
-        return False
-    hooks_patterns = _repo_scoped_patterns(_extract_patterns(hooks_spec))
-    if not hooks_patterns:
-        return False
+    spec = _hooks_spec(agent_id)
+    if spec is None:
+        return []
+    file_types = load_config_file_types(agent_id) or {}
     config_spec = file_types.get("config")
-    shared_patterns = (
-        list(set(hooks_patterns) & set(_extract_patterns(config_spec))) if isinstance(config_spec, dict) else []
-    )
-    matches = glob_file_type_patterns(
-        target, _surface_patterns(target, hooks_spec, scan), _extract_properties(hooks_spec), scan.exclude_dirs
-    )
-    for match in matches:
-        if not shared_patterns or not matches_any_glob(match, shared_patterns, target):
-            return True  # dedicated hooks file present
-        if _has_hooks_setting(match):
-            return True  # shared config file with a real hooks block
-    return False
+    config_patterns = _extract_patterns(config_spec) if isinstance(config_spec, dict) else []
+    shared_patterns = list(set(_repo_scoped_patterns(_extract_patterns(spec))) & set(config_patterns))
+    counted: list[Path] = []
+    for _scope, match in _hook_scope_matches(target, agent_id, scan, repo_only=True):
+        dedicated = not shared_patterns or not matches_any_glob(match, shared_patterns, target)
+        if dedicated or _hooks_key_is_set(match, scan):
+            counted.append(match)
+    return counted
+
+
+def _hook_file_label(path: Path, target: Path) -> str:
+    """A hook file as shown to the user: project-relative, `~/`-relative in the home folder, else absolute."""
+    resolved = path.resolve()
+    for base, prefix in ((target, ""), (Path.home(), "~/")):
+        if resolved.is_relative_to(safe_resolve(base)):
+            return prefix + resolved.relative_to(safe_resolve(base)).as_posix()
+    return path.as_posix()
+
+
+def _agent_hook_entries(target: Path, agent_id: str, scan: _SurfaceScan | None = None) -> list[HookEntry]:
+    """Every hook handler in every file of `agent_id`'s hooks surface, in every scope it models."""
+    scan = _scan_for(target, scan)
+    entries: list[HookEntry] = []
+    for scope, path in _hook_scope_matches(target, agent_id, scan, repo_only=False):
+        label = _hook_file_label(path, target)
+        config = scan.hook_config(path)
+        entries.extend(
+            HookEntry(agent_id, site.event, site.matcher, scope, label)
+            for site in hook_sites(config.data if config else None)
+        )
+    return entries
 
 
 def _agent_declares_path_scoped(agent_id: str) -> bool:

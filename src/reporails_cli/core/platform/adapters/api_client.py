@@ -347,8 +347,7 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
             d_line = d.get("line")
             d_severity = d.get("severity")
             d_rule = d.get("rule")
-            d_message = d.get("message")
-            if d_line is None or d_severity is None or d_rule is None or d_message is None:
+            if d_line is None or d_severity is None or d_rule is None:
                 logger.warning(
                     "Skipping diagnostic with missing required field in file %s: %s",
                     fa_file,
@@ -361,10 +360,13 @@ def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ..
                     line=d_line,
                     severity=d_severity,
                     rule=d_rule,
-                    message=d_message,
-                    fix=d.get("fix", ""),
+                    message=d.get("message") or "",
+                    fix=d.get("fix") or "",
                     impact_tier=d.get("impact_tier", ""),
                     pi=_opt_int(d.get("pi")),
+                    partner_line=_opt_int(d.get("partner_line")),
+                    partner_file=d.get("partner_file") or None,
+                    overlap_pct=_opt_int(d.get("overlap_pct")),
                 )
             )
         items.append(

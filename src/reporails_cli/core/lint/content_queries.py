@@ -7,6 +7,7 @@ Each query inspects the mapper's AST-derived atoms — no regex on raw text.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -51,30 +52,28 @@ def atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
     return [a for a in rm.atoms if _norm_key(a.file_path) == key]
 
 
-def instruction_atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+def own_atoms(atoms: Iterable[Atom]) -> list[Atom]:
+    """The atoms written in the file itself: an atom an `@import` brings in sits on the `@` line and is not in
+    the file's text."""
+    return [a for a in atoms if not a.imported_from]
+
+
+def own_atoms_for_file(rm: RulesetMap, file_path: str) -> list[Atom]:
+    """`atoms_for_file` without the atoms an `@import` brings in."""
+    return own_atoms(atoms_for_file(rm, file_path))
+
+
+def instruction_atoms_for_file(rm: RulesetMap, file_path: str, *, own: bool = False) -> list[Atom]:
     """`file_path`'s atoms without the list items read as an instruction's object
-    (`LIST_OBJECT_ROLE`), which take no place of their own among the file's instructions."""
-    return [a for a in atoms_for_file(rm, file_path) if a.role != LIST_OBJECT_ROLE]
+    (`LIST_OBJECT_ROLE`), which take no place of their own among the file's instructions; `own` also leaves
+    out the atoms an `@import` brings in."""
+    atoms = own_atoms_for_file(rm, file_path) if own else atoms_for_file(rm, file_path)
+    return [a for a in atoms if a.role != LIST_OBJECT_ROLE]
 
 
 def _all_file_paths(rm: RulesetMap) -> set[str]:
     """Get unique file paths from RulesetMap."""
     return {fr.path for fr in rm.files}
-
-
-def instruction_inventory(rm: RulesetMap, file_path: str) -> list[dict[str, Any]]:
-    """`file_path`'s content, in line order: each non-heading atom as `{line, polarity, text,
-    named}` (`polarity` is the atom's `charge_value`, `named` its named tokens), each heading as
-    `{line, depth, text}`. A list item read as its instruction's object is not a unit of its own
-    (`LIST_OBJECT_ROLE`) and is left out, matching how the rest of the pipeline addresses atoms."""
-    atoms = instruction_atoms_for_file(rm, file_path)
-    out: list[dict[str, Any]] = []
-    for a in sorted(atoms, key=lambda a: a.line):
-        if a.kind == "heading":
-            out.append({"line": a.line, "depth": a.depth, "text": a.text})
-        else:
-            out.append({"line": a.line, "polarity": a.charge_value, "text": a.text, "named": list(a.named_tokens)})
-    return out
 
 
 # ──────────────────────────────────────────────────────────────────

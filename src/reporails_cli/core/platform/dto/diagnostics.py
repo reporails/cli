@@ -25,6 +25,12 @@ UNENTITLED_TIERS = frozenset({"anonymous", "free"})
 ACCOUNT_TIERS = (ENTITLED_TIERS | UNENTITLED_TIERS) - {"anonymous"}
 
 
+def tiers_unpaid(*tiers: str | None) -> bool:
+    """True when the named tiers include an unpaid one and no paid one."""
+    named = set(tiers)
+    return bool(named & UNENTITLED_TIERS) and not named & ENTITLED_TIERS
+
+
 def tier_label(tier: str) -> str:
     """`Pro` for an account tier (Free, Pro, Team); "" for anything else."""
     return tier.capitalize() if tier in ACCOUNT_TIERS else ""
@@ -83,6 +89,9 @@ class Diagnostic:
     fix: str = ""
     impact_tier: str = ""  # server-computed leverage tier; "" when offline/not computed
     pi: int | None = None  # the finding's instruction by its position index in the file; None when line-addressed
+    partner_line: int | None = None  # the other side's line of a pairwise finding, when the reply names it
+    partner_file: str | None = None  # the file a per-file overlap finding overlaps with, when the reply names it
+    overlap_pct: int | None = None  # the share of this file's instructions that overlap, 0-100, when named
 
 
 @dataclass(frozen=True)
@@ -171,14 +180,16 @@ class RulesetReport:
 
 @dataclass(frozen=True)
 class LocationFinding:
-    """One finding of a remediation location: its rule, where it fires, and its remedy.
+    """One finding of a remediation location: its rule, where it fires, and the operation that fixes it.
 
     `pi` is the atom's position index when the server addressed it by an instruction,
-    `None` for a line-addressed finding. `message` (and `remedy`) may be empty — an
-    empty `message` is filled from the client's own finding at the same (file, line,
-    rule) when one exists. `impact_tier` ("gate_mover" | "conditional" | "cosmetic") is
-    this finding's own weight — distinct from the location's `importance` — and orders
-    a location's findings weakest-first; `""` when the response omits it.
+    `None` for a line-addressed finding. `op` names the operation (`split`, `move`,
+    `dedupe`, ...; `""` when the response omits it) and `expect` holds the coordinates that
+    operation needs: `{"after": [file, line, pi]}` for a move, `{"keep": [partner_file,
+    partner_line]}` for a dedupe or keep-cut, `{}` otherwise.
+    `impact_tier` ("gate_mover" | "conditional" | "cosmetic") is this finding's own weight
+    — distinct from the location's `importance` — and orders a location's
+    findings weakest-first; `""` when the response omits it.
 
     `members` are the findings this one owns: an instruction owner holds the findings of
     its instruction, a sentence owner holds the instruction-level findings of its line. A
@@ -190,8 +201,8 @@ class LocationFinding:
     file: str
     line: int
     pi: int | None
-    message: str
-    remedy: str
+    op: str = ""
+    expect: dict[str, Any] = field(default_factory=dict)
     impact_tier: str = ""
     members: tuple[LocationFinding, ...] = ()
 
@@ -229,7 +240,8 @@ class LocationRelation:
     """A cross-file relation (overlap / repetition) folded onto the location's editing side.
 
     `file` is THIS location's file (the side that edits); `partner_file` / `partner_line`
-    name the kept side. `partner_line` is 0 when the partner is unlocated.
+    name the kept side. `partner_line` is 0 when the partner is unlocated. `op` and `expect`
+    read as on `LocationFinding`.
     """
 
     rule: str
@@ -237,8 +249,8 @@ class LocationRelation:
     line: int
     partner_file: str
     partner_line: int
-    message: str
-    remedy: str
+    op: str = ""
+    expect: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -261,16 +273,11 @@ class WorkflowLocation:
 
 @dataclass(frozen=True)
 class ListedFinding:
-    """A firing rule that takes no remediation location, with the reason and how many rows.
-
-    `why` is one user-facing sentence naming the rule's real-world consequence; `""` when
-    the response omits it.
-    """
+    """A firing rule that takes no remediation location, with the reason code and how many rows."""
 
     rule: str
     reason: str
     count: int = 0
-    why: str = ""
 
 
 @dataclass(frozen=True)
@@ -279,7 +286,6 @@ class RemediationWorkflow:
 
     locations: tuple[WorkflowLocation, ...] = ()
     listed: tuple[ListedFinding, ...] = ()  # every firing rule that takes no location, with its reason
-    escape: str = ""
     summary: str = ""
 
 

@@ -15,7 +15,13 @@ import yaml
 from reporails_cli.core.platform.utils.utils import is_first_yaml_failure, load_yaml_file, yaml_error_line
 
 if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.results import AgentConfig, GlobalConfig, ProjectConfig
+    from reporails_cli.core.platform.dto.results import (
+        AgentConfig,
+        GlobalConfig,
+        HookFact,
+        ProjectConfig,
+        SubagentHooks,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +54,46 @@ def get_agent_config(agent: str) -> AgentConfig:
             core=data.get("core", False),
             excludes=data.get("excludes", []),
             overrides=data.get("overrides", {}),
+            subagent_hooks=_subagent_hooks(data.get("subagent_hooks")),
+            intercept_events=_intercept_events(data.get("intercept_events")),
         )
     except (yaml.YAMLError, OSError, ValueError) as exc:
         logger.warning("Failed to parse agent config %s: %s", config_path, exc)
         return AgentConfig()
+
+
+def _hook_fact(raw: object) -> HookFact:
+    """One `subagent_hooks` fact; a missing or malformed one reads as `unconfirmed`."""
+    from reporails_cli.core.platform.dto.results import HookFact
+
+    if not isinstance(raw, dict):
+        return HookFact()
+    value = str(raw.get("value", "unconfirmed"))
+    fields = raw.get("fields")
+    return HookFact(
+        value=value if value in ("yes", "no") else "unconfirmed",
+        source=str(raw.get("source", "")),
+        fields=tuple(str(f) for f in fields) if isinstance(fields, list) else (),
+    )
+
+
+def _intercept_events(raw: object) -> dict[str, tuple[str, ...]]:
+    """The optional top-level `intercept_events:` key: event name to the file tools it gates."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(event): tuple(str(tool) for tool in tools) for event, tools in raw.items() if isinstance(tools, list)}
+
+
+def _subagent_hooks(raw: object) -> SubagentHooks:
+    """The optional top-level `subagent_hooks:` key of an agent's config.yml."""
+    from reporails_cli.core.platform.dto.results import SubagentHooks
+
+    facts = raw if isinstance(raw, dict) else {}
+    return SubagentHooks(
+        fire_in_subagents=_hook_fact(facts.get("fire_in_subagents")),
+        identifies_agent=_hook_fact(facts.get("identifies_agent")),
+        extension_opt_out=_hook_fact(facts.get("extension_opt_out")),
+    )
 
 
 _SEGMENTATION_MODES = frozenset({"legacy", "structure-aware"})
@@ -216,6 +258,7 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         disabled_rules=_data_str_list(data, "disabled_rules"),
         exclude_dirs=_data_str_list(data, "exclude_dirs"),
         exclude_files=_data_str_list(data, "exclude_files"),
+        heal_exclude=_data_str_list(data, "heal_exclude"),
         default_agent=da if isinstance(da, str) else "",
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),

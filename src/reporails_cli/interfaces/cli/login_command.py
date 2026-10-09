@@ -89,7 +89,7 @@ def _print_tier_lines(tier: str) -> None:
         )
         console.print(f"  {OTHER_AGENT_HEAL_TEXT}")
         return
-    console.print("  Your diagnosis is unchanged; [bold]ails check --heal[/bold] now applies formatting fixes.")
+    console.print("  Your diagnosis is unchanged; [bold]ails check --heal[/bold] writes fixes on a Pro account only.")
     console.print(UNPAID_PITCH_LINE)
     console.print(upgrade_link_line())
 

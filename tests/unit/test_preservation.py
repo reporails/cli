@@ -100,6 +100,7 @@ def _new_atom(
         scope_conditional=scope_conditional,
         plain_text=text.replace("`", ""),
         modality="direct" if charge_value else "none",
+        imported_from="",
     )
 
 
@@ -413,6 +414,7 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
         "dropped_conditions": [],
         "narrowed_instructions": [],
         "hedge_made_absolute": [],
+        "dangling_fragments": [],
         "padded_lines": [],
         "made_direct": [
             {
@@ -422,11 +424,20 @@ def test_a_clean_ideal_rewrite_is_ok() -> None:
                 "new_text": "Run the `qa suite` before you push.",
             }
         ],
+        "made_specific": [],
         "relabelled_negative_headings": [],
         "lost_context": [],
         "moved_list_items": [],
-        "removed_structure": {"table_rows": 0, "list_items": 0, "headings": 0, "fences": 0, "links": 0},
-        "kept": {"instructions": 2, "table_rows": 1, "list_items": 1, "headings": 2, "fences": 1, "links": 1},
+        "removed_structure": {"table_rows": 0, "list_items": 0, "headings": 0, "fences": 0, "links": 0, "imports": 0},
+        "kept": {
+            "instructions": 2,
+            "table_rows": 1,
+            "list_items": 1,
+            "headings": 2,
+            "fences": 1,
+            "links": 1,
+            "imports": 0,
+        },
     }
 
 
@@ -1542,7 +1553,9 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
     charge model reads the whole sentence as a single scalar, and a reword that only narrows the
     sentence's own emphasis span and fills in the pronoun ("it" -> "that risk", "directly" ->
     "directly in the review") can tip that scalar to the other side of zero without the
-    instruction itself flipping — same directive, same negation, on both sides."""
+    instruction itself flipping — same directive, same negation, on both sides. The rewrite also
+    adds a place phrase ("in the review"), which the narrowing check reports, so the verdict as a
+    whole is not asserted here."""
     after = _RESTATED_BASE.replace(
         "*Face it directly — don't dodge. If the concern remains after the fix, log it as a followup.*",
         "*Face that risk directly in the review — don't dodge it.* If the concern remains after the fix, "
@@ -1550,7 +1563,7 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
     )
     result = _compare_edit(tmp_path, _RESTATED_BASE, after)
     assert result["polarity_flips"] == []
-    assert result["ok"] is True
+    assert result["lost_instructions"] == []
 
 
 @pytest.mark.integration
@@ -1573,15 +1586,6 @@ def test_a_directive_restated_negatively_in_its_own_sentence_reworded_is_not_a_f
             "# Releases\n\nNever deploy on Fridays without approval.\n",
             "# Releases\n\nAlways deploy on Fridays without approval.\n",
             True,
-        ),
-        (
-            _RESTATED_BASE,
-            _RESTATED_BASE.replace(
-                "*Face it directly — don't dodge. If the concern remains after the fix, log it as a followup.*",
-                "*Face that risk directly in the review — don't dodge it.* If the concern remains after the "
-                "fix, log it as a followup.",
-            ),
-            False,
         ),
         (
             "# Reviews\n\nAlways face it directly — don't dodge.\n",
@@ -2226,6 +2230,7 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             line=n,
             position_index=0,
             text=line.lstrip("# ").strip(),
+            plain_text=line.lstrip("# ").strip(),
             charge_value=0,
             named_tokens=[],
             embedding_int8=None,
@@ -2235,6 +2240,7 @@ def _heading_atoms(text: str) -> tuple[SimpleNamespace, ...]:
             format="heading",
             heading_context="",
             scope_conditional=False,
+            imported_from="",
         )
         for n, line in enumerate(text.split("\n"), start=1)
         if line.startswith("#")

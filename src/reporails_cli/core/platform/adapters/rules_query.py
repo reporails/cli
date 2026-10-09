@@ -10,7 +10,7 @@ from pathlib import Path
 
 from reporails_cli.core.platform.adapters.registry import _load_from_path, apply_agent_excludes, get_rules_dir
 from reporails_cli.core.platform.config.config import get_agent_config
-from reporails_cli.core.platform.dto.models import Category, Rule, Severity
+from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Category, Rule, Severity
 
 _CATEGORY_ORDER: dict[Category, int] = {
     Category.STRUCTURE: 0,
@@ -19,13 +19,6 @@ _CATEGORY_ORDER: dict[Category, int] = {
     Category.EFFICIENCY: 3,
     Category.MAINTENANCE: 4,
     Category.GOVERNANCE: 5,
-}
-
-_SEVERITY_ORDER: dict[Severity, int] = {
-    Severity.CRITICAL: 0,
-    Severity.HIGH: 1,
-    Severity.MEDIUM: 2,
-    Severity.LOW: 3,
 }
 
 
@@ -80,8 +73,8 @@ def filter_rules_by_capability(rules: list[Rule], capability: str | list[str]) -
 
 def filter_rules_by_severity(rules: list[Rule], min_severity: Severity) -> list[Rule]:
     """Keep rules at or above `min_severity` (critical > high > medium > low)."""
-    threshold = _SEVERITY_ORDER[min_severity]
-    return [r for r in rules if _SEVERITY_ORDER.get(r.severity, 99) <= threshold]
+    threshold = SEVERITY_ORDER[min_severity]
+    return [r for r in rules if SEVERITY_ORDER.get(r.severity, 99) <= threshold]
 
 
 def sort_rules_for_authoring(rules: list[Rule]) -> list[Rule]:
@@ -90,7 +83,7 @@ def sort_rules_for_authoring(rules: list[Rule]) -> list[Rule]:
         rules,
         key=lambda r: (
             _CATEGORY_ORDER.get(r.category, 99),
-            _SEVERITY_ORDER.get(r.severity, 99),
+            SEVERITY_ORDER.get(r.severity, 99),
             r.id,
         ),
     )

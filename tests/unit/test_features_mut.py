@@ -18,7 +18,8 @@ from reporails_cli.core.discovery.features import (
     _detect_content_features,
     _find_root_instruction,
     _has_hierarchy,
-    _has_hooks_setting,
+    _hooks_key_is_set,
+    _SurfaceScan,
     detect_features_filesystem,
     resolve_symlinked_files,
 )
@@ -100,7 +101,7 @@ def test_hooks_detected_from_settings_json_alone(tmp_path: Path) -> None:
     (claude / "settings.json").write_text('{"hooks": {"PreToolUse": []}}')
     feats = detect_features_filesystem(tmp_path, agents=[_claude_agent()])
     # Only settings.json carries hooks (no hooks dir, no settings.local) → True.
-    assert feats.has_hooks is True  # kills L158 and L159 (both or→and)
+    assert feats.hook_files == (tmp_path / ".claude/settings.json",)  # kills L158 and L159 (both or→and)
 
 
 @pytest.mark.unit
@@ -110,42 +111,42 @@ def test_bare_mcp_json_with_no_detected_agent_grants_no_hooks(tmp_path: Path) ->
     reads a detected agent's own config.yml, never a raw top-level filename."""
     (tmp_path / ".mcp.json").write_text("{}")
     feats = detect_features_filesystem(tmp_path, agents=[])
-    assert feats.has_hooks is False
+    assert feats.hook_files == ()
 
 
 # ──────────────────────────────────────────────────────────────────
-# _has_hooks_setting  (L175, L181, L182)
+# _hooks_key_is_set  (L175, L181, L182)
 # ──────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_has_hooks_setting_missing_file_is_false(tmp_path: Path) -> None:
-    assert _has_hooks_setting(tmp_path / "nope.json") is False  # kills L175
+def test_hooks_key_is_set_missing_file_is_false(tmp_path: Path) -> None:
+    assert _hooks_key_is_set(tmp_path / "nope.json", _SurfaceScan(exclude_dirs=frozenset())) is False  # kills L175
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_has_hooks_setting_malformed_json_is_false(tmp_path: Path) -> None:
+def test_hooks_key_is_set_malformed_json_is_false(tmp_path: Path) -> None:
     p = tmp_path / "settings.json"
     p.write_text("{ not valid json")
-    assert _has_hooks_setting(p) is False  # kills L181
+    assert _hooks_key_is_set(p, _SurfaceScan(exclude_dirs=frozenset())) is False  # kills L181
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_has_hooks_setting_dict_without_hooks_is_false(tmp_path: Path) -> None:
+def test_hooks_key_is_set_dict_without_hooks_is_false(tmp_path: Path) -> None:
     p = tmp_path / "settings.json"
     p.write_text('{"other": 1}')
-    assert _has_hooks_setting(p) is False  # kills L182 and→or
+    assert _hooks_key_is_set(p, _SurfaceScan(exclude_dirs=frozenset())) is False  # kills L182 and→or
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_has_hooks_setting_dict_with_hooks_is_true(tmp_path: Path) -> None:
+def test_hooks_key_is_set_dict_with_hooks_is_true(tmp_path: Path) -> None:
     p = tmp_path / "settings.json"
     p.write_text('{"hooks": {"PreToolUse": []}}')
-    assert _has_hooks_setting(p) is True
+    assert _hooks_key_is_set(p, _SurfaceScan(exclude_dirs=frozenset())) is True
 
 
 # ──────────────────────────────────────────────────────────────────

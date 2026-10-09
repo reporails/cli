@@ -23,6 +23,20 @@ def token_present(inner: str, text: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(inner)}(?!\w)", text) is not None
 
 
+def wordless(inner: str) -> bool:
+    """Whether a named construct holds no letter or digit (`.`, `::`, `--`): such a mark occurs
+    all through ordinary prose, so only its own backticked span counts as a mention of it."""
+    return not any(c.isalnum() for c in inner)
+
+
+def _span_present(inner: str, text: str, *, fold: bool = False) -> bool:
+    """Whether the named construct `inner` is present in `text`: a wordless one as its own
+    backticked span, any other as a whole word (`fold` ignores case)."""
+    if wordless(inner):
+        return f"`{inner}`" in text
+    return token_present_ci(inner, text) if fold else token_present(inner, text)
+
+
 def _token_inners(atoms: Sequence[Any]) -> set[str]:
     """The inner text (backticks stripped) of every named token of `atoms`."""
     return {tok.strip("`") for a in atoms for tok in getattr(a, "named_tokens", None) or ()}
@@ -37,7 +51,7 @@ def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: 
     for sa in snap_atoms:
         for tok in sa.named_tokens:
             inner = tok.strip("`")
-            if inner and inner not in new_inners and not token_present(inner, new_text) and tok not in lost:
+            if inner and inner not in new_inners and not _span_present(inner, new_text) and tok not in lost:
                 lost.append(tok)
     return lost
 
@@ -103,13 +117,13 @@ def repeated_named(
     order: list[str] = []
     for sa in snap_atoms:
         for inner in dict.fromkeys(t.strip("`") for t in sa.named_tokens):
-            if inner:
+            if inner and not wordless(inner):
                 allowance[inner] += sa.charge_value != 0
                 order.append(inner)
     was_unnamed = _unnamed_counterparts(snap_atoms, matched_new_for, split_covering_for)
     for na in new_atoms:
         for inner in dict.fromkeys(t.strip("`") for t in getattr(na, "named_tokens", None) or ()):
-            if inner and token_present(inner, original_text):
+            if inner and not wordless(inner) and token_present(inner, original_text):
                 order.append(inner)
                 allowance[inner] += id(na) in was_unnamed and na.charge_value != 0
     return _flag_overruns(order, allowance, original_text, new_text)
@@ -171,7 +185,7 @@ def invented_named(
             key = inner.lower()
             if not inner or key in seen or key in snap_inners:
                 continue
-            if any(token_present_ci(inner, text) for text in grounding) or (
+            if any(_span_present(inner, text, fold=True) for text in grounding) or (
                 environment is not None
                 and (_is_existing_path(inner, environment) or _is_known_command(inner, environment))
             ):

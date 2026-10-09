@@ -232,9 +232,9 @@ class TestLinkedFileSurfaces:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_build_file_groups_labels_imported_and_referenced(self) -> None:
-        from reporails_cli.formatters.text.display import _build_file_groups
+        from reporails_cli.formatters.text.file_groups import build_file_groups
 
         result = self._result(("docs/imp.md", 6.0), ("docs/ref.md", 5.0))
-        groups = _build_file_groups(result, {"docs/imp.md": "generic", "docs/ref.md": "referenced"}, Path.cwd())
+        groups = build_file_groups(result, {"docs/imp.md": "generic", "docs/ref.md": "referenced"}, Path.cwd())
         assert "imported" in groups
         assert "referenced" in groups

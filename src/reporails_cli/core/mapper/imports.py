@@ -41,14 +41,26 @@ _EXPANDABLE_EXT = frozenset({"", ".md", ".mdc", ".markdown", ".mdx"})
 _MAX_IMPORT_DEPTH = 5
 
 
-def import_refs(content: str) -> list[str]:
-    """The paths `content` imports with `@path`, in order; a reference inside a fenced or indented
-    code block or a code span, as the markdown parse reads them, is documentation, not an import."""
+def import_refs_with_lines(content: str) -> list[tuple[str, int]]:
+    """The `(path, line)` pairs `content` imports with `@path`, in order, lines counted from 1; a
+    reference inside a fenced or indented code block or a code span, as the markdown parse reads
+    them, is documentation, not an import."""
     matches = list(IMPORT_REF_RE.finditer(content))
     if not matches:
         return []
     ranges = code_ranges(content)
-    return [m.group(1) for m in matches if not in_any_span(m.start(), ranges)]
+    return [(m.group(1), content.count("\n", 0, m.start()) + 1) for m in matches if not in_any_span(m.start(), ranges)]
+
+
+def import_refs(content: str) -> list[str]:
+    """The paths `content` imports with `@path`, in order (see `import_refs_with_lines`)."""
+    return [ref for ref, _ in import_refs_with_lines(content)]
+
+
+def import_target(ref: str, source_path: Path) -> Path:
+    """Where an `@path` reference in `source_path` points: `~` expands to the home folder, any other
+    path resolves against the folder of the file that holds it (an absolute path is taken as is)."""
+    return Path(ref).expanduser() if ref.startswith("~") else source_path.parent / ref
 
 
 def _resolve_import_target(
@@ -61,7 +73,7 @@ def _resolve_import_target(
     Returns the resolved Path if it should be expanded, or None if it should
     be left as-is (non-markdown ext, circular, broken, etc.).
     """
-    target = Path(ref).expanduser() if ref.startswith("~") else source_path.parent / ref
+    target = import_target(ref, source_path)
     try:
         target = target.resolve(strict=False)
     except (OSError, RuntimeError):

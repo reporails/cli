@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from reporails_cli.formatters.text import scorecard
-from reporails_cli.formatters.text.display_constants import rule_label
+from reporails_cli.formatters.text.rule_meta import rule_label
 
 
 @dataclass

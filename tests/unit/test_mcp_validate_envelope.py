@@ -14,6 +14,7 @@ import json
 
 import pytest
 
+from reporails_cli.formatters.listed_reasons import listed_reason_text
 from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
@@ -356,25 +357,25 @@ def test_unpaid_default_envelope_stays_under_the_16k_size_bar_on_a_large_project
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_envelope_groups_listed_rules_sharing_one_why():
-    """Two rules that carry the identical `why` sentence collapse into one group — the shared
-    sentence rides once, not once per rule — while a rule with its own `why` gets its own
-    group. `reason` is dropped from the bounded shape; each rule keeps its `count`."""
+def test_envelope_groups_listed_rules_sharing_one_reason_code():
+    """Two rules that share a reason code collapse into one group carrying the cli's own
+    sentence once; a rule with another code gets its own group. Each rule keeps its `count`."""
     payload = _workflow_payload(n_locations=3)
     payload["workflow"]["listed"] = [
-        {"rule": "CORE:E:0004", "reason": "long", "count": 40, "why": "Shared sentence."},
-        {"rule": "CORE:C:0005", "reason": "doc", "count": 1, "why": "Shared sentence."},
-        {"rule": "CORE:S:0002", "reason": "other", "count": 2, "why": "A different sentence."},
+        {"rule": "CORE:E:0004", "reason": "no-gain", "count": 40},
+        {"rule": "CORE:C:0005", "reason": "no-gain", "count": 1},
+        {"rule": "CORE:S:0002", "reason": "unbacked", "count": 2},
     ]
 
     listed = bound_validate_payload(payload)["workflow"]["listed"]
 
     assert listed == [
         {
-            "why": "Shared sentence.",
+            "code": "no-gain",
+            "reason": listed_reason_text("no-gain"),
             "rules": [{"rule": "CORE:E:0004", "count": 40}, {"rule": "CORE:C:0005", "count": 1}],
         },
-        {"why": "A different sentence.", "rules": [{"rule": "CORE:S:0002", "count": 2}]},
+        {"code": "unbacked", "reason": listed_reason_text("unbacked"), "rules": [{"rule": "CORE:S:0002", "count": 2}]},
     ]
 
 
@@ -386,15 +387,16 @@ def test_envelope_groups_listed_when_no_location_is_left():
     payload = _workflow_payload(n_locations=1)
     del payload["workflow"]["locations"]
     payload["workflow"]["listed"] = [
-        {"rule": "CORE:E:0004", "reason": "long", "count": 40, "why": "Shared sentence."},
-        {"rule": "CORE:C:0005", "reason": "doc", "count": 1, "why": "Shared sentence."},
+        {"rule": "CORE:E:0004", "reason": "no-gain", "count": 40},
+        {"rule": "CORE:C:0005", "reason": "no-gain", "count": 1},
     ]
 
     listed = bound_validate_payload(payload)["workflow"]["listed"]
 
     assert listed == [
         {
-            "why": "Shared sentence.",
+            "code": "no-gain",
+            "reason": listed_reason_text("no-gain"),
             "rules": [{"rule": "CORE:E:0004", "count": 40}, {"rule": "CORE:C:0005", "count": 1}],
         }
     ]
@@ -402,37 +404,38 @@ def test_envelope_groups_listed_when_no_location_is_left():
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_envelope_explains_a_listed_rule_that_has_no_why_by_its_reason():
-    """An entry without a `why` keeps its `reason` as the group's explanation instead of joining
-    one empty-text group with every other such entry."""
+def test_envelope_gives_an_unknown_reason_code_the_neutral_sentence():
     payload = _workflow_payload(n_locations=3)
-    payload["workflow"]["listed"] = [
-        {"rule": "CORE:E:0004", "reason": "First reason.", "count": 4},
-        {"rule": "CORE:C:0005", "reason": "Second reason.", "count": 1},
-    ]
+    payload["workflow"]["listed"] = [{"rule": "CORE:E:0004", "reason": "brand-new-code", "count": 4}]
 
     listed = bound_validate_payload(payload)["workflow"]["listed"]
 
     assert listed == [
-        {"why": "First reason.", "rules": [{"rule": "CORE:E:0004", "count": 4}]},
-        {"why": "Second reason.", "rules": [{"rule": "CORE:C:0005", "count": 1}]},
+        {
+            "code": "brand-new-code",
+            "reason": listed_reason_text("brand-new-code"),
+            "rules": [{"rule": "CORE:E:0004", "count": 4}],
+        }
     ]
+    assert listed_reason_text("brand-new-code") == listed_reason_text("another-new-code")
+    assert listed_reason_text("brand-new-code") != listed_reason_text("no-gain")
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_envelope_groups_listed_in_first_seen_why_order():
-    """Group order follows the first appearance of each distinct `why`, not sort order."""
+def test_envelope_groups_listed_in_first_seen_reason_order():
+    """Group order follows the first appearance of each distinct reason code, not sort order."""
     payload = _workflow_payload(n_locations=3)
     payload["workflow"]["listed"] = [
-        {"rule": "CORE:S:0001", "reason": "r1", "count": 1, "why": "Z sentence."},
-        {"rule": "CORE:S:0002", "reason": "r2", "count": 1, "why": "A sentence."},
-        {"rule": "CORE:S:0003", "reason": "r3", "count": 1, "why": "Z sentence."},
+        {"rule": "CORE:S:0001", "reason": "unbacked", "count": 1},
+        {"rule": "CORE:S:0002", "reason": "convention", "count": 1},
+        {"rule": "CORE:S:0003", "reason": "unbacked", "count": 1},
     ]
 
     listed = bound_validate_payload(payload)["workflow"]["listed"]
 
-    assert [group["why"] for group in listed] == ["Z sentence.", "A sentence."]
+    assert [group["code"] for group in listed] == ["unbacked", "convention"]
+    assert [group["reason"] for group in listed] == [listed_reason_text("unbacked"), listed_reason_text("convention")]
     assert [row["rule"] for row in listed[0]["rules"]] == ["CORE:S:0001", "CORE:S:0003"]
 
 
@@ -443,8 +446,8 @@ def test_envelope_grouped_listed_every_rule_still_resolves_in_the_rules_map():
     `with_rule_labels` so the top-level `rules` map still carries it."""
     payload = _workflow_payload(n_locations=3)
     payload["workflow"]["listed"] = [
-        {"rule": "CORE:E:0004", "reason": "long", "count": 40, "why": "Shared sentence."},
-        {"rule": "CORE:E:0003", "reason": "doc", "count": 1, "why": "Shared sentence."},
+        {"rule": "CORE:E:0004", "reason": "long", "count": 40},
+        {"rule": "CORE:E:0003", "reason": "doc", "count": 1},
     ]
 
     bounded = bound_validate_payload(payload)
@@ -457,11 +460,11 @@ def test_envelope_grouped_listed_every_rule_still_resolves_in_the_rules_map():
 def test_full_true_keeps_listed_ungrouped():
     """`full=true` never routes through `bound_validate_payload` (`server._run_validate`
     calls `with_rule_labels(payload)` directly for it) — `listed` stays the server's own
-    per-rule rows (`rule`, `reason`, `count`, `why`), same shape as `-f json`."""
+    per-rule rows (`rule`, `reason`, `count`), same shape as `-f json`."""
     payload = _workflow_payload(n_locations=3)
     payload["workflow"]["listed"] = [
-        {"rule": "CORE:E:0004", "reason": "long", "count": 40, "why": "Shared sentence."},
-        {"rule": "CORE:C:0005", "reason": "doc", "count": 1, "why": "Shared sentence."},
+        {"rule": "CORE:E:0004", "reason": "long", "count": 40},
+        {"rule": "CORE:C:0005", "reason": "doc", "count": 1},
     ]
 
     full = with_rule_labels(payload)
@@ -519,37 +522,106 @@ def test_a_targeted_view_of_one_location_keeps_detail():
         assert "relations" in loc
 
 
+def _large_targeted_payload(n_locations: int = 3, n_findings: int = 60) -> dict:
+    """A targeted workflow whose locations each hold many findings, every one nesting members."""
+    payload = _workflow_payload(n_locations=n_locations)
+    payload["workflow"]["targets"] = {
+        "tokens": ["skills"],
+        "locations": list(range(1, n_locations + 1)),
+        "of": n_locations,
+    }
+    for loc in payload["workflow"]["locations"]:
+        loc["findings"] = [
+            {
+                "rule": "CORE:C:0058",
+                "file": loc["files"][0],
+                "line": n,
+                "pi": n,
+                "message": "x" * 150,
+                "remedy": "y" * 150,
+                "members": [
+                    {
+                        "rule": "CORE:C:0042",
+                        "file": loc["files"][0],
+                        "line": n,
+                        "message": "m" * 100,
+                        "remedy": "r" * 100,
+                    }
+                    for _ in range(3)
+                ],
+            }
+            for n in range(n_findings)
+        ]
+    return payload
+
+
+def _reply_size(reply: dict) -> int:
+    return len(json.dumps({k: v for k, v in reply.items() if k != "rules"}, separators=(",", ":")))
+
+
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_a_targeted_view_of_four_locations_drops_detail():
-    """A broad target (e.g. `skills` across dozens of skills) can still keep more locations
-    than the targeted view's small-reply budget allows — past that bound it behaves like the
-    untargeted index and drops `findings` / `relations`, the same re-growth guard as an
-    untargeted reply."""
-    payload = _workflow_payload(n_locations=4)
-    payload["workflow"]["targets"] = {"tokens": ["skills:*"], "locations": [1, 2, 3, 4], "of": 4}
+def test_a_targeted_reply_over_the_size_bar_is_index_only_and_points_at_remedy_brief():
+    """Three targeted locations with many findings and nested members would run past 16,000
+    characters; the reply stays under the bar without its `rules` map by serving the index,
+    and the `truncated.hint` names the call that serves the findings."""
+    payload = _large_targeted_payload()
 
-    bounded = bound_validate_payload(payload)["workflow"]
+    bounded = bound_validate_payload(payload)
 
-    for loc in bounded["locations"]:
-        assert "findings" not in loc
-        assert "relations" not in loc
+    assert _reply_size(bounded) <= 16_000
+    assert all("findings" not in loc and "relations" not in loc for loc in bounded["workflow"]["locations"])
+    assert bounded["workflow"]["locations"][0]["finding_count"] == 60 * 4
+    assert "remedy_brief(path, location, targets)" in bounded["truncated"]["hint"]
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_a_targeted_view_with_no_files_or_cross_file_still_drops_detail_past_the_budget():
+def test_a_targeted_reply_inlines_detail_only_while_it_fits():
+    """Many small targeted locations (more than three) still carry their findings while the
+    reply fits the bar; the same locations grown past it drop to the index."""
+    small = _workflow_payload(n_locations=6)
+    small["workflow"]["targets"] = {"tokens": ["skills:*"], "locations": [1, 2, 3, 4, 5, 6], "of": 6}
+
+    kept = bound_validate_payload(small)["workflow"]["locations"]
+
+    assert all("findings" in loc and "relations" in loc for loc in kept)
+    assert "remedy_brief(path, location, targets)" not in bound_validate_payload(small).get("truncated", {}).get(
+        "hint", ""
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_a_targeted_view_with_no_files_or_cross_file_drops_detail_past_the_size_bar():
     """Targeting clean files that sit in served locations leaves `files` empty with no
-    `cross_file` -- the envelope's early-return path (no `files` dict content and no
-    `cross_file`) must still apply the workflow index, so a target that kept more than
-    `_TARGETED_DETAIL_MAX_LOCATIONS` locations drops `findings`/`relations` the same as the
-    non-early-return path does."""
-    payload = _workflow_payload(n_locations=4)
+    `cross_file` -- the envelope's early-return path must apply the same size bar."""
+    payload = _large_targeted_payload()
     payload["files"] = {}
-    payload["workflow"]["targets"] = {"tokens": ["skills:*"], "locations": [1, 2, 3, 4], "of": 4}
 
-    bounded = bound_validate_payload(payload)["workflow"]
+    bounded = bound_validate_payload(payload)
 
-    for loc in bounded["locations"]:
-        assert "findings" not in loc
-        assert "relations" not in loc
+    assert _reply_size(bounded) <= 16_000
+    assert all("findings" not in loc for loc in bounded["workflow"]["locations"])
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_an_oversize_targeted_reply_without_a_cut_list_still_names_remedy_brief():
+    """A targeted reply too large to carry its findings stays an index, and `truncated.hint`
+    names `remedy_brief` even when no other list was cut."""
+    finding = {"rule": "CORE:C:0001", "file": "CLAUDE.md", "line": 1, "message": "m" * 400, "remedy": "r"}
+    location = {
+        "order": 1,
+        "kind": "main",
+        "element": "CLAUDE.md",
+        "importance": "gate_mover",
+        "files": ["CLAUDE.md"],
+        "findings": [finding] * 200,
+        "relations": [],
+    }
+    reply = bound_validate_payload(
+        {"files": {}, "workflow": {"targets": {"tokens": ["@main"]}, "locations": [location]}}
+    )
+    assert "findings" not in reply["workflow"]["locations"][0]
+    assert "remedy_brief" in reply["truncated"]["hint"]

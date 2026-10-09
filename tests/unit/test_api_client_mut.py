@@ -30,7 +30,7 @@ _COMPLETE_DIAG = {"line": 5, "severity": "error", "rule": "R1", "message": "boom
 
 @pytest.mark.unit
 @pytest.mark.subsys_api
-@pytest.mark.parametrize("missing", ["line", "severity", "rule", "message"])
+@pytest.mark.parametrize("missing", ["line", "severity", "rule"])
 def test_diagnostic_missing_one_required_field_is_dropped(missing):
     """A diagnostic missing ANY one required field must be skipped.
 
@@ -169,3 +169,20 @@ def _make_map():
         atoms=(),
         summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
     )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_diagnostic_without_message_or_fix_is_kept_with_empty_words():
+    diag = {"line": 5, "severity": "error", "rule": "CORE:S:0012"}
+    [analysis] = _deserialize_per_file(_per_file_payload(diag))
+    [kept] = analysis.diagnostics
+    assert (kept.message, kept.fix, kept.partner_line) == ("", "", None)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
+def test_diagnostic_reads_a_structured_partner_line():
+    diag = {"line": 5, "severity": "warning", "rule": "CORE:D:0003", "partner_line": 12}
+    [analysis] = _deserialize_per_file(_per_file_payload(diag))
+    assert analysis.diagnostics[0].partner_line == 12

@@ -4,9 +4,11 @@ every check and builds the `preservation` block a rewrite check returns.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.heal.preservation import conditions, structure
+from reporails_cli.core.heal.preservation.fragments import dangling_fragments
 from reporails_cli.core.heal.preservation.match import added_instructions, instruction_diffs, lost_context
 from reporails_cli.core.heal.preservation.named import (
     invented_named,
@@ -21,8 +23,11 @@ from reporails_cli.core.heal.preservation.snapshot import (
     is_instruction_heading,
     rewritten_atoms,
 )
-from reporails_cli.core.lint.content_queries import atoms_for_file
+from reporails_cli.core.heal.preservation.words import named_key
+from reporails_cli.core.lint.content_queries import own_atoms_for_file
+from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
+from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
@@ -41,14 +46,30 @@ PRESERVATION_CONTRACT = (
 )
 
 # Findings that are reported but never fail the rewrite.
-_LISTED_ONLY = frozenset({"removed_structure", "made_direct"})
+_LISTED_ONLY = frozenset({"removed_structure", "made_direct", "made_specific"})
+# The block entries that are not checks.
+_NOT_CHECKS = frozenset({"ok", "score_before", "score_after", "kept"})
 
 
 def _negative_heading_texts(new_map: Any, file_path: str) -> list[str]:
     """The text of each bare negative heading the mapper reads in `new_map`'s `file_path`,
     whatever its markdown style (`##`, underlined, inside a quote)."""
-    atoms = atoms_for_file(new_map, file_path) if new_map is not None else ()
+    atoms = own_atoms_for_file(new_map, file_path) if new_map is not None else ()
     return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
+
+
+def _pair_checks(pairs: list[conditions.Pair], old_by_line: conditions.ByLine, invented: set[str]) -> dict[str, Any]:
+    """The checks that read each matched instruction against its rewrite; `invented` is the lowered
+    names reported as invented."""
+    narrowed = conditions.narrowed_instructions(pairs, old_by_line)
+    return {
+        "dropped_conditions": conditions.dropped_conditions(pairs),
+        "narrowed_instructions": narrowed,
+        "hedge_made_absolute": conditions.hedge_made_absolute(pairs, old_by_line),
+        "made_specific": conditions.made_specific(
+            pairs, old_by_line, {(e["line"], e["new_line"]) for e in narrowed}, invented
+        ),
+    }
 
 
 def _run_checks(
@@ -62,33 +83,35 @@ def _run_checks(
     `new` is the rewrite's instruction atoms, its text and its whole-file atoms; `grounding` is the
     project environment and the original text of the sibling files; `negative_headings` is the snapshot's
     bare negative heading atoms and the rewrite's bare negative heading texts."""
-    new_atoms, new_text, new_all, new_structure = new
+    new_atoms, new_text, new_all = new[:3]
     lost_instructions, polarity_flips, matched_new_for, split_covering_for = instruction_diffs(snap_atoms, new_atoms)
     sentences = (conditions.by_line(snapshot.atoms), conditions.by_line(new_all))
     pairs = conditions.pair_up(snap_atoms, matched_new_for, *sentences)
+    invented = invented_named(snapshot.text, new_atoms, *grounding, snap_atoms)
     return {
         "lost_instructions": lost_instructions,
         "polarity_flips": polarity_flips,
         "added_instructions": added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for),
         "lost_named": lost_named_tokens(snap_atoms, new_text, new_atoms),
-        "invented_named": invented_named(snapshot.text, new_atoms, *grounding, snap_atoms),
+        "invented_named": invented,
         "repeated_named": repeated_named(
             snap_atoms, new_atoms, matched_new_for, split_covering_for, snapshot.text, new_text
         ),
-        "detached_constraints": structure.detached_constraints(snap_atoms, matched_new_for, new_structure),
+        "detached_constraints": structure.detached_constraints(snap_atoms, matched_new_for, new[3]),
         "prohibition_scope_changed": prohibition_scope_changes(snap_atoms, matched_new_for),
         "added_conditions": conditions.added_conditions(snap_atoms, matched_new_for),
-        "dropped_conditions": conditions.dropped_conditions(pairs),
-        "narrowed_instructions": conditions.narrowed_instructions(pairs, sentences[0]),
-        "hedge_made_absolute": conditions.hedge_made_absolute(pairs, sentences[0]),
+        **_pair_checks(pairs, sentences[0], {named_key(e["token"]) for e in invented}),
+        "dangling_fragments": dangling_fragments(snapshot.atoms, new_all),
         "padded_lines": structure.padded_lines(list(snapshot.atoms), new_atoms),
         "made_direct": conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences),
         "relabelled_negative_headings": structure.relabelled_negative_headings(snapshot.text, *negative_headings),
         "lost_context": lost_context(snap_atoms, new_text),
         "moved_list_items": structure.moved_list_items(
-            snap_atoms, matched_new_for, snapshot.structure, new_structure, new_atoms
+            snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms
         ),
-        "removed_structure": structure.removed_structure(snapshot.structure, new_structure, snapshot.relation_lines),
+        "removed_structure": structure.removed_structure(
+            snapshot.structure, new[3], snapshot.relation_lines, (snapshot.imports, import_refs(new_text))
+        ),
     }
 
 
@@ -100,7 +123,7 @@ def _kept_counts(snap_atoms: list[SnapshotAtom], snapshot: Snapshot, checks: dic
     Never negative — `max(0, ...)` guards a check that (in principle) over-counts a removal past
     the snapshot's own total."""
     total_instructions = sum(1 for sa in snap_atoms if sa.charge_value != 0)
-    totals = structure.structure_totals(snapshot.structure, snapshot.relation_lines)
+    totals = structure.structure_totals(snapshot.structure, snapshot.relation_lines, snapshot.imports)
     removed = checks["removed_structure"]
     return {
         "instructions": max(0, total_instructions - len(checks["lost_instructions"])),
@@ -133,6 +156,10 @@ def compare(
     shrank — is part of `ok` too, even when the construct in question survives elsewhere in the file.
     `added_conditions` — a matched instruction that was unconditional and now sits in an if /
     when / unless frame carrying words its original line never had — is part of `ok` too.
+    `dangling_fragments` — a sentence of the rewrite that keeps only the first item of a list or clause
+    the original sentence ran on past after a colon or a dash — is part of `ok` too.
+    `made_specific` lists each kept instruction that gained a named construct its line lacked, with its
+    sentence before and after; like `made_direct` it never fails the rewrite.
     `made_direct` lists each hedged instruction the rewrite made direct (`prefer X` -> `use X`) with its
     sentence before and after; it never fails the rewrite. `hedge_made_absolute` — a hedge turned
     into `Never` / `Always` where the line had neither word — `narrowed_instructions` — words added that
@@ -146,7 +173,7 @@ def compare(
     live = [a for a in snapshot.atoms if a.line not in snapshot.relation_lines]
     snap_atoms = [a for a in live if (not a.heading or is_instruction_heading(a)) and not is_hedge_fragment(a)]
     new_atoms = rewritten_atoms(new_map, snapshot.file_path)
-    new_all = atoms_for_file(new_map, snapshot.file_path) if new_map is not None else []
+    new_all = own_atoms_for_file(new_map, snapshot.file_path) if new_map is not None else []
     negative_headings = (
         [a for a in live if a.heading and is_negative_heading(a.text)],
         _negative_heading_texts(new_map, snapshot.file_path),
@@ -163,3 +190,26 @@ def compare(
     )
     kept = _kept_counts(snap_atoms, snapshot, checks)
     return {"ok": ok, "score_before": snapshot.score, "score_after": score_after, **checks, "kept": kept}
+
+
+def check_rewrite(
+    snapshot: Snapshot,
+    file_path: Path,
+    ruleset_map: Any,
+    new_text: str,
+    score: float | None,
+    scan_root: Path | None,
+    siblings: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
+    against `snapshot`, with the project on disk answering which names and paths exist."""
+    environment = LocalProjectEnvironment(scan_root, file_path.parent)
+    return compare(snapshot, ruleset_map, new_text, score, environment, siblings)
+
+
+def failed_checks(block: dict[str, Any]) -> list[str]:
+    """The names of the checks that fail a `compare` block, in the order it lists them."""
+    names = [k for k, v in block.items() if k not in _LISTED_ONLY and k not in _NOT_CHECKS and v]
+    if any(block["removed_structure"].values()):
+        names.append("removed_structure")
+    return names

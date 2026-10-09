@@ -213,10 +213,12 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
 
 def _apply_run_context(ruleset_map: Any, filtered_agents: list[Any] | None, target: Path) -> None:
     """Record skill membership for the run's agents, then stamp each file's owning agent."""
+    from reporails_cli.core.mapper.reach import record_reach
     from reporails_cli.core.mapper.skills import record_skills
 
     agents = [a.agent_type.id for a in filtered_agents or () if a.agent_type.id != "generic"]
     record_skills(ruleset_map, agents, target)
+    record_reach(ruleset_map, target)
     stamp_file_agents(ruleset_map, filtered_agents, target)
 
 
@@ -364,27 +366,24 @@ def _map_in_process(
     """
     import logging
 
-    noisy_loggers = ("sentence_transformers", "transformers", "huggingface_hub", "reporails_cli.core.mapper")
-    previous_levels = {name: logging.getLogger(name).level for name in noisy_loggers}
-    for name in noisy_loggers:
-        logging.getLogger(name).setLevel(logging.ERROR)
-    try:
-        from reporails_cli.core.mapper import map_ruleset
-        from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
+    from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 
-        return map_ruleset(
-            list(instruction_files),
-            root=root,
-            cache_dir=get_global_cache_dir(),
-            segmentation=segmentation,
-            progress=progress,
-        )
+    noisy_loggers = ("sentence_transformers", "transformers", "huggingface_hub", "reporails_cli.core.mapper")
+    try:
+        with quiet_loggers(noisy_loggers):
+            from reporails_cli.core.mapper import map_ruleset
+            from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
+
+            return map_ruleset(
+                list(instruction_files),
+                root=root,
+                cache_dir=get_global_cache_dir(),
+                segmentation=segmentation,
+                progress=progress,
+            )
     except (ImportError, RuntimeError) as exc:
         # The user-visible line never repeats `exc` verbatim; the full exception
         # still reaches DEBUG for a `-v`/log-file diagnosis.
         logging.getLogger(__name__).warning("In-process mapper unavailable; content checks skipped")
         logging.getLogger(__name__).debug("In-process mapper unavailable: %s", exc)
         return None
-    finally:
-        for name, level in previous_levels.items():
-            logging.getLogger(name).setLevel(level)

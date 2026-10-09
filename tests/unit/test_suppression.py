@@ -16,7 +16,7 @@ from reporails_cli.core.lint.suppression import (
 from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.runtime.merger import merge_results
-from reporails_cli.formatters.text.display_constants import rule_aliases
+from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 
 class TestParseDirectives:

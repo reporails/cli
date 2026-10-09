@@ -788,7 +788,7 @@ class TestExtractImports:
     def test_real_path_import_detected(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("See @docs/guide.md and @README for setup.\n")
         result = extract_imports(tmp_path, {}, _cf(tmp_path, "rules.md"))
-        assert result.annotations["discovered_imports"] == ["docs/guide.md", "README"]
+        assert result.annotations["discovered_imports"] == ["rules.md::docs/guide.md::1", "rules.md::README::1"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -804,16 +804,94 @@ class TestCheckImportTargetsExist:
     def test_all_imports_resolve(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("# Rules")
         (tmp_path / "config.md").write_text("# Config")
-        result = check_import_targets_exist(tmp_path, {"import_paths": ["@rules.md", "@config.md"]}, [])
+        entries = ["CLAUDE.md::rules.md::1", "CLAUDE.md::config.md::2"]
+        result = check_import_targets_exist(tmp_path, {"discovered_imports": entries}, [])
         assert result.passed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_missing_import(self, tmp_path: Path) -> None:
         (tmp_path / "rules.md").write_text("# Rules")
-        result = check_import_targets_exist(tmp_path, {"import_paths": ["@rules.md", "@missing.md"]}, [])
+        entries = ["CLAUDE.md::rules.md::1", "CLAUDE.md::missing.md::3"]
+        result = check_import_targets_exist(tmp_path, {"discovered_imports": entries}, [])
         assert not result.passed
-        assert "missing.md" in result.message
+        assert result.occurrences == [("CLAUDE.md:3", "Unresolved imports: missing.md")]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_nested_relative_import_resolves_against_its_file(self, tmp_path: Path) -> None:
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "CLAUDE.md").write_text("See @setup.md\n")
+        (tmp_path / "docs" / "setup.md").write_text("# Setup")
+        found = extract_imports(tmp_path, {}, _cf(tmp_path, "docs/CLAUDE.md"))
+        result = check_import_targets_exist(tmp_path, found.annotations, [])
+        assert result.passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_root_import_with_subfolder_path_passes(self, tmp_path: Path) -> None:
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "a.md").write_text("# A")
+        (tmp_path / "CLAUDE.md").write_text("See @docs/a.md\n")
+        found = extract_imports(tmp_path, {}, _cf(tmp_path, "CLAUDE.md"))
+        assert check_import_targets_exist(tmp_path, found.annotations, []).passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_broken_import_is_located_on_the_skill_file(self, tmp_path: Path) -> None:
+        skill = tmp_path / ".claude" / "skills" / "s"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# S\n\nSee @missing.md\n")
+        (tmp_path / "CLAUDE.md").write_text("# Project\n")
+        found = extract_imports(tmp_path, {}, _cf(tmp_path, "CLAUDE.md", ".claude/skills/s/SKILL.md"))
+        result = check_import_targets_exist(tmp_path, found.annotations, [])
+        assert not result.passed
+        assert result.occurrences == [(".claude/skills/s/SKILL.md:3", "Unresolved imports: missing.md")]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_two_files_each_get_a_finding(self, tmp_path: Path) -> None:
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "CLAUDE.md").write_text("@one.md\n")
+        (tmp_path / "docs" / "CLAUDE.md").write_text("@two.md\n")
+        found = extract_imports(tmp_path, {}, _cf(tmp_path, "CLAUDE.md", "docs/CLAUDE.md"))
+        result = check_import_targets_exist(tmp_path, found.annotations, [])
+        assert result.occurrences == [
+            ("CLAUDE.md:1", "Unresolved imports: one.md"),
+            ("docs/CLAUDE.md:1", "Unresolved imports: two.md"),
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_file_outside_root_resolves_against_its_own_folder(self, tmp_path: Path) -> None:
+        project = tmp_path / "project"
+        outside = tmp_path / "outside"
+        project.mkdir()
+        outside.mkdir()
+        doc = outside / "CLAUDE.md"
+        doc.write_text("See @notes.md\n")
+        classified = [ClassifiedFile(path=doc, file_type="main")]
+        found = extract_imports(project, {}, classified)
+        assert check_import_targets_exist(project, found.annotations, []).occurrences == [
+            (f"{doc}:1", "Unresolved imports: notes.md")
+        ]
+        (outside / "notes.md").write_text("# Notes")
+        assert check_import_targets_exist(project, found.annotations, []).passed
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_home_import_resolves_against_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "x.md").write_text("# X")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "CLAUDE.md").write_text("See @~/x.md and @~/y.md\n")
+        found = extract_imports(project, {}, _cf(project, "CLAUDE.md"))
+        result = check_import_targets_exist(project, found.annotations, [])
+        assert result.occurrences == [("CLAUDE.md:1", "Unresolved imports: ~/y.md")]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

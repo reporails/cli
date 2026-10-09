@@ -15,6 +15,8 @@ Headings should organize content into sections, not carry instructions. The mode
 
 A bare negative heading such as `## Don'ts`, `## Never` or `## Must Not` is the exception and is not reported: it labels a list of prohibitions, and the items under it read as things not to do. Keep such a heading and its list together.
 
+A heading that labels a category and is paired with a sibling label (`## Keep — …` beside `## Partial — …`) organizes content and is not an instruction.
+
 ## Antipatterns
 
 - **Imperative verb in a heading**: `## Always Run Tests Before Pushing` — this is an instruction disguised as a section label. The check classifies the heading itself as a directive or an imperative.

@@ -21,7 +21,7 @@ Three contracts, all previously broken, all reachable from one `ails check` run.
    answered "Missing section headers" and "No safety constraints found", and
    `ails check hooks` told the user to wrap 107 JSON string literals in backticks.
 
-3. **`has_hooks` still detects from `settings.json`.** The L6 governance gate
+3. **`hook_files` still detects from `settings.json`.** The L6 governance gate
    reads the settings file directly; the collision fix must not cost the level.
 """
 
@@ -255,7 +255,7 @@ def test_schema_validated_target_draws_no_prose_findings(
 
 @pytest.mark.e2e
 @pytest.mark.subsys_classify
-def test_has_hooks_still_detects_from_settings_json(tmp_path: Path) -> None:
+def test_hook_files_still_detect_from_settings_json(tmp_path: Path) -> None:
     """Hooks declared inside `settings.json` still light the L6 governance capability.
 
     The collision fix must not be paid for by retiring the `settings.json`
@@ -268,5 +268,5 @@ def test_has_hooks_still_detects_from_settings_json(tmp_path: Path) -> None:
     project = _project(tmp_path, "CLAUDE.md", ".claude/settings.json", BROKEN_HOOKS)
     features = detect_features_filesystem(project)
 
-    assert features.has_hooks is True
+    assert features.hook_files == (project / ".claude/settings.json",)
     assert FEATURE_DETECTORS["governance"](features) is True

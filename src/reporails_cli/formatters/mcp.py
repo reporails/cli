@@ -10,11 +10,14 @@ its already-shaped parts, and `format_rule` renders one rule as readable text fo
 
 from __future__ import annotations
 
+import json
 from typing import Any, NamedTuple
 
 from reporails_cli.core.mapper.md_parser import file_lines
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
+from reporails_cli.formatters.listed_reasons import listed_reason_text
+from reporails_cli.formatters.triage import LeverageTier, resolve_row_leverage
 
 # ---------------------------------------------------------------------------
 # Envelope — bound the validate payload
@@ -43,10 +46,17 @@ _ENVELOPE_CROSS_FILE_COORD_LIMIT = 8
 # come with `remedy_brief(path, location)`), just enough to route the next call.
 _LOCATION_INDEX_KEYS = ("order", "element", "kind", "loading", "files", "importance")
 
-# A targeted workflow keeps each kept location's findings/relations in the reply only when
-# it kept this many locations or fewer — a broad target (e.g. every `skills` location in a
-# project with dozens of skills) would otherwise re-grow the reply the index exists to bound.
-_TARGETED_DETAIL_MAX_LOCATIONS = 3
+# A targeted workflow carries each kept location's findings/relations in the reply only while
+# the whole reply, without its `rules` map, stays within this many characters — a broad target
+# (e.g. every `skills` location in a project with dozens of skills) would otherwise re-grow the
+# reply the index exists to bound. Past it the reply is index-only.
+_TARGETED_REPLY_MAX_CHARS = 16_000
+_TARGETED_DETAIL_KEYS = ("findings", "relations")
+_TARGETED_INDEX_HINT = (
+    "Targeted view over the reply size bar: the locations are indexed without their findings and "
+    "relations. Call remedy_brief(path, location, targets) for a location's findings, then "
+    "validate(path=<file>) after rewriting its files."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +86,7 @@ def rules_block(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
     shows. A rule id with neither a resolvable title nor a docs url is omitted. The key set is
     sorted for stability.
     """
-    from reporails_cli.formatters.text.display_constants import display_rule_id, rule_label
+    from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_label
 
     raw_ids: set[str] = set()
     _collect_rule_ids(payload, raw_ids)
@@ -104,12 +114,12 @@ def with_rule_labels(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _group_listed(listed: Any) -> Any:
-    """`workflow.listed` grouped by its `why` text, one group per distinct `why` in
-    first-seen order: `{"why": <text>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
-    `reason` is dropped — the bounded view's user-facing explanation is `why`; `reason`
-    keeps riding on the ungrouped shape everywhere else (`-f json`, `full=true`). Several
-    rules commonly share one `why` sentence word for word, so grouping them removes the
-    repeated text instead of repeating it once per rule."""
+    """`workflow.listed` grouped by its reason code, one group per distinct code in
+    first-seen order: `{"code": <code>, "reason": <sentence>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
+    The sentence is the cli's own wording for the code (`listed_reason_text`); several rules
+    commonly share one reason, so grouping them removes the repeated text instead of
+    repeating it once per rule. The code stays on each group, so a reader can act on it without
+    matching the sentence."""
     if not isinstance(listed, list):
         return listed
     order: list[str] = []
@@ -117,25 +127,23 @@ def _group_listed(listed: Any) -> Any:
     for entry in listed:
         if not isinstance(entry, dict):
             continue
-        why = entry.get("why") or entry.get("reason") or ""
-        if why not in groups:
-            groups[why] = {"why": why, "rules": []}
-            order.append(why)
-        groups[why]["rules"].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
-    return [groups[why] for why in order]
+        code = str(entry.get("reason") or "")
+        if code not in groups:
+            groups[code] = {"code": code, "reason": listed_reason_text(code), "rules": []}
+            order.append(code)
+        groups[code]["rules"].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
+    return [groups[code] for code in order]
 
 
 def _workflow_index(workflow: Any) -> Any:
     """The workflow as an index: each location without its findings/relations (those come with
     `remedy_brief(path, location)`), each with a true `finding_count`, and `listed` grouped by
-    its shared `why` text (`_group_listed`) instead of repeated once per rule. A workflow with
+    its reason code (`_group_listed`) instead of repeated once per rule. A workflow with
     no location list keeps its other keys as they are, with `listed` grouped the same way.
 
-    A targeted workflow (`workflow.targets` present — `validate(path, targets=...)` already
-    kept only the locations holding a targeted file) keeps each location's `findings` and
-    `relations` too, but only while that kept set is small (at most
-    `_TARGETED_DETAIL_MAX_LOCATIONS` locations); a broader targeted view behaves like the
-    untargeted index instead."""
+    A targeted workflow (`workflow.targets` present) is indexed the same way here;
+    `_with_targeted_detail` then puts its locations' `findings` and `relations` back when the
+    whole reply still fits `_TARGETED_REPLY_MAX_CHARS`."""
     if not isinstance(workflow, dict):
         return workflow
     if not isinstance(workflow.get("locations"), list):
@@ -143,7 +151,6 @@ def _workflow_index(workflow: Any) -> Any:
             return workflow
         return {**workflow, "listed": _group_listed(workflow["listed"])}
     raw_locations = workflow["locations"]
-    targeted = "targets" in workflow and len(raw_locations) <= _TARGETED_DETAIL_MAX_LOCATIONS
     locations = []
     for loc in raw_locations:
         if not isinstance(loc, dict):
@@ -153,17 +160,34 @@ def _workflow_index(workflow: Any) -> Any:
         entry["finding_count"] = sum(1 for _ in walk_findings(loc.get("findings") or ())) + len(
             loc.get("relations") or ()
         )
-        if targeted:
-            if "findings" in loc:
-                entry["findings"] = loc["findings"]
-            if "relations" in loc:
-                entry["relations"] = loc["relations"]
         locations.append(entry)
     index = {k: v for k, v in workflow.items() if k != "locations"}
     index["locations"] = locations
     if "listed" in index:
         index["listed"] = _group_listed(index["listed"])
     return index
+
+
+def _with_targeted_detail(reply: dict[str, Any], raw_workflow: Any) -> dict[str, Any]:
+    """`reply` (its workflow already an index) with every location's `findings` and `relations`
+    put back from `raw_workflow`, when the workflow is targeted and the whole reply, without its
+    `rules` map, then stays within `_TARGETED_REPLY_MAX_CHARS`. Otherwise the reply stays an
+    index, and `truncated.hint` names `remedy_brief(path, location,
+    targets)` for the findings."""
+    if not isinstance(raw_workflow, dict) or "targets" not in raw_workflow:
+        return reply
+    index = reply.get("workflow")
+    raw_locations = raw_workflow.get("locations")
+    if not isinstance(index, dict) or not isinstance(raw_locations, list):
+        return reply
+    detailed = [
+        {**entry, **{k: raw[k] for k in _TARGETED_DETAIL_KEYS if k in raw}} if isinstance(raw, dict) else entry
+        for entry, raw in zip(index["locations"], raw_locations, strict=True)
+    ]
+    candidate = {**reply, "workflow": {**index, "locations": detailed}}
+    if len(json.dumps(candidate, separators=(",", ":"))) <= _TARGETED_REPLY_MAX_CHARS:
+        return candidate
+    return {**reply, "truncated": {**reply.get("truncated", {}), "hint": _TARGETED_INDEX_HINT}}
 
 
 def _truncated_block(
@@ -249,7 +273,37 @@ def _set_or_drop_cut_list(bounded: dict[str, Any], key: str, bl: _BoundList) -> 
             del bounded[key]
 
 
-def bound_validate_payload(
+_SCORE_MOVING = (LeverageTier.GATE_MOVER, LeverageTier.CONDITIONAL)
+
+
+def _compression(payload: dict[str, Any]) -> dict[str, int] | None:
+    """How much the rewrite list compresses the findings, counted before the per-file findings
+    are withheld: `{findings, locations, moves_score, cosmetic}`. `findings` is the per-file
+    findings plus the cross-file rows (the location findings are the same ones, not added);
+    `moves_score` counts those rows graded `gate_mover` or `conditional`, `cosmetic` the rest.
+    `None` when the reply carries no workflow."""
+    workflow = payload.get("workflow")
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("locations"), list):
+        return None
+    files = payload["files"] if isinstance(payload.get("files"), dict) else {}
+    rows = [f for entry in files.values() for f in entry.get("findings", [])] + list(payload.get("cross_file") or ())
+    moves_score = sum(1 for r in rows if isinstance(r, dict) and resolve_row_leverage(r) in _SCORE_MOVING)
+    return {
+        "findings": len(rows),
+        "locations": len(workflow["locations"]),
+        "moves_score": moves_score,
+        "cosmetic": len(rows) - moves_score,
+    }
+
+
+def bound_validate_payload(payload: dict[str, Any], **limits: int) -> dict[str, Any]:
+    """`_bounded_payload` plus the reply's `compression` block, counted from the unbounded payload."""
+    bounded = _bounded_payload(payload, **limits)
+    compression = _compression(payload)
+    return {**bounded, "compression": compression} if compression else bounded
+
+
+def _bounded_payload(
     payload: dict[str, Any],
     *,
     per_file_limit: int = _ENVELOPE_PER_FILE_LIMIT,
@@ -271,9 +325,9 @@ def bound_validate_payload(
     The paid `workflow` (when present) is an index: every location — order, tier, element,
     kind, loading, files, importance, and a true `finding_count` — with no findings or
     relations; `remedy_brief(path, location)` serves those. `listed` is grouped by its
-    shared `why` text (`{"why", "rules": [{"rule", "count"}, ...]}`) instead of repeating
-    the same explanation once per rule; `reason` is dropped from this bounded shape (it
-    stays on the ungrouped `-f json` / `full=true` shape).
+    reason code (`{"reason": <sentence>, "rules": [{"rule", "count"}, ...]}`) instead of
+    repeating the same sentence once per rule; the code stays on the ungrouped `-f json` /
+    `full=true` shape.
 
     Every reply also carries a top-level `rules` map (`with_rule_labels`) — a title + docs
     link for every rule id still named anywhere in the (possibly bounded) reply, so a coding
@@ -289,7 +343,9 @@ def bound_validate_payload(
         indexed_workflow = _workflow_index(payload.get("workflow"))
         if indexed_workflow is payload.get("workflow"):
             return with_rule_labels(payload)
-        return with_rule_labels({**payload, "workflow": indexed_workflow})
+        return with_rule_labels(
+            _with_targeted_detail({**payload, "workflow": indexed_workflow}, payload.get("workflow"))
+        )
 
     workflow = _workflow_index(payload.get("workflow"))
     # A paid response carries the remediation `workflow` — the location index the coding
@@ -334,7 +390,7 @@ def bound_validate_payload(
         cross_file_coordinates=(coordinates.shown, coordinates.total),
         workflow_present=workflow_present,
     )
-    return with_rule_labels(bounded)
+    return with_rule_labels(_with_targeted_detail(bounded, payload.get("workflow")))
 
 
 # ---------------------------------------------------------------------------
@@ -345,43 +401,37 @@ def bound_validate_payload(
 def remedy_brief_payload(
     *,
     location: dict[str, Any],
-    files: list[dict[str, Any]],
-    findings: list[dict[str, Any]],
-    relations: list[dict[str, Any]],
-    ideal_instruction: list[dict[str, Any]],
-    artifact_rules: dict[str, Any] | None,
+    edits: list[dict[str, Any]],
+    slots: list[dict[str, Any]],
+    guides: dict[str, dict[str, str]],
+    ops: dict[str, str],
+    refused: list[dict[str, Any]],
     preservation_contract: str,
-    procedure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the `remedy_brief` reply from its already-shaped plain-dict parts.
 
-    `artifact_rules` is omitted entirely when no rule names the location's kind — every other
-    input rides as given, this function only shapes the envelope. `procedure` is this kind's
-    heal procedure: the deterministic line fixes to apply first, then the kind's rules in
-    the order to work them.
+    `edits` are exact block replacements to apply as written; `slots` are the few lines that need
+    a decision, each rule's `guides` entry and each op's `ops` line saying how; `refused` lists
+    the ops the plan does not carry. This function only shapes the envelope.
     """
-    out: dict[str, Any] = {
+    return {
         "location": location,
-        "files": files,
-        "findings": findings,
-        "relations": relations,
-        "ideal_instruction": ideal_instruction,
+        "edits": edits,
+        "slots": slots,
+        "guides": guides,
+        "ops": ops,
+        "refused": refused,
         "preservation_contract": preservation_contract,
         "next": (
-            "Apply `procedure.mechanical_fixes` first (every part carries some of them when the "
-            "brief pages; each replaces one line's `before` with its "
-            "`after`), then rewrite every file of this location whole, working this kind's rules in "
-            "`procedure.rules` order, then call validate with path set to each "
-            "file's absolute `path` (never its relative `file` name — the healed project may not "
-            "be the caller's own working directory); its preservation block says whether the "
+            "Apply each edit as written, replacing its `before` text with its `after` text in the "
+            "file at its absolute `path` (bottom to top within a file), then change only the slot "
+            "lines, following each slot's op line and its rule's guide, then call validate with path "
+            "set to each file's absolute `path` (never its relative `file` name — the healed project "
+            "may not be the caller's own working directory); its conformance block says whether every "
+            "listed change was made and nothing else changed, and its preservation block whether the "
             "rewrite kept everything."
         ),
     }
-    if procedure is not None:
-        out["procedure"] = procedure
-    if artifact_rules is not None:
-        out["artifact_rules"] = artifact_rules
-    return out
 
 
 # ---------------------------------------------------------------------------

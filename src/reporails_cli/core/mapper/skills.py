@@ -147,6 +147,7 @@ def _join_skill(rec: Any, owner: Any | None) -> None:
     """A record that was not yet a skill file takes the entry record's load fields."""
     if owner is not None:
         rec.loading, rec.scope, rec.globs, rec.agent = owner.loading, owner.scope, owner.globs, owner.agent
+        rec.activation = owner.activation
 
 
 def _has_file(folder: Path, name: str) -> bool:

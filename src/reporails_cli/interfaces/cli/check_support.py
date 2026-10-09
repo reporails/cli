@@ -107,12 +107,10 @@ def _heal_authed(funnel_error: object) -> bool:
     server reached, a non-auth funnel error, or a normal lint response — leaves a
     present key authed, exactly as before.
     """
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
+    from reporails_cli.core.heal.apply import heal_signed_in
+    from reporails_cli.core.platform.dto.diagnostics import FunnelError
 
-    if not has_api_key():
-        return False
-    return not (isinstance(funnel_error, FunnelError) and funnel_error.error in AUTH_REJECTED_ERRORS)
+    return heal_signed_in(funnel_error.error if isinstance(funnel_error, FunnelError) else None)
 
 
 def _resolve_rule_token(token: str) -> str:

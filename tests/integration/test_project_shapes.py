@@ -157,6 +157,27 @@ def test_instructions_that_name_what_not_to_edit_are_not_reported_as_boilerplate
     assert "CORE:C:0030" not in _rules(_check(monkeypatch, tmp_path, "edit_prohibitions"))
 
 
+def _serve_fixes(monkeypatch: pytest.MonkeyPatch, project: Path) -> None:
+    """Stand in for the server's fix list (0.6.2 heal writes only what the server lists): a `format`
+    fix on the `build.sh` line of `CLAUDE.md` and one on a line of the settings file."""
+    from reporails_cli.core.pipeline.mapping import map_instruction_files
+    from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
+    from reporails_cli.interfaces.cli import check_flow
+
+    instructions = project / "CLAUDE.md"
+    settings = project / ".claude" / "settings.json"
+    mapped = map_instruction_files(project, [instructions], spawn_daemon=False)
+    line = next(i for i, text in enumerate(instructions.read_text().splitlines(), 1) if "build.sh" in text)
+    pi = next(a.position_index for a in mapped.atoms if a.line == line)
+    items = (
+        LocationFinding("format", str(instructions), line, pi, "code"),
+        LocationFinding("format", str(settings), 1, None, "code"),
+    )
+    location = WorkflowLocation(1, "main", "main", "always", (str(instructions), str(settings)), "", items)
+    workflow = RemediationWorkflow(locations=(location,))
+    monkeypatch.setattr(check_flow, "_heal_workflow", lambda state: workflow)
+
+
 @pytest.mark.e2e
 @pytest.mark.subsys_heal
 @pytest.mark.requires_model
@@ -167,7 +188,10 @@ def test_heal_rewrites_the_instruction_file_and_leaves_the_settings_file_untouch
     shutil.copytree(FIXTURES / "settings_json", project)
     monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("AILS_API_KEY", "test-key")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # no stored sign-in or user config is read
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.chdir(project)
+    _serve_fixes(monkeypatch, project)
     result = runner.invoke(app, ["check", "--heal", "--cwd", "-f", "json"])
     assert result.exit_code == 0, result.output
     fixed = json.JSONDecoder().raw_decode(result.output[result.output.index('{\n  "auto_fixed"') :])[0]["auto_fixed"]

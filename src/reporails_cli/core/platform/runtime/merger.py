@@ -24,6 +24,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RulesetReport,
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
+from reporails_cli.core.platform.dto.results import HookEntry
 
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
@@ -84,6 +85,10 @@ class FindingItem:
     )
     # The instruction's place in its file, when the finding is on one; never part of a finding's identity.
     pi: int | None = field(default=None, compare=False)
+    # A per-file overlap finding's partner file, its line and shared percentage, when the reply names them.
+    partner_file: str | None = field(default=None, compare=False)
+    partner_line: int | None = field(default=None, compare=False)
+    overlap_pct: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,9 @@ class CombinedResult:
     # the caller attaches it once it has both the merged result and the funnel
     # outcome (see `interfaces/cli/check_orchestration.py::_dispatch_output`).
     server_error: FunnelError | None = None
+    # The hooks found in the project's agent hook configs, set by the assemble spine from the
+    # features it already computes for the level; empty for a hand-built result.
+    hooks: tuple[HookEntry, ...] = ()
 
 
 def _collect_server_diagnostics(
@@ -138,6 +146,9 @@ def _collect_server_diagnostics(
 ) -> tuple[list[FindingItem], set[tuple[str, int, str]]]:
     """Extract server diagnostics as FindingItems and build dedup key set.
 
+    A finding the reply sends without words reads as its bundled rule's title and carries no fix:
+    a fix is for a paid account, and the rule's guidance is `ails explain <rule>`.
+
     A line can hold several instructions, and the server flags each one: two vague
     instructions on one line arrive as two findings that read the same. They are one
     thing to fix on that line, so the repeat is dropped; the same rule with different
@@ -145,12 +156,25 @@ def _collect_server_diagnostics(
     """
     items: list[FindingItem] = []
     server_keys: set[tuple[str, int, str]] = set()
-    seen: set[tuple[str, int, str, str, str, str]] = set()
+    seen: set[tuple[str, int, str, str, str, str, int | None, str | None]] = set()
+    from reporails_cli.core.lint.rule_pages import rule_title
+
     for fa in server_report.per_file:
         for diag in fa.diagnostics:
+            if not diag.message:
+                diag = replace(diag, message=rule_title(diag.rule))
             norm_file = norm_fn(diag.file)  # type: ignore[operator]
             server_keys.add((norm_file, diag.line, diag.rule))
-            same = (norm_file, diag.line, diag.severity, diag.rule, diag.message, diag.fix)
+            same = (
+                norm_file,
+                diag.line,
+                diag.severity,
+                diag.rule,
+                diag.message,
+                diag.fix,
+                diag.partner_line,
+                diag.partner_file,
+            )
             if same in seen:
                 continue
             seen.add(same)
@@ -165,6 +189,9 @@ def _collect_server_diagnostics(
                     source="server",
                     impact_tier=getattr(diag, "impact_tier", ""),
                     pi=getattr(diag, "pi", None),
+                    partner_file=diag.partner_file,
+                    partner_line=diag.partner_line,
+                    overlap_pct=diag.overlap_pct,
                 )
             )
     return items, server_keys

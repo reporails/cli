@@ -88,7 +88,8 @@ def assemble_result(inp: AssembleInputs) -> Any:
     if inp.ruleset_map is not None:
         memory_findings = validate_memory_files(inp.ruleset_map.files)
 
-    level = determine_level_from_gates(detect_features_filesystem(inp.scan_root, agents=inp.filter_agents))
+    features = detect_features_filesystem(inp.scan_root, agents=inp.filter_agents)
+    level = determine_level_from_gates(features)
 
     all_client_findings = inp.content_findings + inp.client_findings + memory_findings
     report = lint_result.report if lint_result else None
@@ -104,6 +105,7 @@ def assemble_result(inp: AssembleInputs) -> Any:
         level=level,
         tier=lint_result.tier if lint_result else "",
     )
+    result = replace(result, hooks=features.hooks)
     result = _drop_dependent(result, inp)
     result = replace(result, notices=inp.notices)
     # The workflow goes on first, so the suppressions the author wrote apply to what it lists too.
@@ -160,6 +162,7 @@ def name_imported_instructions(report: RulesetReport, ruleset_map: Any, scan_roo
     the instruction's words. Matched by the instruction's place in its file, so two
     imported instructions under one `@path` line each name their own line.
     """
+    from reporails_cli.core.lint.rule_pages import rule_title
     from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     imported = _imported_atoms(ruleset_map, scan_root)
@@ -168,7 +171,11 @@ def name_imported_instructions(report: RulesetReport, ruleset_map: Any, scan_roo
 
     def _named(d: Diagnostic) -> Diagnostic:
         atom = None if d.pi is None else imported.get((normalize_finding_path(d.file, scan_root), d.pi))
-        return d if atom is None else replace(d, message=d.message + _imported_note(atom, scan_root))
+        return (
+            d
+            if atom is None
+            else replace(d, message=(d.message or rule_title(d.rule)) + _imported_note(atom, scan_root))
+        )
 
     per_file = tuple(replace(fa, diagnostics=tuple(_named(d) for d in fa.diagnostics)) for fa in report.per_file)
     return replace(report, per_file=per_file)
