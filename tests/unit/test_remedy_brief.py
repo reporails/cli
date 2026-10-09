@@ -557,15 +557,19 @@ def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(m
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_only_the_lines_a_dedupe_removes_are_deletable() -> None:
-    from reporails_cli.core.heal.plan import deduped_lines
+def test_only_the_lines_a_line_leaving_op_removes_are_deletable() -> None:
+    from reporails_cli.core.heal.plan import leaving_lines
     from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, Slot
 
     plan = Plan(
         (Edit("a.md", 4, "x", None, "dedupe", "R"), Edit("a.md", 6, "y", "z", "code", "R")),
-        (Slot("a.md", 8, None, "dedupe", "R", "w", "line"),),
+        (
+            Slot("a.md", 8, None, "dedupe", "R", "w", "line"),
+            Slot("a.md", 9, None, "keep-cut", "R", "w", "line"),
+            Slot("a.md", 10, None, "elaborate", "R", "w", "line"),
+        ),
     )
-    assert deduped_lines(plan) == {4, 8}
+    assert leaving_lines(plan) == {4, 8, 9}
 
 
 # ── findings from review: the real brief path ────────────────────────────
@@ -729,3 +733,27 @@ def test_a_brief_after_a_project_validate_takes_a_fresh_baseline(monkeypatch, tm
     remedy_brief.build_remedy_brief(location, tmp_path, fake_map)
     snap = snapshots.get_snapshot(file)
     assert snap is not None and snap.text == edited
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+@pytest.mark.parametrize("op", ["keep-cut", "dedupe", "hoist"])
+def test_a_line_the_guide_lets_the_agent_delete_does_not_fail_the_check(monkeypatch, tmp_path: Path, op: str) -> None:
+    from reporails_cli.core.heal.preservation import check_rewrite, failed_checks
+
+    text = "# T\n\nDup `foo` line.\n\nKeep `foo`.\n\nOther `foo` thing.\n"
+    file = tmp_path / "CLAUDE.md"
+    atoms = [
+        _atom(file, 3, "Dup `foo` line."),
+        _atom(file, 5, "Keep `foo`."),
+        _atom(file, 7, "Other `foo` thing."),
+    ]
+    expect = {"keep": ["CLAUDE.md", 5]} if op != "hoist" else {"to": "other.md"}
+    _brief_with(monkeypatch, tmp_path, text, atoms, _op_location(op, 3, expect))
+    snap = snapshots.get_snapshot(file)
+    assert snap is not None
+    assert 3 in snap.relation_lines
+    new = "# T\n\nKeep `foo`.\n\nOther `foo` thing.\n"
+    file.write_text(new, encoding="utf-8")
+    fresh = SimpleNamespace(atoms=(_atom(file, 3, "Keep `foo`."), _atom(file, 5, "Other `foo` thing.")), files=())
+    assert "lost_instructions" not in failed_checks(check_rewrite(snap, file, fresh, new, None, tmp_path))

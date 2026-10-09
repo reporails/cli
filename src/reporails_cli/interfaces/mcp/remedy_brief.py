@@ -20,7 +20,7 @@ from typing import Any
 from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.keyed import mapped_path_resolver, resolve_expect
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
-from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, deduped_lines
+from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
@@ -477,7 +477,7 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
         )
         if str(f.abs_file) in held:
             continue
-        snapshots.snapshot_file(f.abs_file, f.ruleset_map, f.score, deduped_lines(own), f.rule_counts, own)
+        snapshots.snapshot_file(f.abs_file, f.ruleset_map, f.score, leaving_lines(own), f.rule_counts, own)
 
     slots = _slot_entries(plan, names, ops, scan_root, lines_by_file)
     location_out = {

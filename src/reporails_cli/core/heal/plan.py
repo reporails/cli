@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from reporails_cli.core.heal.op_guide import LINE_LEAVING_OPS
 from reporails_cli.core.heal.transforms import TRANSFORMS, atoms_at, dedupe, split_or_reason
 from reporails_cli.core.lint.content_queries import own_atoms
 from reporails_cli.core.platform.dto.heal_plan import (
@@ -117,11 +118,11 @@ def _order(op: PlanOp) -> tuple[str, int, int, int]:
     return (op.file, -op.line, 0 if op.op in _TEXT_OPS else 1, op.pi or 0)
 
 
-def deduped_lines(plan: Plan) -> set[int]:
-    """The lines of a plan a rewrite may let go: those its `dedupe` edits remove and those a `dedupe` slot
-    leaves for the rewrite to remove."""
-    return {n for e in plan.edits if e.op == "dedupe" for n in range(e.line, e.line + e.span)} | {
-        s.line for s in plan.slots if s.op == "dedupe"
+def leaving_lines(plan: Plan) -> set[int]:
+    """The lines of a plan a rewrite may let go: those an edit of a line-leaving op (`LINE_LEAVING_OPS`)
+    removes and those a slot of such an op leaves for the rewrite to remove."""
+    return {n for e in plan.edits if e.op in LINE_LEAVING_OPS for n in range(e.line, e.line + e.span)} | {
+        s.line for s in plan.slots if s.op in LINE_LEAVING_OPS
     }
 
 

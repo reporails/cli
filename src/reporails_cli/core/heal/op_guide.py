@@ -28,6 +28,9 @@ OP_GUIDE: dict[str, str] = {
     "dedupe": _CHANGE_THIS_LINE,
 }
 
+# The ops whose guide lets the line leave its file: `dedupe` and `keep-cut` delete it, `hoist` moves it away.
+LINE_LEAVING_OPS: frozenset[str] = frozenset({"dedupe", "keep-cut", "hoist"})
+
 
 CHANGE_GUIDE: dict[str, str] = {
     "split-keep-lead-in": (

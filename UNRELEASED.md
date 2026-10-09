@@ -40,6 +40,7 @@
 - Heal: a rewrite that adds a named tool or file to a rule is now listed in the report, so you can undo it.
 - Heal: a sentence that goes on to a step with "then" is no longer split before "then", and a rewrite that splits that step off into a sentence of its own on the same line is put back.
 - Heal: when heal leaves a long sentence for your agent to split, it now keeps a lead-in, a real condition or a "then" step with what it governs.
+- Heal: a line your agent deletes because its partner already says it, or moves to another file as the plan directs, is no longer put back as a lost instruction.
 - Check: when your project is a git repository, a separate repository inside it, such as a repository you cloned into the project or a git worktree under `.claude/worktrees/`, is no longer checked as part of your project, so its rules, skills and agents no longer add to your findings and score. Check it on its own with `ails check <folder>`. Git submodules, and skills or agents you cloned into your own `.claude/skills/` or `.claude/agents/` folder, are still checked.
 - Check: an `@` import that does not resolve is reported on the file that holds it, at the import's line, instead of on your main instruction file, and a relative import is looked up from the folder of the file that holds it. Before, a correct relative import in a nested `CLAUDE.md` could be reported as broken.
 - Docs: the configuration guide's list of folders that are always skipped no longer includes `.vscode`, which is checked (GitHub Copilot keeps its settings there).

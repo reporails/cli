@@ -12,7 +12,7 @@ from typing import Any
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import read_lines
-from reporails_cli.core.heal.plan import apply_edits, build_plan, deduped_lines
+from reporails_cli.core.heal.plan import apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
@@ -272,7 +272,7 @@ def _put_back(
         failure = (
             {"file": file, "op": found[0].op, "rule": found[0].rule, "line": found[0].line, "check": "conformance"}
             if found
-            else _rewrite_failure(file, originals[file], ruleset_map, fresh_map, target, deduped_lines(one))
+            else _rewrite_failure(file, originals[file], ruleset_map, fresh_map, target, leaving_lines(one))
         )
         if failure is not None:
             Path(file).write_bytes(originals[file])
