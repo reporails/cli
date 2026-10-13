@@ -174,10 +174,10 @@ def _audit_file(path: Path, allowed_subsys: set[str], entries: set[str]) -> list
     in_unit = "unit" in path.relative_to(TESTS).parts[:1]
     helpers = _reaching(tree.body, entries)
     module_markers = _pytestmark_names(tree.body)
-    for node, inherited in _tests(tree.body, set()):
+    for node, inherited in _tests(tree.body, module_markers):
         markers = _markers_on(node)
         reaches = _called_names(node) & entries or _called_names(node, bare_only=True) & helpers
-        if in_unit and reaches and not _stubs_mapper(node) and MODEL_MARKER not in markers | inherited | module_markers:
+        if in_unit and reaches and not _stubs_mapper(node) and MODEL_MARKER not in markers | inherited:
             gaps.append((f"{path.relative_to(ROOT)}::{node.name}", "runs the mapper without requires_model"))
         label = f"{path.relative_to(ROOT)}::{node.name}"
         markers = markers | inherited

@@ -299,6 +299,7 @@ def test_referenced_listing_honors_a_flag_folder(project: Path) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.subsys_classify
 def test_a_referenced_target_checks_the_file_no_agent_lists(project: Path) -> None:
     (project / "ext").mkdir()
     (project / "ext" / "x.md").write_text("# X\n", "utf-8")

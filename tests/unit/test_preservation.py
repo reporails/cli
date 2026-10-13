@@ -23,8 +23,6 @@ from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.interfaces.mcp import snapshots
 
-pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
-
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
