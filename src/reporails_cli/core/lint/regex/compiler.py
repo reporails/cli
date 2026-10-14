@@ -180,6 +180,34 @@ def _parse_entries(data: dict[str, Any], yml_path: Path) -> list[dict[str, Any]]
     return [e for e in entries if e.get("type", "deterministic") == "deterministic"]
 
 
+def _compile_entries(
+    entries: list[dict[str, Any]],
+    yml_path: Path,
+    body_only_paths: set[Path] | None,
+    result: CompiledRuleSet,
+) -> None:
+    """Compile each entry into `result`; an entry that cannot be compiled is recorded as skipped."""
+    for rule_entry in entries:
+        rule_id = rule_entry.get("id", "unknown")
+        if _get_operator(rule_entry) is None:
+            logger.warning("Rule %s has no recognized pattern operator, skipping", rule_id)
+            result.skipped.append(rule_id)
+            continue
+
+        try:
+            check = _compile_single_rule(rule_entry)
+        except re.error as e:
+            logger.warning("Invalid regex in rule %s: %s", rule_id, e)
+            result.skipped.append(rule_id)
+            continue
+        if check is None:
+            result.skipped.append(rule_id)
+            continue
+        if body_only_paths and yml_path in body_only_paths:
+            check = replace(check, body_only=True)
+        result.checks.append(check)
+
+
 def compile_rules(
     yml_paths: list[Path],
     body_only_paths: set[Path] | None = None,
@@ -208,29 +236,7 @@ def compile_rules(
             if entries is None:
                 continue
 
-            for rule_entry in entries:
-                rule_id = rule_entry.get("id", "unknown")
-                operator = _get_operator(rule_entry)
-
-                if operator is None:
-                    logger.warning(
-                        "Rule %s has no recognized pattern operator, skipping",
-                        rule_id,
-                    )
-                    result.skipped.append(rule_id)
-                    continue
-
-                try:
-                    check = _compile_single_rule(rule_entry)
-                    if check is not None:
-                        if body_only_paths and yml_path in body_only_paths:
-                            check = replace(check, body_only=True)
-                        result.checks.append(check)
-                    else:
-                        result.skipped.append(rule_id)
-                except re.error as e:
-                    logger.warning("Invalid regex in rule %s: %s", rule_id, e)
-                    result.skipped.append(rule_id)
+            _compile_entries(entries, yml_path, body_only_paths, result)
 
         except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
             logger.warning("Failed to load rule file %s: %s", yml_path, e)

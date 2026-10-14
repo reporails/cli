@@ -290,6 +290,7 @@ def _append_content_tokens(
     md_parts: list[str],
     plain_parts: list[str],
     inline_tokens: list[InlineToken],
+    *,
     md_prefix: str = "",
 ) -> None:
     """Append text content with format tracking to md/plain/inline collectors."""

@@ -20,10 +20,10 @@ class TestDetectFeaturesFilesystem:
 
         assert features.has_claude_md is False
         assert features.has_instruction_file is False
-        assert features.instruction_file_count == 0
-        assert features.is_abstracted is False
-        assert features.has_backbone is False
-        assert features.has_multiple_instruction_files is False
+        assert features.discovery.instruction_file_count == 0
+        assert features.layout.is_abstracted is False
+        assert features.layout.has_backbone is False
+        assert features.discovery.has_multiple_instruction_files is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -37,7 +37,7 @@ class TestDetectFeaturesFilesystem:
 
         assert features.has_claude_md is True
         assert features.has_instruction_file is True
-        assert features.instruction_file_count == 1
+        assert features.discovery.instruction_file_count == 1
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -53,4 +53,4 @@ class TestDetectFeaturesFilesystem:
 
         features = detect_features_filesystem(tmp_path)
 
-        assert features.is_abstracted is True
+        assert features.layout.is_abstracted is True

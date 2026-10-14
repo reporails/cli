@@ -13,7 +13,8 @@ import httpx
 import pytest
 import yaml
 
-from reporails_cli.core.platform.adapters.api_client import DEFAULT_SERVER_URL, AilsClient
+from reporails_cli.core.platform.adapters.api_client import AilsClient
+from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL
 from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from tests.unit.test_api_client import _make_map, _payload_with_file
@@ -69,7 +70,7 @@ def _lint(
     if env_key:
         monkeypatch.setenv("AILS_API_KEY", env_key)
     with (
-        patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+        patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
         patch("httpx.post", return_value=reply),
     ):
         return AilsClient(base_url=base_url).lint(_make_map(), root=_ROOT)

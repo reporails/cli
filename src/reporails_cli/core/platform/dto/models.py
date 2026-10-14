@@ -4,7 +4,7 @@ Schema-mapped types (Check, Rule, FileMatch, FileTypeDeclaration, ClassifiedFile
 use Pydantic BaseModel — frozen, validated, and self-documenting. The model IS
 the schema: use Rule.model_json_schema() to export.
 
-Internal types (LocalFinding, Violation, JudgmentRequest, JudgmentResponse)
+Internal types (LocalFinding, Violation)
 remain plain dataclasses — no schema contract needed.
 """
 
@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from reporails_cli.core.platform.dto.diagnostics import FindingBase
 
 
 class Category(str, Enum):
@@ -227,15 +229,9 @@ class Rule(BaseModel):
 
 
 @dataclass(frozen=True)
-class LocalFinding:
+class LocalFinding(FindingBase):
     """A finding from a local check or a client check."""
 
-    file: str  # relative file path
-    line: int  # 1-based line number
-    severity: str  # "error" | "warning" | "info"
-    rule: str  # rule id (local checks) or check label (client checks)
-    message: str  # human-readable description
-    fix: str = ""  # suggested fix text
     source: str = "local"  # "m_probe" | "client_check"
     check_id: str = ""  # specific check that triggered this
     signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
@@ -270,33 +266,6 @@ class Violation:
     fix: str = ""  # Canonical fix text propagated from Rule.fix
 
 
-@dataclass(frozen=True)
-class JudgmentRequest:
-    """Request for host LLM to evaluate semantic rule."""
-
-    rule_id: str
-    rule_title: str
-    content: str  # Text to evaluate
-    location: str  # e.g., "CLAUDE.md"
-    question: str  # What to evaluate
-    criteria: dict[str, str]  # {key: check, ...}
-    examples: dict[str, list[str]]  # {good: [...], bad: [...]}
-    choices: list[str]  # [value, ...]
-    pass_value: str  # Which choice means "pass"
-    severity: Severity
-    points_if_fail: int
-
-
-@dataclass(frozen=True)
-class JudgmentResponse:
-    """Response from host LLM after evaluation."""
-
-    rule_id: str
-    verdict: str  # One of the choice values
-    reason: str  # Explanation
-    passed: bool  # verdict == pass_value
-
-
 __all__ = [
     "CATEGORY_CODES",
     "SEVERITY_ORDER",
@@ -305,8 +274,6 @@ __all__ = [
     "ClassifiedFile",
     "FileMatch",
     "FileTypeDeclaration",
-    "JudgmentRequest",
-    "JudgmentResponse",
     "Level",
     "PatternConfidence",
     "Rule",

@@ -17,7 +17,7 @@ Install points
 transitively reaches ``thinc`` or ``sentence_transformers``. Concretely,
 the very first non-stdlib import in each entry point:
 
-- ``src/reporails_cli/interfaces/cli/main.py`` — the ``ails`` CLI
+- ``src/reporails_cli/interfaces/cli/typer_app.py`` — the ``ails`` CLI
 - ``src/reporails_cli/interfaces/mcp/server.py`` — the MCP server
 - ``src/reporails_cli/core/mapper/daemon.py`` — inside ``_daemon_main``
   (the forked daemon child re-enters Python-land and must reinstall)
@@ -43,7 +43,7 @@ from collections.abc import Sequence
 from importlib.machinery import ModuleSpec
 
 
-class _TorchBlocker:
+class _TorchBlocker:  # pylint: disable=too-few-public-methods  # sys.meta_path finder protocol is one method
     """``sys.meta_path`` finder that rejects any ``torch*`` import.
 
     Returning ``None`` from ``find_spec`` means "not my problem, try the
@@ -55,16 +55,17 @@ class _TorchBlocker:
     def find_spec(
         self,
         fullname: str,
-        path: Sequence[str] | None = None,  # noqa: ARG002  (MetaPathFinder protocol)
-        target: object | None = None,  # noqa: ARG002  (MetaPathFinder protocol)
+        _path: Sequence[str] | None = None,
+        _target: object | None = None,
     ) -> ModuleSpec | None:
-        if fullname == "torch" or fullname.startswith("torch."):
-            raise ImportError(
-                f"torch import blocked by ails entry-point hook: {fullname}. "
-                "The reporails pipeline runs on ONNX Runtime; torch is not a "
-                "runtime dependency."
-            )
-        return None
+        """Raise ``ImportError`` for ``torch`` and ``torch.*``; let every other name fall through."""
+        if fullname != "torch" and not fullname.startswith("torch."):
+            return None
+        raise ImportError(
+            f"torch import blocked by ails entry-point hook: {fullname}. "
+            "The reporails pipeline runs on ONNX Runtime; torch is not a "
+            "runtime dependency."
+        )
 
 
 def install() -> None:

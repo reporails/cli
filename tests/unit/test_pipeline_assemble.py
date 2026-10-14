@@ -84,8 +84,8 @@ def test_assemble_unpacks_lint_result_and_attaches_workflow(tmp_path):
 
     result = assemble_result(_inputs(scan_root=tmp_path, lint_result=lint_result))
 
-    assert result.tier == "pro"
-    assert result.workflow is sentinel_workflow
+    assert result.reply.tier == "pro"
+    assert result.reply.workflow is sentinel_workflow
 
 
 @pytest.mark.unit
@@ -94,7 +94,7 @@ def test_assemble_leaves_workflow_none_when_lint_result_absent(tmp_path):
     """No lint result (offline) → no workflow attached, no crash on the `None` unpack."""
     result = assemble_result(_inputs(scan_root=tmp_path, lint_result=None))
 
-    assert result.workflow is None
+    assert result.reply.workflow is None
 
 
 def _subagent_credential_findings() -> list[object]:
@@ -340,8 +340,8 @@ def test_a_listed_config_file_finding_keeps_the_tier_its_row_carried(tmp_path, d
     )
 
     assert [f.impact_tier for f in result.findings if f.rule == "CODEX:E:0002"] == ["gate_mover"]
-    assert [loc.element for loc in result.workflow.locations] == [main]
-    assert [(e.rule, e.reason) for e in result.workflow.listed] == [("CODEX:E:0002", "config-file")]
+    assert [loc.element for loc in result.reply.workflow.locations] == [main]
+    assert [(e.rule, e.reason) for e in result.reply.workflow.listed] == [("CODEX:E:0002", "config-file")]
 
 
 @pytest.mark.unit
@@ -433,9 +433,9 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
     result = _archive_project(tmp_path, 'heal_exclude: ["archive/**"]\n')
 
     assert sorted(f.file for f in result.findings) == ["AGENTS.md", "archive/AGENTS.md"]
-    assert [loc.element for loc in result.workflow.locations] == ["AGENTS.md"]
-    assert [loc.order for loc in result.workflow.locations] == [1]
-    [entry] = result.workflow.listed
+    assert [loc.element for loc in result.reply.workflow.locations] == ["AGENTS.md"]
+    assert [loc.order for loc in result.reply.workflow.locations] == [1]
+    [entry] = result.reply.workflow.listed
     assert (entry.rule, entry.reason, entry.count) == ("CODEX:E:0001", "excluded", 1)
 
 
@@ -444,8 +444,8 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
 def test_without_heal_exclude_every_location_is_kept(tmp_path, dev_rules_dir):
     result = _archive_project(tmp_path, "exclude_dirs: [examples]\n")
 
-    assert [loc.order for loc in result.workflow.locations] == [1, 2]
-    assert not result.workflow.listed
+    assert [loc.order for loc in result.reply.workflow.locations] == [1, 2]
+    assert not result.reply.workflow.listed
 
 
 @pytest.mark.unit
@@ -476,6 +476,6 @@ def test_with_exclusions_states_the_recorded_value(tmp_path):
     from reporails_cli.core.pipeline.assemble import with_exclusions
 
     result = with_exclusions(assemble_result(_inputs(scan_root=tmp_path)), (("agents", "docs"), ("a.md",)))
-    assert result.excluded_dirs == ("agents", "docs")
-    assert result.excluded_files == ("a.md",)
-    assert assemble_result(_inputs(scan_root=tmp_path)).excluded_dirs == ()
+    assert result.omissions.excluded_dirs == ("agents", "docs")
+    assert result.omissions.excluded_files == ("a.md",)
+    assert assemble_result(_inputs(scan_root=tmp_path)).omissions.excluded_dirs == ()

@@ -28,11 +28,8 @@ _FAIL_ON_VIOLATION = True
 # (relative_path, enclosing_function, handler_exception_type) tuples whose sentinel-collapse
 # is reviewed-and-allowed. Regenerate by running this module's AST walk against the adapters.
 _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
-    # Legitimate dependency-missing degrades — optional package absent → genuine anonymous.
-    ("src/reporails_cli/core/platform/adapters/api_client.py", "_tier_from_config", "ImportError"),
-    ("src/reporails_cli/core/platform/adapters/api_client.py", "_lint_remote", "ImportError"),
     # Legitimate crash-firewall — PlatformError surfaced as a WARNING, session continues anonymous.
-    ("src/reporails_cli/core/platform/adapters/api_client.py", "_degrade_on_fault", "PlatformError"),
+    ("src/reporails_cli/core/platform/adapters/api_key.py", "degrade_on_fault", "PlatformError"),
     # Legitimate logged-isolation — network / parse faults logged at WARNING, server call degrades.
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_post_payload", "httpx.TimeoutException"),
     ("src/reporails_cli/core/platform/adapters/api_client.py", "_post_payload", "httpx.HTTPStatusError"),

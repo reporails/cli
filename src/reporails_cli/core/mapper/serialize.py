@@ -26,20 +26,22 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.mapper.classify import (
-    _MODAL_ABSOLUTE,
     ABSOLUTE_CUES,
     _strip_md_for_classify,
     leading_prohibition,
-    starts_bare_no_status,
-    starts_descriptive_no,
-    words_of,
 )
+from reporails_cli.core.mapper.classify_lexicon import MODAL_ABSOLUTE, words_of
+from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
 from reporails_cli.core.platform.dto.ruleset import (
+    SLOT_COORD_FIELDS,
+    SLOT_SPAN_FIELDS,
     Atom,
     AtomSlots,
     FileRecord,
     RulesetMap,
     RulesetSummary,
+    file_record_scalars,
+    int8_bytes,
 )
 
 # ──────────────────────────────────────────────────────────────────
@@ -91,27 +93,23 @@ def _pack_granularity_and_span_fields(atom: Atom, d: dict[str, Any]) -> None:
 def _pack_slot_coords(atom: Atom, d: dict[str, Any]) -> None:
     """Add the axis-span coordinate half of ``slots`` under ``slot_coords``.
 
-    Mirrors `map_cache._SLOT_COORD_FIELDS`: token-offset spans + per-span
+    Stores `SLOT_COORD_FIELDS`: token-offset spans + per-span
     confidences only — never the slot text (subject/predicate/object/scope
     strings). Omitted entirely when every span offset is absent.
     """
-    from reporails_cli.core.cache.map_cache import _SLOT_COORD_FIELDS, _SLOT_SPAN_FIELDS
-
     slots = atom.slots
     if slots is None:
         return
-    if not any(getattr(slots, f) is not None for f in _SLOT_SPAN_FIELDS):
+    if not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS):
         return
-    d["slot_coords"] = {f: getattr(slots, f) for f in _SLOT_COORD_FIELDS}
+    d["slot_coords"] = {f: getattr(slots, f) for f in SLOT_COORD_FIELDS}
 
 
 def _encode_embedding_b64(vec: tuple[int, ...] | None) -> str | None:
     """Base64-encode an int8 embedding vector (None → None)."""
-    import numpy as np
-
     if vec is None:
         return None
-    return base64.b64encode(np.asarray(vec, dtype=np.int8).tobytes()).decode("ascii")
+    return base64.b64encode(int8_bytes(vec)).decode("ascii")
 
 
 def _atom_to_dict(atom: Atom) -> dict[str, Any]:
@@ -224,26 +222,13 @@ def _unpack_slot_coords(slot_coords: dict[str, Any] | None) -> AtomSlots | None:
     stay unset, exactly like an atom that never carried spans). Slot TEXT is
     never round-tripped (see `_pack_slot_coords`); only offsets + confidences.
     """
-    from reporails_cli.core.cache.map_cache import _as_offset
-
     if not slot_coords:
         return None
-    return AtomSlots(
-        subject_span=_as_offset(slot_coords.get("subject_span")),
-        predicate_span=_as_offset(slot_coords.get("predicate_span")),
-        object_span=_as_offset(slot_coords.get("object_span")),
-        scope_span=_as_offset(slot_coords.get("scope_span")),
-        subject_conf=slot_coords.get("subject_conf", 0.0),
-        predicate_conf=slot_coords.get("predicate_conf", 0.0),
-        object_conf=slot_coords.get("object_conf", 0.0),
-        scope_conf=slot_coords.get("scope_conf", 0.0),
-    )
+    return AtomSlots.from_coords(slot_coords)
 
 
 def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
     """Serialize a RulesetMap to JSON."""
-    import numpy as np
-
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "schema_version": ruleset_map.schema_version,
@@ -252,21 +237,13 @@ def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
         "files": [
             {
                 "path": f.path,
-                "content_hash": f.content_hash,
-                "loading": f.loading,
-                "scope": f.scope,
-                "agent": f.agent,
-                "type": f.type,
+                **file_record_scalars(f),
                 "activation": f.activation,
                 **({"reach": list(f.reach)} if f.reach else {}),
                 **({"globs": list(f.globs)} if f.globs else {}),
                 **({"description": f.description} if f.description else {}),
                 **(
-                    {
-                        "description_embedding_b64": base64.b64encode(
-                            np.asarray(f.description_embedding, dtype=np.int8).tobytes()
-                        ).decode("ascii")
-                    }
+                    {"description_embedding_b64": base64.b64encode(int8_bytes(f.description_embedding)).decode("ascii")}
                     if f.description_embedding
                     else {}
                 ),
@@ -342,9 +319,7 @@ class MapFinding:
 # for an order that admits no exception, in capitals, and the two capitalised prohibition adjectives
 # it carries only as verb stems.
 _STRONG_CHARGE_RE = re.compile(
-    r"\b("
-    + "|".join(sorted(w.upper() for w in _MODAL_ABSOLUTE | ABSOLUTE_CUES | {"forbidden", "prohibited"}))
-    + r")\b",
+    r"\b(" + "|".join(sorted(w.upper() for w in MODAL_ABSOLUTE | ABSOLUTE_CUES | {"forbidden", "prohibited"})) + r")\b",
 )
 _QUOTED_ATOM_RE = re.compile(r'^["“„]')
 

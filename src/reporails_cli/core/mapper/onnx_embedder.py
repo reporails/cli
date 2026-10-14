@@ -15,12 +15,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import numpy as np
+
+from reporails_cli.core.mapper.encode_pool import run_buckets
+from reporails_cli.core.mapper.model_manifest import get_models_path
+from reporails_cli.core.mapper.model_store import reload_after_repair
 from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
-
-if TYPE_CHECKING:
-    import numpy as np
 
 # Fixed settings of the bundled embedder
 _HIDDEN_DIM = 384
@@ -41,8 +42,6 @@ class OnnxEmbedder(_OnnxEncoderSession):
         model_dir: Path | None = None,
         threads: int | None = None,
     ) -> None:
-        from reporails_cli.bundled import get_models_path
-
         if model_dir is None:
             model_dir = get_models_path() / _DEFAULT_MODEL_SUBDIR
 
@@ -59,8 +58,6 @@ class OnnxEmbedder(_OnnxEncoderSession):
                 "online once to fetch it, or unset AILS_MODEL_OFFLINE."
             )
 
-        from reporails_cli.bundled import reload_after_repair
-
         reload_after_repair(lambda: self._init_session(onnx_path, tokenizer_path, _MAX_LENGTH, threads))
 
     def encode(self, texts: list[str]) -> np.ndarray:
@@ -69,10 +66,6 @@ class OnnxEmbedder(_OnnxEncoderSession):
         Each distinct text is encoded once, in buckets of similar token count.
         Output row ``i`` corresponds to ``texts[i]`` (original order).
         """
-        import numpy as np
-
-        from reporails_cli.core.mapper.encode_pool import run_buckets
-
         n = len(texts)
         if n == 0:
             return np.empty((0, _HIDDEN_DIM), dtype=np.float32)
@@ -87,9 +80,7 @@ class OnnxEmbedder(_OnnxEncoderSession):
 
     def _encode_batch(self, bucket: list[str]) -> np.ndarray:
         """Tokenize one bucket of texts, forward it through the graph, mean-pool and L2-normalise."""
-        import numpy as np
-
-        feed = self._encode_feed(self._tokenize(bucket))
+        feed = self.encode_feed(self.tokenize(bucket))
         masks = feed["attention_mask"]
 
         # Last hidden state: (B, T_max, hidden)

@@ -12,11 +12,13 @@ from typing import Any
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import read_lines
-from reporails_cli.core.heal.plan import apply_edits, build_plan, leaving_lines
+from reporails_cli.core.heal.plan import _touched, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
+from reporails_cli.core.lint.suppression import finding_surface
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
 from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,6 @@ class KeyedResult:
 
 
 def _aliases(path: str, target: Path) -> set[str]:
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
     p = Path(path)
     out = {path, str(safe_resolve(p)), normalize_finding_path(path)}
     with contextlib.suppress(ValueError):
@@ -126,9 +126,7 @@ def _partners(atoms_by_file: Mapping[str, list[Atom]]) -> dict[tuple[str, int], 
 
 
 def _drop_suppressed(plan: Plan, suppressed: Mapping[str, set[int]]) -> Plan:
-    from reporails_cli.core.heal.plan import _touched
-
-    kept = tuple(e for e in plan.edits if not (_touched(e) & suppressed.get(e.file, set())))
+    kept = tuple(e for e in plan.edits if not _touched(e) & suppressed.get(e.file, set()))
     return Plan(kept, plan.slots, plan.refused)
 
 
@@ -165,7 +163,11 @@ def keyed_heal(
         if (s.file, s.line, s.pi, s.op) in workflow_keys
     ]
     originals = {} if dry_run else _write(plan, raw)
-    result.put_back = _put_back(plan, raw, remap, originals, ruleset_map, target) if originals else []
+    result.put_back = (
+        _put_back(plan, raw, remap=remap, originals=originals, ruleset_map=ruleset_map, target=target)
+        if originals
+        else []
+    )
     result.fixes = [f for e in plan.edits if e.file not in {b["file"] for b in result.put_back} for f in _fixes(e)]
     return result
 
@@ -174,8 +176,6 @@ def _eligible(
     atoms_by_file: Mapping[str, list[Atom]], allowed_files: set[Path] | None, suppressed: Mapping[Path, set[int]]
 ) -> tuple[dict[str, tuple[list[str], list[str]]], dict[str, set[int]]]:
     """The mapped files heal may write, with their lines and endings, and the suppressed lines of each."""
-    from reporails_cli.core.lint.suppression import finding_surface
-
     raw: dict[str, tuple[list[str], list[str]]] = {}
     sup: dict[str, set[int]] = {}
     for file in atoms_by_file:
@@ -224,14 +224,14 @@ def _first_line(block: Mapping[str, Any], check: str) -> int:
 
 
 def _rewrite_failure(
-    file: str, original: bytes, ruleset_map: Any, fresh: Any, target: Path, deduped: Iterable[int] = ()
+    file: str, original: bytes, *, ruleset_map: Any, fresh: Any, target: Path, deduped: Iterable[int] = ()
 ) -> dict[str, Any] | None:
     """The put-back entry for `file` when the preservation check fails its written text against its original;
     the lines in `deduped` are repeats the plan removes, so their going is no loss."""
     text = original.decode("utf-8", errors="replace")
     snapshot = take_snapshot(file, text, ruleset_map, None, deduped)
     written = Path(file).read_text(encoding="utf-8", errors="replace")
-    block = check_rewrite(snapshot, Path(file), fresh, written, None, target)
+    block = check_rewrite(snapshot, Path(file), fresh, written, score=None, scan_root=target)
     failed = failed_checks(block)
     if not failed:
         return None
@@ -254,6 +254,7 @@ def put_back_line(entry: Mapping[str, Any], file: str | None = None) -> str:
 def _put_back(
     plan: Plan,
     raw: Mapping[str, tuple[list[str], list[str]]],
+    *,
     remap: Callable[[list[Path]], Any],
     originals: Mapping[str, bytes],
     ruleset_map: Any,
@@ -272,7 +273,14 @@ def _put_back(
         failure = (
             {"file": file, "op": found[0].op, "rule": found[0].rule, "line": found[0].line, "check": "conformance"}
             if found
-            else _rewrite_failure(file, originals[file], ruleset_map, fresh_map, target, leaving_lines(one))
+            else _rewrite_failure(
+                file,
+                originals[file],
+                ruleset_map=ruleset_map,
+                fresh=fresh_map,
+                target=target,
+                deduped=leaving_lines(one),
+            )
         )
         if failure is not None:
             Path(file).write_bytes(originals[file])

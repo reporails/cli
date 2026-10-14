@@ -1430,7 +1430,7 @@ def _compare_edit(tmp_path, before_text: str, after_text: str) -> dict[str, Any]
 
     target.write_text(after_text, encoding="utf-8")
     after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
-    return compare(snap, after_map, after_text, 5.0, LocalProjectEnvironment(tmp_path, target.parent))
+    return compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path, target.parent))
 
 
 @pytest.mark.integration

@@ -7,75 +7,30 @@ access from these configs — no hardcoded agent list.
 
 from __future__ import annotations
 
-import logging
+import functools
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from reporails_cli.core.discovery import plugin_roots as _plugin_roots
-from reporails_cli.core.discovery.agent_discovery import _agent_namespace
-from reporails_cli.core.discovery.agent_discovery import categorize_file_type as _categorize_file_type
-from reporails_cli.core.discovery.agent_discovery import config_names_agent as _config_names_agent
-from reporails_cli.core.discovery.agent_discovery import discover_from_config as _discover_from_config
+from reporails_cli.core.discovery.agent_config import (
+    categorize_file_type,
+    extract_patterns,
+    extract_properties,
+    iter_agent_configs,
+)
+from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agent_markers import agent_has_marker, dir_prefix_from_glob
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
-from reporails_cli.core.discovery.file_aliases import _dedupe_with_aliases, _store_alias_cache, clear_alias_cache
-from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
+from reporails_cli.core.discovery.file_aliases import clear_alias_cache, dedupe_with_aliases, store_alias_cache
+from reporails_cli.core.discovery.read_gates import reads_as_fallback
+from reporails_cli.core.discovery.surface_config import config_names_agent
+from reporails_cli.core.platform.config.config import get_project_config, get_rules_path
 
 if TYPE_CHECKING:
     from reporails_cli.core.discovery.exclusions import RunExclusions
     from reporails_cli.core.platform.dto.results import ProjectConfig
-
-logger = logging.getLogger(__name__)
-
-
-def _extract_patterns(spec: dict[str, Any], key: str = "patterns") -> list[str]:
-    """Extract all file patterns from a file type spec (`key` names the pattern list: `patterns`, or
-    `entry_patterns` for where an instance's entry file sits).
-
-    Supports both v0.3.0 (patterns at top level) and v0.5.0 (patterns
-    inside scopes). Returns a flat list of all patterns across all scopes; a `plugin`
-    scope's patterns come back as `<marker>/pattern` (see `plugin_roots`).
-    """
-    # v0.3.0: patterns at top level
-    patterns = spec.get(key, [])
-    if isinstance(patterns, str):
-        patterns = [patterns]
-    if patterns:
-        return list(patterns)
-
-    # v0.5.0: patterns inside scopes
-    scopes = spec.get("scopes", {})
-    if not isinstance(scopes, dict):
-        return []
-    all_patterns: list[str] = []
-    for scope_name, scope_spec in scopes.items():
-        if not isinstance(scope_spec, dict):
-            continue
-        if scope_name == _plugin_roots.PLUGIN_SCOPE:
-            all_patterns.extend(_plugin_roots.plugin_scope_patterns(scope_spec, key))
-            continue
-        scope_patterns = scope_spec.get(key, [])
-        if isinstance(scope_patterns, str):
-            scope_patterns = [scope_patterns]
-        all_patterns.extend(scope_patterns)
-    return all_patterns
-
-
-def _extract_properties(spec: dict[str, Any]) -> dict[str, Any]:
-    """Extract properties from a file type spec.
-
-    Supports both v0.3.0 (properties nested) and v0.5.0 (flattened).
-    """
-    # v0.3.0: properties in a nested dict
-    props = spec.get("properties")
-    if isinstance(props, dict):
-        return props
-
-    # v0.5.0: properties flattened at file type level
-    prop_keys = {"format", "scope", "cardinality", "lifecycle", "maintainer", "vcs", "loading", "precedence"}
-    return {k: v for k, v in spec.items() if k in prop_keys and v is not None}
 
 
 @dataclass(frozen=True)
@@ -109,10 +64,10 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
     for spec in file_types.values():
         if not isinstance(spec, dict):
             continue
-        patterns = _extract_patterns(spec)
-        properties = _extract_properties(spec)
+        patterns = extract_patterns(spec)
+        properties = extract_properties(spec)
 
-        bucket = _categorize_file_type(patterns, properties)
+        bucket = categorize_file_type(patterns, properties)
 
         if bucket == "instruction":
             instr_patterns.extend(
@@ -143,23 +98,12 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
 
 def _build_agent_registry() -> dict[str, AgentType]:
     """Build agent registry from bundled framework/rules/*/config.yml files."""
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
-    from reporails_cli.core.platform.utils.utils import load_yaml_file
-
     registry: dict[str, AgentType] = {}
     rules_path = get_rules_path()
     if not rules_path or not rules_path.is_dir():
         return registry
 
-    for config_path in sorted(rules_path.glob("*/config.yml")):
-        try:
-            data = load_yaml_file(config_path)
-        except Exception:  # load_yaml_file can raise various errors
-            logger.warning("Failed to load agent config %s — agent skipped", config_path, exc_info=True)
-            continue
-        if not data or not isinstance(data, dict):
-            logger.warning("Agent config is empty or malformed: %s — agent skipped", config_path)
-            continue
+    for data in iter_agent_configs(rules_path):
         agent_type = _parse_agent_config(data)
         if agent_type:
             registry[agent_type.id] = agent_type
@@ -167,15 +111,10 @@ def _build_agent_registry() -> dict[str, AgentType]:
     return registry
 
 
-_agent_registry: dict[str, AgentType] | None = None
-
-
+@functools.cache
 def get_known_agents() -> dict[str, AgentType]:
     """Get the agent registry, building from config.yml on first access."""
-    global _agent_registry
-    if _agent_registry is None:
-        _agent_registry = _build_agent_registry()
-    return _agent_registry
+    return _build_agent_registry()
 
 
 @dataclass
@@ -207,9 +146,47 @@ def clear_agent_cache() -> None:
 # ─── Public API ─────────────────────────────────────────────────────────
 
 
-def load_project_exclude_dirs(target: Path) -> frozenset[str]:
-    """The built-in default excludes plus the project's `exclude_dirs`."""
-    return load_run_exclusions(target).walk_dirs
+def _detect_agent(
+    target: Path,
+    agent_type: AgentType,
+    *,
+    known: dict[str, AgentType],
+    rules_paths: list[Path] | None,
+    project_excludes: frozenset[str],
+    project_config: ProjectConfig | None,
+) -> DetectedAgent | None:
+    """The agent's detected files and directories under `target`, None when it has no scannable footprint."""
+    agent_id = agent_type.id
+    # Fast marker check — skip agents with no footprint (avoids tree walks)
+    if not (
+        agent_has_marker(target, agent_type, known, project_excludes) or config_names_agent(agent_id, project_config)
+    ):
+        return None
+
+    # Config-driven discovery from bundled config.yml
+    config_result = discover_from_config(
+        target, agent_id, rules_paths, project_excludes, project_config=project_config, repo_scoped=True
+    )
+    if config_result is None:
+        return None
+    instruction_files, rule_files, config_files = config_result
+    # Include only when we found scannable files (instruction or rule)
+    if not (instruction_files or rule_files):
+        return None
+
+    # Detect directories (derived from config.yml patterns)
+    detected_dirs: dict[str, str] = {}
+    for label, dir_path in agent_type.directory_patterns:
+        full_path = target / dir_path
+        if full_path.is_dir() and any(full_path.iterdir()):
+            detected_dirs[label] = dir_path + "/"
+    return DetectedAgent(
+        agent_type=agent_type,
+        instruction_files=instruction_files,
+        config_files=config_files,
+        rule_files=rule_files,
+        detected_directories=detected_dirs,
+    )
 
 
 def detect_agents(
@@ -234,44 +211,22 @@ def detect_agents(
     # Load project config for per-surface include/exclude + fallback filenames
     project_config = get_project_config(target)
 
-    detected: list[DetectedAgent] = []
-
     known = get_known_agents()
-    for agent_id, agent_type in known.items():
-        # Fast marker check — skip agents with no footprint (avoids tree walks)
-        if not (
-            agent_has_marker(target, agent_type, known, project_excludes)
-            or _config_names_agent(agent_id, project_config)
-        ):
-            continue
-
-        # Config-driven discovery from bundled config.yml
-        config_result = _discover_from_config(
-            target, agent_id, rules_paths, project_excludes, project_config=project_config, repo_scoped=True
-        )
-        if config_result is None:
-            continue
-
-        instruction_files, rule_files, config_files = config_result
-
-        # Detect directories (derived from config.yml patterns)
-        detected_dirs: dict[str, str] = {}
-        for label, dir_path in agent_type.directory_patterns:
-            full_path = target / dir_path
-            if full_path.is_dir() and any(full_path.iterdir()):
-                detected_dirs[label] = dir_path + "/"
-
-        # Include if we found any scannable files (instruction or rule)
-        if instruction_files or rule_files:
-            detected.append(
-                DetectedAgent(
-                    agent_type=agent_type,
-                    instruction_files=instruction_files,
-                    config_files=config_files,
-                    rule_files=rule_files,
-                    detected_directories=detected_dirs,
-                )
+    detected = [
+        agent
+        for agent_type in known.values()
+        if (
+            agent := _detect_agent(
+                target,
+                agent_type,
+                known=known,
+                rules_paths=rules_paths,
+                project_excludes=project_excludes,
+                project_config=project_config,
             )
+        )
+        is not None
+    ]
 
     detected = _disambiguate_codex_generic(detected, target, project_config)
     detected = _disambiguate_shared_files(detected, target)
@@ -290,7 +245,7 @@ def detect_single_agent(
     if not agent_type:
         return None
 
-    config_result = _discover_from_config(
+    config_result = discover_from_config(
         target, agent_id, rules_paths, project_config=get_project_config(target), repo_scoped=True
     )
     if config_result is None:
@@ -326,7 +281,7 @@ def _disambiguate_codex_generic(
         any(f.name == "AGENTS.override.md" for f in codex.instruction_files)  # Tier 1
         or bool(codex.config_files)  # Tier 2
         or _codex_global_heuristic(target)  # Tier 3
-        or _config_names_agent("codex", project_config)  # Tier 4
+        or config_names_agent("codex", project_config)  # Tier 4
     )
     drop = "generic" if codex_confirmed else "codex"
     return [a for a in detected if a.agent_type.id != drop]
@@ -388,6 +343,118 @@ def _disambiguate_shared_files(detected: list[DetectedAgent], target: Path | Non
     return result
 
 
+# Coding-agent home directories whose name differs from the agent's own id
+# (Copilot's is `.github/`, Antigravity's is `.gemini/`) plus the Agent Skills
+# standard's shared `.agents/` home, which is `generic`'s own namespace, not any
+# one coding agent's — a project with nothing but `.agents/skills/**` cross-reads
+# has no single specific owner among the coding agents.
+_NAMESPACE_ALIASES = {"github": "copilot", "gemini": "antigravity", "agents": "generic"}
+
+
+def _agent_namespace(path: Path, target: Path) -> str | None:
+    """The agent id that natively owns the on-disk namespace `path` sits under
+    (`.claude/x` -> `"claude"`, `.github/x` -> `"copilot"` via `_NAMESPACE_ALIASES`),
+    or `None` for a root-level file (no dot-directory) or a path outside `target` —
+    neither carries a namespace to attribute a cross-read to."""
+    try:
+        parts = path.relative_to(target).parts
+    except ValueError:
+        return None
+    if not parts or not (parts[0].startswith(".") and len(parts[0]) > 1):
+        return None
+    dirname = parts[0][1:]
+    return _NAMESPACE_ALIASES.get(dirname, dirname)
+
+
+def _is_project_root_file(path: Path, target: Path) -> bool:
+    """True for a file directly at `target`'s root (no dot-directory, no subdirectory) —
+    real native evidence for whichever agent's own pattern matched it (`CLAUDE.md`,
+    root `AGENTS.md`), unlike a NESTED un-namespaced file reached only through a
+    recursive `**/AGENTS.md`-style cross-agent-standard glob."""
+    try:
+        parts = path.relative_to(target).parts
+    except ValueError:
+        return False
+    return len(parts) == 1
+
+
+def _all_cross_read(
+    files: set[Path], own_id: str, other_ids: set[str], target: Path, shared: frozenset[Path] = frozenset()
+) -> bool:
+    """True when `files` establishes no distinctiveness of `own_id`'s own: none sits in
+    `own_id`'s own namespace or at a project-root main-file path, and at least one sits in
+    another DETECTED agent's own namespace. A nobody's-specific shared surface
+    (`.agents/skills/**`, which resolves to `generic` — not itself a distinctive candidate
+    in this loop) is neutral: it neither grants nor costs distinctiveness by itself, so it
+    alone can never block the exclusion the way requiring EVERY file to positively
+    cross-read someone else would (a Copilot project cross-reading both Claude's
+    `.claude/**` and the shared `.agents/skills/**`, with nothing of its own, must still
+    exclude Copilot). A project-root file in `shared` (one another detected agent also
+    reads, like a root `AGENTS.md` Claude reads when the project has no `CLAUDE.md`) is
+    neutral the same way. Empty `files` is never cross-read (there is nothing to read)."""
+    if not files:
+        return False
+    if any(
+        _agent_namespace(f, target) == own_id or (_is_project_root_file(f, target) and f not in shared) for f in files
+    ):
+        return False
+    return any((ns := _agent_namespace(f, target)) is not None and ns != own_id and ns in other_ids for f in files)
+
+
+def _reads_nothing_of_its_own(agent: DetectedAgent, other_ids: set[str], target: Path, shared: frozenset[Path]) -> bool:
+    """True when `agent` is no distinctive agent of its own: its files are all cross-reads
+    (`_all_cross_read`), or every instruction and rule file it claims is one it reads only
+    in place of its own main file (Claude and `AGENTS.md`) that another detected agent
+    also claims -- a Codex project's `AGENTS.md` does not make Claude a second agent."""
+    own_id = agent.agent_type.id
+    content = [*agent.instruction_files, *agent.rule_files]
+    if content and all(f in shared and reads_as_fallback(own_id, f) for f in content):
+        return True
+    return _all_cross_read(_own_files(agent), own_id, other_ids, target, shared)
+
+
+def partition_by_native_owner(detected_agents: list[DetectedAgent], target: Path) -> dict[str, str]:
+    """Map every file a non-generic detected agent claims to its rule-running attribution:
+    the DISTINCTIVE agent that natively owns it (its own on-disk namespace, or a
+    project-root main-file path), or `"generic"` when no currently-distinctive agent
+    natively owns it -- a shared cross-agent standard (`.agents/skills/**`) or a nested
+    `AGENTS.md` no agent's own namespace claims runs the core rule set only, exactly as a
+    plain single-agent project's own unclaimed files would. This never drops a file from
+    the map -- it only routes each one to the right ruleset. Keyed by `path.as_posix()` to match
+    `FileRecord.path` and `Path` instruction-file entries directly."""
+    distinctive_ids = {a.agent_type.id for a in _distinctive_agents(detected_agents, target)}
+    claimants: dict[Path, list[str]] = {}
+    for detected in detected_agents:
+        if detected.agent_type.id == "generic":
+            continue
+        for f in _own_files(detected):
+            claimants.setdefault(f, []).append(detected.agent_type.id)
+
+    owner_by_path: dict[str, str] = {}
+    for f, claimant_ids in claimants.items():
+        # A file only ONE detected agent claims at all (its filename/pattern isn't a
+        # cross-agent standard several registries share) is unambiguous native evidence
+        # for that agent the moment it stays distinctive -- a nested `CLAUDE.md` under a
+        # subproject (`packages/web/CLAUDE.md`) is real claude ownership even though it
+        # sits neither at the project root nor inside claude's own `.claude/` namespace.
+        # The namespace/root-file tie-break below is only needed once MULTIPLE agents
+        # claim the same path (a shared standard like root `AGENTS.md`), where the
+        # claim alone can't say which detected agent, if any, really owns it here.
+        if len(claimant_ids) == 1 and claimant_ids[0] in distinctive_ids:
+            owner_by_path[f.as_posix()] = claimant_ids[0]
+            continue
+        owner = "generic"
+        # An agent that reads the file only in place of its own main file (Claude and a
+        # root `AGENTS.md`) yields it to an agent that reads it natively.
+        fallback = {cid: reads_as_fallback(cid, f) for cid in claimant_ids}
+        for cid in sorted(claimant_ids, key=fallback.__getitem__):
+            if cid in distinctive_ids and (_agent_namespace(f, target) == cid or _is_project_root_file(f, target)):
+                owner = cid
+                break
+        owner_by_path[f.as_posix()] = owner
+    return owner_by_path
+
+
 def _own_files(a: DetectedAgent) -> set[Path]:
     """Every file this agent claims — instruction, rule, and config combined."""
     return set(a.instruction_files) | set(a.rule_files) | set(a.config_files)
@@ -400,8 +467,6 @@ def _distinctive_agents(detected_agents: list[DetectedAgent], target: Path | Non
     here — see `_all_cross_read`). `target=None` (no project root on hand, e.g. a unit
     test) still runs the generic-subset check; only the cross-read check needs it.
     """
-    from reporails_cli.core.discovery.agent_discovery import _reads_nothing_of_its_own
-
     generic_files = next((_own_files(a) for a in detected_agents if a.agent_type.id == "generic"), set())
     other_ids = {a.agent_type.id for a in detected_agents}
     claims = Counter(f for a in detected_agents if a.agent_type.id != "generic" for f in _own_files(a))
@@ -442,7 +507,7 @@ def filter_agents_by_id(agents: list[DetectedAgent], agent_id: str) -> list[Dete
     return [agent for agent in agents if agent.agent_type.id == agent_id]
 
 
-def _drop_agent_files(agents: list[DetectedAgent], drop: Any) -> list[DetectedAgent]:
+def _drop_agent_files(agents: list[DetectedAgent], drop: Callable[[Path], bool]) -> list[DetectedAgent]:
     """Each agent with the instruction, rule and config files `drop(path)` rejects removed. An
     agent is kept while at least one instruction or rule file survives, and dropped when
     none does."""
@@ -469,8 +534,8 @@ def get_all_instruction_files(target: Path, agents: list[DetectedAgent] | None =
     for detected in agents if agents is not None else detect_agents(target):
         raw.extend(detected.instruction_files)
         raw.extend(detected.rule_files)
-    canonical, aliases = _dedupe_with_aliases(raw)
-    _store_alias_cache(target, aliases)
+    canonical, aliases = dedupe_with_aliases(raw)
+    store_alias_cache(target, aliases)
     return canonical
 
 
@@ -481,6 +546,6 @@ def get_all_scannable_files(target: Path, agents: list[DetectedAgent] | None = N
         raw.extend(detected.instruction_files)
         raw.extend(detected.rule_files)
         raw.extend(detected.config_files)
-    canonical, aliases = _dedupe_with_aliases(raw)
-    _store_alias_cache(target, aliases)
+    canonical, aliases = dedupe_with_aliases(raw)
+    store_alias_cache(target, aliases)
     return canonical

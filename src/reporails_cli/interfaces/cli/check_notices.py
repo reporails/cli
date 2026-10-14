@@ -1,6 +1,6 @@
 """User-facing notices for the ``ails check`` heal path.
 
-Small output emitters split out of ``main.py``
+Small output emitters split out of ``check_command.py``
 so the command module stays focused on orchestration. Each renders in the
 active output format — plain console for humans, a single JSON object on the
 ``json`` / ``github`` machine channels.
@@ -13,7 +13,11 @@ import sys
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.heal.apply import heal_withheld_for_run
-from reporails_cli.interfaces.cli.check_orchestration import _dispatch_output
+from reporails_cli.core.pipeline.assemble import with_exclusions
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.formatters.text.verdict import render_excluded_line
+from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
 
 if TYPE_CHECKING:
@@ -77,7 +81,6 @@ def _agent_is_pinned(state: CheckState) -> bool:
     """True when the run is set to one agent: ``--agent`` or the configured ``default_agent``."""
     if state.inputs.agent:
         return True
-    from reporails_cli.core.platform.config.config import get_project_config
 
     return bool(get_project_config(state.targets.target).default_agent)
 
@@ -97,20 +100,18 @@ def _emit_empty_run(state: CheckState) -> None:
     human message, which says plainly that nothing was found.
     """
     if state.targets.output_format in ("json", "github"):
-        from reporails_cli.core.pipeline.assemble import with_exclusions
-        from reporails_cli.core.platform.runtime.merger import CombinedResult
-
         _dispatch_output(
             state.targets.output_format,
             with_exclusions(CombinedResult(), state.render.excluded),
             None,
             0.0,
-            set(),
-            state.targets.target,
-            state.inputs.ascii_mode,
-            state.inputs.verbose,
-            None,
-            None,
+            funnel_error=None,
+            context=RenderContext(
+                project_root=state.targets.target,
+                capability_paths=set(),
+                ascii_mode=state.inputs.ascii_mode,
+                verbose=state.inputs.verbose,
+            ),
         )
         return
     whole_project = not state.targets.capability_specs and all(
@@ -126,8 +127,5 @@ def _print_excluded_record(state: CheckState) -> None:
     dirs, files = state.render.excluded
     if not (dirs or files):
         return
-    from reporails_cli.core.pipeline.assemble import with_exclusions
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
-    from reporails_cli.formatters.text.verdict import render_excluded_line
 
     render_excluded_line(with_exclusions(CombinedResult(), state.render.excluded), scored=False)

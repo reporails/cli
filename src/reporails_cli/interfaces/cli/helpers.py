@@ -1,9 +1,10 @@
-"""Shared CLI utilities — app instance, console, environment helpers."""
+"""Shared CLI utilities — console, environment helpers."""
 
 from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,15 +12,18 @@ from typing import Any
 import typer
 from rich.console import Console
 
+from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(
-    name="ails",
-    help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your project's instructions"),
-    no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
-)
 console = Console(emoji=False, highlight=False)
+
+
+def run_uv_tool(uv: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run `uv tool <args>` and capture its output."""
+    return subprocess.run([uv, "tool", *args], capture_output=True, text=True, timeout=120, check=False)
 
 
 def _is_ci() -> bool:
@@ -56,10 +60,9 @@ def _default_format() -> str:
 
 def _validate_agent(agent: str, con: Console) -> str:
     """Normalize and validate --agent value. Returns normalized agent or exits."""
-    from reporails_cli.core.discovery.agents import get_known_agents as _get_known
 
     agent = agent.lower().strip()
-    known = _get_known()
+    known = get_known_agents()
     if agent and agent not in known:
         con.print(f"[red]Error:[/red] Unknown agent: {agent}")
         con.print(f"Known agents: {', '.join(sorted(known))}")
@@ -115,9 +118,6 @@ def _print_no_instruction_files(effective_agent: str, con: Console, detected_age
     consumer reads one envelope shape whether or not anything was in scope —
     see `check_notices._emit_empty_run`.
     """
-    from reporails_cli.core.discovery.agents import get_known_agents
-    from reporails_cli.core.platform.dto.models import Level
-    from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
 
     at = get_known_agents().get(effective_agent)
     others = sorted(

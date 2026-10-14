@@ -18,6 +18,8 @@ from reporails_cli.core.lint.content_queries import QUERY_REGISTRY
 from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, LocalFinding, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.policy.matching import file_matches, is_wildcard_match
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +34,6 @@ def _matching_files(
 
     if match is None:
         return sorted(rm_paths)
-
-    from reporails_cli.core.platform.policy.matching import file_matches, is_wildcard_match
 
     matched = [cf.path.as_posix() for cf in classified if file_matches(cf, match) and cf.path.as_posix() in rm_paths]
     if matched:
@@ -127,6 +127,4 @@ def run_content_checks(
 
 def _relative_path(file_path: str) -> str:
     """Normalize file path for display. Uses merger's normalize_finding_path."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
     return normalize_finding_path(file_path)

@@ -230,6 +230,11 @@ def has_bold_label(text: str, runs: Iterable[EmphasisRun]) -> bool:
     return any(run.strong and text[run.end :].lstrip().startswith(":") for run in runs)
 
 
+def tok_line(tok: Any, line_offset: int) -> int:
+    """Extract line number from a markdown-it token."""
+    return (tok.map[0] if tok.map else 0) + line_offset + 1
+
+
 def file_lines(text: str) -> list[str]:
     """The lines of `text` as the parser numbers them: split at `\\n` only, so a form feed, a vertical tab
     and the Unicode line and paragraph separators stay inside their line."""

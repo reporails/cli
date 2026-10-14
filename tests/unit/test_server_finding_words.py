@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.lint.rule_pages import rule_title
 from reporails_cli.core.platform.adapters.api_client import _deserialize_per_file
+from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, RulesetReport
 from reporails_cli.core.platform.runtime.merger import merge_results
 from reporails_cli.formatters.mcp import with_rule_labels
@@ -48,7 +48,9 @@ def test_check_text_output_shows_the_rule_title(monkeypatch: pytest.MonkeyPatch)
     [finding] = merge_results([], [], _bare_reply()).findings
     lines: list[str] = []
     monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
-    triage_view.print_file_card("AGENTS.md", [finding], {"error": "X", "warning": "!", "info": "i"}, False, None)
+    triage_view.print_file_card(
+        "AGENTS.md", [finding], triage_view.CardContext({"error": "X", "warning": "!", "info": "i"}, False)
+    )
     assert TITLE in "\n".join(lines)
 
 
@@ -102,7 +104,9 @@ def _overlap_lines(monkeypatch: pytest.MonkeyPatch, diag: dict, partners: list[s
     lines: list[str] = []
     monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
     triage_view.print_file_card(
-        "AGENTS.md", [finding], ICONS, False, None, partners_of=(lambda _f: partners) if partners else None
+        "AGENTS.md",
+        [finding],
+        triage_view.CardContext(ICONS, False, partners_of=(lambda _f: partners) if partners else None),
     )
     return "\n".join(lines)
 

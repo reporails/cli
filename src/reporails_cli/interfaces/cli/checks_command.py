@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 import typer
 
-from reporails_cli.core.lint.rule_pages import load_rule_examples
+from reporails_cli.core.lint.rule_pages import load_rule_examples, serialize_match
 from reporails_cli.core.platform.adapters.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
@@ -21,9 +21,9 @@ from reporails_cli.core.platform.adapters.rules_query import (
     load_all_rules,
     sort_rules_for_authoring,
 )
+from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import Rule, Severity
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
-from reporails_cli.interfaces.cli.check_support import _serialize_match
 from reporails_cli.interfaces.cli.helpers import console
 
 
@@ -38,8 +38,6 @@ def list_checks(
 
     Each capability is reported as the config file type it names (`skill` reads as `skills`).
     """
-    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
-
     if capabilities:
         input_forms = load_capability_vocabulary().input_forms
         capabilities = [input_forms.get(c, c) for c in capabilities]
@@ -161,7 +159,7 @@ def _rule_to_dict(rule: Rule) -> dict[str, object]:
         "category": rule.category.value,
         "severity": rule.severity.value,
         "type": rule.type.value,
-        "match": _serialize_match(rule.match),
+        "match": serialize_match(rule.match),
     }
 
 

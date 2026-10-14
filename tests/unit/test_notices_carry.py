@@ -21,7 +21,7 @@ from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, Notice
 from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
@@ -77,7 +77,7 @@ class _Reply:
 def _lint(status: int, body: Any, headers: dict[str, str], *, key: str = "") -> LintResponse:
     payload = {"files": [{"path": "CLAUDE.md"}]}
     with (
-        patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=payload),
+        patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=payload),
         patch("httpx.post", return_value=_Reply(status, body, headers)),
     ):
         client = AilsClient(base_url="https://example.test", tier="pro")
@@ -122,13 +122,15 @@ def test_assemble_result_puts_notices_on_the_result(tmp_path: Path) -> None:
         alias_fn=lambda _r: set(),
         notices=(WARN, INFO),
     )
-    assert assemble_result(inp).notices == (WARN, INFO)
+    assert assemble_result(inp).reply.notices == (WARN, INFO)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_json_carries_every_notice_and_an_empty_list_when_none() -> None:
-    data = json_formatter.format_combined_result(CombinedResult(notices=(WARN, INFO)), ruleset_map=None)
+    data = json_formatter.format_combined_result(
+        CombinedResult(reply=ServerReply(notices=(WARN, INFO))), ruleset_map=None
+    )
     assert data["notices"] == RAW
     assert json_formatter.format_combined_result(CombinedResult(), ruleset_map=None)["notices"] == []
 
@@ -164,7 +166,8 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path, 
     root.mkdir()
     (root / "CLAUDE.md").write_text("# Project\n\nUse uv for Python.\n", encoding="utf-8")
     monkeypatch.chdir(root)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_instruction_files", lambda *_a, **_k: _map())
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.map_instruction_files", lambda *_a, **_k: _map())
+    monkeypatch.setattr("reporails_cli.interfaces.cli.check_pipeline.map_instruction_files", lambda *_a, **_k: _map())
     monkeypatch.setattr(
         AilsClient, "lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, INFO))
     )

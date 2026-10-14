@@ -162,7 +162,7 @@ FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
     # L1 — Primer: one main file present
     "instruction_file": lambda f: f.has_instruction_file,
     # L2 — Composite: multiple main files in the project (user-scope files do not count)
-    "multiple_files": lambda f: f.has_multiple_instruction_files,
+    "multiple_files": lambda f: f.discovery.has_multiple_instruction_files,
     # L3 — Scoped: path-conditional rule loading
     "path_scoping": lambda f: f.has_path_scoped_rules,
     # L4 — Delegated: skills directory with definitions
@@ -172,7 +172,7 @@ FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
     # L6 — Governed: hooks (enforcement outside the model's context)
     "governance": lambda f: bool(f.hook_files),
     # L7 — Adaptive: auto-memory or self-modifying instruction sources
-    "adaptive_memory": lambda f: f.has_auto_memory or f.has_memory_dir,
+    "adaptive_memory": lambda f: f.memory.has_auto_memory or f.memory.has_memory_dir,
 }
 
 

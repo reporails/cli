@@ -8,20 +8,21 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import yaml
 
+from reporails_cli.core.platform.config.bootstrap import get_global_config_path, get_reporails_home
+from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
+from reporails_cli.core.platform.dto.results import (
+    AgentConfig,
+    GlobalConfig,
+    HookFact,
+    MapperConfig,
+    ProjectConfig,
+    SubagentHooks,
+)
 from reporails_cli.core.platform.utils.utils import is_first_yaml_failure, load_yaml_file, yaml_error_line
-
-if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.results import (
-        AgentConfig,
-        GlobalConfig,
-        HookFact,
-        ProjectConfig,
-        SubagentHooks,
-    )
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,6 @@ def get_agent_config(agent: str) -> AgentConfig:
     Returns:
         AgentConfig with excludes and overrides, or defaults if missing/malformed
     """
-    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
-    from reporails_cli.core.platform.dto.results import AgentConfig
 
     config_path = get_agent_config_path(agent)
     if not config_path.exists():
@@ -64,7 +63,6 @@ def get_agent_config(agent: str) -> AgentConfig:
 
 def _hook_fact(raw: object) -> HookFact:
     """One `subagent_hooks` fact; a missing or malformed one reads as `unconfirmed`."""
-    from reporails_cli.core.platform.dto.results import HookFact
 
     if not isinstance(raw, dict):
         return HookFact()
@@ -86,7 +84,6 @@ def _intercept_events(raw: object) -> dict[str, tuple[str, ...]]:
 
 def _subagent_hooks(raw: object) -> SubagentHooks:
     """The optional top-level `subagent_hooks:` key of an agent's config.yml."""
-    from reporails_cli.core.platform.dto.results import SubagentHooks
 
     facts = raw if isinstance(raw, dict) else {}
     return SubagentHooks(
@@ -141,8 +138,6 @@ def get_global_config() -> GlobalConfig:
     absent — `None` signals "no global preference" so the project layer
     can keep its default semantics.
     """
-    from reporails_cli.core.platform.config.bootstrap import get_global_config_path
-    from reporails_cli.core.platform.dto.results import GlobalConfig
 
     config_path = get_global_config_path()
     if not config_path.exists():
@@ -238,7 +233,6 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     Returns:
         ProjectConfig with loaded or default values, layered with globals.
     """
-    from reporails_cli.core.platform.dto.results import MapperConfig, ProjectConfig
 
     base = _load_yaml_dict(project_root / ".ails" / "config.yml") or {}
     local = _load_yaml_dict(project_root / ".ails" / "config.local.yml") or {}
@@ -330,3 +324,69 @@ def _merge_under(project: dict[str, Any], globals_: dict[str, Any]) -> dict[str,
         else:
             merged[key] = project_val
     return merged
+
+
+def get_rules_path() -> Path:
+    """Get path to rules directory.
+
+    Resolution: config override → bundled (package default).
+    """
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        rules_sub = config.framework_path / "rules"
+        if rules_sub.is_dir():
+            return rules_sub
+        return config.framework_path
+
+    bundled = get_bundled_rules_path()
+    if bundled is not None:
+        return bundled
+
+    # Unreachable when installed correctly, but return a sane default
+    return get_reporails_home() / "rules"
+
+
+def get_framework_root() -> Path:
+    """Get the root where schemas/, registry/, sources.yml live.
+
+    Resolution: config override → bundled package root.
+    """
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        return config.framework_path
+
+    bundled_root = get_bundled_package_root()
+    if bundled_root is not None:
+        return bundled_root
+
+    return get_reporails_home() / "rules"
+
+
+def get_core_rules_path() -> Path:
+    """Get path to core rules directory (~/.reporails/rules/core/)."""
+    return get_rules_path() / "core"
+
+
+def get_agent_rules_path(agent: str) -> Path:
+    """Get path to agent-specific rules (~/.reporails/rules/{agent}/)."""
+    return get_rules_path() / agent
+
+
+def get_agent_config_path(agent: str) -> Path:
+    """Get path to agent config file.
+
+    The generic agent's config lives in core/ (not a separate directory).
+    """
+    dir_name = "core" if agent == "generic" else agent
+    return get_rules_path() / dir_name / "config.yml"
+
+
+def get_schemas_path() -> Path:
+    """Get path to rule schemas (schemas/ under framework root)."""
+    return get_framework_root() / "schemas"
+
+
+def is_initialized() -> bool:
+    """Check if rules are available (installed, config override, or bundled)."""
+    rules_path = get_rules_path()
+    return rules_path.is_dir() and (rules_path / "core").is_dir()

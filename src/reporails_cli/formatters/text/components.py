@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from reporails_cli.core.platform.dto.results import ScanDelta
+from reporails_cli.formatters.text.chars import get_chars
+from reporails_cli.templates import render
 
 if TYPE_CHECKING:
     from reporails_cli.core.discovery.agents import DetectedAgent
-from reporails_cli.formatters.text.chars import get_chars
-from reporails_cli.templates import render
 
 # --- Color helpers ---
 
@@ -149,12 +149,11 @@ def format_score_delta(
             rich = f"  [green]{chars['up']} +{delta.score_delta:.1f}[/green]"
             return (rich, len(rich) - len(plain))
         return (plain, 0)
-    else:
-        plain = f"  {chars['down']} {delta.score_delta:.1f}"
-        if colored:
-            rich = f"  [red]{chars['down']} {delta.score_delta:.1f}[/red]"
-            return (rich, len(rich) - len(plain))
-        return (plain, 0)
+    plain = f"  {chars['down']} {delta.score_delta:.1f}"
+    if colored:
+        rich = f"  [red]{chars['down']} {delta.score_delta:.1f}[/red]"
+        return (rich, len(rich) - len(plain))
+    return (plain, 0)
 
 
 def format_level_delta(
@@ -173,12 +172,11 @@ def format_level_delta(
             rich = f"  [green]{chars['up']} from {delta.level_previous}[/green]"
             return (rich, len(rich) - len(plain))
         return (plain, 0)
-    else:
-        plain = f"  {chars['down']} from {delta.level_previous}"
-        if colored:
-            rich = f"  [red]{chars['down']} from {delta.level_previous}[/red]"
-            return (rich, len(rich) - len(plain))
-        return (plain, 0)
+    plain = f"  {chars['down']} from {delta.level_previous}"
+    if colored:
+        rich = f"  [red]{chars['down']} from {delta.level_previous}[/red]"
+        return (rich, len(rich) - len(plain))
+    return (plain, 0)
 
 
 def format_violations_delta(
@@ -198,13 +196,12 @@ def format_violations_delta(
             rich = f"  [green]{chars['down']} {delta.violations_delta}[/green]"
             return (rich, len(rich) - len(plain))
         return (plain, 0)
-    else:
-        # Increased = bad
-        plain = f"  {chars['up']} +{delta.violations_delta}"
-        if colored:
-            rich = f"  [red]{chars['up']} +{delta.violations_delta}[/red]"
-            return (rich, len(rich) - len(plain))
-        return (plain, 0)
+    # Increased = bad
+    plain = f"  {chars['up']} +{delta.violations_delta}"
+    if colored:
+        rich = f"  [red]{chars['up']} +{delta.violations_delta}[/red]"
+        return (rich, len(rich) - len(plain))
+    return (plain, 0)
 
 
 def pad_line(content: str, width: int, v_char: str) -> str:

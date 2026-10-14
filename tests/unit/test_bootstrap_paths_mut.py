@@ -12,11 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from reporails_cli.core.platform.config.bootstrap import (
-    get_agent_config_path,
-    get_framework_root,
-    is_initialized,
-)
+from reporails_cli.core.platform.config.config import get_agent_config_path, get_framework_root, is_initialized
 from reporails_cli.core.platform.dto.results import GlobalConfig
 
 
@@ -33,7 +29,7 @@ def test_framework_root_ignores_nonexistent_override(tmp_path: Path) -> None:
             return_value=GlobalConfig(framework_path=bad_override),
         ),
         patch(
-            "reporails_cli.core.platform.config.bootstrap.get_bundled_package_root",
+            "reporails_cli.core.platform.config.config.get_bundled_package_root",
             return_value=bundled,
         ),
     ):
@@ -47,7 +43,7 @@ def test_framework_root_ignores_nonexistent_override(tmp_path: Path) -> None:
 @pytest.mark.subsys_runtime
 def test_generic_agent_config_lives_in_core(tmp_path: Path) -> None:
     with patch(
-        "reporails_cli.core.platform.config.bootstrap.get_rules_path",
+        "reporails_cli.core.platform.config.config.get_rules_path",
         return_value=tmp_path,
     ):
         # `==`->`!=` would route generic to a `generic/` dir instead of `core/`.
@@ -58,7 +54,7 @@ def test_generic_agent_config_lives_in_core(tmp_path: Path) -> None:
 @pytest.mark.subsys_runtime
 def test_named_agent_config_lives_in_its_own_dir(tmp_path: Path) -> None:
     with patch(
-        "reporails_cli.core.platform.config.bootstrap.get_rules_path",
+        "reporails_cli.core.platform.config.config.get_rules_path",
         return_value=tmp_path,
     ):
         # `==`->`!=` would misroute a named agent into `core/`.
@@ -71,7 +67,7 @@ def test_named_agent_config_lives_in_its_own_dir(tmp_path: Path) -> None:
 def test_is_initialized_false_when_core_missing(tmp_path: Path) -> None:
     # rules_path exists but has no core/ subdir.
     with patch(
-        "reporails_cli.core.platform.config.bootstrap.get_rules_path",
+        "reporails_cli.core.platform.config.config.get_rules_path",
         return_value=tmp_path,
     ):
         # `and`->`or` would report initialized on the rules dir alone.
@@ -83,7 +79,7 @@ def test_is_initialized_false_when_core_missing(tmp_path: Path) -> None:
 def test_is_initialized_true_when_core_present(tmp_path: Path) -> None:
     (tmp_path / "core").mkdir()
     with patch(
-        "reporails_cli.core.platform.config.bootstrap.get_rules_path",
+        "reporails_cli.core.platform.config.config.get_rules_path",
         return_value=tmp_path,
     ):
         assert is_initialized() is True

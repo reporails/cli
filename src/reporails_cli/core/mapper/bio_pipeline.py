@@ -18,17 +18,21 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from reporails_cli.core.mapper.bio_tagger import (
-    AtomTuple,
-    Span,
-    multislot_available,
+from reporails_cli.core.mapper.atom_build import _atom_from_sentence
+from reporails_cli.core.mapper.bio_graphs import multislot_available
+from reporails_cli.core.mapper.bio_tagger import AtomTuple, Span
+from reporails_cli.core.mapper.charge_floors import (
+    TABLE_HEADER_RULE,
+    _apply_deontic_floor,
+    _apply_hedged_should_floor,
+    _apply_negation_constraint_floor,
+    _apply_structural_neutral_floor,
+    is_quoted_line,
 )
-from reporails_cli.core.mapper.classify import (
-    _CLASSIFY_WORD_RE,
-    is_conditional_frame,
-    is_terse_no_prohibition,
-    opens_conditional_clause,
-)
+from reporails_cli.core.mapper.classify import is_conditional_frame, opens_conditional_clause
+from reporails_cli.core.mapper.classify_lexicon import WORD_RE
+from reporails_cli.core.mapper.classify_no import is_terse_no_prohibition
+from reporails_cli.core.mapper.fence_atoms import is_fence_block
 from reporails_cli.core.mapper.heading_labels import neutralize_paired_label_headings
 from reporails_cli.core.mapper.instructions import fold_lead_ins, instruction_texts, without_joining_word
 from reporails_cli.core.mapper.markers import reformat_spans
@@ -38,15 +42,7 @@ from reporails_cli.core.mapper.multislot_frames import (
     _heading_tuple_from_decoded,
 )
 from reporails_cli.core.mapper.parse import (
-    TABLE_HEADER_RULE,
-    _apply_deontic_floor,
-    _apply_hedged_should_floor,
-    _apply_negation_constraint_floor,
-    _apply_structural_neutral_floor,
-    _atom_from_sentence,
     inline_plain_text,
-    is_fence_block,
-    is_quoted_line,
     keep_lead_in_on_last,
     reindex_positions,
 )
@@ -142,11 +138,7 @@ def _atom_from_tuple(t: AtomTuple, parent: Atom, *, already_plain: bool, formatt
     atom = _atom_from_sentence(
         sent,
         parent,
-        charge,
-        cv,
-        t.modality,
-        "multislot",
-        scope=_tuple_scope_conditional(t),
+        (charge, cv, t.modality, "multislot", _tuple_scope_conditional(t)),
         plain_sent=plain_sent,
     )
     atom.file_path = parent.file_path
@@ -165,7 +157,7 @@ def _heading_names_no_action(atom: Atom, t: AtomTuple) -> bool:
     """
     if t.predicate.offset is not None:
         return False
-    words = [w.lower() for w in _CLASSIFY_WORD_RE.findall(atom.plain_text or atom.text)]
+    words = [w.lower() for w in WORD_RE.findall(atom.plain_text or atom.text)]
     return not is_terse_no_prohibition(words)
 
 

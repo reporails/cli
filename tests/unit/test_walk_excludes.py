@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.agents import load_project_exclude_dirs
-from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS
+from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS, load_project_exclude_dirs
 from reporails_cli.core.discovery.plugin_roots import find_plugin_roots
 from reporails_cli.core.discovery.walk import walk_files, walk_glob, walk_markdown
 

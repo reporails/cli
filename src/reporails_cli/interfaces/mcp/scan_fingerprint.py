@@ -5,7 +5,11 @@ import os
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.platform.adapters.api_client import DEFAULT_SERVER_URL
+from reporails_cli.core.discovery.agents import clear_agent_cache
+from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, has_api_key
+from reporails_cli.core.platform.config.bootstrap import get_global_config_path
+from reporails_cli.core.platform.config.config import get_global_config
+from reporails_cli.core.platform.config.credentials import credentials_path
 from reporails_cli.interfaces.mcp.tools import _discover_files
 
 
@@ -18,11 +22,6 @@ def scan_inputs_base(scan_root: Path) -> str:
     presence and tier of the sign-in are hashed, never a key value. Empty string when nothing
     is found.
     """
-    from reporails_cli.core.discovery.agents import clear_agent_cache
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.config.bootstrap import get_global_config_path
-    from reporails_cli.core.platform.config.config import get_global_config
-    from reporails_cli.core.platform.config.credentials import credentials_path
 
     # A long-running server keeps the detected-agent list between calls, so a file added or
     # removed (or an exclusion changed) would go unseen: detect afresh, and the run that

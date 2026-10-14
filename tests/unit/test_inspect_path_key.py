@@ -190,14 +190,14 @@ def test_nested_instruction_files_load_on_demand(tmp_path, rel, expected):
 def test_every_agent_declares_where_a_skills_entry_file_sits():
     """Each agent's `skills` scopes name the entry file's place: one level below the skills
     folder, except Cursor, which walks its skills folders recursively."""
-    from reporails_cli.core.discovery.agents import _extract_patterns
+    from reporails_cli.core.discovery.agent_config import extract_patterns
 
     for agent, config in _load_registry().items():
         skills = (config.get("file_types") or {}).get("skills")
         if skills is None:
             continue
         for scope, spec in skills["scopes"].items():
-            entry = _extract_patterns({"scopes": {scope: spec}}, "entry_patterns")
+            entry = extract_patterns({"scopes": {scope: spec}}, "entry_patterns")
             assert entry, f"{agent}/{scope} declares no entry_patterns"
             wanted = "*/**/SKILL.md" if agent == "cursor" else "*/SKILL.md"
             assert all(p.endswith("/skills/" + wanted) or p == "skills/" + wanted for p in entry), (agent, entry)

@@ -9,15 +9,12 @@ from __future__ import annotations
 
 import re
 
-from reporails_cli.core.mapper.classify import (
-    _VERBS_AMBIGUOUS,
-    _VERBS_CORE,
-    _VERBS_SUPPLEMENT,
-    is_conditional_frame,
-)
+from reporails_cli.core.mapper.charge_floors import _SEE_POINTER_RE
+from reporails_cli.core.mapper.classify import is_conditional_frame
+from reporails_cli.core.mapper.classify_lexicon import VERBS_AMBIGUOUS, VERBS_CORE, VERBS_SUPPLEMENT
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import code_spans, leading_bold_run
-from reporails_cli.core.mapper.parse import _SEE_POINTER_RE, _build_scope_mask
+from reporails_cli.core.mapper.parse import _build_scope_mask
 from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, Atom
 
 # Where a sentence can start another clause: a semicolon, a comma, a spaced dash, or a bare `and` / `then`.
@@ -59,8 +56,8 @@ _UNLEXICONED_COMMAND_VERBS = frozenset(
         "upgrade",
     }
 )
-_COMMAND_VERBS = frozenset(_VERBS_CORE | _VERBS_SUPPLEMENT | _UNLEXICONED_COMMAND_VERBS) - _TOOL_NAMES
-_NOUN_OR_VERB = frozenset(_VERBS_AMBIGUOUS | _TOOL_NAMES)
+_COMMAND_VERBS = frozenset(VERBS_CORE | VERBS_SUPPLEMENT | _UNLEXICONED_COMMAND_VERBS) - _TOOL_NAMES
+_NOUN_OR_VERB = frozenset(VERBS_AMBIGUOUS | _TOOL_NAMES)
 _OBJECT_OPENERS = frozenset(
     {"the", "a", "an", "it", "them", "this", "that", "these", "those", "every", "all", "each", "any", "your", "its"}
     | {"sure"}

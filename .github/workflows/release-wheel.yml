@@ -117,7 +117,7 @@ jobs:
           subprocess.run([str(ails), 'version'], check=True)
           subprocess.run([str(ails), 'check', '--help'], check=True, stdout=subprocess.DEVNULL)
           subprocess.run([str(py), '-c',
-              'from reporails_cli.bundled import ensure_models_available;'
+              'from reporails_cli.core.mapper.model_store import ensure_models_available;'
               'onnx = ensure_models_available() / \"minilm-l6-v2\" / \"onnx\" / \"model.onnx\";'
               'assert onnx.exists(), f\"ONNX missing: {onnx}\";'
               'print(f\"ONNX OK: {onnx.stat().st_size // 1024 // 1024} MB\")'
@@ -127,7 +127,7 @@ jobs:
           # one. Asserts the runtime capability predicate so it survives
           # model-file renames.
           subprocess.run([str(py), '-c',
-              'from reporails_cli.core.mapper import bio_tagger as b;'
+              'from reporails_cli.core.mapper import bio_graphs as b;'
               'm = b.multislot_available();'
               'print(f\"classifier available: {m}\");'
               'assert m, \"the instruction classifier files are missing from the fetched model set\";'

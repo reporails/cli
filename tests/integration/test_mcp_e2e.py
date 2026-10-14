@@ -42,7 +42,7 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.config import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -172,10 +172,10 @@ class TestListTools:
         """`initialize`'s `serverInfo.version` was always empty — `MCPServer("ails", ...)`
         never passed its own `version`, and the SDK defaults it to `""`. A caller has no way to
         tell which server build it is talking to without it."""
-        from reporails_cli import __version__
+        from reporails_cli.core.platform.utils.version import installed_version
         from reporails_cli.interfaces.mcp.server import server
 
-        assert server.version == __version__
+        assert server.version == installed_version()
         assert server.version != ""
 
 
@@ -966,109 +966,6 @@ class TestDisplayScoreHelper:
 
 
 # ---------------------------------------------------------------------------
-# Verdict parsing — unit-level tests for _parse_verdict_string
-# ---------------------------------------------------------------------------
-
-
-class TestVerdictParsing:
-    """Test the verdict string parser directly for edge cases."""
-
-    def _parse(self, s: str) -> tuple[str, str, str, str]:
-        from reporails_cli.core.cache import _parse_verdict_string
-
-        return _parse_verdict_string(s)
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_short_rule_id(self) -> None:
-        assert self._parse("S1:CLAUDE.md:pass:OK") == ("S1", "CLAUDE.md", "pass", "OK")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_short_rule_id_fail(self) -> None:
-        assert self._parse("C2:CLAUDE.md:fail:Missing") == ("C2", "CLAUDE.md", "fail", "Missing")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_coordinate_rule_id(self) -> None:
-        assert self._parse("CORE:S:0001:CLAUDE.md:pass:Good") == ("CORE:S:0001", "CLAUDE.md", "pass", "Good")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_coordinate_rule_id_fail(self) -> None:
-        assert self._parse("AILS:C:0002:.claude/rules/foo.md:fail:Bad") == (
-            "AILS:C:0002",
-            ".claude/rules/foo.md",
-            "fail",
-            "Bad",
-        )
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_short_with_line_number(self) -> None:
-        """Line number in location must not be confused with verdict."""
-        assert self._parse("S1:CLAUDE.md:42:pass:Has line") == ("S1", "CLAUDE.md:42", "pass", "Has line")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_coordinate_with_line_number(self) -> None:
-        """Coordinate ID + line number in location must parse correctly."""
-        assert self._parse("CORE:S:0001:CLAUDE.md:42:pass:Has line") == (
-            "CORE:S:0001",
-            "CLAUDE.md:42",
-            "pass",
-            "Has line",
-        )
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_colons_in_reason(self) -> None:
-        """Colons in the reason field should be preserved."""
-        assert self._parse("S1:CLAUDE.md:pass:reason:with:colons") == ("S1", "CLAUDE.md", "pass", "reason:with:colons")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_empty_string(self) -> None:
-        assert self._parse("") == ("", "", "", "")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_garbage(self) -> None:
-        assert self._parse("garbage") == ("", "", "", "")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_just_colons(self) -> None:
-        assert self._parse(":::") == ("", "", "", "")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_invalid_verdict_value(self) -> None:
-        """Verdict must be 'pass' or 'fail'."""
-        assert self._parse("S1:CLAUDE.md:maybe:unsure") == ("", "", "", "")
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_no_location(self) -> None:
-        """Missing location should return empty."""
-        _rule_id, location, _verdict, _reason = self._parse("S1::pass:no loc")
-        # location is empty string, which means downstream rejects it
-        assert location == ""
-
-
-# ---------------------------------------------------------------------------
 # ScanDelta — corrupted cache resilience
 # ---------------------------------------------------------------------------
 
@@ -1194,13 +1091,15 @@ class TestRemedyBrief:
         loop); `consecutive_unchanged` — the actual no-progress guard — is untouched."""
         from types import SimpleNamespace
 
-        from reporails_cli.interfaces.mcp import server, tools
+        from reporails_cli.interfaces.mcp import remedy_brief, server
 
         fake_map = SimpleNamespace(atoms=(), files=())
         monkeypatch.setattr(
             server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (self._payload(), None, None)
         )
-        monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+        monkeypatch.setattr(
+            remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None)
+        )
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
         state_before = server._validate_states[str(tmp_path.resolve())]
@@ -1220,13 +1119,15 @@ class TestRemedyBrief:
     ) -> None:
         from types import SimpleNamespace
 
-        from reporails_cli.interfaces.mcp import server, tools
+        from reporails_cli.interfaces.mcp import remedy_brief, server
 
         fake_map = SimpleNamespace(atoms=(), files=())
         monkeypatch.setattr(
             server, "run_pipeline_for_path", lambda path, full=False, named=frozenset(): (self._payload(), None, None)
         )
-        monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+        monkeypatch.setattr(
+            remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None)
+        )
         (tmp_path / "CLAUDE.md").write_text("# Project\n")
         _call_tool("validate", {"path": str(tmp_path)})
 
@@ -1399,7 +1300,7 @@ class TestFileFeedback:
                 ]
             },
         }
-        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         assert feedback == [
             {"rule": "B", "line": 8, "message": "gate issue", "op": "split", "impact_tier": "gate_mover"},
             {"rule": "A", "line": 3, "message": "cosmetic issue", "op": "rewrite", "impact_tier": "cosmetic"},
@@ -1422,7 +1323,7 @@ class TestFileFeedback:
             },
             "workflow": {"locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}]},
         }
-        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         # No `impact_tier`, so weight ties and the line number decides.
         assert feedback == [
             {"rule": "Y", "line": 2, "message": "m2", "impact_tier": ""},
@@ -1444,30 +1345,28 @@ class TestFileFeedback:
         draws in real project context. The stored whole-project `validate`'s own workflow is
         ground truth — a `(rule, file)` pair absent from it is dropped, never served as
         `feedback` that pushes the remedy agent to add content the file never had."""
-        from reporails_cli.interfaces.mcp import feedback, server
+        from reporails_cli.interfaces.mcp import feedback
 
-        server._validate_states[server._state_key("/proj", ())] = server._CircuitState(
-            full_payload={
-                "workflow": {
-                    "locations": [
-                        {
-                            "order": 1,
-                            "files": ["CLAUDE.md"],
-                            "findings": [
-                                {
-                                    "rule": "CORE:C:0042",
-                                    "file": "CLAUDE.md",
-                                    "line": 3,
-                                    "message": "Vague instruction.",
-                                    "remedy": "Name it.",
-                                    "impact_tier": "cosmetic",
-                                }
-                            ],
-                        }
-                    ]
-                }
+        stored = {
+            "workflow": {
+                "locations": [
+                    {
+                        "order": 1,
+                        "files": ["CLAUDE.md"],
+                        "findings": [
+                            {
+                                "rule": "CORE:C:0042",
+                                "file": "CLAUDE.md",
+                                "line": 3,
+                                "message": "Vague instruction.",
+                                "remedy": "Name it.",
+                                "impact_tier": "cosmetic",
+                            }
+                        ],
+                    }
+                ]
             }
-        )
+        }
         single_file_payload = {
             "workflow": {
                 "locations": [
@@ -1497,7 +1396,7 @@ class TestFileFeedback:
             }
         }
 
-        feedback = feedback.file_feedback(single_file_payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(single_file_payload, Path("/proj/CLAUDE.md"), Path("/proj"), stored)
 
         assert feedback == [
             {
@@ -1513,21 +1412,19 @@ class TestFileFeedback:
     def test_drops_a_per_file_fallback_finding_the_stored_project_workflow_never_counted(self) -> None:
         """The same drop applies to the per-file fallback path (used when the current run's own
         workflow names no location for this file)."""
-        from reporails_cli.interfaces.mcp import feedback, server
+        from reporails_cli.interfaces.mcp import feedback
 
-        server._validate_states[server._state_key("/proj", ())] = server._CircuitState(
-            full_payload={
-                "workflow": {
-                    "locations": [
-                        {
-                            "order": 1,
-                            "files": ["CLAUDE.md"],
-                            "findings": [{"rule": "X", "file": "CLAUDE.md", "line": 5, "message": "m1"}],
-                        }
-                    ]
-                }
+        stored = {
+            "workflow": {
+                "locations": [
+                    {
+                        "order": 1,
+                        "files": ["CLAUDE.md"],
+                        "findings": [{"rule": "X", "file": "CLAUDE.md", "line": 5, "message": "m1"}],
+                    }
+                ]
             }
-        )
+        }
         single_file_payload = {
             "files": {
                 "CLAUDE.md": {
@@ -1541,7 +1438,7 @@ class TestFileFeedback:
             "workflow": {"locations": [{"order": 1, "files": ["CLAUDE.md"], "findings": []}]},
         }
 
-        feedback = feedback.file_feedback(single_file_payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(single_file_payload, Path("/proj/CLAUDE.md"), Path("/proj"), stored)
 
         assert feedback == [{"rule": "X", "line": 5, "message": "m1", "fix": "fix1", "impact_tier": ""}]
 
@@ -1562,7 +1459,7 @@ class TestFileFeedback:
             }
         }
 
-        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
 
         assert feedback == [
             {
@@ -1580,7 +1477,7 @@ class TestFileFeedback:
         from reporails_cli.interfaces.mcp import feedback
 
         payload = {"files": {"CLAUDE.md": {"count": 0, "findings": []}}}
-        assert feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj")) == []
+        assert feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None) == []
 
     @pytest.mark.e2e
     @pytest.mark.subsys_server
@@ -1589,7 +1486,7 @@ class TestFileFeedback:
 
         findings = [{"rule": f"R{i}", "line": i, "message": "m", "fix": "f"} for i in range(20)]
         payload = {"files": {"CLAUDE.md": {"count": 20, "findings": findings}}}
-        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         assert len(feedback) == 15
         assert [f["line"] for f in feedback] == list(range(15)), "weakest-first ties break on line, ascending"
 
@@ -1710,21 +1607,19 @@ class TestFeedbackNewKinds:
     @pytest.mark.e2e
     @pytest.mark.subsys_server
     def test_new_kinds_are_kept_ahead_of_repeats_errors_first_and_inside_the_cap(self) -> None:
-        from reporails_cli.interfaces.mcp import feedback, server
+        from reporails_cli.interfaces.mcp import feedback
 
-        server._validate_states[server._state_key("/proj", ())] = server._CircuitState(
-            full_payload={
-                "workflow": {
-                    "locations": [
-                        {
-                            "order": 1,
-                            "files": ["CLAUDE.md"],
-                            "findings": [_wf_finding(f"OLD{i}", i, "gate_mover") for i in range(20)],
-                        }
-                    ]
-                }
+        stored = {
+            "workflow": {
+                "locations": [
+                    {
+                        "order": 1,
+                        "files": ["CLAUDE.md"],
+                        "findings": [_wf_finding(f"OLD{i}", i, "gate_mover") for i in range(20)],
+                    }
+                ]
             }
-        )
+        }
         payload = {
             "files": {
                 "CLAUDE.md": {
@@ -1745,7 +1640,7 @@ class TestFeedbackNewKinds:
                 ]
             },
         }
-        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), stored)
         assert len(feedback) == 15
         assert [f["rule"] for f in feedback[:2]] == ["NEWERR", "NEWWARN"]
         assert [f["rule"] for f in feedback[2:5]] == ["OLD0", "OLD1", "OLD2"]
@@ -1763,7 +1658,7 @@ class TestFeedbackNewKinds:
                 }
             }
         }
-        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"))
+        feedback = feedback.file_feedback(payload, Path("/proj/CLAUDE.md"), Path("/proj"), None)
         assert [f["rule"] for f in feedback] == ["CORE:G:0002"]
 
 

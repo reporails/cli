@@ -32,14 +32,17 @@ class LocalProjectEnvironment:
         self._manifests: str | None = None
 
     def path_exists(self, candidate: str) -> bool:
+        """Whether `candidate` is a `~`-expanded path or sits under the project root or the file's directory."""
         if candidate.startswith("~"):
             return os.path.exists(os.path.expanduser(candidate))
         return any(os.path.exists(base / candidate) for base in self._bases)
 
     def on_path(self, program: str) -> bool:
+        """Whether `program` is an executable on `PATH`."""
         return shutil.which(program) is not None
 
     def manifest_text(self) -> str:
+        """The project's manifest and CI workflow files, concatenated (read once)."""
         if self._manifests is None:
             self._manifests = self._read_manifests()
         return self._manifests

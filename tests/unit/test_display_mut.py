@@ -13,32 +13,26 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.mapper.skills import record_skills
-from reporails_cli.core.platform.dto.diagnostics import (
-    CrossFileFinding,
-    FileAnalysis,
-    QualityResult,
-)
+from reporails_cli.core.platform.dto.diagnostics import CrossFileFinding, FileAnalysis, FindingItem, QualityResult
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
-from reporails_cli.core.platform.runtime.merger import (
-    CombinedResult,
-    CombinedStats,
-    FindingItem,
-)
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
 from reporails_cli.formatters.text import display, file_groups
 from reporails_cli.formatters.text.display import (
-    _CardContext,
     _count_atoms,
     _detect_agent_name,
     _detect_tier,
-    _filter_quality,
     _print_header,
     _render_cross_file_coordinates,
     _render_one_group,
-    filter_result_to_paths,
-    filter_ruleset_map_to_paths,
 )
 from reporails_cli.formatters.text.display_constants import get_sev_icons
 from reporails_cli.formatters.text.file_groups import build_file_groups
+from reporails_cli.formatters.text.path_filter import (
+    _filter_quality,
+    filter_result_to_paths,
+    filter_ruleset_map_to_paths,
+)
+from reporails_cli.formatters.text.triage_view import CardContext
 
 
 def _rmap(*records: FileRecord, atoms: tuple[Atom, ...] = ()) -> RulesetMap:
@@ -234,7 +228,7 @@ class TestRenderOneGroupCap:
             (f"file{i}.md", [FindingItem(file=f"file{i}.md", line=1, severity="warning", rule="R", message="m")])
             for i in range(4)
         ]
-        ctx = _CardContext(sev_icons=get_sev_icons(True), verbose=False, project_root=tmp_path)
+        ctx = CardContext(sev_icons=get_sev_icons(True), verbose=False, project_root=tmp_path)
         with display.console.capture() as cap:
             _render_one_group("file", group_files, ctx)
         out = cap.get()
@@ -248,7 +242,7 @@ class TestRenderOneGroupCap:
             (f"file{i}.md", [FindingItem(file=f"file{i}.md", line=1, severity="warning", rule="R", message="m")])
             for i in range(3)
         ]
-        ctx = _CardContext(sev_icons=get_sev_icons(True), verbose=False, project_root=tmp_path)
+        ctx = CardContext(sev_icons=get_sev_icons(True), verbose=False, project_root=tmp_path)
         with display.console.capture() as cap:
             _render_one_group("file", group_files, ctx)
         assert "more" not in cap.get()
@@ -289,7 +283,7 @@ class TestDetailCta:
     @pytest.mark.subsys_cli_ux
     def test_keyless_user_gets_the_login_cta(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            "reporails_cli.core.platform.adapters.api_client.has_api_key",
+            "reporails_cli.formatters.text.display.has_api_key",
             lambda: False,
         )
         coord = SimpleNamespace(count=2, file_1="a.md", file_2="b.md", finding_type="repetition")
@@ -304,7 +298,7 @@ class TestDetailCta:
     @pytest.mark.subsys_cli_ux
     def test_keyed_user_gets_the_upgrade_cta(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            "reporails_cli.core.platform.adapters.api_client.has_api_key",
+            "reporails_cli.formatters.text.display.has_api_key",
             lambda: True,
         )
         coord = SimpleNamespace(count=2, file_1="a.md", file_2="b.md", finding_type="repetition")
@@ -344,31 +338,31 @@ class TestDetectTier:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_pro_wire_tier_yields_pro(self) -> None:
-        result = SimpleNamespace(offline=False, hints=(), tier="pro")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="pro", server_error=None))
         assert _detect_tier(result, has_quality=True) == "Pro"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_team_wire_tier_yields_pro(self) -> None:
-        result = SimpleNamespace(offline=False, hints=(), tier="team")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="team", server_error=None))
         assert _detect_tier(result, has_quality=True) == "Pro"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_free_wire_tier_yields_free(self) -> None:
-        result = SimpleNamespace(offline=False, hints=(), tier="free")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="free", server_error=None))
         assert _detect_tier(result, has_quality=False) == "free"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_anonymous_wire_tier_yields_free(self) -> None:
-        result = SimpleNamespace(offline=False, hints=(), tier="anonymous")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="anonymous", server_error=None))
         assert _detect_tier(result, has_quality=False) == "free"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_offline_without_a_named_tier_yields_offline(self) -> None:
-        result = SimpleNamespace(offline=True, hints=(), tier="")
+        result = SimpleNamespace(offline=True, hints=(), reply=SimpleNamespace(tier="", server_error=None))
         assert _detect_tier(result, has_quality=True) == "offline"
 
     @pytest.mark.unit
@@ -376,13 +370,13 @@ class TestDetectTier:
     def test_no_wire_tier_falls_back_to_hints(self) -> None:
         """A result with no wire tier at all (e.g. pre-0.6.0 server) falls back
         to the hints/has_quality heuristic."""
-        result = SimpleNamespace(offline=False, hints=({"x": 1},), tier="")
+        result = SimpleNamespace(offline=False, hints=({"x": 1},), reply=SimpleNamespace(tier="", server_error=None))
         assert _detect_tier(result, has_quality=False) == "free"
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_wire_tier_falls_back_to_has_quality(self) -> None:
-        result = SimpleNamespace(offline=False, hints=(), tier="")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="", server_error=None))
         assert _detect_tier(result, has_quality=True) == "Pro"
 
     @pytest.mark.unit
@@ -394,7 +388,7 @@ class TestDetectTier:
         deserializer now forwards an empty tier for that case instead of inventing
         `free`, and an empty tier is exactly what routes here.
         """
-        result = SimpleNamespace(offline=False, hints=(), tier="")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="", server_error=None))
         assert _detect_tier(result, has_quality=True) == "Pro"
 
     @pytest.mark.unit
@@ -405,7 +399,9 @@ class TestDetectTier:
         Only the declared unentitled set downgrades the banner; a new paid plan the
         server ships before the client knows about it must not silently render as free.
         """
-        result = SimpleNamespace(offline=False, hints=({"x": 1},), tier="enterprise")
+        result = SimpleNamespace(
+            offline=False, hints=({"x": 1},), reply=SimpleNamespace(tier="enterprise", server_error=None)
+        )
         assert _detect_tier(result, has_quality=False) == "Pro"
 
     @pytest.mark.unit
@@ -417,7 +413,7 @@ class TestDetectTier:
         import reporails_cli.core.platform.config.credentials as credentials
 
         monkeypatch.setattr(credentials, "read_credentials", lambda: {"tier": "beta"})
-        result = SimpleNamespace(offline=False, hints=(), tier="anonymous")
+        result = SimpleNamespace(offline=False, hints=(), reply=SimpleNamespace(tier="anonymous", server_error=None))
         assert _detect_tier(result, has_quality=False) == "free"
         assert _detect_tier(result, has_quality=False) != "Pro (beta)"
 
@@ -561,7 +557,15 @@ class TestItemHealthGating:
         result = CombinedResult(findings=(), quality=quality, per_file_analysis=per_file)
 
         with item_scorecard.console.capture() as cap:
-            display._render_findings_and_scorecard(result, rmap, True, False, ScopeInfo(), "free", 0, tmp_path, {})
+            display._render_findings_and_scorecard(
+                result,
+                rmap,
+                ascii_mode=True,
+                verbose=False,
+                summary=display._SummaryInputs(scope=ScopeInfo(), tier="free", elapsed_ms=0),
+                project_root=tmp_path,
+                file_type_by_path={},
+            )
         out = cap.get()
         # Both per-item rows render only when item_health is computed (the guard holds).
         assert "alpha" in out and "beta" in out  # kills L423 `== -> !=`

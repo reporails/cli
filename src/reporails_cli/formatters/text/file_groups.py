@@ -7,14 +7,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import SEV_WEIGHT, path_tag
+from reporails_cli.formatters.triage import classify_regime
 
 
 def group_key(filepath: str, ft: dict[str, str], root: Path, skill_of: dict[str, str] | None) -> str:
     """File-group key for a path: `skills` for a file inside a skill folder first, then `imported` /
     `referenced` by classifier type, else the path-based tag (a `SKILL.md` outside every skill
     folder is a plain file whenever a skill lookup exists)."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     norm = normalize_finding_path(filepath, root)
     if skill_of is not None and norm in skill_of:
@@ -96,8 +98,6 @@ def build_hints_by_file(
     """Build a file-keyed index of hints for inline display; an alias file's hints fold into its canonical's."""
     result: dict[str, list[Any]] = {}
     if hints:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
         for h in hints:
             norm = normalize_finding_path(h.file, project_root)
             result.setdefault(norm, []).append(h)
@@ -114,8 +114,6 @@ def build_regime_by_file(result: Any, project_root: Path) -> dict[str, Any]:
     Empty for offline runs (no `per_file_analysis`) — callers then render the
     neutral findings view.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-    from reporails_cli.formatters.triage import classify_regime
 
     regimes: dict[str, Any] = {}
     for fa in result.per_file_analysis:
@@ -135,8 +133,6 @@ def build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str
     one row. Both alias sources are returned as project-relative posix strings
     so `_print_file_card` can do a plain dict lookup.
     """
-    from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     out: dict[str, list[str]] = {}
     for canonical, alias_paths in get_file_aliases(project_root).items():

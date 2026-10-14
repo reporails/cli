@@ -18,11 +18,9 @@ import regex
 import yaml
 
 from reporails_cli.core.lint.regex.compiler import CombinedPattern, CompiledCheck, compile_rules
+from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
     _append_extra,
-    _emit_expect_findings,
-    _file_below_min_lines,
-    _file_matches_path_filter,
     _is_text_file,
     _resolve_scan_targets,
     _scan_all_targets,
@@ -79,7 +77,7 @@ def test_strip_frontmatter_closing_at_eof() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _file_matches_path_filter (L62)
+# file_matches_path_filter (L62)
 # ---------------------------------------------------------------------------
 
 
@@ -91,7 +89,7 @@ def test_path_filter_globstar_matches_rel_not_filename() -> None:
     Kills L62 `or->and`: the rel-path branch matches while the bare-filename
     branch does not; `and` would drop the match.
     """
-    assert _file_matches_path_filter("sub/file.md", ("**/sub/file.md",)) is True
+    assert file_matches_path_filter("sub/file.md", ("**/sub/file.md",)) is True
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +143,7 @@ def test_scan_combined_skips_unnamed_group_match() -> None:
     )
     results: list[dict[str, Any]] = []
     rule_defs: dict[str, dict[str, Any]] = {}
-    _scan_combined("bar", "f.md", [combined], results, rule_defs, [])
+    _scan_combined("bar", "f.md", [combined], results=results, rule_defs=rule_defs, unfinished=[])
     assert results == []
 
 
@@ -217,7 +215,7 @@ def test_compiled_check_ignores_nonpositive_min_lines(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _emit_expect_findings (L518 rule_id, L538 message fallback)
+# emit_expect_findings (L518 rule_id, L538 message fallback)
 # ---------------------------------------------------------------------------
 
 
@@ -225,7 +223,7 @@ def test_compiled_check_ignores_nonpositive_min_lines(tmp_path: Path) -> None:
 @pytest.mark.subsys_lint
 def test_emit_findings_rule_id_from_three_part_check_id() -> None:
     """A 3-part check id maps to a colon-joined rule id (L518 `>=->>`)."""
-    findings = _emit_expect_findings(
+    findings = emit_expect_findings(
         [_make_check("CORE.S.0013")],
         matched_pairs=set(),
         match_details={},
@@ -239,7 +237,7 @@ def test_emit_findings_rule_id_from_three_part_check_id() -> None:
 @pytest.mark.subsys_lint
 def test_emit_findings_absent_message_falls_back_to_check_message() -> None:
     """An empty match message falls back to the check message (L538 `or->and`)."""
-    findings = _emit_expect_findings(
+    findings = emit_expect_findings(
         [replace(_make_check("C1", every_match=True), message="fallback message")],
         matched_pairs={("C1", "f.md")},
         match_details={("C1", "f.md"): [(5, "", "")]},
@@ -250,7 +248,7 @@ def test_emit_findings_absent_message_falls_back_to_check_message() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _file_below_min_lines guards (L569 or->and, L575)
+# file_below_min_lines guards (L569 or->and, L575)
 # ---------------------------------------------------------------------------
 
 
@@ -258,11 +256,11 @@ def test_emit_findings_absent_message_falls_back_to_check_message() -> None:
 @pytest.mark.subsys_lint
 def test_file_below_min_lines_none_scan_root() -> None:
     """A None scan_root short-circuits to False, not a None-division (L569 `or->and`)."""
-    assert _file_below_min_lines("f.md", 5, None) is False
+    assert file_below_min_lines("f.md", 5, None) is False
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_file_below_min_lines_missing_file(tmp_path: Path) -> None:
     """An unreadable file is treated as not-below (L575 `False->True`)."""
-    assert _file_below_min_lines("missing.md", 5, tmp_path) is False
+    assert file_below_min_lines("missing.md", 5, tmp_path) is False

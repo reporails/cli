@@ -101,6 +101,7 @@ def _flag_overruns(
 def repeated_named(
     snap_atoms: list[SnapshotAtom],
     new_atoms: list[Any],
+    *,
     matched_new_for: dict[int, Any],
     split_covering_for: dict[int, list[Any]],
     original_text: str,

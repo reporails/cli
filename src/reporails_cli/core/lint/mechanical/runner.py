@@ -12,9 +12,11 @@ from typing import Any
 
 from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.walk import is_under, shared_dir_listings
-from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS, get_target_files
+from reporails_cli.core.lint.mechanical.checks import get_target_files
+from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
+from reporails_cli.core.platform.policy.matching import match_files
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ def run_mechanical_check(
     check: Check,
     root: Path,
     classified_files: list[ClassifiedFile],
+    *,
     extra_args: dict[str, Any] | None = None,
     match_type: str | list[str] | None = None,
     exclusions: RunExclusions | None = None,
@@ -65,6 +68,7 @@ def dispatch_single_check(
     root: Path,
     classified_files: list[ClassifiedFile],
     location: str,
+    *,
     extra_args: dict[str, Any] | None = None,
     exclusions: RunExclusions | None = None,
 ) -> tuple[Violation | None, CheckResult | None]:
@@ -90,11 +94,13 @@ def dispatch_single_check(
 
     match_type = rule.match.type if rule.match is not None else None
     try:
-        result = run_mechanical_check(check, root, classified_files, extra_args, match_type, exclusions)
+        result = run_mechanical_check(
+            check, root, classified_files, extra_args=extra_args, match_type=match_type, exclusions=exclusions
+        )
     except UnknownCheckError:
         logger.warning("Unknown mechanical check: %s (rule %s)", check.check, rule.id)
         return None, None
-    except Exception:  # mechanical checks are plugin-like; any failure caught and logged
+    except Exception:  # pylint: disable=broad-exception-caught  # a failing check is logged and skipped so the run keeps serving the other rules
         logger.exception("Mechanical check %s failed for rule %s", check.check, rule.id)
         return None, None
     if result is None:
@@ -123,6 +129,7 @@ def run_mechanical_checks(
     rules: dict[str, Rule],
     target: Path,
     classified_files: list[ClassifiedFile],
+    *,
     scoped: bool = False,
     project_checks: str = "all",
     exclusions: RunExclusions | None = None,
@@ -149,20 +156,21 @@ def run_mechanical_checks(
         List of Violation objects for failed checks
     """
     with shared_dir_listings():
-        return _run_mechanical_checks(rules, target, classified_files, scoped, project_checks, exclusions)
+        return _run_mechanical_checks(
+            rules, target, classified_files, scoped=scoped, project_checks=project_checks, exclusions=exclusions
+        )
 
 
 def _run_mechanical_checks(
     rules: dict[str, Rule],
     target: Path,
     classified_files: list[ClassifiedFile],
+    *,
     scoped: bool,
     project_checks: str,
     exclusions: RunExclusions | None = None,
 ) -> list[Violation]:
     """The check loop of `run_mechanical_checks`, run inside its shared directory listings."""
-    from reporails_cli.core.platform.policy.matching import match_files
-
     violations: list[Violation] = []
 
     for rule in rules.values():
@@ -302,17 +310,20 @@ def _resolve_location_path(
 
     # Wildcard match (type is None) — prefer main file, then any project-scope file
     path = _first_classified_path(classified_files, root, "main")
-    if path:
-        return path
+    return path or _first_project_scope_path(classified_files, root)
 
-    # Fallback: first project-scope file (under root). Skip user-scope and
-    # managed-scope so project-wide rules don't misattribute findings to
-    # `~/.claude/CLAUDE.md` when the project has no project-scope main.
-    if classified_files and root is not None:
-        for cf in classified_files:
-            if _is_under_root(cf.path, root):
-                return _classified_display(cf, root)
-    elif classified_files:
+
+def _first_project_scope_path(classified_files: list[ClassifiedFile], root: Path | None) -> str | None:
+    """Display path of the first project-scope file (under root); None when there is none.
+
+    Skips user-scope and managed-scope files so project-wide rules don't misattribute
+    findings to `~/.claude/CLAUDE.md` when the project has no project-scope main.
+    """
+    if not classified_files:
+        return None
+    if root is None:
         return _classified_display(classified_files[0], root)
-
+    for cf in classified_files:
+        if _is_under_root(cf.path, root):
+            return _classified_display(cf, root)
     return None

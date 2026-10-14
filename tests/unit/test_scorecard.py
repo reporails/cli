@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.runtime.merger import Omissions
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
 
@@ -154,6 +155,7 @@ class _VerdictResult:
     quality: _Quality | None
     stats: _Stats
     findings: tuple = ()
+    omissions: Omissions = field(default_factory=Omissions)
 
 
 class TestConventionsInFindingsLine:
@@ -172,6 +174,6 @@ class TestConventionsInFindingsLine:
             ),
         )
         with console.capture() as cap:
-            _render_verdict_block(result, has_quality=True, n_atoms=0, elapsed_ms=0)
+            _render_verdict_block(result, has_quality=True, elapsed_ms=0)
         out = " ".join(cap.get().split())
         assert "Findings 1 total · 2 documentation conventions not present · -v to list them" in out

@@ -12,13 +12,14 @@ would change, so the assertion reddens when that bug returns.
 
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from reporails_cli.core.mapper import bio_graphs, bio_tagger
+from reporails_cli.core.mapper import bio_graphs, bio_tagger, graph_hash
 from reporails_cli.core.mapper.bio_tagger import (
     _B_DIR,
     _I_DIR,
@@ -338,8 +339,8 @@ def test_multislot_tuple_compound_candidate_defaults_false() -> None:
 @pytest.mark.subsys_map
 def test_multislot_available_false_when_graph_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """One missing graph → not available (kills `and` -> `or` in multislot_available)."""
-    monkeypatch.setattr(bio_tagger, "_enc_a_path", lambda: Path("/nonexistent/encA.onnx"))
-    assert bio_tagger.multislot_available() is False
+    monkeypatch.setattr(bio_graphs, "_enc_a_path", lambda: Path("/nonexistent/encA.onnx"))
+    assert bio_graphs.multislot_available() is False
 
 
 @pytest.mark.unit
@@ -348,12 +349,11 @@ def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch
     """REGRESSION: a same-size corrupted `charge_encoder_encA.onnx` must not
     crash every check forever with a raw ONNX-runtime traceback. `_enc_a()` repairs
     the persistent cache once (never the in-package dev tree) and retries the load."""
-    import reporails_cli.bundled as bundled_mod
-    from reporails_cli.core.mapper import model_fetch
+    from reporails_cli.core.mapper import model_fetch, model_manifest, model_store
 
     bio_tagger._enc_a.cache_clear()
-    monkeypatch.setattr(bundled_mod, "_tree_present", False)
-    monkeypatch.setattr(bundled_mod, "_repair_events", {})
+    monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
+    monkeypatch.setattr(model_store, "_repair_events", {})
     # tests/conftest.py defaults AILS_MODEL_OFFLINE=1 for the whole suite; this
     # test exercises the online repair path.
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
@@ -390,11 +390,10 @@ def test_enc_a_repairs_cache_once_and_retries_after_a_corrupted_load(monkeypatch
 def test_enc_a_never_repairs_the_in_package_dev_tree(monkeypatch: pytest.MonkeyPatch) -> None:
     """A load failure against the in-package dev tree (no pins apply there) must
     re-raise unchanged — a network repair could not fix a dev checkout's own files."""
-    import reporails_cli.bundled as bundled_mod
-    from reporails_cli.core.mapper import model_fetch
+    from reporails_cli.core.mapper import model_fetch, model_manifest
 
     bio_tagger._enc_a.cache_clear()
-    monkeypatch.setattr(bundled_mod, "_tree_present", True)
+    monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: True)
 
     def always_fails(self: object, onnx_path: Path) -> None:
         raise RuntimeError("dev tree file is broken")
@@ -435,14 +434,12 @@ def _seed_fake_model_dir(models_dir: Path) -> None:
 @pytest.mark.subsys_map
 def test_multislot_fingerprint_stable_with_no_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Two calls with nothing changed must return the identical fingerprint."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    fp1 = bio_tagger.multislot_fingerprint()
-    fp2 = bio_tagger.multislot_fingerprint()
+    fp1 = bio_graphs.multislot_fingerprint()
+    fp2 = bio_graphs.multislot_fingerprint()
     assert fp1 == fp2
 
 
@@ -454,15 +451,13 @@ def test_multislot_fingerprint_changes_when_charge_encoder_a_changes(
     """Swapping the first encoder's weights (not just the heads) must
     re-key the fingerprint — this is what full_map_cache.compute_identity and
     pipeline._open_map_cache fold into their cache identity."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    before = bio_tagger.multislot_fingerprint()
+    before = bio_graphs.multislot_fingerprint()
     (fake_models / "charge_encoder_encA.onnx").write_bytes(b"encA-v2-different-weights")
-    after = bio_tagger.multislot_fingerprint()
+    after = bio_graphs.multislot_fingerprint()
     assert before != after
 
 
@@ -472,15 +467,13 @@ def test_multislot_fingerprint_changes_when_charge_encoder_b_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Same as the first encoder, mirrored for the second."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    before = bio_tagger.multislot_fingerprint()
+    before = bio_graphs.multislot_fingerprint()
     (fake_models / "charge_encoder_encB.onnx").write_bytes(b"encB-v2-different-weights")
-    after = bio_tagger.multislot_fingerprint()
+    after = bio_graphs.multislot_fingerprint()
     assert before != after
 
 
@@ -490,15 +483,13 @@ def test_multislot_fingerprint_changes_when_tokenizer_changes(tmp_path: Path, mo
     """The bundled tokenizer changing (a model release that only touches
     `tokenizer.json`) must re-key too — otherwise a tokenizer-only release
     serves stale per-file/whole-map atom caches."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    before = bio_tagger.multislot_fingerprint()
+    before = bio_graphs.multislot_fingerprint()
     (fake_models / "minilm-l6-v2" / "tokenizer.json").write_text('{"changed": true}')
-    after = bio_tagger.multislot_fingerprint()
+    after = bio_graphs.multislot_fingerprint()
     assert before != after
 
 
@@ -507,20 +498,18 @@ def test_multislot_fingerprint_changes_when_tokenizer_changes(tmp_path: Path, mo
 def test_multislot_fingerprint_ignores_the_contract_sidecar(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The `two_encoder_contract.json` sidecar is no longer fetched, pinned,
     or read by the fingerprint — editing or removing it must not re-key."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
     (fake_models / "two_encoder_contract.json").write_text("{}")
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    before = bio_tagger.multislot_fingerprint()
+    before = bio_graphs.multislot_fingerprint()
     (fake_models / "two_encoder_contract.json").write_text('{"changed": true}')
-    after = bio_tagger.multislot_fingerprint()
+    after = bio_graphs.multislot_fingerprint()
     assert before == after
 
     (fake_models / "two_encoder_contract.json").unlink()
-    still = bio_tagger.multislot_fingerprint()
+    still = bio_graphs.multislot_fingerprint()
     assert still == before
 
 
@@ -531,15 +520,13 @@ def test_multislot_fingerprint_changes_when_embedder_graph_changes(
 ) -> None:
     """Swapping the shared embedder graph must re-key the fingerprint, so a fresh
     embedder model never keeps a whole-map cache HIT."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    before = bio_tagger.multislot_fingerprint()
+    before = bio_graphs.multislot_fingerprint()
     (fake_models / "minilm-l6-v2" / "onnx" / "model.onnx").write_bytes(b"embedder-v2-different-weights")
-    after = bio_tagger.multislot_fingerprint()
+    after = bio_graphs.multislot_fingerprint()
     assert before != after
 
 
@@ -547,15 +534,13 @@ def test_multislot_fingerprint_changes_when_embedder_graph_changes(
 @pytest.mark.subsys_map
 def test_multislot_fingerprint_changes_when_head_a_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Pre-existing coverage preserved: a head swap must still re-key."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    before = bio_tagger.multislot_fingerprint()
+    before = bio_graphs.multislot_fingerprint()
     (fake_models / "multislot_head_encA.onnx").write_bytes(b"headA-v2-different-weights")
-    after = bio_tagger.multislot_fingerprint()
+    after = bio_graphs.multislot_fingerprint()
     assert before != after
 
 
@@ -563,23 +548,27 @@ def test_multislot_fingerprint_changes_when_head_a_changes(tmp_path: Path, monke
 @pytest.mark.subsys_map
 def test_multislot_fingerprint_none_when_a_graph_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A missing graph must still short-circuit to the sentinel "none" fingerprint."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
     (fake_models / "charge_encoder_encA.onnx").unlink()
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    assert bio_tagger.multislot_fingerprint() == "none"
+    assert bio_graphs.multislot_fingerprint() == "none"
 
 
 # ── content-hash disk sidecar: memoize the hash across processes ──
 
 
+def _use_models_dir(monkeypatch: pytest.MonkeyPatch, models_dir: Path) -> None:
+    """Point every model-path consumer of the tagger at `models_dir`."""
+    monkeypatch.setattr(bio_tagger, "get_models_path", lambda: models_dir)
+    monkeypatch.setattr(bio_graphs, "get_models_path", lambda: models_dir)
+
+
 def _clear_in_memory_hash_caches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulate a fresh process: no in-memory cache, no already-loaded sidecar."""
-    bio_graphs._graph_hash_cache.clear()
-    monkeypatch.setattr(bio_graphs, "_sidecar_data", None)
+    graph_hash._graph_hash_cache.clear()
+    monkeypatch.setattr(graph_hash, "_load_sidecar", functools.cache(graph_hash._load_sidecar.__wrapped__))
 
 
 @pytest.mark.unit
@@ -587,24 +576,23 @@ def _clear_in_memory_hash_caches(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_fingerprint_sidecar_avoids_rehash_in_a_fresh_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A 'fresh process' (in-memory caches cleared) reads the on-disk sidecar
     a PRIOR process wrote and does not re-hash an unchanged file."""
-    import reporails_cli.bundled as bundled_mod
     from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
     # First "process": computes and persists the sidecar.
-    fp1 = bio_tagger.multislot_fingerprint()
+    fp1 = bio_graphs.multislot_fingerprint()
     assert (get_global_cache_dir() / "fingerprint.json").is_file()
     assert not (fake_models / "fingerprint.json").exists()
 
     # Second "process": in-memory state gone, sidecar file remains.
     _clear_in_memory_hash_caches(monkeypatch)
     calls: list[Path] = []
-    monkeypatch.setattr(bio_graphs, "_hash_file_bytes", lambda p: calls.append(p) or "should-not-be-used")
+    monkeypatch.setattr(graph_hash, "_hash_file_bytes", lambda p: calls.append(p) or "should-not-be-used")
 
-    fp2 = bio_tagger.multislot_fingerprint()
+    fp2 = bio_graphs.multislot_fingerprint()
     assert fp2 == fp1
     assert calls == [], f"re-hashed unchanged files in a 'fresh process': {calls}"
 
@@ -613,18 +601,16 @@ def test_fingerprint_sidecar_avoids_rehash_in_a_fresh_process(tmp_path: Path, mo
 @pytest.mark.subsys_map
 def test_fingerprint_sidecar_rehashes_a_changed_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A file whose size/mtime moved since the sidecar was written is re-hashed, not trusted stale."""
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     _seed_fake_model_dir(fake_models)
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
+    _use_models_dir(monkeypatch, fake_models)
 
-    fp1 = bio_tagger.multislot_fingerprint()
+    fp1 = bio_graphs.multislot_fingerprint()
 
     _clear_in_memory_hash_caches(monkeypatch)
     (fake_models / "charge_encoder_encA.onnx").write_bytes(b"encA-v2-different-weights")
 
-    fp2 = bio_tagger.multislot_fingerprint()
+    fp2 = bio_graphs.multislot_fingerprint()
     assert fp2 != fp1
 
 
@@ -653,22 +639,20 @@ def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: 
     import threading
     import time
 
-    import reporails_cli.bundled as bundled_mod
-
     fake_models = tmp_path / "models"
     fake_models.mkdir()
-    monkeypatch.setattr(bundled_mod, "get_models_path", lambda: fake_models)
-    monkeypatch.setattr(bio_graphs, "_sidecar_paths", lambda: [fake_models / "fingerprint.json"])
+    _use_models_dir(monkeypatch, fake_models)
+    monkeypatch.setattr(graph_hash, "_sidecar_paths", lambda: [fake_models / "fingerprint.json"])
     _clear_in_memory_hash_caches(monkeypatch)
     # Pre-load once so every thread shares the SAME empty dict object (the normal
     # steady state after a process's first sidecar touch) rather than racing the
     # one-time `_sidecar_data = {}` initialization too.
-    bio_graphs._load_sidecar()
+    graph_hash._load_sidecar()
 
     real_dumps = json.dumps
 
     def slow_dumps(obj: object, *args: object, **kwargs: object) -> str:
-        if obj is bio_graphs._sidecar_data:
+        if obj is graph_hash._load_sidecar():
             # Iterate the live dict view (NOT a copy) — a concurrent insert during
             # this walk must raise, exactly as it does inside the real `json.dumps`
             # C encoder's own live iteration over `dct.items()`.
@@ -676,7 +660,7 @@ def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: 
                 time.sleep(0.005)
         return real_dumps(obj, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(bio_graphs.json, "dumps", slow_dumps)
+    monkeypatch.setattr(graph_hash.json, "dumps", slow_dumps)
 
     n = 12
     paths = []
@@ -691,7 +675,7 @@ def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: 
     def worker(path: Path) -> None:
         barrier.wait()
         try:
-            bio_graphs._graph_content_hash(path)
+            graph_hash.graph_content_hash(path)
         except BaseException as exc:
             errors.append(exc)
 
@@ -713,7 +697,7 @@ def test_word_features_pool_each_word_distinctly() -> None:
     """Each whitespace word pools its own token, not the global fallback mean
     (kills L212 `ws <= s` -> `ws < s`, which drops each word's first token and
     collapses every row to the shared all-token mean)."""
-    if not bio_tagger.multislot_available():
+    if not bio_graphs.multislot_available():
         pytest.skip("encoder not bundled")
     feats, _word_spans, _covered = bio_tagger._word_features("alpha beta", bio_tagger._enc_a())
     assert feats.shape[0] == 2
@@ -726,7 +710,7 @@ def test_tag_atom_multislot_whitespace_is_empty_tuple() -> None:
     """Whitespace pools to no words → a neutral empty 5-tuple, never compound
     (kills L545 compound_candidate False->True; and L520 == -> != which then runs
     the head on empty feats and raises)."""
-    if not bio_tagger.multislot_available():
+    if not bio_graphs.multislot_available():
         pytest.skip("dev multi-slot graphs not bundled")
     tup = bio_tagger.tag_atom_multislot("   ")
     assert tup.polarity == 0

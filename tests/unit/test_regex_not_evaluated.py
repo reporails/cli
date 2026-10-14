@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from io import StringIO
 from pathlib import Path
 
 import pytest
 from rich.console import Console
 
-from reporails_cli.core.lint.regex import runner
+from reporails_cli.core.lint.regex import matching, runner
 from reporails_cli.core.lint.regex.not_evaluated import (
     PatternTimeoutError,
     not_evaluated_scope,
     record_not_evaluated,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.not_evaluated import print_not_evaluated
 
@@ -68,7 +67,7 @@ def test_timed_out_search_gives_no_finding_for_either_expect_mode(
     def _timeout(pat: object, content: str) -> None:
         raise PatternTimeoutError("forced")
 
-    monkeypatch.setattr(runner, "_safe_search", _timeout)
+    monkeypatch.setattr(matching, "safe_search", _timeout)
     with not_evaluated_scope() as unfinished:
         findings = _run(yml, root)
     assert findings == []
@@ -83,7 +82,7 @@ def test_real_catastrophic_pattern_runs_out_of_time(tmp_path: Path, monkeypatch:
         _CHECKS.replace("(?m)^# \\S", "(a|aa)+$"),
         encoding="utf-8",
     )
-    monkeypatch.setattr(runner, "_REGEX_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(matching, "REGEX_TIMEOUT_S", 0.05)
     with not_evaluated_scope() as unfinished:
         findings = _run(yml, root)
     assert ("CORE:X:0001", "CLAUDE.md") in unfinished
@@ -99,7 +98,7 @@ def test_nothing_recorded_outside_a_scope(tmp_path: Path, monkeypatch: pytest.Mo
     assert unfinished == []
 
     yml, root = _project(tmp_path, "x\n")
-    monkeypatch.setattr(runner, "_safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
+    monkeypatch.setattr(matching, "safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
     assert _run(yml, root) == []
 
 
@@ -120,7 +119,7 @@ def test_scopes_nest_without_leaking() -> None:
 def test_json_envelope_lists_not_evaluated(tmp_path: Path) -> None:
     empty = json_formatter.format_combined_result(CombinedResult(), project_root=tmp_path)
     assert empty["not_evaluated"] == []
-    result = replace(CombinedResult(), not_evaluated=(("CORE:C:0037", "docs/big.md"),))
+    result = CombinedResult(omissions=Omissions(not_evaluated=(("CORE:C:0037", "docs/big.md"),)))
     data = json_formatter.format_combined_result(result, project_root=tmp_path)
     assert data["not_evaluated"] == [{"rule": "CORE:C:0037", "file": "docs/big.md"}]
 
@@ -138,7 +137,7 @@ def test_text_line_is_dim_and_only_when_present() -> None:
 
 
 def _timeout_on(*needles: str, fn: str) -> object:
-    real = getattr(runner, fn)
+    real = getattr(matching, fn)
 
     def _wrapped(pat: object, content: str) -> object:
         if any(n in getattr(pat, "pattern", "") for n in needles):
@@ -154,7 +153,7 @@ def test_confirmed_absent_match_survives_a_timed_out_enumeration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     yml, root = _project(tmp_path, "# title\nSECRET here\n")
-    monkeypatch.setattr(runner, "_safe_finditer", _timeout_on("SECRET", fn="_safe_finditer"))
+    monkeypatch.setattr(matching, "safe_finditer", _timeout_on("SECRET", fn="safe_finditer"))
     with not_evaluated_scope() as unfinished:
         findings = _run(yml, root)
     assert [f.rule for f in findings] == ["CORE:X:0002"]
@@ -173,8 +172,8 @@ def test_either_pattern_check_reports_when_one_pattern_times_out(
         "  severity: low\n  pattern-either:\n  - pattern-regex: SLOWONE\n  - pattern-regex: TOKEN\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(runner, "_safe_search", _timeout_on("SLOWONE", fn="_safe_search"))
-    monkeypatch.setattr(runner, "_safe_finditer", _timeout_on("SLOWONE", fn="_safe_finditer"))
+    monkeypatch.setattr(matching, "safe_search", _timeout_on("SLOWONE", fn="safe_search"))
+    monkeypatch.setattr(matching, "safe_finditer", _timeout_on("SLOWONE", fn="safe_finditer"))
     with not_evaluated_scope() as unfinished:
         findings = _run(yml, tmp_path)
     assert [f.rule for f in findings] == ["CORE:X:0003"]
@@ -194,7 +193,7 @@ def test_timeout_is_recorded_only_for_a_file_the_check_applies_to(
         "  severity: low\n  min_lines: 3\n  pattern-regex: NEVER\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(runner, "_safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
+    monkeypatch.setattr(matching, "safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
     with not_evaluated_scope() as unfinished:
         runner.run_checks([yml], tmp_path, instruction_files=[tmp_path / "small.md", tmp_path / "big.md"])
     assert unfinished == [("CORE:X:0004", "big.md")]
@@ -211,7 +210,7 @@ def test_timeout_on_a_non_entry_file_is_not_recorded(tmp_path: Path, monkeypatch
         "  severity: low\n  entry_only: true\n  pattern-regex: NEVER\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(runner, "_safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
+    monkeypatch.setattr(matching, "safe_search", lambda *_a: (_ for _ in ()).throw(PatternTimeoutError("forced")))
     with not_evaluated_scope() as unfinished:
         runner.run_checks(
             [yml],

@@ -33,12 +33,6 @@ from reporails_cli.core.platform.dto.models import (
     Severity,
 )
 
-_CLASSIFY = "reporails_cli.core.classify"
-_REGISTRY = "reporails_cli.core.platform.adapters.registry"
-_CONFIG = "reporails_cli.core.platform.config.config"
-_MECH_RUNNER = "reporails_cli.core.lint.mechanical.runner"
-_REGEX = "reporails_cli.core.lint.regex"
-_CONTENT = "reporails_cli.core.lint.content_checker"
 _RR = "reporails_cli.core.lint.rule_runner"
 
 
@@ -184,7 +178,7 @@ def test_mechanical_check_runs_in_a_local_rule_of_any_type(tmp_path: Path, monke
             ("CORE:X:0003", RuleType.MECHANICAL, Execution.SERVER),
         )
     }
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: rules)
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: rules)
 
     findings = run_m_probes(tmp_path, [main], agent="claude")
 
@@ -206,7 +200,7 @@ def test_collect_mechanical_preserves_check_id(tmp_path: Path, monkeypatch: pyte
         fix=None,
         check_id="CHK1",
     )
-    monkeypatch.setattr(f"{_MECH_RUNNER}.run_mechanical_checks", lambda *a, **k: [viol])
+    monkeypatch.setattr(f"{_RR}.run_mechanical_checks", lambda *a, **k: [viol])
 
     findings = _collect_mechanical_findings({}, tmp_path, [])
     assert len(findings) == 1
@@ -229,7 +223,7 @@ def test_deterministic_type_rule_with_mechanical_checks_still_runs(
     `!= -> ==` and with `and -> or` (either would wrongly skip the rule).
     """
     sentinel = object()
-    monkeypatch.setattr(f"{_REGEX}.run_checks", lambda *a, **k: [sentinel])
+    monkeypatch.setattr(f"{_RR}.run_checks", lambda *a, **k: [sentinel])
 
     yml = tmp_path / "r.yml"
     yml.write_text("x")
@@ -247,7 +241,7 @@ def test_deterministic_rule_without_yml_path_is_skipped(tmp_path: Path, monkeypa
     Kills: L112 `not yml_path or not yml_path.exists()` with `or -> and`
     (`and` dereferences `.exists()` on None -> AttributeError).
     """
-    monkeypatch.setattr(f"{_REGEX}.run_checks", lambda *a, **k: [object()])
+    monkeypatch.setattr(f"{_RR}.run_checks", lambda *a, **k: [object()])
     rule = _rule(
         id="R",
         type=RuleType.DETERMINISTIC,
@@ -297,10 +291,10 @@ def test_run_m_probes_config_error_defaults_generic_off(tmp_path: Path, monkeypa
         captured["gs"] = generic_scanning
         return []
 
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: {})
-    monkeypatch.setattr(f"{_CLASSIFY}.load_file_types", lambda _a, **_kw: {})
-    monkeypatch.setattr(f"{_CONFIG}.get_project_config", raise_cfg)
-    monkeypatch.setattr(f"{_CLASSIFY}.classify_files", fake_classify)
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
+    monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
+    monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
+    monkeypatch.setattr(f"{_RR}.classify_files", fake_classify)
     monkeypatch.setattr(f"{_RR}._collect_mechanical_findings", lambda *a, **k: [])
     monkeypatch.setattr(f"{_RR}._collect_deterministic_findings", lambda *a, **k: [])
 
@@ -326,12 +320,12 @@ def test_content_quality_agent_defaults_to_generic(tmp_path: Path, monkeypatch: 
     the empty string through instead of the generic default).
     """
     captured: dict[str, object] = {}
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: {})
-    monkeypatch.setattr(f"{_CONTENT}.run_content_checks", lambda *a, **k: [])
-    monkeypatch.setattr(f"{_CLASSIFY}.load_file_types", lambda a, **_kw: captured.__setitem__("agent", a) or {})
-    monkeypatch.setattr(f"{_CLASSIFY}.classify_files", lambda *a, **k: [])
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
+    monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
+    monkeypatch.setattr(f"{_RR}.load_file_types", lambda a, **_kw: captured.__setitem__("agent", a) or {})
+    monkeypatch.setattr(f"{_RR}.classify_files", lambda *a, **k: [])
     monkeypatch.setattr(
-        f"{_CONFIG}.get_project_config",
+        f"{_RR}.get_project_config",
         lambda _pd: SimpleNamespace(generic_scanning=False, exclude_files=None),
     )
 
@@ -357,11 +351,11 @@ def test_content_quality_config_error_defaults_generic_off(tmp_path: Path, monke
         captured["gs"] = generic_scanning
         return []
 
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: {})
-    monkeypatch.setattr(f"{_CONTENT}.run_content_checks", lambda *a, **k: [])
-    monkeypatch.setattr(f"{_CLASSIFY}.load_file_types", lambda _a, **_kw: {})
-    monkeypatch.setattr(f"{_CONFIG}.get_project_config", raise_cfg)
-    monkeypatch.setattr(f"{_CLASSIFY}.classify_files", fake_classify)
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
+    monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
+    monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
+    monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
+    monkeypatch.setattr(f"{_RR}.classify_files", fake_classify)
 
     run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude")
     assert captured["gs"] is False

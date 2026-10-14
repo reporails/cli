@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 from reporails_cli.interfaces.cli import check_orchestration as orch
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools

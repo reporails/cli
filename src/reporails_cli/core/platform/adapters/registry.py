@@ -10,21 +10,9 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.platform.adapters.rule_builder import (
-    build_rule as build_rule,
-)
-from reporails_cli.core.platform.adapters.rule_builder import (
-    get_checks_paths as get_checks_paths,
-)
-from reporails_cli.core.platform.adapters.rule_builder import (
-    get_rules_by_category as get_rules_by_category,
-)
-from reporails_cli.core.platform.adapters.rule_builder import (
-    get_rules_by_type as get_rules_by_type,
-)
-from reporails_cli.core.platform.config.bootstrap import get_rules_path
+from reporails_cli.core.platform.adapters.rule_builder import build_rule
 from reporails_cli.core.platform.config.capabilities import agent_capabilities, clear_capability_cache
-from reporails_cli.core.platform.config.config import get_agent_config, get_project_config
+from reporails_cli.core.platform.config.config import get_agent_config, get_project_config, get_rules_path
 from reporails_cli.core.platform.dto.models import Execution, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
 from reporails_cli.core.platform.policy.applicability import filter_by_capability

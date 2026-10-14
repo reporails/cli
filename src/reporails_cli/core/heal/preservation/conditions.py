@@ -29,18 +29,20 @@ from reporails_cli.core.heal.preservation.words import (
     word_forms,
 )
 from reporails_cli.core.mapper.classify import (
+    COVERAGE_RESTRICTORS,
+    SCOPE_RESTRICTORS,
+    absolute_cues,
+    has_hedge_cue,
+)
+from reporails_cli.core.mapper.classify_lexicon import (
     CONDITION_CONJUNCTIONS,
     CONDITION_OPENERS,
     CONDITION_QUANTIFIERS,
     CONDITIONAL_MARKERS,
-    COVERAGE_RESTRICTORS,
     DETERMINERS,
     GENERAL_QUANTIFIERS,
     PHRASE_PREPOSITIONS,
     SCOPE_PREPOSITIONS,
-    SCOPE_RESTRICTORS,
-    absolute_cues,
-    has_hedge_cue,
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
 
@@ -72,6 +74,7 @@ class Pair:
     new_sentence: str
 
     def entry(self) -> dict[str, Any]:
+        """The pair as a report entry: each side's line and sentence."""
         return {
             "line": self.old.line,
             "text": self.old_sentence,

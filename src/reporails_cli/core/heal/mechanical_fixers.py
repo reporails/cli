@@ -311,6 +311,7 @@ class _Prose:
 
     @classmethod
     def read(cls, lines: list[str]) -> _Prose:
+        """The prose map of `lines`: its plain paragraphs and code spans as the markdown parse reads them."""
         content = "".join(lines)
         return cls(lines, paragraph_lines(content), line_spans(content))
 
@@ -319,6 +320,7 @@ class _Prose:
         return next(((lo, hi) for lo, hi in self.paragraphs if lo <= idx <= hi), None)
 
     def is_code(self, line: int, col: int) -> bool:
+        """Whether the character at `line`, `col` sits in a code span."""
         return in_any_span(col, _spans_at(self.spans, line).code)
 
 

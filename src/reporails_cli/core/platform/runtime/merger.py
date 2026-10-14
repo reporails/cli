@@ -13,15 +13,18 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileFinding,
     FileAnalysis,
+    FindingItem,
     FunnelError,
     LocalTier,
     Notice,
     QualityResult,
     RemediationWorkflow,
     RulesetReport,
+    walk_findings,
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
 from reporails_cli.core.platform.dto.results import HookEntry
@@ -67,31 +70,6 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
 
 
 @dataclass(frozen=True)
-class FindingItem:
-    """A single finding in the combined output, from any source."""
-
-    file: str
-    line: int
-    severity: str  # "error" | "warning" | "info"
-    rule: str  # diagnostic rule identifier or rule_id
-    message: str
-    fix: str = ""
-    source: str = "local"  # "m_probe" | "client_check" | "server"
-    impact_tier: str = ""  # the grade the reply gives this finding; "" when it gives none, and none is shown
-    signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
-    check_id: str = ""  # the local check that produced it; "" for server findings
-    convention: bool = (
-        False  # a documentation convention the file does not follow: listed apart from findings to act on
-    )
-    # The instruction's place in its file, when the finding is on one; never part of a finding's identity.
-    pi: int | None = field(default=None, compare=False)
-    # A per-file overlap finding's partner file, its line and shared percentage, when the reply names them.
-    partner_file: str | None = field(default=None, compare=False)
-    partner_line: int | None = field(default=None, compare=False)
-    overlap_pct: int | None = field(default=None, compare=False)
-
-
-@dataclass(frozen=True)
 class CombinedStats:
     """Aggregate statistics for the combined result."""
 
@@ -110,18 +88,9 @@ class CombinedStats:
 
 
 @dataclass(frozen=True)
-class CombinedResult:
-    """Merged local + server findings — the output of the new pipeline."""
+class ServerReply:
+    """What the diagnostics service answered with, carried onto every output surface."""
 
-    findings: tuple[FindingItem, ...] = ()
-    cross_file: tuple[CrossFileFinding, ...] = ()
-    quality: QualityResult | None = None
-    per_file_analysis: tuple[FileAnalysis, ...] = ()
-    stats: CombinedStats = field(default_factory=CombinedStats)
-    offline: bool = True
-    hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
-    cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
-    level: Level = Level.L0
     tier: str = ""  # Tier label propagated from LintResult ("free", "pro", "anonymous"); empty when offline
     # The composable remediation HOW; `None` offline, on the anon tier, or
     # from a pre-0.6.0 server. Carried through so JSON / MCP consumers can render it.
@@ -135,17 +104,40 @@ class CombinedResult:
     # the caller attaches it once it has both the merged result and the funnel
     # outcome (see `interfaces/cli/check_orchestration.py::_dispatch_output`).
     server_error: FunnelError | None = None
-    # The hooks found in the project's agent hook configs, set by the assemble spine from the
-    # features it already computes for the level; empty for a hand-built result.
-    hooks: tuple[HookEntry, ...] = ()
-    # The `(rule id, project-relative file)` pairs whose check did not finish in time, so says
-    # nothing about that file; empty when every check finished.
-    not_evaluated: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class Omissions:
+    """What the run left out or could not check."""
+
     # The folders and file globs the user left out of the run (built-in default excludes are not listed).
     excluded_dirs: tuple[str, ...] = ()
     excluded_files: tuple[str, ...] = ()
     # True when a checked file imports text from a file the user left out; that text still counts there.
     excluded_imported: bool = False
+    # The `(rule id, project-relative file)` pairs whose check did not finish in time, so says
+    # nothing about that file; empty when every check finished.
+    not_evaluated: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class CombinedResult:
+    """Merged local + server findings — the output of the new pipeline."""
+
+    findings: tuple[FindingItem, ...] = ()
+    cross_file: tuple[CrossFileFinding, ...] = ()
+    quality: QualityResult | None = None
+    per_file_analysis: tuple[FileAnalysis, ...] = ()
+    stats: CombinedStats = field(default_factory=CombinedStats)
+    offline: bool = True
+    hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
+    cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
+    level: Level = Level.L0
+    reply: ServerReply = field(default_factory=ServerReply)
+    # The hooks found in the project's agent hook configs, set by the assemble spine from the
+    # features it already computes for the level; empty for a hand-built result.
+    hooks: tuple[HookEntry, ...] = ()
+    omissions: Omissions = field(default_factory=Omissions)
 
 
 def _collect_server_diagnostics(
@@ -165,8 +157,6 @@ def _collect_server_diagnostics(
     items: list[FindingItem] = []
     server_keys: set[tuple[str, int, str]] = set()
     seen: set[tuple[str, int, str, str, str, str, int | None, str | None]] = set()
-    from reporails_cli.core.lint.rule_pages import rule_title
-
     for fa in server_report.per_file:
         for diag in fa.diagnostics:
             if not diag.message:
@@ -318,8 +308,6 @@ def _served_tiers(
     workflow: Any, project_root: Path | None
 ) -> tuple[dict[tuple[str, str, int], str], dict[tuple[str, str], str]]:
     """The tiers a workflow serves, by (file, rule, line) and, for a line-0 row, by (file, rule)."""
-    from reporails_cli.core.platform.dto.diagnostics import walk_findings
-
     exact: dict[tuple[str, str, int], str] = {}
     whole_file: dict[tuple[str, str], str] = {}
     for location in workflow.locations:
@@ -342,9 +330,9 @@ def stamp_served_tiers(result: CombinedResult, project_root: Path | None = None)
     any line. A finding that already has a tier, a served row without one, and a finding the
     workflow does not serve are left as they are.
     """
-    if result.workflow is None:
+    if result.reply.workflow is None:
         return result
-    exact, whole_file = _served_tiers(result.workflow, project_root)
+    exact, whole_file = _served_tiers(result.reply.workflow, project_root)
     stamped = tuple(
         replace(f, impact_tier=tier)
         if not f.impact_tier and (tier := exact.get((f.file, f.rule, f.line)) or whole_file.get((f.file, f.rule)))
@@ -494,6 +482,7 @@ def merge_results(
     m_probe_findings: list[LocalFinding],
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
+    *,
     hints: tuple[Any, ...] = (),
     cross_file_coordinates: tuple[Any, ...] = (),
     project_root: Path | None = None,
@@ -540,5 +529,5 @@ def merge_results(
         hints=hints,
         cross_file_coordinates=cross_file_coordinates,
         level=level,
-        tier=tier,
+        reply=ServerReply(tier=tier),
     )

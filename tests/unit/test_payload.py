@@ -588,3 +588,36 @@ class TestLeadInKey:
         save_ruleset_map(rm, tmp_path / "map.json")
         assert [a.lead_in for a in load_ruleset_map(tmp_path / "map.json").atoms] == [True, False, False]
         assert [a.lead_in for a in dicts_to_atoms(atoms_to_dicts(atoms))] == [True, False, False]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_file_projection_scalar_fields_snapshot() -> None:
+    """The wire file entry carries the shared scalar fields under their own keys, in order."""
+    rec = FileRecord(
+        path=str(_ROOT / "a.md"),
+        content_hash="sha256:ab",
+        loading="on_demand",
+        scope="path_scoped",
+        agent="claude",
+        type="rules",
+    )
+    rmap = RulesetMap(
+        schema_version="1",
+        embedding_model="m",
+        generated_at="t",
+        files=(rec,),
+        atoms=(),
+        summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+    )
+    entry = project_payload(rmap, _ROOT)["files"][0]
+    assert entry == {
+        "path": "a.md",
+        "content_hash": "sha256:ab",
+        "loading": "on_demand",
+        "scope": "path_scoped",
+        "agent": "claude",
+        "type": "rules",
+        "act": "always",
+    }
+    assert list(entry) == ["path", "content_hash", "loading", "scope", "agent", "type", "act"]

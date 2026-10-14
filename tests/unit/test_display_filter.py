@@ -13,9 +13,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem, normalize_finding_path
-from reporails_cli.formatters.text.display import filter_result_to_paths
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions, normalize_finding_path
 from reporails_cli.formatters.text.display_constants import get_group_atoms, per_file_stats
+from reporails_cli.formatters.text.path_filter import filter_result_to_paths
 
 
 @pytest.mark.unit
@@ -87,7 +88,7 @@ def test_get_group_atoms_uses_passed_root_not_cwd(tmp_path: Path) -> None:
     abs_file = root / "CLAUDE.md"
     rm = SimpleNamespace(atoms=[_atom(str(abs_file), 1), _atom(str(abs_file), -1)])
 
-    atoms = get_group_atoms("main", [("CLAUDE.md", [])], rm, root)
+    atoms = get_group_atoms([("CLAUDE.md", [])], rm, root)
 
     assert len(atoms) == 2, "atoms under the scan root must match the group's files"
 
@@ -97,7 +98,7 @@ def test_get_group_atoms_uses_passed_root_not_cwd(tmp_path: Path) -> None:
 def test_filter_result_to_paths_carries_user_exclusions(tmp_path: Path) -> None:
     from reporails_cli.core.platform.runtime.merger import CombinedResult
 
-    result = CombinedResult(excluded_dirs=("agents",), excluded_files=("*.gen.md",))
+    result = CombinedResult(omissions=Omissions(excluded_dirs=("agents",), excluded_files=("*.gen.md",)))
     filtered = filter_result_to_paths(result, set(), tmp_path)
-    assert filtered.excluded_dirs == ("agents",)
-    assert filtered.excluded_files == ("*.gen.md",)
+    assert filtered.omissions.excluded_dirs == ("agents",)
+    assert filtered.omissions.excluded_files == ("*.gen.md",)

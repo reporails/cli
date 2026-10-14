@@ -163,5 +163,5 @@ def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> No
         record = {str(k): str(v) for k, v in data.items()}
         record["tier"] = tier
         write_credentials_file(target, record, expect_key=api_key)
-    except Exception as exc:
+    except OSError as exc:
         logger.debug("Could not refresh the stored tier: %s", exc)

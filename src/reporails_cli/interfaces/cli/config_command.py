@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import typer
 import yaml
 
+from reporails_cli.core.platform.config.bootstrap import get_global_config_path
 from reporails_cli.interfaces.cli.helpers import console
 
 logger = logging.getLogger(__name__)
@@ -38,8 +40,6 @@ def _project_config_path(path: Path) -> Path:
 
 
 def _global_config_path() -> Path:
-    from reporails_cli.core.platform.config.bootstrap import get_global_config_path
-
     return get_global_config_path()
 
 
@@ -84,8 +84,6 @@ def _ensure_ails_gitignore(ails_dir: Path) -> None:
     Idempotent: if the file already lists both entries, no change. If it
     exists but is missing entries, append the missing ones.
     """
-    import contextlib
-
     gitignore = ails_dir / ".gitignore"
     if gitignore.exists():
         try:

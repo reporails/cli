@@ -58,7 +58,7 @@ class _Reply:
 
 def _lint(post: Any) -> FunnelError:
     with (
-        patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload()),
+        patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload()),
         patch("httpx.post", side_effect=post),
     ):
         response = AilsClient(base_url="https://example.test", tier="pro").lint(_map(), root=_ROOT)

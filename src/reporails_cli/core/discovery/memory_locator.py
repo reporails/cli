@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.discovery.agent_discovery import (
-    glob_file_type_patterns,
-    load_config_file_types,
-)
+from reporails_cli.core.discovery.agent_config import load_config_file_types
+from reporails_cli.core.discovery.agent_discovery import glob_file_type_patterns
+from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +78,6 @@ def _entries_from_directory_globs(
     # Pass empty properties — directory-glob dispatch in glob_file_type_patterns
     # only needs the patterns themselves for trailing-slash enumeration.
     if exclude_dirs is None:
-        from reporails_cli.core.discovery.agents import load_project_exclude_dirs
-
         exclude_dirs = load_project_exclude_dirs(project_root)
     paths = glob_file_type_patterns(project_root, patterns, {}, exclude_dirs)
     entries: list[MemoryEntry] = []

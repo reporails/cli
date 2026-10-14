@@ -1,12 +1,10 @@
-"""Path helpers and config loading for reporails home directory."""
+"""Path helpers for the reporails home directory."""
 
 from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
-
-from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
 
 logger = logging.getLogger(__name__)
 
@@ -48,81 +46,6 @@ def get_global_cache_dir() -> Path:
     return REPORAILS_HOME / "cache"
 
 
-def get_project_cache_dir(project_root: Path) -> Path:
-    """Get per-project cache dir under global home.
-
-    Layout: ~/.reporails/cache/projects/<12-char-hash>/
-    Uses git remote URL hash for consistency across clones.
-    """
-    from reporails_cli.core.platform.observability.analytics import get_project_id
-
-    return REPORAILS_HOME / "cache" / "projects" / get_project_id(project_root)
-
-
-def get_rules_path() -> Path:
-    """Get path to rules directory.
-
-    Resolution: config override → bundled (package default).
-    """
-    from reporails_cli.core.platform.config.config import get_global_config
-
-    config = get_global_config()
-    if config.framework_path and config.framework_path.is_dir():
-        rules_sub = config.framework_path / "rules"
-        if rules_sub.is_dir():
-            return rules_sub
-        return config.framework_path
-
-    bundled = get_bundled_rules_path()
-    if bundled is not None:
-        return bundled
-
-    # Unreachable when installed correctly, but return a sane default
-    return get_reporails_home() / "rules"
-
-
-def get_framework_root() -> Path:
-    """Get the root where schemas/, registry/, sources.yml live.
-
-    Resolution: config override → bundled package root.
-    """
-    from reporails_cli.core.platform.config.config import get_global_config
-
-    config = get_global_config()
-    if config.framework_path and config.framework_path.is_dir():
-        return config.framework_path
-
-    bundled_root = get_bundled_package_root()
-    if bundled_root is not None:
-        return bundled_root
-
-    return get_reporails_home() / "rules"
-
-
-def get_core_rules_path() -> Path:
-    """Get path to core rules directory (~/.reporails/rules/core/)."""
-    return get_rules_path() / "core"
-
-
-def get_agent_rules_path(agent: str) -> Path:
-    """Get path to agent-specific rules (~/.reporails/rules/{agent}/)."""
-    return get_rules_path() / agent
-
-
-def get_agent_config_path(agent: str) -> Path:
-    """Get path to agent config file.
-
-    The generic agent's config lives in core/ (not a separate directory).
-    """
-    dir_name = "core" if agent == "generic" else agent
-    return get_rules_path() / dir_name / "config.yml"
-
-
-def get_schemas_path() -> Path:
-    """Get path to rule schemas (schemas/ under framework root)."""
-    return get_framework_root() / "schemas"
-
-
 def get_global_packages_path() -> Path:
     """Get path to global packages directory (~/.reporails/packages/)."""
     return get_reporails_home() / "packages"
@@ -160,9 +83,3 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
         if global_dir.is_dir():
             paths.append(global_dir)
     return paths
-
-
-def is_initialized() -> bool:
-    """Check if rules are available (installed, config override, or bundled)."""
-    rules_path = get_rules_path()
-    return rules_path.is_dir() and (rules_path / "core").is_dir()

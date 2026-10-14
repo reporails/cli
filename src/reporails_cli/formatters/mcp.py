@@ -17,6 +17,7 @@ from reporails_cli.core.mapper.md_parser import file_lines
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
 from reporails_cli.formatters.listed_reasons import listed_reason_text
+from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_label
 from reporails_cli.formatters.triage import LeverageTier, resolve_row_leverage
 
 # ---------------------------------------------------------------------------
@@ -86,7 +87,6 @@ def rules_block(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
     shows. A rule id with neither a resolvable title nor a docs url is omitted. The key set is
     sorted for stability.
     """
-    from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_label
 
     raw_ids: set[str] = set()
     _collect_rule_ids(payload, raw_ids)
@@ -464,7 +464,7 @@ def _rule_meta_line(rule_data: dict[str, Any]) -> str:
     for key, val in (match or {}).items():
         # `type` already rendered above as `scope:`; every other set MATCH_PROPERTIES entry
         # (content_format, loading_verb, link_source_type, ...) is single-sourced from the same
-        # `_serialize_match` dict `rules list` emits, so it must not go missing here.
+        # `serialize_match` dict `rules list` emits, so it must not go missing here.
         if key == "type":
             continue
         meta.append(f"{key}: {_join_match_value(val)}")

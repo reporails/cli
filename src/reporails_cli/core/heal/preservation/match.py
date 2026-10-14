@@ -11,7 +11,8 @@ from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, content_words, named_key
-from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, leading_prohibition, words_of
+from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, leading_prohibition
+from reporails_cli.core.mapper.classify_lexicon import words_of
 
 # Matching thresholds, pinned by tests.
 COSINE_THRESHOLD = 0.75

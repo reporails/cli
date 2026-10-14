@@ -14,15 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import msgpack
 
-from reporails_cli.core.platform.adapters.api_client import (
-    _CHARGE_ENC,
-    _FORMAT_ENC,
-    _KIND_ENC,
-    _MODALITY_ENC,
-    _SPECIFICITY_ENC,
-)
 from reporails_cli.core.platform.dto.models import LocalEntry
-from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE
+from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, file_record_scalars, int8_bytes
 from reporails_cli.core.platform.policy.negative_headings import in_negative_section, is_negative_heading
 
 if TYPE_CHECKING:
@@ -31,6 +24,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 WIRE_SCHEMA_VERSION = 5
+
+# Encoding tables — map semantic names to wire-format short codes.
+_CHARGE_ENC = {"CONSTRAINT": 0, "DIRECTIVE": 1, "IMPERATIVE": 2, "NEUTRAL": 3, "AMBIGUOUS": 4}
+_MODALITY_ENC = {"imperative": 0, "direct": 1, "absolute": 2, "hedged": 3, "none": 4}
+_SPECIFICITY_ENC = {"named": 0, "abstract": 1}
+_FORMAT_ENC = {
+    "prose": 0,
+    "heading": 1,
+    "list": 2,
+    "numbered": 3,
+    "table": 4,
+    "blockquote": 5,
+    "code_block": 6,
+    "data_block": 7,
+}
+_KIND_ENC = {"heading": 0, "excitation": 1}
 
 # A file record carries at most this many activation patterns; the rest are dropped.
 MAX_FILE_GLOBS = 50
@@ -78,7 +87,7 @@ def _project_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
         "ub": len(a.unformatted_code) if a.unformatted_code else 0,
     }
     if a.embedding_int8:
-        d["e"] = bytes(v & 0xFF for v in a.embedding_int8)
+        d["e"] = int8_bytes(a.embedding_int8)
     if a.depth is not None:
         d["d"] = a.depth
     if a.ambiguous:
@@ -131,11 +140,7 @@ def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
     for f in ruleset_map.files:
         fd: dict[str, Any] = {
             "path": _relativize(f.path, root),
-            "content_hash": f.content_hash,
-            "loading": f.loading,
-            "scope": f.scope,
-            "agent": f.agent,
-            "type": f.type,
+            **file_record_scalars(f),
         }
         if f.skill:
             fd["skill"] = _relativize(f.skill, root)
@@ -146,7 +151,7 @@ def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
         if f.globs:
             fd["globs"] = list(f.globs[:MAX_FILE_GLOBS])
         if f.description_embedding:
-            fd["de"] = bytes(v & 0xFF for v in f.description_embedding)
+            fd["de"] = int8_bytes(f.description_embedding)
         out.append(fd)
     return out
 

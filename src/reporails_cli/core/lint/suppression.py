@@ -23,13 +23,14 @@ Two filters run at the same chokepoint (after merge, before display and strict g
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import (
     ListedFinding,
@@ -38,11 +39,8 @@ from reporails_cli.core.platform.dto.diagnostics import (
     workflow_summary,
 )
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, rebuild_severity_stats
+from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import matches_any_glob
-
-# Canonical form is an inline HTML comment, invisible when the file renders.
-_DIRECTIVE_RE = re.compile(r"<!--\s*ails-disable-line\b(?P<rules>[^>]*?)-->")
-_RULE_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]*$")
 
 
 class SuppressionIndex(dict[tuple[str, int], set[str]]):
@@ -70,31 +68,6 @@ class SuppressionIndex(dict[tuple[str, int], set[str]]):
 ImportedPlaces = Mapping[tuple[str, int], tuple[str, int]]
 
 
-def _rule_tokens(captured: str) -> set[str]:
-    """Pull valid rule names out of a directive's body, dropping separators."""
-    return {tok for tok in re.split(r"[,\s]+", captured.strip()) if _RULE_TOKEN_RE.match(tok)}
-
-
-def parse_directives(text: str) -> dict[int, set[str]]:
-    """Map 1-based line number to the set of rule names suppressed on that line."""
-    out: dict[int, set[str]] = {}
-    for lineno, line in enumerate(text.split("\n"), start=1):
-        for match in _DIRECTIVE_RE.finditer(line):
-            rules = _rule_tokens(match.group("rules"))
-            if rules:
-                out.setdefault(lineno, set()).update(rules)
-    return out
-
-
-def strip_directives(content: str) -> str:
-    """Remove suppression-directive comments so they never reach classification.
-
-    Replaces each directive comment with an equal run of spaces, preserving
-    every newline and column offset so atom line numbers stay exact.
-    """
-    return _DIRECTIVE_RE.sub(lambda m: " " * (m.end() - m.start()), content)
-
-
 def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
     """Read `path`, expand its imports and record each directive into `index`.
 
@@ -102,8 +75,6 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
     one written inside an imported file is keyed under `rel`, the imported file and
     its own line.
     """
-    from reporails_cli.core.mapper.imports import expand_imports_with_origins
-
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -261,6 +232,7 @@ def prune_workflow(
     workflow: Any,
     gone: Callable[[Any], bool],
     norm: Callable[[str], str],
+    *,
     dropped: Sequence[Any] = (),
     kept_findings: Sequence[Any] = (),
     relation_gone: Callable[[Any], bool] | None = None,
@@ -353,7 +325,7 @@ def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Cal
 def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
     """`result` whose workflow lists config-format files' findings, and those of files in the
     project's `heal_exclude`, instead of locating them. Findings, scores and stats stay as they are."""
-    workflow = result.workflow
+    workflow = result.reply.workflow
     if getattr(workflow, "locations", None) is None:
         return result
 
@@ -366,7 +338,7 @@ def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
         projected = list_heal_excluded(
             projected, lambda rel: matches_any_glob(project_root / rel, patterns, project_root), norm
         )
-    return result if projected is workflow else replace(result, workflow=projected)
+    return result if projected is workflow else replace(result, reply=replace(result.reply, workflow=projected))
 
 
 def _workflow_files(workflow: Any, norm: Callable[[str], str]) -> list[str]:
@@ -388,7 +360,7 @@ def apply_suppressions(
     def norm(file: str) -> str:
         return normalize_finding_path(file, project_root)
 
-    workflow = result.workflow if getattr(result.workflow, "locations", None) is not None else None
+    workflow = result.reply.workflow if getattr(result.reply.workflow, "locations", None) is not None else None
     if not result.findings and workflow is None:
         return result
     files = [f.file for f in result.findings]
@@ -407,11 +379,16 @@ def apply_suppressions(
         def _gone(f: Any) -> bool:
             return is_suppressed(replace(f, file=norm(f.file)), index, alias_fn, imported)
 
-        workflow = prune_workflow(workflow, _gone, norm, dropped, kept)
-    if len(kept) == len(result.findings) and (workflow is None or workflow is result.workflow):
+        workflow = prune_workflow(workflow, _gone, norm, dropped=dropped, kept_findings=kept)
+    if len(kept) == len(result.findings) and (workflow is None or workflow is result.reply.workflow):
         return result
     stats = rebuild_severity_stats(result.stats, kept) if len(kept) != len(result.findings) else result.stats
-    return replace(result, findings=kept, stats=stats, workflow=workflow if workflow is not None else result.workflow)
+    return replace(
+        result,
+        findings=kept,
+        stats=stats,
+        reply=replace(result.reply, workflow=workflow if workflow is not None else result.reply.workflow),
+    )
 
 
 def finding_surface(file: str) -> str:
@@ -425,8 +402,6 @@ def finding_surface(file: str) -> str:
     patterns, so this covers the auto-memory index (`~/.claude/projects/*/memory/`) AND the
     subagent-memory scopes (`agent-memory/` user+project, `agent-memory-local/` local) uniformly.
     """
-    from reporails_cli.core.classify.file_tags import classify_file
-
     return classify_file(file).split(":")[0]
 
 
@@ -484,15 +459,22 @@ def apply_surface_mutations(
     if not dropped:
         return result
     kept = tuple(kept_list)
-    workflow = result.workflow
+    workflow = result.reply.workflow
     if getattr(workflow, "locations", None) is not None:
 
         def norm(file: str) -> str:
             return normalize_finding_path(file, project_root)
 
         gone_rows = {_row_coordinate(f, norm) for f in dropped}
-        workflow = prune_workflow(workflow, lambda row: _row_coordinate(row, norm) in gone_rows, norm, dropped, kept)
-    return replace(result, findings=kept, stats=rebuild_severity_stats(result.stats, kept), workflow=workflow)
+        workflow = prune_workflow(
+            workflow, lambda row: _row_coordinate(row, norm) in gone_rows, norm, dropped=dropped, kept_findings=kept
+        )
+    return replace(
+        result,
+        findings=kept,
+        stats=rebuild_severity_stats(result.stats, kept),
+        reply=replace(result.reply, workflow=workflow),
+    )
 
 
 def resolve_finding_path(rel: str, project_root: Path | None) -> Path | None:

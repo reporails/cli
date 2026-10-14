@@ -54,7 +54,7 @@ def test_whole_map_identity_folds_charge_head_fingerprint(monkeypatch: pytest.Mo
     # charge-head re-export (new fingerprint, unchanged atom shape) MISSES the cached map
     # instead of serving stale charges. The per-file cache already did this; the whole-map
     # short-circuit did not.
-    import reporails_cli.core.mapper.bio_tagger as bt
+    import reporails_cli.core.cache.full_map_cache as bt
     from reporails_cli.core.cache.full_map_cache import compute_identity
 
     paths = [Path("a.md")]

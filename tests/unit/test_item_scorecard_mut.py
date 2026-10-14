@@ -15,13 +15,13 @@ import pytest
 from rich.console import Console
 
 import reporails_cli.formatters.text.item_scorecard as isc
-from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.formatters.text.health import SurfaceHealth, count_tag
 from reporails_cli.formatters.text.item_scorecard import (
     _display_name_for_path,
     compute_item_scores,
 )
-from reporails_cli.formatters.text.scorecard import SurfaceHealth, _count_tag
 
 
 @dataclass
@@ -133,8 +133,8 @@ class TestBreakdownGate:
         with_findings = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=3, item_count=1)
         without = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=0, item_count=1)
 
-        assert "3 findings" in _count_tag(with_findings)
-        assert _count_tag(without) == ""
+        assert "3 findings" in count_tag(with_findings)
+        assert count_tag(without) == ""
 
 
 # ── Band separation in render (L148, L149) ───────────────────────────

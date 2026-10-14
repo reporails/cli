@@ -3,13 +3,14 @@ description and the public guides, with each section taken from the page's markd
 
 from __future__ import annotations
 
-from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from reporails_cli.core.mapper.structure import section_span
 from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id
-from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, load_all_rules
-from reporails_cli.core.platform.dto.models import Rule
+from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+from reporails_cli.core.platform.dto.models import FileMatch, Rule
+from reporails_cli.core.platform.policy.matching import MATCH_PROPERTIES
 from reporails_cli.core.platform.utils.utils import frontmatter_block, read_frontmatter
 
 
@@ -81,8 +82,35 @@ def load_rule_description(rule: Rule) -> str | None:
     return "\n".join(kept).strip() or None
 
 
-@lru_cache(maxsize=256)
-def rule_title(rule_id: str) -> str:
-    """The title of a bundled rule, or an empty string when none is known."""
-    rule = find_rule_by_id(rule_id)
-    return (rule.title or "") if rule else ""
+def serialize_match(match: FileMatch | None) -> dict[str, object]:
+    """Serialize FileMatch to dict, including all non-None properties."""
+    if match is None:
+        return {}
+    result: dict[str, object] = {}
+    if match.type is not None:
+        result["type"] = match.type
+    for prop in MATCH_PROPERTIES:
+        val = getattr(match, prop)
+        if val is not None:
+            result[prop] = val
+    return result
+
+
+def rule_page_data(rule: Rule) -> dict[str, Any]:
+    """A rule page as the explain surfaces show it: metadata, checks, body and Pass / Fail examples."""
+    data: dict[str, Any] = {
+        "title": rule.title,
+        "category": rule.category.value,
+        "type": rule.type.value,
+        "slug": rule.slug,
+        "match": serialize_match(rule.match),
+        "severity": rule.severity.value,
+        "execution": rule.execution.value,
+        "checks": [{"id": c.id, "type": c.type, "severity": c.severity or rule.severity.value} for c in rule.checks],
+        "see_also": rule.see_also,
+    }
+    description = load_rule_description(rule)
+    if description:
+        data["description"] = description
+    data["examples"] = load_rule_examples(rule)
+    return data

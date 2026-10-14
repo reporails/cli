@@ -12,12 +12,13 @@ the dev tree (the mock host serves them) and loads a real ONNX graph.
 
 from __future__ import annotations
 
+import functools
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper import model_fetch
+from reporails_cli.core.mapper import model_fetch, model_manifest
 
 
 def _real_models_root() -> Path:
@@ -65,17 +66,22 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
     if not model_fetch.models_present(real_root):
         pytest.skip("real model files not present in the dev tree")
 
-    import reporails_cli.bundled as bundled
+    from reporails_cli.core.mapper import model_store as bundled
 
     # Route the resolver away from the dev tree so it must use the cache.
     empty_pkg = tmp_path / "pkg"
     empty_pkg.mkdir()
-    monkeypatch.setattr(bundled, "get_bundled_path", lambda: empty_pkg)
-    monkeypatch.setattr(bundled, "_tree_present", None)
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: empty_pkg)
+    monkeypatch.setattr(
+        model_manifest,
+        "in_package_tree_present",
+        functools.cache(model_manifest.in_package_tree_present.__wrapped__),
+    )
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
 
     cache_root = tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION
     monkeypatch.setattr(model_fetch, "cache_models_dir", lambda version=model_fetch.MODEL_VERSION: cache_root)
+    monkeypatch.setattr(model_manifest, "cache_models_dir", lambda version=model_manifest.MODEL_VERSION: cache_root)
 
     calls: list[str] = []
     monkeypatch.setattr(model_fetch, "_http_client", lambda headers=None: _RealServingClient(real_root, calls))
@@ -100,5 +106,5 @@ def test_first_use_fetches_then_loads_from_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr(model_fetch, "_http_client", _no_host)
     assert bundled.ensure_models_available() == cache_root
-    assert bundled.get_models_path() == cache_root
+    assert model_manifest.get_models_path() == cache_root
     assert OnnxEmbedder().encode(["another line"]).shape == (1, 384)

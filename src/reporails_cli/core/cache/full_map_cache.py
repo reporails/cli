@@ -23,11 +23,17 @@ import json
 import logging
 from pathlib import Path
 
+from reporails_cli.core.cache.map_cache import _CACHE_VERSION, content_hash
+from reporails_cli.core.mapper.bio_graphs import multislot_fingerprint
+from reporails_cli.core.mapper.imports import expand_imports
+from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
+from reporails_cli.core.platform.config.config import get_rules_path
 from reporails_cli.core.platform.dto.ruleset import (
     EMBEDDING_MODEL,
     SCHEMA_VERSION,
     RulesetMap,
 )
+from reporails_cli.core.platform.utils.directives import strip_directives
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +46,6 @@ def _expanded_content_hash(path: Path) -> str:
     Matching `_classify_file`'s hash keeps the identity key import-aware: an
     `@path` import changing the expanded content changes the key.
     """
-    from reporails_cli.core.cache.map_cache import content_hash
-    from reporails_cli.core.lint.suppression import strip_directives
-    from reporails_cli.core.mapper.imports import expand_imports
 
     raw = path.read_text(encoding="utf-8", errors="replace")
     return content_hash(strip_directives(expand_imports(raw, path)))
@@ -58,7 +61,6 @@ def _registry_fingerprint() -> str:
     is a mapper INPUT like file content is, and must key the map. Hashed by content (not
     mtime) so re-installing identical rules keeps the cache warm.
     """
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
     digest = hashlib.sha256()
     try:
@@ -89,8 +91,6 @@ def compute_identity(
     served to a run under another. A caller that cannot name its root would be silently
     storing an entry no other caller can safely reuse.
     """
-    from reporails_cli.core.cache.map_cache import _CACHE_VERSION
-    from reporails_cli.core.mapper.bio_tagger import multislot_fingerprint
 
     parts = [
         f"model={model}",
@@ -126,7 +126,6 @@ class FullMapCache:
 
     def get(self, key: str) -> RulesetMap | None:
         """Return the cached map for this identity, or None on miss/corruption."""
-        from reporails_cli.core.mapper.serialize import load_ruleset_map
 
         entry = self._entry_path(key)
         if not entry.exists():
@@ -142,7 +141,6 @@ class FullMapCache:
 
     def put(self, key: str, ruleset_map: RulesetMap) -> None:
         """Store the map under this identity and enforce the LRU cap."""
-        from reporails_cli.core.mapper.serialize import save_ruleset_map
 
         try:
             self.dir.mkdir(parents=True, exist_ok=True)

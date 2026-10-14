@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import (
-    _location_matches_mode,
     _parse_file_types,
+    location_matches_mode,
     resolve_match_to_paths,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
@@ -57,7 +57,7 @@ class TestIsLooseLeafPattern:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# _location_matches_mode — eager/nested loading model (L255 x3, L260)
+# location_matches_mode — eager/nested loading model (L255 x3, L260)
 # ═══════════════════════════════════════════════════════════════════════
 
 
@@ -77,9 +77,9 @@ class TestLocationMatchesMode:
         root = Path("/proj")
         ft = self._ft("global", "session_start")
         # In-chain (file at root) → matches.
-        assert _location_matches_mode(root / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is True
+        assert location_matches_mode(root / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is True
         # Out-of-chain (file in a descendant subdir) → does NOT match — kills L255 ==→!= (both).
-        assert _location_matches_mode(root / "sub" / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is False
+        assert location_matches_mode(root / "sub" / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
@@ -91,7 +91,7 @@ class TestLocationMatchesMode:
         """
         ft = self._ft("global", "on_demand")
         root = Path("/proj")
-        assert _location_matches_mode(root / "sub" / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is True
+        assert location_matches_mode(root / "sub" / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
@@ -103,7 +103,7 @@ class TestLocationMatchesMode:
         ft = self._ft("global", "session_start")
         root = Path("/proj")
         assert (
-            _location_matches_mode(
+            location_matches_mode(
                 root / "sub" / ".github" / "copilot-instructions.md",
                 ft,
                 {root},
@@ -122,8 +122,8 @@ class TestLocationMatchesMode:
             properties={"scope": "nested"},
         )
         root = Path("/proj")
-        assert _location_matches_mode(root / "sub" / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is True
-        assert _location_matches_mode(root / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is False
+        assert location_matches_mode(root / "sub" / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is True
+        assert location_matches_mode(root / "CLAUDE.md", ft, {root}, "**/CLAUDE.md") is False
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -210,7 +210,7 @@ class TestParseFileTypes:
 @pytest.mark.unit
 @pytest.mark.subsys_classify
 def test_the_verb_noun_determiners_extend_the_public_determiner_list() -> None:
-    from reporails_cli.core.mapper import classify
+    from reporails_cli.core.mapper import classify, classify_lexicon, classify_phases
 
     assert not hasattr(classify, "_DETERMINERS")
-    assert classify.DETERMINERS < classify._VERB_NOUN_DETERMINERS
+    assert classify_lexicon.DETERMINERS < classify_phases._VERB_NOUN_DETERMINERS

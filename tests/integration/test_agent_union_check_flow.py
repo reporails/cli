@@ -53,6 +53,7 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
     per distinctive agent, over that agent's own file only, and never with
     `agent="generic"` (a union run, never the collapsed pass)."""
     from reporails_cli.core.lint import rule_runner
+    from reporails_cli.interfaces.cli import check_pipeline
 
     project = _claude_and_cursor_project(tmp_path)
     monkeypatch.chdir(project)
@@ -95,7 +96,7 @@ def test_two_distinctive_agents_each_run_their_own_rules_never_generic(
         return real_content_checks(ruleset_map, project_dir, instruction_files, agent=agent, exclusions=exclusions)
 
     monkeypatch.setattr(rule_runner, "run_m_probes", _spy_m_probes)
-    monkeypatch.setattr(rule_runner, "run_content_quality_checks", _spy_content_checks)
+    monkeypatch.setattr(check_pipeline, "run_content_quality_checks", _spy_content_checks)
 
     result = runner.invoke(app, ["check", "-f", "json"])
 

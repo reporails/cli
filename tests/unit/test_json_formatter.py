@@ -7,9 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.diagnostics import CrossFileCoordinate, FunnelError, Hint, QualityResult
+from reporails_cli.core.platform.dto.diagnostics import (
+    CrossFileCoordinate,
+    FindingItem,
+    FunnelError,
+    Hint,
+    QualityResult,
+)
 from reporails_cli.core.platform.dto.models import Level
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, Omissions, ServerReply
 from reporails_cli.formatters.json import format_combined_result
 
 
@@ -49,7 +55,7 @@ class TestServerErrorSection:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_successful_result_serializes_server_error_null(self) -> None:
-        data = format_combined_result(_result(offline=False, tier="pro"))
+        data = format_combined_result(_result(offline=False, reply=ServerReply(tier="pro")))
         assert data["server_error"] is None
         assert data["offline"] is False
 
@@ -65,7 +71,7 @@ class TestServerErrorSection:
     @pytest.mark.subsys_diagnostic
     def test_401_invalid_api_key_populates_server_error(self) -> None:
         server_error = FunnelError(error="unknown_error", message="API key not recognized", status=401)
-        data = format_combined_result(_result(offline=True, server_error=server_error))
+        data = format_combined_result(_result(offline=True, reply=ServerReply(server_error=server_error)))
         assert data["offline"] is True  # `offline` semantics unchanged by this fix
         assert data["server_error"] == {
             "status": 401,
@@ -86,7 +92,7 @@ class TestServerErrorSection:
             status=413,
             upgrade_url="https://reporails.com/account?utm_source=cli",
         )
-        data = format_combined_result(_result(offline=True, server_error=server_error))
+        data = format_combined_result(_result(offline=True, reply=ServerReply(server_error=server_error)))
         se = data["server_error"]
         assert se["status"] == 413
         assert se["error"] == "payload_too_large"
@@ -98,7 +104,7 @@ class TestServerErrorSection:
     @pytest.mark.subsys_diagnostic
     def test_timeout_has_no_http_status(self) -> None:
         server_error = FunnelError(error="timeout", reset_in=10)
-        data = format_combined_result(_result(offline=True, server_error=server_error))
+        data = format_combined_result(_result(offline=True, reply=ServerReply(server_error=server_error)))
         se = data["server_error"]
         assert se["status"] is None
         assert se["error"] == "timeout"
@@ -115,7 +121,7 @@ class TestServerErrorSection:
         server_error = FunnelError(
             error="rate_limit_exceeded", tier="free", limit=5, upgrade_url="https://reporails.com/account"
         )
-        data = format_combined_result(_result(offline=True, server_error=server_error))
+        data = format_combined_result(_result(offline=True, reply=ServerReply(server_error=server_error)))
         message = data["server_error"]["message"]
         assert "[link=" not in message
         assert "[bold]" not in message
@@ -129,7 +135,7 @@ class TestServerErrorSection:
         `[/bold]` must not raise `rich.errors.MarkupError` when it enters the JSON
         `server_error.message` field, and must survive as literal text, not be swallowed."""
         server_error = FunnelError(error="unknown_error", tier="free", message="Server said [/bold] oops")
-        data = format_combined_result(_result(offline=True, server_error=server_error))
+        data = format_combined_result(_result(offline=True, reply=ServerReply(server_error=server_error)))
         assert "[/bold]" in data["server_error"]["message"]
 
     @pytest.mark.unit
@@ -138,7 +144,7 @@ class TestServerErrorSection:
         """A server `message` containing a `:name:` shortcode must render as literal text
         in machine-consumed JSON output, never substituted into an emoji glyph."""
         server_error = FunnelError(error="unknown_error", tier="free", message="Uh oh :smile: try again")
-        data = format_combined_result(_result(offline=True, server_error=server_error))
+        data = format_combined_result(_result(offline=True, reply=ServerReply(server_error=server_error)))
         assert ":smile:" in data["server_error"]["message"]
 
 
@@ -190,7 +196,7 @@ class TestLeverageAndRegime:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_graded_finding_keeps_leverage_without_touching_severity(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(
@@ -215,7 +221,7 @@ class TestLeverageAndRegime:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_ungraded_finding_has_no_leverage_key(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0042", message="x"),
@@ -231,8 +237,7 @@ class TestLeverageAndRegime:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_per_file_regime_added_when_analysis_present(self) -> None:
-        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
 
         findings = (FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
         per_file = (
@@ -251,8 +256,7 @@ class TestLeverageAndRegime:
     def test_retired_strict_token_drops_the_regime_key(self) -> None:
         """A server still emitting the retired "strict" wire token degrades to
         the neutral view — no `regime` key rather than an honored "strict"."""
-        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
 
         findings = (FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
         per_file = (
@@ -270,8 +274,7 @@ class TestLeverageAndRegime:
         """Server `per_file` paths are absolute; the regime must relativize them
         against the run's `project_root` (not cwd) so single-path scans attach
         the regime to the matching finding key instead of dropping it."""
-        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
 
         root = Path("/tmp/proj")
         findings = (
@@ -298,8 +301,7 @@ class TestLeverageAndRegime:
     def test_surface_health_keyed_against_passed_project_root(self) -> None:
         """Surface scores must relativize absolute server `per_file` paths against the run's
         `project_root` too (not just regime) — the MCP path where target != cwd."""
-        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
 
         root = Path("/tmp/proj")
         findings = (FindingItem(file="CLAUDE.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
@@ -324,8 +326,7 @@ class TestLeverageAndRegime:
     def test_surface_health_routes_generic_to_imported(self) -> None:
         """JSON surface_health must route @-import (`generic`) files to the Imported surface
         when file_type_by_path is supplied — matching the text view (was text-only)."""
-        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
 
         root = Path("/tmp/proj")
         findings = (FindingItem(file="docs/imp.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
@@ -340,7 +341,7 @@ class TestLeverageAndRegime:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_no_regime_key_when_offline(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (FindingItem(file="a.md", line=1, severity="warning", rule="CORE:C:0044", message="x"),)
         data = format_combined_result(_result(findings=findings))
@@ -351,7 +352,7 @@ class TestTierExposure:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_tier_present_at_top_level(self) -> None:
-        data = format_combined_result(_result(tier="pro"))
+        data = format_combined_result(_result(reply=ServerReply(tier="pro")))
         assert data["tier"] == "pro"
 
     @pytest.mark.unit
@@ -363,7 +364,7 @@ class TestTierExposure:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_tier_pass_through_for_anonymous(self) -> None:
-        data = format_combined_result(_result(tier="anonymous"))
+        data = format_combined_result(_result(reply=ServerReply(tier="anonymous")))
         assert data["tier"] == "anonymous"
 
 
@@ -383,7 +384,7 @@ class TestPerFindingCategory:
         ],
     )
     def test_category_derived_from_rule_id(self, rule_id: str, expected: str) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (FindingItem(file="a.md", line=1, severity="error", rule=rule_id, message="x"),)
         data = format_combined_result(_result(findings=findings))
@@ -395,7 +396,7 @@ class TestPerFindingCategory:
     def test_bare_token_canonicalized_to_category(self) -> None:
         """Bare-token rule ids are canonicalized on the wire, so they
         now carry a category and preserve the raw token under `label`."""
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (FindingItem(file="a.md", line=1, severity="warning", rule="format", message="x"),)
         data = format_combined_result(_result(findings=findings))
@@ -409,7 +410,7 @@ class TestSurfaceCategoryBreakdown:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_breakdown_sums_to_finding_count_for_well_formed_rules(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(file="CLAUDE.md", line=1, severity="error", rule="CORE:C:0001", message="x"),
@@ -427,7 +428,7 @@ class TestSurfaceCategoryBreakdown:
     def test_breakdown_includes_canonicalized_bare_tokens(self) -> None:
         """Bare-token rule ids are canonicalized before the breakdown,
         so the breakdown now sums to finding_count instead of dropping them."""
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(file="CLAUDE.md", line=1, severity="error", rule="CORE:C:0001", message="x"),
@@ -449,7 +450,7 @@ class TestTopRulesSeverityBreakdown:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_top_rules_entry_carries_its_own_error_and_warning_counts(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(file="a.md", line=1, severity="error", rule="CORE:C:0042", message="x"),
@@ -468,7 +469,7 @@ class TestTopRulesSeverityBreakdown:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_top_rules_all_warnings_reads_zero_errors(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(file="a.md", line=1, severity="warning", rule="CORE:S:0001", message="x"),
@@ -486,19 +487,19 @@ class TestContentChecksSkippedFlag:
     classification models, with nothing in the JSON saying so — a CI consumer reads a
     degraded run's smaller finding count as a cleaner project. `content_checks_skipped`
     reports the same predicate the mapper's charge stage itself reads to decide whether to
-    run the encoders (`core.mapper.bio_tagger.multislot_available`)."""
+    run the encoders (`core.mapper.bio_graphs.multislot_available`)."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_flag_true_when_classification_models_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: False)
+        monkeypatch.setattr("reporails_cli.formatters.json.multislot_available", lambda: False)
         data = format_combined_result(_result())
         assert data["content_checks_skipped"] is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_flag_false_when_classification_models_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.json.multislot_available", lambda: True)
         data = format_combined_result(_result())
         assert data["content_checks_skipped"] is False
 
@@ -509,19 +510,19 @@ class TestContentChecksSkippedWhenMappingFailed:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_flag_true_when_the_run_could_not_map_its_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.json.multislot_available", lambda: True)
         assert format_combined_result(_result(level=Level.L2), ruleset_map=None)["content_checks_skipped"] is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_flag_false_when_the_run_mapped_its_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.json.multislot_available", lambda: True)
         assert format_combined_result(_result(), ruleset_map=object())["content_checks_skipped"] is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_flag_false_for_a_project_with_no_instruction_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.json.multislot_available", lambda: True)
         data = format_combined_result(CombinedResult(), ruleset_map=None)
         assert data["content_checks_skipped"] is False
 
@@ -531,7 +532,7 @@ class TestConventionMarker:
     @pytest.mark.subsys_diagnostic
     def test_convention_findings_are_kept_and_marked(self) -> None:
         """Every finding stays in the JSON; a documentation convention carries `convention: true`."""
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(
@@ -580,7 +581,9 @@ class TestExcludedBlock:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_lists_what_the_user_left_out(self) -> None:
-        data = format_combined_result(_result(excluded_dirs=("agents",), excluded_files=("*.generated.md",)))
+        data = format_combined_result(
+            _result(omissions=Omissions(excluded_dirs=("agents",), excluded_files=("*.generated.md",)))
+        )
         assert data["excluded"] == {"dirs": ["agents"], "files": ["*.generated.md"], "imported_text_counted": False}
 
     @pytest.mark.unit
@@ -597,7 +600,7 @@ class TestExcludedBlock:
     def test_survives_the_bounded_mcp_payload(self) -> None:
         from reporails_cli.formatters.mcp import bound_validate_payload
 
-        data = format_combined_result(_result(excluded_dirs=("agents",)))
+        data = format_combined_result(_result(omissions=Omissions(excluded_dirs=("agents",))))
         assert bound_validate_payload(data)["excluded"] == {
             "dirs": ["agents"],
             "files": [],

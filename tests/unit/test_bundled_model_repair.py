@@ -1,4 +1,4 @@
-"""Behavioral tests for `bundled.reload_after_repair`.
+"""Behavioral tests for `model_store.reload_after_repair`.
 
 `reload_after_repair` wraps every bundled-model load (the sentence embedder,
 the two bio-tagger encoders and heads). It must repair the persistent cache
@@ -19,8 +19,7 @@ import time
 
 import pytest
 
-from reporails_cli import bundled
-from reporails_cli.core.mapper import model_fetch
+from reporails_cli.core.mapper import model_fetch, model_manifest, model_store
 
 
 @pytest.fixture(autouse=True)
@@ -32,11 +31,11 @@ def _reset_repair_state(monkeypatch):
     it explicitly, every other test here is about the damaged/not-damaged
     decision and needs the online path.
     """
-    monkeypatch.setattr(bundled, "_repair_events", {})
-    monkeypatch.setattr(bundled, "_repair_generation", {})
-    monkeypatch.setattr(bundled, "_known_sound", {}, raising=False)
-    monkeypatch.setattr(bundled, "_known_unrepairable", {}, raising=False)
-    monkeypatch.setattr(bundled, "_tree_present", False)
+    monkeypatch.setattr(model_store, "_repair_events", {})
+    monkeypatch.setattr(model_store, "_repair_generation", {})
+    monkeypatch.setattr(model_store, "_known_sound", {}, raising=False)
+    monkeypatch.setattr(model_store, "_known_unrepairable", {}, raising=False)
+    monkeypatch.setattr(model_manifest, "in_package_tree_present", lambda: False)
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
 
 
@@ -55,7 +54,7 @@ def test_a_non_corruption_load_error_is_never_repaired(monkeypatch):
         raise ImportError("onnxruntime is not installed in this environment")
 
     with pytest.raises(ImportError, match="onnxruntime is not installed"):
-        bundled.reload_after_repair(load)
+        model_store.reload_after_repair(load)
 
     assert checked["called"] is True  # the cache WAS checked directly...
     assert repaired["called"] is False  # ...and found not to be the cause, so no repair ran
@@ -77,7 +76,7 @@ def test_offline_surfaces_the_real_error_not_damaged(monkeypatch):
         raise RuntimeError("the real underlying error")
 
     with pytest.raises(RuntimeError, match="the real underlying error"):
-        bundled.reload_after_repair(load)
+        model_store.reload_after_repair(load)
 
     assert repaired["called"] is False
     assert checked["called"] is False  # short-circuited on offline before even checking
@@ -98,7 +97,7 @@ def test_a_damaged_cache_is_repaired_once_then_the_retry_loads(monkeypatch):
             raise RuntimeError("same-size corrupted ONNX load")
         return "loaded"
 
-    assert bundled.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load) == "loaded"
     assert repaired["n"] == 1
     assert calls["n"] == 2
 
@@ -122,7 +121,7 @@ def test_damage_that_appears_after_a_non_damage_failure_is_still_repaired(monkey
         raise MemoryError("out of memory")
 
     with pytest.raises(MemoryError):
-        bundled.reload_after_repair(oom)
+        model_store.reload_after_repair(oom)
     assert repaired["n"] == 0
 
     state["damaged"] = True
@@ -134,7 +133,7 @@ def test_damage_that_appears_after_a_non_damage_failure_is_still_repaired(monkey
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert bundled.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load) == "loaded"
     assert repaired["n"] == 1
 
 
@@ -153,13 +152,13 @@ def test_a_repair_that_fails_midway_does_not_make_a_later_caller_retry_unrepaire
     monkeypatch.setattr(model_fetch, "cache_damaged", lambda *a, **k: attempts["n"] < 2)
     monkeypatch.setattr(model_fetch, "repair_cache", flaky_repair)
     # the interrupted download leaves the cache files different from before
-    monkeypatch.setattr(bundled, "_cache_fingerprint", lambda *a, **k: (("weights.bin", attempts["n"], 0),))
+    monkeypatch.setattr(model_store, "_cache_fingerprint", lambda *a, **k: (("weights.bin", attempts["n"], 0),))
 
     def bad():
         raise RuntimeError("corrupted")
 
     with pytest.raises(OSError, match="download interrupted"):
-        bundled.reload_after_repair(bad)
+        model_store.reload_after_repair(bad)
 
     calls = {"n": 0}
 
@@ -169,7 +168,7 @@ def test_a_repair_that_fails_midway_does_not_make_a_later_caller_retry_unrepaire
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert bundled.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load) == "loaded"
     assert attempts["n"] == 2
 
 
@@ -205,7 +204,7 @@ def test_two_threads_failing_on_the_same_damaged_file_neither_raises(monkeypatch
 
     def run():
         try:
-            results.append(bundled.reload_after_repair(load))
+            results.append(model_store.reload_after_repair(load))
         except BaseException as exc:
             errors.append(exc)
 
@@ -233,9 +232,13 @@ def real_cache(monkeypatch, tmp_path):
     root.mkdir()
     weights = root / "weights.bin"
     weights.write_bytes(b"good weights")
-    monkeypatch.setattr(model_fetch, "cache_models_dir", lambda version=model_fetch.MODEL_VERSION: root)
+    monkeypatch.setattr(model_manifest, "cache_models_dir", lambda version=model_manifest.MODEL_VERSION: root)
+    monkeypatch.setattr(model_manifest, "REQUIRED_RELPATHS", ("weights.bin",))
+    pins = {"weights.bin": hashlib.sha256(b"good weights").hexdigest()}
+    monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
+    monkeypatch.setattr(model_fetch, "cache_models_dir", lambda version=model_manifest.MODEL_VERSION: root)
     monkeypatch.setattr(model_fetch, "REQUIRED_RELPATHS", ("weights.bin",))
-    monkeypatch.setattr(model_fetch, "FETCH_SHA256", {"weights.bin": hashlib.sha256(b"good weights").hexdigest()})
+    monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
     hashed = {"n": 0}
     real_sha = model_fetch._file_sha256
 
@@ -265,7 +268,7 @@ def test_repeated_load_failures_over_unchanged_sound_files_hash_the_model_once(m
 
     for _ in range(3):
         with pytest.raises(RuntimeError, match="refused the model"):
-            bundled.reload_after_repair(_fails())
+            model_store.reload_after_repair(_fails())
 
     assert hashed["n"] == 1
     assert repaired["n"] == 0
@@ -285,7 +288,7 @@ def test_a_file_damaged_after_a_sound_verdict_is_verified_and_repaired(monkeypat
 
     monkeypatch.setattr(model_fetch, "repair_cache", fix)
     with pytest.raises(RuntimeError):
-        bundled.reload_after_repair(_fails())
+        model_store.reload_after_repair(_fails())
     assert hashed["n"] == 1
 
     stat = weights.stat()
@@ -300,7 +303,7 @@ def test_a_file_damaged_after_a_sound_verdict_is_verified_and_repaired(monkeypat
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert bundled.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load) == "loaded"
     assert hashed["n"] >= 2
     assert repaired["n"] == 1
 
@@ -318,20 +321,20 @@ def test_a_failed_repair_is_not_tried_again_while_the_files_are_unchanged(monkey
 
     def offline_download(*a, **k):
         attempts["n"] += 1
-        raise model_fetch.ModelFetchError("could not repair the model cache: no network")
+        raise model_manifest.ModelFetchError("could not repair the model cache: no network")
 
     monkeypatch.setattr(model_fetch, "repair_cache", offline_download)
 
     for _ in range(3):
-        with pytest.raises(model_fetch.ModelFetchError, match="no network"):
-            bundled.reload_after_repair(_fails("corrupted"))
+        with pytest.raises(model_manifest.ModelFetchError, match="no network"):
+            model_store.reload_after_repair(_fails("corrupted"))
 
     assert attempts["n"] == 1
     assert hashed["n"] == 1
 
     weights.write_bytes(b"other bytes!")  # the file changes: the repair is tried again
-    with pytest.raises(model_fetch.ModelFetchError):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError):
+        model_store.reload_after_repair(_fails("corrupted"))
     assert attempts["n"] == 2
 
 
@@ -348,7 +351,7 @@ class _Clock:
 @pytest.fixture
 def clock(monkeypatch):
     fake = _Clock()
-    monkeypatch.setattr(bundled, "time", fake, raising=False)
+    monkeypatch.setattr(model_store, "time", fake, raising=False)
     return fake
 
 
@@ -370,17 +373,17 @@ def test_a_failed_repair_is_tried_again_after_the_wait_and_the_load_retried(monk
     def repair(*a, **k):
         attempts["n"] += 1
         if attempts["n"] == 1:
-            raise model_fetch.ModelFetchError("could not repair the model cache: no network")
+            raise model_manifest.ModelFetchError("could not repair the model cache: no network")
         weights.write_bytes(b"good weights")
 
     monkeypatch.setattr(model_fetch, "repair_cache", repair)
-    with pytest.raises(model_fetch.ModelFetchError, match="no network"):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError, match="no network"):
+        model_store.reload_after_repair(_fails("corrupted"))
 
-    clock.now += bundled.REPAIR_RETRY_WAIT_SECONDS - 1
+    clock.now += model_store.REPAIR_RETRY_WAIT_SECONDS - 1
     hashes_before = hashed["n"]
-    with pytest.raises(model_fetch.ModelFetchError, match="no network"):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError, match="no network"):
+        model_store.reload_after_repair(_fails("corrupted"))
     assert attempts["n"] == 1
     assert hashed["n"] == hashes_before
 
@@ -393,7 +396,7 @@ def test_a_failed_repair_is_tried_again_after_the_wait_and_the_load_retried(monk
             raise RuntimeError("corrupted")
         return "loaded"
 
-    assert bundled.reload_after_repair(load) == "loaded"
+    assert model_store.reload_after_repair(load) == "loaded"
     assert attempts["n"] == 2
     assert calls["n"] == 2
 
@@ -407,26 +410,26 @@ def test_a_repair_that_fails_again_after_the_wait_restarts_the_wait(monkeypatch,
 
     def offline_download(*a, **k):
         attempts["n"] += 1
-        raise model_fetch.ModelFetchError("could not repair the model cache: no network")
+        raise model_manifest.ModelFetchError("could not repair the model cache: no network")
 
     monkeypatch.setattr(model_fetch, "repair_cache", offline_download)
-    wait = bundled.REPAIR_RETRY_WAIT_SECONDS
+    wait = model_store.REPAIR_RETRY_WAIT_SECONDS
 
-    with pytest.raises(model_fetch.ModelFetchError):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError):
+        model_store.reload_after_repair(_fails("corrupted"))
     clock.now += wait + 1
-    with pytest.raises(model_fetch.ModelFetchError):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError):
+        model_store.reload_after_repair(_fails("corrupted"))
     assert attempts["n"] == 2
 
     clock.now += wait - 1  # inside the restarted wait
-    with pytest.raises(model_fetch.ModelFetchError):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError):
+        model_store.reload_after_repair(_fails("corrupted"))
     assert attempts["n"] == 2
 
     clock.now += 2
-    with pytest.raises(model_fetch.ModelFetchError):
-        bundled.reload_after_repair(_fails("corrupted"))
+    with pytest.raises(model_manifest.ModelFetchError):
+        model_store.reload_after_repair(_fails("corrupted"))
     assert attempts["n"] == 3
 
 
@@ -437,9 +440,9 @@ def test_sound_files_are_never_hashed_again_however_much_time_passes(monkeypatch
     monkeypatch.setattr(model_fetch, "repair_cache", lambda *a, **k: pytest.fail("repair attempted"))
 
     with pytest.raises(RuntimeError):
-        bundled.reload_after_repair(_fails())
-    clock.now += bundled.REPAIR_RETRY_WAIT_SECONDS * 100
+        model_store.reload_after_repair(_fails())
+    clock.now += model_store.REPAIR_RETRY_WAIT_SECONDS * 100
     with pytest.raises(RuntimeError):
-        bundled.reload_after_repair(_fails())
+        model_store.reload_after_repair(_fails())
 
     assert hashed["n"] == 1

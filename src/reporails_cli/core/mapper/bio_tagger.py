@@ -2,30 +2,33 @@
 
 Takes one line of text and returns its spans, each with a charge sign, a
 modality, and a confidence. Word-pooling, log-softmax, and the Viterbi decode
-run in numpy, torch-free. Callers guard on :func:`multislot_available`.
+run in numpy, torch-free. Callers guard on ``bio_graphs.multislot_available``.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from reporails_cli.core.mapper.bio_graphs import (
     _enc_a_path,
     _enc_b_path,
-    _graph_content_hash,
     _head_a_path,
     _head_b_path,
 )
+from reporails_cli.core.mapper.encode_pool import ort_intra_threads
+from reporails_cli.core.mapper.model_manifest import EMBEDDER_SUBDIR, get_models_path
+from reporails_cli.core.mapper.model_store import reload_after_repair
 from reporails_cli.core.mapper.onnx_session import _OnnxEncoderSession
+from reporails_cli.core.mapper.word_spans import word_offsets
 
 _MAX_LENGTH = 128
 _HIDDEN = 384
 _N_TAGS = 7
-_MODEL_SUBDIR = "minilm-l6-v2"
 # Axis-name aliases: a graph output name mapped to its neutral 5-tuple name
 # (rename, not reorder).
 _MULTISLOT_RENAME = {"logits_target": "logits_object", "logits_action": "logits_predicate"}
@@ -49,22 +52,6 @@ _TAG_CLASS = {
 # I-tag → its only legal predecessors (B-X or I-X of the same class).
 _I_PREV = {_I_DIR: (_B_DIR, _I_DIR), _I_REST: (_B_REST, _I_REST), _I_NEUT: (_B_NEUT, _I_NEUT)}
 
-_WORD_RE = re.compile(r"\S+")
-
-
-def word_offsets(text: str) -> list[tuple[int, int]]:
-    """Character offsets of each word in `text` — the word coordinates an atom's slot spans use."""
-    return [(m.start(), m.end()) for m in _WORD_RE.finditer(text)]
-
-
-def words_between(text: str, start: int, end: int) -> str:
-    """`text` over words `[start, end)`; empty when the span falls outside the text."""
-    words = word_offsets(text)
-    if not 0 <= start < end <= len(words):
-        return ""
-    return text[words[start][0] : words[end - 1][1]]
-
-
 DEFAULT_TAU = 0.6
 # A decoded span is kept only when its mean per-word confidence clears this value.
 SPAN_TAU = 0.7
@@ -81,41 +68,11 @@ class BioSpan:
     modality: str = "none"  # imperative | direct | absolute | hedged | none
 
 
-def multislot_fingerprint() -> str:
-    """Cache-identity token for the classification models this module loads.
-
-    Returns a content hash (see `_graph_content_hash`) over the bundled model
-    files this module reads, so any change to those files invalidates the
-    per-file atom cache and the whole-map identity cache. The hash itself is
-    memoized on disk (`bio_graphs._graph_content_hash`), so a repeat process
-    pays no re-hash for an unchanged install. Returns ``"none"`` when a
-    required file is missing.
-    """
-    from reporails_cli.bundled import get_models_path
-
-    paths = (
-        _enc_a_path(),
-        _head_a_path(),
-        _enc_b_path(),
-        _head_b_path(),
-        get_models_path() / _MODEL_SUBDIR / "onnx" / "model.onnx",
-        get_models_path() / _MODEL_SUBDIR / "tokenizer.json",
-    )
-    parts = []
-    for path in paths:
-        if not path.is_file():
-            return "none"
-        parts.append(_graph_content_hash(path))
-    return "|".join(parts)
-
-
 class _BioEncoder(_OnnxEncoderSession):
     """Bundled ONNX encoder returning per-token last-hidden-state + char offsets."""
 
     def __init__(self, onnx_path: Path) -> None:
-        from reporails_cli.bundled import get_models_path
-
-        tokenizer_path = get_models_path() / _MODEL_SUBDIR / "tokenizer.json"
+        tokenizer_path = get_models_path() / EMBEDDER_SUBDIR / "tokenizer.json"
         if not onnx_path.is_file():
             raise RuntimeError(f"bundled ONNX encoder not found at {onnx_path}")
         if not tokenizer_path.is_file():
@@ -124,8 +81,6 @@ class _BioEncoder(_OnnxEncoderSession):
 
     def token_states(self, text: str) -> tuple[Any, list[tuple[int, int]]]:
         """Encode ``text`` → ``(last_hidden_state [seq, hidden], per-token char offsets)``."""
-        import numpy as np
-
         enc = self._tokenizer.encode(text)
         ids = np.array([enc.ids], dtype=np.int64)
         masks = np.array([enc.attention_mask], dtype=np.int64)
@@ -137,28 +92,24 @@ class _BioEncoder(_OnnxEncoderSession):
 
     def forward_bucket(self, bucket: list[str]) -> list[tuple[Any, list[tuple[int, int]]]]:
         """One forward over a bucket of texts → per-text ``(hidden [seq, hidden], offsets)``, padding trimmed."""
-        tokens = self._tokenize(bucket)
-        hidden = self._session.run(["last_hidden_state"], self._encode_feed(tokens))[0]  # (B, max_len, hidden)
+        tokens = self.tokenize(bucket)
+        hidden = self._session.run(["last_hidden_state"], self.encode_feed(tokens))[0]  # (B, max_len, hidden)
         return [(hidden[i, : len(t.ids)], t.offsets) for i, t in enumerate(tokens)]
 
 
 @lru_cache(maxsize=4)
 def _head_session(head_path: str) -> Any:
-    from reporails_cli.bundled import reload_after_repair
-
     return reload_after_repair(lambda: _build_head_session(head_path))
 
 
 def _build_head_session(head_path: str) -> Any:
-    import onnxruntime as ort
+    import onnxruntime as ort  # pylint: disable=import-outside-toplevel  # ML runtime loads on first model use
 
     opts = ort.SessionOptions()
     opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     # Coordinate intra-op with the encode thread pool: an explicit
     # AILS_ORT_THREADS wins (shard workers pin it to 1); otherwise intra-op is 1
     # when the pool is on and cpu_count when it is off, so pool * intra ~= cores.
-    from reporails_cli.core.mapper.encode_pool import ort_intra_threads
-
     opts.intra_op_num_threads = ort_intra_threads()
     opts.inter_op_num_threads = 1
     return ort.InferenceSession(head_path, sess_options=opts, providers=["CPUExecutionProvider"])
@@ -167,8 +118,6 @@ def _build_head_session(head_path: str) -> Any:
 @lru_cache(maxsize=1)
 def _transition() -> Any:
     """Transition score matrix ``T[prev, cur]`` for the tag decode."""
-    import numpy as np
-
     t = np.zeros((_N_TAGS, _N_TAGS), dtype=np.float32)
     for cur in _I_TAGS:
         legal = set(_I_PREV[cur])
@@ -183,8 +132,6 @@ def _transition() -> Any:
 
 def _log_softmax(logits: Any) -> Any:
     """Numpy log-softmax over the last axis of ``[n_words, 7]`` logits."""
-    import numpy as np
-
     shifted = logits - logits.max(axis=-1, keepdims=True)
     return shifted - np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
 
@@ -201,8 +148,6 @@ def _pool_words(
     vector carries no signal specific to that word, and ``covered`` is read to keep an
     uninformative word from extending a decoded run.
     """
-    import numpy as np
-
     content = [(i, s, e) for i, (s, e) in enumerate(offsets) if not (s == 0 and e == 0)]
     all_mean = hidden.mean(0)  # fallback contract: mean over ALL token states (incl. specials)
     word_spans = word_offsets(text)
@@ -225,8 +170,6 @@ def _word_features(text: str, encoder: _BioEncoder) -> tuple[Any, list[tuple[int
 
 def _viterbi(emissions: Any) -> list[int]:
     """Viterbi over log-softmax ``emissions`` [n_words, 7] with the transition mask."""
-    import numpy as np
-
     n = emissions.shape[0]
     t = _transition()
     dp = emissions[0].copy()
@@ -354,33 +297,18 @@ class AtomTuple:
     text: str
 
 
-def multislot_available() -> bool:
-    """True when onnxruntime + tokenizers import and all four model graphs exist."""
-    import importlib.util
-
-    have_libs = all(importlib.util.find_spec(m) is not None for m in ("onnxruntime", "tokenizers"))
-    graphs = (_enc_a_path(), _head_a_path(), _enc_b_path(), _head_b_path())
-    return have_libs and all(p.is_file() for p in graphs)
-
-
 @lru_cache(maxsize=1)
 def _enc_a() -> _BioEncoder:
-    from reporails_cli.bundled import reload_after_repair
-
     return reload_after_repair(lambda: _BioEncoder(_enc_a_path()))
 
 
 @lru_cache(maxsize=1)
 def _enc_b() -> _BioEncoder:
-    from reporails_cli.bundled import reload_after_repair
-
     return reload_after_repair(lambda: _BioEncoder(_enc_b_path()))
 
 
 def _softmax_rows(logits: Any) -> Any:
     """Row-wise softmax over the last axis."""
-    import numpy as np
-
     e = np.exp(logits - logits.max(axis=-1, keepdims=True))
     return e / e.sum(axis=-1, keepdims=True)
 
@@ -438,8 +366,6 @@ def _sentence_charge_from_logits(
     logits_charge: Any, logits_modality: Any, word_spans: list[tuple[int, int]], text: str, tau: float
 ) -> tuple[int, str]:
     """Viterbi-decode the charge tags → sentence ``(polarity, modality)``."""
-    import numpy as np
-
     emissions = _log_softmax(logits_charge)
     tags = _viterbi(emissions)
     probs = [float(np.exp(emissions[w, tags[w]])) for w in range(len(tags))]
@@ -487,8 +413,6 @@ def _run_head(
     feats: Any, word_spans: list[tuple[int, int]], head_path: Path, outputs: list[str]
 ) -> tuple[dict[str, Any], list[tuple[int, int]]]:
     """Run the (small) head over pooled word features → ({output_name: logits}, word_spans)."""
-    import numpy as np
-
     if feats.shape[0] == 0:
         return {}, word_spans
     session = _head_session(str(head_path))

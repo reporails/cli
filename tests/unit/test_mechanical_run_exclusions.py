@@ -8,7 +8,7 @@ import pytest
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.discovery.exclusions import RunExclusions
-from reporails_cli.core.lint.mechanical.checks import file_absent
+from reporails_cli.core.lint.mechanical.checks_absent import file_absent
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.pipeline.mapping import discover_scope
 

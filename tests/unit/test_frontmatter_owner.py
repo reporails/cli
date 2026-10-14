@@ -306,7 +306,8 @@ _DEAD_GLOB_ARGS = {"path": ".claude/rules", "require_matches": True}
 @pytest.mark.subsys_lint
 @pytest.mark.parametrize("rule_check", ["valid_markdown", "import_depth", "content_absent", "metadata"])
 def test_mechanical_checks_read_a_file_that_is_not_utf8(tmp_path: Path, rule_check: str) -> None:
-    from reporails_cli.core.lint.mechanical.checks_advanced import content_absent, import_depth, valid_markdown
+    from reporails_cli.core.lint.mechanical.checks_absent import content_absent
+    from reporails_cli.core.lint.mechanical.checks_advanced import import_depth, valid_markdown
 
     (tmp_path / "CLAUDE.md").write_bytes(b"# Title\n\nNever use rm -rf on caf\xe9 files.\n")
     cfs = [ClassifiedFile(path=tmp_path / "CLAUDE.md", file_type="main")]

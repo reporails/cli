@@ -7,12 +7,8 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import _parse_file_types, classify_files
-from reporails_cli.core.discovery.agent_discovery import (
-    categorize_file_type,
-    claude_project_folder_name,
-    discover_from_config,
-    load_config_file_types,
-)
+from reporails_cli.core.discovery.agent_config import categorize_file_type, load_config_file_types
+from reporails_cli.core.discovery.agent_discovery import claude_project_folder_name, discover_from_config
 
 
 @pytest.fixture

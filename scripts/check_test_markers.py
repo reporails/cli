@@ -94,8 +94,9 @@ def _called_names(node: ast.AST, *, bare_only: bool = False) -> set[str]:
 def _stubs_mapper(node: ast.AST) -> bool:
     """Whether a test replaces a part of the mapper or its pipeline (`monkeypatch.setattr` / `patch`).
 
-    A target is the dotted string (`"reporails_cli.core.mapper.daemon.start_daemon"`) or the
-    module the test imported the pipeline as (`pl`, `mapping`)."""
+    A target is the dotted string (`"reporails_cli.core.mapper.daemon.start_daemon"`), a mapper entry
+    replaced where a consumer imported it (`"reporails_cli.interfaces.mcp.tools.map_instruction_files"`),
+    or the module the test imported the pipeline as (`pl`, `mapping`)."""
     for sub in ast.walk(node):
         if not isinstance(sub, ast.Call):
             continue
@@ -106,6 +107,8 @@ def _stubs_mapper(node: ast.AST) -> bool:
         target = sub.args[0]
         if isinstance(target, ast.Constant) and isinstance(target.value, str):
             if any(part in target.value for part in MAPPER_MODULES):
+                return True
+            if target.value.rpartition(".")[2] in MAPPER_ENTRIES:
                 return True
         elif isinstance(target, ast.Name) and target.id in MAPPER_ALIASES:
             return True

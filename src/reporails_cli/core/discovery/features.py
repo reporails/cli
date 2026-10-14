@@ -9,7 +9,6 @@ regex engine can scan them as extra targets.
 
 from __future__ import annotations
 
-import functools
 import logging
 import re
 from dataclasses import dataclass, field
@@ -18,26 +17,25 @@ from typing import Any
 
 import yaml
 
+from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import (
     claude_project_folder_name,
     glob_file_type_patterns,
-    load_config_file_types,
+    is_external_pattern,
 )
 from reporails_cli.core.discovery.agents import (
     DetectedAgent,
-    _extract_patterns,
-    _extract_properties,
     detect_agents,
     get_all_instruction_files,
-    get_known_agents,
 )
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.walk import is_symlink_loop_error, is_under, safe_resolve
 from reporails_cli.core.mapper.classify import CONSTRAINT_WORDS
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.platform.dto.results import DetectedFeatures, HookEntry
 from reporails_cli.core.platform.utils.hook_config import HookConfig, hook_sites, read_hook_config
-from reporails_cli.core.platform.utils.utils import matches_any_glob
+from reporails_cli.core.platform.utils.utils import load_yaml_file, matches_any_glob, yaml_error_line
 
 logger = logging.getLogger(__name__)
 
@@ -150,9 +148,9 @@ def detect_features_filesystem(
 
     # Check for backbone.yml
     backbone_path = target / ".ails" / "backbone.yml"
-    features.has_backbone = backbone_path.exists()
-    if features.has_backbone:
-        features.component_count = _count_components(backbone_path)
+    features.layout.has_backbone = backbone_path.exists()
+    if features.layout.has_backbone:
+        features.discovery.component_count = _count_components(backbone_path)
 
     # Count instruction files (all agents, not just CLAUDE.md).
     # Scope the count to files under `target` — user-level memories like
@@ -163,20 +161,20 @@ def detect_features_filesystem(
     # in `policy/levels.py`).
     all_instruction_files = get_all_instruction_files(target, agents=resolved_agents)
     project_instruction_files = [f for f in all_instruction_files if is_under(f, target)]
-    features.instruction_file_count = len(project_instruction_files)
-    features.has_multiple_instruction_files = len(project_instruction_files) > 1
+    features.discovery.instruction_file_count = len(project_instruction_files)
+    features.discovery.has_multiple_instruction_files = len(project_instruction_files) > 1
 
-    if features.instruction_file_count > 0:
+    if features.discovery.instruction_file_count > 0:
         features.has_instruction_file = True
 
     # Check for hierarchical structure
-    features.has_hierarchical_structure = _has_hierarchy(target, resolved_agents)
+    features.discovery.has_hierarchical_structure = _has_hierarchy(target, resolved_agents)
 
     # Check for shared files
     shared_patterns = [".shared", "shared", ".ai/shared"]
     for pattern in shared_patterns:
         if (target / pattern).exists():
-            features.has_shared_files = True
+            features.layout.has_shared_files = True
             break
 
     # L2 capabilities — content analysis on root instruction file
@@ -194,7 +192,7 @@ def detect_features_filesystem(
 
     # Directory structure — broadened beyond path-scoped rules to any abstracted
     # surface (skills, sub-agents) a detected agent declares.
-    features.is_abstracted = features.has_path_scoped_rules or features.has_skills_dir or features.has_subagents
+    features.layout.is_abstracted = features.has_path_scoped_rules or features.has_skills_dir or features.has_subagents
 
     # L6 capability — hooks, per detected agent's own config.yml. A folder of
     # plain git hooks is not an agent surface and adds no level.
@@ -203,12 +201,12 @@ def detect_features_filesystem(
 
     # L7 capabilities — adaptive: each detected agent's own repo-scoped memory
     # surfaces, plus Claude's user-scope auto-memory when Claude is detected.
-    features.has_memory_dir = any(
+    features.memory.has_memory_dir = any(
         _agent_has_surface(target, agent_id, surface, scan)
         for agent_id in agent_ids
         for surface in ("memory", "subagent_memory")
     )
-    features.has_auto_memory = "claude" in agent_ids and _detect_auto_memory(target)
+    features.memory.has_auto_memory = "claude" in agent_ids and _detect_auto_memory(target)
 
     # Resolve symlinked instruction files (for regex engine extra targets)
     features.resolved_symlinks = resolve_symlinked_files(target, agents=resolved_agents)
@@ -220,13 +218,6 @@ def _hooks_key_is_set(settings_path: Path, scan: _SurfaceScan) -> bool:
     """True when the file declares a non-empty `hooks` block."""
     config = scan.hook_config(settings_path)
     return config is not None and isinstance(config.data, dict) and bool(config.data.get("hooks"))
-
-
-def _repo_scoped_patterns(patterns: list[str]) -> list[str]:
-    """Drop user-scope (`~/...`) and absolute patterns — a project-level gate checks
-    the project's own files only; a home-directory surface reaches no further than
-    the developer who ran the scan."""
-    return [p for p in patterns if not p.startswith(("~", "/")) and not (len(p) > 1 and p[1] == ":")]
 
 
 @dataclass
@@ -253,6 +244,7 @@ class _SurfaceScan:
 
     @classmethod
     def for_target(cls, target: Path, exclusions: RunExclusions | None = None) -> _SurfaceScan:
+        """The scan for `target` under `exclusions` (the project's own when none is given)."""
         exclusions = exclusions or load_run_exclusions(target)
         return cls(exclude_dirs=exclusions.feature_walk_dirs, exclusions=exclusions)
 
@@ -268,12 +260,13 @@ def _surface_patterns(
     """A file type's project-level patterns, with plugin-root patterns expanded against the
     plugin roots found under `target` exactly as discovery expands them (excluded folders
     are not searched). `repo_only=False` keeps the user-scope (`~/...`) and absolute patterns too."""
-    from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
-
     scan = _scan_for(target, scan)
-    patterns = _extract_patterns(spec)
+    patterns = extract_patterns(spec)
     return expand_plugin_patterns(
-        _repo_scoped_patterns(patterns) if repo_only else patterns, target, scan.exclude_dirs, scan.roots_by_marker
+        [p for p in patterns if not is_external_pattern(p)] if repo_only else patterns,
+        target,
+        scan.exclude_dirs,
+        scan.roots_by_marker,
     )
 
 
@@ -296,7 +289,7 @@ def _agent_surface_files(
     patterns = _surface_patterns(target, spec, scan)
     if not patterns:
         return []
-    return scan.keep(glob_file_type_patterns(target, patterns, _extract_properties(spec), scan.exclude_dirs))
+    return scan.keep(glob_file_type_patterns(target, patterns, extract_properties(spec), scan.exclude_dirs))
 
 
 def _agent_has_surface(target: Path, agent_id: str, surface_name: str, scan: _SurfaceScan | None = None) -> bool:
@@ -323,7 +316,7 @@ def _hook_scope_matches(target: Path, agent_id: str, scan: _SurfaceScan, *, repo
         return []
     scopes = spec.get("scopes")
     by_scope = scopes if isinstance(scopes, dict) else {"project": spec}
-    props = _extract_properties(spec)
+    props = extract_properties(spec)
     seen: set[Path] = set()
     found: list[tuple[str, Path]] = []
     for scope, scope_spec in by_scope.items():
@@ -356,8 +349,8 @@ def _agent_hook_files(target: Path, agent_id: str, scan: _SurfaceScan | None = N
         return []
     file_types = load_config_file_types(agent_id) or {}
     config_spec = file_types.get("config")
-    config_patterns = _extract_patterns(config_spec) if isinstance(config_spec, dict) else []
-    shared_patterns = list(set(_repo_scoped_patterns(_extract_patterns(spec))) & set(config_patterns))
+    config_patterns = extract_patterns(config_spec) if isinstance(config_spec, dict) else []
+    shared_patterns = list({p for p in extract_patterns(spec) if not is_external_pattern(p)} & set(config_patterns))
     counted: list[Path] = []
     for _scope, match in _hook_scope_matches(target, agent_id, scan, repo_only=True):
         dedicated = not shared_patterns or not matches_any_glob(match, shared_patterns, target)
@@ -420,7 +413,7 @@ def _agent_nested_instruction_files(target: Path, agent_id: str, scan: _SurfaceS
         patterns = _surface_patterns(target, ft, scan)
         if not patterns:
             continue
-        found.extend(scan.keep(glob_file_type_patterns(target, patterns, _extract_properties(ft), scan.exclude_dirs)))
+        found.extend(scan.keep(glob_file_type_patterns(target, patterns, extract_properties(ft), scan.exclude_dirs)))
     return found
 
 
@@ -451,103 +444,13 @@ def _detect_content_features(root_file: Path, features: DetectedFeatures) -> Non
         return
 
     line_count = content.count("\n")
-    features.is_size_controlled = line_count < _SIZE_THRESHOLD
-    features.has_explicit_constraints = bool(_CONSTRAINT_RE.search(content))
-    features.has_imports = bool(import_refs(content))
-
-
-@functools.lru_cache(maxsize=1)
-def agent_main_literal_paths() -> frozenset[str]:
-    """Relative paths every agent's `main` file type pins to one fixed location.
-
-    A `main` scope pattern with no wildcard segment (Copilot's fixed
-    `.github/copilot-instructions.md`) names an exact file, not a root-vs-nested
-    choice — a path-depth heuristic tuned for Claude's bare-root `CLAUDE.md`
-    otherwise reads that fixed, one-directory-deep location as a nested copy.
-    Derived once from the bundled `framework/rules/*/config.yml` so an agent
-    whose main file lives one directory in is recognized without a second edit.
-    """
-    literal: set[str] = set()
-    for agent_id in get_known_agents():
-        file_types = load_config_file_types(agent_id) or {}
-        main_spec = file_types.get("main")
-        if not isinstance(main_spec, dict):
-            continue
-        for pattern in _extract_patterns(main_spec):
-            if "*" not in pattern and not pattern.startswith("~") and not pattern.startswith("/"):
-                literal.add(pattern)
-    return frozenset(literal)
-
-
-# Main-file names that no agent's `main` file type declares: the legacy single-file
-# rule files of Cursor and Windsurf.
-_LEGACY_MAIN_NAMES = frozenset((".cursorrules", ".windsurfrules"))
-
-# Used only when the bundled configs cannot be read (a broken install).
-_MAIN_NAMES_FALLBACK = frozenset(("CLAUDE.md", "AGENTS.md", "GEMINI.md", "copilot-instructions.md"))
-
-
-@functools.lru_cache(maxsize=1)
-def agent_main_names() -> frozenset[str]:
-    """The file names every agent's `main` file type reads, wherever the file sits.
-
-    Derived once from the bundled `framework/rules/*/config.yml` `main` scope patterns
-    (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `copilot-instructions.md`, ...), so an agent whose
-    main file is named differently is recognized without a second edit. Case-sensitive:
-    wrong-case copies are not instruction files. User-scope (`~`) and absolute patterns sit
-    outside the project and are skipped, as are names with a wildcard.
-    """
-    names: set[str] = set()
-    for agent_id in get_known_agents():
-        main_spec = (load_config_file_types(agent_id) or {}).get("main")
-        if not isinstance(main_spec, dict):
-            continue
-        for pattern in _extract_patterns(main_spec):
-            if pattern.startswith(("~", "/")) or pattern[1:2] == ":":
-                continue
-            name = pattern.rsplit("/", 1)[-1]
-            if name and "*" not in name:
-                names.add(name)
-    return frozenset(names or _MAIN_NAMES_FALLBACK) | _LEGACY_MAIN_NAMES
-
-
-@functools.lru_cache(maxsize=1)
-def agent_rule_surface_markers() -> tuple[frozenset[str], tuple[str, ...]]:
-    """Directory basenames and filename globs that mark a path-scoped rule file.
-
-    A path-only classifier that only recognizes a literal `rules` directory with
-    a `.md` file only covers Claude and Cursor's own convention — Copilot's
-    path-scoped surface lives under `.github/instructions/` and Cursor's own
-    rule files use the `.mdc` extension, so both would otherwise go unrecognized.
-    Derived once from every agent's own `scope: path_scoped` file type in the
-    bundled config, so a rule surface named or extended differently from
-    Claude's is still recognized the same way.
-    """
-    dir_names: set[str] = set()
-    filename_globs: set[str] = set()
-    for agent_id in get_known_agents():
-        file_types = load_config_file_types(agent_id) or {}
-        for ft in file_types.values():
-            if not isinstance(ft, dict) or ft.get("scope") != "path_scoped":
-                continue
-            for pattern in _extract_patterns(ft):
-                segs = [seg for seg in str(pattern).split("/") if seg]
-                dir_segs: list[str] = []
-                for seg in segs:
-                    if "*" in seg:
-                        break
-                    dir_segs.append(seg)
-                if dir_segs:
-                    dir_names.add(dir_segs[-1])
-                if segs and "*" in segs[-1]:
-                    filename_globs.add(segs[-1])
-    return frozenset(dir_names), tuple(sorted(filename_globs))
+    features.content.is_size_controlled = line_count < _SIZE_THRESHOLD
+    features.content.has_explicit_constraints = bool(_CONSTRAINT_RE.search(content))
+    features.content.has_imports = bool(import_refs(content))
 
 
 def _count_components(backbone_path: Path) -> int:
     """Count components declared in backbone.yml."""
-    from reporails_cli.core.platform.utils.utils import load_yaml_file, yaml_error_line
-
     try:
         data = load_yaml_file(backbone_path)
     except (OSError, ValueError, yaml.YAMLError) as exc:

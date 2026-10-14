@@ -10,7 +10,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.classify.capability_paths import TargetError, classify_target_token, sniff_agent
+from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.lint.suppression import renumbered
+from reporails_cli.core.pipeline.mapping import resolve_agent_filters
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
 
 def _resolve_one_target(
@@ -18,7 +26,6 @@ def _resolve_one_target(
 ) -> tuple[set[Path], set[Path]] | dict[str, Any]:
     """One target `token` resolved to the `(files, dirs)` it contributes, or a
     `target_not_found` error payload."""
-    from reporails_cli.core.classify.capability_paths import TargetError, classify_target_token, resolve_capability_spec
 
     kind, target = classify_target_token(token, token_agent, scan_root, base=scan_root)
     if kind == "capability" and isinstance(target, tuple):
@@ -41,11 +48,6 @@ def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[
     its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
     as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
     `(files, dirs)` — every path resolved — or a `target_not_found` error payload."""
-    from reporails_cli.core.classify.capability_paths import sniff_agent
-    from reporails_cli.core.discovery.agents import detect_agents
-    from reporails_cli.core.discovery.exclusions import load_run_exclusions
-    from reporails_cli.core.pipeline.mapping import resolve_agent_filters
-    from reporails_cli.core.platform.config.config import get_project_config
 
     exclusions = load_run_exclusions(scan_root)
     effective_agent, _, _, _ = resolve_agent_filters(
@@ -82,8 +84,6 @@ def keep_target_locations(
     the tokens and how many locations they keep. Everything else — `listed`, `pro` (a
     whole-project aggregate, not a per-file/per-pair breakdown), the stats and scores — stays
     whole-project."""
-    from reporails_cli.core.lint.suppression import renumbered
-    from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
     def targeted(rel: str) -> bool:
         path = resolve_from_root(rel, scan_root)

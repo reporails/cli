@@ -16,9 +16,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.lint.content_checker import run_content_checks
+from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
+from reporails_cli.core.lint.regex import run_checks
 from reporails_cli.core.lint.regex.compiler import display_severity
-from reporails_cli.core.platform.dto.models import LocalFinding, Rule, RuleType
+from reporails_cli.core.mapper.skills import skill_entry_paths, skill_membership
+from reporails_cli.core.platform.adapters.registry import load_rules
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.models import Execution, LocalFinding, Rule, RuleType
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.policy.matching import match_files
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +38,12 @@ def _collect_mechanical_findings(
     rules: dict[str, Rule],
     project_dir: Path,
     classified: list[Any],
+    *,
     scoped: bool = False,
     project_checks: str = "all",
     exclusions: RunExclusions | None = None,
 ) -> list[LocalFinding]:
     """Run mechanical checks and convert Violations to LocalFinding."""
-    from reporails_cli.core.lint.mechanical.runner import run_mechanical_checks
-    from reporails_cli.core.platform.dto.models import Execution
-
     # A rule of any type may hold a mechanical check; the runner runs only those checks.
     mechanical_rules = {k: v for k, v in rules.items() if v.execution == Execution.LOCAL}
     findings: list[LocalFinding] = []
@@ -68,6 +75,27 @@ def _has_deterministic_checks(rule: Rule) -> bool:
     return any(c.type == "deterministic" for c in rule.checks)
 
 
+def _min_lines_overrides(project_dir: Path) -> dict[str, int]:
+    """The per-rule `min_lines` thresholds the project's config sets."""
+    try:
+        thresholds = get_project_config(project_dir).rule_thresholds
+    except (OSError, ValueError):
+        return {}
+    overrides: dict[str, int] = {}
+    for rule_id, args in thresholds.items():
+        min_lines = args.get("min_lines")
+        if isinstance(min_lines, int):
+            overrides[rule_id] = min_lines
+    return overrides
+
+
+def _deterministic_targets(rule: Rule, instruction_files: list[Path], classified: list[Any]) -> list[Path]:
+    """The files a deterministic rule runs on: those its `match` criteria select, else every instruction file."""
+    if rule.match:
+        return [cf.path for cf in match_files(classified, rule.match)]
+    return instruction_files
+
+
 def _collect_deterministic_findings(
     rules: dict[str, Rule],
     project_dir: Path,
@@ -80,22 +108,7 @@ def _collect_deterministic_findings(
     scopes, formats, or other properties get the correct file set.
     Rules of any type are included if they contain deterministic checks.
     """
-    from reporails_cli.core.lint.regex import run_checks
-    from reporails_cli.core.mapper.skills import skill_entry_paths
-    from reporails_cli.core.platform.config.config import get_project_config
-    from reporails_cli.core.platform.policy.matching import match_files
-
-    try:
-        project_config = get_project_config(project_dir)
-        thresholds = project_config.rule_thresholds
-    except (OSError, ValueError):
-        thresholds = {}
-    min_lines_overrides: dict[str, int] = {}
-    for rule_id, args in thresholds.items():
-        ml = args.get("min_lines")
-        if isinstance(ml, int):
-            min_lines_overrides[rule_id] = ml
-
+    min_lines_overrides = _min_lines_overrides(project_dir)
     skill_entries = skill_entry_paths(classified)
     findings: list[LocalFinding] = []
     for rule in rules.values():
@@ -103,14 +116,7 @@ def _collect_deterministic_findings(
             continue
         if not rule.yml_path or not rule.yml_path.exists():
             continue
-
-        # Resolve target files: match criteria → classified files, or all instruction files
-        if rule.match:
-            matched = match_files(classified, rule.match)
-            target_files = [cf.path for cf in matched]
-        else:
-            target_files = instruction_files
-
+        target_files = _deterministic_targets(rule, instruction_files, classified)
         if not target_files:
             continue
 
@@ -152,9 +158,6 @@ def _classify_agent_files(
     exclusions: RunExclusions | None = None,
 ) -> tuple[list[Any], bool]:
     """Classify `instruction_files` with `agent`'s file types; also return whether generic scanning is on."""
-    from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.platform.config.config import get_project_config
-
     file_types = load_file_types(agent or "generic", project_root=project_dir)
     try:
         _config = get_project_config(project_dir)
@@ -175,6 +178,7 @@ def _classify_agent_files(
 def run_m_probes(
     project_dir: Path,
     instruction_files: list[Path],
+    *,
     agent: str = "",
     scoped: bool = False,
     project_checks: str = "all",
@@ -190,8 +194,6 @@ def run_m_probes(
     later pass (project-wide checks alone). `skills` maps each file in a skill to its
     skill folder; when given, only those files are typed `skills`.
     """
-    from reporails_cli.core.platform.adapters.registry import load_rules
-
     scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
     rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
     classified, generic_scanning = _classify_agent_files(project_dir, instruction_files, agent, skills, exclusions)
@@ -210,9 +212,36 @@ def run_m_probes(
     return findings
 
 
+def _replaced_core_rules(
+    project_dir: Path, scan_dir: Path, agent_ids: list[str], core_rules: dict[str, Rule]
+) -> dict[str, set[str]]:
+    """For each core rule an agent's own rule supersedes, the agents whose rule replaces it."""
+    replaced_by: dict[str, set[str]] = {}
+    for agent_id in agent_ids:
+        for rule in load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent_id).values():
+            if rule.supersedes in core_rules:
+                replaced_by.setdefault(rule.supersedes, set()).add(agent_id)
+    return replaced_by
+
+
+def _files_by_first_agent(
+    project_dir: Path,
+    pairs: list[tuple[str, list[Path]]],
+    skills: Mapping[str, str] | None,
+    exclusions: RunExclusions | None,
+) -> dict[Path, tuple[str, Any]]:
+    """Each file the pairs name, classified by the first agent that lists it: path -> (agent, classified file)."""
+    seen: dict[Path, tuple[str, Any]] = {}
+    for agent_id, agent_files in pairs:
+        for cf in _classify_agent_files(project_dir, agent_files, agent_id, skills, exclusions)[0]:
+            seen.setdefault(cf.path, (agent_id, cf))
+    return seen
+
+
 def _project_wide_findings(
     project_dir: Path,
     pairs: list[tuple[str, list[Path]]],
+    *,
     scoped: bool = False,
     skills: Mapping[str, str] | None = None,
     exclusions: RunExclusions | None = None,
@@ -222,36 +251,31 @@ def _project_wide_findings(
     A core rule that an agent's own rule replaces does not judge that agent's files: the
     agent's pass already reports them under the agent's rule.
     """
-    from reporails_cli.core.platform.adapters.registry import load_rules
-
     scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
     rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent="")
-    seen: dict[Path, tuple[str, Any]] = {}
-    replaced_by: dict[str, set[str]] = {}
-    for agent_id, agent_files in pairs:
-        for cf in _classify_agent_files(project_dir, agent_files, agent_id, skills, exclusions)[0]:
-            seen.setdefault(cf.path, (agent_id, cf))
-        if agent_id:
-            for rule in load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent_id).values():
-                if rule.supersedes in rules:
-                    replaced_by.setdefault(rule.supersedes, set()).add(agent_id)
+    seen = _files_by_first_agent(project_dir, pairs, skills, exclusions)
+    replaced_by = _replaced_core_rules(project_dir, scan_dir, [agent_id for agent_id, _ in pairs if agent_id], rules)
     groups: dict[frozenset[str], dict[str, Rule]] = {}
     for rule_id, rule in rules.items():
         groups.setdefault(frozenset(replaced_by.get(rule_id, ())), {})[rule_id] = rule
-    findings: list[LocalFinding] = []
-    for skipped_agents, group in groups.items():
-        files = [cf for owner, cf in seen.values() if owner not in skipped_agents]
-        findings.extend(
-            _collect_mechanical_findings(
-                group, project_dir, files, scoped=scoped, project_checks="only", exclusions=exclusions
-            )
+    return [
+        finding
+        for skipped_agents, group in groups.items()
+        for finding in _collect_mechanical_findings(
+            group,
+            project_dir,
+            [cf for owner, cf in seen.values() if owner not in skipped_agents],
+            scoped=scoped,
+            project_checks="only",
+            exclusions=exclusions,
         )
-    return findings
+    ]
 
 
 def run_m_probes_over_pairs(
     project_dir: Path,
     pairs: list[tuple[str, list[Path]]],
+    *,
     scoped: bool = False,
     skills: Mapping[str, str] | None = None,
     exclusions: RunExclusions | None = None,
@@ -295,35 +319,17 @@ def run_content_quality_checks(
     Atom queries are dispatched against files matching each rule's `match`
     field, using classified file properties from the agent config.
     """
-    from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.lint.content_checker import run_content_checks
-    from reporails_cli.core.mapper.skills import skill_membership
-    from reporails_cli.core.platform.adapters.registry import load_rules
-    from reporails_cli.core.platform.config.config import get_project_config
-    from reporails_cli.core.platform.dto.ruleset import RulesetMap as _RulesetMap
-
-    if not isinstance(ruleset_map, _RulesetMap):
+    if not isinstance(ruleset_map, RulesetMap):
         return []
 
     scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
     rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
 
     # Classify files so content_checker can respect rule.match targeting
-    classified = []
+    classified: list[Any] = []
     if instruction_files:
-        file_types = load_file_types(agent or "generic", project_root=project_dir)
-        try:
-            _config = get_project_config(project_dir)
-            generic_scanning = _config.generic_scanning
-        except (OSError, ValueError):
-            generic_scanning = False
-        classified = classify_files(
-            project_dir,
-            instruction_files,
-            file_types,
-            generic_scanning=generic_scanning,
-            skills=skill_membership(ruleset_map),
-            exclusions=exclusions,
+        classified, _ = _classify_agent_files(
+            project_dir, instruction_files, agent, skill_membership(ruleset_map), exclusions
         )
 
     return run_content_checks(ruleset_map, rules, classified)

@@ -261,20 +261,20 @@ def test_discover_files_folds_generic_scanned_imports(monkeypatch, tmp_path):
     arch = tmp_path / "docs" / "arch.md"
 
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.config.get_project_config",
+        "reporails_cli.interfaces.mcp.tools.get_project_config",
         lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=True),
     )
-    monkeypatch.setattr("reporails_cli.core.discovery.agents.detect_agents", lambda _t: [])
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _t: [])
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",
         lambda *_a, **_k: ("claude", False, False, ["AGENT"]),
     )
     monkeypatch.setattr(
-        "reporails_cli.core.discovery.agents.get_all_scannable_files",
+        "reporails_cli.core.pipeline.mapping.get_all_scannable_files",
         lambda _t, agents=None: [claude_md],
     )
     monkeypatch.setattr(
-        "reporails_cli.core.pipeline.mapping.apply_generic_scan",
+        "reporails_cli.interfaces.mcp.tools.apply_generic_scan",
         lambda *_a, **_k: ([arch], {"docs/arch.md": "generic"}),
     )
 
@@ -294,16 +294,16 @@ def test_discover_files_skips_generic_scan_fold_when_disabled(monkeypatch, tmp_p
     claude_md.write_text("# Claude\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.config.get_project_config",
+        "reporails_cli.interfaces.mcp.tools.get_project_config",
         lambda _t: SimpleNamespace(default_agent="", exclude_dirs=[], exclude_files=[], generic_scanning=False),
     )
-    monkeypatch.setattr("reporails_cli.core.discovery.agents.detect_agents", lambda _t: [])
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.detect_agents", lambda _t: [])
     monkeypatch.setattr(
         "reporails_cli.core.pipeline.mapping.resolve_agent_filters",
         lambda *_a, **_k: ("claude", False, False, ["AGENT"]),
     )
     monkeypatch.setattr(
-        "reporails_cli.core.discovery.agents.get_all_scannable_files",
+        "reporails_cli.core.pipeline.mapping.get_all_scannable_files",
         lambda _t, agents=None: [claude_md],
     )
 

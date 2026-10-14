@@ -20,6 +20,7 @@ from reporails_cli.core.platform.adapters.payload import (
     project_local,
 )
 from reporails_cli.core.platform.adapters.registry import registry_rule_ids, structural_rule_ids
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
@@ -29,7 +30,6 @@ from reporails_cli.core.platform.dto.models import (
     RuleType,
     Severity,
 )
-from reporails_cli.core.platform.runtime.merger import FindingItem
 
 
 def _finding(rule: str, severity: str = "error", file: str = "a.md", line: int = 1, check: str = "") -> FindingItem:

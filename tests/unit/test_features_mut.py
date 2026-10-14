@@ -198,7 +198,7 @@ def test_content_import_detected_from_import_marker(tmp_path: Path) -> None:
     root.write_text("Top matter.\n@./other.md\nMore text.\n")
     feats = DetectedFeatures()
     _detect_content_features(root, feats)
-    assert feats.has_imports is True  # kills L226 or→and
+    assert feats.content.has_imports is True  # kills L226 or→and
 
 
 @pytest.mark.unit
@@ -218,7 +218,7 @@ def test_content_import_ignores_mentions_and_code(tmp_path: Path, body: str) -> 
     root.write_text(body)
     feats = DetectedFeatures()
     _detect_content_features(root, feats)
-    assert feats.has_imports is False
+    assert feats.content.has_imports is False
 
 
 @pytest.mark.unit

@@ -22,11 +22,11 @@ from reporails_cli.core.heal.mechanical_fixers import (
 from reporails_cli.core.heal.preservation.conditions import conditional
 from reporails_cli.core.heal.preservation.fragments import opens_step, rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
-from reporails_cli.core.mapper.bio_tagger import words_between
 from reporails_cli.core.mapper.classify import HEDGE_LEADS, hedges_with_should
 from reporails_cli.core.mapper.instructions import holds_comma_series, opens_command, without_joining_word
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
 from reporails_cli.core.mapper.structure import in_any_span, paragraph_lines, read_structure
+from reporails_cli.core.mapper.word_spans import words_between
 from reporails_cli.core.platform.dto.heal_plan import Edit, PlanOp
 from reporails_cli.core.platform.dto.ruleset import Atom
 

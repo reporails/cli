@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.platform.dto.models import Severity
-from reporails_cli.core.platform.dto.results import ScanDelta, ValidationResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters import json as json_formatter
+from reporails_cli.formatters.text.rule_meta import display_rule_id
 
 
 def _severity_to_command(severity: Severity) -> str:
@@ -48,60 +49,6 @@ def _escape_workflow_data(value: str) -> str:
     Data must escape: % \r \n
     """
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-
-
-def format_annotations(result: ValidationResult) -> str:
-    """Emit GitHub workflow commands for each violation.
-
-    Format: ::error file=F,line=L,title=T::message
-    """
-    lines: list[str] = []
-
-    for v in result.violations:
-        command = _severity_to_command(v.severity)
-
-        # Parse file:line from location (e.g. "CLAUDE.md:45")
-        if ":" in v.location:
-            file_part, line_part = v.location.rsplit(":", 1)
-            try:
-                line_num = int(line_part)
-            except ValueError:
-                file_part = v.location
-                line_num = 1
-        else:
-            file_part = v.location
-            line_num = 1
-
-        title = _escape_workflow_property(f"[{v.rule_id}] {v.rule_title}")
-        file_val = _escape_workflow_property(file_part)
-        message = _escape_workflow_data(v.message)
-
-        lines.append(f"::{command} file={file_val},line={line_num},title={title}::{message}")
-
-    return "\n".join(lines)
-
-
-def format_result(
-    result: ValidationResult,
-    delta: ScanDelta | None = None,
-) -> str:
-    """Format validation result as GitHub workflow commands + JSON summary.
-
-    Output:
-    - One ::error / ::warning / ::notice line per violation (for PR annotations)
-    - One JSON line at the end (for action output parsing)
-    """
-    parts: list[str] = []
-
-    annotations = format_annotations(result)
-    if annotations:
-        parts.append(annotations)
-
-    # JSON summary on last line for machine parsing
-    data: dict[str, Any] = json_formatter.format_result(result, delta)
-    parts.append(json.dumps(data))
-
-    return "\n".join(parts)
 
 
 def _notice_annotations(notices: Any) -> list[str]:
@@ -156,20 +103,17 @@ def format_combined_annotations(
             `elapsed_ms` the `-f json` trailer carries, so a consumer reading either
             format sees the same run duration.
     """
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return ""
 
-    from reporails_cli.formatters.text.rule_meta import display_rule_id
-
     lines: list[str] = []
-    server_error = json_formatter.format_server_error(getattr(result, "server_error", None))
+    server_error = json_formatter.format_server_error(result.reply.server_error)
     if server_error is not None:
         title = _escape_workflow_property(f"reporails: server {server_error['error']}")
         message = _escape_workflow_data(server_error["message"])
         lines.append(f"::warning title={title}::{message}")
-    lines.extend(_notice_annotations(result.notices))
+    lines.extend(_notice_annotations(result.reply.notices))
     for f in result.findings:
         command = _FINDING_COMMANDS.get(f.severity, "warning")
         # Canonical rule id, matching the trailing JSON summary's `rule` field.

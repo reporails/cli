@@ -8,7 +8,9 @@ decides whether to ask again.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import httpx
 
 from reporails_cli.core.platform.adapters.api_client import _user_agent
 from reporails_cli.core.platform.adapters.notices_wire import notices_from_list
@@ -16,9 +18,6 @@ from reporails_cli.core.platform.contract.errors import PlatformRefusedError, Pl
 from reporails_cli.core.platform.dto.sign_in import PollOutcome, PollStatus, SignedIn, SignInGrant
 from reporails_cli.core.platform.policy.preflight import parse_retry_after
 from reporails_cli.core.platform.utils.utils import json_object
-
-if TYPE_CHECKING:
-    import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,6 @@ def _headers() -> dict[str, str]:
 
 def _post(url: str, **kwargs: Any) -> httpx.Response:
     """One POST; a transport fault is raised as `PlatformUnavailableError`."""
-    import httpx
-
     try:
         return httpx.post(url, headers=_headers() | kwargs.pop("headers", {}), timeout=_TIMEOUT_S, **kwargs)
     except (httpx.HTTPError, OSError) as exc:

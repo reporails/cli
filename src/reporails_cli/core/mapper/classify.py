@@ -12,6 +12,20 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from reporails_cli.core.mapper.classify_lexicon import (
+    ALL_VERBS,
+    CONDITION_OPENERS,
+    CONDITIONAL_MARKERS,
+    MODAL_ABSOLUTE,
+    MODAL_HEDGED,
+    WORD_RE,
+    words_of,
+)
+from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
+from reporails_cli.core.mapper.classify_phases import (
+    SUBJECT_ENDS,
+    classify_phase3_lexicon,
+)
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
 from reporails_cli.core.mapper.md_parser import leading_bold_run, replace_code_spans
 
@@ -35,14 +49,9 @@ _MID_NEGATION_RE = re.compile(
 )
 _LATE_DONOT_RE = re.compile(r"\bdo not\b|\bdon't\b|\bdo NOT\b", re.IGNORECASE)
 
-# Phase 2: Modals / Adverbs
-_MODAL_ABSOLUTE: set[str] = {"must", "shall"}
-# Removed: "will" — future tense, not directive. "you will" handled in Phase 2.
-_MODAL_HEDGED: frozenset[str] = frozenset({"should", "could", "might"})
-# Removed: "can" (capability), "may" (possibility) — not instructions.
 
 # Words that make an instruction a suggestion rather than an order.
-HEDGE_WORDS: frozenset[str] = _MODAL_HEDGED | frozenset(
+HEDGE_WORDS: frozenset[str] = MODAL_HEDGED | frozenset(
     {
         "maybe", "probably", "perhaps", "possibly", "try", "consider",
         "ideally", "generally", "usually", "prefer", "preferably",
@@ -67,481 +76,6 @@ SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", 
     _ABSOLUTE_ADVERBS - {"always"}
 )
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
-SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "within", "inside", "across", "under"})
-# Words that open a noun phrase (`for the api module`).
-# Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
-# right after one narrows what the line covers.
-GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
-DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"}) | (
-    GENERAL_QUANTIFIERS - {"no", "one"}
-)
-
-# Phase 3: verb lexicon
-# CORE: high-confidence charged verbs
-_VERBS_CORE: set[str] = {
-    "add",
-    "apply",
-    "ask",
-    "assume",
-    "call",
-    "check",
-    "clone",
-    "commit",
-    "configure",
-    "copy",
-    "create",
-    "define",
-    "deploy",
-    "document",
-    "edit",
-    "enable",
-    "ensure",
-    "execute",
-    "export",
-    "follow",
-    "generate",
-    "handle",
-    "identify",
-    "implement",
-    "import",
-    "include",
-    "install",
-    "invoke",
-    "keep",
-    "lint",
-    "list",
-    "load",
-    "locate",
-    "maintain",
-    "mark",
-    "minimize",
-    "modify",
-    "monitor",
-    "navigate",
-    "open",
-    "optimize",
-    "organize",
-    "preserve",
-    "preview",
-    "provide",
-    "pull",
-    "push",
-    "put",
-    "query",
-    "read",
-    "refactor",
-    "register",
-    "restart",
-    "return",
-    "reuse",
-    "review",
-    "run",
-    "search",
-    "set",
-    "show",
-    "skip",
-    "switch",
-    "sync",
-    "update",
-    "use",
-    "validate",
-    "verify",
-    "view",
-    "wrap",
-    "write",
-}
-# SUPPLEMENT: legitimate but lower-frequency charged verbs
-_VERBS_SUPPLEMENT: set[str] = {
-    "accept",
-    "achieve",
-    "activate",
-    "adapt",
-    "adjust",
-    "advise",
-    "analyze",
-    "annotate",
-    "answer",
-    "append",
-    "assess",
-    "assign",
-    "assist",
-    "audit",
-    "avoid",
-    "be",
-    "begin",
-    "capture",
-    "choose",
-    "cite",
-    "clarify",
-    "classify",
-    "collaborate",
-    "collect",
-    "compare",
-    "compose",
-    "confirm",
-    "consolidate",
-    "coordinate",
-    "continue",
-    "convert",
-    "cross",
-    "customize",
-    "debounce",
-    "deduplicate",
-    "delete",
-    "derive",
-    "describe",
-    "deserialize",
-    "determine",
-    "detect",
-    "display",
-    "distinguish",
-    "document",
-    "enforce",
-    "establish",
-    "evaluate",
-    "examine",
-    "explain",
-    "expose",
-    "extend",
-    "extract",
-    "fall",
-    "favor",
-    "fetch",
-    "find",
-    "flag",
-    "give",
-    "go",
-    "group",
-    "highlight",
-    "improve",
-    "inject",
-    "inspect",
-    "integrate",
-    "investigate",
-    "iterate",
-    "leave",
-    "leverage",
-    "limit",
-    "link",
-    "look",
-    "make",
-    "manage",
-    "map",
-    "match",
-    "maximize",
-    "migrate",
-    "mock",
-    "move",
-    "normalize",
-    "note",
-    "offer",
-    "omit",
-    "parametrize",
-    "parse",
-    "pass",
-    "patch",
-    "place",
-    "populate",
-    "prefer",
-    "prefix",
-    "prepare",
-    "present",
-    "print",
-    "prioritize",
-    "proceed",
-    "produce",
-    "profile",
-    "propose",
-    "raise",
-    "recommend",
-    "reconcile",
-    "record",
-    "refer",
-    "release",
-    "remember",
-    "rename",
-    "render",
-    "repeat",
-    "replace",
-    "report",
-    "request",
-    "require",
-    "reset",
-    "resolve",
-    "respect",
-    "respond",
-    "restrict",
-    "reuse",
-    "revert",
-    "sanitize",
-    "save",
-    "scaffold",
-    "scan",
-    "scope",
-    "serialize",
-    "stage",
-    "seed",
-    "select",
-    "send",
-    "separate",
-    "serve",
-    "sort",
-    "specify",
-    "store",
-    "structure",
-    "submit",
-    "suggest",
-    "summarize",
-    "support",
-    "surface",
-    "take",
-    "throttle",
-    "transform",
-    "treat",
-    "trigger",
-    "understand",
-    "upload",
-    "utilize",
-    "wait",
-    "warn",
-    "wire",
-}
-# AMBIGUOUS: mixed-confidence or genuinely dual noun/verb in tech context
-_VERBS_AMBIGUOUS: set[str] = {
-    "abstract",
-    "archive",
-    "benchmark",
-    "break",
-    "build",
-    "cache",
-    "clean",
-    "close",
-    "complete",
-    "connect",
-    "consider",
-    "delegate",
-    "design",
-    "exercise",
-    "fail",
-    "fix",
-    "focus",
-    "format",
-    "get",
-    "help",
-    "ignore",
-    "initialize",
-    "inline",
-    "log",
-    "name",
-    "outline",
-    "override",
-    "pass",
-    "plan",
-    "process",
-    "prototype",
-    "react",
-    "reference",
-    "remove",
-    "research",
-    "route",
-    "see",
-    "split",
-    "start",
-    "state",
-    "stop",
-    "stub",
-    "target",
-    "test",
-    "toggle",
-    "trace",
-    "track",
-    "work",
-}
-_ALL_VERBS = _VERBS_CORE | _VERBS_SUPPLEMENT | _VERBS_AMBIGUOUS
-
-CONDITIONAL_MARKERS: set[str] = {
-    # Conditional
-    "if",
-    "unless",
-    "provided",
-    "given",
-    "assuming",
-    "whether",
-    # Temporal
-    "when",
-    "whenever",
-    "before",
-    "after",
-    "while",
-    "until",
-    "once",
-    "during",
-    "upon",
-    # Restrictive
-    "except",
-    "where",
-    # General
-    "for",
-}
-
-# Words that only join or quantify a condition (`every time`, `prior to`, `whenever`): swapping one
-# for a marker above adds no content of its own.
-CONDITION_QUANTIFIERS: frozenset[str] = frozenset(
-    {
-        "wherever", "whilst", "till", "since", "otherwise", "then", "each", "every", "time", "case",
-        "soon", "prior", "else", "only",
-    }
-)  # fmt: skip
-
-# Words that join two conditions of one frame (`If the tests fail and the branch is main, ...`).
-CONDITION_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or"})
-
-# Context words that can precede an imperative verb without blocking detection.
-_CONTEXT_WORDS = CONDITIONAL_MARKERS | {
-    # Determiners, articles, adverbs
-    "each",
-    "every",
-    "all",
-    "any",
-    "first",
-    "then",
-    "also",
-    "next",
-    "finally",
-    "immediately",
-    "the",
-    "a",
-    "an",
-    "this",
-    "that",
-    "these",
-    "those",
-    "now",
-    "here",
-    "there",
-    "instead",
-    "to",
-    "and",
-    "or",
-    "not",
-    "with",
-    "in",
-    "on",
-    "at",
-    "by",
-    "from",
-    "into",
-    "only",
-    "just",
-    "simply",
-    "please",
-    "automatically",
-    "optionally",
-    "alternatively",
-    "additionally",
-    # CLI tools — invocation context preceding a verb
-    "npm",
-    "npx",
-    "bun",
-    "pnpm",
-    "yarn",
-    "cargo",
-    "pip",
-    "uv",
-    "dotnet",
-    "docker",
-    "git",
-    "go",
-    "python",
-    "node",
-    "deno",
-    "make",
-    "composer",
-    "mix",
-    "flutter",
-    "dart",
-    "swift",
-    "java",
-    "mvn",
-    "gradle",
-    "gradlew",
-    "ruby",
-    "zig",
-    "nix",
-    "brew",
-    "apt",
-    "snap",
-    "curl",
-    "wget",
-    "pytest",
-    "ruff",
-    "eslint",
-    "prettier",
-    "vitest",
-    "jest",
-    "mocha",
-    "turbo",
-    "nx",
-    "lerna",
-    "rushx",
-    "hatch",
-    "poetry",
-    "pipx",
-    "uvx",
-    "helm",
-    "kubectl",
-    "terraform",
-    "ansible",
-    "ssh",
-    "scp",
-}
-
-_CLASSIFY_WORD_RE = re.compile(r"[a-zA-Z']+")
-
-# "No X is/are/was/were Y" — descriptive, not a prohibition. Shared by the
-# Phase 1 prohibition guard and the map-validation must_constraint check.
-_DESCRIPTIVE_NO_COPULAS = frozenset({"is", "are", "was", "were", "has", "have", "does", "did"})
-
-
-def starts_descriptive_no(lowers: list[str]) -> bool:
-    """True for a descriptive `No X is/are Y` opener (not a prohibition)."""
-    return bool(lowers) and lowers[0] == "no" and any(v in _DESCRIPTIVE_NO_COPULAS for v in lowers[1:8])
-
-
-# A `No …` opener is a determiner only in front of a noun phrase. These followers
-# turn it into an adverbial or a pronoun (`no longer used`, `no matter what`), so
-# the line is neither a status report nor a prohibition of the `No <NP>` kind.
-_NO_ADVERBIAL_FOLLOWERS = frozenset({"longer", "matter", "more", "less", "doubt", "one", "other", "such"})
-
-# A prohibition scopes itself with a LOCATIONAL preposition — it names the place
-# the rule binds (`in code`, `between sections`, `on the main branch`, `at the
-# boundary`). Every other preposition / subordinator describes an absence instead
-# (`No support for Windows`, `No plans for v2`, `No context unless configured`),
-# so this is the set that disqualifies the prohibition reading.
-_NO_DESCRIPTIVE_PREPS = frozenset(
-    {
-        "for",
-        "of",
-        "about",
-        "with",
-        "without",
-        "by",
-        "to",
-        "from",
-        "unless",
-        "when",
-        "while",
-        "except",
-        "after",
-        "before",
-        "during",
-        "beyond",
-        "near",
-        "around",
-        "since",
-        "per",
-    }
-)
 
 
 class CoverageRestrictor(NamedTuple):
@@ -561,143 +95,11 @@ COVERAGE_RESTRICTORS: dict[str, CoverageRestrictor] = {
     "remaining": CoverageRestrictor(frozenset(), frozenset({"remaining", "rest", "left"})),
 }
 # Prepositions that open a phrase naming a place, a target or a means (`to the scratch dir`): the
-# scope prepositions and the prepositions above less the words that open a clause rather than a phrase
-# (`unless`, `when`, `while`, `except`, `since`; `before` / `after` stay, opening a time phrase), with a few more.
-PHRASE_PREPOSITIONS: frozenset[str] = (
-    SCOPE_PREPOSITIONS
-    | (_NO_DESCRIPTIVE_PREPS - {"unless", "when", "while", "except", "since"})
-    | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
-)
-
-# The noun phrases a `No <NP>` STATUS report names. A status line reports a count
-# or a verdict; anything else a two-word `No <NP>` names is the forbidden thing
-# itself (`No console.log`, `No blank lines`), so the status reading is a closed
-# vocabulary rather than a shape rule.
-_NO_STATUS_PHRASES = frozenset(
-    {
-        "open issues",
-        "known issues",
-        "open questions",
-        "issues found",
-        "issues remain",
-        "priority action items",
-        "action items",
-        "action required",
-        "action needed",
-        "further action",
-        "change needed",
-        "changes needed",
-        "change required",
-        "changes required",
-        "setup required",
-        "setup needed",
-        "drift detected",
-        "cloud dependencies",
-    }
-)
-_NO_STATUS_PHRASE_MAX_WORDS = max(len(p.split()) for p in _NO_STATUS_PHRASES)
-
-# Adverbs that date a statement — a line reporting what is absent *so far* reports,
-# it does not forbid (`No data in this table yet`).
-_NO_STATUS_ADVERBS = ("yet", "currently", "so far", "right now", "at the moment", "for now", "at present", "to date")
-
-# Nouns that merely end in `-ed`; the inflection read below would take them for a
-# participle and mistake the clause for a report.
-_ED_NOUNS = frozenset({"speed", "breed", "creed", "tweed", "steed", "embed"})
-
-# A terse prohibition is a short verbless clause; past that length the line is prose.
-_NO_PROHIBITION_MAX_WORDS = 10
-
-
-def starts_bare_no_status(lowers: list[str]) -> bool:
-    """True for a `No <noun phrase>` STATUS line — not a prohibition.
-
-    A status line reports a count or a verdict and stops (`No regressions.`,
-    `No changes.`, `None.`, `No open issues`, `No drift detected on the tracked
-    dimensions`). A prohibition written with the same opener names the thing it
-    forbids (`No console.log`, `No hardcoded secrets`, `No blank lines`), and that
-    naming takes at least two words — so the one-word form is the status shape
-    itself, and past one word the line only reports when it names one of the
-    status phrases in `_NO_STATUS_PHRASES`.
-    """
-    if not lowers or lowers[0] not in ("no", "none"):
-        return False
-    rest = lowers[1:]
-    if not rest:
-        return True  # a bare "None." / "No."
-    if rest[0] in _NO_ADVERBIAL_FOLLOWERS:
-        return False
-    if len(rest) == 1:
-        return True  # `No regressions.` / `No changes.` — the bare count
-    return any(" ".join(rest[:n]) in _NO_STATUS_PHRASES for n in range(2, _NO_STATUS_PHRASE_MAX_WORDS + 1))
-
-
-def _carries_status_adverb(lowers: list[str]) -> bool:
-    """True when the clause dates its own statement (`… yet`, `… so far`)."""
-    joined = f" {' '.join(lowers)} "
-    return any(f" {adverb} " in joined for adverb in _NO_STATUS_ADVERBS)
-
-
-def is_terse_no_prohibition(lowers: list[str]) -> bool:
-    """True for a verbless `No <noun phrase>` prohibition.
-
-    The positive side of :func:`starts_bare_no_status`: a short clause that names a
-    forbidden thing, with or without the place it is forbidden in
-    (`No console.log`, `No hardcoded secrets in code`, `No blank lines between
-    sections`).
-
-    Three shapes are excluded because they describe an absence instead of forbidding
-    a thing: a non-locational preposition, which names what is missing rather than
-    where a rule binds (`No support for Windows`, `No plans for v2`); a dating adverb
-    (`No data in this table yet`); and a predicate — a copula
-    (:func:`starts_descriptive_no`) or a past participle past the attributive slot,
-    which turns the line into a report (`No new CSS classes introduced`, `No rule
-    existed to verify file scope`). The one word directly after `No` is the head
-    noun's own modifier (`No hardcoded secrets`), so it is never read as the verb.
-    """
-    if len(lowers) < 3 or lowers[0] != "no" or len(lowers) > _NO_PROHIBITION_MAX_WORDS:
-        return False
-    if lowers[1] in _NO_ADVERBIAL_FOLLOWERS:
-        return False
-    if (
-        starts_descriptive_no(lowers)
-        or starts_bare_no_status(lowers)
-        or _carries_status_adverb(lowers)
-        or any(w in _NO_DESCRIPTIVE_PREPS for w in lowers[1:])
-    ):
-        return False
-    return not any(_is_past_participle(w) for w in lowers[2:])
-
-
-def _is_past_participle(word: str) -> bool:
-    """True for an `-ed` form that reads as a clause's verb, not as a noun."""
-    return word.endswith("ed") and len(word) > 4 and word not in _ED_NOUNS
-
-
-# Probable sentence subjects — block mid-sentence verb promotion
-_PROBABLE_SUBJECTS = {
-    "it",
-    "this",
-    "that",
-    "they",
-    "we",
-    "he",
-    "she",
-    "everything",
-    "nothing",
-    "something",
-    "anything",
-}
 
 
 def _strip_md_for_classify(text: str) -> str:
     """Strip markdown markers for charge classification. Keeps content."""
     return without_list_marker(strip_markdown_inline(text))
-
-
-def _classify_words(text: str) -> list[str]:
-    """Extract alphabetic words from text."""
-    return _CLASSIFY_WORD_RE.findall(text)
 
 
 # What sits between a bold label and the text it introduces: a colon, a dash, a slash or a sentence
@@ -718,13 +120,10 @@ def _after_bold_label(md_text: str) -> str | None:
 def _find_verb_idx(lowers: list[str]) -> int:
     """Index of first known verb in word list, or -1."""
     for i, w in enumerate(lowers):
-        if w in _ALL_VERBS:
+        if w in ALL_VERBS:
             return i
     return -1
 
-
-# The words that open a condition clause; a bare `for` opens none.
-CONDITION_OPENERS = CONDITIONAL_MARKERS - {"for"}
 
 # Limiting adverbs that may sit in front of a frame marker without breaking the
 # frame (`Only for TypeScript files, …`, `Just when the build fails, …`).
@@ -739,7 +138,7 @@ def is_conditional_frame(text: str) -> bool:
     opener counts only behind such an adverb (`Only for TypeScript files`), because
     an unqualified `For example, …` names no condition.
     """
-    lowers = [w.lower() for w in _CLASSIFY_WORD_RE.findall(text)]
+    lowers = [w.lower() for w in WORD_RE.findall(text)]
     i = 0
     while i < len(lowers) and lowers[i] in _COND_FRAME_LEADS:
         i += 1
@@ -813,8 +212,8 @@ DIRECTIVE_CUES: frozenset[str] = (
     ABSOLUTE_CUES
     | NEGATION_WORDS
     | frozenset(w.lower() for w in CONSTRAINT_WORDS)
-    | _MODAL_ABSOLUTE
-    | _MODAL_HEDGED
+    | MODAL_ABSOLUTE
+    | MODAL_HEDGED
     | {"only"}
 )
 
@@ -838,9 +237,9 @@ def _check_modal_word(
 ) -> tuple[str, int, str, str, bool] | None:
     """Check a single word for modal/hedged/you-will patterns. Returns result or None."""
     next_negated = i + 1 < len(lowers) and lowers[i + 1] in NEGATION_WORDS
-    if w in _MODAL_ABSOLUTE:
+    if w in MODAL_ABSOLUTE:
         return _modal_result(next_negated, "absolute", f"p2_modal_{w}", "p2_modal_negated")
-    if w in _MODAL_HEDGED:
+    if w in MODAL_HEDGED:
         if next_negated:
             return "CONSTRAINT", -1, "hedged", f"p2_hedged_{w}_negated", False
         is_positioned = (
@@ -865,194 +264,10 @@ def _classify_phase2(
             return result
     for w in lowers[:6]:
         if w in _ABSOLUTE_ADVERBS:
-            if w == "only" and not any(v in _ALL_VERBS for v in lowers):
+            if w == "only" and not any(v in ALL_VERBS for v in lowers):
                 continue
             return "DIRECTIVE", 1, "absolute", f"p2_adverb_{w}", False
     return None
-
-
-# Determiners for verb-noun disambiguation in Phase 3c: the noun-phrase openers plus articles,
-# possessives and quantifiers.
-_VERB_NOUN_DETERMINERS: frozenset[str] = DETERMINERS | {
-    "a",
-    "an",
-    "your",
-    "our",
-    "my",
-    "its",
-    "their",
-    "his",
-    "her",
-    "no",
-    "some",
-    "both",
-    "either",
-    "neither",
-}
-
-# Declarative sentence starters for Phase 3g
-_DECLARATIVE_STARTS: frozenset[str] = frozenset(
-    _PROBABLE_SUBJECTS
-    | {
-        "the",
-        "a",
-        "an",
-        "its",
-        "their",
-        "our",
-        "your",
-        "my",
-        "his",
-        "her",
-    }
-)
-
-
-# Verbs that read as a noun at the head of a subject (`Set theory underlies …`): the ambiguous verbs
-# and `set`, which stays among the core verbs so `Set NODE_ENV to production` reads as an order.
-_SUBJECT_HOMOGRAPHS: frozenset[str] = frozenset(_VERBS_AMBIGUOUS | {"set"})
-# Finite verbs that follow a subject noun phrase (`Build artifacts live under …`): the modals, the
-# auxiliaries and the plain and `-s` forms of verbs that describe rather than order.
-_FINITE_AFTER_SUBJECT: frozenset[str] = (
-    _MODAL_HEDGED
-    | _DESCRIPTIVE_NO_COPULAS
-    | frozenset(_MODAL_ABSOLUTE)
-    | frozenset(
-        {
-            "can", "will", "may", "would", "need", "needs",
-            "live", "lives", "underlie", "underlies", "slow", "slows", "exist", "exists", "reside",
-            "resides", "contain", "contains", "cause", "causes", "depend", "depends", "belong",
-            "belongs", "appear", "appears", "remain", "remains", "mean", "means",
-        }
-    )
-)  # fmt: skip
-# Personal pronouns: after an ambiguous opening verb they start a clause of their own (`Fix tests you can reproduce`).
-_SUBJECT_PRONOUNS: frozenset[str] = frozenset({"you", "i", "we", "they", "he", "she", "it"})
-# Words that end a subject noun phrase before any verb: determiners, prepositions, conjunctions,
-# pronouns and the words that open a condition or a relative clause (`once tests exist`, `whose names`).
-_SUBJECT_ENDS: frozenset[str] = (
-    _VERB_NOUN_DETERMINERS
-    | PHRASE_PREPOSITIONS
-    | CONDITIONAL_MARKERS
-    | CONDITION_CONJUNCTIONS
-    | _DECLARATIVE_STARTS
-    | _SUBJECT_PRONOUNS
-    | frozenset({"but", "then", "as", "whose", "which", "who", "what", "whatever", "whoever", "whichever", "how"})
-)
-_SUBJECT_REACH = 5  # a subject noun phrase of up to three words before its finite verb
-
-
-def starts_noun_subject(text: str) -> bool:
-    """True when `text` opens with a word that is also a noun and that starts the subject of a
-    later finite verb (`Set theory underlies the proof`, `Cache misses slow the build`, `Build
-    artifacts live under dist/`) -- a statement, not an order."""
-    lowers = words_of(text)
-    if len(lowers) < 3 or lowers[0] not in _SUBJECT_HOMOGRAPHS or lowers[1] in _SUBJECT_ENDS:
-        return False
-    for i in range(2, min(len(lowers), _SUBJECT_REACH)):
-        word = lowers[i]
-        if word in _FINITE_AFTER_SUBJECT:
-            return True
-        if word in _SUBJECT_ENDS:
-            return False
-    return False
-
-
-def _classify_phase3e_break(
-    clean: str,
-) -> tuple[str, int, str, str, bool] | None:
-    """Phase 3e: verb after sentence/clause break."""
-    sentences = re.split(r"(?<=[.!?:;])\s+", clean)
-    for sent in sentences[1:]:
-        sw = _classify_words(sent)
-        if not sw:
-            continue
-        sl = [w.lower() for w in sw]
-        if sl[0] in _ALL_VERBS:
-            has_cond = any(w in CONDITIONAL_MARKERS for w in sl[:6])
-            amb = "!amb" if sl[0] in _VERBS_AMBIGUOUS else ""
-            return "IMPERATIVE", 1, "imperative", f"p3e_break_{sl[0]}{amb}", has_cond
-        if sl[0] in CONDITIONAL_MARKERS:
-            return "IMPERATIVE", 1, "imperative", "p3e_break_cond", True
-    return None
-
-
-def _classify_phase3d_context(
-    lowers: list[str],
-    verb_idx: int,
-    pre: set[str],
-) -> tuple[str, int, str, str, bool] | None:
-    """Phase 3d: verb after context words only."""
-    if not (pre <= _CONTEXT_WORDS):
-        return None
-    has_cond = bool(pre & CONDITIONAL_MARKERS)
-    if "not" in pre:
-        return "CONSTRAINT", -1, "direct", "p3d_context_not", has_cond
-    verb = lowers[verb_idx]
-    amb = "!amb" if verb in _VERBS_AMBIGUOUS else ""
-    return "IMPERATIVE", 1, "imperative", f"p3d_context_{verb}{amb}", has_cond
-
-
-def _classify_phase3_deep(
-    clean: str,
-    lowers: list[str],
-    verb_idx: int,
-    pre: set[str],
-) -> tuple[str, int, str, str, bool]:
-    """Phase 3 deep detection: sub-phases 3d-3g (mid-sentence verb detection)."""
-    # 3d: Verb after context words only
-    p3d = _classify_phase3d_context(lowers, verb_idx, pre)
-    if p3d is not None:
-        return p3d
-
-    # 3e: Verb after sentence/clause break
-    p3e = _classify_phase3e_break(clean)
-    if p3e is not None:
-        return p3e
-
-    # 3f: Conditional marker at sentence start
-    if lowers[0] in CONDITIONAL_MARKERS:
-        return "IMPERATIVE", 1, "imperative", f"p3f_cond_{lowers[0]}", True
-
-    # 3g: Mid-sentence verb with conditional marker before it
-    if lowers[0] not in _DECLARATIVE_STARTS and verb_idx <= 7 and pre & CONDITIONAL_MARKERS:
-        verb = lowers[verb_idx]
-        amb = "!amb" if verb in _VERBS_AMBIGUOUS else ""
-        if "not" in pre:
-            return "CONSTRAINT", -1, "direct", f"p3g_mid_not{amb}", True
-        return "IMPERATIVE", 1, "imperative", f"p3g_mid_{verb}{amb}", True
-
-    return "NEUTRAL", 0, "none", "fallthrough", False
-
-
-def _classify_phase3_lexicon(
-    clean: str,
-    lowers: list[str],
-    verb_idx: int,
-    *,
-    shallow: bool,
-) -> tuple[str, int, str, str, bool]:
-    """Phase 3 fallback: verb lexicon detection (when spaCy unavailable or returns None).
-
-    Covers sub-phases 3c through 3g.
-    """
-    # 3c: Verb at position 0
-    if verb_idx == 0:
-        if starts_noun_subject(clean):
-            return "NEUTRAL", 0, "none", "p3c_noun_subject", False
-        verb = lowers[0]
-        amb = ""
-        if verb in _VERBS_AMBIGUOUS:
-            pos1 = lowers[1] if len(lowers) > 1 else ""
-            if pos1 not in _VERB_NOUN_DETERMINERS:
-                amb = "!amb"
-        has_cond = any(w in CONDITION_OPENERS for w in lowers[1:8])
-        return "IMPERATIVE", 1, "imperative", f"p3c_verb0_{verb}{amb}", has_cond
-
-    if shallow:
-        return "NEUTRAL", 0, "none", "p3_shallow_stop", False
-
-    return _classify_phase3_deep(clean, lowers, verb_idx, set(lowers[:verb_idx]))
 
 
 _NEUTRAL_RESULT: tuple[str, int, str, str, bool] = ("NEUTRAL", 0, "none", "fallthrough", False)
@@ -1093,9 +308,9 @@ def _classify_phase3(
     # 3c-3g: verb lexicon (primary path)
     verb_idx = _find_verb_idx(lowers)
     if verb_idx != -1:
-        return _classify_phase3_lexicon(clean, lowers, verb_idx, shallow=shallow)
+        return classify_phase3_lexicon(clean, lowers, verb_idx, shallow=shallow)
 
-    # Lexicon miss: no verb found (`_ALL_VERBS` is the sole verb source).
+    # Lexicon miss: no verb found (`ALL_VERBS` is the sole verb source).
     return "NEUTRAL", 0, "none", "p3_no_verb", False
 
 
@@ -1110,11 +325,6 @@ def hedges_with_should(text: str) -> bool:
         return False
     _charge, _cv, _mod, trace, _scope = classify_charge(text, plain_text=text)
     return trace.startswith("p2_hedged_should")
-
-
-def words_of(text: str) -> list[str]:
-    """`text`'s alphabetic words, lowered, in order."""
-    return [w.lower() for w in _CLASSIFY_WORD_RE.findall(text)]
 
 
 def hedges_with_lead(text: str) -> bool:
@@ -1164,7 +374,7 @@ def best_to_sign(text: str) -> int:
             return 0
         negated = rest[1:2] == ["not"]
         after = rest[2:] if negated else rest[1:]
-        if after[:1] != ["to"] or not after[1:] or after[1] in _SUBJECT_ENDS:
+        if after[:1] != ["to"] or not after[1:] or after[1] in SUBJECT_ENDS:
             return 0
         act = after[1:]
         return -1 if negated or act[0] == "not" or leading_prohibition(" ".join(act)) else 1
@@ -1245,7 +455,7 @@ def _classify_lexical(
     if len(clean) < 3:
         return "NEUTRAL", 0, "none", "short_text", False
 
-    words = _classify_words(clean)
+    words = WORD_RE.findall(clean)
     if not words:
         return "NEUTRAL", 0, "none", "no_words", False
     lowers = [w.lower() for w in words]

@@ -8,7 +8,11 @@ from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.keyed import KeyedResult, keyed_heal
+from reporails_cli.core.lint.suppression import suppressed_lines
+from reporails_cli.core.pipeline.mapping import map_instruction_files
+from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, tiers_unpaid
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
 HEAL_PRO_REQUIRED = "Applying fixes needs a Pro account."
@@ -23,9 +27,6 @@ HEAL_NO_FIXES_CODE = "heal_no_fixes"
 def heal_signed_in(error: str | None) -> bool:
     """True when a key is present and the server did not reject it in this same run (`error` is the
     run's server error token, if any)."""
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS
-
     return has_api_key() and error not in AUTH_REJECTED_ERRORS
 
 
@@ -38,8 +39,6 @@ def heal_withheld_for_run(
     Only a reply whose tier is known not to be paid reads as "needs a Pro account"; a paid or
     unnamed tier with no fixes reads as "the server sent no fixes".
     """
-    from reporails_cli.core.platform.dto.diagnostics import tiers_unpaid
-
     return heal_withheld(
         signed_in=heal_signed_in(error), server_replied=server_replied and tiers_unpaid(tier, funnel_tier)
     )
@@ -77,8 +76,6 @@ def resolved_within(path: Path, scope: Path) -> bool:
 
 def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[int]]:
     """The lines each file annotated with an `ails-disable-line` directive, keyed by resolved path."""
-    from reporails_cli.core.lint.suppression import suppressed_lines
-
     raw = suppressed_lines([str(f) for f in files], target)
     return {safe_resolve(Path(k)): v for k, v in raw.items()}
 
@@ -98,8 +95,6 @@ def apply_keyed_heal(
     maps a resolved path to its `ails-disable-line` lines, which heal leaves alone. A written file is
     re-mapped and checked against its plan; one that departs is put back.
     """
-    from reporails_cli.core.pipeline.mapping import map_instruction_files
-
     if ruleset_map is None or workflow is None:
         return KeyedResult()
 

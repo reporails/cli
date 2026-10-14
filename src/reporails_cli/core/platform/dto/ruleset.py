@@ -12,6 +12,8 @@ consumers do not have to import from the `mapper/` subsystem.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA_VERSION = "1.0.0"
@@ -27,6 +29,18 @@ class InlineToken(BaseModel):
 
     text: str
     format: str  # "backtick" | "bold" | "italic" | "plain"
+
+
+# AtomSlots fields carrying the span-coordinate half (token offsets + per-span
+# confidence) — the only part of `slots` that is stored. Slot TEXT (the
+# subject/predicate/object/scope strings) stays local to the run.
+SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_span")
+SLOT_COORD_FIELDS = (*SLOT_SPAN_FIELDS, "subject_conf", "predicate_conf", "object_conf", "scope_conf")
+
+
+def _as_offset(v: Any) -> tuple[int, int] | None:
+    """A stored token offset comes back from JSON as a 2-element list; restore the tuple."""
+    return tuple(v) if v is not None else None
 
 
 class AtomSlots(BaseModel):
@@ -50,6 +64,20 @@ class AtomSlots(BaseModel):
     predicate_conf: float = 0.0
     object_conf: float = 0.0
     scope_conf: float = 0.0
+
+    @classmethod
+    def from_coords(cls, coords: dict[str, Any]) -> AtomSlots:
+        """Rebuild slots from stored span coordinates (JSON hands each offset back as a list)."""
+        return cls(
+            subject_span=_as_offset(coords.get("subject_span")),
+            predicate_span=_as_offset(coords.get("predicate_span")),
+            object_span=_as_offset(coords.get("object_span")),
+            scope_span=_as_offset(coords.get("scope_span")),
+            subject_conf=coords.get("subject_conf", 0.0),
+            predicate_conf=coords.get("predicate_conf", 0.0),
+            object_conf=coords.get("object_conf", 0.0),
+            scope_conf=coords.get("scope_conf", 0.0),
+        )
 
 
 # A list item read as the object of the instruction that introduces it: it stays a line of its file
@@ -131,6 +159,22 @@ class FileRecord(BaseModel):
     skill: str = ""  # folder of the skill this file belongs to (same path form as `path`); "" in no skill
     description: str = ""  # frontmatter name+description (always in base context)
     description_embedding: tuple[int, ...] | None = None  # int8 quantized embedding
+
+
+def int8_bytes(values: tuple[int, ...] | list[int]) -> bytes:
+    """Pack an int8 vector as its two's-complement bytes (the encoding the disk cache and the wire share)."""
+    return bytes(v & 0xFF for v in values)
+
+
+def file_record_scalars(record: FileRecord) -> dict[str, str]:
+    """The scalar fields of `record` shared by its disk and wire forms, in their fixed key order."""
+    return {
+        "content_hash": record.content_hash,
+        "loading": record.loading,
+        "scope": record.scope,
+        "agent": record.agent,
+        "type": record.type,
+    }
 
 
 class RulesetSummary(BaseModel):

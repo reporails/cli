@@ -49,7 +49,7 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.config import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -196,7 +196,7 @@ def _isolate_global_config(monkeypatch, tmp_path: Path) -> None:
     project that doesn't set its own `.ails/config.yml` value -- these tests assert exact
     empty-project / unknown-agent shapes that a stray global `default_agent` would mask."""
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        "reporails_cli.core.platform.config.config.get_global_config_path",
         lambda: tmp_path / "unused-global-config.yml",
     )
 

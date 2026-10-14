@@ -10,16 +10,12 @@ between them.
 from __future__ import annotations
 
 import functools
-import logging
 from pathlib import Path, PurePosixPath
 
-import yaml
-
-from reporails_cli.core.discovery.features import agent_main_names
+from reporails_cli.core.discovery.agent_config import bundled_file_types
+from reporails_cli.core.discovery.agent_surfaces import agent_main_names
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.platform.utils.utils import glob_matches
-
-logger = logging.getLogger(__name__)
 
 _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))
 
@@ -71,23 +67,8 @@ def _memory_surface_dirs() -> frozenset[str]:
     Falls back to `_MEMORY_SURFACE_DIRS_FALLBACK` when the bundled configs are
     unreadable.
     """
-    from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
-    from reporails_cli.core.platform.utils.utils import load_yaml_file
-
-    rules_dir = get_bundled_rules_path()
-    if rules_dir is None:
-        return _MEMORY_SURFACE_DIRS_FALLBACK
-
     names: set[str] = set()
-    for config_path in sorted(rules_dir.glob("*/config.yml")):
-        try:
-            data = load_yaml_file(config_path)
-        except (OSError, ValueError, yaml.YAMLError) as exc:  # unreadable or non-YAML agent config
-            logger.warning("Skipping agent config %s: %s", config_path, exc)
-            continue
-        file_types = (data or {}).get("file_types") or {}
-        if not isinstance(file_types, dict):
-            continue
+    for file_types in bundled_file_types():
         for ft_name, ft in file_types.items():
             if ft_name not in _MEMORY_SURFACE_FILE_TYPES or not isinstance(ft, dict):
                 continue
@@ -115,23 +96,8 @@ def _config_surface_patterns() -> tuple[str, ...]:
     home and any-depth prefixes dropped, for `_matches_config_surface`. Empty on an unreadable
     install, which sends `_classify_by_name` to the suffix fallback.
     """
-    from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
-    from reporails_cli.core.platform.utils.utils import load_yaml_file
-
-    rules_dir = get_bundled_rules_path()
-    if rules_dir is None:
-        return ()
-
     patterns: set[str] = set()
-    for config_path in sorted(rules_dir.glob("*/config.yml")):
-        try:
-            data = load_yaml_file(config_path)
-        except (OSError, ValueError, yaml.YAMLError) as exc:  # unreadable or non-YAML agent config
-            logger.warning("Skipping agent config %s: %s", config_path, exc)
-            continue
-        file_types = (data or {}).get("file_types") or {}
-        if not isinstance(file_types, dict):
-            continue
+    for file_types in bundled_file_types():
         for ft in file_types.values():
             if not isinstance(ft, dict) or ft.get("format") != _SCHEMA_VALIDATED:
                 continue

@@ -11,11 +11,11 @@ from reporails_cli.core.lint.suppression import (
     apply_surface_mutations,
     build_index,
     finding_surface,
-    parse_directives,
 )
 from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.runtime.merger import merge_results
+from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 

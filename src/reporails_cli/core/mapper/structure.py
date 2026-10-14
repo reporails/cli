@@ -26,8 +26,9 @@ from reporails_cli.core.mapper.md_parser import (
     line_offsets,
     link_spans,
     recorded_spans,
+    tok_line,
 )
-from reporails_cli.core.mapper.parse import _tok_line, inline_line, parse_blocks
+from reporails_cli.core.mapper.parse import inline_line, parse_blocks
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
 _LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "fence", "code_block", "table_open", "html_block", "hr"})
@@ -125,14 +126,17 @@ class _Reading:
     item_just_opened: bool = False
 
     def line(self, tok: Any) -> int:
-        return _tok_line(tok, self.offset)
+        """The file line `tok` starts on."""
+        return tok_line(tok, self.offset)
 
     def open_list(self, tokens: list[Any], i: int) -> None:
+        """Enter a list, starting a new list group unless it continues the previous list."""
         if not self.lists and not _is_after_list(tokens, i):
             self.group += 1
         self.lists.append(self.group)
 
     def open_item(self, tok: Any) -> None:
+        """Record a list item with its list group and open a new block for it."""
         self.items.append((self.line(tok), self.lists[-1] if self.lists else self.group))
         self.block += 1
         self.item_just_opened = True
@@ -146,6 +150,7 @@ class _Reading:
         self.block_of.update(dict.fromkeys(range(first, first + tok.map[1] - tok.map[0]), self.block))
 
     def visit(self, tokens: list[Any], i: int) -> None:
+        """Update the walk state for the token at `i`."""
         tok = tokens[i]
         if _is_list(tok, 1):
             self.open_list(tokens, i)
@@ -194,9 +199,9 @@ def section_span(content: str, heading: str) -> tuple[int, int] | None:
         level = int(tok.tag[1:])
         if depth:
             if level <= depth:
-                return start, _tok_line(tok, offset)
+                return start, tok_line(tok, offset)
         elif level in (2, 3) and tokens[i + 1].content.strip() == heading:
-            depth, start = level, _tok_line(tok, offset)
+            depth, start = level, tok_line(tok, offset)
     return (start, content.count("\n") + 2) if depth else None
 
 

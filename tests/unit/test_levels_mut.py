@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.results import DetectedFeatures
+from reporails_cli.core.platform.dto.results import DetectedFeatures, MemoryFeatures
 from reporails_cli.core.platform.policy.levels import (
     _detect_capability,
     _level_has_capability,
@@ -52,7 +52,7 @@ class TestOrDetectors:
     def test_adaptive_memory_fires_on_auto_memory_alone(self) -> None:
         # Kills L170 `or -> and`: auto-memory present but no memory dir still
         # counts as adaptive under OR, but not under AND.
-        features = DetectedFeatures(has_auto_memory=True, has_memory_dir=False)
+        features = DetectedFeatures(memory=MemoryFeatures(has_auto_memory=True, has_memory_dir=False))
         assert _detect_capability(features, "adaptive_memory") is True
 
 

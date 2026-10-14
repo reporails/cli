@@ -235,7 +235,7 @@ def test_only_a_should_instruction_reads_hedged(text: str, hedged: bool) -> None
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_the_should_floor_touches_only_charged_atoms_and_only_modality() -> None:
-    from reporails_cli.core.mapper.parse import _apply_hedged_should_floor
+    from reporails_cli.core.mapper.charge_floors import _apply_hedged_should_floor
 
     charged = _atom("You should avoid long-running transactions.", -1, modality="direct")
     neutral = _atom("The build should finish in a minute.", 0)
@@ -269,7 +269,7 @@ def test_an_instruction_opening_with_a_hedge_word_reads_hedged(text: str, hedged
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_the_hedge_floor_reads_a_lead_hedge_on_a_charged_atom() -> None:
-    from reporails_cli.core.mapper.parse import _apply_hedged_should_floor
+    from reporails_cli.core.mapper.charge_floors import _apply_hedged_should_floor
 
     lead = _atom("Try not to use global state.", -1, modality="imperative")
     neutral = _atom("Perhaps the build is slow.", 0)

@@ -46,7 +46,7 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         lines.append("Execution: server (needs a server connection; the remedies are part of Pro)")
     match = rule_data.get("match") or {}
     if match:
-        # Single-sourced from `_serialize_match` (the same dict `ails rules list` emits) so a
+        # Single-sourced from `serialize_match` (the same dict `ails rules list` emits) so a
         # rule author who sets e.g. `content_format` / `loading_verb` / `link_source_type` sees
         # it here too, not only in the JSON listing.
         lines.append(

@@ -42,7 +42,7 @@ def scanned(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
         seen.append(Path(target))
         return [SimpleNamespace(agent_type=SimpleNamespace(id="claude"))]
 
-    monkeypatch.setattr("reporails_cli.core.discovery.agents.detect_agents", fake_detect)
+    monkeypatch.setattr("reporails_cli.core.classify.capability_paths.detect_agents", fake_detect)
     return seen
 
 

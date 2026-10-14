@@ -21,12 +21,40 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-# Imported at module scope so tests and callers can substitute the level policy;
-# the heavier lint/merge/suppression machinery is imported lazily in the body to
-# match the CLI flow's import discipline and avoid import-time cost on cold paths.
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.lint.memory_checks import validate_memory_files
+from reporails_cli.core.lint.suppression import (
+    apply_config_listing,
+    apply_suppressions,
+    apply_surface_mutations,
+    resolve_finding_path,
+)
+from reporails_cli.core.mapper.inspect import _load_registry, file_type_of
+from reporails_cli.core.mapper.parse import holds_position
+from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders, skill_type
+from reporails_cli.core.platform.adapters.payload import local_entries
+from reporails_cli.core.platform.adapters.registry import (
+    convention_check_ids,
+    file_level_check_ids,
+    load_rules,
+    registry_rule_ids,
+    rule_dependencies,
+    structural_rule_ids,
+    whole_run_check_ids,
+)
+from reporails_cli.core.platform.adapters.rules_query import rule_title
+from reporails_cli.core.platform.policy.dependencies import drop_dependent_findings
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
+from reporails_cli.core.platform.runtime.merger import (
+    collapse_same_secret,
+    drop_findings,
+    merge_results,
+    normalize_finding_path,
+    stamp_conventions,
+    stamp_local_tiers,
+    stamp_served_tiers,
+)
 
 if TYPE_CHECKING:
     from reporails_cli.core.discovery.exclusions import RunExclusions
@@ -77,16 +105,6 @@ def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None
     and the computed level is always threaded onto the merged result. `exclusions` is what the run left out: a
     capability folder it names is not counted as present, and an import from a left-out file is flagged.
     """
-    from reporails_cli.core.lint.memory_checks import validate_memory_files
-    from reporails_cli.core.lint.suppression import apply_config_listing, apply_suppressions
-    from reporails_cli.core.platform.adapters.registry import convention_check_ids
-    from reporails_cli.core.platform.runtime.merger import (
-        collapse_same_secret,
-        merge_results,
-        stamp_conventions,
-        stamp_local_tiers,
-        stamp_served_tiers,
-    )
 
     lint_result = inp.lint_result
     memory_findings: list[Any] = []
@@ -110,12 +128,20 @@ def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None
         level=level,
         tier=lint_result.tier if lint_result else "",
     )
-    result = replace(result, hooks=features.hooks, excluded_imported=_imports_left_out(inp, exclusions))
+    result = replace(
+        result,
+        hooks=features.hooks,
+        omissions=replace(result.omissions, excluded_imported=_imports_left_out(inp, exclusions)),
+    )
     result = _drop_dependent(result, inp)
-    result = replace(result, notices=inp.notices, not_evaluated=_relative_pairs(inp.not_evaluated, inp.scan_root))
+    result = replace(
+        result,
+        reply=replace(result.reply, notices=inp.notices),
+        omissions=replace(result.omissions, not_evaluated=_relative_pairs(inp.not_evaluated, inp.scan_root)),
+    )
     # The workflow goes on first, so the suppressions the author wrote apply to what it lists too.
     if lint_result is not None and lint_result.workflow is not None:
-        result = replace(result, workflow=lint_result.workflow)
+        result = replace(result, reply=replace(result.reply, workflow=lint_result.workflow))
     imported = imported_places(inp.ruleset_map, inp.scan_root) if inp.ruleset_map is not None else None
     result = apply_suppressions(result, project_root=inp.scan_root, alias_fn=inp.alias_fn, imported=imported)
     result = _apply_surface_mutations(result, inp.scan_root, inp.effective_agent, inp.alias_fn)
@@ -133,9 +159,12 @@ def with_exclusions(result: Any, exclusions: tuple[tuple[str, ...], tuple[str, .
     dirs, files = exclusions
     return replace(
         result,
-        excluded_dirs=dirs,
-        excluded_files=files,
-        excluded_imported=result.excluded_imported and bool(dirs or files),
+        omissions=replace(
+            result.omissions,
+            excluded_dirs=dirs,
+            excluded_files=files,
+            excluded_imported=result.omissions.excluded_imported and bool(dirs or files),
+        ),
     )
 
 
@@ -154,7 +183,6 @@ def _imports_left_out(inp: AssembleInputs, exclusions: RunExclusions | None) -> 
 
 def _relative_pairs(pairs: tuple[tuple[str, str], ...], scan_root: Path) -> tuple[tuple[str, str], ...]:
     """`pairs` with each file given project-relative, as findings are; repeats dropped, order kept."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     return tuple(dict.fromkeys((rule, normalize_finding_path(file, scan_root)) for rule, file in pairs))
 
@@ -165,7 +193,6 @@ _QUOTE_MAX_CHARS = 80
 
 def _imported_note(atom: Any, scan_root: Path) -> str:
     """` (from docs/style.md:7: "Keep the diff small.")` — where an imported instruction is written."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     where = normalize_finding_path(Path(_imported_source(atom)).as_posix(), scan_root)
     text = " ".join(atom.text.split())
@@ -175,8 +202,6 @@ def _imported_note(atom: Any, scan_root: Path) -> str:
 
 def _imported_atoms(ruleset_map: Any, scan_root: Path) -> dict[tuple[str, int], Any]:
     """The instructions `@path` imports bring in, by their file and place in it."""
-    from reporails_cli.core.mapper.parse import holds_position
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     return {
         (normalize_finding_path(a.file_path, scan_root), a.position_index): a
@@ -198,8 +223,6 @@ def name_imported_instructions(report: RulesetReport, ruleset_map: Any, scan_roo
     the instruction's words. Matched by the instruction's place in its file, so two
     imported instructions under one `@path` line each name their own line.
     """
-    from reporails_cli.core.lint.rule_pages import rule_title
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     imported = _imported_atoms(ruleset_map, scan_root)
     if not imported:
@@ -223,9 +246,6 @@ def reported_local_findings(inp: AssembleInputs) -> tuple[Any, ...]:
     Memory-index validation is folded in, and the same inline suppressions, surface-scoped
     mutations and same-secret collapse the assembled result applies are applied here.
     """
-    from reporails_cli.core.lint.memory_checks import validate_memory_files
-    from reporails_cli.core.lint.suppression import apply_suppressions
-    from reporails_cli.core.platform.runtime.merger import collapse_same_secret, merge_results
 
     memory_findings: list[Any] = []
     if inp.ruleset_map is not None:
@@ -250,8 +270,6 @@ def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) 
     type, and stays `skills` only when it sits at or below a recorded skill folder or is exactly a skill slot folder
     (a folder with no `SKILL.md`; its other files stay plain).
     """
-    from reporails_cli.core.mapper.inspect import file_type_of
-    from reporails_cli.core.mapper.skills import skill_membership, skill_slot_folders, skill_type
 
     ruleset_files = inp.ruleset_map.files if inp.ruleset_map is not None else ()
     skill_folders = {Path(f) for f in (skill_membership(inp.ruleset_map) or {}).values()}
@@ -277,9 +295,6 @@ def _rule_agents(inp: AssembleInputs) -> tuple[str, ...]:
 
 def _drop_dependent(result: Any, inp: AssembleInputs) -> Any:
     """Drop the findings covered by a rule they depend on, judged on the findings as detected."""
-    from reporails_cli.core.platform.adapters.registry import rule_dependencies, whole_run_check_ids
-    from reporails_cli.core.platform.policy.dependencies import drop_dependent_findings
-    from reporails_cli.core.platform.runtime.merger import drop_findings
 
     agents = _rule_agents(inp)
     dependencies: dict[str, frozenset[str]] = {}
@@ -294,7 +309,6 @@ def _drop_dependent(result: Any, inp: AssembleInputs) -> Any:
 
 def _structural_ids(inp: AssembleInputs) -> frozenset[str]:
     """The structural rule ids across every agent whose rules ran."""
-    from reporails_cli.core.platform.adapters.registry import structural_rule_ids
 
     return frozenset().union(*(structural_rule_ids(a) for a in _rule_agents(inp)))
 
@@ -307,10 +321,6 @@ def lint_request_local(inp: AssembleInputs) -> tuple[list[Any], int]:
     and an agent rule that supersedes a core structural rule counts under the id the finding
     carries.
     """
-    from reporails_cli.core.lint.suppression import resolve_finding_path
-    from reporails_cli.core.mapper.inspect import _load_registry
-    from reporails_cli.core.platform.adapters.payload import local_entries
-    from reporails_cli.core.platform.adapters.registry import file_level_check_ids, registry_rule_ids
 
     agents = _rule_agents(inp)
     structural_ids = _structural_ids(inp)
@@ -338,8 +348,6 @@ def _apply_surface_mutations(
     Loads the active rule set (surface mutations live on core rules) and filters the merged
     result. A load failure is non-fatal — the unmutated result is returned unchanged.
     """
-    from reporails_cli.core.lint.suppression import apply_surface_mutations
-    from reporails_cli.core.platform.adapters.registry import load_rules
 
     try:
         rules = load_rules(project_root=scan_root, agent=effective_agent, scan_root=scan_root)

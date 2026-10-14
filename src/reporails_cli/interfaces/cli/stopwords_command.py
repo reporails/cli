@@ -25,7 +25,10 @@ def stopwords_extract(
     ),
 ) -> None:
     """Extract alternation terms from checks.yml into vocab.yml files."""
-    from reporails_cli.core.classify.stopwords import extract_all, write_vocab
+    from reporails_cli.core.classify.stopwords import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        extract_all,
+        write_vocab,
+    )
 
     root = Path(rules_root).resolve()
     if not root.exists():
@@ -63,7 +66,9 @@ def stopwords_sync(
     ),
 ) -> None:
     """Compile vocab.yml terms into checks.yml patterns."""
-    from reporails_cli.core.classify.stopwords_sync import sync_all
+    from reporails_cli.core.classify.stopwords_sync import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        sync_all,
+    )
 
     root = Path(rules_root).resolve()
     if not root.exists():

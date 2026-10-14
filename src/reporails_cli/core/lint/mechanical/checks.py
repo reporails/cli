@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
 from reporails_cli.core.mapper.skills import skill_entry_paths
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.policy.matching import _prop_matches
 from reporails_cli.core.platform.utils.utils import read_frontmatter_file
 
 
@@ -97,8 +99,6 @@ def _select_targets(
         # `match.type` may be a list (`{type: [config, hooks]}`) — compare through
         # the shared matching predicate, never `==`, or a list-valued type matches
         # nothing and the check reports "No matching files found" on a file it owns.
-        from reporails_cli.core.platform.policy.matching import _prop_matches
-
         matched = [cf.path for cf in classified_files if _prop_matches(match_type, cf.file_type)]
         if matched:
             return matched
@@ -110,6 +110,21 @@ def _select_targets(
         return [cf.path for cf in classified_files]
 
     return []
+
+
+def target_texts(
+    args: dict[str, Any],
+    classified_files: list[ClassifiedFile],
+    root: Path,
+) -> Iterator[tuple[Path, str]]:
+    """Yield each target file with its text; files that are not regular files or cannot be read are skipped."""
+    for match in get_target_files(args, classified_files, root):
+        if not match.is_file():
+            continue
+        try:
+            yield match, match.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
 
 
 def _get_counted_files(
@@ -304,70 +319,3 @@ def byte_size(
         if size < min_bytes:
             return CheckResult(passed=False, message=f"{match.name}: {size}B below min", location=f"{rel}:0")
     return CheckResult(passed=True, message="File sizes within bounds")
-
-
-# Import advanced checks for registry registration
-from reporails_cli.core.lint.mechanical.checks_advanced import (  # noqa: E402
-    aggregate_byte_size,
-    check_import_targets_exist,
-    check_markdown_link_targets_exist,
-    content_absent,
-    count_at_least,
-    count_at_most,
-    directory_file_types,
-    extract_imports,
-    extract_markdown_links,
-    file_absent,
-    filename_matches_pattern,
-    frontmatter_extra_keys,
-    frontmatter_matches_dirname,
-    frontmatter_present,
-    frontmatter_valid_glob,
-    frontmatter_valid_yaml,
-    import_depth,
-    path_resolves,
-    skill_entrypoint_present,
-    valid_markdown,
-)
-from reporails_cli.core.lint.mechanical.hook_handlers import hook_handlers  # noqa: E402
-
-# Registry of mechanical checks
-MECHANICAL_CHECKS: dict[str, Any] = {
-    "file_exists": file_exists,
-    "directory_exists": directory_exists,
-    "directory_contains": directory_contains,
-    "git_tracked": git_tracked,
-    "frontmatter_key": frontmatter_key,
-    "frontmatter_present": frontmatter_present,
-    "frontmatter_valid_yaml": frontmatter_valid_yaml,
-    "valid_markdown": valid_markdown,
-    "file_count": file_count,
-    "line_count": line_count,
-    "byte_size": byte_size,
-    "path_resolves": path_resolves,
-    "extract_imports": extract_imports,
-    "aggregate_byte_size": aggregate_byte_size,
-    "import_depth": import_depth,
-    "directory_file_types": directory_file_types,
-    "frontmatter_valid_glob": frontmatter_valid_glob,
-    "content_absent": content_absent,
-    "count_at_most": count_at_most,
-    "count_at_least": count_at_least,
-    "check_import_targets_exist": check_import_targets_exist,
-    "extract_markdown_links": extract_markdown_links,
-    "check_markdown_link_targets_exist": check_markdown_link_targets_exist,
-    "file_absent": file_absent,
-    "filename_matches_pattern": filename_matches_pattern,
-    "frontmatter_extra_keys": frontmatter_extra_keys,
-    "frontmatter_matches_dirname": frontmatter_matches_dirname,
-    "skill_entrypoint_present": skill_entrypoint_present,
-    "hook_handlers": hook_handlers,
-    # Aliases for signal catalog naming
-    "glob_match": file_exists,
-    "max_line_count": line_count,
-    "glob_count": file_count,
-    # Aliases for rule frontmatter name → check mapping
-    "file_tracked": git_tracked,
-    "memory_dir_exists": directory_exists,
-    "total_size_check": aggregate_byte_size,
-}

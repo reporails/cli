@@ -10,6 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import numpy as np
+
+from reporails_cli.core.mapper.encode_pool import ort_intra_threads
+
 # Texts tokenized per call when counting tokens for bucket ordering.
 _COUNT_CHUNK = 1024
 
@@ -44,13 +48,12 @@ class _OnnxEncoderSession:
     ) -> None:
         """Build the CPU-tuned ORT session and configure the bundled tokenizer."""
         # Local imports so the module imports cheaply without pulling ORT up-front.
-        import onnxruntime as ort
-        from tokenizers import Tokenizer
+        import onnxruntime as ort  # pylint: disable=import-outside-toplevel  # ML runtime loads on first model use
+        import tokenizers  # pylint: disable=import-outside-toplevel  # ML runtime loads on first model use
 
         # Session options tuned for CPU inference.
         opts = ort.SessionOptions()
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        from reporails_cli.core.mapper.encode_pool import ort_intra_threads
 
         opts.intra_op_num_threads = ort_intra_threads() if threads is None else int(threads)
         opts.inter_op_num_threads = 1
@@ -65,7 +68,7 @@ class _OnnxEncoderSession:
             providers=["CPUExecutionProvider"],
         )
 
-        self._tokenizer = Tokenizer.from_file(str(tokenizer_path))
+        self._tokenizer = tokenizers.Tokenizer.from_file(str(tokenizer_path))
         self._tokenizer.enable_truncation(max_length=max_length)
 
         # Whether this particular model graph takes token_type_ids as an input.
@@ -78,7 +81,7 @@ class _OnnxEncoderSession:
         ``slot[i]`` is the position of ``texts[i]`` in the concatenation of the
         buckets, so ``flat[slot[i]]`` is the result for input ``i`` (duplicate inputs
         share one slot). Token counts are taken in fixed-size chunks and only the
-        counts are kept; `_tokenize` builds the tokens of one bucket on demand.
+        counts are kept; `tokenize` builds the tokens of one bucket on demand.
         """
         unique = list(dict.fromkeys(texts))
         if not unique:
@@ -94,7 +97,7 @@ class _OnnxEncoderSession:
         buckets = [ordered[s : s + bucket_size] for s in range(0, len(ordered), bucket_size)]
         return buckets, [index[t] for t in texts]
 
-    def _tokenize(self, texts: list[str]) -> list[_Tokens]:
+    def tokenize(self, texts: list[str]) -> list[_Tokens]:
         """Tokenize one bucket's ``texts`` (truncated, padding stripped)."""
         tokens: list[_Tokens] = []
         for t, e in zip(texts, self._tokenizer.encode_batch(texts), strict=True):
@@ -102,10 +105,8 @@ class _OnnxEncoderSession:
             tokens.append(_Tokens(t, e.ids[:n], list(e.offsets[:n])))
         return tokens
 
-    def _encode_feed(self, bucket: list[_Tokens]) -> dict[str, Any]:
+    def encode_feed(self, bucket: list[_Tokens]) -> dict[str, Any]:
         """Build the ORT feed (int64 ids / attention mask / type-ids) for one bucket, zero-padded."""
-        import numpy as np
-
         width = max(len(t.ids) for t in bucket)
         ids = np.zeros((len(bucket), width), dtype=np.int64)
         masks = np.zeros((len(bucket), width), dtype=np.int64)

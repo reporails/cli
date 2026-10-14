@@ -20,16 +20,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from reporails_cli.core.mapper.charge_floors import TABLE_HEADER_RULE, is_quoted_line
 from reporails_cli.core.mapper.embed import _embed_atoms_deduped
 from reporails_cli.core.mapper.lexical import split_clauses
 from reporails_cli.core.mapper.markers import reformat_spans
-from reporails_cli.core.mapper.parse import (
-    TABLE_HEADER_RULE,
-    build_split_atom,
-    is_quoted_line,
-    keep_lead_in_on_last,
-    reindex_positions,
-)
+from reporails_cli.core.mapper.parse import build_split_atom, keep_lead_in_on_last, reindex_positions
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 

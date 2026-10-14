@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.platform.adapters.api_client import _deserialize_lint_result
-from reporails_cli.core.platform.dto.diagnostics import LocalTier
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem, stamp_local_tiers
+from reporails_cli.core.platform.dto.diagnostics import FindingItem, LocalTier
+from reporails_cli.core.platform.runtime.merger import CombinedResult, stamp_local_tiers
 
 
 def _f(file: str, rule: str, line: int = 1, tier: str = "") -> FindingItem:

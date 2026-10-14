@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import NamedTuple
 
-from reporails_cli.core.lint.rule_pages import rule_title
+from reporails_cli.core.platform.adapters.rules_query import load_all_rules, rule_title
 
 # Client-check labels map to their canonical rule ID so local findings display the ID like
 # server findings. Unmapped tokens (server IDs, ambiguous_charge) pass through unchanged.
@@ -37,7 +37,6 @@ class _RuleMeta(NamedTuple):
 @lru_cache(maxsize=1)
 def _rule_registry() -> dict[str, _RuleMeta]:
     """`{rule_id: _RuleMeta}` from the bundled framework registry, loaded once per process."""
-    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
 
     try:
         return {r.id: _RuleMeta(r.slug or "", r.severity.value) for r in load_all_rules()}

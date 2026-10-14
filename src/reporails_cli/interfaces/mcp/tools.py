@@ -6,16 +6,41 @@ in `rule_tools.py`.
 """
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from reporails_cli.core.discovery.agents import get_known_agents
 from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.discovery.project_root import resolve_project_root, resolve_project_root_for_file
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
+from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
+from reporails_cli.core.mapper.model_manifest import ModelFetchError, get_models_path, models_present
+from reporails_cli.core.mapper.skills import skill_membership
+from reporails_cli.core.pipeline.assemble import (
+    AssembleInputs,
+    assemble_result,
+    lint_request_local,
+    with_exclusions,
+)
+from reporails_cli.core.pipeline.mapping import (
+    agent_file_pairs,
+    apply_generic_scan,
+    discover_scope,
+    map_instruction_files,
+)
+from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.adapters.notices_seen import visible_notices
-from reporails_cli.core.platform.config.bootstrap import is_initialized
+from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, is_initialized
+from reporails_cli.core.platform.dto.diagnostics import FunnelError, tiers_unpaid
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.host_hooks import host_hooks_field
+from reporails_cli.formatters.text.funnel_cta import plain_cta
+from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +66,6 @@ def _unknown_agent_error(agent: str) -> dict[str, Any]:
     MCP has no console to print to, so it surfaces the same two facts as fields instead of
     masking the misconfiguration behind a generic "No instruction files found".
     """
-    from reporails_cli.core.discovery.agents import get_known_agents
 
     return {"error": f"Unknown agent: {agent}", "known_agents": sorted(get_known_agents())}
 
@@ -69,9 +93,6 @@ def _discover_files(
     `named` is ignored. Otherwise `named` holds files the caller named, which stay in the set
     whatever is excluded.
     """
-    from reporails_cli.core.discovery.agents import get_known_agents
-    from reporails_cli.core.pipeline.mapping import apply_generic_scan, discover_scope
-    from reporails_cli.core.platform.config.config import get_project_config
 
     config = get_project_config(target)
     normalized_agent = (config.default_agent or "").lower().strip()
@@ -92,9 +113,7 @@ def _discover_files(
     )
     instruction_files = [safe_resolve(single_file)] if single_file is not None else found.files
     if not instruction_files:
-        from reporails_cli.formatters.json import empty_result_payload
-
-        return empty_result_payload(target, found.excluded)
+        return json_formatter.empty_result_payload(target, found.excluded)
 
     import_extra, file_type_by_path = apply_generic_scan(
         target, instruction_files, found.effective_agent, config.generic_scanning, found.exclusions
@@ -127,8 +146,6 @@ def _build_map(
     `mapper_error`) can surface WHY the map came back empty instead of only a bare `None`.
     """
     try:
-        from reporails_cli.core.pipeline.mapping import map_instruction_files
-
         return (
             map_instruction_files(target, list(instruction_files), spawn_daemon=False, filtered_agents=filter_agents),
             None,
@@ -151,7 +168,6 @@ def _resolve_scan_target(target: Path) -> tuple[Path, Path | None]:
     misclassifies the file and never shares the CLI's whole-map cache entry for the
     same file.
     """
-    from reporails_cli.core.discovery.agent_discovery import resolve_project_root, resolve_project_root_for_file
 
     if target.is_file():
         return resolve_project_root_for_file(target), target
@@ -164,10 +180,15 @@ def model_not_ready_error() -> dict[str, Any] | None:
     While a download already runs in this process (the server's launch-time fetch),
     return `model_downloading` at once instead of blocking the tool call on it.
     """
-    from reporails_cli.bundled import ensure_models_available, get_models_path
-    from reporails_cli.core.mapper import model_fetch
 
-    if model_fetch.models_present(get_models_path()):
+    from reporails_cli.core.mapper import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
+        model_fetch,
+    )
+    from reporails_cli.core.mapper.model_store import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
+        ensure_models_available,
+    )
+
+    if models_present(get_models_path()):
         return None
     if model_fetch.download_in_progress():
         return {
@@ -176,7 +197,7 @@ def model_not_ready_error() -> dict[str, Any] | None:
         }
     try:
         ensure_models_available()
-    except model_fetch.ModelFetchError as exc:
+    except ModelFetchError as exc:
         return {"error": "model_unavailable", "message": str(exc)}
     return None
 
@@ -188,7 +209,6 @@ def _display_score(result: Any, target: Path | None = None, scan_root: Path | No
     `@`-imported files join the scored set, so entry 0 is not reliably the target's).
     `None` when neither is scored. `target=None` keeps the old first-entry fallback, for a
     caller with no specific file to match."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     per_file = getattr(result, "per_file_analysis", ())
     if target is not None:
@@ -230,7 +250,7 @@ def _run_pipeline(
         effective_agent,
         instruction_files,
         filter_agents,
-        file_type_by_path,
+        file_type_by_path=file_type_by_path,
         full=full,
         single_file=single_file,
         left_out=LeftOut(excluded, exclusions),
@@ -242,6 +262,7 @@ def _lint_discovered(
     effective_agent: str,
     instruction_files: list[Any],
     filter_agents: list[Any],
+    *,
     file_type_by_path: dict[str, str] | None = None,
     full: bool = False,
     single_file: Path | None = None,
@@ -265,7 +286,6 @@ def _lint_discovered(
     "produced no map". Unless `full` is set the formatted payload is bounded to a
     top-N-per-file envelope (aggregate stats + surface_health stay whole).
     """
-    from reporails_cli.formatters import json as json_formatter
 
     ruleset_map, mapper_error = _build_map(scan_root, instruction_files, filter_agents)
     result, funnel_error = _check_and_assemble(
@@ -274,7 +294,7 @@ def _lint_discovered(
         effective_agent,
         filter_agents,
         ruleset_map,
-        left_out,
+        left_out=left_out,
         scoped=single_file is not None,
     )
     payload = json_formatter.format_combined_result(
@@ -299,8 +319,6 @@ def _mcp_agent_file_pairs(
     """MCP's thin wrapper over the shared `core.pipeline.mapping.agent_file_pairs` split --
     explicit-agent-ness for MCP `validate` can only come from the project's `default_agent`
     (no per-call `--agent`-style override the way the CLI has one)."""
-    from reporails_cli.core.pipeline.mapping import agent_file_pairs
-    from reporails_cli.core.platform.config.config import get_project_config
 
     explicit = bool(get_project_config(scan_root).default_agent)
     return agent_file_pairs(
@@ -314,15 +332,14 @@ def _check_and_assemble(
     effective_agent: str,
     filter_agents: list[Any],
     ruleset_map: Any,
-    left_out: LeftOut = NOTHING_LEFT_OUT,
     *,
+    left_out: LeftOut = NOTHING_LEFT_OUT,
     scoped: bool = False,
 ) -> tuple[Any, Any]:
     """Run the local checks, then `_assemble_mcp_result`; the request is resolved under the agents whose rules ran."""
     pairs = _mcp_agent_file_pairs(scan_root, instruction_files, filter_agents, effective_agent)
     with not_evaluated_scope() as unfinished:
         local = _checks_over_pairs(scan_root, pairs, ruleset_map, scoped, left_out.exclusions)
-    from reporails_cli.core.pipeline.assemble import with_exclusions
 
     result, funnel_error = _assemble_mcp_result(
         scan_root,
@@ -356,9 +373,6 @@ def _checks_over_pairs(
     core rules only, so `validate` reports identical `(rule, file, line)` triples to
     `ails check` for the same tree.
     """
-    from reporails_cli.core.lint.client_checks import run_client_checks
-    from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes_over_pairs
-    from reporails_cli.core.mapper.skills import skill_membership
 
     skills = skill_membership(ruleset_map)
     m_findings = run_m_probes_over_pairs(scan_root, pairs, scoped=scoped, skills=skills, exclusions=exclusions)
@@ -378,13 +392,12 @@ def _build_assemble_inputs(
     filter_agents: list[Any],
     ruleset_map: Any,
     local: tuple[list[Any], list[Any], list[Any]],
+    *,
     rule_agents: tuple[str, ...] = (),
     not_evaluated: tuple[tuple[str, str], ...] = (),
 ) -> Any:
     """The shared `AssembleInputs` for `_assemble_mcp_result`, built from the local M-probe /
     content / client finding lists."""
-    from reporails_cli.core.pipeline.assemble import AssembleInputs
-    from reporails_cli.formatters.text.rule_meta import rule_aliases
 
     m_findings, content_findings, client_findings = local
     return AssembleInputs(
@@ -417,17 +430,21 @@ def _assemble_mcp_result(
     filter_agents: list[Any],
     ruleset_map: Any,
     local: tuple[list[Any], list[Any], list[Any]],
+    *,
     rule_agents: tuple[str, ...] = (),
     not_evaluated: tuple[tuple[str, str], ...] = (),
     exclusions: RunExclusions | None = None,
 ) -> tuple[Any, Any]:
     """Server-lint the local findings, then run the shared assemble spine. Returns `(result, funnel_error)`."""
-    from dataclasses import replace
-
-    from reporails_cli.core.pipeline.assemble import assemble_result
 
     inputs = _build_assemble_inputs(
-        scan_root, effective_agent, filter_agents, ruleset_map, local, rule_agents, not_evaluated
+        scan_root,
+        effective_agent,
+        filter_agents,
+        ruleset_map,
+        local,
+        rule_agents=rule_agents,
+        not_evaluated=not_evaluated,
     )
     lint_result, funnel_error, notices = _server_lint_result(inputs)
     return assemble_result(replace(inputs, lint_result=lint_result, notices=notices), exclusions), funnel_error
@@ -440,11 +457,13 @@ def _server_lint(inputs: Any) -> Any:
     caller also read `.funnel_error` — a server-side rejection (rate limit, payload/atom cap,
     project limit) that must not read like a network outage. None when nothing was mapped.
     """
-    from reporails_cli.core.pipeline.assemble import lint_request_local
-    from reporails_cli.core.platform.adapters.api_client import AilsClient
 
     if not inputs.ruleset_map:
         return None
+    from reporails_cli.core.platform.adapters.api_client import (  # pylint: disable=import-outside-toplevel  # startup: the HTTP client loads on a server request
+        AilsClient,
+    )
+
     local, structural_required = lint_request_local(inputs)
     return AilsClient().lint(inputs.ruleset_map, local, structural_required, root=inputs.scan_root)
 
@@ -474,13 +493,10 @@ def _attach_funnel(payload: dict[str, Any], funnel_error: Any) -> dict[str, Any]
     MCP `funnel` object, the MCP `server_error` field, and the CLI JSON `server_error` field
     agree word for word instead of drifting under three renderings of one error.
     """
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
-    from reporails_cli.formatters.json import format_server_error
-    from reporails_cli.formatters.text.funnel_cta import plain_cta
 
     if not isinstance(funnel_error, FunnelError):
         return payload
-    server_error = format_server_error(funnel_error)
+    server_error = json_formatter.format_server_error(funnel_error)
     payload = {**payload, "server_error": server_error}
     payload["funnel"] = {
         "error": funnel_error.error,
@@ -497,8 +513,6 @@ def _attach_funnel(payload: dict[str, Any], funnel_error: Any) -> dict[str, Any]
 def unpaid_signed_in_reply(payload: dict[str, Any]) -> bool:
     """True when a signed-in user's reply carries a non-paid tier (reported, or named by a funnel
     rejection). Anonymous replies and paid replies are False."""
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
-    from reporails_cli.core.platform.dto.diagnostics import tiers_unpaid
 
     if not has_api_key():
         return False
@@ -510,7 +524,6 @@ def _rules_missing_payload() -> dict[str, Any]:
     """The reply when the rules folder is missing or has no `core` rules: the rules ship inside
     the package, so this means a broken install or a `framework_path` setting that points at a
     folder without them."""
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
 
     return {
         "needs_install": True,

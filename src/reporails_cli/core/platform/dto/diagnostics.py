@@ -81,20 +81,45 @@ DEFAULT_RETRY_AFTER_S = 10
 
 
 @dataclass(frozen=True)
-class Diagnostic:
-    """A single diagnostic from the server."""
+class FindingBase:
+    """The fields every finding carries, whichever source it came from."""
 
     file: str
     line: int
     severity: str  # "error" | "warning" | "info"
-    rule: str  # diagnostic rule identifier
+    rule: str  # rule id, check label or diagnostic rule identifier
     message: str
     fix: str = ""
+
+
+@dataclass(frozen=True)
+class Diagnostic(FindingBase):
+    """A single diagnostic from the server."""
+
     impact_tier: str = ""  # server-computed leverage tier; "" when offline/not computed
     pi: int | None = None  # the finding's instruction by its position index in the file; None when line-addressed
     partner_line: int | None = None  # the other side's line of a pairwise finding, when the reply names it
     partner_file: str | None = None  # the file a per-file overlap finding overlaps with, when the reply names it
     overlap_pct: int | None = None  # the share of this file's instructions that overlap, 0-100, when named
+
+
+@dataclass(frozen=True)
+class FindingItem(FindingBase):
+    """A single finding in the combined output, from any source."""
+
+    source: str = "local"  # "m_probe" | "client_check" | "server"
+    impact_tier: str = ""  # the grade the reply gives this finding; "" when it gives none, and none is shown
+    signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
+    check_id: str = ""  # the local check that produced it; "" for server findings
+    convention: bool = (
+        False  # a documentation convention the file does not follow: listed apart from findings to act on
+    )
+    # The instruction's place in its file, when the finding is on one; never part of a finding's identity.
+    pi: int | None = field(default=None, compare=False)
+    # A per-file overlap finding's partner file, its line and shared percentage, when the reply names them.
+    partner_file: str | None = field(default=None, compare=False)
+    partner_line: int | None = field(default=None, compare=False)
+    overlap_pct: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

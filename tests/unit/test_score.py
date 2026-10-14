@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.scorecard import compute_score, compute_surface_scores
@@ -187,8 +187,8 @@ class TestUnscoredFiles:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_item_cell_renders_not_scored(self) -> None:
+        from reporails_cli.formatters.text.health import SurfaceHealth
         from reporails_cli.formatters.text.item_scorecard import _item_cell
-        from reporails_cli.formatters.text.scorecard import SurfaceHealth
 
         cell = _item_cell(
             SurfaceHealth(name="cursorignore", score=None, file_count=1, finding_count=0, item_count=1), label_w=14

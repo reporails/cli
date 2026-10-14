@@ -8,6 +8,7 @@ carry scaffold files the check would otherwise demand.
 
 from __future__ import annotations
 
+import glob as globmod
 import shutil
 import tempfile
 from pathlib import Path
@@ -320,8 +321,6 @@ def _scaffold_file_removal(
     tmp_dir: Path,
 ) -> None:
     """Remove forbidden file from pass scaffold (for file_absent checks)."""
-    import glob as globmod
-
     pattern = str(args.get("pattern", ""))
     if not pattern:
         return
@@ -400,8 +399,6 @@ def _scaffold_filename_mismatch(
     Preserves the file extension so glob patterns still find the file,
     but uses a name that won't match the regex pattern.
     """
-    import glob as globmod
-
     for fp in _get_target_patterns_from_args(args, file_types):
         resolved = str(tmp_dir / fp)
         for match_path in globmod.glob(resolved, recursive=True):

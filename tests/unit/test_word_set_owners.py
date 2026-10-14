@@ -8,12 +8,12 @@ from reporails_cli.core.heal.preservation.match import _leading_polarity_sign
 from reporails_cli.core.heal.preservation.words import NEGATION_RE
 from reporails_cli.core.mapper.classify import (
     _ABSOLUTE_ADVERBS,
-    _MODAL_HEDGED,
     ABSOLUTE_CUES,
     AFFIRMATIVE_ABSOLUTES,
     HEDGE_WORDS,
     NEGATION_WORDS,
 )
+from reporails_cli.core.mapper.classify_lexicon import MODAL_HEDGED
 
 
 @pytest.mark.unit
@@ -32,7 +32,7 @@ def test_without_stays_a_preservation_cue() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 def test_modal_hedges_are_part_of_the_hedge_words() -> None:
-    assert _MODAL_HEDGED <= HEDGE_WORDS
+    assert MODAL_HEDGED <= HEDGE_WORDS
 
 
 @pytest.mark.unit

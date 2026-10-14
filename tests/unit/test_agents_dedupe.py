@@ -19,14 +19,14 @@ import pytest
 
 from reporails_cli.core.discovery.agents import get_all_instruction_files
 from reporails_cli.core.discovery.file_aliases import (
-    _dedupe_with_aliases,
     compute_same_dir_content_aliases,
+    dedupe_with_aliases,
     get_file_aliases,
 )
 
 
 class TestDedupeWithAliases:
-    """Verify `_dedupe_with_aliases` collapses symlinks but leaves
+    """Verify `dedupe_with_aliases` collapses symlinks but leaves
     same-dir content-identical files in place."""
 
     @pytest.mark.unit
@@ -43,7 +43,7 @@ class TestDedupeWithAliases:
         claude_dir.mkdir()
         os.symlink(str(real.parent), str(claude_dir / "skills"))
 
-        canonical, aliases = _dedupe_with_aliases([skill, claude_dir / "skills" / "x" / "SKILL.md"])
+        canonical, aliases = dedupe_with_aliases([skill, claude_dir / "skills" / "x" / "SKILL.md"])
 
         assert canonical == [skill]
         assert aliases == {skill: [claude_dir / "skills" / "x" / "SKILL.md"]}
@@ -55,7 +55,7 @@ class TestDedupeWithAliases:
         f = tmp_path / "AGENTS.md"
         f.write_text("# x\n")
 
-        canonical, aliases = _dedupe_with_aliases([f, f, f])
+        canonical, aliases = dedupe_with_aliases([f, f, f])
 
         assert canonical == [f]
         assert aliases == {}
@@ -70,7 +70,7 @@ class TestDedupeWithAliases:
         (tmp_path / "AGENTS.md").write_text(body)
         (tmp_path / "CLAUDE.md").write_text(body)
 
-        canonical, aliases = _dedupe_with_aliases([tmp_path / "AGENTS.md", tmp_path / "CLAUDE.md"])
+        canonical, aliases = dedupe_with_aliases([tmp_path / "AGENTS.md", tmp_path / "CLAUDE.md"])
 
         assert canonical == sorted([tmp_path / "AGENTS.md", tmp_path / "CLAUDE.md"])
         assert aliases == {}

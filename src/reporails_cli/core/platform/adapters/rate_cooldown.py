@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.config.bootstrap import get_reporails_home
 from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS, FunnelError
 from reporails_cli.core.platform.utils.utils import write_json_atomic
 
@@ -38,8 +39,6 @@ def _cooldown_path() -> Path:
     # Kept outside the cache directory: that directory may be restored onto a
     # different machine (CI caches it), and a cooldown belongs to the machine
     # that received the rate-limit response.
-    from reporails_cli.core.platform.config.bootstrap import get_reporails_home
-
     return get_reporails_home() / "rate_limit.json"
 
 

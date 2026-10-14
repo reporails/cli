@@ -24,6 +24,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.platform.config.config import get_agent_config_path
+from reporails_cli.core.platform.utils.utils import load_yaml_file
+
 logger = logging.getLogger(__name__)
 
 AGENTS_MD_PLUGIN = "agents-md@builtin"
@@ -39,9 +42,6 @@ MODES_WITHOUT_AGENTS_MD = frozenset({MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
 
 def _settings_patterns() -> dict[str, list[str]]:
     """Scope name -> settings-file patterns, from Claude's `config` file type."""
-    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
-    from reporails_cli.core.platform.utils.utils import load_yaml_file
-
     try:
         data = load_yaml_file(get_agent_config_path("claude")) or {}
     except (OSError, ValueError):

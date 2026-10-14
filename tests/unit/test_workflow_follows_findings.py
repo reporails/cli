@@ -15,8 +15,8 @@ import pytest
 
 from reporails_cli.core.lint.suppression import apply_suppressions, apply_surface_mutations
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
-from reporails_cli.core.platform.dto.diagnostics import RemediationWorkflow
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem, RemediationWorkflow
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 E4 = "CORE:E:0004"
@@ -58,7 +58,9 @@ def _item(rule: str, file: str, line: int = 2, source: str = "server") -> Findin
 
 
 def _result(items: list[FindingItem], workflow: RemediationWorkflow) -> CombinedResult:
-    return CombinedResult(findings=tuple(items), stats=CombinedStats(total_findings=len(items)), workflow=workflow)
+    return CombinedResult(
+        findings=tuple(items), stats=CombinedStats(total_findings=len(items)), reply=ServerReply(workflow=workflow)
+    )
 
 
 def _project(tmp_path: Path, silenced: dict[str, str]) -> Path:
@@ -84,8 +86,8 @@ def test_silencing_a_whole_location_leaves_the_summary_naming_the_locations_kept
 
     out = apply_suppressions(result, project_root=root, alias_fn=rule_aliases)
 
-    assert [loc.order for loc in out.workflow.locations] == [1]
-    assert out.workflow.summary == "1 location to rewrite, by kind: 1 skills."
+    assert [loc.order for loc in out.reply.workflow.locations] == [1]
+    assert out.reply.workflow.summary == "1 location to rewrite, by kind: 1 skills."
 
 
 @pytest.mark.unit
@@ -96,8 +98,8 @@ def test_silencing_every_location_says_there_is_nothing_to_rewrite(tmp_path: Pat
 
     out = apply_suppressions(_result([_item(E4, "CLAUDE.md")], wf), project_root=root, alias_fn=rule_aliases)
 
-    assert out.workflow.locations == ()
-    assert out.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
+    assert out.reply.workflow.locations == ()
+    assert out.reply.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
 
 
 @pytest.mark.unit
@@ -108,7 +110,7 @@ def test_silencing_every_finding_says_no_remediation_is_needed(tmp_path: Path) -
 
     out = apply_suppressions(_result([_item(E4, "CLAUDE.md")], wf), project_root=root, alias_fn=rule_aliases)
 
-    assert out.workflow.summary == "No remediation needed — the surface carries no findings."
+    assert out.reply.workflow.summary == "No remediation needed — the surface carries no findings."
 
 
 @pytest.mark.unit
@@ -120,8 +122,8 @@ def test_a_silenced_finding_with_the_rule_still_firing_keeps_the_served_listed_c
 
     out = apply_suppressions(_result(items, wf), project_root=root, alias_fn=rule_aliases)
 
-    assert [(e.rule, e.count) for e in out.workflow.listed] == [(D3, 2)]
-    assert len(out.workflow.locations) == 1
+    assert [(e.rule, e.count) for e in out.reply.workflow.listed] == [(D3, 2)]
+    assert len(out.reply.workflow.locations) == 1
 
 
 @pytest.mark.unit
@@ -134,8 +136,8 @@ def test_a_listed_rule_left_with_no_finding_is_removed(tmp_path: Path) -> None:
         _result([_item(E4, "CLAUDE.md", 5), _item(D3, "CLAUDE.md", 2)], wf), project_root=root, alias_fn=rule_aliases
     )
 
-    assert out.workflow.listed == ()
-    assert out.workflow.summary == "1 location to rewrite, by kind: 1 main."
+    assert out.reply.workflow.listed == ()
+    assert out.reply.workflow.summary == "1 location to rewrite, by kind: 1 main."
 
 
 @pytest.mark.unit
@@ -147,7 +149,7 @@ def test_a_silenced_finding_a_location_serves_leaves_listed_alone(tmp_path: Path
 
     out = apply_suppressions(_result(items, wf), project_root=root, alias_fn=rule_aliases)
 
-    assert [(e.rule, e.count) for e in out.workflow.listed] == [(D3, 1)]
+    assert [(e.rule, e.count) for e in out.reply.workflow.listed] == [(D3, 1)]
 
 
 def _memory_rules() -> dict[str, Any]:
@@ -166,8 +168,8 @@ def test_a_finding_dropped_on_the_memory_surface_leaves_its_location_and_summary
     out = apply_surface_mutations(_result(items, wf), _memory_rules(), project_root=tmp_path)
 
     assert [f.rule for f in out.findings] == [E4]
-    assert [(loc.order, loc.kind) for loc in out.workflow.locations] == [(1, "main")]
-    assert out.workflow.summary == "1 location to rewrite, by kind: 1 main."
+    assert [(loc.order, loc.kind) for loc in out.reply.workflow.locations] == [(1, "main")]
+    assert out.reply.workflow.summary == "1 location to rewrite, by kind: 1 main."
 
 
 @pytest.mark.unit
@@ -181,7 +183,7 @@ def test_a_finding_dropped_on_the_memory_surface_keeps_the_served_listed_count_w
 
     out = apply_surface_mutations(_result(items, wf), _memory_rules(), project_root=tmp_path)
 
-    assert [(e.rule, e.count) for e in out.workflow.listed] == [(D3, 2)]
+    assert [(e.rule, e.count) for e in out.reply.workflow.listed] == [(D3, 2)]
 
 
 @pytest.mark.unit
@@ -193,7 +195,7 @@ def test_a_rule_dropped_everywhere_on_the_memory_surface_is_no_longer_listed(tmp
 
     out = apply_surface_mutations(_result(items, wf), _memory_rules(), project_root=tmp_path)
 
-    assert out.workflow.listed == ()
+    assert out.reply.workflow.listed == ()
 
 
 def _two_line_project(tmp_path: Path, silenced_lines: tuple[bool, bool]) -> Path:
@@ -212,7 +214,7 @@ def test_overlap_rows_all_silenced_remove_the_listed_rule(tmp_path: Path) -> Non
 
     out = apply_suppressions(_result(items, wf), project_root=root, alias_fn=rule_aliases)
 
-    assert out.workflow.listed == ()
+    assert out.reply.workflow.listed == ()
 
 
 @pytest.mark.unit
@@ -224,7 +226,7 @@ def test_overlap_rows_partly_silenced_keep_the_served_listed_count(tmp_path: Pat
 
     out = apply_suppressions(_result(items, wf), project_root=root, alias_fn=rule_aliases)
 
-    assert [(e.rule, e.count) for e in out.workflow.listed] == [(D3, 4)]
+    assert [(e.rule, e.count) for e in out.reply.workflow.listed] == [(D3, 4)]
 
 
 @pytest.mark.unit
@@ -236,7 +238,7 @@ def test_two_rows_merged_into_one_finding_and_silenced_remove_the_listed_rule(tm
 
     out = apply_suppressions(_result(items, wf), project_root=root, alias_fn=rule_aliases)
 
-    assert out.workflow.listed == ()
+    assert out.reply.workflow.listed == ()
 
 
 @pytest.mark.unit
@@ -247,8 +249,8 @@ def test_a_workflow_with_no_locations_follows_a_silenced_finding(tmp_path: Path)
 
     out = apply_suppressions(_result([_item(D3, "CLAUDE.md", 2)], wf), project_root=root, alias_fn=rule_aliases)
 
-    assert [e.rule for e in out.workflow.listed] == ["CORE:C:0035"]
-    assert out.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
+    assert [e.rule for e in out.reply.workflow.listed] == ["CORE:C:0035"]
+    assert out.reply.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
 
 
 @pytest.mark.unit

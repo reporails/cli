@@ -7,15 +7,16 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.platform.adapters import api_client as api_client_mod
+from reporails_cli.core.platform.adapters import api_key as api_key_mod
 from reporails_cli.core.platform.adapters.api_client import (
     AilsClient,
-    _api_key_from_credentials,
     _deserialize_cross_file_coordinates,
     _deserialize_hints,
     _deserialize_lint_result,
     _deserialize_per_file,
     _tier_from_config,
 )
+from reporails_cli.core.platform.adapters.api_key import api_key_from_credentials
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
     CredentialsUnreadableError,
@@ -78,7 +79,7 @@ class TestFaultDistinction:
         from pathlib import Path
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        assert _api_key_from_credentials() == ""
+        assert api_key_from_credentials() == ""
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
@@ -91,7 +92,7 @@ class TestFaultDistinction:
         creds.write_text("api_key: [unterminated", encoding="utf-8")
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         with pytest.raises(CredentialsUnreadableError):
-            _api_key_from_credentials()
+            api_key_from_credentials()
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
@@ -101,7 +102,7 @@ class TestFaultDistinction:
         class _Cfg:
             tier = ""
 
-        monkeypatch.setattr("reporails_cli.core.platform.config.config.get_global_config", lambda: _Cfg())
+        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.get_global_config", lambda: _Cfg())
         assert _tier_from_config() == ""
 
     @pytest.mark.unit
@@ -112,7 +113,7 @@ class TestFaultDistinction:
         def _boom() -> object:
             raise OSError("disk gone")
 
-        monkeypatch.setattr("reporails_cli.core.platform.config.config.get_global_config", _boom)
+        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.get_global_config", _boom)
         with pytest.raises(ConfigUnreadableError):
             _tier_from_config()
 
@@ -127,7 +128,7 @@ class TestFaultDistinction:
         def _raise_creds() -> str:
             raise CredentialsUnreadableError("corrupt")
 
-        monkeypatch.setattr(api_client_mod, "_api_key_from_credentials", _raise_creds)
+        monkeypatch.setattr(api_key_mod, "api_key_from_credentials", _raise_creds)
         monkeypatch.setattr(api_client_mod, "_tier_from_config", lambda: "")
 
         with caplog.at_level(logging.WARNING, logger="reporails_cli.core.platform.adapters.api_client"):
@@ -168,7 +169,7 @@ class TestScanRootThreading:
 
         with (
             patch(
-                "reporails_cli.core.platform.adapters.payload.project_payload",
+                "reporails_cli.core.platform.adapters.api_client.project_payload",
                 side_effect=_fake_project_payload,
             ),
             patch("httpx.post") as mock_post,
@@ -205,11 +206,11 @@ class TestScanRootThreading:
 
         with (
             patch(
-                "reporails_cli.core.platform.adapters.payload.project_payload",
+                "reporails_cli.core.platform.adapters.api_client.project_payload",
                 return_value=_payload_with_file(),
             ),
             patch(
-                "reporails_cli.core.platform.adapters.payload.project_local",
+                "reporails_cli.core.platform.adapters.api_client.project_local",
                 side_effect=_fake_project_local,
             ),
             patch("httpx.post") as mock_post,
@@ -281,7 +282,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0},
         }
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=oversized),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=oversized),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -316,7 +317,7 @@ class TestPayloadCaps:
             "summary": {"n_atoms": 0, "n_charged": 0, "n_neutral": 0},
         }
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=empty_payload),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=empty_payload),
             patch("httpx.post") as mock_post,
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -356,7 +357,7 @@ class TestTransportFailureFunnelError:
             raise httpx.TimeoutException("timed out")
 
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_raise_timeout),
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -377,7 +378,7 @@ class TestTransportFailureFunnelError:
             raise httpx.ConnectError("connection refused")
 
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_raise_connect_error),
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -404,7 +405,7 @@ class TestTransportFailureFunnelError:
             return _FakeResponse()
 
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_fake_post),
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -432,7 +433,7 @@ class TestTransportFailureFunnelError:
             return _FakeResponse()
 
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_fake_post),
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -457,7 +458,7 @@ class TestTransportFailureFunnelError:
                 return body
 
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", return_value=_FakeResponse()),
         ):
             client = AilsClient(base_url="https://example.test", tier="pro")
@@ -769,7 +770,7 @@ class TestRateLimitCooldown:
 
         mock_post = MagicMock(side_effect=post)
         with (
-            patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload_with_file()),
+            patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", mock_post),
         ):
             client = AilsClient(base_url="https://example.test", api_key=api_key or None, tier="free")

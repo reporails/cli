@@ -14,12 +14,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.lint.mechanical.checks_advanced import (
-    _is_external_link,
     _metadata_bytes,
-    check_markdown_link_targets_exist,
     directory_file_types,
     extract_imports,
-    extract_markdown_links,
     frontmatter_extra_keys,
     frontmatter_present,
     frontmatter_valid_glob,
@@ -27,6 +24,11 @@ from reporails_cli.core.lint.mechanical.checks_advanced import (
     import_depth,
     path_resolves,
     valid_markdown,
+)
+from reporails_cli.core.lint.mechanical.checks_links import (
+    _is_external_link,
+    check_markdown_link_targets_exist,
+    extract_markdown_links,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 

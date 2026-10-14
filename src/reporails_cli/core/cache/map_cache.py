@@ -32,13 +32,16 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.imports import expand_imports_with_origins
 from reporails_cli.core.platform.dto.ruleset import (
     EMBEDDING_MODEL,
     SCHEMA_VERSION,
+    SLOT_COORD_FIELDS,
     Atom,
     AtomSlots,
     FileRecord,
 )
+from reporails_cli.core.platform.utils.directives import strip_directives
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +80,6 @@ def file_cache_key(
 
 def cache_key_for_path(path: Path) -> str:
     """The per-file cache key the mapper uses for `path`."""
-    from reporails_cli.core.lint.suppression import strip_directives
-    from reporails_cli.core.mapper.imports import expand_imports_with_origins
-
     expanded, line_map, origins = expand_imports_with_origins(path.read_text(encoding="utf-8", errors="replace"), path)
     return file_cache_key(path, content_hash(strip_directives(expanded)), line_map, origins)
 
@@ -88,22 +88,6 @@ def cache_key_for_path(path: Path) -> str:
 # Atom no longer declares, so a stale-shape entry rehydrates instead of crashing
 # Atom(**d) on an unexpected keyword.
 _ATOM_FIELD_NAMES = frozenset(Atom.model_fields)
-
-# AtomSlots fields carrying the span-coordinate half (offsets + per-span
-# confidence) — the only part of `slots` that survives the cache round-trip.
-# Slot TEXT (subject/predicate/object/scope strings) stays cli-local-per-run
-# and is never written to `slot_coords`: slot text stays local to the run.
-_SLOT_COORD_FIELDS = (
-    "subject_span",
-    "predicate_span",
-    "object_span",
-    "scope_span",
-    "subject_conf",
-    "predicate_conf",
-    "object_conf",
-    "scope_conf",
-)
-_SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_span")
 
 # Bump when the cached atom shape or the way atoms are read changes: every entry
 # stored under an older version then misses and is rebuilt on the next run.
@@ -142,13 +126,13 @@ def _shard_payload(entry: CachedFileEntry) -> dict[str, Any]:
     return payload
 
 
-def _shard_filename(content_hash: str) -> str:
+def _shard_filename(chash: str) -> str:
     """Filesystem-safe shard filename for a content hash.
 
     Content hashes may carry a `sha256:` prefix; `:` and `/` are not portable in
     filenames, so replace them (the hex charset means no distinct hash collides).
     """
-    return content_hash.replace(":", "_").replace("/", "_") + ".json"
+    return chash.replace(":", "_").replace("/", "_") + ".json"
 
 
 class MapCache:
@@ -266,10 +250,10 @@ class MapCache:
         else:
             logger.warning("Monolith migration had shard-write failures; keeping map-cache.json for retry")
 
-    def _shard_path(self, content_hash: str) -> Path:
-        return self._shard_dir / _shard_filename(content_hash)
+    def _shard_path(self, chash: str) -> Path:
+        return self._shard_dir / _shard_filename(chash)
 
-    def _write_shard(self, content_hash: str, payload: dict[str, Any]) -> bool:
+    def _write_shard(self, chash: str, payload: dict[str, Any]) -> bool:
         """Atomically write one shard (mkstemp + os.replace). Never raises.
 
         Returns True on success. A cache write must never take down the run, so
@@ -282,7 +266,7 @@ class MapCache:
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(json.dumps(payload, separators=(",", ":")))
-                os.replace(tmp_name, self._shard_path(content_hash))
+                os.replace(tmp_name, self._shard_path(chash))
             except OSError:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp_name)
@@ -292,42 +276,42 @@ class MapCache:
             return False
         return True
 
-    def get(self, content_hash: str) -> CachedFileEntry | None:
+    def get(self, chash: str) -> CachedFileEntry | None:
         """Look up cached atoms by content hash, reading the shard on a memory miss.
 
         Touches the shard's mtime on a disk hit so mtime-LRU sees the access. The
         touch is a single-file `Path.touch` — cheap now that entries are separate
         files, unlike the old whole-blob rewrite a read-touch used to imply.
         """
-        entry = self._entries.get(content_hash)
+        entry = self._entries.get(chash)
         if entry is not None:
             entry.last_used = _now_iso()
             return entry
-        path = self._shard_path(content_hash)
+        path = self._shard_path(chash)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
         entry = CachedFileEntry(
-            content_hash=content_hash,
+            content_hash=chash,
             atoms=data.get("atoms", []),
             last_used=data.get("last_used", ""),
             description_embedding=data.get("description_embedding"),
         )
-        self._entries[content_hash] = entry
+        self._entries[chash] = entry
         with contextlib.suppress(OSError):
             path.touch()
         entry.last_used = _now_iso()
         return entry
 
-    def put(self, content_hash: str, entry: CachedFileEntry) -> None:
+    def put(self, chash: str, entry: CachedFileEntry) -> None:
         """Store atoms for a content hash and write its shard immediately."""
         entry.last_used = _now_iso()
-        self._entries[content_hash] = entry
-        if self._write_shard(content_hash, _shard_payload(entry)):
-            self._pending.discard(content_hash)
+        self._entries[chash] = entry
+        if self._write_shard(chash, _shard_payload(entry)):
+            self._pending.discard(chash)
         else:
-            self._pending.add(content_hash)
+            self._pending.add(chash)
 
     def save(self) -> None:
         """Retry any shard writes that failed at `put()` time.
@@ -419,11 +403,6 @@ def _now_iso() -> str:
     return time.strftime("%Y%m%dT%H%M%S", time.gmtime())
 
 
-def _as_offset(v: Any) -> tuple[int, int] | None:
-    """JSON round-trips a tuple offset as a 2-element list; restore the tuple."""
-    return tuple(v) if v is not None else None
-
-
 def atoms_to_dicts(atoms: list[Atom]) -> list[dict[str, Any]]:
     """Serialize atoms to dicts for cache storage."""
     result = []
@@ -443,7 +422,7 @@ def atoms_to_dicts(atoms: list[Atom]) -> list[dict[str, Any]]:
         # made the write and the read asymmetric for that all-None case.
         slots = d.pop("slots", None)
         if slots is not None:
-            d["slot_coords"] = {f: slots[f] for f in _SLOT_COORD_FIELDS}
+            d["slot_coords"] = {f: slots[f] for f in SLOT_COORD_FIELDS}
         result.append(d)
     return result
 
@@ -468,15 +447,6 @@ def dicts_to_atoms(dicts: list[dict[str, Any]]) -> list[Atom]:
         d.pop("slots", None)
         slot_coords = src.get("slot_coords")
         if slot_coords:
-            d["slots"] = AtomSlots(
-                subject_span=_as_offset(slot_coords.get("subject_span")),
-                predicate_span=_as_offset(slot_coords.get("predicate_span")),
-                object_span=_as_offset(slot_coords.get("object_span")),
-                scope_span=_as_offset(slot_coords.get("scope_span")),
-                subject_conf=slot_coords.get("subject_conf", 0.0),
-                predicate_conf=slot_coords.get("predicate_conf", 0.0),
-                object_conf=slot_coords.get("object_conf", 0.0),
-                scope_conf=slot_coords.get("scope_conf", 0.0),
-            )
+            d["slots"] = AtomSlots.from_coords(slot_coords)
         atoms.append(Atom(**d))
     return atoms

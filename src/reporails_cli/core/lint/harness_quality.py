@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.lint.harness_discovery import discover_rules, load_agent_config
+from reporails_cli.core.lint.harness_discovery import discover_agent_rules
 from reporails_cli.core.lint.harness_models import (
     BaselineEntry,
     CoverageGap,
@@ -21,15 +21,13 @@ from reporails_cli.core.lint.harness_models import (
     RuleInfo,
     ScoreDelta,
 )
+from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 logger = logging.getLogger(__name__)
 
 
-def score_fixture(
-    fixture_dir: Path,  # noqa: ARG001
-    rules_paths: list[Path],  # noqa: ARG001
-) -> float:
+def score_fixture() -> float:
     """Run full validation scoring on a fixture directory.
 
     Returns 0.0 — scoring pending pipeline rewrite (0.5.0).
@@ -55,31 +53,17 @@ def score_rules(
         package_roots: Additional package roots to scan.
         agent: Agent config for var resolution.
     """
-    _, excludes = load_agent_config(rules_root, agent)
-    rules = discover_rules(
-        rules_root,
-        filter_path=filter_path,
-        filter_rule=filter_rule,
-        package_roots=package_roots,
-        excludes=excludes,
-        agent=agent,
+    rules = discover_agent_rules(
+        rules_root, agent, filter_path=filter_path, filter_rule=filter_rule, package_roots=package_roots
     )
-
-    # Collect all rules_paths for scoring
-    all_roots = [rules_root]
-    if package_roots:
-        all_roots.extend(package_roots)
 
     deltas: list[ScoreDelta] = []
     for rule in rules:
-        pass_dir = rule.rule_dir / "tests" / "pass"
-        fail_dir = rule.rule_dir / "tests" / "fail"
-
         if not rule.has_pass_fixture or not rule.has_fail_fixture:
             continue
 
-        pass_score = score_fixture(pass_dir, all_roots)
-        fail_score = score_fixture(fail_dir, all_roots)
+        pass_score = score_fixture()
+        fail_score = score_fixture()
         deltas.append(
             ScoreDelta(
                 rule_id=rule.rule_id,
@@ -213,8 +197,6 @@ def lint_rules(rules: list[RuleInfo]) -> list[LintError]:
     4. Required frontmatter — id, slug, title, category, type, severity present
     5. Enforcement-partner gap — enforcement_required: true must name an enforcement_mechanism
     """
-    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
-
     errors: list[LintError] = []
     seen_ids: dict[str, Path] = {}
 
@@ -242,13 +224,7 @@ def export_baseline(
         package_roots: Additional package roots to scan.
         agent: Agent config for var resolution.
     """
-    _, excludes = load_agent_config(rules_root, agent)
-    rules = discover_rules(
-        rules_root,
-        package_roots=package_roots,
-        excludes=excludes,
-        agent=agent,
-    )
+    rules = discover_agent_rules(rules_root, agent, package_roots=package_roots)
 
     return [
         BaselineEntry(
@@ -278,13 +254,7 @@ def check_coverage(
     Returns:
         List of gaps (missing rules or rules without fixtures).
     """
-    _, excludes = load_agent_config(rules_root, agent)
-    rules = discover_rules(
-        rules_root,
-        package_roots=package_roots,
-        excludes=excludes,
-        agent=agent,
-    )
+    rules = discover_agent_rules(rules_root, agent, package_roots=package_roots)
 
     current_ids = {r.rule_id for r in rules}
     current_map = {r.rule_id: r for r in rules}

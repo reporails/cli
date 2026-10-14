@@ -7,14 +7,13 @@ Global (~/.reporails/analytics/):
 
 from __future__ import annotations
 
-import hashlib
 import json
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
 from reporails_cli.core.platform.config.bootstrap import get_reporails_home
 from reporails_cli.core.platform.dto.analytics import AnalyticsEntry, ProjectAnalytics
+from reporails_cli.core.platform.utils.utils import get_project_id
 
 
 def get_analytics_dir() -> Path:
@@ -25,44 +24,6 @@ def get_analytics_dir() -> Path:
 # =============================================================================
 # Project Identification
 # =============================================================================
-
-
-def get_git_remote(target: Path) -> str | None:
-    """Get git remote URL for project identification."""
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=target,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return None
-
-
-def get_project_id(target: Path) -> str:
-    """
-    Get unique project identifier.
-
-    Uses git remote URL hash for consistency across clones,
-    falls back to absolute path hash.
-
-    Args:
-        target: Project root
-
-    Returns:
-        12-character hex hash
-    """
-    # Try git remote first (consistent across clones), fallback to absolute path
-    remote = get_git_remote(target)
-    source = remote or str(target.resolve())
-
-    return hashlib.sha256(source.encode()).hexdigest()[:12]
 
 
 def get_project_name(target: Path) -> str:
@@ -148,6 +109,7 @@ def get_previous_scan(target: Path) -> AnalyticsEntry | None:
 
 def record_scan(
     target: Path,
+    *,
     score: float,
     level: str,
     violations_count: int,

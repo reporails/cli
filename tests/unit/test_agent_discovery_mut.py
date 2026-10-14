@@ -15,7 +15,9 @@ import pytest
 
 from reporails_cli.core.discovery import agent_discovery as ad
 from reporails_cli.core.discovery import walk
+from reporails_cli.core.discovery.agent_config import load_config_file_types
 from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS
+from reporails_cli.core.discovery.surface_config import surface_include_patterns
 from tests.conftest import skip_if_case_insensitive_fs
 
 # --- is_excluded (L90) ------------------------------------------------------
@@ -93,9 +95,9 @@ def test_is_eager_global_true_only_for_global_session_start() -> None:
     Kills: L229 first `== -> !=` (scope check), the second `== -> !=` (loading
     check), and `and -> or` (the lazy-loading case must be False).
     """
-    assert ad._is_eager_global({"scope": "global", "loading": "session_start"}) is True
-    assert ad._is_eager_global({"scope": "global", "loading": "lazy"}) is False
-    assert ad._is_eager_global({"scope": "nested", "loading": "session_start"}) is False
+    assert ad.is_eager_global({"scope": "global", "loading": "session_start"}) is True
+    assert ad.is_eager_global({"scope": "global", "loading": "lazy"}) is False
+    assert ad.is_eager_global({"scope": "nested", "loading": "session_start"}) is False
 
 
 # --- _is_nested (L240) ------------------------------------------------------
@@ -108,8 +110,8 @@ def test_is_nested_only_for_nested_scope() -> None:
 
     Kills: L240 `== "nested" -> != "nested"`.
     """
-    assert ad._is_nested({"scope": "nested"}) is True
-    assert ad._is_nested({"scope": "global"}) is False
+    assert ad.is_nested({"scope": "nested"}) is True
+    assert ad.is_nested({"scope": "global"}) is False
 
 
 # --- glob_file_type_patterns eager-global recursive-leaf (L310) -------------
@@ -147,7 +149,7 @@ def test_load_config_file_types_ignores_non_dict_file_types(tmp_path: Path) -> N
     """
     (tmp_path / "fakeagent").mkdir()
     (tmp_path / "fakeagent" / "config.yml").write_text("file_types:\n  - [k, v]\n")
-    assert ad.load_config_file_types("fakeagent", [tmp_path]) is None
+    assert load_config_file_types("fakeagent", [tmp_path]) is None
 
 
 # --- _surface_include_patterns main-only fallbacks (L447) -------------------
@@ -162,8 +164,8 @@ def test_surface_include_injects_fallbacks_only_for_main() -> None:
     for every non-main surface and none for main).
     """
     cfg = SimpleNamespace(surfaces={}, agents={"codex": {"fallback_filenames": ["FOO.md"]}})
-    assert ad._surface_include_patterns("codex", "main", cfg) == ["**/FOO.md"]
-    assert ad._surface_include_patterns("codex", "override", cfg) == []
+    assert surface_include_patterns("codex", "main", cfg) == ["**/FOO.md"]
+    assert surface_include_patterns("codex", "override", cfg) == []
 
 
 @pytest.mark.unit

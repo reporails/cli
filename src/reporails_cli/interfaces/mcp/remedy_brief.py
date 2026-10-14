@@ -21,11 +21,18 @@ from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.keyed import mapped_path_resolver, resolve_expect
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
 from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, leaving_lines
+from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
+from reporails_cli.core.heal.transforms import atoms_at
+from reporails_cli.core.lint.content_queries import atoms_for_file
+from reporails_cli.core.lint.rule_pages import load_rule_description, load_rule_examples, load_rule_guides
+from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, load_all_rules, rule_title
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
 from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
 from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.formatters.mcp import remedy_brief_payload
 from reporails_cli.interfaces.mcp import snapshots
+from reporails_cli.interfaces.mcp.tools import run_pipeline_for_path
 
 # The ideal-instruction rule ids, in the fixed order `remedy_brief` presents them.
 IDEAL_INSTRUCTION_RULE_IDS = (
@@ -55,7 +62,6 @@ def resolve_from_root(rel: str, scan_root: Path) -> Path:
 def _ideal_instruction_entry(rule_id: str, guides: dict[str, Any], by_id: dict[str, Any]) -> dict[str, Any]:
     """One `ideal_instruction[]` entry: title/pass/antipatterns from its guide, statement from
     the rule description body before its first `##` sub-heading."""
-    from reporails_cli.core.lint.rule_pages import load_rule_description
 
     guide = guides.get(rule_id, {})
     rule = by_id.get(rule_id)
@@ -73,8 +79,6 @@ def _ideal_instruction_entry(rule_id: str, guides: dict[str, Any], by_id: dict[s
 def ideal_instruction_guide() -> list[dict[str, Any]]:
     """The ideal-instruction rules, in their fixed order: id, title, statement (the rule
     description body before its first `##` sub-heading, trimmed), pass example, antipatterns."""
-    from reporails_cli.core.lint.rule_pages import load_rule_guides
-    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
 
     guides = load_rule_guides(list(IDEAL_INSTRUCTION_RULE_IDS))
     by_id = {r.id: r for r in load_all_rules()}
@@ -158,7 +162,6 @@ class _BuiltFile:
 def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     """The built file for `rel`, or the reason its pipeline run produced no map — the underlying
     cause, never a bare sentinel."""
-    from reporails_cli.interfaces.mcp.tools import run_pipeline_for_path
 
     abs_file = resolve_from_root(rel, scan_root)
     payload, ruleset_map, score = run_pipeline_for_path(str(abs_file), True)
@@ -229,8 +232,6 @@ def _location_ops(location: dict[str, Any], scan_root: Path, files: list[str]) -
 def _partner_atoms(ops: list[PlanOp], scan_root: Path, maps: list[Any]) -> dict[PartnerKey, Atom]:
     """The atom each dedupe or keep-cut op's `expect["keep"]` names, looked up in `maps` (the
     project map first)."""
-    from reporails_cli.core.heal.transforms import atoms_at
-    from reporails_cli.core.lint.content_queries import atoms_for_file
 
     out: dict[PartnerKey, Atom] = {}
     for op in ops:
@@ -273,7 +274,7 @@ def _block(edits: list[Edit], lines: list[str]) -> tuple[int, int, str, str]:
 
 
 def _widened(
-    start: int, end: int, before: str, after: str, lines: list[str], blocked: list[tuple[int, int]]
+    start: int, end: int, before: str, after: str, *, lines: list[str], blocked: list[tuple[int, int]]
 ) -> tuple[int, int, str, str]:
     """The block with neighbouring lines added, before and after alike, until `before` occurs once in the
     file (so a literal replace hits it alone). It never reaches into another block of the same file, whose
@@ -334,7 +335,7 @@ def _file_edit_entries(
     for index, (_lo, _hi, group) in reversed(list(enumerate(groups))):
         start, end, before, after = _block(group, lines)
         others = [(a, b) for i, (a, b, _) in enumerate(groups) if i != index]
-        start, end, before, after = _widened(start, end, before, after, lines, others)
+        start, end, before, after = _widened(start, end, before, after, lines=lines, blocked=others)
         lead = group[0]
         out.append(
             {
@@ -410,8 +411,6 @@ def _refused_entries(plan: Plan, names: dict[str, str]) -> list[dict[str, Any]]:
 
 def _guides(rule_ids: set[str]) -> dict[str, dict[str, str]]:
     """Each rule's title and its own Pass and Fail examples."""
-    from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_title
-    from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id
 
     out: dict[str, dict[str, str]] = {}
     for rule_id in sorted(rule_ids):
@@ -423,6 +422,33 @@ def _guides(rule_ids: set[str]) -> dict[str, dict[str, str]]:
             "fail": examples.get("fail") or "",
         }
     return out
+
+
+def _with_held_plans(planned: Plan, held: dict[str, tuple[str, Plan]]) -> Plan:
+    """`planned` plus the edits, slots of the plans stored for files briefed and edited since."""
+    stored = [plan for _, plan in held.values()]
+    return Plan(
+        tuple(sorted((*planned.edits, *(e for p in stored for e in p.edits)), key=lambda e: (e.file, e.line))),
+        tuple(
+            sorted((*planned.slots, *(s for p in stored for s in p.slots)), key=lambda s: (s.file, s.line, s.pi or 0))
+        ),
+        planned.refused,
+    )
+
+
+def _commit_snapshots(built: list[_BuiltFile], held: dict[str, tuple[str, Plan]], plan: Plan) -> None:
+    """Every file built: commit the snapshots together, so a brief that IS delivered is the
+    only thing that ever replaces an earlier baseline."""
+    for f in built:
+        if str(f.abs_file) in held:
+            continue
+        own = Plan(
+            tuple(e for e in plan.edits if e.file == str(f.abs_file)),
+            tuple(s for s in plan.slots if s.file == str(f.abs_file)),
+        )
+        snapshots.snapshot_file(
+            f.abs_file, f.ruleset_map, f.score, leaving_lines(own), rule_counts=f.rule_counts, plan=own
+        )
 
 
 def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: Any = None) -> dict[str, Any]:
@@ -439,9 +465,6 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
     The reply's `location` carries `root`: the absolute project root the location's relative
     `file` names resolve against; every edit and slot carries its file's absolute `path` beside the
     relative `file`. A rewrite or a `validate(path=<file>)` check must use `path`, never `file`."""
-    from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
-    from reporails_cli.core.lint.content_queries import atoms_for_file
-    from reporails_cli.formatters.mcp import remedy_brief_payload
 
     built = _build_files(location, scan_root)
     if isinstance(built, dict):
@@ -450,34 +473,16 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
     # A file already briefed and edited since keeps its stored baseline and plan, shown against the text
     # they were made from.
     held = {str(f.abs_file): h for f in built if (h := snapshots.held_brief(f.abs_file, f.text)) is not None}
-    skipped = set(held)
     atoms_by_file = {str(f.abs_file): atoms_for_file(f.ruleset_map, str(f.abs_file)) for f in built}
     lines_by_file = {str(f.abs_file): f.lines for f in built}
     lines_by_file.update({name: split_lines(text)[0] for name, (text, _) in held.items()})
     maps = [m for m in (project_map, *(f.ruleset_map for f in built)) if m is not None]
     planned = build_plan(
-        [o for o in ops if o.file not in skipped], atoms_by_file, lines_by_file, _partner_atoms(ops, scan_root, maps)
+        [o for o in ops if o.file not in held], atoms_by_file, lines_by_file, _partner_atoms(ops, scan_root, maps)
     )
-    stored = [plan for _, plan in held.values()]
-    plan = Plan(
-        tuple(sorted((*planned.edits, *(e for p in stored for e in p.edits)), key=lambda e: (e.file, e.line))),
-        tuple(
-            sorted((*planned.slots, *(s for p in stored for s in p.slots)), key=lambda s: (s.file, s.line, s.pi or 0))
-        ),
-        planned.refused,
-    )
+    plan = _with_held_plans(planned, held)
     names.update({str(f.abs_file): f.rel for f in built})
-
-    # Every file built: commit the snapshots together, so a brief that IS delivered is the
-    # only thing that ever replaces an earlier baseline.
-    for f in built:
-        own = Plan(
-            tuple(e for e in plan.edits if e.file == str(f.abs_file)),
-            tuple(s for s in plan.slots if s.file == str(f.abs_file)),
-        )
-        if str(f.abs_file) in held:
-            continue
-        snapshots.snapshot_file(f.abs_file, f.ruleset_map, f.score, leaving_lines(own), f.rule_counts, own)
+    _commit_snapshots(built, held, plan)
 
     slots = _slot_entries(plan, names, ops, scan_root, lines_by_file)
     location_out = {

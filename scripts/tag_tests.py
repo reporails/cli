@@ -51,7 +51,6 @@ _MAPPING: dict[str, tuple[str | None, list[str]]] = {
     "tests/unit/test_backbone_gate.py": (None, ["subsys_map", "subsys_cli_ux"]),
     "tests/unit/test_byte_preflight.py": (None, ["subsys_cli_ux"]),
     "tests/unit/test_cache.py": (None, ["subsys_caching"]),
-    "tests/unit/test_cache_structural.py": (None, ["subsys_caching"]),
     "tests/unit/test_check_cache.py": (None, ["subsys_caching"]),
     "tests/unit/test_classification.py": (None, ["subsys_classify"]),
     "tests/unit/test_client_checks.py": (None, ["subsys_lint"]),

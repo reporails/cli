@@ -9,49 +9,46 @@ SDK derives no output schema from an internal model — only the explicit wire
 payload is exposed and no non-wire field can reach the schema.
 """
 
-# ─────────────────────────────────────────────────────────────────────
-# CRITICAL: the import blocker MUST run before any import that could
-# transitively pull a heavy ML backend. The MCP server is long-lived and
-# serves many tool calls; skipping that import makes the first validate/score
-# calls fast. See `_torch_blocker` docstring for details.
+import asyncio
+import contextlib
+import json
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
+
+from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.platform.runtime import _torch_blocker
-
-_torch_blocker.install()
-# ─────────────────────────────────────────────────────────────────────
-
-import asyncio  # noqa: E402
-import json  # noqa: E402
-import threading  # noqa: E402
-from dataclasses import dataclass, field  # noqa: E402
-from pathlib import Path  # noqa: E402
-from typing import Any  # noqa: E402
-
-from mcp.types import CallToolResult, TextContent, ToolAnnotations  # noqa: E402
-
-from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels  # noqa: E402
-from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices  # noqa: E402
-from reporails_cli.interfaces.mcp import snapshots  # noqa: E402
-from reporails_cli.interfaces.mcp.feedback import file_feedback  # noqa: E402
-from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written  # noqa: E402
-from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity  # noqa: E402
-from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief  # noqa: E402
-from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool  # noqa: E402
-from reporails_cli.interfaces.mcp.scan_fingerprint import (  # noqa: E402
+from reporails_cli.core.platform.utils.version import installed_version
+from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels
+from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices
+from reporails_cli.interfaces.mcp import snapshots
+from reporails_cli.interfaces.mcp.feedback import file_feedback
+from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written
+from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
+from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief
+from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool
+from reporails_cli.interfaces.mcp.scan_fingerprint import (
     combine_scan_inputs,
     compute_scan_fingerprint,
     dependency_files,
 )
-from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
+from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer
+from reporails_cli.interfaces.mcp.tools import (
     _resolve_scan_target,
     is_retryable_reply,
     model_not_ready_error,
     run_pipeline_for_path,
     unpaid_signed_in_reply,
 )
-from reporails_cli.interfaces.mcp.validate_targets import (  # noqa: E402
-    keep_target_locations,
-    resolve_validate_targets,
-)
+from reporails_cli.interfaces.mcp.validate_targets import keep_target_locations, resolve_validate_targets
+
+# The long-lived MCP server never needs a heavy ML backend: block it before any tool runs, so a
+# transitive import cannot pull one in and slow the first validate call.
+_torch_blocker.install()
 
 # Circuit breaker: content-aware loop detection.
 _MAX_CALLS = 10
@@ -170,7 +167,9 @@ def _with_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> di
         return payload
     if not target.is_file() or not snapshots.has_snapshot(target):
         return payload
-    return {**payload, "feedback": file_feedback(payload, target, scan_root)}
+    state = _validate_states.get(_state_key(str(scan_root), ()))
+    stored = state.full_payload if state is not None else None
+    return {**payload, "feedback": file_feedback(payload, target, scan_root, stored)}
 
 
 def _with_preservation(
@@ -199,7 +198,7 @@ def _with_preservation(
         new_text = target.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return payload
-    block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score, scan_root)
+    block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score=score, scan_root=scan_root)
     block["introduced"] = snapshots.introduced_count(target, payload)
     out = {**payload, "preservation": block}
     conformance = snapshots.check_conformance(target, ruleset_map, new_text, scan_root)
@@ -235,6 +234,34 @@ async def _fresh_validate_payload(
         state.last_ruleset_map = ruleset_map
         state.last_score = score
     return payload, ruleset_map, score
+
+
+async def _begin_validate_call(
+    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path
+) -> tuple[_CircuitState, bool, str]:
+    """Fingerprint the scan inputs, then count this `validate` call on its `(path, targets)` state.
+    Returns `(state, unchanged, base_hash)`: whether the content matches the last call's, and the
+    fingerprint base the fresh run later extends with the files it mapped."""
+    path_key = _state_key(path, tokens)
+    # The input walk is blocking file IO: run it off the event loop, before the state read, so
+    # the read-modify-write below stays free of any `await`.
+    prior = _validate_states.get(path_key)
+    prior_map = prior.last_ruleset_map if prior is not None else None
+    prior_reply = prior.full_payload if prior is not None else None
+    base_hash, mtime_hash = await asyncio.to_thread(compute_scan_fingerprint, scan_root, prior_map, prior_reply, target)
+    state = _validate_states.get(path_key, _CircuitState())
+    unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
+    if not unchanged:
+        state.full_payload = None
+        state.consecutive_unchanged = 0
+    elif not full:
+        state.consecutive_unchanged += 1
+        if state.unpaid_reply:
+            state.full_payload = None
+    state.last_mtime_hash = mtime_hash
+    state.call_count += 1
+    _validate_states[path_key] = state
+    return state, unchanged, base_hash
 
 
 async def _run_validate(path: str, full: bool, targets: list[str] | None = None) -> dict[str, Any]:
@@ -282,25 +309,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     scan_root = _resolve_scan_target(target)[0]
 
     tokens = _target_tokens(targets)
-    path_key = _state_key(path, tokens)
-    # The input walk is blocking file IO: run it off the event loop, before the state read, so
-    # the read-modify-write below stays free of any `await`.
-    prior = _validate_states.get(path_key)
-    prior_map = prior.last_ruleset_map if prior is not None else None
-    prior_reply = prior.full_payload if prior is not None else None
-    base_hash, mtime_hash = await asyncio.to_thread(compute_scan_fingerprint, scan_root, prior_map, prior_reply, target)
-    state = _validate_states.get(path_key, _CircuitState())
-    unchanged = bool(state.last_mtime_hash) and mtime_hash == state.last_mtime_hash
-    if not unchanged:
-        state.full_payload = None
-        state.consecutive_unchanged = 0
-    elif not full:
-        state.consecutive_unchanged += 1
-        if state.unpaid_reply:
-            state.full_payload = None
-    state.last_mtime_hash = mtime_hash
-    state.call_count += 1
-    _validate_states[path_key] = state
+    state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root)
 
     if state.call_count > _MAX_CALLS or state.consecutive_unchanged >= _MAX_UNCHANGED:
         return {
@@ -382,10 +391,7 @@ async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
 # `MCPServer`'s own `version` defaults to `""` when not passed, so `initialize`'s
 # `serverInfo.version` was always empty — a caller has no way to tell which server build it
 # is talking to. `StrictArgsMCPServer` also closes a related gap: an unknown tool argument.
-from reporails_cli import __version__ as _ails_version  # noqa: E402
-from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer  # noqa: E402
-
-server = StrictArgsMCPServer("ails", version=_ails_version, lifespan=lifespan)
+server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan)
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
@@ -540,9 +546,7 @@ async def explain(rule_id: str) -> str:
     return result if isinstance(result, str) else json.dumps(result)
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Back-compat module shims — the callable surface tests + callers share.
-# ─────────────────────────────────────────────────────────────────────
+# Module-level callables that list and invoke the registered tools.
 
 
 async def list_tools() -> list[Any]:
@@ -558,10 +562,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[Any]:
     argument name is rejected the same way (`StrictArgsMCPServer.call_tool`), before the
     tool body ever runs.
     """
-    import json
-
-    from mcp.server.mcpserver.exceptions import ToolError
-
     try:
         result = await server.call_tool(name, arguments or {})
     except ToolError as exc:
@@ -579,10 +579,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[Any]:
 
 def _prewarm_models() -> None:
     """Fetch the model set in the background so the first `validate` rarely waits on it."""
-    import contextlib
-
-    from reporails_cli.bundled import ensure_models_available
-    from reporails_cli.core.mapper.model_fetch import ModelFetchError
+    from reporails_cli.core.mapper.model_store import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
+        ensure_models_available,
+    )
 
     # On failure `validate` retries and reports the error to the caller.
     with contextlib.suppress(ModelFetchError):
@@ -591,7 +590,6 @@ def _prewarm_models() -> None:
 
 def main() -> None:
     """Entry point for the MCP server (stdio transport)."""
-
     threading.Thread(target=_prewarm_models, name="model-prewarm", daemon=True).start()
     server.run("stdio")
 

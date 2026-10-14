@@ -26,7 +26,7 @@ from reporails_cli.core.lint.mechanical.checks import (
     _resolve_glob_targets,
     get_target_files,
 )
-from reporails_cli.core.lint.mechanical.checks_advanced import (
+from reporails_cli.core.lint.mechanical.checks_links import (
     extract_markdown_links,
 )
 from reporails_cli.core.lint.mechanical.runner import (

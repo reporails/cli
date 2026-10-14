@@ -41,5 +41,5 @@ def intercepted_tools(hook: HookEntry, config: AgentConfig) -> tuple[str, ...]:
     reachable = tuple(tool for tool in HEAL_TOOLS if tool in gated)
     if hook.matcher in ("", "*"):
         return reachable
-    covered = {_TOOL_NAMES[name] for name in _TOOL_NAMES if _matches(hook.matcher, name)}
+    covered = {edit for name, edit in _TOOL_NAMES.items() if _matches(hook.matcher, name)}
     return tuple(tool for tool in reachable if tool in covered)

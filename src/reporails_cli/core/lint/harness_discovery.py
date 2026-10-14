@@ -182,71 +182,89 @@ def discover_rules(
         excludes: Rule ID patterns to exclude.
         agent: Agent name filter for agent-specific rules.
     """
-    rules: list[RuleInfo] = []
     excludes = excludes or []
-
     all_roots = [rules_root] + (package_roots or [])
-    search_pairs: list[tuple[Path, Path]] = []
-    for root in all_roots:
-        search_pairs.extend((root, slug_dir) for slug_dir in _scan_root(root, agent))
+    loaded = (
+        _load_rule(root, slug_dir, filter_path, filter_rule, excludes)
+        for root in all_roots
+        for slug_dir in _scan_root(root, agent)
+    )
+    return [rule for rule in loaded if rule is not None]
 
-    for root, slug_dir in search_pairs:
-        rule_md = slug_dir / "rule.md"
-        checks_yml = slug_dir / "checks.yml"
-        if not rule_md.exists():
-            continue
 
-        if filter_path:
-            rel = slug_dir.relative_to(root).as_posix()
-            if not rel.startswith(filter_path.rstrip("/")):
-                continue
+def _load_rule(
+    root: Path,
+    slug_dir: Path,
+    filter_path: str | None,
+    filter_rule: str | None,
+    excludes: list[str],
+) -> RuleInfo | None:
+    """The rule in `slug_dir`, or None when it has no readable `rule.md` or a filter or exclude drops it."""
+    rule_md = slug_dir / "rule.md"
+    checks_yml = slug_dir / "checks.yml"
+    if not rule_md.exists():
+        return None
+    rel_dir = slug_dir.relative_to(root).as_posix()
+    if filter_path and not rel_dir.startswith(filter_path.rstrip("/")):
+        return None
+    try:
+        content = rule_md.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
-        try:
-            content = rule_md.read_text(encoding="utf-8")
-        except OSError:
-            continue
+    meta = read_frontmatter(content).data
+    if not meta:
+        return None
+    rule_id = meta.get("id", "")
+    if (filter_rule and rule_id != filter_rule) or _rule_matches_exclude(rule_id, excludes):
+        return None
 
-        read = read_frontmatter(content)
-        meta = read.data
-        if not meta:
-            continue
+    raw_checks = meta.get("checks", [])
+    source = f"{rel_dir}/rule.md"
+    load_error = ""
+    if not raw_checks and checks_yml.exists():
+        source = f"{rel_dir}/checks.yml"
+        raw_checks, load_error = _read_checks_yml(checks_yml, source)
+    # Route every check through the Check model so a schema-invalid entry is
+    # reported against its file instead of silently loading as an untyped dict.
+    checks: list[Check] = []
+    if not load_error:
+        checks, load_error = _validate_checks(raw_checks, source)
 
-        rule_id = meta.get("id", "")
-        if filter_rule and rule_id != filter_rule:
-            continue
-        if _rule_matches_exclude(rule_id, excludes):
-            continue
+    return RuleInfo(
+        rule_id=rule_id,
+        slug=meta.get("slug", ""),
+        title=meta.get("title", ""),
+        category=meta.get("category", ""),
+        rule_type=meta.get("type", ""),
+        match=meta.get("match") or {},
+        checks=checks,
+        rule_dir=slug_dir,
+        checks_yml=checks_yml,
+        supersedes=meta.get("supersedes") or "",
+        inherited=meta.get("inherited") or "",
+        load_error=load_error,
+    )
 
-        raw_checks = meta.get("checks", [])
-        source = f"{slug_dir.relative_to(root).as_posix()}/rule.md"
-        load_error = ""
-        if not raw_checks and checks_yml.exists():
-            source = f"{slug_dir.relative_to(root).as_posix()}/checks.yml"
-            raw_checks, load_error = _read_checks_yml(checks_yml, source)
-        # Route every check through the Check model so a schema-invalid entry is
-        # reported against its file instead of silently loading as an untyped dict.
-        checks: list[Check] = []
-        if not load_error:
-            checks, load_error = _validate_checks(raw_checks, source)
 
-        rules.append(
-            RuleInfo(
-                rule_id=rule_id,
-                slug=meta.get("slug", ""),
-                title=meta.get("title", ""),
-                category=meta.get("category", ""),
-                rule_type=meta.get("type", ""),
-                match=meta.get("match") or {},
-                checks=checks,
-                rule_dir=slug_dir,
-                checks_yml=checks_yml,
-                supersedes=meta.get("supersedes") or "",
-                inherited=meta.get("inherited") or "",
-                load_error=load_error,
-            )
-        )
-
-    return rules
+def discover_agent_rules(
+    rules_root: Path,
+    agent: str,
+    *,
+    filter_path: str | None = None,
+    filter_rule: str | None = None,
+    package_roots: list[Path] | None = None,
+) -> list[RuleInfo]:
+    """Discover the rules of one agent: its own rules plus core, minus what its config excludes."""
+    _, excludes = load_agent_config(rules_root, agent)
+    return discover_rules(
+        rules_root,
+        filter_path=filter_path,
+        filter_rule=filter_rule,
+        package_roots=package_roots,
+        excludes=excludes,
+        agent=agent,
+    )
 
 
 def apply_check_inheritance(rules: list[RuleInfo]) -> None:

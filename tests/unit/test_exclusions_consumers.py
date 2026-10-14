@@ -62,16 +62,24 @@ def test_a_glob_excluded_rule_file_gets_no_glob_finding(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_heal
 def test_section_suggestions_classify_only_the_checked_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from reporails_cli.core.heal import fixers
+    from reporails_cli.interfaces.cli import heal as heal_cli
     from reporails_cli.interfaces.cli.heal import _collect_section_suggestions
 
     project = _gs_project(tmp_path)
     exclusions = load_run_exclusions(project)
     seen: list[list[ClassifiedFile]] = []
     monkeypatch.setattr(
-        fixers, "suggest_missing_sections", lambda _v, _t, classified, _r: seen.append(classified) or []
+        heal_cli, "suggest_missing_sections", lambda _v, _t, classified, _r: seen.append(classified) or []
     )
-    _collect_section_suggestions(project, [project / "CLAUDE.md"], object(), "claude", False, _Console(), exclusions)
+    _collect_section_suggestions(
+        project,
+        [project / "CLAUDE.md"],
+        object(),
+        "claude",
+        show_progress=False,
+        console=_Console(),
+        exclusions=exclusions,
+    )
     assert seen
     assert {cf.path.name for cf in seen[0]} == {"CLAUDE.md"}
 
@@ -90,7 +98,9 @@ def test_the_heal_pass_receives_the_run_exclusions(monkeypatch: pytest.MonkeyPat
         inputs=SimpleNamespace(heal=True, dry_run=True),
         pipeline=SimpleNamespace(lint_result=None, funnel_error=None, ruleset_map=None, stage_timer=None),
         render=SimpleNamespace(
-            heal_authed=True, capability_paths=set(), result=SimpleNamespace(notices=(), workflow=None)
+            heal_authed=True,
+            capability_paths=set(),
+            result=SimpleNamespace(reply=SimpleNamespace(notices=(), workflow=None)),
         ),
         scope=SimpleNamespace(instruction_files=[path], effective_agent="claude", exclusions=exclusions),
         targets=SimpleNamespace(single_path=None, target=tmp_path, output_format="text"),

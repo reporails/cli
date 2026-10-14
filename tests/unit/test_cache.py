@@ -11,18 +11,18 @@ from unittest.mock import patch
 
 import pytest
 
-from reporails_cli.core.cache import ProjectCache, content_hash
+from reporails_cli.core.cache.hashing import file_bytes_digest
 from reporails_cli.core.platform.dto.analytics import ProjectAnalytics
 from reporails_cli.core.platform.observability.analytics import (
-    get_project_id,
     get_project_name,
     load_project_analytics,
     record_scan,
     save_project_analytics,
 )
+from reporails_cli.core.platform.utils.utils import get_project_id
 
 # ---------------------------------------------------------------------------
-# content_hash
+# file_bytes_digest
 # ---------------------------------------------------------------------------
 
 
@@ -32,8 +32,8 @@ class TestContentHash:
     def test_deterministic_hash(self, tmp_path: Path) -> None:
         f = tmp_path / "test.md"
         f.write_text("hello world")
-        h1 = content_hash(f)
-        h2 = content_hash(f)
+        h1 = file_bytes_digest(f)
+        h2 = file_bytes_digest(f)
         assert h1 == h2
         assert h1.startswith("sha256:")
         assert len(h1) == len("sha256:") + 16
@@ -49,7 +49,7 @@ class TestGetProjectId:
     @pytest.mark.subsys_caching
     def test_with_git_remote(self, tmp_path: Path) -> None:
         with patch(
-            "reporails_cli.core.platform.observability.analytics.get_git_remote",
+            "reporails_cli.core.platform.utils.utils.get_git_remote",
             return_value="git@github.com:org/repo.git",
         ):
             pid = get_project_id(tmp_path)
@@ -59,7 +59,7 @@ class TestGetProjectId:
     @pytest.mark.unit
     @pytest.mark.subsys_caching
     def test_without_git_remote(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.platform.observability.analytics.get_git_remote", return_value=None):
+        with patch("reporails_cli.core.platform.utils.utils.get_git_remote", return_value=None):
             pid = get_project_id(tmp_path)
         assert len(pid) == 12
         assert pid.isalnum()
@@ -68,12 +68,12 @@ class TestGetProjectId:
     @pytest.mark.subsys_caching
     def test_different_remotes_different_ids(self, tmp_path: Path) -> None:
         with patch(
-            "reporails_cli.core.platform.observability.analytics.get_git_remote",
+            "reporails_cli.core.platform.utils.utils.get_git_remote",
             return_value="git@github.com:org/a.git",
         ):
             id_a = get_project_id(tmp_path)
         with patch(
-            "reporails_cli.core.platform.observability.analytics.get_git_remote",
+            "reporails_cli.core.platform.utils.utils.get_git_remote",
             return_value="git@github.com:org/b.git",
         ):
             id_b = get_project_id(tmp_path)
@@ -86,77 +86,6 @@ class TestGetProjectName:
     def test_returns_directory_name(self, tmp_path: Path) -> None:
         name = get_project_name(tmp_path)
         assert name == tmp_path.resolve().name
-
-
-# ---------------------------------------------------------------------------
-# ProjectCache — file map
-# ---------------------------------------------------------------------------
-
-
-class TestProjectCacheFileMap:
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_round_trip(self, tmp_path: Path) -> None:
-        cache = ProjectCache(tmp_path)
-        # Create real files so get_cached_files validation passes
-        f1 = tmp_path / "a.md"
-        f2 = tmp_path / "b.md"
-        f1.write_text("a")
-        f2.write_text("b")
-
-        cache.save_file_map([f1, f2])
-        loaded = cache.load_file_map()
-
-        assert loaded is not None
-        assert loaded["count"] == 2
-        assert set(loaded["files"]) == {"a.md", "b.md"}
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_returns_none_on_missing(self, tmp_path: Path) -> None:
-        cache = ProjectCache(tmp_path)
-        assert cache.load_file_map() is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_returns_none_on_corrupt_json(self, tmp_path: Path) -> None:
-        cache = ProjectCache(tmp_path)
-        cache.ensure_dir()
-        cache.file_map_path.write_text("not json")
-        assert cache.load_file_map() is None
-
-
-# ---------------------------------------------------------------------------
-# ProjectCache — judgment cache
-# ---------------------------------------------------------------------------
-
-
-class TestProjectCacheJudgment:
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_set_then_get_hit(self, tmp_path: Path) -> None:
-        cache = ProjectCache(tmp_path)
-        results = {"C6": {"verdict": "pass", "reason": "ok"}}
-        cache.set_cached_judgment("CLAUDE.md", "sha256:abc123", results)
-
-        cached = cache.get_cached_judgment("CLAUDE.md", "sha256:abc123")
-        assert cached == results
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_get_with_wrong_hash_miss(self, tmp_path: Path) -> None:
-        cache = ProjectCache(tmp_path)
-        results = {"C6": {"verdict": "pass", "reason": "ok"}}
-        cache.set_cached_judgment("CLAUDE.md", "sha256:abc123", results)
-
-        cached = cache.get_cached_judgment("CLAUDE.md", "sha256:DIFFERENT")
-        assert cached is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_get_missing_file_returns_none(self, tmp_path: Path) -> None:
-        cache = ProjectCache(tmp_path)
-        assert cache.get_cached_judgment("nope.md", "sha256:x") is None
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +138,7 @@ class TestProjectAnalytics:
 class TestRecordScan:
     def _record(self, target: Path, analytics_dir: Path, score: float = 7.5) -> None:
         with (
-            patch("reporails_cli.core.platform.observability.analytics.get_git_remote", return_value=None),
+            patch("reporails_cli.core.platform.utils.utils.get_git_remote", return_value=None),
             patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=analytics_dir),
         ):
             record_scan(
@@ -555,7 +484,7 @@ class TestFullMapIdentity:
             "agent: cursor\nfile_types:\n  rules:\n    loading: on_demand\n"
             '    detection:\n      project:\n        patterns: [".cursor/rules/**/*.mdc"]\n'
         )
-        monkeypatch.setattr("reporails_cli.core.platform.config.bootstrap.get_rules_path", lambda: tmp_path / "rules")
+        monkeypatch.setattr("reporails_cli.core.cache.full_map_cache.get_rules_path", lambda: tmp_path / "rules")
         a = tmp_path / "a.md"
         a.write_text("alpha")
 

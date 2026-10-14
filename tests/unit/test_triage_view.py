@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.runtime.merger import FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.formatters.text import triage_view
 from reporails_cli.formatters.text.display_constants import element_namer
 from reporails_cli.formatters.triage import classify_regime
@@ -50,7 +50,9 @@ def _render(monkeypatch: pytest.MonkeyPatch, findings: list[FindingItem], regime
     lines: list[str] = []
     monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
     sev_icons = {"error": "X", "warning": "!", "info": "i"}
-    triage_view.print_file_card("CLAUDE.md", findings, sev_icons, verbose, regime)
+    triage_view.print_file_card(
+        "CLAUDE.md", findings, triage_view.CardContext(sev_icons=sev_icons, verbose=verbose), regime
+    )
     return "\n".join(lines)
 
 
@@ -418,11 +420,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert "overlaps 62% with x (skill)" in rows[0] and "CORE:C:0044" in rows[0]
@@ -472,11 +476,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 1
@@ -509,11 +515,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 2
@@ -526,11 +534,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             path,
             findings,
-            {"warning": "!"},
-            verbose,
+            triage_view.CardContext(
+                sev_icons={"warning": "!"},
+                verbose=verbose,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path) if rmap is not None else None,
+            ),
             classify_regime({"triage_tier": "partial"}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path) if rmap is not None else None,
         )
         return lines
 
@@ -643,12 +653,14 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "skills/foo/SKILL.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+                partners_of=partner_lookup(cross, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
-            partners_of=partner_lookup(cross, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 2 and "%" not in "".join(rows)
@@ -678,11 +690,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert "overlaps 42% with feedback_surface_progress_on_background_work (memory)" in rows[0]

@@ -65,6 +65,7 @@ def snapshot_file(
     ruleset_map: Any,
     score: float | None,
     relation_lines: Any = (),
+    *,
     rule_counts: dict[str, int] | None = None,
     plan: Plan | None = None,
 ) -> None:
@@ -106,6 +107,7 @@ def get_snapshot(file_path: Path) -> Snapshot | None:
 
 
 def has_snapshot(file_path: Path) -> bool:
+    """Whether `file_path` has a stored snapshot."""
     return _key(file_path) in _snapshots
 
 
@@ -129,12 +131,18 @@ def sibling_texts(snapshot: Snapshot, scan_root: Path | None) -> tuple[str, ...]
 
 
 def check_rewrite(
-    snapshot: Snapshot, file_path: Path, ruleset_map: Any, new_text: str, score: float | None, scan_root: Path | None
+    snapshot: Snapshot, file_path: Path, ruleset_map: Any, new_text: str, *, score: float | None, scan_root: Path | None
 ) -> dict[str, Any]:
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
     against `snapshot`, with the project on disk answering which names and paths exist."""
     return judge_rewrite(
-        snapshot, file_path, ruleset_map, new_text, score, scan_root, sibling_texts(snapshot, scan_root)
+        snapshot,
+        file_path,
+        ruleset_map,
+        new_text,
+        score=score,
+        scan_root=scan_root,
+        siblings=sibling_texts(snapshot, scan_root),
     )
 
 

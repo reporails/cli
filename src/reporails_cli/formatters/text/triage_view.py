@@ -12,12 +12,14 @@ import contextlib
 import re
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from rich.console import Console
 
 from reporails_cli.core.lint.client_checks import PACKED_SENTENCE_RULE
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import (
     AGG_ORDER,
     AGGREGATE_KEY,
@@ -41,6 +43,25 @@ from reporails_cli.formatters.text.rule_meta import linked_rule_id
 from reporails_cli.formatters.triage import Regime, TriageFinding, is_triaged, split_conventions, triage
 
 console = Console()
+
+
+@dataclass(frozen=True)
+class CardContext:
+    """Per-run rendering inputs threaded into each file card."""
+
+    sev_icons: dict[str, str]
+    verbose: bool
+    project_root: Path = field(default_factory=Path.cwd)
+    ruleset_map: Any = None
+    hints_by_file: dict[str, list[Any]] = field(default_factory=dict)
+    aliases_by_file: dict[str, list[str]] = field(default_factory=dict)
+    regime_by_file: dict[str, Any] = field(default_factory=dict)
+    atoms_by_path: dict[str, list[Any]] = field(default_factory=dict)
+    skill_of: dict[str, str] | None = None
+    element_of: Callable[[str], Element] | None = None
+    partners_of: Callable[[str], list[str]] | None = None
+    # Scanned item count per surface label, as the Summary's surface rows state it.
+    scanned_items: dict[str, int] = field(default_factory=dict)
 
 
 # ── Inline hints ──────────────────────────────────────────────────────
@@ -309,14 +330,13 @@ def _overlap_partners(
     element_of: Callable[[str], Element],
     filepath: str,
     partners_of: Callable[[str], list[str]] | None,
-    project_root: Path | None,
+    project_root: Path,
 ) -> dict[Element, int | None]:
     """Each partner element the overlap findings name, with the highest share any of them gives it.
 
     The partner file comes from the finding itself; with none named, from the reply's cross-file rows."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
-    root = project_root or Path.cwd()
+    root = project_root
     best: dict[Element, int | None] = {}
     for f in findings:
         if getattr(f, "partner_file", None):
@@ -329,14 +349,7 @@ def _overlap_partners(
     return best
 
 
-def _render_file_overlaps(
-    findings: list[Any],
-    border: str,
-    element_of: Callable[[str], Element] | None,
-    filepath: str = "",
-    partners_of: Callable[[str], list[str]] | None = None,
-    project_root: Path | None = None,
-) -> None:
+def _render_file_overlaps(findings: list[Any], border: str, ctx: CardContext, filepath: str) -> None:
     """Print the file-pair overlap findings once per partner, unanchored, right under the file's header.
 
     A finding that names its partner file (and the share of the file's instructions) reads
@@ -344,7 +357,8 @@ def _render_file_overlaps(
     reply's cross-file rows and read `overlaps with <partner>`."""
     if not findings:
         return
-    best = _overlap_partners(findings, element_of or element_namer(None, None), filepath, partners_of, project_root)
+    element_of = ctx.element_of or element_namer(None, None)
+    best = _overlap_partners(findings, element_of, filepath, ctx.partners_of, ctx.project_root)
     label = element_labels(best)
     ranked = sorted(best.items(), key=lambda kv: (-1 if kv[1] is None else -kv[1], label[kv[0].key]))
     texts = [f"overlaps {f'{pct}% ' if pct is not None else ''}with {label[e.key]}" for e, pct in ranked]
@@ -355,14 +369,10 @@ def _render_file_overlaps(
 
 
 def _render_card_body(
-    findings: list[Any],
-    sev_icons: dict[str, str],
-    verbose: bool,
-    regime: Regime | None,
-    border: str,
-    msg_width: int,
+    findings: list[Any], ctx: CardContext, regime: Regime | None, border: str, msg_width: int
 ) -> None:
     """Render the finding body: triaged when the file's token asks for it and a finding is graded, else neutral."""
+    sev_icons, verbose = ctx.sev_icons, ctx.verbose
     if not verbose and is_triaged(findings, regime):
         _render_triaged(findings, sev_icons, border, msg_width)
         return
@@ -407,26 +417,10 @@ def _format_alias_suffix(canonical: str, aliases: list[str]) -> str:
     return f" (+{', +'.join(labels)})"
 
 
-def print_file_card(
-    filepath: str,
-    findings: list[Any],
-    sev_icons: dict[str, str],
-    verbose: bool,
-    regime: Regime | None = None,
-    ruleset_map: Any = None,
-    file_hints: list[Any] | None = None,
-    aliases_by_file: dict[str, list[str]] | None = None,
-    project_root: Path | None = None,
-    atoms_by_path: dict[str, list[Any]] | None = None,
-    skill_of: dict[str, str] | None = None,
-    element_of: Callable[[str], Element] | None = None,
-    partners_of: Callable[[str], list[str]] | None = None,
-) -> None:
-    """Print one file's card: name, stats, triaged findings (or neutral fallback). `skill_of` is the
-    skill-folder lookup; a file in a skill folder is named inside it."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
-    norm = normalize_finding_path(filepath, project_root or Path.cwd())
+def _card_name(filepath: str, ctx: CardContext) -> str:
+    """The file's name on its card: skill-relative inside a skill folder, with its alias suffix."""
+    skill_of = ctx.skill_of
+    norm = normalize_finding_path(filepath, ctx.project_root)
     skill_dir = (skill_of or {}).get(norm)
     if skill_dir:
         name = friendly_name(norm, path_tag(filepath, skill_of, norm), skill_dir)
@@ -434,9 +428,22 @@ def print_file_card(
         name = norm  # a SKILL.md in no skill is a plain file, named by its path
     else:
         name = friendly_name(filepath, path_tag(filepath, skill_of, norm))
-    alias_list = (aliases_by_file or {}).get(filepath, [])
-    name = f"{name}{_format_alias_suffix(filepath, alias_list)}"
-    stats = per_file_stats(filepath, ruleset_map, project_root or Path.cwd(), atoms_by_path)
+    return f"{name}{_format_alias_suffix(filepath, ctx.aliases_by_file.get(filepath, []))}"
+
+
+def print_file_card(
+    filepath: str,
+    findings: list[Any],
+    ctx: CardContext,
+    regime: Regime | None = None,
+    file_hints: list[Any] | None = None,
+) -> None:
+    """Print one file's card: name, stats, triaged findings (or neutral fallback). `skill_of` is the
+    skill-folder lookup; a file in a skill folder is named inside it."""
+
+    name = _card_name(filepath, ctx)
+    verbose = ctx.verbose
+    stats = per_file_stats(filepath, ctx.ruleset_map, ctx.project_root, ctx.atoms_by_path)
     border = "│"
     msg_width = get_term_width() - 35
 
@@ -448,8 +455,8 @@ def print_file_card(
 
     findings, conventions = split_conventions(findings, verbose)
     overlaps = [f for f in findings if _is_file_overlap(f)]
-    _render_file_overlaps(overlaps, border, element_of, filepath, partners_of, project_root)
-    _render_card_body([f for f in findings if f not in overlaps], sev_icons, verbose, regime, border, msg_width)
+    _render_file_overlaps(overlaps, border, ctx, filepath)
+    _render_card_body([f for f in findings if f not in overlaps], ctx, regime, border, msg_width)
     if conventions:
         console.print(f"  [dim]{border}     \u25e6 {conventions_phrase(len(conventions))} \u00b7 -v to list[/dim]")
 

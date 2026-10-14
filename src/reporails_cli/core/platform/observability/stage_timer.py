@@ -28,6 +28,7 @@ class StageTimer:
 
     @property
     def enabled(self) -> bool:
+        """Whether stage marks are being recorded."""
         return self._enabled
 
     def configure(self, enabled: bool) -> None:

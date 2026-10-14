@@ -100,7 +100,7 @@ import glob, zipfile
 names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist()
 heavy = [n for n in names if n.endswith('.onnx')]
 assert not heavy, f'model files in the lean wheel: {heavy}'
-from reporails_cli.bundled import ensure_models_available
+from reporails_cli.core.mapper.model_store import ensure_models_available
 root = ensure_models_available()
 assert root is not None, 'model download is switched off (AILS_MODEL_OFFLINE is set)'
 onnx = root / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
@@ -113,7 +113,7 @@ ok "Lean wheel; model set fetched and verified (fresh HOME: $MODEL_HOME)"
 # classifier inert at runtime.
 step "Verify classifier model"
 HOME="$MODEL_HOME" "$VENV/bin/python" -c "
-from reporails_cli.core.mapper import bio_tagger as b
+from reporails_cli.core.mapper import bio_graphs as b
 multislot_ok = b.multislot_available()
 print(f'  classifier available: {multislot_ok}')
 assert multislot_ok, 'classifier files missing from the model set'

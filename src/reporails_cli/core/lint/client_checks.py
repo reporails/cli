@@ -17,6 +17,7 @@ from reporails_cli.core.mapper.md_parser import emphasis_runs, has_bold_label, w
 from reporails_cli.core.mapper.structure import line_spans
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 _SCOPE_RE = re.compile(
     r"^(?:when|if|unless|before|after)\s+(.+?),\s+",
@@ -68,8 +69,6 @@ def run_client_checks(ruleset_map: RulesetMap) -> list[LocalFinding]:
 
 def _relative_display_path(file_path: str) -> str:
     """Normalize file path for display. Uses merger's normalize_finding_path."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
     return normalize_finding_path(file_path)
 
 

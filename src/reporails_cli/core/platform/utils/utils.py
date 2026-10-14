@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 from fnmatch import fnmatchcase
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
@@ -212,21 +213,6 @@ def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter |
     return read_frontmatter(text, lenient=lenient)
 
 
-def compute_content_hash(file_path: Path) -> str:
-    """Compute SHA256 hash of file content.
-
-    I/O function — reads file.
-
-    Args:
-        file_path: Path to file
-
-    Returns:
-        Hash string in format "sha256:{hash16}"
-    """
-    content = file_path.read_bytes()
-    return f"sha256:{hashlib.sha256(content).hexdigest()[:16]}"
-
-
 def is_valid_path_reference(path: str) -> bool:
     """Check if a string looks like a valid file path reference.
 
@@ -425,3 +411,28 @@ def write_json_atomic(path: Path, data: Any) -> None:
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def get_git_remote(target: Path) -> str | None:
+    """Get git remote URL for project identification."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=target,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def get_project_id(target: Path) -> str:
+    """Get the unique project identifier: a 12-character hex hash of the git remote URL, else of the absolute path."""
+    remote = get_git_remote(target)
+    source = remote or str(target.resolve())
+    return hashlib.sha256(source.encode()).hexdigest()[:12]

@@ -578,21 +578,21 @@ class TestCheckAliases:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_tracked_alias(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+        from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["file_tracked"] is MECHANICAL_CHECKS["git_tracked"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_memory_dir_exists_alias(self) -> None:
-        from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+        from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["memory_dir_exists"] is MECHANICAL_CHECKS["directory_exists"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_total_size_check_alias(self) -> None:
-        from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+        from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["total_size_check"] is MECHANICAL_CHECKS["aggregate_byte_size"]
 

@@ -11,6 +11,8 @@ from collections import Counter
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
+from rich.table import Table
 
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Severity
 from reporails_cli.formatters.text.display_constants import (
@@ -27,14 +29,13 @@ from reporails_cli.formatters.triage import LeverageTier, resolve_leverage, spli
 console = Console()
 
 
-def compute_score(result: Any, has_quality: bool, n_atoms: int = 0) -> float | None:  # noqa: ARG001
+def compute_score(result: Any, has_quality: bool) -> float | None:
     """Return the reported whole-project display score verbatim.
 
     The CLI renders it without re-deriving. Falls back to 0.0 when offline (no server quality).
     Returns `None` when the project has quality data but no scorable content (the
     reported `display_score` is itself `None` — no file had any charged atoms), so the
     caller renders "n/a (no scorable content)" rather than raising or fabricating 0.0.
-    `n_atoms` is retained for call-signature stability.
     """
     if has_quality and result.quality is not None:
         score = result.quality.display_score
@@ -61,10 +62,31 @@ def _score_bar(score: float, bar_width: int, color: str) -> str:
 _VERDICT_LABEL_W = 10  # widest label is "Findings" plus two spaces
 
 
+def _render_quality_line(result: Any, has_quality: bool, elapsed_s: str) -> float | None:
+    """Print the Quality line and return the score it shows (`None` when it shows no score)."""
+    bar_width = min(20, max(10, get_term_width() - 48))
+    score: float | None = None
+    has_quality_obj = has_quality and result.quality is not None
+    if has_quality_obj:
+        score = compute_score(result, has_quality)
+    if score is not None:
+        color = score_color(score)
+        quality_bar = _score_bar(score, bar_width, color)
+        value = f"[{color} bold]{score:>4.1f}[/{color} bold] / 10"
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W - 1}}{value}  {quality_bar}{elapsed_s}")
+    elif has_quality_obj:
+        # Quality data exists but no file had any scorable content (display_score
+        # is `None`, not a fabricated floor) — never raise, render the n/a line.
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (no scorable content)[/dim]{elapsed_s}")
+    else:
+        reason = no_score_reason(result.reply.server_error)
+        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a ({reason})[/dim]{elapsed_s}")
+    return score
+
+
 def _render_verdict_block(
     result: Any,
     has_quality: bool,
-    n_atoms: int,
     elapsed_ms: float,
     hint_errors: int = 0,
     verbose: bool = False,
@@ -76,26 +98,8 @@ def _render_verdict_block(
     file cannot read as high quality. Line two is the next action. Line three is the
     size of the rest. A caption beneath reconciles a low score with a must-fix list.
     """
-    tw = get_term_width()
-    bar_width = min(20, max(10, tw - 48))
     elapsed_s = f"  [dim]({elapsed_ms / 1000:.1f}s)[/dim]" if elapsed_ms else ""
-
-    score: float | None = None
-    has_quality_obj = has_quality and result.quality is not None
-    if has_quality_obj:
-        score = compute_score(result, has_quality, n_atoms)
-    if score is not None:
-        color = score_color(score)
-        bar = _score_bar(score, bar_width, color)
-        value = f"[{color} bold]{score:>4.1f}[/{color} bold] / 10"
-        console.print(f"  {'Quality':<{_VERDICT_LABEL_W - 1}}{value}  {bar}{elapsed_s}")
-    elif has_quality_obj:
-        # Quality data exists but no file had any scorable content (display_score
-        # is `None`, not a fabricated floor) — never raise, render the n/a line.
-        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a (no scorable content)[/dim]{elapsed_s}")
-    else:
-        reason = no_score_reason(getattr(result, "server_error", None))
-        console.print(f"  {'Quality':<{_VERDICT_LABEL_W}}[dim]n/a ({reason})[/dim]{elapsed_s}")
+    score = _render_quality_line(result, has_quality, elapsed_s)
     render_excluded_line(result, scored=score is not None)
 
     findings = list(result.findings or [])
@@ -108,14 +112,13 @@ def _render_verdict_block(
 
 def render_excluded_line(result: Any, *, scored: bool) -> None:
     """The folders and files the user left out of the run, under the Quality line; nothing when none were."""
-    from rich.markup import escape
-    from rich.table import Table
 
+    omissions = result.omissions
     phrase = excluded_phrase(
-        getattr(result, "excluded_dirs", ()),
-        getattr(result, "excluded_files", ()),
+        omissions.excluded_dirs,
+        omissions.excluded_files,
         scored=scored,
-        imported_counted=getattr(result, "excluded_imported", False),
+        imported_counted=omissions.excluded_imported,
     )
     if phrase:
         # Two columns, so a long list wraps under its own value rather than back to the margin.

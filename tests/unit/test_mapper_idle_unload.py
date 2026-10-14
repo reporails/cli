@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper import daemon
+from reporails_cli.core.mapper import daemon_server as daemon
 from reporails_cli.core.mapper.models import Models
 from reporails_cli.interfaces.mcp import idle_release
 
@@ -91,7 +91,7 @@ def test_idle_watchdog_unloads_once_while_idle(monkeypatch) -> None:
     import asyncio
 
     monkeypatch.setenv("AILS_MCP_IDLE_S", "1")
-    monkeypatch.setattr(idle_release, "_last_activity", 0.0)
+    monkeypatch.setattr(idle_release._activity, "last", 0.0)
     monkeypatch.setattr(idle_release.time, "monotonic", lambda: 10_000.0)  # always idle
 
     calls = {"unload": 0}
@@ -100,7 +100,7 @@ def test_idle_watchdog_unloads_once_while_idle(monkeypatch) -> None:
         def unload(self) -> None:
             calls["unload"] += 1
 
-    monkeypatch.setattr("reporails_cli.core.mapper.models.get_models", lambda: _FakeModels())
+    monkeypatch.setattr(idle_release, "get_models", lambda: _FakeModels())
 
     polls = {"n": 0}
 

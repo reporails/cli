@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.platform.dto.analytics import AnalyticsEntry
-from reporails_cli.core.platform.dto.models import JudgmentRequest, Level, Violation
 
 # =============================================================================
 # Feature Detection Models
@@ -26,6 +25,42 @@ class HookEntry:
 
 
 @dataclass
+class LayoutFeatures:
+    """Directory structure signals of a project."""
+
+    is_abstracted: bool = False  # .claude/rules/, .claude/skills/, etc.
+    has_shared_files: bool = False  # .shared/, shared/
+    has_backbone: bool = False  # .ails/backbone.yml
+
+
+@dataclass
+class DiscoveryFeatures:
+    """What discovery found: instruction file counts and nesting."""
+
+    instruction_file_count: int = 0
+    has_multiple_instruction_files: bool = False
+    has_hierarchical_structure: bool = False  # nested instruction files
+    component_count: int = 0  # components from backbone.yml
+
+
+@dataclass
+class ContentFeatures:
+    """L2 capabilities read from the root instruction file's content."""
+
+    is_size_controlled: bool = False  # root instruction file under size threshold
+    has_explicit_constraints: bool = False  # MUST/NEVER keywords in content
+    has_imports: bool = False  # @import references in content
+
+
+@dataclass
+class MemoryFeatures:
+    """L7 capabilities (Adaptive): memory and state persistence."""
+
+    has_memory_dir: bool = False  # memory/state persistence directory
+    has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
+
+
+@dataclass
 class DetectedFeatures:
     """Features detected in a project for capability-gate level detection.
 
@@ -37,21 +72,9 @@ class DetectedFeatures:
     has_instruction_file: bool = False
     has_claude_md: bool = False  # CLAUDE.md at root
 
-    # Directory structure
-    is_abstracted: bool = False  # .claude/rules/, .claude/skills/, etc.
-    has_shared_files: bool = False  # .shared/, shared/
-    has_backbone: bool = False  # .ails/backbone.yml
-
-    # Discovery
-    instruction_file_count: int = 0
-    has_multiple_instruction_files: bool = False
-    has_hierarchical_structure: bool = False  # nested instruction files
-    component_count: int = 0  # components from backbone.yml
-
-    # L2 capabilities
-    is_size_controlled: bool = False  # root instruction file under size threshold
-    has_explicit_constraints: bool = False  # MUST/NEVER keywords in content
-    has_imports: bool = False  # @import references in content
+    layout: LayoutFeatures = field(default_factory=LayoutFeatures)
+    discovery: DiscoveryFeatures = field(default_factory=DiscoveryFeatures)
+    content: ContentFeatures = field(default_factory=ContentFeatures)
 
     # L3 capabilities (Scoped)
     has_path_scoped_rules: bool = False  # an agent's rule files (with or without `paths:`), or nested instruction files
@@ -65,39 +88,10 @@ class DetectedFeatures:
         Path, ...
     ] = ()  # repo-scoped hook files that count toward L6: a dedicated file, or a shared one with hooks
     hooks: tuple[HookEntry, ...] = ()  # every hook found in every scope of each agent's hooks surface
-    # L7 capabilities (Adaptive)
-    has_memory_dir: bool = False  # memory/state persistence directory
-    has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
+    memory: MemoryFeatures = field(default_factory=MemoryFeatures)
 
     # Symlink resolution (for regex engine extra targets)
     resolved_symlinks: list[Path] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class FrictionEstimate:
-    """Friction estimate from violations."""
-
-    level: str  # "extreme", "high", "medium", "small", "none"
-
-
-@dataclass(frozen=True)
-class RuleResult:
-    """Per-rule pass/fail outcome for the violation matrix."""
-
-    rule_id: str  # e.g., "CORE:C:0001"
-    status: str  # "pass" or "fail"
-
-
-@dataclass(frozen=True)
-class CategoryStats:
-    """Per-category rule statistics for the category summary table."""
-
-    code: str  # "S", "C", "D", "E", "M", "G"
-    name: str  # "Structure", "Coherence", "Direction", etc.
-    total: int
-    passed: int
-    failed: int
-    worst_severity: str | None  # "critical"/"high"/"medium"/"low" or None
 
 
 # =============================================================================
@@ -261,37 +255,6 @@ class ScanDelta:
         violations_delta = viol_delta if viol_delta != 0 else None
 
         return cls(score_delta, level_previous, level_improved, violations_delta)
-
-
-@dataclass(frozen=True)
-class PendingSemantic:
-    """Summary of pending semantic rules for partial evaluation."""
-
-    rule_count: int  # Number of semantic rules pending
-    file_count: int  # Files with pending semantic checks
-    rules: tuple[str, ...]  # Rule IDs (e.g., "C6", "C10")
-
-
-@dataclass(frozen=True)
-class ValidationResult:
-    """Complete validation output."""
-
-    score: float  # 0.0-10.0 scale
-    level: Level  # Maturity level
-    violations: tuple[Violation, ...]  # Immutable
-    judgment_requests: tuple[JudgmentRequest, ...]
-    rules_checked: int  # Deterministic rules checked
-    rules_passed: int
-    rules_failed: int
-    feature_summary: str  # Human-readable
-    friction: FrictionEstimate
-    # Per-category breakdown
-    category_summary: tuple[CategoryStats, ...] = ()
-    # Per-rule pass/fail (for violation matrix construction)
-    rule_results: tuple[RuleResult, ...] = ()
-    # Evaluation completeness
-    is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
-    pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules
 
 
 @dataclass(frozen=True)

@@ -10,8 +10,8 @@ import threading
 
 import pytest
 
-from reporails_cli.core.mapper import daemon as d
 from reporails_cli.core.mapper import daemon_client as dc
+from reporails_cli.core.mapper import daemon_server as d
 
 
 class _FakeSock:

@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import pytest
 
+from reporails_cli.core.mapper.charge_floors import _apply_hedged_should_floor
 from reporails_cli.core.mapper.classify import (
     best_to_sign,
     classify_charge,
     has_hedge_cue,
     hedges_with_possible,
-    starts_noun_subject,
 )
+from reporails_cli.core.mapper.classify_phases import starts_noun_subject
 from reporails_cli.core.mapper.instructions import instruction_count
-from reporails_cli.core.mapper.parse import _apply_hedged_should_floor
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 

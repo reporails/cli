@@ -8,12 +8,13 @@ import pytest
 
 from reporails_cli.core.lint.suppression import apply_suppressions, build_index, suppressed_lines
 from reporails_cli.core.platform.dto.diagnostics import (
+    FindingItem,
     LocationFinding,
     LocationRelation,
     RemediationWorkflow,
     WorkflowLocation,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem, merge_results
+from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply, merge_results
 from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 STYLE = "# Style\n\nKeep diffs small.{a}\n\nUse tabs.{b}\n\nPrefer clarity.{c}\n"
@@ -178,12 +179,12 @@ def test_suppressed_finding_leaves_the_workflow_and_emptied_location_is_dropped(
     only = _loc(3, "c.md", ("CORE:C:0042", 9, None))
     (tmp_path / "c.md").write_text("x\n" * 8 + "Do it. <!-- ails-disable-line CORE:C:0042 -->\n", encoding="utf-8")
     workflow = RemediationWorkflow(locations=(*workflow.locations, only), summary="served")
-    result = CombinedResult(findings=(), workflow=workflow)
+    result = CombinedResult(findings=(), reply=ServerReply(workflow=workflow))
     out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
-    assert out.workflow is not None
-    assert [(loc.order, loc.element) for loc in out.workflow.locations] == [(1, "CLAUDE.md"), (2, "b.md")]
-    assert [f.rule for f in out.workflow.locations[0].findings] == ["CORE:E:0004"]
-    assert out.workflow.summary == "2 locations to rewrite, by kind: 2 main."
+    assert out.reply.workflow is not None
+    assert [(loc.order, loc.element) for loc in out.reply.workflow.locations] == [(1, "CLAUDE.md"), (2, "b.md")]
+    assert [f.rule for f in out.reply.workflow.locations[0].findings] == ["CORE:E:0004"]
+    assert out.reply.workflow.summary == "2 locations to rewrite, by kind: 2 main."
 
 
 @pytest.mark.unit
@@ -193,11 +194,11 @@ def test_location_with_only_a_relation_left_is_kept(tmp_path: Path) -> None:
     rel = LocationRelation("CORE:E:0001", "CLAUDE.md", 2, "o.md", 1, "m", "r")
     workflow = RemediationWorkflow(locations=(_loc(1, "CLAUDE.md", ("CORE:C:0042", 2, None), relations=(rel,)),))
     out = apply_suppressions(
-        CombinedResult(findings=(), workflow=workflow), project_root=tmp_path, alias_fn=rule_aliases
+        CombinedResult(findings=(), reply=ServerReply(workflow=workflow)), project_root=tmp_path, alias_fn=rule_aliases
     )
-    assert out.workflow is not None
-    assert out.workflow.locations[0].findings == ()
-    assert out.workflow.locations[0].relations == (rel,)
+    assert out.reply.workflow is not None
+    assert out.reply.workflow.locations[0].findings == ()
+    assert out.reply.workflow.locations[0].relations == (rel,)
 
 
 @pytest.mark.unit
@@ -206,10 +207,13 @@ def test_suppressed_imported_finding_leaves_the_workflow(tmp_path: Path) -> None
     root = _project(tmp_path, a=_directive("CORE:C:0042"))
     workflow = RemediationWorkflow(locations=(_loc(1, "CLAUDE.md", ("CORE:C:0042", 3, 1), ("CORE:C:0042", 3, 2)),))
     out = apply_suppressions(
-        CombinedResult(findings=(), workflow=workflow), project_root=root, alias_fn=rule_aliases, imported=PLACES
+        CombinedResult(findings=(), reply=ServerReply(workflow=workflow)),
+        project_root=root,
+        alias_fn=rule_aliases,
+        imported=PLACES,
     )
-    assert out.workflow is not None
-    assert [f.pi for f in out.workflow.locations[0].findings] == [2]
+    assert out.reply.workflow is not None
+    assert [f.pi for f in out.reply.workflow.locations[0].findings] == [2]
 
 
 @pytest.mark.unit

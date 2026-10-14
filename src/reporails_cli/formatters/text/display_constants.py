@@ -13,6 +13,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
 
 from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
+from reporails_cli.core.mapper.skills import skill_membership
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
 
@@ -212,8 +215,6 @@ def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
     its own skill; a file with none is a plain file. `None` when there is no ruleset map (the
     path-based tags then decide); empty when the map carries no skills.
     """
-    from reporails_cli.core.mapper.skills import skill_membership
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     membership = skill_membership(ruleset_map, project_root)
     if membership is None:
@@ -240,6 +241,7 @@ class Element(NamedTuple):
 
     @property
     def label(self) -> str:
+        """The name with its kind in parentheses, when it has a kind."""
         return f"{self.base} ({self.kind})" if self.kind else self.base
 
 
@@ -250,13 +252,11 @@ def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str]
     definition, rule file and command are named by their file stem, by the type the ruleset map
     records for the file. Any other file is named by its project-relative path.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     root = project_root if project_root is not None else Path.cwd()
     skill_of = skill_lookup(ruleset_map, root) or {}
     type_by_path = {normalize_finding_path(fr.path, root): fr.type for fr in getattr(ruleset_map, "files", ())}
     kinds = {"agents": "agent", "rules": "rule", "commands": "command"}
-    from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
 
     def element(path: str) -> Element:
         norm = normalize_finding_path(path, root)
@@ -291,7 +291,6 @@ def partner_lookup(result: Any, project_root: Path) -> Callable[[str], list[str]
 
     Each partner is a full project path, in a stable order; a file with no overlap pair has none.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
     partners: dict[str, set[str]] = {}
     for left, right in overlapping_pairs(result.cross_file, getattr(result, "cross_file_coordinates", ())):
@@ -382,9 +381,8 @@ def index_atoms_by_norm_path(atoms: Any, project_root: Path) -> dict[str, list[A
 
     Collapses the per-card / per-group re-normalization of every atom (an
     O(atoms x files) render hot loop) into one `normalize_finding_path` call per
-    distinct `file_path`. Built once per render and shared via `_CardContext`.
+    distinct `file_path`. Built once per render and shared via `CardContext`.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     memo: dict[str, str] = {}
     out: dict[str, list[Any]] = {}
@@ -413,8 +411,6 @@ def per_file_stats(
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
         norm_target = normalize_finding_path(filepath, project_root)
         if atoms_by_path is not None:
             atoms = atoms_by_path.get(norm_target, [])
@@ -447,7 +443,6 @@ def _format_atom_stats(atoms: list[Any]) -> str:
 
 
 def get_group_atoms(
-    group_key: str,  # noqa: ARG001
     group_files: list[tuple[str, list[Any]]],
     ruleset_map: Any,
     project_root: Path,
@@ -461,8 +456,6 @@ def get_group_atoms(
     if ruleset_map is None:
         return []
     try:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
         norm_fps = {normalize_finding_path(fp, project_root) for fp, _ in group_files}
         if atoms_by_path is not None:
             atoms: list[Any] = []

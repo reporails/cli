@@ -43,10 +43,12 @@ def test_collect_section_suggestions_does_not_write(tmp_path: Path, monkeypatch:
             LocalFinding(file="CLAUDE.md", line=0, severity="warning", rule="CORE:C:0010", message="missing"),
         ]
 
-    monkeypatch.setattr("reporails_cli.core.lint.rule_runner.run_m_probes", _fake_probes)
-    monkeypatch.setattr("reporails_cli.core.lint.rule_runner.run_content_quality_checks", _fake_content)
+    monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_m_probes", _fake_probes)
+    monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_content_quality_checks", _fake_content)
 
-    suggestions = _collect_section_suggestions(tmp_path, [fpath], object(), "claude", False, _Console())
+    suggestions = _collect_section_suggestions(
+        tmp_path, [fpath], object(), "claude", show_progress=False, console=_Console()
+    )
 
     assert fpath.read_text(encoding="utf-8") == original
     assert {s["rule_id"] for s in suggestions} == {"CORE:C:0019", "CORE:C:0010", "CORE:C:0035"}
@@ -74,10 +76,12 @@ def test_collect_section_suggestions_honors_inline_suppression(tmp_path: Path, m
     def _fake_content(*_a: Any, **_k: Any) -> list[LocalFinding]:
         return [LocalFinding(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0019", message="missing")]
 
-    monkeypatch.setattr("reporails_cli.core.lint.rule_runner.run_m_probes", _fake_probes)
-    monkeypatch.setattr("reporails_cli.core.lint.rule_runner.run_content_quality_checks", _fake_content)
+    monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_m_probes", _fake_probes)
+    monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_content_quality_checks", _fake_content)
 
-    suggestions = _collect_section_suggestions(tmp_path, [fpath], object(), "claude", False, _Console())
+    suggestions = _collect_section_suggestions(
+        tmp_path, [fpath], object(), "claude", show_progress=False, console=_Console()
+    )
 
     assert suggestions == []
     assert fpath.read_text(encoding="utf-8") == original
@@ -100,10 +104,12 @@ def test_collect_section_suggestions_still_fires_on_an_unsuppressed_line(
     def _fake_content(*_a: Any, **_k: Any) -> list[LocalFinding]:
         return [LocalFinding(file="CLAUDE.md", line=3, severity="warning", rule="CORE:C:0019", message="missing")]
 
-    monkeypatch.setattr("reporails_cli.core.lint.rule_runner.run_m_probes", _fake_probes)
-    monkeypatch.setattr("reporails_cli.core.lint.rule_runner.run_content_quality_checks", _fake_content)
+    monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_m_probes", _fake_probes)
+    monkeypatch.setattr("reporails_cli.interfaces.cli.heal.run_content_quality_checks", _fake_content)
 
-    suggestions = _collect_section_suggestions(tmp_path, [fpath], object(), "claude", False, _Console())
+    suggestions = _collect_section_suggestions(
+        tmp_path, [fpath], object(), "claude", show_progress=False, console=_Console()
+    )
 
     assert {s["rule_id"] for s in suggestions} == {"CORE:C:0019"}
 
@@ -118,7 +124,7 @@ def test_output_heal_results_json_carries_suggested_list_and_count() -> None:
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        _output_heal_results(mech, suggested, False, 12.3, "json", _Console())
+        _output_heal_results(mech, suggested, dry_run=False, elapsed_ms=12.3, output_format="json", console=_Console())
 
     data = json.loads(buf.getvalue())
     assert data["auto_fixed"] == mech
@@ -135,7 +141,7 @@ def test_output_heal_results_text_lists_suggestions_under_their_own_heading() ->
     ]
     console = _Console()
 
-    _output_heal_results([], suggested, False, 5.0, "text", console)
+    _output_heal_results([], suggested, dry_run=False, elapsed_ms=5.0, output_format="text", console=console)
 
     joined = "\n".join(console.lines)
     assert "Sections to add (not written):" in joined
@@ -151,7 +157,7 @@ def test_output_heal_results_text_lists_suggestions_under_their_own_heading() ->
 def test_output_heal_results_text_reports_no_fixable_issues_when_nothing_found() -> None:
     console = _Console()
 
-    _output_heal_results([], [], False, 5.0, "text", console)
+    _output_heal_results([], [], dry_run=False, elapsed_ms=5.0, output_format="text", console=console)
 
     joined = "\n".join(console.lines)
     assert "No fixable issues found." in joined
@@ -166,7 +172,9 @@ def test_output_heal_results_json_carries_notices() -> None:
     notice = Notice("pay", "warn", "Payment failed", "https://example.test/pay")
     buf = io.StringIO()
     with redirect_stdout(buf):
-        _output_heal_results([], [], True, 1.0, "json", _Console(), (notice,))
+        _output_heal_results(
+            [], [], dry_run=True, elapsed_ms=1.0, output_format="json", console=_Console(), notices=(notice,)
+        )
     data = json.loads(buf.getvalue())
     assert data["notices"] == [
         {"id": "pay", "level": "warn", "text": "Payment failed", "url": "https://example.test/pay", "kind": "notice"}

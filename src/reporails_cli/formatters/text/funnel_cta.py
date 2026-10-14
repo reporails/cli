@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import shlex
 import sys
-from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from rich.markup import escape as escape_markup
+from rich.markup import render as render_markup
+
+from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, UNENTITLED_TIERS, FunnelError
+from reporails_cli.core.platform.utils.version import installed_version
 
 BUG_REPORT_URL = "https://github.com/reporails/cli/issues"
 BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
@@ -71,7 +75,6 @@ def no_score_reason(err: object) -> str:
 
 def _has_key() -> bool:
     """True when this CLI holds an API key (env override or stored credentials)."""
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
 
     return has_api_key()
 
@@ -107,14 +110,6 @@ def _cta_upgrade_url(err: FunnelError) -> str:
     return err.support_url
 
 
-def _cli_version() -> str:
-    """Return the installed CLI version, or 'unknown' if metadata is missing."""
-    try:
-        return version("reporails-cli")
-    except PackageNotFoundError:
-        return "unknown"
-
-
 def format_bug_report_url(err: FunnelError) -> str:
     """Return the GitHub-issues URL for the bug-report exit ramp.
 
@@ -134,7 +129,7 @@ def format_bug_report_url(err: FunnelError) -> str:
         "## What happened\n\n"
         f"{err.message}\n\n"
         "## Environment\n\n"
-        f"- reporails-cli: {_cli_version()}\n"
+        f"- reporails-cli: {installed_version()}\n"
         f"- OS: {sys.platform}\n"
         f"- Python: {sys.version.split()[0]}\n\n"
         "## Steps to reproduce\n\n"
@@ -169,7 +164,6 @@ def format_cta(err: FunnelError, *, command_line: bool = True) -> str:
     `command_line` is False for a caller with no command to add flags to (JSON and MCP text): an
     over-cap refusal then names the config key instead of a flag.
     """
-    from rich.markup import escape as escape_markup
 
     if err.retryable:
         return retry_text(err)
@@ -195,7 +189,6 @@ def _atom_cap_route(err: FunnelError, tier: str, command_line: bool = True) -> s
     With a command line the route says to run the same command with the flags added; without one it
     names the folders and points at `exclude_dirs:` in `.ails/config.yml`.
     """
-    from rich.markup import escape as escape_markup
 
     lines = []
     if err.dense_dirs:
@@ -239,7 +232,6 @@ def plain_cta(err: FunnelError) -> str:
     shortcode renders as the literal text, not a substituted emoji glyph, in JSON/MCP
     output.
     """
-    from rich.markup import render as render_markup
 
     return render_markup(format_cta(err, command_line=False), emoji=False).plain
 

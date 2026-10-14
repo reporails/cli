@@ -12,6 +12,7 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
+from reporails_cli.core.cache.hashing import file_bytes_digest
 from reporails_cli.core.discovery.walk import has_symlink_loop, safe_resolve
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def _dedupe_symlinks(paths: list[Path]) -> tuple[list[Path], dict[Path, list[Pat
     return representatives, aliases
 
 
-def _dedupe_with_aliases(paths: Iterable[Path]) -> tuple[list[Path], dict[Path, list[Path]]]:
+def dedupe_with_aliases(paths: Iterable[Path]) -> tuple[list[Path], dict[Path, list[Path]]]:
     """Dedupe input paths by canonical resolved path (symlinks → one inode).
 
     Multi-agent projects often expose the same physical file via several agent
@@ -77,11 +78,9 @@ def compute_same_dir_content_aliases(paths: Iterable[Path]) -> dict[Path, list[P
     pairs (and similar) into one visual row without dropping them from
     classification. Restricted to same-directory pairs so two unrelated
     identical files elsewhere in the tree are never merged. Uses
-    `cache.content_hash` so the truncated SHA-256 keyspace matches every other
+    `cache.hashing.file_bytes_digest` so the truncated SHA-256 keyspace matches every other
     content-keyed cache in the codebase.
     """
-    from reporails_cli.core.cache import content_hash
-
     by_parent: dict[Path, list[Path]] = {}
     for p in paths:
         by_parent.setdefault(p.parent, []).append(p)
@@ -92,7 +91,7 @@ def compute_same_dir_content_aliases(paths: Iterable[Path]) -> dict[Path, list[P
         by_hash: dict[str, list[Path]] = {}
         for s in siblings:
             try:
-                key = content_hash(s)
+                key = file_bytes_digest(s)
             except OSError:
                 key = f"__unhashable__:{s}"
             by_hash.setdefault(key, []).append(s)
@@ -110,7 +109,7 @@ def _alias_cache_key(target: Path) -> str:
     return str(safe_resolve(target))
 
 
-def _store_alias_cache(target: Path, aliases: dict[Path, list[Path]]) -> None:
+def store_alias_cache(target: Path, aliases: dict[Path, list[Path]]) -> None:
     """Cache aliases keyed by project root so the display layer can look them up."""
     _alias_cache[_alias_cache_key(target)] = aliases
 

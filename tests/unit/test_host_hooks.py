@@ -224,7 +224,7 @@ def test_get_agent_config_reads_subagent_hook_facts(tmp_path: Path, monkeypatch:
         "  identifies_agent: {value: 'yes', fields: [agent_id, agent_type], source: https://example.test/b}\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", lambda _agent: config)
+    monkeypatch.setattr("reporails_cli.core.platform.config.config.get_agent_config_path", lambda _agent: config)
     facts = get_agent_config("claude").subagent_hooks
     assert (facts.fire_in_subagents.value, facts.fire_in_subagents.source) == ("yes", "https://example.test/a")
     assert facts.identifies_agent.fields == ("agent_id", "agent_type")

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 
 class StrictArgsMCPServer(MCPServer):
@@ -18,8 +19,6 @@ class StrictArgsMCPServer(MCPServer):
     here covers both."""
 
     async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
-        from mcp.server.mcpserver.exceptions import ToolError
-
         tool = next((t for t in await self.list_tools() if t.name == name), None)
         if tool is not None:
             known = set((tool.input_schema or {}).get("properties") or {})

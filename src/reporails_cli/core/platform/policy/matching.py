@@ -34,7 +34,7 @@ def _prop_matches(match_val: list[str] | str | None, actual: list[str] | str | N
 
 
 # FileMatch properties compared by file_matches(), single-sourced so the
-# serializer (interfaces/cli/check_support._serialize_match) cannot drift from
+# serializer (core/lint/rule_pages.serialize_match) cannot drift from
 # what matching actually compares. `type` is compared separately, first.
 MATCH_PROPERTIES: tuple[str, ...] = (
     "scope",

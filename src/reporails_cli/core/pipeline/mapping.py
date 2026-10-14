@@ -10,12 +10,44 @@ file discovery of one scan as a single pass that reads each directory once. Disp
 
 from __future__ import annotations
 
+import dataclasses
+import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import Any, NamedTuple
 
-if TYPE_CHECKING:
-    from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.cache.full_map_cache import FullMapCache, compute_identity
+from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.discovery.agent_config import categorize_file_type
+from reporails_cli.core.discovery.agents import (
+    DetectedAgent,
+    detect_agents,
+    detect_single_agent,
+    filter_agents_by_exclusions,
+    filter_agents_by_id,
+    get_all_scannable_files,
+    get_known_agents,
+    partition_by_native_owner,
+    resolve_agent,
+)
+from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
+from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon
+from reporails_cli.core.mapper.daemon_client import (
+    DaemonStatus,
+    ensure_daemon,
+    map_ruleset_via_daemon,
+    ping,
+    runs_older_code,
+    serves_this_code,
+)
+from reporails_cli.core.mapper.reach import record_reach
+from reporails_cli.core.mapper.skills import record_skills
+from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.observability.log_levels import quiet_loggers
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 
 class ScopeDiscovery(NamedTuple):
@@ -52,7 +84,6 @@ def discover_scope(
     only the named paths) the Excluded record drops every pattern a named path matches; otherwise it
     keeps every pattern the user set. A pass that lists no files records nothing.
     """
-    from reporails_cli.core.discovery.exclusions import load_run_exclusions
 
     exclusions = load_run_exclusions(target, exclude_dirs, exclude_files).with_named(named)
     detected, resolved, files = _scan(target, agent, exclusions, scan_files)
@@ -64,8 +95,6 @@ def _scan(
     target: Path, agent: str, exclusions: RunExclusions, scan_files: bool
 ) -> tuple[list[Any], tuple[str, bool, bool, list[Any]], list[Path]]:
     """Detect agents, resolve the effective agent and its filtered agents, and list the files under one dir cache."""
-    from reporails_cli.core.discovery.agents import detect_agents, get_all_scannable_files
-    from reporails_cli.core.discovery.walk import shared_dir_listings
 
     with shared_dir_listings():
         detected = detect_agents(target)
@@ -92,13 +121,6 @@ def resolve_agent_filters(
     ``core.discovery.agents.partition_by_native_owner`` (the DISTINCTIVE agent that
     natively owns a file, or the core rule set when none does), not via ``filtered``.
     """
-    from reporails_cli.core.discovery.agents import (
-        detect_single_agent,
-        filter_agents_by_exclusions,
-        filter_agents_by_id,
-        resolve_agent,
-    )
-    from reporails_cli.core.discovery.exclusions import RunExclusions
 
     explicit = bool(agent)
     agent, assumed, mixed = resolve_agent(agent, all_detected, target)
@@ -123,7 +145,6 @@ def _place_named(
     agent that listed it in ``detected``, else to the effective agent under the list its file type
     maps to. A named file no user pattern matches is not added. Lists are copied before they grow.
     """
-    from reporails_cli.core.discovery.agents import DetectedAgent
 
     wanted = _unlisted_named(filtered, exclusions)
     if not wanted:
@@ -143,7 +164,6 @@ def _place_named(
 
 def _unlisted_named(filtered: list[Any], exclusions: RunExclusions) -> list[Path]:
     """The named paths a user pattern matches that `filtered` does not hold."""
-    import dataclasses
 
     if not exclusions.named or not (exclusions.dirs or exclusions.files):
         return []
@@ -154,7 +174,6 @@ def _unlisted_named(filtered: list[Any], exclusions: RunExclusions) -> list[Path
 
 def _append_file(agents: list[Any], owner: str, kind: str, path: Path) -> None:
     """Add `path` to the `kind` list of the agent `owner`, adding that agent when it is absent."""
-    from reporails_cli.core.discovery.agents import DetectedAgent, get_known_agents
 
     holder = next((a for a in agents if a.agent_type.id == owner), None)
     if holder is None and owner in get_known_agents():
@@ -166,7 +185,6 @@ def _append_file(agents: list[Any], owner: str, kind: str, path: Path) -> None:
 
 def _by_resolved_path(agents: list[Any]) -> dict[Path, tuple[str, str, Path]]:
     """Each file the agents list, keyed by its resolved path: `(agent id, list name, path as listed)`."""
-    from reporails_cli.core.discovery.walk import safe_resolve
 
     return {safe_resolve(f): (a.agent_type.id, k, f) for a in agents for k in _KINDS for f in getattr(a, k)}
 
@@ -176,8 +194,6 @@ _KINDS = ("instruction_files", "rule_files", "config_files")
 
 def _kind_of(path: Path, agent: str, target: Path) -> str:
     """The file list (``instruction_files``, ``rule_files`` or ``config_files``) `path`'s type maps to."""
-    from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.discovery.agent_discovery import categorize_file_type
 
     try:
         declarations = load_file_types(agent, project_root=target)
@@ -217,9 +233,6 @@ def apply_generic_scan(
     """
     if not generic_scanning:
         return [], {}
-    from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.discovery.walk import shared_dir_listings
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     try:
         file_types = load_file_types(agent, project_root=target)
@@ -253,7 +266,7 @@ def agent_file_pairs(
     An explicit ``agent`` (``--agent`` / ``default_agent``) runs over the WHOLE scoped file
     set unchanged -- the caller asked for that one agent's perspective specifically.
     Auto-detect partitions the full scoped set (never narrowed) by native ownership via
-    ``core.discovery.agent_discovery.partition_by_native_owner``: a file a
+    ``core.discovery.agents.partition_by_native_owner``: a file a
     currently-distinctive agent natively owns runs that agent's own rules; a file no
     distinctive agent natively owns (a shared cross-agent standard, a nested ``AGENTS.md``
     no agent's own namespace claims) runs the core rule set (``agent=""``), exactly as a
@@ -261,8 +274,6 @@ def agent_file_pairs(
     """
     if explicit:
         return [(effective_agent, list(instruction_files))]
-
-    from reporails_cli.core.discovery.agent_discovery import partition_by_native_owner
 
     owner_by_path = partition_by_native_owner(filter_agents, target)
     pairs: dict[str, list[Path]] = {}
@@ -286,10 +297,8 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
     authoritative per-file answer, so every claimed file's record ``agent`` is overwritten to
     match it, in place. A no-op when ``detected_agents`` is falsy (nothing to stamp from).
     """
-    from reporails_cli.core.discovery.agent_discovery import partition_by_native_owner
-    from reporails_cli.core.platform.dto.ruleset import RulesetMap as _RulesetMap
 
-    if not detected_agents or not isinstance(ruleset_map, _RulesetMap):
+    if not detected_agents or not isinstance(ruleset_map, RulesetMap):
         return
     owner_by_path = partition_by_native_owner(detected_agents, target)
     for record in ruleset_map.files:
@@ -300,8 +309,6 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
 
 def _apply_run_context(ruleset_map: Any, filtered_agents: list[Any] | None, target: Path) -> None:
     """Record skill membership for the run's agents, then stamp each file's owning agent."""
-    from reporails_cli.core.mapper.reach import record_reach
-    from reporails_cli.core.mapper.skills import record_skills
 
     agents = [a.agent_type.id for a in filtered_agents or () if a.agent_type.id != "generic"]
     record_skills(ruleset_map, agents, target)
@@ -340,9 +347,6 @@ def map_instruction_files(
     map came from cache, the daemon, or in-process, so cold, warm, daemon and this surface
     agree on attribution.
     """
-    from reporails_cli.core.cache.full_map_cache import FullMapCache, compute_identity
-    from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
-    from reporails_cli.core.platform.config.config import get_project_config
 
     emit = progress if progress is not None else (lambda _msg: None)
 
@@ -374,9 +378,6 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
     a child process from inside a caller (like the MCP server) that must not fork.
     """
     if not spawn_daemon:
-        from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon
-        from reporails_cli.core.mapper.daemon_client import DaemonStatus, ping, runs_older_code, serves_this_code
-
         try:
             pong = ping() if is_daemon_running() else None
             attached = serves_this_code(pong)
@@ -390,8 +391,6 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
             emit("Starting Reporails...")
             return DaemonStatus.UNAVAILABLE
         return DaemonStatus.ATTACHED
-
-    from reporails_cli.core.mapper.daemon_client import DaemonStatus, ensure_daemon
 
     try:
         status = ensure_daemon(emit=emit)
@@ -411,7 +410,6 @@ def _map_via_daemon_or_process(
     daemon_status: Any, files: list[Path], target: Path, mapper_cfg: Any, emit: Callable[[str], None]
 ) -> Any:
     """Map via the daemon when attached, else in-process with sub-logger noise quieted."""
-    from reporails_cli.core.mapper.daemon_client import DaemonStatus, map_ruleset_via_daemon
 
     if daemon_status in (DaemonStatus.ATTACHED, DaemonStatus.STARTED, DaemonStatus.STARTING):
         # STARTING: the daemon's socket is up but its models are still warming. The daemon-side
@@ -451,16 +449,14 @@ def _map_in_process(
     Models load lazily on first use: when the map cache is mostly warm they are never
     loaded, so a single check stays fast.
     """
-    import logging
-
-    from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 
     noisy_loggers = ("sentence_transformers", "transformers", "huggingface_hub", "reporails_cli.core.mapper")
     try:
-        with quiet_loggers(noisy_loggers):
-            from reporails_cli.core.mapper import map_ruleset
-            from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
+        from reporails_cli.core.mapper.pipeline import (  # pylint: disable=import-outside-toplevel  # ML runtime loads on first model use
+            map_ruleset,
+        )
 
+        with quiet_loggers(noisy_loggers):
             return map_ruleset(
                 list(instruction_files),
                 root=root,

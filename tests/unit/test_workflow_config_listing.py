@@ -12,7 +12,8 @@ from reporails_cli.core.lint.suppression import (
     list_config_locations,
 )
 from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 
 CFG = ".claude/settings.local.json"
 RULE_A = "CORE:E:0004"
@@ -61,10 +62,10 @@ def test_config_location_is_listed_and_the_rest_renumbered() -> None:
 def test_only_config_locations_leaves_nothing_to_rewrite_and_findings_untouched() -> None:
     wf = _wf([_loc(1, "config", [CFG], [_row(RULE_A, CFG)])])
     items = (FindingItem(file=CFG, line=2, severity="warning", rule=RULE_A, message="m", source="server", pi=0),)
-    result = CombinedResult(findings=items, stats=CombinedStats(total_findings=1), workflow=wf)
+    result = CombinedResult(findings=items, stats=CombinedStats(total_findings=1), reply=ServerReply(workflow=wf))
     out = apply_config_listing(result)
-    assert out.workflow.locations == ()
-    assert out.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
+    assert out.reply.workflow.locations == ()
+    assert out.reply.workflow.summary == "Nothing to rewrite — every finding is listed with the reason it takes none."
     assert out.findings == items
 
 

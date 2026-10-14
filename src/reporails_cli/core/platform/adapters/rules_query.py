@@ -6,10 +6,12 @@ authoring-workflow order.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from reporails_cli.core.platform.adapters.registry import _load_from_path, apply_agent_excludes, get_rules_dir
 from reporails_cli.core.platform.config.config import get_agent_config
+from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Category, Rule, Severity
 
 _CATEGORY_ORDER: dict[Category, int] = {
@@ -46,8 +48,6 @@ def load_all_rules(agents: list[str] | None = None, rules_dir: Path | None = Non
 def capability_file_types(capability: str | list[str]) -> set[str]:
     """The config file types a capability word names: a config key itself, a word a user may
     type for one (`skill`, `agent`), or a display alias folding several (`memories`)."""
-    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
-
     vocab = load_capability_vocabulary()
     caps = [capability] if isinstance(capability, str) else list(capability)
     targets: set[str] = set()
@@ -113,3 +113,10 @@ def find_rule_by_id(
         if rule.id == rule_id:
             return rule
     return None
+
+
+@lru_cache(maxsize=256)
+def rule_title(rule_id: str) -> str:
+    """The title of a bundled rule, or an empty string when none is known."""
+    rule = find_rule_by_id(rule_id)
+    return (rule.title or "") if rule else ""

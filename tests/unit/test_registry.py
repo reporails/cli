@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters.registry import build_rule
+from reporails_cli.core.platform.adapters.rule_builder import build_rule
 from reporails_cli.core.platform.dto.models import Category, PatternConfidence, Rule, RuleType
 
 MINIMAL_FRONTMATTER = {

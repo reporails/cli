@@ -8,14 +8,18 @@ from __future__ import annotations
 import fnmatch
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from rich.text import Text
 
-from reporails_cli.core.discovery.features import agent_main_literal_paths, agent_rule_surface_markers
-from reporails_cli.core.lint.rule_pages import rule_title
+from reporails_cli.core.discovery.agent_surfaces import agent_main_literal_paths, agent_rule_surface_markers
+from reporails_cli.core.platform.adapters.api_key import has_api_key
+from reporails_cli.core.platform.adapters.rules_query import rule_title
+from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
+from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 from reporails_cli.formatters.text.display_constants import (
     HRULE,
     NAMED_OVERLAP_PAIRS,
@@ -29,6 +33,9 @@ from reporails_cli.formatters.text.display_constants import (
     path_tag,
     skill_lookup,
 )
+from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINES, UNPAID_PITCH_LINE, upgrade_link_line
+from reporails_cli.formatters.text.health import SurfaceHealth, count_tag, mean_display_score
+from reporails_cli.formatters.text.item_scorecard import render_item_health
 from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.verdict import (
@@ -39,7 +46,7 @@ from reporails_cli.formatters.text.verdict import (
 )
 from reporails_cli.formatters.triage import split_conventions
 
-__all__ = ["ScopeInfo", "SurfaceHealth", "compute_score", "compute_surface_scores", "print_scorecard"]
+__all__ = ["ScopeInfo", "ScorecardDetail", "compute_score", "compute_surface_scores", "print_scorecard"]
 
 
 # ── Score computation ─────────────────────────────────────────────────
@@ -101,27 +108,63 @@ def _surface_key(rel: str, ft_by_path: dict[str, str], skill_of: dict[str, str] 
     return tag
 
 
-@dataclass
-class SurfaceHealth:
-    """Per-surface health score for the scorecard."""
+def _surface_paths(
+    ruleset_map: Any, root: Path, ft_by_path: dict[str, str], skill_of: dict[str, str] | None
+) -> dict[str, set[str]]:
+    """Files per surface from the ruleset map's authoritative file list."""
+    surface_paths: dict[str, set[str]] = {}
+    if ruleset_map is not None:
+        try:
+            for fr in ruleset_map.files:
+                rel = normalize_finding_path(fr.path, root)
+                surface_paths.setdefault(_surface_key(rel, ft_by_path, skill_of), set()).add(rel)
+        except (AttributeError, TypeError):
+            pass
+    return surface_paths
 
-    name: str
-    # `None` marks an unscored item/surface (no charged atoms — a non-instruction
-    # surface or an empty instruction file); rendered as "not scored", no bar/band.
-    score: float | None
-    file_count: int
-    finding_count: int
-    # Items beside the type name: a skill folder counts once, every other file once.
-    item_count: int
-    errors: int = 0
-    warnings: int = 0
-    infos: int = 0
-    # Findings grouped by Category enum value (`structure`, `direction`,
-    # `coherence`, `efficiency`, `maintenance`, `governance`). Empty when no
-    # findings have a recognizable category code. Sum of values equals
-    # `finding_count` for findings whose rule-id second segment maps via
-    # `CATEGORY_CODES`; rules with non-standard IDs are excluded.
-    category_breakdown: dict[str, int] = field(default_factory=dict)
+
+def _group_by_surface(
+    items: Any, root: Path, ft_by_path: dict[str, str], skill_of: dict[str, str] | None
+) -> dict[str, list[Any]]:
+    """Group findings or per-file analyses by surface, re-normalizing defensively.
+
+    Server per-file paths are absolute, but `main` keys on root-level path depth, so each path is
+    normalized to the project-relative form first or every absolute path falls out of `main`.
+    """
+    grouped: dict[str, list[Any]] = {}
+    for it in items:
+        key = _surface_key(normalize_finding_path(it.file, root), ft_by_path, skill_of)
+        grouped.setdefault(key, []).append(it)
+    return grouped
+
+
+def _surface_health(
+    key: str,
+    findings: list[Any],
+    analyses: list[Any],
+    *,
+    known_paths: set[str] | None,
+    root: Path,
+    skill_of: dict[str, str] | None,
+) -> SurfaceHealth:
+    """Health record of one surface from its findings, analyses and discovered files."""
+    by_severity = Counter(f.severity for f in findings)
+    # Files: prefer mapper discovery, fall back to the files findings/analysis name.
+    paths = known_paths or {
+        normalize_finding_path(p, root) for p in [*(f.file for f in findings), *(a.file for a in analyses)]
+    }
+    return SurfaceHealth(
+        name=_SURFACE_NAMES.get(key, key.title()),
+        # Mean of the reported per-file display scores over the surface's files.
+        score=mean_display_score(analyses),
+        file_count=len(paths),
+        item_count=len({(skill_of or {}).get(p, p) for p in paths}),
+        finding_count=len(findings),
+        errors=by_severity["error"],
+        warnings=by_severity["warning"],
+        infos=by_severity["info"],
+        category_breakdown=_count_categories(findings),
+    )
 
 
 def compute_surface_scores(
@@ -142,7 +185,6 @@ def compute_surface_scores(
     on relative paths. `result.findings` and `result.per_file_analysis`
     already carry relative paths; `ruleset_map.files` does not.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     root = Path(project_root) if project_root is not None else Path.cwd()
 
@@ -151,81 +193,24 @@ def compute_surface_scores(
     ft_by_path = file_type_by_path or {}
     skill_of = skill_lookup(ruleset_map, root) if skill_of is None else skill_of
 
-    # Files per surface from ruleset_map (authoritative file list)
-    surface_paths: dict[str, set[str]] = {}
-    if ruleset_map is not None:
-        try:
-            for fr in ruleset_map.files:
-                rel = normalize_finding_path(fr.path, root)
-                surface_paths.setdefault(_surface_key(rel, ft_by_path, skill_of), set()).add(rel)
-        except (AttributeError, TypeError):
-            pass
-
-    # Group findings and per-file analysis by surface, re-normalizing defensively. Server
-    # per-file paths are absolute, but `main` keys on root-level path depth, so normalize to
-    # the project-relative form first or every absolute path falls out of `main`.
-    def by_surface(items: Any) -> dict[str, list[Any]]:
-        grouped: dict[str, list[Any]] = {}
-        for it in items:
-            key = _surface_key(normalize_finding_path(it.file, root), ft_by_path, skill_of)
-            grouped.setdefault(key, []).append(it)
-        return grouped
-
-    surface_findings, surface_analysis = by_surface(result.findings), by_surface(result.per_file_analysis)
+    surface_paths = _surface_paths(ruleset_map, root, ft_by_path, skill_of)
+    surface_findings = _group_by_surface(result.findings, root, ft_by_path, skill_of)
+    surface_analysis = _group_by_surface(result.per_file_analysis, root, ft_by_path, skill_of)
 
     # Collect all surfaces from any source
     all_keys = set(surface_findings) | set(surface_analysis) | set(surface_paths)
-
-    surfaces = []
-    for key in _SURFACE_ORDER:
-        if key not in all_keys:
-            continue
-        display_name = _SURFACE_NAMES.get(key, key.title())
-        findings = surface_findings.get(key, [])
-        analyses = surface_analysis.get(key, [])
-
-        by_severity = Counter(f.severity for f in findings)
-        # Files: prefer mapper discovery, fall back to the files findings/analysis name.
-        paths = surface_paths.get(key) or {
-            normalize_finding_path(p, root) for p in [*(f.file for f in findings), *(a.file for a in analyses)]
-        }
-
-        surfaces.append(
-            SurfaceHealth(
-                name=display_name,
-                # Mean of the reported per-file display scores over the surface's files.
-                score=_mean_display_score(analyses),
-                file_count=len(paths),
-                item_count=len({(skill_of or {}).get(p, p) for p in paths}),
-                finding_count=len(findings),
-                errors=by_severity["error"],
-                warnings=by_severity["warning"],
-                infos=by_severity["info"],
-                category_breakdown=_count_categories(findings),
-            )
+    return [
+        _surface_health(
+            key,
+            surface_findings.get(key, []),
+            surface_analysis.get(key, []),
+            known_paths=surface_paths.get(key),
+            root=root,
+            skill_of=skill_of,
         )
-    return surfaces
-
-
-def _mean_display_score(analyses: list[Any]) -> float | None:
-    """Atom-weighted mean of the reported per-file display scores.
-
-    A surface's bar (and the filtered headline) aggregate the same way the
-    whole-project headline does. Unscored files (`display_score`
-    is `None`) are excluded from the aggregation. Falls back to a
-    simple mean when atom counts are unavailable; `None` when there is no scored analysis to aggregate.
-    """
-    scored = [
-        (float(fa.display_score), int(fa.stats.get("atoms", 0)))
-        for fa in analyses
-        if fa is not None and fa.display_score is not None
+        for key in _SURFACE_ORDER
+        if key in all_keys
     ]
-    if not scored:
-        return None
-    total_weight = sum(w for _, w in scored)
-    if total_weight <= 0:
-        return round(sum(s for s, _ in scored) / len(scored), 1)
-    return round(sum(s * w for s, w in scored) / total_weight, 1)
 
 
 def _count_categories(findings: list[Any]) -> dict[str, int]:
@@ -236,7 +221,6 @@ def _count_categories(findings: list[Any]) -> dict[str, int]:
     `CATEGORY_CODES`. Only ids that still lack a known code after canonicalization
     are skipped, so the breakdown stays consistent with the per-finding categories.
     """
-    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 
     counts: Counter[str] = Counter()
     for f in findings:
@@ -260,28 +244,13 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13, 
     right-aligns the finding counts the same way.
     """
     label = f"{s.name} ({s.item_count}):"
-    tag = _count_tag(s, count_width)
+    tag = count_tag(s, count_width)
     if s.score is None:
         empty = "░" * bar_width
         return f"{label:<{label_width}s} [dim]{empty}[/dim]  [dim]not scored[/dim]{tag}"
     color = score_color(s.score)
-    bar = _score_bar(s.score, bar_width, color)
-    return f"{label:<{label_width}s} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{tag}"
-
-
-def _count_tag(s: SurfaceHealth, count_width: int = 0) -> str:
-    """Tag beside a health bar: `N findings · M errors` (the error part only when M > 0).
-
-    One axis, whole then part, so the row answers "which surface is worst" without
-    competing with the bar. Empty when the surface has no findings at all.
-    """
-    if not s.finding_count:
-        return ""
-    count = f"{s.finding_count:,}".rjust(count_width)
-    tag = f"  [dim]{count} finding{'' if s.finding_count == 1 else 's'}[/dim]"
-    if s.errors:
-        tag += f"[dim] · [/dim][red]{counted(s.errors, 'error')}[/red]"
-    return tag
+    health_bar = _score_bar(s.score, bar_width, color)
+    return f"{label:<{label_width}s} {health_bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{tag}"
 
 
 def _render_surface_health(surfaces: list[SurfaceHealth]) -> None:
@@ -341,13 +310,23 @@ def _render_scope(scope: ScopeInfo, has_surface_health: bool = False) -> None:
             console.print(f"                  {extra}")
 
 
+def _render_overlap_groups(groups: list[tuple[str, list[str]]], n_pairs: int) -> None:
+    """Name the first overlapping element pairs and count the rest."""
+    noun = "pair overlaps" if n_pairs == 1 else "pairs overlap"
+    console.print(f"  {n_pairs} element {noun} in topic \u2014 keep each topic in one file")
+    width = max((len(head) for head, _ in groups[:NAMED_OVERLAP_PAIRS]), default=0)
+    for head, partners in groups[:NAMED_OVERLAP_PAIRS]:
+        console.print(f"    [dim]{head:<{width}} \u2194 {partner_list(partners)}[/dim]")
+    if hidden := sum(len(partners) for _head, partners in groups[NAMED_OVERLAP_PAIRS:]):
+        console.print(f"    [dim]{more_pairs_line(hidden)}[/dim]")
+
+
 def _render_cross_file_counts(
     result: Any, project_root: Path | None = None, element_of: Callable[[str], Element] | None = None
 ) -> None:
     """Render the cross-file repetition and topic-overlap counts.
     With detailed rows the headline counts the element pairs named below; else the `stats` count stands.
     """
-    from reporails_cli.core.platform.runtime.merger import overlapping_pairs
 
     n_reps = getattr(result.stats, "cross_file_repetitions", 0)
     if n_reps:
@@ -362,13 +341,7 @@ def _render_cross_file_counts(
         n_pairs = sum(len(partners) for _head, partners in groups)
         if not n_pairs:
             return
-    noun = "pair overlaps" if n_pairs == 1 else "pairs overlap"
-    console.print(f"  {n_pairs} element {noun} in topic \u2014 keep each topic in one file")
-    width = max((len(head) for head, _ in groups[:NAMED_OVERLAP_PAIRS]), default=0)
-    for head, partners in groups[:NAMED_OVERLAP_PAIRS]:
-        console.print(f"    [dim]{head:<{width}} \u2194 {partner_list(partners)}[/dim]")
-    if hidden := sum(len(partners) for _head, partners in groups[NAMED_OVERLAP_PAIRS:]):
-        console.print(f"    [dim]{more_pairs_line(hidden)}[/dim]")
+    _render_overlap_groups(groups, n_pairs)
 
 
 _RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
@@ -443,6 +416,18 @@ def _rule_label(rule: str, message: str) -> str:
     return rule_title(rule) or _first_sentence(message)
 
 
+def _top_rule_row(rule: str, count: int, severity: str, message: str, widths: tuple[int, int, int]) -> str:
+    """One Top-rules row; `widths` is (rule column, count column, snippet) in characters."""
+    rule_w, count_w, snippet_w = widths
+    label = _RULE_SEVERITY_LABEL.get(severity, severity)
+    snippet = _fit(_rule_label(rule, message), snippet_w)
+    # Hyperlink the ID but pad by its visible length — the link markup is zero-width.
+    url = rule_docs_url(rule)
+    rule_cell = f"[link={url}]{rule}[/link]" if url else rule
+    pad = " " * max(0, rule_w - len(rule))
+    return f"    {rule_cell}{pad} x{count:<{count_w}} {label}  {snippet}"
+
+
 def _render_top_rules(result: Any, verbose: bool = True) -> None:
     """Render the Top-rules block in the whole-repo scorecard.
 
@@ -464,13 +449,7 @@ def _render_top_rules(result: Any, verbose: bool = True) -> None:
     fixed = 4 + rule_w + 1 + count_w + 1 + 6 + 2
     snippet_w = max(20, tw - fixed - 2)
     for rule, count, severity, message in rows:
-        label = _RULE_SEVERITY_LABEL.get(severity, severity)
-        snippet = _fit(_rule_label(rule, message), snippet_w)
-        # Hyperlink the ID but pad by its visible length — the link markup is zero-width.
-        url = rule_docs_url(rule)
-        rule_cell = f"[link={url}]{rule}[/link]" if url else rule
-        pad = " " * max(0, rule_w - len(rule))
-        console.print(f"    {rule_cell}{pad} x{count:<{count_w}} {label}  {snippet}")
+        console.print(_top_rule_row(rule, count, severity, message, (rule_w, count_w, snippet_w)))
 
 
 def _render_results_summary(
@@ -479,15 +458,12 @@ def _render_results_summary(
     hint_warnings: int,
     project_root: Path | None = None,
     element_of: Callable[[str], Element] | None = None,
-) -> tuple[int, int]:
-    """Render pro diagnostics + cross-file counts. Returns (visible_findings, pro_total).
+) -> None:
+    """Render pro diagnostics + cross-file counts.
 
     The error/warning/info breakdown now lives in the top verdict block's Findings
     line, so it is not repeated here.
     """
-    s = result.stats
-    visible_findings = s.total_findings
-
     pro_total = sum(h.count for h in result.hints) if result.hints else 0
     if pro_total:
         console.print()
@@ -501,41 +477,22 @@ def _render_results_summary(
 
     _render_cross_file_counts(result, project_root, element_of)
 
-    return visible_findings, pro_total
-
 
 # ── Scorecard ─────────────────────────────────────────────────────────
 
 
-def print_scorecard(
-    result: Any,
-    has_quality: bool,
-    n_atoms: int = 0,
-    tier: str = "",
-    elapsed_ms: float = 0,
-    agent: str = "",
-    scope: ScopeInfo | None = None,
-    surface_health: list[SurfaceHealth] | None = None,
-    item_health: list[SurfaceHealth] | None = None,
-    verbose: bool = False,
-    project_root: Path | None = None,
-    element_of: Callable[[str], Element] | None = None,
-) -> None:
-    """Print the bottom scorecard — the payoff users scroll to.
+@dataclass
+class ScorecardDetail:
+    """What the summary lists beneath the verdict: health bars and the path context for findings."""
 
-    Exactly one of {surface_health (multi-surface), item_health
-    (capability listing)} renders below the scope block. Single-surface
-    single-file runs render neither — the top `Score:` covers it.
-    """
-    from reporails_cli.core.platform.dto.models import Level
-    from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+    surface_health: list[SurfaceHealth] | None = None
+    item_health: list[SurfaceHealth] | None = None
+    project_root: Path | None = None
+    element_of: Callable[[str], Element] | None = None
 
-    hint_errors, hint_warnings = _hint_totals(result)
 
-    console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
-
-    _render_verdict_block(result, has_quality, n_atoms, elapsed_ms, hint_errors=hint_errors, verbose=verbose)
-
+def _render_agent_and_level(result: Any, agent: str) -> None:
+    """Render the Agent and Level lines."""
     if agent:
         console.print(f"  Agent: {agent.title()}")
     else:
@@ -546,6 +503,10 @@ def print_scorecard(
     label = LEVEL_LABELS.get(level, "Unknown")
     console.print(f"  Level: {level.value} [bold]{label}[/bold]")
 
+
+def _render_health_bars(has_quality: bool, scope: ScopeInfo | None, detail: ScorecardDetail) -> None:
+    """Render the scope block and exactly one of the surface bars or the per-item bars."""
+    surface_health, item_health = detail.surface_health, detail.item_health
     # Offline runs carry no server scores, so suppress the per-surface / per-item bars
     # entirely — rendering every surface as "not scored" reads as broken. The "Quality
     # n/a (server diagnostics unavailable)" headline already states the offline state.
@@ -561,27 +522,20 @@ def print_scorecard(
         if any(s.name == "Imported" for s in surface_health):
             console.print("\n  [dim]Imported files (@-imports) are eagerly loaded, so they count toward Quality.[/dim]")
     elif has_items and item_health is not None:
-        from reporails_cli.formatters.text.item_scorecard import render_item_health
-
         render_item_health(item_health)
 
-    _render_top_rules(result, verbose)
 
-    _visible_findings, _pro_total = _render_results_summary(
-        result, hint_errors, hint_warnings, project_root, element_of
-    )
+def _render_tier_footer(result: Any, tier: str) -> None:
+    """One line per run for an unpaid tier, in place of any per-finding remedy.
 
-    # One line per run for an unpaid tier, in place of any per-finding remedy
-    # (the reply carries none for an anonymous or free run) — keyed on whether a
-    # key is held, not on the reported tier: a signed-in free user told to run
-    # `ails login` is sent to a dead end. Never claims a fix for every
-    # finding — only that Pro adds the remedies and the order to apply them.
-    refused = getattr(result, "server_error", None) is not None
-    from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINES, UNPAID_PITCH_LINE, upgrade_link_line
+    The reply carries none for an anonymous or free run. The line is keyed on whether a
+    key is held, not on the reported tier: a signed-in free user told to run
+    `ails login` is sent to a dead end. Never claims a fix for every
+    finding — only that Pro adds the remedies and the order to apply them.
+    """
+    refused = result.reply.server_error is not None
 
     if tier == "free" and not refused:
-        from reporails_cli.core.platform.adapters.api_client import has_api_key
-
         console.print()
         console.print(UNPAID_PITCH_LINE)
         if has_api_key():
@@ -592,5 +546,38 @@ def print_scorecard(
         console.print()
         for line in PRO_HEAL_FOOTER_LINES:
             console.print(line)
+
+
+def print_scorecard(
+    result: Any,
+    has_quality: bool,
+    *,
+    tier: str = "",
+    elapsed_ms: float = 0,
+    agent: str = "",
+    scope: ScopeInfo | None = None,
+    verbose: bool = False,
+    detail: ScorecardDetail | None = None,
+) -> None:
+    """Print the bottom scorecard — the payoff users scroll to.
+
+    Exactly one of {surface_health (multi-surface), item_health
+    (capability listing)} renders below the scope block. Single-surface
+    single-file runs render neither — the top `Score:` covers it.
+    """
+    detail = detail or ScorecardDetail()
+    hint_errors, hint_warnings = _hint_totals(result)
+
+    console.print(f"  [dim]\u2500\u2500 Summary {HRULE}[/dim]\n")
+
+    _render_verdict_block(result, has_quality, elapsed_ms, hint_errors=hint_errors, verbose=verbose)
+    _render_agent_and_level(result, agent)
+    _render_health_bars(has_quality, scope, detail)
+
+    _render_top_rules(result, verbose)
+
+    _render_results_summary(result, hint_errors, hint_warnings, detail.project_root, detail.element_of)
+
+    _render_tier_footer(result, tier)
 
     console.print()

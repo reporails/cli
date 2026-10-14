@@ -160,7 +160,9 @@ def _expand_file_lines(content: str, source_path: Path, depth: int, visited: set
     ranges = code_ranges(content) if IMPORT_REF_RE.search(content) else []
     out: list[_Line] = []
     for idx, (line, line_start) in enumerate(zip(lines, line_offsets(lines), strict=True)):
-        out.extend(_expand_one_line(line, line_start, (origin_path, idx + 1), source_path, visited, ranges, depth))
+        out.extend(
+            _expand_one_line(line, line_start, (origin_path, idx + 1), source_path, visited, ranges=ranges, depth=depth)
+        )
     return out
 
 
@@ -191,6 +193,7 @@ def _expand_one_line(
     origin: LineOrigin,
     source_path: Path,
     visited: set[str],
+    *,
     ranges: list[tuple[int, int]],
     depth: int,
 ) -> list[_Line]:
@@ -267,7 +270,7 @@ def expand_imports_with_origins(
     origins: list[tuple[Path, int] | None] = []
     for idx, (line, line_start) in enumerate(zip(orig_lines, line_offsets(orig_lines), strict=True)):
         for text, (path, line_no) in _expand_one_line(
-            line, line_start, (None, idx + 1), source_path, visited, ranges, 0
+            line, line_start, (None, idx + 1), source_path, visited, ranges=ranges, depth=0
         ):
             out_lines.append(text)
             line_map.append(idx + 1)

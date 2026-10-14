@@ -10,11 +10,24 @@ import json
 import logging
 import socket
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from packaging.version import InvalidVersion, Version
+
+from reporails_cli.core.mapper.daemon import (
+    code_identity,
+    daemon_pid,
+    is_daemon_running,
+    retire_daemon,
+    socket_path,
+    start_daemon,
+)
+from reporails_cli.core.mapper.serialize import load_ruleset_map
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +41,11 @@ class DaemonStatus(str, Enum):
     UNAVAILABLE = "unavailable"  # Windows, fork failure, or process died
 
 
-def _socket_path() -> Path:
-    from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
-
-    return get_daemon_dir() / "mapper.sock"
-
-
 def connect(timeout: float = 5.0) -> socket.socket | None:
     """Connect to global daemon socket. Returns None if unreachable."""
     if sys.platform == "win32":
         return None
-    sock_path = _socket_path()
+    sock_path = socket_path()
     if not sock_path.exists():
         return None
     try:
@@ -82,8 +89,6 @@ def ping() -> dict[str, Any] | None:
 
 def _code_key(code: str) -> tuple[Any, int] | None:
     """`(package version, map version)` of a code identity, or None when it does not parse."""
-    from packaging.version import InvalidVersion, Version
-
     package, sep, mapper = code.rpartition("+map")
     try:
         return (Version(package), int(mapper)) if sep else None
@@ -94,8 +99,6 @@ def _code_key(code: str) -> tuple[Any, int] | None:
 def runs_older_code(pong: dict[str, Any]) -> bool:
     """Whether a daemon reply comes from an older version than this process: one from before
     the reply carried its code, or one whose package or map version is lower."""
-    from reporails_cli.core.mapper.daemon import code_identity
-
     code = pong.get("code")
     if not isinstance(code, str):
         return True
@@ -105,8 +108,6 @@ def runs_older_code(pong: dict[str, Any]) -> bool:
 
 def runs_newer_code(pong: dict[str, Any]) -> bool:
     """Whether a daemon reply comes from a newer version than this process."""
-    from reporails_cli.core.mapper.daemon import code_identity
-
     code = pong.get("code")
     theirs = _code_key(code) if isinstance(code, str) else None
     ours = _code_key(code_identity())
@@ -120,8 +121,6 @@ def serves_this_code(pong: dict[str, Any] | None) -> bool:
     Another installed version's daemon (or one from before the reply carried its code) maps
     with its own mapper, so its map is not this version's.
     """
-    from reporails_cli.core.mapper.daemon import code_identity
-
     return pong is not None and pong.get("code") == code_identity()
 
 
@@ -159,7 +158,7 @@ def _stream_map_response(
                     # abort the map or the result read — swallow and keep reading.
                     try:
                         progress(str(obj.get("msg", "")))
-                    except Exception:
+                    except Exception:  # pylint: disable=broad-exception-caught  # caller callback must never abort the map
                         logger.debug("map progress callback raised; ignoring", exc_info=True)
                 continue
             return obj  # the result line (carries `ok`)
@@ -210,11 +209,7 @@ def map_ruleset_via_daemon(
         return None
 
     try:
-        import tempfile
-
-        from reporails_cli.core.mapper.serialize import load_ruleset_map
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
             json.dump(map_data, f)
             tmp_path = Path(f.name)
 
@@ -224,6 +219,27 @@ def map_ruleset_via_daemon(
     except (OSError, TimeoutError, json.JSONDecodeError, RuntimeError):
         logger.debug("Failed to deserialize daemon response", exc_info=True)
         return None
+
+
+def _reconcile_running_daemon() -> DaemonStatus | None:
+    """Status decided by an already-running daemon, or None when this version must start its own."""
+    if not is_daemon_running():
+        return None
+    # One busy mapping misses the ping; it is attached as before, and a map it returns from
+    # other code is refused on arrival. A daemon that answers with other code is never used:
+    # an older version's (left over from before an upgrade) is replaced by this version's
+    # once it has exited, a newer version's is left to that version.
+    pong = ping()
+    if pong is None or serves_this_code(pong):
+        return DaemonStatus.ATTACHED
+    if not runs_older_code(pong):
+        return DaemonStatus.UNAVAILABLE
+    # Not retired because it is busy or slow to exit: leave it. Not retired because it is
+    # already gone or replaced (a check running beside this one got there first): start or
+    # attach to this version's below.
+    if not retire_daemon(pong.get("pid")) and daemon_pid() == pong.get("pid"):
+        return DaemonStatus.UNAVAILABLE
+    return None
 
 
 def ensure_daemon(emit: Callable[[str], None] | None = None) -> DaemonStatus:
@@ -239,25 +255,11 @@ def ensure_daemon(emit: Callable[[str], None] | None = None) -> DaemonStatus:
     Reporails...`` → ``Loading tools...``) so a caller's spinner shows the start
     sequence; an already-running daemon (``ATTACHED``) emits nothing.
     """
-    from reporails_cli.core.mapper.daemon import daemon_pid, is_daemon_running, retire_daemon, start_daemon
-
     say = emit if emit is not None else (lambda _msg: None)
 
-    if is_daemon_running():
-        # One busy mapping misses the ping; it is attached as before, and a map it returns from
-        # other code is refused on arrival. A daemon that answers with other code is never used:
-        # an older version's (left over from before an upgrade) is replaced by this version's
-        # once it has exited, a newer version's is left to that version.
-        pong = ping()
-        if pong is None or serves_this_code(pong):
-            return DaemonStatus.ATTACHED
-        if not runs_older_code(pong):
-            return DaemonStatus.UNAVAILABLE
-        # Not retired because it is busy or slow to exit: leave it. Not retired because it is
-        # already gone or replaced (a check running beside this one got there first): start or
-        # attach to this version's below.
-        if not retire_daemon(pong.get("pid")) and daemon_pid() == pong.get("pid"):
-            return DaemonStatus.UNAVAILABLE
+    status = _reconcile_running_daemon()
+    if status is not None:
+        return status
 
     say("Starting Reporails...")
     try:

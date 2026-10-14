@@ -95,7 +95,12 @@ def _run_checks(
         "lost_named": lost_named_tokens(snap_atoms, new_text, new_atoms),
         "invented_named": invented,
         "repeated_named": repeated_named(
-            snap_atoms, new_atoms, matched_new_for, split_covering_for, snapshot.text, new_text
+            snap_atoms,
+            new_atoms,
+            matched_new_for=matched_new_for,
+            split_covering_for=split_covering_for,
+            original_text=snapshot.text,
+            new_text=new_text,
         ),
         "detached_constraints": structure.detached_constraints(snap_atoms, matched_new_for, new[3]),
         "prohibition_scope_changed": prohibition_scope_changes(snap_atoms, matched_new_for),
@@ -127,7 +132,7 @@ def _kept_counts(snap_atoms: list[SnapshotAtom], snapshot: Snapshot, checks: dic
     removed = checks["removed_structure"]
     return {
         "instructions": max(0, total_instructions - len(checks["lost_instructions"])),
-        **{key: max(0, totals[key] - removed[key]) for key in totals},
+        **{key: max(0, total - removed[key]) for key, total in totals.items()},
     }
 
 
@@ -136,6 +141,7 @@ def compare(
     new_map: Any,
     new_text: str,
     score_after: float | None,
+    *,
     environment: ProjectEnvironment | None = None,
     sibling_texts: tuple[str, ...] = (),
 ) -> dict[str, Any]:
@@ -197,6 +203,7 @@ def check_rewrite(
     file_path: Path,
     ruleset_map: Any,
     new_text: str,
+    *,
     score: float | None,
     scan_root: Path | None,
     siblings: tuple[str, ...] = (),
@@ -204,7 +211,7 @@ def check_rewrite(
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
     against `snapshot`, with the project on disk answering which names and paths exist."""
     environment = LocalProjectEnvironment(scan_root, file_path.parent)
-    return compare(snapshot, ruleset_map, new_text, score, environment, siblings)
+    return compare(snapshot, ruleset_map, new_text, score, environment=environment, sibling_texts=siblings)
 
 
 def failed_checks(block: dict[str, Any]) -> list[str]:

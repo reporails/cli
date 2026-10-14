@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper.parse import _apply_deontic_floor, tokenize
+from reporails_cli.core.mapper.charge_floors import _apply_deontic_floor
+from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 

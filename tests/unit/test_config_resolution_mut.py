@@ -106,7 +106,7 @@ def test_agent_config_core_defaults_false(tmp_path: Path, monkeypatch: pytest.Mo
     cfg_file = tmp_path / "agent.yml"
     cfg_file.write_text("agent: claude\nname: Claude\n", encoding="utf-8")
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_agent_config_path",
+        "reporails_cli.core.platform.config.config.get_agent_config_path",
         lambda _agent: cfg_file,
     )
 

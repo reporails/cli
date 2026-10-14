@@ -9,6 +9,8 @@ Two seams:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from reporails_cli.core.mapper.serialize import (
@@ -346,3 +348,32 @@ def test_charge_checks_use_the_classifier_s_prohibition_and_absolute_words() -> 
     assert "suspicious_neutral" in _rules_for(_atom(text="The EXCLUSIVELY keyword is reserved."))
     assert "suspicious_neutral" in _rules_for(_atom(text="Files marked FORBIDDEN stay."))
     assert "suspicious_neutral" not in _rules_for(_atom(text="The never keyword is reserved."))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_file_record_scalars_round_trip_and_disk_keys(tmp_path) -> None:
+    """A file record's scalar fields reach disk under their own keys, in order, and load back equal."""
+    rec = FileRecord(
+        path="a.md", content_hash="sha256:ab", loading="on_demand", scope="path_scoped", agent="claude", type="rules"
+    )
+    rmap = RulesetMap(
+        schema_version="1",
+        embedding_model="m",
+        generated_at="t",
+        files=(rec,),
+        atoms=(),
+        summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+    )
+    out = tmp_path / "map.json"
+    save_ruleset_map(rmap, out)
+    on_disk = json.loads(out.read_text(encoding="utf-8"))["files"][0]
+    assert list(on_disk) == ["path", "content_hash", "loading", "scope", "agent", "type", "activation"]
+    assert on_disk["content_hash"] == "sha256:ab"
+    assert (on_disk["loading"], on_disk["scope"], on_disk["agent"], on_disk["type"]) == (
+        "on_demand",
+        "path_scoped",
+        "claude",
+        "rules",
+    )
+    assert load_ruleset_map(out).files == (rec,)

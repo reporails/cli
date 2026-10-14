@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.lint.mechanical.checks_advanced import (
+from reporails_cli.core.lint.mechanical.checks_links import (
     check_markdown_link_targets_exist,
     extract_markdown_links,
 )

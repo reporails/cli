@@ -19,7 +19,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
+from reporails_cli.core.platform.config.claude_settings import (
+    MODE_CLAUDE_MD_AND_AGENTS_MD,
+    MODES_WITHOUT_AGENTS_MD,
+    claude_instruction_files_mode,
+)
 
 _AGENTS_MD = "agents.md"
 _CLAUDE_FAMILY = ("claude.md", "claude.local.md")
@@ -71,18 +77,11 @@ def _never_read(path: Path, root: Path) -> bool:
 
 
 def _loads_at_session_start(path: Path, root: Path) -> bool:
-    return path.parent == root or path.parent == root / ".claude"
+    return path.parent in (root, root / ".claude")
 
 
 def claude_agents_md_files(found: list[Path], target: Path) -> list[Path]:
     """The `AGENTS.md` files among `found` that Claude Code loads for a session in `target`."""
-    from reporails_cli.core.discovery.agent_discovery import resolve_project_root
-    from reporails_cli.core.platform.config.claude_settings import (
-        MODE_CLAUDE_MD_AND_AGENTS_MD,
-        MODES_WITHOUT_AGENTS_MD,
-        claude_instruction_files_mode,
-    )
-
     if not found:
         return []
     root = resolve_project_root(target)

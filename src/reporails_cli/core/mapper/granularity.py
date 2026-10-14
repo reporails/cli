@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from reporails_cli.core.mapper.charge_floors import is_quoted_line
 from reporails_cli.core.mapper.lexical import split_clauses
-from reporails_cli.core.mapper.parse import is_quoted_line
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Clauses of one atom sitting below this similarity count as distinct topics.

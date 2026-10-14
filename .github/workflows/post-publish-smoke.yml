@@ -55,7 +55,7 @@ jobs:
         run: |
           ails version
           python -c "
-          from reporails_cli.bundled import ensure_models_available
+          from reporails_cli.core.mapper.model_store import ensure_models_available
           onnx = ensure_models_available() / 'minilm-l6-v2' / 'onnx' / 'model.onnx'
           assert onnx.exists(), f'ONNX model missing: {onnx}'
           print(f'OK: {onnx.stat().st_size // 1024 // 1024} MB')

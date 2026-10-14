@@ -1,62 +1,24 @@
 """Support helpers for the ``ails check`` / ``ails explain`` commands.
 
-Autocompletion shims, rule-token resolution, match serialization, structural
-finding rollup, generic-scan classification, and the wall-clock timeout backstop.
+Rule-token resolution, heal-authorization, model availability, and the wall-clock timeout backstop.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import signal
 import sys
-from pathlib import Path
 
-from reporails_cli.core.platform.dto.models import FileMatch
-from reporails_cli.core.platform.policy.matching import MATCH_PROPERTIES
+import typer
+
+from reporails_cli.core.heal.apply import heal_signed_in
+from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.mapper.model_store import ensure_models_available
+from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.interfaces.cli.helpers import console
 
 logger = logging.getLogger(__name__)
-
-
-def _autocomplete_target_token(incomplete: str) -> list[str]:
-    """Typer autocompletion shim for `ails check <TARGET>`."""
-    from reporails_cli.interfaces.cli.completion import complete_target_token
-
-    return complete_target_token(incomplete)
-
-
-def _autocomplete_agent(incomplete: str) -> list[str]:
-    """Typer autocompletion shim for `--agent`."""
-    from reporails_cli.interfaces.cli.completion import complete_agent
-
-    return complete_agent(incomplete)
-
-
-def _autocomplete_rule_token(incomplete: str) -> list[str]:
-    """Typer autocompletion shim for `ails explain <ID-or-slug>`."""
-    from reporails_cli.interfaces.cli.completion import complete_rule_token
-
-    return complete_rule_token(incomplete)
-
-
-def _serialize_match(match: FileMatch | None) -> dict[str, object]:
-    """Serialize FileMatch to dict, including all non-None properties."""
-    if match is None:
-        return {}
-    result: dict[str, object] = {}
-    if match.type is not None:
-        result["type"] = match.type
-    for prop in MATCH_PROPERTIES:
-        val = getattr(match, prop)
-        if val is not None:
-            result[prop] = val
-    return result
-
-
-def _explain_rules_paths(rules: list[str] | None) -> list[Path] | None:
-    """Resolve rules paths for explain command."""
-    if rules:
-        return [Path(r).resolve() for r in rules]
-    return None
 
 
 def _heal_authed(funnel_error: object) -> bool:
@@ -68,22 +30,8 @@ def _heal_authed(funnel_error: object) -> bool:
     server reached, a non-auth funnel error, or a normal lint response — leaves a
     present key authed, exactly as before.
     """
-    from reporails_cli.core.heal.apply import heal_signed_in
-    from reporails_cli.core.platform.dto.diagnostics import FunnelError
 
     return heal_signed_in(funnel_error.error if isinstance(funnel_error, FunnelError) else None)
-
-
-def _resolve_rule_token(token: str) -> str:
-    """Map either a rule ID or a rule slug to a canonical ID."""
-    if ":" in token:
-        return token.upper()
-    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
-
-    for rule in load_all_rules():
-        if rule.slug == token:
-            return rule.id
-    return token
 
 
 def _ensure_model_or_exit() -> bool:
@@ -97,10 +45,6 @@ def _ensure_model_or_exit() -> bool:
     runs without the content checks (the opt-in the variable documents) and says
     so on stderr, rather than scoring on with no notice.
     """
-    import typer
-
-    from reporails_cli.bundled import ensure_models_available
-    from reporails_cli.core.mapper.model_fetch import ModelFetchError
 
     remaining = _pause_check_timeout()
     try:
@@ -122,7 +66,6 @@ def _pause_check_timeout() -> float:
     """Stop the wall-clock timer; return the seconds it had left (0 when none was armed)."""
     if sys.platform == "win32":
         return 0.0
-    import signal
 
     remaining, _interval = signal.setitimer(signal.ITIMER_REAL, 0)
     return remaining
@@ -133,14 +76,11 @@ def _resume_check_timeout(remaining: float) -> None:
     if sys.platform == "win32":
         return
     if remaining > 0:
-        import signal
-
         signal.setitimer(signal.ITIMER_REAL, remaining)
 
 
 def _check_timeout_ceiling() -> int:
     """Wall-clock ceiling (seconds) for a single `ails check`; 0 disables. Default 600."""
-    import os
 
     raw = os.environ.get("AILS_CHECK_TIMEOUT_S", "").strip()
     if not raw:
@@ -153,7 +93,6 @@ def _check_timeout_ceiling() -> int:
 
 def _arm_check_timeout() -> None:
     """Backstop a runaway check with a SIGALRM wall-clock kill (POSIX-only; no-op on Windows)."""
-    import signal
 
     if sys.platform == "win32":  # no SIGALRM/setitimer on Windows
         return

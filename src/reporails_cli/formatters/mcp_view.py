@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.heal.keyed import put_back_line
 from reporails_cli.formatters.text.display_constants import excluded_phrase
 from reporails_cli.formatters.text.not_evaluated import group_not_evaluated, not_evaluated_sentence
 
@@ -425,8 +426,6 @@ def render_heal_apply(
     project_root: Path,
 ) -> str:
     """The `heal_apply` reply: a count line, one line per changed file, one line per file put back."""
-
-    from reporails_cli.core.heal.keyed import put_back_line
 
     def rel(file: str) -> str:
         try:

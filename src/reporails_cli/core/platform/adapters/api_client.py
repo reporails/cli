@@ -9,20 +9,26 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+import httpx
+
+from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, degrade_on_fault, resolve_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
+from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
 from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
 from reporails_cli.core.platform.config.bootstrap import env_flag
-from reporails_cli.core.platform.config.credentials import env_api_key
+from reporails_cli.core.platform.config.config import get_global_config
+from reporails_cli.core.platform.config.credentials import (
+    refresh_stored_tier,
+    signed_in_recently,
+)
 from reporails_cli.core.platform.contract.errors import (
     ConfigUnreadableError,
-    PlatformError,
 )
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
@@ -43,11 +49,9 @@ from reporails_cli.core.platform.dto.diagnostics import (
 from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.preflight import parse_error_body, preflight_oversized
+from reporails_cli.core.platform.utils.version import installed_version
 
 logger = logging.getLogger(__name__)
-
-# The diagnostics server used when `AILS_SERVER_URL` is unset.
-DEFAULT_SERVER_URL = "https://api.reporails.com"
 
 
 def _reply_notices(response: Any) -> tuple[Notice, ...]:
@@ -61,10 +65,7 @@ def _user_agent() -> str:
 
     Sends a distinct UA instead of the default `python-httpx/*` one.
     """
-    try:
-        return f"reporails-cli/{version('reporails-cli')}"
-    except PackageNotFoundError:
-        return "reporails-cli/unknown"
+    return f"reporails-cli/{installed_version()}"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -79,68 +80,9 @@ def _tier_from_config() -> str:
     ConfigUnreadableError when the config exists but cannot be read.
     """
     try:
-        from reporails_cli.core.platform.config.config import get_global_config
-    except ImportError:
-        logger.debug("Config module unavailable — defaulting tier")
-        return ""
-    try:
         return get_global_config().tier
     except (OSError, AttributeError) as exc:
         raise ConfigUnreadableError(f"Could not read tier from config: {exc}") from exc
-
-
-def _api_key_from_credentials() -> str:
-    """Read API key from ~/.reporails/credentials.yml (set by `ails login`).
-
-    Returns "" only for genuine absence (no file / no key). Raises
-    CredentialsUnreadableError when the file exists but cannot be read or parsed.
-    """
-    from reporails_cli.core.platform.config.credentials import load_credentials_record
-
-    return str(load_credentials_record().get("api_key") or "")
-
-
-def _degrade_on_fault(reader: Callable[[], str], unit: str) -> str:
-    """Run a credentials/config read; on PlatformError drop the unit with a visible WARNING.
-
-    The legitimate crash-firewall: a corrupt file surfaces as a WARNING and the
-    session continues anonymous, rather than crashing or being debug-buried.
-    """
-    try:
-        return reader()
-    except PlatformError as exc:
-        logger.warning("Dropping %s and continuing anonymous: %s", unit, exc)
-        return ""
-
-
-def resolve_api_key() -> str:
-    """The API key in effect: ``AILS_API_KEY`` when set, else the stored credentials.
-
-    Returns "" when neither holds a key; an unreadable credentials file drops
-    to "" with a WARNING.
-    """
-    return env_api_key() or _degrade_on_fault(_api_key_from_credentials, "API key")
-
-
-def default_server_api_key() -> str:
-    """The API key in effect when ``AILS_SERVER_URL`` is unset or the default server, else "".
-
-    A key paired with another server (a local or staging one) is not returned.
-    """
-    server = os.environ.get("AILS_SERVER_URL", "").strip().rstrip("/")
-    if server and server != DEFAULT_SERVER_URL:
-        return ""
-    return resolve_api_key()
-
-
-def has_api_key() -> bool:
-    """True when an API key is available (env override or stored credentials).
-
-    Client-side affordance gate: distinguishes an authenticated user from an
-    anonymous one without consulting the server. This only gates which local
-    affordances are offered; the plan itself is whatever the server reports.
-    """
-    return bool(resolve_api_key())
 
 
 class AilsClient:
@@ -159,7 +101,7 @@ class AilsClient:
     ) -> None:
         self.base_url = base_url or os.environ.get("AILS_SERVER_URL") or DEFAULT_SERVER_URL
         self.api_key = api_key or resolve_api_key()
-        self.tier = tier or os.environ.get("AILS_TIER") or _degrade_on_fault(_tier_from_config, "tier") or "free"
+        self.tier = tier or os.environ.get("AILS_TIER") or degrade_on_fault(_tier_from_config, "tier") or "free"
         self.timeout = timeout
 
     def lint(
@@ -194,14 +136,6 @@ class AilsClient:
         root: Path,
     ) -> LintResponse:
         """POST the projected RulesetMap to the diagnostic backend."""
-        try:
-            import httpx
-        except ImportError:
-            logger.debug("httpx not installed — cannot use remote diagnostics")
-            return LintResponse()
-
-        from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_local, project_payload
-
         payload = project_payload(ruleset_map, root)
         if local:
             payload.update(project_local(local, [f["path"] for f in payload["files"]], root))
@@ -219,7 +153,7 @@ class AilsClient:
             logger.debug("Rate limit still in effect for %ds — skipping remote diagnostics", cooldown.reset_in)
             return LintResponse(funnel_error=cooldown)
         body = encode_msgpack(payload)
-        return self._post_payload(httpx, body)
+        return self._post_payload(body)
 
     def _status_error(self, response: Any) -> FunnelError:
         """The funnel error for a non-2xx reply: a busy or slow server, a tier-aware 4xx, or a plain HTTP error."""
@@ -247,8 +181,6 @@ class AilsClient:
         """
         if err.error != "invalid_api_key" or not self.api_key:
             return err
-        from reporails_cli.core.platform.config.credentials import signed_in_recently
-
         if not signed_in_recently(self.api_key):
             return err
         return replace(err, message=STILL_REACHING_MESSAGE)
@@ -261,8 +193,6 @@ class AilsClient:
     def _remember_tier(self, tier: str) -> None:
         """Keep the stored tier in step with the tier a server reply named (stored key only)."""
         if self._sent_stored_key():
-            from reporails_cli.core.platform.config.credentials import refresh_stored_tier
-
             refresh_stored_tier(self.api_key, tier)
 
     def diagnose_request(self, content_type: str) -> tuple[str, dict[str, str]]:
@@ -276,7 +206,7 @@ class AilsClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return f"{base}/v1/diagnose", headers
 
-    def _post_payload(self, httpx: Any, body: bytes) -> LintResponse:
+    def _post_payload(self, body: bytes) -> LintResponse:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
         url, headers = self.diagnose_request("application/msgpack")
         try:
@@ -306,27 +236,6 @@ class AilsClient:
                     message="Diagnostics server returned an unreadable response",
                 )
             )
-
-
-# ──────────────────────────────────────────────────────────────────
-# WIRE FORMAT — serialization for API transport
-# ──────────────────────────────────────────────────────────────────
-
-# Encoding tables — map semantic names to wire-format short codes.
-_CHARGE_ENC = {"CONSTRAINT": 0, "DIRECTIVE": 1, "IMPERATIVE": 2, "NEUTRAL": 3, "AMBIGUOUS": 4}
-_MODALITY_ENC = {"imperative": 0, "direct": 1, "absolute": 2, "hedged": 3, "none": 4}
-_SPECIFICITY_ENC = {"named": 0, "abstract": 1}
-_FORMAT_ENC = {
-    "prose": 0,
-    "heading": 1,
-    "list": 2,
-    "numbered": 3,
-    "table": 4,
-    "blockquote": 5,
-    "code_block": 6,
-    "data_block": 7,
-}
-_KIND_ENC = {"heading": 0, "excitation": 1}
 
 
 def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ...]:

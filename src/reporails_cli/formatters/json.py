@@ -1,153 +1,19 @@
-"""Canonical JSON serialization for ValidationResult.
-
-This is the single source of truth for serializing validation results.
-All other formatters consume this format internally.
-"""
+"""Canonical JSON serialization for check results."""
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from reporails_cli.core.platform.dto.models import Level
-from reporails_cli.core.platform.dto.results import (
-    CategoryStats,
-    PendingSemantic,
-    RuleResult,
-    ScanDelta,
-    ValidationResult,
-)
-from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
-
-
-def _format_pending_semantic(pending: PendingSemantic | None) -> dict[str, Any] | None:
-    """Format pending semantic rules for JSON output."""
-    if pending is None:
-        return None
-    return {
-        "rule_count": pending.rule_count,
-        "file_count": pending.file_count,
-        "rules": list(pending.rules),
-    }
-
-
-def _format_rule_results(results: tuple[RuleResult, ...]) -> list[dict[str, str]]:
-    """Format per-rule pass/fail for JSON output."""
-    return [{"rule_id": r.rule_id, "status": r.status} for r in results]
-
-
-def _format_category_summary(summary: tuple[CategoryStats, ...]) -> list[dict[str, Any]]:
-    """Format category summary for JSON output."""
-    return [
-        {
-            "code": cs.code,
-            "name": cs.name,
-            "total": cs.total,
-            "passed": cs.passed,
-            "failed": cs.failed,
-            "worst_severity": cs.worst_severity,
-        }
-        for cs in summary
-    ]
-
-
-def format_result(
-    result: ValidationResult,
-    delta: ScanDelta | None = None,
-) -> dict[str, Any]:
-    """Convert ValidationResult to canonical dict format.
-
-    This is the single source of truth for result serialization.
-
-    Args:
-        result: ValidationResult from engine
-        delta: Optional ScanDelta for comparison with previous run
-
-    Returns:
-        Canonical dict representation
-    """
-    data: dict[str, Any] = {
-        "score": result.score,
-        "level": result.level.value,
-        "capability": LEVEL_LABELS.get(result.level, "Unknown"),
-        "feature_summary": result.feature_summary,
-        "summary": {
-            "rules_checked": result.rules_checked,
-            "rules_passed": result.rules_passed,
-            "rules_failed": result.rules_failed,
-        },
-        "violations": [
-            {
-                "rule_id": v.rule_id,
-                "rule_title": v.rule_title,
-                "location": v.location,
-                "message": v.message,
-                "severity": v.severity.value,
-                "check_id": v.check_id,
-            }
-            for v in result.violations
-        ],
-        "judgment_requests": [
-            {
-                "rule_id": jr.rule_id,
-                "rule_title": jr.rule_title,
-                "question": jr.question,
-                "content": jr.content,
-                "location": jr.location,
-                "criteria": jr.criteria,
-                "examples": jr.examples,
-                "choices": jr.choices,
-                "pass_value": jr.pass_value,
-            }
-            for jr in result.judgment_requests
-        ],
-        "friction": result.friction.level if result.friction else "none",
-        "category_summary": _format_category_summary(result.category_summary),
-        "rule_results": _format_rule_results(result.rule_results),
-        # Evaluation completeness
-        "evaluation": "awaiting_semantic" if result.is_partial else "complete",
-        "is_partial": result.is_partial,
-    }
-
-    # Optional fields — omit when absent to avoid null-chaining bugs in consumers
-    pending = _format_pending_semantic(result.pending_semantic)
-    if pending is not None:
-        data["pending_semantic"] = pending
-
-    # Add delta fields (null if no previous run or unchanged)
-    if delta is not None:
-        data["score_delta"] = delta.score_delta
-        data["level_previous"] = delta.level_previous
-        data["level_improved"] = delta.level_improved
-        data["violations_delta"] = delta.violations_delta
-    else:
-        data["score_delta"] = None
-        data["level_previous"] = None
-        data["level_improved"] = None
-        data["violations_delta"] = None
-
-    return data
-
-
-def format_score(result: ValidationResult) -> dict[str, Any]:
-    """Convert ValidationResult to minimal score dict.
-
-    Args:
-        result: ValidationResult from engine
-
-    Returns:
-        Simplified dict with just score info
-    """
-    return {
-        "score": result.score,
-        "level": result.level.value,
-        "capability": LEVEL_LABELS.get(result.level, "Unknown"),
-        "feature_summary": result.feature_summary,
-        "rules_checked": result.rules_checked,
-        "violations_count": len(result.violations),
-        "has_critical": any(v.severity.value == "critical" for v in result.violations),
-        "friction": result.friction.level if result.friction else "none",
-    }
+from reporails_cli.core.mapper.bio_graphs import multislot_available
+from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, FunnelError
+from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
+from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions, normalize_finding_path
+from reporails_cli.formatters.text.funnel_cta import plain_cta
+from reporails_cli.formatters.text.rule_meta import display_rule_id
+from reporails_cli.formatters.text.scorecard import compute_surface_scores
+from reporails_cli.formatters.triage import classify_regime, resolve_leverage
 
 
 def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
@@ -213,7 +79,6 @@ def _category_for_rule(rule_id: str) -> str:
     string when the shape is unrecognized. The MCP / JSON consumer reads
     this to group findings by category for prioritization.
     """
-    from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 
     parts = rule_id.split(":")
     if len(parts) < 2:
@@ -227,8 +92,6 @@ def _regime_by_file(result: Any, project_root: Path) -> dict[str, dict[str, Any]
 
     Keyed by project-relative path; empty for offline runs.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-    from reporails_cli.formatters.triage import classify_regime
 
     out: dict[str, dict[str, Any]] = {}
     for fa in getattr(result, "per_file_analysis", ()):  # absent on offline-only shapes
@@ -275,7 +138,6 @@ def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
     findings it owns, in the same shape and treatment (`[]` when it owns none). `listed` names
     every firing rule that takes no location, with its reason code and how many rows it covers.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     def _rel(path: str) -> str:
         return normalize_finding_path(path, project_root) if path else path
@@ -346,8 +208,6 @@ def format_server_error(server_error: Any) -> dict[str, Any] | None:
     (`interfaces/mcp/tools.py::_attach_funnel`) — so a machine consumer never sees the
     terminal CTA's `[link=...][bold]...[/bold][/link]` tags.
     """
-    from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, FunnelError
-    from reporails_cli.formatters.text.funnel_cta import plain_cta
 
     if not isinstance(server_error, FunnelError):
         return None
@@ -374,10 +234,10 @@ def empty_result_payload(
     consumer branch on two incompatible envelopes for the same command. `excluded` is the
     `(folders, file globs)` the run left out, so a run they emptied still names them.
     """
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     dirs, files = excluded
-    return format_combined_result(CombinedResult(excluded_dirs=dirs, excluded_files=files), project_root=project_root)
+    left_out = CombinedResult(omissions=Omissions(excluded_dirs=dirs, excluded_files=files))
+    return format_combined_result(left_out, project_root=project_root)
 
 
 # `format_combined_result`'s `ruleset_map` when the caller says nothing about mapping;
@@ -396,9 +256,6 @@ def _finding_entry(f: Any, project_root: Path) -> dict[str, Any]:
     overlap finding names the file it overlaps (`partner_file`, relative to the project), its line
     and the share that overlaps, when the reply names them.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-    from reporails_cli.formatters.text.rule_meta import display_rule_id
-    from reporails_cli.formatters.triage import resolve_leverage
 
     canonical = display_rule_id(f.rule)
     entry: dict[str, Any] = {
@@ -452,7 +309,6 @@ def _surface_health(
     result: Any, ruleset_map: Any, root: Path, file_type_by_path: dict[str, str] | None
 ) -> list[dict[str, Any]]:
     """The per-surface score rows of a combined result."""
-    from reporails_cli.formatters.text.scorecard import compute_surface_scores
 
     surfaces = compute_surface_scores(
         result, ruleset_map=ruleset_map, project_root=root, file_type_by_path=file_type_by_path
@@ -488,9 +344,6 @@ def format_combined_result(
     Returns:
         Dict with findings, stats, compliance, tier, category info.
     """
-    from dataclasses import asdict
-
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
 
     if not isinstance(result, CombinedResult):
         return {"error": "Invalid result type"}
@@ -502,7 +355,6 @@ def format_combined_result(
         by_file.setdefault(f.file, []).append(_finding_entry(f, root))
 
     regime_by_file = _regime_by_file(result, root)
-    from reporails_cli.core.mapper.bio_tagger import multislot_available
 
     # A project with no instruction files (level L0) has nothing to map: that is an empty run,
     # not a failed one.
@@ -512,14 +364,14 @@ def format_combined_result(
 
     data: dict[str, Any] = {
         "offline": result.offline,
-        "server_error": format_server_error(getattr(result, "server_error", None)),
-        "tier": result.tier,
-        "notices": format_notices(result.notices),
-        "not_evaluated": [{"rule": rule, "file": file} for rule, file in result.not_evaluated],
+        "server_error": format_server_error(result.reply.server_error),
+        "tier": result.reply.tier,
+        "notices": format_notices(result.reply.notices),
+        "not_evaluated": [{"rule": rule, "file": file} for rule, file in result.omissions.not_evaluated],
         "excluded": {
-            "dirs": list(result.excluded_dirs),
-            "files": list(result.excluded_files),
-            "imported_text_counted": result.excluded_imported,
+            "dirs": list(result.omissions.excluded_dirs),
+            "files": list(result.omissions.excluded_files),
+            "imported_text_counted": result.omissions.excluded_imported,
         },
         "quality": (
             float(result.quality.display_score)
@@ -549,7 +401,7 @@ def format_combined_result(
     # absent (anon / offline / older server) it is simply omitted. Rendered whenever the
     # server sent one, even with no locations and nothing listed — that is a real, clean
     # paid result ("nothing to rewrite"), not the absence of the paid feature.
-    workflow = getattr(result, "workflow", None)
+    workflow = result.reply.workflow
     if workflow is not None:
         data["workflow"] = _format_workflow(workflow, project_root or Path.cwd())
     return data
@@ -566,7 +418,6 @@ def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]
     counts, so a consumer never has to infer them from the worst-severity label. Used by
     both the JSON envelope and the text scorecard so the aggregation has one source of truth.
     """
-    from reporails_cli.formatters.text.rule_meta import display_rule_id
 
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     buckets: dict[str, dict[str, Any]] = {}

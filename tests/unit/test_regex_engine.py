@@ -18,12 +18,9 @@ from reporails_cli.core.lint.regex.compiler import (
     _compile_pattern,
     compile_rules,
 )
-from reporails_cli.core.lint.regex.runner import (
-    _file_matches_path_filter,
-    _find_line_number,
-    _match_check,
-    run_validation,
-)
+from reporails_cli.core.lint.regex.expect import file_matches_path_filter
+from reporails_cli.core.lint.regex.matching import find_line_number, match_check
+from reporails_cli.core.lint.regex.runner import run_validation
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 
@@ -40,7 +37,7 @@ class TestLineAndFrontmatterEdges:
         content = "line0\nline1\nTARGET here"
         m = _re.search("TARGET", content)
         assert m is not None
-        assert _find_line_number(content, m) == 3  # kills the off-by-one `+ 1 -> - 1`
+        assert find_line_number(content, m) == 3  # kills the off-by-one `+ 1 -> - 1`
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -213,7 +210,7 @@ class TestCompilerEdgeCases:
     def test_patterns_only_negative(self, tmp_path: Path) -> None:
         """patterns block with ONLY pattern-not-regex (no positive patterns).
 
-        This compiles successfully. The runner's _match_check returns []
+        This compiles successfully. The runner's match_check returns []
         for positive patterns (vacuously true) but then checks negatives.
         """
         p = _write_rule(
@@ -294,7 +291,7 @@ class TestCompilerEdgeCases:
 
 
 class TestMatchCheck:
-    """Test _match_check with edge cases in matching logic."""
+    """Test match_check with edge cases in matching logic."""
 
     @staticmethod
     def _make_check(
@@ -316,61 +313,61 @@ class TestMatchCheck:
     @pytest.mark.subsys_lint
     def test_single_pattern_match(self) -> None:
         check = self._make_check(patterns=["hello"])
-        assert _match_check(check, "hello world") != []
+        assert match_check(check, "hello world") != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_single_pattern_no_match(self) -> None:
         check = self._make_check(patterns=["hello"])
-        assert _match_check(check, "goodbye world") == []
+        assert match_check(check, "goodbye world") == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_and_all_match(self) -> None:
         """All patterns must match (AND logic)."""
         check = self._make_check(patterns=["hello", "world"])
-        assert _match_check(check, "hello world") != []
+        assert match_check(check, "hello world") != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_and_partial_match(self) -> None:
         """If only some AND patterns match, result should be empty."""
         check = self._make_check(patterns=["hello", "missing"])
-        assert _match_check(check, "hello world") == []
+        assert match_check(check, "hello world") == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_negative_blocks_match(self) -> None:
         """Negative pattern should block a positive match."""
         check = self._make_check(patterns=["hello"], negative=["world"])
-        assert _match_check(check, "hello world") == []
+        assert match_check(check, "hello world") == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_negative_allows_when_absent(self) -> None:
         """No negative match → positive match goes through."""
         check = self._make_check(patterns=["hello"], negative=["missing"])
-        assert _match_check(check, "hello world") != []
+        assert match_check(check, "hello world") != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_either_any_match(self) -> None:
         """Any pattern in either list should match (OR logic)."""
         check = self._make_check(either=["hello", "goodbye"])
-        assert _match_check(check, "goodbye world") != []
+        assert match_check(check, "goodbye world") != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_either_none_match(self) -> None:
         check = self._make_check(either=["missing", "absent"])
-        assert _match_check(check, "hello world") == []
+        assert match_check(check, "hello world") == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_either_returns_all_matching(self) -> None:
         """either returns all matching patterns (not just first)."""
         check = self._make_check(either=["hello", "world"])
-        matches = _match_check(check, "hello world")
+        matches = match_check(check, "hello world")
         assert len(matches) == 2
 
     @pytest.mark.unit
@@ -378,7 +375,7 @@ class TestMatchCheck:
     def test_either_returns_only_matching(self) -> None:
         """either should only return patterns that actually match."""
         check = self._make_check(either=["hello", "missing"])
-        matches = _match_check(check, "hello world")
+        matches = match_check(check, "hello world")
         assert len(matches) == 1
         assert matches[0].group(0) == "hello"
 
@@ -387,14 +384,14 @@ class TestMatchCheck:
     def test_empty_content(self) -> None:
         """Empty string should not match any pattern."""
         check = self._make_check(patterns=["something"])
-        assert _match_check(check, "") == []
+        assert match_check(check, "") == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_empty_pattern_matches_everything(self) -> None:
         """Empty regex matches everything (this is valid Python re behavior)."""
         check = self._make_check(patterns=[""])
-        assert _match_check(check, "anything") != []
+        assert match_check(check, "anything") != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -407,7 +404,7 @@ class TestMatchCheck:
         loop processes zero patterns and returns the empty matches list.
         """
         check = self._make_check(negative=["secret"])
-        matches = _match_check(check, "no secrets here")
+        matches = match_check(check, "no secrets here")
         # Empty patterns list → returns empty matches list (line 106-110)
         # The loop iterates over 0 patterns → matches stays []
         assert matches == []
@@ -418,7 +415,7 @@ class TestMatchCheck:
         """Patterns should match across lines (DOTALL flag)."""
         check = self._make_check(patterns=["hello.*world"])
         content = "hello\nworld"
-        assert _match_check(check, content) != []
+        assert match_check(check, content) != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -426,14 +423,14 @@ class TestMatchCheck:
         """^ should match at start of each line (MULTILINE flag)."""
         check = self._make_check(patterns=["^## Section"])
         content = "intro\n## Section\ndetail"
-        assert _match_check(check, content) != []
+        assert match_check(check, content) != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_unicode_content(self) -> None:
         """Unicode content should be handled correctly."""
         check = self._make_check(patterns=["(?i)résumé"])
-        assert _match_check(check, "My Résumé") != []
+        assert match_check(check, "My Résumé") != []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -443,10 +440,10 @@ class TestMatchCheck:
         This mirrors CORE.C.0012 pattern.
         """
         check = self._make_check(patterns=["[A-Z]{2,}\\s*[=:\u2014\u2013-]"])
-        assert _match_check(check, "API: value") != []
-        assert _match_check(check, "API\u2014value") != []
-        assert _match_check(check, "API\u2013value") != []
-        assert _match_check(check, "api: value") == []  # lowercase
+        assert match_check(check, "API: value") != []
+        assert match_check(check, "API\u2014value") != []
+        assert match_check(check, "API\u2013value") != []
+        assert match_check(check, "api: value") == []  # lowercase
 
 
 # ===========================================================================
@@ -642,35 +639,35 @@ class TestPathFiltering:
     @pytest.mark.subsys_lint
     def test_glob_star_star_slash_star_md(self) -> None:
         """**/*.md should match any .md file."""
-        assert _file_matches_path_filter("docs/README.md", ("**/*.md",))
-        assert _file_matches_path_filter("CLAUDE.md", ("**/*.md",))
-        assert _file_matches_path_filter("deep/nested/file.md", ("**/*.md",))
-        assert not _file_matches_path_filter("file.txt", ("**/*.md",))
+        assert file_matches_path_filter("docs/README.md", ("**/*.md",))
+        assert file_matches_path_filter("CLAUDE.md", ("**/*.md",))
+        assert file_matches_path_filter("deep/nested/file.md", ("**/*.md",))
+        assert not file_matches_path_filter("file.txt", ("**/*.md",))
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_exact_filename(self) -> None:
         """Exact filename match."""
-        assert _file_matches_path_filter("CLAUDE.md", ("CLAUDE.md",))
-        assert not _file_matches_path_filter("OTHER.md", ("CLAUDE.md",))
+        assert file_matches_path_filter("CLAUDE.md", ("CLAUDE.md",))
+        assert not file_matches_path_filter("OTHER.md", ("CLAUDE.md",))
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_empty_path_includes(self) -> None:
         """Empty path_includes should match everything."""
-        assert _file_matches_path_filter("anything.txt", ())
+        assert file_matches_path_filter("anything.txt", ())
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_template_placeholder_skipped(self) -> None:
         """Patterns containing {{ should be skipped."""
-        assert not _file_matches_path_filter("CLAUDE.md", ("{{instruction_files}}",))
+        assert not file_matches_path_filter("CLAUDE.md", ("{{instruction_files}}",))
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_dotslash_prefix_stripped(self) -> None:
         """./prefix should be stripped from file paths."""
-        assert _file_matches_path_filter("./CLAUDE.md", ("CLAUDE.md",))
+        assert file_matches_path_filter("./CLAUDE.md", ("CLAUDE.md",))
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

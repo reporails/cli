@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper import bio_tagger
+from reporails_cli.core.mapper import bio_graphs, bio_tagger
 
 
 @pytest.mark.unit
@@ -28,7 +28,7 @@ def test_the_four_graphs_are_distinct_files() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_charge_pass_reads_the_first_graph_and_span_pass_reads_the_second(monkeypatch) -> None:
-    if not bio_tagger.multislot_available():
+    if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
     enc_a, enc_b = bio_tagger._enc_a(), bio_tagger._enc_b()
     assert enc_a is not enc_b

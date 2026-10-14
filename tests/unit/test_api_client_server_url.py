@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.adapters.api_client import DEFAULT_SERVER_URL, AilsClient
+from reporails_cli.core.platform.adapters.api_client import AilsClient
+from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL
 
 
 class TestServerUrlEnvOverride:

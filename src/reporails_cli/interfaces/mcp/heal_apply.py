@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.heal.apply import apply_keyed_heal, heal_withheld_for_run, resolved_within, suppressed_by_path
+from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.formatters.mcp_view import render_heal_apply
 from reporails_cli.interfaces.mcp import snapshots
 
@@ -16,7 +18,6 @@ def heal_apply_message(payload: dict[str, Any], *, mapped: bool = True) -> str:
     A reply that is offline, carries a server error or funnel rejection, or came with no map to fix
     (`mapped` false) is "no fixes came"; only a clean reply without fixes means the account is not Pro.
     """
-    from reporails_cli.core.heal.apply import heal_withheld_for_run
 
     if "error" in payload:
         return f"heal_apply: {payload.get('message') or payload['error']}"
@@ -31,8 +32,6 @@ def heal_apply_message(payload: dict[str, Any], *, mapped: bool = True) -> str:
 
 def heal_apply_write(ruleset_map: Any, workflow: dict[str, Any], target: Path, scan_root: Path) -> str:
     """Write the workflow's keyed fixes within `target`'s scope; the text view of what was done."""
-    from reporails_cli.core.heal.apply import apply_keyed_heal, resolved_within, suppressed_by_path
-    from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 
     files = sorted({Path(a.file_path) for a in ruleset_map.atoms})
     files = [f for f in files if resolved_within(f, target)]

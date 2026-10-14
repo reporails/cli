@@ -27,7 +27,7 @@ class TestFeatureDetection:
 
         features = detect_features_filesystem(project)
 
-        assert features.has_backbone is False
+        assert features.layout.has_backbone is False
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
@@ -44,7 +44,7 @@ class TestFeatureDetection:
 
         features = detect_features_filesystem(project)
 
-        assert features.has_backbone is True
+        assert features.layout.has_backbone is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
@@ -60,7 +60,7 @@ class TestFeatureDetection:
 
         features = detect_features_filesystem(project)
 
-        assert features.is_abstracted is True
+        assert features.layout.is_abstracted is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
@@ -74,7 +74,7 @@ class TestFeatureDetection:
 
         features = detect_features_filesystem(project)
 
-        assert features.has_shared_files is True
+        assert features.layout.has_shared_files is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
@@ -89,5 +89,5 @@ class TestFeatureDetection:
 
         features = detect_features_filesystem(project)
 
-        assert features.has_backbone is False
+        assert features.layout.has_backbone is False
         assert not (project / ".ails" / "backbone.yml").exists()

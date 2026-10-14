@@ -125,7 +125,7 @@ def plugin_relative_path(path: Path, scan_root: Path, marker: str) -> str | None
     while True:
         if _holds_marker(directory, marker):
             return path.relative_to(directory).as_posix()
-        if directory == scan_root or directory == directory.parent:
+        if directory in (scan_root, directory.parent):
             return None
         directory = directory.parent
 

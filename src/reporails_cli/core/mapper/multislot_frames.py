@@ -42,6 +42,7 @@ from reporails_cli.core.mapper.bio_tagger import (
     _head_session,
     _softmax_rows,
 )
+from reporails_cli.core.mapper.encode_pool import run_buckets
 
 _BUCKET_SIZE = 32
 _CHARGE_OUT = ["logits_charge", "logits_modality"]
@@ -260,8 +261,6 @@ def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] 
     """
     if not texts:
         return []
-    from reporails_cli.core.mapper.encode_pool import run_buckets
-
     enc_a, enc_b = _enc_a(), _enc_b()
     head_a, head_b = _head_a_path(), _head_b_path()
     _head_session(str(head_a))

@@ -77,7 +77,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     exactly the tests that need the mapper model, as `ails check` runs without it.
     """
     from reporails_cli.bundled import get_bundled_path
-    from reporails_cli.core.mapper.model_fetch import models_present
+    from reporails_cli.core.mapper.model_manifest import models_present
 
     if models_present(get_bundled_path() / "models"):
         return

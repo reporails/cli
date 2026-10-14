@@ -601,7 +601,7 @@ class TestMatchFilesLoadingVerbAndLinkSourceType:
         )
 
     def _rule_match(self, match_frontmatter: dict[str, object]) -> FileMatch:
-        from reporails_cli.core.platform.adapters.registry import build_rule
+        from reporails_cli.core.platform.adapters.rule_builder import build_rule
 
         frontmatter = {
             "id": "CORE:S:0999",

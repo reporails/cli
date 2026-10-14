@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import httpx
+
 from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.dto.diagnostics import ACCOUNT_TIERS, AUTH_REJECTED_ERRORS
@@ -11,8 +13,6 @@ from reporails_cli.core.platform.utils.utils import json_object
 
 def check_api_key(api_key: str, *, base_url: str | None = None, timeout: float = 10.0) -> KeyCheck:
     """Sends an empty request with the key; reads the tier and notices the reply carries, or the rejection."""
-    import httpx
-
     url, headers = AilsClient(base_url=base_url, api_key=api_key).diagnose_request("application/json")
     try:
         resp = httpx.post(url, content=b"{}", headers=headers, timeout=timeout)

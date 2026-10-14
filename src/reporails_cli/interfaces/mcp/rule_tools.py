@@ -3,10 +3,14 @@
 from pathlib import Path
 from typing import Any
 
+from reporails_cli.core.classify import load_file_types
+from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_page_data, serialize_match
 from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules
-from reporails_cli.core.platform.config.bootstrap import is_initialized
+from reporails_cli.core.platform.adapters.rules_query import rules_for_capability
+from reporails_cli.core.platform.config.config import is_initialized
+from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.formatters import mcp as mcp_formatter
-from reporails_cli.interfaces.cli.check_support import _serialize_match
 from reporails_cli.interfaces.mcp.tools import _rules_missing_payload, _unknown_agent_error
 
 
@@ -16,9 +20,6 @@ def _known_capabilities(agent: str) -> set[str]:
     same agent-agnostic union `rules_for_capability` mixes into a no-agent reply) — plus the
     vocabulary's input-form words, fold aliases, and virtual (classifier-synthesized)
     capabilities."""
-    from reporails_cli.core.classify import load_file_types
-    from reporails_cli.core.discovery.agents import get_known_agents
-    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 
     agents = [agent] if agent else list(get_known_agents())
     vocab = load_capability_vocabulary()
@@ -45,9 +46,6 @@ def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
     generic rule set instead of naming the typo. Both are validated first, each against its own
     known list, mirroring the CLI's `_validate_agent` / `TargetError` shape.
     """
-    from reporails_cli.core.discovery.agents import get_known_agents
-    from reporails_cli.core.platform.adapters.rules_query import rules_for_capability
-    from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 
     if not is_initialized():
         return _rules_missing_payload()
@@ -78,7 +76,6 @@ def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
 
 def _serialize_preflight_rule(rule: Any) -> dict[str, Any]:
     """Shape one rule for the preflight response payload."""
-    from reporails_cli.core.lint.rule_pages import load_rule_examples
 
     examples = load_rule_examples(rule)
     payload: dict[str, Any] = {
@@ -87,7 +84,7 @@ def _serialize_preflight_rule(rule: Any) -> dict[str, Any]:
         "category": rule.category.value,
         "severity": rule.severity.value,
         "slug": rule.slug,
-        "match": _serialize_match(rule.match),
+        "match": serialize_match(rule.match),
     }
     if examples.get("pass"):
         payload["pass_example"] = examples["pass"]
@@ -108,25 +105,4 @@ def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | d
             "available_rules": sorted(rules.keys()),
         }
 
-    rule = rules[rule_id_upper]
-    rule_data: dict[str, Any] = {
-        "title": rule.title,
-        "category": rule.category.value,
-        "type": rule.type.value,
-        "slug": rule.slug,
-        "match": _serialize_match(rule.match),
-        "severity": rule.severity.value,
-        "checks": [{"id": c.id, "type": c.type} for c in rule.checks],
-        "see_also": rule.see_also,
-    }
-
-    # The rule body and its Pass / Fail examples — the same extraction `ails explain` /
-    # `ails rules -f md` use, so the MCP explain surface agrees with the CLI.
-    from reporails_cli.core.lint.rule_pages import load_rule_description, load_rule_examples
-
-    description = load_rule_description(rule)
-    if description:
-        rule_data["description"] = description
-    rule_data["examples"] = load_rule_examples(rule)
-
-    return mcp_formatter.format_rule(rule_id_upper, rule_data)
+    return mcp_formatter.format_rule(rule_id_upper, rule_page_data(rules[rule_id_upper]))

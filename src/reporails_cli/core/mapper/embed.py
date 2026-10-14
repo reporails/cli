@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import numpy as np
+
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord
 
 
@@ -29,8 +31,6 @@ def _quantize_int8(vec: Any) -> tuple[int, ...]:
 
     Keeps cosine similarity between vectors close to the float original.
     """
-    import numpy as np
-
     arr = np.asarray(vec, dtype=np.float32)
     # Scale to [-127, 127] range based on max absolute value
     scale = max(float(np.abs(arr).max()), 1e-10)

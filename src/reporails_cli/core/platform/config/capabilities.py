@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from reporails_cli.core.platform.config.bootstrap import get_framework_root
+from reporails_cli.core.platform.config.config import get_framework_root
 from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 _MATRIX_FILENAME = "capabilities_matrix.yml"

@@ -4,7 +4,10 @@ import pytest
 
 from reporails_cli.core.classify.content_format import detect_content_format
 from reporails_cli.core.mapper.annotate import bold_title_label, check_specificity
+from reporails_cli.core.mapper.atom_build import _strip_backtick_delims
+from reporails_cli.core.mapper.charge_floors import _is_structural
 from reporails_cli.core.mapper.classify import _after_bold_label, _strip_md_for_classify
+from reporails_cli.core.mapper.embedded_markers import _scan_neutral_for_embedded_markers
 from reporails_cli.core.mapper.instructions import _cut_mask, without_lead
 from reporails_cli.core.mapper.markers import project_markers, strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import (
@@ -16,11 +19,6 @@ from reporails_cli.core.mapper.md_parser import (
     replace_code_spans,
     replace_spans,
     wrapping_runs,
-)
-from reporails_cli.core.mapper.parse import (
-    _is_structural,
-    _scan_neutral_for_embedded_markers,
-    _strip_backtick_delims,
 )
 from reporails_cli.core.platform.dto.ruleset import Atom
 
