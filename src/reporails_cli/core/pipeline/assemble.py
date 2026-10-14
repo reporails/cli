@@ -26,6 +26,7 @@ from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.memory_checks import validate_memory_files
 from reporails_cli.core.lint.suppression import (
     apply_config_listing,
+    apply_rule_set,
     apply_suppressions,
     apply_surface_mutations,
     resolve_finding_path,
@@ -43,7 +44,7 @@ from reporails_cli.core.platform.adapters.registry import (
     structural_rule_ids,
     whole_run_check_ids,
 )
-from reporails_cli.core.platform.adapters.rules_query import rule_title
+from reporails_cli.core.platform.adapters.rules_query import load_all_rules, rule_title
 from reporails_cli.core.platform.policy.dependencies import drop_dependent_findings
 from reporails_cli.core.platform.policy.levels import determine_level_from_gates
 from reporails_cli.core.platform.runtime.merger import (
@@ -71,9 +72,7 @@ class AssembleInputs:
     server-lint result (or ``None`` when offline) -- this core unpacks its
     ``report``/``hints``/``cross_file_coordinates``/``tier``/``workflow`` itself, so both
     surfaces stop hand-unpacking the same four projections before calling in, and stop
-    re-attaching ``workflow`` afterward. ``alias_fn`` is the rule-id → alias resolver the
-    suppression passes key against; the caller supplies it (it lives in the formatters
-    layer, which this core may not import). ``rule_agents`` names the agents whose rules
+    re-attaching ``workflow`` afterward. ``rule_agents`` names the agents whose rules
     ran (the empty name is the core rule set); left empty, the run is taken to be
     ``effective_agent`` alone.
     """
@@ -86,7 +85,6 @@ class AssembleInputs:
     filter_agents: list[Any] | None
     effective_agent: str
     lint_result: LintResult | None
-    alias_fn: Callable[[str], set[str]]
     rule_agents: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     # `(rule id, file)` pairs whose check did not finish in time; the file is as the check reported it.
@@ -118,7 +116,20 @@ def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None
     report = lint_result.report if lint_result else None
     if report is not None and inp.ruleset_map is not None:
         report = name_imported_instructions(report, inp.ruleset_map, inp.scan_root)
-    result = merge_results(
+
+    def _attach(merged: Any) -> Any:
+        merged = replace(
+            merged,
+            hooks=features.hooks,
+            omissions=replace(merged.omissions, excluded_imported=_imports_left_out(inp, exclusions)),
+        )
+        return replace(
+            merged,
+            reply=replace(merged.reply, notices=inp.notices),
+            omissions=replace(merged.omissions, not_evaluated=_relative_pairs(inp.not_evaluated, inp.scan_root)),
+        )
+
+    merged = merge_results(
         inp.m_findings,
         all_client_findings,
         report,
@@ -128,25 +139,10 @@ def assemble_result(inp: AssembleInputs, exclusions: RunExclusions | None = None
         level=level,
         tier=lint_result.tier if lint_result else "",
     )
-    result = replace(
-        result,
-        hooks=features.hooks,
-        omissions=replace(result.omissions, excluded_imported=_imports_left_out(inp, exclusions)),
-    )
-    result = _drop_dependent(result, inp)
-    result = replace(
-        result,
-        reply=replace(result.reply, notices=inp.notices),
-        omissions=replace(result.omissions, not_evaluated=_relative_pairs(inp.not_evaluated, inp.scan_root)),
-    )
-    # The workflow goes on first, so the suppressions the author wrote apply to what it lists too.
+    # The workflow goes on first, so the rule set and the suppressions the author wrote apply to what it lists too.
     if lint_result is not None and lint_result.workflow is not None:
-        result = replace(result, reply=replace(result.reply, workflow=lint_result.workflow))
-    imported = imported_places(inp.ruleset_map, inp.scan_root) if inp.ruleset_map is not None else None
-    result = apply_suppressions(result, project_root=inp.scan_root, alias_fn=inp.alias_fn, imported=imported)
-    result = _apply_surface_mutations(result, inp.scan_root, inp.effective_agent, inp.alias_fn)
-    # After suppressions, so ignoring either credential rule on a line keeps the other's finding.
-    result = stamp_served_tiers(collapse_same_secret(result), inp.scan_root)
+        merged = replace(merged, reply=replace(merged.reply, workflow=lint_result.workflow))
+    result = stamp_served_tiers(_reported(inp, merged, _attach), inp.scan_root)
     # After the served tiers, so a config file's findings keep the tier their row carried.
     result = apply_config_listing(result, inp.scan_root)
     result = stamp_local_tiers(result, report.local_tiers if report is not None else (), inp.scan_root)
@@ -243,23 +239,43 @@ def name_imported_instructions(report: RulesetReport, ruleset_map: Any, scan_roo
 def reported_local_findings(inp: AssembleInputs) -> tuple[Any, ...]:
     """The local findings as they will be reported, before any server lint.
 
-    Memory-index validation is folded in, and the same inline suppressions, surface-scoped
-    mutations and same-secret collapse the assembled result applies are applied here.
+    Memory-index validation is folded in, and the same rule-set filter, inline suppressions,
+    surface-scoped mutations and same-secret collapse the assembled result applies are applied here.
     """
 
     memory_findings: list[Any] = []
     if inp.ruleset_map is not None:
         memory_findings = validate_memory_files(inp.ruleset_map.files)
-    result = merge_results(
+    merged = merge_results(
         inp.m_findings,
         inp.content_findings + inp.client_findings + memory_findings,
         None,
         project_root=inp.scan_root,
     )
-    result = _drop_dependent(result, inp)
-    result = apply_suppressions(result, project_root=inp.scan_root, alias_fn=inp.alias_fn)
-    result = _apply_surface_mutations(result, inp.scan_root, inp.effective_agent, inp.alias_fn)
-    return tuple(collapse_same_secret(result).findings)
+    return tuple(_reported(inp, merged).findings)
+
+
+def _reported(inp: AssembleInputs, merged: Any, attach: Callable[[Any], Any] = lambda r: r) -> Any:
+    """`merged` as it is reported: only the run's rules, dependents dropped, directives and surfaces applied.
+
+    The rules the run resolves (disabled rules, an agent's excludes, capability gating and
+    supersession applied) filter every producer's findings once. `attach` adds what the
+    assembled result carries before the directives apply.
+    A secret reported by both credential rules on one line is kept once, after the directives,
+    so ignoring either credential rule on a line keeps the other's finding.
+    """
+
+    rules: dict[str, Any] = {}
+    for agent in _rule_agents(inp):
+        rules.update(load_rules(project_root=inp.scan_root, agent=agent, scan_root=inp.scan_root))
+    known = frozenset(r.id for r in load_all_rules())
+    result = apply_rule_set(merged, rules.keys(), known, project_root=inp.scan_root)
+    result = attach(_drop_dependent(result, inp))
+    imported = imported_places(inp.ruleset_map, inp.scan_root) if inp.ruleset_map is not None else None
+    result = apply_suppressions(result, project_root=inp.scan_root, imported=imported)
+    if rules:
+        result = apply_surface_mutations(result, rules, project_root=inp.scan_root)
+    return collapse_same_secret(result)
 
 
 def _local_finding_type_resolver(inp: AssembleInputs, registry: dict[str, Any]) -> Callable[[str], str]:
@@ -338,21 +354,3 @@ def lint_request_local(inp: AssembleInputs) -> tuple[list[Any], int]:
         _local_finding_type_resolver(inp, registry),
     )
     return entries, len(structural_ids)
-
-
-def _apply_surface_mutations(
-    result: Any, scan_root: Path, effective_agent: str, alias_fn: Callable[[str], set[str]]
-) -> Any:
-    """Drop findings on a surface whose rule declares ``surface_mutations`` non-applicable.
-
-    Loads the active rule set (surface mutations live on core rules) and filters the merged
-    result. A load failure is non-fatal — the unmutated result is returned unchanged.
-    """
-
-    try:
-        rules = load_rules(project_root=scan_root, agent=effective_agent, scan_root=scan_root)
-    except (OSError, ValueError):
-        return result
-    if rules:
-        return apply_surface_mutations(result, rules, alias_fn=alias_fn, project_root=scan_root)
-    return result

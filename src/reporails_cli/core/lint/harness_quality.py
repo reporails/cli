@@ -1,15 +1,14 @@
-"""Quality reporting over discovered rules — scoring, lint, coverage baseline.
+"""Quality reporting over discovered rules — structural lint and coverage baseline.
 
 The harness's upper layer: it consumes the ``RuleInfo`` list from
-``harness_discovery`` and produces the effectiveness deltas, structural-lint
-errors, and coverage-baseline entries the ``ails test`` command surfaces. It
-depends on the models + discovery, never on the run/batch stages, so it stays a
-leaf of the harness split.
+``harness_discovery`` and produces the structural-lint errors and
+coverage-baseline entries the ``ails test`` command surfaces. It depends on
+the models + discovery, never on the run/batch stages, so it stays a leaf of
+the harness split.
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -19,63 +18,9 @@ from reporails_cli.core.lint.harness_models import (
     CoverageGap,
     LintError,
     RuleInfo,
-    ScoreDelta,
 )
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES
 from reporails_cli.core.platform.utils.utils import read_frontmatter
-
-logger = logging.getLogger(__name__)
-
-
-def score_fixture() -> float:
-    """Run full validation scoring on a fixture directory.
-
-    Returns 0.0 — scoring pending pipeline rewrite (0.5.0).
-    """
-    logger.warning("score_fixture: scoring disabled pending 0.5.0 pipeline rewrite")
-    return 0.0
-
-
-def score_rules(
-    rules_root: Path,
-    *,
-    filter_path: str | None = None,
-    filter_rule: str | None = None,
-    package_roots: list[Path] | None = None,
-    agent: str = "claude",
-) -> list[ScoreDelta]:
-    """Score pass/fail fixtures for all rules, returning quality deltas.
-
-    Args:
-        rules_root: Primary rules repository root.
-        filter_path: Optional path prefix filter.
-        filter_rule: Optional rule coordinate filter.
-        package_roots: Additional package roots to scan.
-        agent: Agent config for var resolution.
-    """
-    rules = discover_agent_rules(
-        rules_root, agent, filter_path=filter_path, filter_rule=filter_rule, package_roots=package_roots
-    )
-
-    deltas: list[ScoreDelta] = []
-    for rule in rules:
-        if not rule.has_pass_fixture or not rule.has_fail_fixture:
-            continue
-
-        pass_score = score_fixture()
-        fail_score = score_fixture()
-        deltas.append(
-            ScoreDelta(
-                rule_id=rule.rule_id,
-                slug=rule.slug,
-                pass_score=round(pass_score, 1),
-                fail_score=round(fail_score, 1),
-                delta=round(pass_score - fail_score, 1),
-            )
-        )
-
-    return deltas
-
 
 # ── Rule lint ───────────────────────────────────────────────────────
 

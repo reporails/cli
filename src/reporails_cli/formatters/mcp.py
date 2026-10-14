@@ -17,7 +17,7 @@ from reporails_cli.core.mapper.md_parser import file_lines
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
 from reporails_cli.formatters.listed_reasons import listed_reason_text
-from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_label
+from reporails_cli.formatters.text.rule_meta import rule_label
 from reporails_cli.formatters.triage import LeverageTier, resolve_row_leverage
 
 # ---------------------------------------------------------------------------
@@ -82,22 +82,17 @@ def _collect_rule_ids(node: Any, out: set[str]) -> None:
 
 def rules_block(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
     """`{<canonical rule id>: {"title": ..., "url": ...}}` for every rule id named anywhere in
-    `payload`, once each. A raw client-check token (`format`, `bold`, ...) is mapped through
-    `display_rule_id` first, so the key matches the canonical id the rest of the reply already
-    shows. A rule id with neither a resolvable title nor a docs url is omitted. The key set is
-    sorted for stability.
+    `payload`, once each. A rule id with neither a resolvable title nor a docs url is omitted.
+    The key set is sorted for stability.
     """
 
-    raw_ids: set[str] = set()
-    _collect_rule_ids(payload, raw_ids)
+    rule_ids: set[str] = set()
+    _collect_rule_ids(payload, rule_ids)
     rules: dict[str, dict[str, str]] = {}
-    for raw in raw_ids:
-        canon = display_rule_id(raw)
-        if canon in rules:
-            continue
-        label = rule_label(canon)
+    for rule_id in rule_ids:
+        label = rule_label(rule_id)
         if label:
-            rules[canon] = label
+            rules[rule_id] = label
     return dict(sorted(rules.items()))
 
 

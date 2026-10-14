@@ -49,32 +49,36 @@ Modular design with clear boundaries.
     return project, external_file
 
 
+_onnx_path = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "reporails_cli"
+    / "bundled"
+    / "models"
+    / "minilm-l6-v2"
+    / "onnx"
+    / "model.onnx"
+)
+requires_model = pytest.mark.skipif(not _onnx_path.exists(), reason="Bundled ONNX model not available")
+
+
 class TestSymlinkIntegration:
     """Integration tests for symlinked instruction file handling."""
 
     @pytest.mark.integration
     @pytest.mark.subsys_lint
-    def test_symlink_detection_populates_resolved_symlinks(self, symlink_project: tuple[Path, Path]) -> None:
-        """Symlinked CLAUDE.md should appear in resolved_symlinks."""
-        project, _external = symlink_project
-
-        from reporails_cli.core.discovery.features import detect_features_filesystem
-
-        features = detect_features_filesystem(project)
-        assert features.has_claude_md is True
-        assert len(features.resolved_symlinks) == 1
-
-    @pytest.mark.integration
-    @pytest.mark.subsys_lint
+    @requires_model
     def test_rule_validation_with_external_symlink(self, symlink_project: tuple[Path, Path]) -> None:
-        """Symlinked CLAUDE.md with violations should have them detected."""
+        """A CLAUDE.md symlinked to a file outside the project is checked and its violations reported."""
+        from reporails_cli.core.lint.client_checks import run_client_checks
+        from reporails_cli.core.mapper.models import get_models
+        from reporails_cli.core.mapper.pipeline import map_ruleset
+
         project, external = symlink_project
+        external.write_text("# Project\n\nRun build.sh before every commit.\n", encoding="utf-8")
 
-        # Rewrite external file to be too long (trigger S1 if available)
-        external.write_text("# Project\n\n" + "Line of content.\n" * 300)
-
-        from reporails_cli.core.discovery.features import detect_features_filesystem
-
-        features = detect_features_filesystem(project)
-        assert features.has_claude_md is True
-        assert len(features.resolved_symlinks) == 1
+        link = project / "CLAUDE.md"
+        assert link.is_symlink()
+        ruleset = map_ruleset([link], models=get_models(), root=project, cache_dir=None)
+        reported = {f.line for f in run_client_checks(ruleset) if f.check_id == "format"}
+        assert reported == {3}

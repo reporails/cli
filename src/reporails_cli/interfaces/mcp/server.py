@@ -21,6 +21,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.runtime import _torch_blocker
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels
@@ -265,6 +266,14 @@ async def _begin_validate_call(
 
 
 async def _run_validate(path: str, full: bool, targets: list[str] | None = None) -> dict[str, Any]:
+    """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
+    try:
+        return await _validate_reply(path, full, targets)
+    except ConfigUnreadableError as exc:
+        return {"error": "config_unreadable", "message": str(exc)}
+
+
+async def _validate_reply(path: str, full: bool, targets: list[str] | None = None) -> dict[str, Any]:
     """Compute the `validate` payload with the content-aware circuit breaker.
 
     With `targets`, the whole project is diagnosed as without them and the reply's
@@ -272,26 +281,19 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     (`keep_target_locations`); the counters and the stored workflow are kept per
     `(path, targets)`.
 
-    Two layers of safety:
-      1. Path-existence checks emit structured errors the slash command body can
-         branch on (no bare strings).
-      2. The circuit breaker (`_MAX_CALLS` total, `_MAX_UNCHANGED` consecutive
-         no-op validates per path) catches a model that re-validates without
-         applying fixes. The mtime-tracker resets on any file edit. A `full=true`
-         call for unchanged content is served from the memoized full payload rather
-         than counted as another unchanged repeat, since it is the bounded
-         response's own suggested next call, not a sign of no progress.
+    Path-existence checks emit structured errors the slash command body can branch on. The
+    circuit breaker (`_MAX_CALLS` total, `_MAX_UNCHANGED` consecutive no-op validates per path)
+    catches a model that re-validates without applying fixes; the mtime-tracker resets on any
+    file edit. A `full=true` call for unchanged content is served from the memoized full payload,
+    not counted as another unchanged repeat.
 
-    The circuit-breaker state read-modify-write runs inline on the event loop —
-    no `await` between the `_validate_states` read and its write — so concurrent
-    same-path calls serialize (a retryable reply edits that live state, never a copy); only the
-    blocking pipeline (`run_pipeline_for_path`) is offloaded to a worker thread. The
-    pipeline always runs `full=True` internally (the bounding step is the last
-    thing it does) and the bounded view is derived here via `bound_validate_payload`,
-    so a cached full payload serves either shape without a second pipeline run.
-    Returns a structured-success dict for every expected condition (needs_install /
-    path_not_found / circuit_breaker); an unexpected exception propagates for the
-    SDK to surface as an execution error.
+    The circuit-breaker state read-modify-write runs inline on the event loop (no `await`
+    between the `_validate_states` read and its write), so concurrent same-path calls serialize;
+    only the blocking pipeline (`run_pipeline_for_path`) is offloaded to a worker thread. The
+    pipeline always runs `full=True` internally and the bounded view is derived here via
+    `bound_validate_payload`, so a cached full payload serves either shape. Returns a
+    structured dict for every expected condition (needs_install / path_not_found /
+    circuit_breaker); an unexpected exception propagates for the SDK to surface.
     """
     target = Path(path).resolve()
 
@@ -301,11 +303,9 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     if model_error is not None:
         return model_error
 
-    # The mtime hash walks the same scan root the pipeline itself discovers from — a FILE
-    # target's root is its enclosing project (`_resolve_scan_target`), never the bare file
-    # path, which discovery reads as an (empty) directory. Without this a
-    # file-scoped validate's hash is always the empty string, `unchanged` is always False, and
-    # a same-content repeat validate never hits the cached-reply path at all.
+    # The mtime hash walks the scan root the pipeline discovers from: a FILE target's root is its
+    # enclosing project, never the bare file path (which reads as an empty directory and would
+    # keep a same-content repeat validate from ever hitting the cached reply).
     scan_root = _resolve_scan_target(target)[0]
 
     tokens = _target_tokens(targets)
@@ -333,9 +333,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
 
     if unchanged and state.full_payload is not None:
         payload = state.full_payload
-        # Reuse the map/score the last fresh run stored, instead of re-running the
-        # pipeline a second time (with its own server diagnose) just for the preservation
-        # check on a reply that is otherwise served entirely from cache.
+        # Reuse the map/score the last fresh run stored rather than re-running the pipeline.
         ruleset_map, score = state.last_ruleset_map, state.last_score
     else:
         result = await _fresh_validate_payload(path, tokens, scan_root, state)
@@ -354,17 +352,21 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
             )
         )
 
-    # `_with_preservation` is CPU/IO work (a fenced-block scan over the file's text, a
-    # possible read) — run it off the event loop too, so a preservation check never blocks a
-    # concurrent tool call the way running it inline here used to.
+    # `_with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
     payload = await asyncio.to_thread(_with_preservation, payload, target, ruleset_map, score, scan_root)
-    # `_with_feedback` reads only `payload` + `target` — no pipeline re-run, no IO — but stays
-    # off the event loop too, so it never carries a stray blocking op later without review.
     payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
 
 
 async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
+    """`heal_apply`'s reply; an unreadable config file is reported with the file and line."""
+    try:
+        return await _heal_apply_reply(path, targets)
+    except ConfigUnreadableError as exc:
+        return heal_apply_message({"error": "config_unreadable", "message": str(exc)})
+
+
+async def _heal_apply_reply(path: str, targets: list[str] | None = None) -> str:
     """`heal_apply`'s body: the pipeline `validate` runs, then the keyed heal the CLI runs."""
     target = Path(path).resolve()
     model_error = await asyncio.to_thread(model_not_ready_error)

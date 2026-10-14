@@ -30,4 +30,4 @@ class CredentialsUnreadableError(PlatformError):
 
 
 class ConfigUnreadableError(PlatformError):
-    """The global config exists but could not be read or parsed."""
+    """A config file exists but could not be read, is not valid YAML, or is not a mapping."""

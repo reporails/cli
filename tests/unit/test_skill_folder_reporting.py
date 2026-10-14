@@ -467,7 +467,7 @@ class TestSkillRecordConsumers:
         rmap = _map(tmp_path, *_skill(tmp_path, ".claude/skills/foo"), _rec(tmp_path, ".claude/skills/bar/SKILL.md"))
         inp = AssembleInputs(
             m_findings=[], content_findings=[], client_findings=[], ruleset_map=rmap, scan_root=tmp_path,
-            filter_agents=None, effective_agent="claude", lint_result=None, alias_fn=lambda _r: set(),
+            filter_agents=None, effective_agent="claude", lint_result=None,
         )  # fmt: skip
         typed = _local_finding_type_resolver(inp, _load_registry())
         root = tmp_path.as_posix()

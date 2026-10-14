@@ -30,7 +30,6 @@ def _inputs(**overrides: object) -> AssembleInputs:
         "filter_agents": None,
         "effective_agent": "",
         "lint_result": None,
-        "alias_fn": lambda _rule: set(),
     }
     base.update(overrides)
     return AssembleInputs(**base)  # type: ignore[arg-type]
@@ -120,9 +119,7 @@ def test_assemble_reports_one_credential_finding_per_secret(tmp_path):
     """The generic and the subagent credential rule on one secret report it once."""
     _write_subagent(tmp_path, 'api_key = "sk-live-abc123"')
 
-    result = assemble_result(
-        _inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
 
     assert [f.rule for f in result.findings] == ["CORE:G:0009"]
     assert result.stats.total_findings == 1
@@ -141,9 +138,7 @@ def test_assemble_ignoring_one_credential_rule_keeps_the_other(tmp_path, ignored
     other rule's finding on the same secret is still reported."""
     _write_subagent(tmp_path, f'api_key = "sk-live-abc123"  <!-- ails-disable-line {ignored} -->')
 
-    result = assemble_result(
-        _inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
 
     assert [f.rule for f in result.findings] == [reported]
     assert result.stats.total_findings == 1
@@ -162,7 +157,7 @@ def test_assemble_keeps_two_other_rules_that_matched_the_same_text(tmp_path):
         LocalFinding("CLAUDE.md", 5, "error", "CORE:C:0050", "Second", signature="TODO"),
     ]
 
-    result = assemble_result(_inputs(m_findings=findings, scan_root=tmp_path, alias_fn=lambda rule: {rule}))
+    result = assemble_result(_inputs(m_findings=findings, scan_root=tmp_path))
 
     assert sorted(f.rule for f in result.findings) == ["CORE:C:0049", "CORE:C:0050"]
     assert result.stats.total_findings == 2
@@ -185,9 +180,7 @@ def test_a_finding_takes_the_grade_of_the_reply_row_at_its_coordinates(tmp_path)
     )
     lint_result = SimpleNamespace(report=report, hints=(), cross_file_coordinates=(), tier="pro", workflow=None)
 
-    result = assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result))
 
     assert [(f.line, f.impact_tier) for f in result.findings if f.rule == "CORE:C:0011"] == [
         (3, ""),
@@ -204,9 +197,7 @@ def test_an_offline_run_grades_no_finding(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("# Project\n\nFirst line.\n", encoding="utf-8")
     findings = [LocalFinding("CLAUDE.md", 3, "error", "CORE:C:0011", "m", check_id="c")]
 
-    result = assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=None, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(scan_root=tmp_path, m_findings=findings, lint_result=None))
 
     assert {f.impact_tier for f in result.findings} == {""}
 
@@ -233,7 +224,6 @@ def test_a_finding_whose_dependency_reports_on_its_file_is_neither_shown_nor_sen
         m_findings=_dependent_pair_project(tmp_path),
         scan_root=tmp_path,
         effective_agent="claude",
-        alias_fn=lambda rule: {rule},
     )
 
     result = assemble_result(inputs)
@@ -255,7 +245,6 @@ def test_silencing_a_dependency_inline_does_not_bring_back_the_finding_that_depe
         m_findings=_dependent_pair_project(tmp_path, ignored="CORE:S:0002"),
         scan_root=tmp_path,
         effective_agent="claude",
-        alias_fn=lambda rule: {rule},
     )
 
     result = assemble_result(inputs)

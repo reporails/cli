@@ -81,7 +81,7 @@ def test_bold_on_a_directive_becomes_italic_and_is_not_reported_again(tmp_path: 
     assert "Always run the *linter* before" in path.read_text()
     assert {f["rule_id"] for f in res.fixes} == {"bold", "format"}
     m = map_instruction_files(tmp_path, [path], spawn_daemon=False)
-    assert not [f for f in run_client_checks(m) if f.rule == "bold"]
+    assert not [f for f in run_client_checks(m) if f.check_id == "bold"]
 
 
 @pytest.mark.unit

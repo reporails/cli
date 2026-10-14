@@ -15,6 +15,7 @@ from typing import Any
 
 from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
+    CLIENT_CHECK_KINDS,
     CrossFileFinding,
     FileAnalysis,
     FindingItem,
@@ -201,7 +202,10 @@ def _merge_local_findings(
     source: str,
     norm_fn: object,
 ) -> tuple[list[FindingItem], int]:
-    """Convert local findings to FindingItems, deduplicating against server keys."""
+    """Convert local findings to FindingItems, deduplicating against server keys.
+
+    A format or bold client-check finding is never dropped for a server finding.
+    """
     items: list[FindingItem] = []
     reported: set[tuple[str, int, str, str, str, str]] = set()
     for finding in local_findings:
@@ -212,7 +216,8 @@ def _merge_local_findings(
         if identity in reported:
             continue
         reported.add(identity)
-        if key not in server_keys:
+        # A format or bold client check is its own detection: a server finding of that rule on the line is another.
+        if finding.check_id in CLIENT_CHECK_KINDS or key not in server_keys:
             items.append(
                 FindingItem(
                     file=norm_file,
@@ -436,6 +441,19 @@ def count_cross_file_overlaps(
 ) -> int:
     """Count the distinct file pairs that overlap in topic, from whichever form the run carries."""
     return len(overlapping_pairs(cross_file, cross_file_coordinates))
+
+
+def rebuild_cross_file_stats(
+    stats: CombinedStats,
+    cross_file: tuple[CrossFileFinding, ...],
+    cross_file_coordinates: tuple[Any, ...] = (),
+) -> CombinedStats:
+    """The stats with the cross-file counts recomputed over the cross-file data the run keeps."""
+    return replace(
+        stats,
+        cross_file_repetitions=count_cross_file_repetitions(cross_file, cross_file_coordinates),
+        cross_file_overlaps=count_cross_file_overlaps(cross_file, cross_file_coordinates),
+    )
 
 
 def _compute_stats(

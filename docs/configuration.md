@@ -1,13 +1,15 @@
 ---
 title: "Configuration"
 description: "Disabling rules, project / global config, exclude paths"
-version: "0.6.1"
-last_updated: 2026-09-20
+version: "0.6.4"
+last_updated: 2026-10-14
 ---
 
 # Configuration
 
 Reporails *provides* two configuration surfaces: global (per-user) and project (per-repo). Global supplies the defaults and project overrides them per-repo: a single-value setting takes the project value, and a list setting combines both files.
+
+A config file that cannot be read (a YAML syntax error, a file that is not a mapping, a file that is not UTF-8) stops `ails check` with an error naming the file, the line and the problem, and exit code 2; `ails config` and the MCP `validate` and `heal_apply` tools report the same error. Nothing runs on defaults in its place. This holds for `.ails/config.yml`, `.ails/config.local.yml` and `~/.reporails/config.yml`.
 
 ## Project config — `.ails/config.yml`
 
@@ -55,7 +57,7 @@ Applies to every project.
 default_agent: claude
 ```
 
-The global file accepts every field `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `exclude_files`, `rule_thresholds`, `generic_scanning`, and more) — the two files are combined, and the project file wins where both set the same thing. List settings (`disabled_rules`, `exclude_dirs`, `exclude_files`, `packages`) are combined: a global file that disables one rule and a project file that disables another disable both. Settings that hold a single value (`default_agent`, `generic_scanning`) take the project value when the project sets one. Keyed settings (`rule_thresholds`, `agents`, `surfaces`) are merged key by key, with the project value replacing the global one for the same key.
+The global file accepts the fields `.ails/config.yml` does (`disabled_rules`, `exclude_dirs`, `exclude_files`, `rule_thresholds`, `generic_scanning`, and more) except `heal_exclude`, which only the project files carry — the two files are combined, and the project file wins where both set the same thing. List settings (`disabled_rules`, `exclude_dirs`, `exclude_files`, `packages`) are combined: a global file that disables one rule and a project file that disables another disable both. Settings that hold a single value (`default_agent`, `generic_scanning`) take the project value when the project sets one. Keyed settings (`rule_thresholds`, `agents`, `surfaces`) are merged key by key, with the project value replacing the global one for the same key.
 
 Set values from the command line:
 
@@ -107,7 +109,7 @@ A CI job starts on a fresh machine with an empty home directory, so without a ca
 
 ```yaml
 env:
-  REPORAILS_VERSION: "0.6.1"
+  REPORAILS_VERSION: "0.6.4"
 steps:
   - uses: actions/checkout@v4
   - uses: actions/setup-python@v5
@@ -135,6 +137,8 @@ disabled_rules:
   - CORE:C:0010   # Build And Test Commands
   - CORE:S:0005   # Identity Fields In Frontmatter
 ```
+
+A disabled rule is off for every check that reports it: the file and structure checks, the checks on each instruction (such as `CORE:E:0003` for a code name without backticks or bold on an instruction) and what the server sends (its findings, the per-file counts on a free plan, and the cross-file repetitions and overlaps). A rule your agent's rule set leaves out is not reported either.
 
 Browse the full rule reference at [reporails.com/rules](https://reporails.com/rules) to look up each rule's body and pass / fail examples before disabling — disabling is the right call when the rule's intent doesn't fit your project; complying is the right call when the intent matches but you weren't reaching it. `ails explain CORE:C:0010` shows the rule body inline from the CLI when you already know the ID.
 
@@ -317,7 +321,7 @@ ails check --strict
 The CLI does not have a built-in `--min-score` flag. To gate on a minimum score, use the GitHub Action's `min-score` input — it parses the score from the JSON output and runs a post-step gate:
 
 ```yaml
-- uses: reporails/cli/action@0.6.1
+- uses: reporails/cli/action@0.6.4
   with:
     strict: "true"            # exit 1 if any rule fires
     min-score: "7.0"          # exit 1 if score < 7.0
@@ -355,7 +359,7 @@ For CI, create an API key on [reporails.com/account](https://reporails.com/accou
 | `min-score`    | (empty) | Minimum score (0–10). Fails the step when the run scores below it.                                |
 | `agent`        | (empty) | Agent to score against (`claude`, `cursor`, …). Empty resolves from project config, then a generic fallback. |
 | `exclude-dir`  | (empty) | Comma-separated directory *names* to skip (e.g. `vendor,dist`), added to the built-in excludes.   |
-| `version`      | (empty) | CLI version to install (e.g. `0.6.1`). Empty installs the latest release.                         |
+| `version`      | (empty) | CLI version to install (e.g. `0.6.4`). Empty installs the latest release.                         |
 | `from-source`  | `false` | Internal — installs the CLI from a local checkout so the action can test itself. Leave it `false`. |
 | `api-key`      | (empty) | Your API key, normally `${{ secrets.REPORAILS_API_KEY }}`. Empty runs anonymously.                |
 | `server-url`   | (empty) | Overrides the diagnostic endpoint. Empty uses production — set it only for a staging deployment.  |
@@ -372,7 +376,7 @@ And every output:
 | `server-error`  | The rejection/outage reason token (e.g. `rate_limit_exceeded`, `timeout`, `network_error`) when `server-status` is `server-unavailable`. Empty otherwise. |
 
 ```yaml
-- uses: reporails/cli/action@0.6.1
+- uses: reporails/cli/action@0.6.4
   id: reporails
   with:
     path: ./packages/api

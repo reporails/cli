@@ -15,6 +15,7 @@ from reporails_cli.core.mapper.instructions import instruction_starts, without_l
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import emphasis_runs, has_bold_label, wrapping_runs
 from reporails_cli.core.mapper.structure import line_spans
+from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, FORMAT_CHECK
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -42,6 +43,7 @@ _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 BROAD_SCOPE_RULE = "CORE:C:0060"
 PACKED_SENTENCE_RULE = "CORE:C:0058"
+FORMATTING_RULE = "CORE:E:0003"
 _RUNNING_TEXT = frozenset({"prose", "list", "numbered", "blockquote", "table"})
 _SENTENCE_END_RE = re.compile(r"[.!?][)\]\"'`]*$")
 
@@ -198,7 +200,8 @@ def _check_unformatted_code(
                     file=filepath,
                     line=a.line,
                     severity="warning",
-                    rule="format",
+                    rule=FORMATTING_RULE,
+                    check_id=FORMAT_CHECK,
                     message=f"'{code_tok}' should be in backticks — use `{code_tok}`",
                     fix=f"Wrap in backticks: `{code_tok}`",
                     source="client_check",
@@ -250,7 +253,8 @@ def _check_bold_patterns(charged: list[Atom], filepath: str) -> list[LocalFindin
                 file=filepath,
                 line=a.line,
                 severity="info",
-                rule="bold",
+                rule=FORMATTING_RULE,
+                check_id=BOLD_CHECK,
                 message=(
                     f"Bold on terms: {terms_str}. "
                     f"Bold competes for attention between instructions — "

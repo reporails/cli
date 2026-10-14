@@ -30,7 +30,6 @@ from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.config.bootstrap import env_flag
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
 from reporails_cli.formatters.text.path_filter import filter_result_to_paths, filter_ruleset_map_to_paths
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 from reporails_cli.interfaces.cli.check_notices import _agent_is_pinned
 from reporails_cli.interfaces.cli.check_orchestration import logger
 from reporails_cli.interfaces.cli.helpers import console
@@ -168,7 +167,6 @@ def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
         filter_agents=state.scope.filtered,
         effective_agent=state.scope.effective_agent,
         lint_result=lint_result,
-        alias_fn=rule_aliases,
         rule_agents=state.pipeline.rule_agents,
         notices=state.pipeline.notices,
         not_evaluated=state.pipeline.not_evaluated,

@@ -17,7 +17,6 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.json import format_combined_result
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 from reporails_cli.interfaces.mcp import remedy_brief
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_diagnostic]
@@ -146,7 +145,7 @@ def _project(tmp_path: Path, silenced: tuple[str, ...]) -> Path:
 def _suppressed(tmp_path: Path, *silenced: str, workflow: RemediationWorkflow | None = None) -> RemediationWorkflow:
     root = _project(tmp_path, silenced)
     result = CombinedResult(findings=(), reply=ServerReply(workflow=workflow or _packed_workflow()))
-    out = apply_suppressions(result, project_root=root, alias_fn=rule_aliases)
+    out = apply_suppressions(result, project_root=root)
     assert out.reply.workflow is not None
     return out.reply.workflow
 

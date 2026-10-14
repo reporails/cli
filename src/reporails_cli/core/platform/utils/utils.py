@@ -60,23 +60,9 @@ def yaml_error_line(exc: Exception) -> str:
     return f"{problem} (line {mark.line + 1})" if mark is not None else str(problem)
 
 
-# Paths whose unreadable YAML was already reported, so one broken file is reported once per run.
-_yaml_failures_reported: set[str] = set()
-
-
-def is_first_yaml_failure(path: Path) -> bool:
-    """True the first time `path` is reported as unreadable YAML since the cache was last cleared."""
-    key = str(path)
-    if key in _yaml_failures_reported:
-        return False
-    _yaml_failures_reported.add(key)
-    return True
-
-
 def clear_yaml_cache() -> None:
-    """Clear the YAML file cache and the reported-failure memory. Called alongside rule cache clearing."""
+    """Clear the YAML file cache. Called alongside rule cache clearing."""
     _yaml_file_cache.clear()
-    _yaml_failures_reported.clear()
 
 
 # A frontmatter delimiter: a whole `---` line (trailing whitespace allowed). A longer dash run,

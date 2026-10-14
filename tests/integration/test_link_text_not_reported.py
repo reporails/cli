@@ -41,5 +41,5 @@ def test_tool_name_in_link_text_is_not_reported_but_a_bare_one_is(tmp_path: Path
         encoding="utf-8",
     )
     ruleset = map_ruleset([doc], models=get_models(), root=tmp_path, cache_dir=None)
-    reported = {f.line for f in run_client_checks(ruleset) if f.rule == "format"}
+    reported = {f.line for f in run_client_checks(ruleset) if f.check_id == "format"}
     assert reported == {7}

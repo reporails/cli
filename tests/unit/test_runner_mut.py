@@ -20,7 +20,6 @@ import yaml
 from reporails_cli.core.lint.regex.compiler import CombinedPattern, CompiledCheck, compile_rules
 from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
-    _append_extra,
     _is_text_file,
     _resolve_scan_targets,
     _scan_all_targets,
@@ -93,25 +92,15 @@ def test_path_filter_globstar_matches_rel_not_filename() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _append_extra (L76) / _resolve_scan_targets (L92) — existence guards
+# _resolve_scan_targets (L92) — existence guards
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_append_extra_skips_nonexistent(tmp_path: Path) -> None:
-    """A non-existent extra target is not appended (L76 `and->or`)."""
-    seen: set[Path] = set()
-    targets: list[Path] = []
-    _append_extra(seen, targets, [tmp_path / "missing.md"])
-    assert targets == []
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_resolve_scan_targets_skips_nonexistent_instruction(tmp_path: Path) -> None:
     """A non-existent instruction file is not a scan target (L92 `and->or`)."""
-    result = _resolve_scan_targets(tmp_path, [tmp_path / "missing.md"], None)
+    result = _resolve_scan_targets(tmp_path, [tmp_path / "missing.md"])
     assert result == []
 
 

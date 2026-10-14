@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, degrade_on_fault, resolve_api_key
+from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, resolve_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
 from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
@@ -26,9 +26,6 @@ from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import (
     refresh_stored_tier,
     signed_in_recently,
-)
-from reporails_cli.core.platform.contract.errors import (
-    ConfigUnreadableError,
 )
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
@@ -76,13 +73,10 @@ def _user_agent() -> str:
 def _tier_from_config() -> str:
     """Read tier from global config (~/.reporails/config.yml).
 
-    Returns "" only for genuine absence (no config / no tier). Raises
-    ConfigUnreadableError when the config exists but cannot be read.
+    Returns "" only for genuine absence (no config / no tier). An unreadable
+    config raises ConfigUnreadableError.
     """
-    try:
-        return get_global_config().tier
-    except (OSError, AttributeError) as exc:
-        raise ConfigUnreadableError(f"Could not read tier from config: {exc}") from exc
+    return get_global_config().tier
 
 
 class AilsClient:
@@ -101,7 +95,7 @@ class AilsClient:
     ) -> None:
         self.base_url = base_url or os.environ.get("AILS_SERVER_URL") or DEFAULT_SERVER_URL
         self.api_key = api_key or resolve_api_key()
-        self.tier = tier or os.environ.get("AILS_TIER") or degrade_on_fault(_tier_from_config, "tier") or "free"
+        self.tier = tier or os.environ.get("AILS_TIER") or _tier_from_config() or "free"
         self.timeout = timeout
 
     def lint(

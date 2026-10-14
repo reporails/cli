@@ -78,7 +78,6 @@ def test_symlinked_importer_reads_the_source_next_to_the_real_file(tmp_path: Pat
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=lambda _r: set(),
     )
     assert _imports_left_out(inp, RunExclusions(root, dirs=frozenset({"ext"})))
     assert "(from ext/notes.md:3" in _imported_note(atom, root)

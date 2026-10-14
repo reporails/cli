@@ -7,11 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from reporails_cli.core.mapper.bio_graphs import multislot_available
-from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, FunnelError
+from reporails_cli.core.platform.dto.diagnostics import CLIENT_CHECK_KINDS, DEFAULT_RETRY_AFTER_S, FunnelError
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
 from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions, normalize_finding_path
 from reporails_cli.formatters.text.funnel_cta import plain_cta
-from reporails_cli.formatters.text.rule_meta import display_rule_id
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
 from reporails_cli.formatters.triage import classify_regime, resolve_leverage
 
@@ -250,26 +249,25 @@ def _finding_entry(f: Any, project_root: Path) -> dict[str, Any]:
 
     `leverage` is additive (raw `severity` is unchanged — the machine baseline); it appears only
     on a finding the reply graded. `rule` is the canonical `<NS>:<CAT>:<SLOT>` id (same as text
-    output); the raw client-check token, when it differs, is preserved under `label` for baseline
+    output); a check that is not one of the rule's own (`format`, `bold`) is named under `label` for baseline
     stability. `convention` marks a finding that only names a documentation convention the file
     does not follow, so a reader can collapse the group the way the text output does. A per-file
     overlap finding names the file it overlaps (`partner_file`, relative to the project), its line
     and the share that overlaps, when the reply names them.
     """
 
-    canonical = display_rule_id(f.rule)
     entry: dict[str, Any] = {
         "line": f.line,
         "severity": f.severity,
-        "rule": canonical,
-        "category": _category_for_rule(canonical),
+        "rule": f.rule,
+        "category": _category_for_rule(f.rule),
         "message": f.message,
     }
     grade = resolve_leverage(f)
     if grade is not None:
         entry["leverage"] = grade.value
-    if canonical != f.rule:
-        entry["label"] = f.rule
+    if f.check_id in CLIENT_CHECK_KINDS:
+        entry["label"] = f.check_id
     if f.fix:
         entry["fix"] = f.fix
     if f.convention:
@@ -422,8 +420,9 @@ def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     buckets: dict[str, dict[str, Any]] = {}
     for f in findings:
-        rule = display_rule_id(f.rule)
-        bucket = buckets.setdefault(rule, {"count": 0, "severity": f.severity, "errors": 0, "warnings": 0, "infos": 0})
+        bucket = buckets.setdefault(
+            f.rule, {"count": 0, "severity": f.severity, "errors": 0, "warnings": 0, "infos": 0}
+        )
         bucket["count"] += 1
         bucket[f"{f.severity}s"] = bucket.get(f"{f.severity}s", 0) + 1
         if severity_rank.get(f.severity, 3) < severity_rank.get(bucket["severity"], 3):

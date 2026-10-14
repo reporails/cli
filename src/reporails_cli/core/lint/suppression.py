@@ -1,6 +1,6 @@
-"""Post-merge finding filters — inline-directive suppression and surface-scoped mutation.
+"""Post-merge finding filters — inline-directive suppression, the run's rule set and surface-scoped mutation.
 
-Two filters run at the same chokepoint (after merge, before display and strict gating):
+Three filters run at the same chokepoint (after merge, before display and strict gating):
 
 1. Inline per-line suppression — an author marks a single reviewed finding as intentional
    with a rule-named inline directive on the offending line; the rule stays armed on every
@@ -18,12 +18,16 @@ Two filters run at the same chokepoint (after merge, before display and strict g
    its frontmatter; `apply_surface_mutations` reads that declaration and drops the rule's
    findings on memory-surface files. Filtering post-merge covers both locally-computed and
    server-emitted findings uniformly.
+
+3. Run rule set — a rule the run does not report (disabled, excluded by an agent, gated out
+   by its capabilities or superseded) loses its findings, hints, cross-file rows and
+   remediation rows (`apply_rule_set`).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -31,6 +35,7 @@ from typing import Any
 from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
+from reporails_cli.core.platform.adapters.rules_query import rule_slug
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.dto.diagnostics import (
     ListedFinding,
@@ -38,7 +43,12 @@ from reporails_cli.core.platform.dto.diagnostics import (
     walk_findings,
     workflow_summary,
 )
-from reporails_cli.core.platform.runtime.merger import normalize_finding_path, rebuild_severity_stats
+from reporails_cli.core.platform.runtime.merger import (
+    drop_findings,
+    normalize_finding_path,
+    rebuild_cross_file_stats,
+    rebuild_severity_stats,
+)
 from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
@@ -135,10 +145,24 @@ def suppressed_lines(
     return out
 
 
+# A rule a suppression directive may also name by its short token, as it has always been written.
+SHORT_TOKEN = {"CORE:S:0039": "heading_instruction"}
+
+
+def rule_aliases(rule: str) -> set[str]:
+    """Every name a suppression directive may use for a rule: its id, its slug and its short token."""
+    names = {rule}
+    if rule in SHORT_TOKEN:
+        names.add(SHORT_TOKEN[rule])
+    slug = rule_slug(rule)
+    if slug:
+        names.add(slug)
+    return names
+
+
 def is_suppressed(
     finding: Any,
     index: SuppressionIndex,
-    alias_fn: Callable[[str], set[str]] | None = None,
     imported: ImportedPlaces | None = None,
 ) -> bool:
     """True when a directive on the finding's line names the finding's rule.
@@ -157,8 +181,7 @@ def is_suppressed(
         named |= index.import_rules.get((finding.file, finding.line)) or set()
     if not named:
         return False
-    aliases = alias_fn(finding.rule) if alias_fn else {finding.rule}
-    return bool(named & aliases)
+    return bool(named & rule_aliases(finding.rule))
 
 
 def renumbered(locations: Sequence[Any]) -> list[Any]:
@@ -348,7 +371,6 @@ def _workflow_files(workflow: Any, norm: Callable[[str], str]) -> list[str]:
 def apply_suppressions(
     result: Any,
     project_root: Path | None = None,
-    alias_fn: Callable[[str], set[str]] | None = None,
     imported: ImportedPlaces | None = None,
 ) -> Any:
     """Return `result` with directive-suppressed findings removed and stats rebuilt.
@@ -372,12 +394,12 @@ def apply_suppressions(
     kept_list: list[Any] = []
     dropped: list[Any] = []
     for f in result.findings:
-        (dropped if is_suppressed(f, index, alias_fn, imported) else kept_list).append(f)
+        (dropped if is_suppressed(f, index, imported) else kept_list).append(f)
     kept = tuple(kept_list)
     if workflow is not None:
 
         def _gone(f: Any) -> bool:
-            return is_suppressed(replace(f, file=norm(f.file)), index, alias_fn, imported)
+            return is_suppressed(replace(f, file=norm(f.file)), index, imported)
 
         workflow = prune_workflow(workflow, _gone, norm, dropped=dropped, kept_findings=kept)
     if len(kept) == len(result.findings) and (workflow is None or workflow is result.reply.workflow):
@@ -389,6 +411,55 @@ def apply_suppressions(
         stats=stats,
         reply=replace(result.reply, workflow=workflow if workflow is not None else result.reply.workflow),
     )
+
+
+def apply_rule_set(
+    result: Any, resolved: Collection[str], known: Collection[str], project_root: Path | None = None
+) -> Any:
+    """Return `result` without the findings of a rule the run does not report.
+
+    A finding whose rule is one of the `known` rules but not among the `resolved` ones (a
+    disabled rule, one an agent excludes, one its capabilities gate out or a superseded one) is
+    dropped with its remediation `workflow` rows and listed entries, and leaves the source
+    counts as if it never ran. The same goes for its hints and cross-file rows, and the
+    cross-file counts follow what is kept. A rule name no known rule carries (a classifier or
+    memory check's own label) is kept.
+    """
+
+    def out(rule: str) -> bool:
+        return rule in known and rule not in resolved
+
+    kept = [f for f in result.findings if not out(f.rule)]
+    dropped = [f for f in result.findings if out(f.rule)]
+    result = drop_findings(result, kept)
+    cross_file = tuple(row for row in result.cross_file if not out(row.rule))
+    coordinates = tuple(row for row in result.cross_file_coordinates if not out(row.rule))
+    hints = tuple(hint for hint in result.hints if not out(hint.diagnostic_type))
+    if (cross_file, coordinates, hints) != (result.cross_file, result.cross_file_coordinates, result.hints):
+        result = replace(
+            result,
+            cross_file=cross_file,
+            cross_file_coordinates=coordinates,
+            hints=hints,
+            stats=rebuild_cross_file_stats(result.stats, cross_file, coordinates),
+        )
+    workflow = result.reply.workflow
+    if getattr(workflow, "locations", None) is None:
+        return result
+
+    def norm(file: str) -> str:
+        return normalize_finding_path(file, project_root)
+
+    listed_out = [entry for entry in workflow.listed if out(entry.rule)]
+    pruned = prune_workflow(
+        workflow,
+        lambda row: out(row.rule),
+        norm,
+        dropped=[*dropped, *listed_out],
+        kept_findings=kept,
+        relation_gone=lambda relation: out(relation.rule),
+    )
+    return result if pruned is workflow else replace(result, reply=replace(result.reply, workflow=pruned))
 
 
 def finding_surface(file: str) -> str:
@@ -423,38 +494,28 @@ def _finding_surface_excluded(
     finding: Any,
     surface: str,
     rules_by_id: dict[str, Any],
-    alias_fn: Callable[[str], set[str]] | None,
 ) -> bool:
-    """True when any name the finding's rule is known by declares the surface non-applicable.
-
-    Client-side findings carry a raw token (`format`, `heading_instruction`, `scope`) that aliases to a
-    canonical `CORE:*` id; server findings carry the canonical id directly. Resolving through
-    `alias_fn` (the same resolver `apply_suppressions` uses) lets a `surface_mutations` block on
-    the canonical rule suppress the raw-token finding too.
-    """
-    names = alias_fn(finding.rule) if alias_fn else {finding.rule}
-    return any(_surface_excluded(rules_by_id.get(name), surface) for name in names)
+    """True when the finding's rule declares the surface non-applicable."""
+    return _surface_excluded(rules_by_id.get(finding.rule), surface)
 
 
 def apply_surface_mutations(
     result: Any,
     rules_by_id: dict[str, Any],
-    alias_fn: Callable[[str], set[str]] | None = None,
     project_root: Path | None = None,
 ) -> Any:
     """Return `result` with findings dropped on a surface their rule marks non-applicable.
 
-    A finding survives unless its rule (resolved through `alias_fn` to every name it is known
-    by) declares the finding's surface non-applicable via `surface_mutations`. Stats are rebuilt
-    over the kept findings, mirroring `apply_suppressions`, and the remediation `workflow`
-    loses the same findings.
+    A finding survives unless its rule declares the finding's surface non-applicable via
+    `surface_mutations`. Stats are rebuilt over the kept findings, mirroring
+    `apply_suppressions`, and the remediation `workflow` loses the same findings.
     """
     if not result.findings:
         return result
     kept_list: list[Any] = []
     dropped: list[Any] = []
     for f in result.findings:
-        excluded = _finding_surface_excluded(f, finding_surface(f.file), rules_by_id, alias_fn)
+        excluded = _finding_surface_excluded(f, finding_surface(f.file), rules_by_id)
         (dropped if excluded else kept_list).append(f)
     if not dropped:
         return result

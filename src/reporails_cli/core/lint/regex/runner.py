@@ -34,21 +34,9 @@ def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
     return text[:max_len] + "..." if len(text) > max_len else text
 
 
-def _append_extra(seen: set[Path], targets: list[Path], extra_targets: list[Path] | None) -> None:
-    """Append extra targets (deduped by resolved path)."""
-    if not extra_targets:
-        return
-    for extra in extra_targets:
-        resolved = safe_resolve(extra)
-        if resolved not in seen and resolved.exists():
-            seen.add(resolved)
-            targets.append(resolved)
-
-
 def _resolve_scan_targets(
     target: Path,
     instruction_files: list[Path] | None,
-    extra_targets: list[Path] | None,
 ) -> list[Path]:
     """Build scan targets from instruction files or directory scan."""
     if instruction_files:
@@ -59,7 +47,6 @@ def _resolve_scan_targets(
             if resolved not in seen and resolved.exists():
                 seen.add(resolved)
                 targets.append(ifile)
-        _append_extra(seen, targets, extra_targets)
         return targets
 
     scan_dir = target if target.is_dir() else target.parent
@@ -67,8 +54,6 @@ def _resolve_scan_targets(
     targets = list(walk_markdown(scan_dir, excluded))
     if not targets:
         targets = list(walk_files(scan_dir, excluded, _is_text_file))
-    seen = {safe_resolve(t) for t in targets}
-    _append_extra(seen, targets, extra_targets)
     return targets
 
 
@@ -368,13 +353,12 @@ def _compile_ruleset(yml_paths: list[Path], body_only_paths: set[Path] | None) -
 def _scan_ruleset(
     ruleset: CompiledRuleSet,
     target: Path,
-    extra_targets: list[Path] | None = None,
     instruction_files: list[Path] | None = None,
 ) -> dict[str, Any]:
     """Run a compiled ruleset over the scan targets, returns SARIF-shaped dict."""
     if not ruleset.checks:
         return {"runs": []}
-    scan_targets = _resolve_scan_targets(target, instruction_files, extra_targets)
+    scan_targets = _resolve_scan_targets(target, instruction_files)
     if not scan_targets:
         return {"runs": []}
     scan_root = target if target.is_dir() else target.parent
@@ -385,13 +369,12 @@ def _scan_ruleset(
 def run_validation(
     yml_paths: list[Path],
     target: Path,
-    extra_targets: list[Path] | None = None,
     instruction_files: list[Path] | None = None,
     body_only_paths: set[Path] | None = None,
 ) -> dict[str, Any]:
     """Execute regex validation with specified rule configs, returns SARIF-shaped dict."""
     ruleset = _compile_ruleset(yml_paths, body_only_paths)
-    return _scan_ruleset(ruleset, target, extra_targets, instruction_files)
+    return _scan_ruleset(ruleset, target, instruction_files)
 
 
 def _collect_sarif_matches(
@@ -437,7 +420,7 @@ def _resolve_scanned_files(
     """Build list of relative file paths that were scanned."""
     scan_root = target if target.is_dir() else target.parent
     scanned: list[str] = []
-    for fp in _resolve_scan_targets(target, instruction_files, None):
+    for fp in _resolve_scan_targets(target, instruction_files):
         if not fp.is_file():
             continue
         try:

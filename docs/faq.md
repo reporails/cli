@@ -1,7 +1,7 @@
 ---
 title: "FAQ"
 description: "Common questions"
-version: "0.6.1"
+version: "0.6.4"
 last_updated: 2026-10-08
 ---
 
@@ -85,7 +85,7 @@ If you only have a root file but a large repo, you'll likely trip `CORE:E:0002` 
 CI runs in a fresh environment without the credentials file at `~/.reporails/credentials.yml` that `ails login` writes locally. Create an API key on [reporails.com/account](https://reporails.com/account), store it as a secret in your CI provider, and pass it via the action input or environment variable:
 
 ```yaml
-- uses: reporails/cli/action@0.6.1
+- uses: reporails/cli/action@0.6.4
   with:
     api-key: ${{ secrets.REPORAILS_API_KEY }}
 ```

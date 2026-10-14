@@ -108,10 +108,10 @@ class TestFaultDistinction:
     @pytest.mark.unit
     @pytest.mark.subsys_api
     def test_unreadable_config_raises_typed_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A config-read OSError is a fault, not absence → ConfigUnreadableError."""
+        """An unreadable config is a fault, not absence → ConfigUnreadableError."""
 
         def _boom() -> object:
-            raise OSError("disk gone")
+            raise ConfigUnreadableError("config.yml: could not be read")
 
         monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.get_global_config", _boom)
         with pytest.raises(ConfigUnreadableError):

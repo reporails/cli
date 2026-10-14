@@ -14,7 +14,9 @@ from typing import Any, NamedTuple
 
 from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
+from reporails_cli.core.lint.suppression import SHORT_TOKEN
 from reporails_cli.core.mapper.skills import skill_membership
+from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, CLIENT_CHECK_KINDS, FORMAT_CHECK
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
@@ -42,10 +44,6 @@ AGGREGATE_RULES = {
     "CORE:C:0040",
     "CORE:S:0039",
     "CORE:C:0060",
-    # Client check labels
-    "format",
-    "bold",
-    "heading_instruction",
     # Classifier confidence
     "ambiguous_charge",
 }
@@ -66,25 +64,30 @@ AGGREGATE_LABELS: dict[str, str] = {
     "CORE:C:0050": "context near vague",
     "CORE:C:0052": "default wins",
     "CORE:C:0040": "redundant",
-    "format": "unformatted",
-    "bold": "bold",
+    FORMAT_CHECK: "unformatted",
+    BOLD_CHECK: "bold",
     "heading_instruction": "heading as instruction",
     "CORE:C:0060": "broad scope",
     "ambiguous_charge": "ambiguous",
 }
 
-# Rule ids counted under another aggregate key: the heading rule's findings are grouped under
-# the short heading label.
-AGGREGATE_KEY = {"CORE:S:0039": "heading_instruction"}
+
+def aggregate_key(finding: Any) -> str:
+    """The aggregate a finding is counted under: a client check's own kind (`format`, `bold`),
+    else its rule id, or the short key a rule is grouped under."""
+    if finding.check_id in CLIENT_CHECK_KINDS:
+        return str(finding.check_id)
+    return str(SHORT_TOKEN.get(finding.rule, finding.rule))
+
 
 AGG_ORDER = [
     "CORE:C:0042",
     "CORE:E:0004",
     "CORE:C:0058",
     "CORE:C:0043",
-    "format",
+    FORMAT_CHECK,
     "CORE:E:0003",
-    "bold",
+    BOLD_CHECK,
     "heading_instruction",
     "CORE:C:0060",
     "ambiguous_charge",

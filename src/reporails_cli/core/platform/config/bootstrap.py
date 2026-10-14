@@ -56,6 +56,16 @@ def get_global_config_path() -> Path:
     return get_reporails_home() / "config.yml"
 
 
+def get_project_config_path(project_root: Path) -> Path:
+    """Get path to the project config file (<root>/.ails/config.yml)."""
+    return project_root / ".ails" / "config.yml"
+
+
+def get_local_config_path(project_root: Path) -> Path:
+    """Get path to the project's personal override file (<root>/.ails/config.local.yml)."""
+    return project_root / ".ails" / "config.local.yml"
+
+
 def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
     """Resolve package names to directories.
 

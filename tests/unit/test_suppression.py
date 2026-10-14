@@ -16,7 +16,6 @@ from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.runtime.merger import merge_results
 from reporails_cli.core.platform.utils.directives import parse_directives
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 
 class TestParseDirectives:
@@ -82,7 +81,7 @@ class TestApplySuppressions:
         result = _result(project)
         assert len(result.findings) == 2
 
-        out = apply_suppressions(result, project_root=project, alias_fn=rule_aliases)
+        out = apply_suppressions(result, project_root=project)
 
         # Both directions: the annotated line is gone, the un-annotated sibling stays.
         lines = sorted(f.line for f in out.findings)
@@ -98,20 +97,30 @@ class TestApplySuppressions:
             LocalFinding("CLAUDE.md", 2, "warning", "CORE:C:0046", "conflict", source="client_check"),
         ]
         result = merge_results([], findings, None, project_root=project)
-        out = apply_suppressions(result, project_root=project, alias_fn=rule_aliases)
+        out = apply_suppressions(result, project_root=project)
         assert len(out.findings) == 1
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_canonical_id_directive_matches_client_token(self, tmp_path: Path) -> None:
-        # Author copies the displayed canonical ID; finding carries the raw client token.
+    def test_canonical_id_directive_matches_client_check(self, tmp_path: Path) -> None:
+        # Author copies the displayed rule ID; the client check reports under it.
         (tmp_path / "CLAUDE.md").write_text(
             "constraint first  <!-- ails-disable-line CORE:E:0003 -->\n", encoding="utf-8"
         )
-        findings = [LocalFinding("CLAUDE.md", 1, "warning", "bold", "bold on term", source="client_check")]
+        findings = [LocalFinding("CLAUDE.md", 1, "warning", "CORE:E:0003", "bold on term", source="client_check")]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
+        out = apply_suppressions(result, project_root=tmp_path)
         assert out.findings == ()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_check_label_directive_silences_nothing(self, tmp_path: Path) -> None:
+        # A directive names the rule id or its slug; the label of the check that raised it is not a name.
+        directive = "constraint first  <!-- ails-disable-line format bold -->\n"
+        (tmp_path / "CLAUDE.md").write_text(directive, encoding="utf-8")
+        findings = [LocalFinding("CLAUDE.md", 1, "warning", "CORE:E:0003", "bold on term", source="client_check")]
+        result = merge_results([], findings, None, project_root=tmp_path)
+        assert apply_suppressions(result, project_root=tmp_path).findings == result.findings
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -122,7 +131,7 @@ class TestApplySuppressions:
         )
         findings = [LocalFinding("CLAUDE.md", 1, "warning", "CORE:S:0039", "heading", source="content_query")]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
+        out = apply_suppressions(result, project_root=tmp_path)
         assert out.findings == ()
 
     @pytest.mark.unit
@@ -131,13 +140,13 @@ class TestApplySuppressions:
         (tmp_path / "CLAUDE.md").write_text("plain prose\n", encoding="utf-8")
         findings = [LocalFinding("CLAUDE.md", 1, "warning", "CORE:C:0049", "x", source="client_check")]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
+        out = apply_suppressions(result, project_root=tmp_path)
         assert out is result
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_default_alias_is_exact_rule_token(self, project: Path) -> None:
-        # Without an alias_fn only the exact raw token matches.
+        # Only the rule id, its slug or its short token match.
         result = _result(project)
         out = apply_suppressions(result, project_root=project)
         assert sorted(f.line for f in out.findings) == [4]
@@ -194,7 +203,7 @@ class TestBuildIndex:
 
         findings = [LocalFinding("CLAUDE.md", 2, "warning", "CORE:C:0049", "ambiguous", source="client_check")]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
+        out = apply_suppressions(result, project_root=tmp_path)
         assert out.findings == ()
 
 
@@ -316,7 +325,7 @@ class TestSurfaceMutations:
         rules = load_rules()
         findings = [LocalFinding("skills/memory/SKILL.md", 1, "warning", "CORE:D:0003", "order", source="server")]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_surface_mutations(result, rules, alias_fn=rule_aliases)
+        out = apply_surface_mutations(result, rules)
         assert len(out.findings) == 1
 
     @pytest.mark.unit
@@ -329,19 +338,20 @@ class TestSurfaceMutations:
             LocalFinding("CLAUDE.md", 1, "warning", "CORE:D:0003", "order", source="server"),
         ]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_surface_mutations(result, rules, alias_fn=rule_aliases)
+        out = apply_surface_mutations(result, rules)
         surviving = {f.file for f in out.findings}
         assert not any(finding_surface(f.file) == "memory" for f in out.findings)
         assert "CLAUDE.md" in surviving  # off-surface finding for the same rule stays armed
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_client_token_aliases_to_mutated_rule(self, tmp_path: Path) -> None:
-        # The client-side "bold" token aliases to CORE:E:0003; the mutation must reach it.
+    def test_client_check_reaches_mutated_rule(self, tmp_path: Path) -> None:
+        # The client-side bold check reports under CORE:E:0003; the mutation must reach it.
         rules = load_rules()
-        findings = [LocalFinding("memory/MEMORY.md", 1, "warning", "bold", "bold on term", source="client_check")]
+        finding = LocalFinding("memory/MEMORY.md", 1, "warning", "CORE:E:0003", "bold on term", source="client_check")
+        findings = [finding]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_surface_mutations(result, rules, alias_fn=rule_aliases)
+        out = apply_surface_mutations(result, rules)
         assert out.findings == ()
 
     @pytest.mark.unit
@@ -353,5 +363,5 @@ class TestSurfaceMutations:
         rules = load_rules()
         findings = [LocalFinding("memory/MEMORY.md", 1, "warning", "memory_frontmatter", "fm", source="client_check")]
         result = merge_results([], findings, None, project_root=tmp_path)
-        out = apply_surface_mutations(result, rules, alias_fn=rule_aliases)
+        out = apply_surface_mutations(result, rules)
         assert len(out.findings) == 1

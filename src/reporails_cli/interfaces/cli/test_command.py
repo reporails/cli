@@ -64,11 +64,6 @@ class RulesTestOptions:
         "--fail-on-not-impl",
         help="Treat not_implemented rules as failures (for CI)",
     )
-    score: bool = typer.Option(
-        False,
-        "--score",
-        help="Show quality delta between pass/fail fixtures",
-    )
     export_baseline: str = typer.Option(
         None,
         "--export-baseline",
@@ -110,17 +105,6 @@ def test_rules(opts: RulesTestOptions) -> None:
         return
 
     _require_model()
-
-    if opts.score:
-        _run_score_mode(
-            root,
-            filter_path=opts.path,
-            filter_rule=opts.rule,
-            package_roots=package_roots,
-            agent=opts.agent,
-            output_format=opts.output_format,
-        )
-        return
 
     from reporails_cli.core.lint.harness import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         run_harness,
@@ -253,72 +237,6 @@ def _run_coverage_check(
         console.print(f"  {gap.rule_id}: {gap.reason}")
 
     raise typer.Exit(1)
-
-
-def _run_score_mode(
-    root: Path,
-    *,
-    filter_path: str | None,
-    filter_rule: str | None,
-    package_roots: list[Path],
-    agent: str,
-    output_format: str,
-) -> None:
-    """Run effectiveness scoring mode."""
-    from reporails_cli.core.lint.harness_quality import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
-        score_rules,
-    )
-
-    deltas = score_rules(
-        root,
-        filter_path=filter_path,
-        filter_rule=filter_rule,
-        package_roots=package_roots,
-        agent=agent,
-    )
-
-    if not deltas:
-        console.print("[red]No rules with both pass and fail fixtures found.[/red]")
-        return
-
-    if output_format == "json":
-        _print_score_json(deltas)
-    else:
-        _print_score_text(deltas)
-
-
-def _print_score_text(deltas: list[Any]) -> None:
-    """Print human-readable score deltas."""
-    console.print(f"Effectiveness: {len(deltas)} rule(s) scored")
-    console.print("-" * 55)
-    console.print(f"  {'Rule':<20} {'Pass':>6} {'Fail':>6} {'Delta':>6}")
-    console.print("-" * 55)
-
-    flagged = 0
-    for d in sorted(deltas, key=lambda x: x.delta, reverse=True):
-        flag = " *" if d.delta < 0.5 else ""
-        if d.delta < 0.5:
-            flagged += 1
-        console.print(f"  {d.rule_id:<20} {d.pass_score:>6.1f} {d.fail_score:>6.1f} {d.delta:>+6.1f}{flag}")
-
-    console.print()
-    if flagged:
-        console.print(f"  * {flagged} rule(s) with delta < 0.5 — candidates for review")
-        console.print()
-
-
-def _print_score_json(deltas: list[Any]) -> None:
-    """Print JSON score deltas."""
-    data = {
-        d.rule_id: {
-            "slug": d.slug,
-            "pass_score": d.pass_score,
-            "fail_score": d.fail_score,
-            "delta": d.delta,
-        }
-        for d in deltas
-    }
-    print(json.dumps(data, indent=2))
 
 
 def _print_text(results: list[Any], verbose: bool) -> None:

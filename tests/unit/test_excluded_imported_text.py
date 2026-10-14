@@ -30,7 +30,6 @@ def _inputs(root: Path, imported_from: str | None) -> AssembleInputs:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=lambda _r: set(),
     )
 
 

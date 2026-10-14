@@ -36,7 +36,7 @@ from reporails_cli.formatters.text.display_constants import (
 from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINES, UNPAID_PITCH_LINE, upgrade_link_line
 from reporails_cli.formatters.text.health import SurfaceHealth, count_tag, mean_display_score
 from reporails_cli.formatters.text.item_scorecard import render_item_health
-from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url
+from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.text.verdict import (
     _render_verdict_block,
@@ -216,15 +216,14 @@ def compute_surface_scores(
 def _count_categories(findings: list[Any]) -> dict[str, int]:
     """Group findings by rule-id-derived Category value.
 
-    Canonicalizes each finding's rule id first (a bare client-check token like
-    `format` maps to `CORE:E:0003`), pulls the second segment, and maps it via
-    `CATEGORY_CODES`. Only ids that still lack a known code after canonicalization
-    are skipped, so the breakdown stays consistent with the per-finding categories.
+    Takes the second segment of each finding's rule id and maps it via `CATEGORY_CODES`.
+    A rule name without a known category code is skipped, so the breakdown stays
+    consistent with the per-finding categories.
     """
 
     counts: Counter[str] = Counter()
     for f in findings:
-        parts = display_rule_id(f.rule or "").split(":")
+        parts = (f.rule or "").split(":")
         if len(parts) < 2:
             continue
         category = CATEGORY_CODES.get(parts[1])
@@ -359,7 +358,7 @@ def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, 
     buckets: dict[str, dict[str, Any]] = {}
     for f in findings:
         bucket = buckets.setdefault(
-            display_rule_id(f.rule),
+            f.rule,
             {"count": 0, "severity": f.severity, "message": f.message},
         )
         bucket["count"] += 1

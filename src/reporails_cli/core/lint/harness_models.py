@@ -125,17 +125,6 @@ class RuleInfo(BaseModel):
 
 
 @dataclass
-class ScoreDelta:
-    """Per-rule quality delta between pass and fail fixtures."""
-
-    rule_id: str
-    slug: str
-    pass_score: float
-    fail_score: float
-    delta: float
-
-
-@dataclass
 class LintError:
     """A structural integrity error found in a rule."""
 

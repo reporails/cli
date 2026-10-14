@@ -15,7 +15,6 @@ from reporails_cli.core.platform.dto.diagnostics import (
     WorkflowLocation,
 )
 from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply, merge_results
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 STYLE = "# Style\n\nKeep diffs small.{a}\n\nUse tabs.{b}\n\nPrefer clarity.{c}\n"
 
@@ -52,7 +51,7 @@ def _survivors(result: CombinedResult) -> set[tuple[str, int | None]]:
 
 
 def _apply(root: Path, result: CombinedResult) -> CombinedResult:
-    return apply_suppressions(result, project_root=root, alias_fn=rule_aliases, imported=PLACES)
+    return apply_suppressions(result, project_root=root, imported=PLACES)
 
 
 def _combined(**kw: object) -> CombinedResult:
@@ -107,7 +106,7 @@ def test_directive_on_an_ordinary_line_is_unchanged(tmp_path: Path) -> None:
         FindingItem("CLAUDE.md", 2, "warning", "CORE:C:0049", "x"),
         FindingItem("CLAUDE.md", 3, "warning", "CORE:C:0049", "x"),
     ]
-    out = apply_suppressions(CombinedResult(findings=tuple(findings)), project_root=tmp_path, alias_fn=rule_aliases)
+    out = apply_suppressions(CombinedResult(findings=tuple(findings)), project_root=tmp_path)
     assert [f.line for f in out.findings] == [3]
 
 
@@ -122,9 +121,7 @@ def test_directive_in_a_twice_nested_import_silences_its_own_line(tmp_path: Path
     (tmp_path / "CLAUDE.md").write_text("# Project\n\n@sub/mid.md\n", encoding="utf-8")
     places = {("CLAUDE.md", 1): ("sub/deep.md", 3), ("CLAUDE.md", 2): ("sub/deep.md", 5)}
     findings = tuple(FindingItem("CLAUDE.md", 3, "warning", "CORE:C:0042", "x", pi=pi) for pi in (1, 2))
-    out = apply_suppressions(
-        CombinedResult(findings=findings), project_root=tmp_path, alias_fn=rule_aliases, imported=places
-    )
+    out = apply_suppressions(CombinedResult(findings=findings), project_root=tmp_path, imported=places)
     assert [f.pi for f in out.findings] == [1]
 
 
@@ -133,9 +130,7 @@ def test_directive_in_a_twice_nested_import_silences_its_own_line(tmp_path: Path
 def test_alias_names_in_an_imported_directive_silence_the_finding(tmp_path: Path) -> None:
     root = _project(tmp_path, a=_directive("CORE:C:0042"))
     findings = (FindingItem("CLAUDE.md", 3, "warning", "CORE:C:0042", "x", pi=1),)
-    out = apply_suppressions(
-        CombinedResult(findings=findings), project_root=root, alias_fn=lambda r: {r, "CORE:C:0042"}, imported=PLACES
-    )
+    out = apply_suppressions(CombinedResult(findings=findings), project_root=root, imported=PLACES)
     assert out.findings == ()
 
 
@@ -180,7 +175,7 @@ def test_suppressed_finding_leaves_the_workflow_and_emptied_location_is_dropped(
     (tmp_path / "c.md").write_text("x\n" * 8 + "Do it. <!-- ails-disable-line CORE:C:0042 -->\n", encoding="utf-8")
     workflow = RemediationWorkflow(locations=(*workflow.locations, only), summary="served")
     result = CombinedResult(findings=(), reply=ServerReply(workflow=workflow))
-    out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
+    out = apply_suppressions(result, project_root=tmp_path)
     assert out.reply.workflow is not None
     assert [(loc.order, loc.element) for loc in out.reply.workflow.locations] == [(1, "CLAUDE.md"), (2, "b.md")]
     assert [f.rule for f in out.reply.workflow.locations[0].findings] == ["CORE:E:0004"]
@@ -193,9 +188,7 @@ def test_location_with_only_a_relation_left_is_kept(tmp_path: Path) -> None:
     (tmp_path / "CLAUDE.md").write_text("# T\nDo it.  <!-- ails-disable-line CORE:C:0042 -->\n", encoding="utf-8")
     rel = LocationRelation("CORE:E:0001", "CLAUDE.md", 2, "o.md", 1, "m", "r")
     workflow = RemediationWorkflow(locations=(_loc(1, "CLAUDE.md", ("CORE:C:0042", 2, None), relations=(rel,)),))
-    out = apply_suppressions(
-        CombinedResult(findings=(), reply=ServerReply(workflow=workflow)), project_root=tmp_path, alias_fn=rule_aliases
-    )
+    out = apply_suppressions(CombinedResult(findings=(), reply=ServerReply(workflow=workflow)), project_root=tmp_path)
     assert out.reply.workflow is not None
     assert out.reply.workflow.locations[0].findings == ()
     assert out.reply.workflow.locations[0].relations == (rel,)
@@ -209,7 +202,6 @@ def test_suppressed_imported_finding_leaves_the_workflow(tmp_path: Path) -> None
     out = apply_suppressions(
         CombinedResult(findings=(), reply=ServerReply(workflow=workflow)),
         project_root=root,
-        alias_fn=rule_aliases,
         imported=PLACES,
     )
     assert out.reply.workflow is not None
@@ -239,7 +231,7 @@ def _no_position_project(tmp_path: Path, style: str) -> Path:
 def test_finding_without_position_on_import_line_is_silenced_by_imported_directive(tmp_path: Path) -> None:
     root = _no_position_project(tmp_path, f"# Style\n\nNever push to main directly.{_directive('CORE:E:0006')}\n")
     findings = (FindingItem("CLAUDE.md", 3, "warning", "CORE:E:0006", "x"),)
-    out = apply_suppressions(CombinedResult(findings=findings), project_root=root, alias_fn=rule_aliases)
+    out = apply_suppressions(CombinedResult(findings=findings), project_root=root)
     assert out.findings == ()
 
 
@@ -258,7 +250,5 @@ def test_directives_under_one_import_merge_for_findings_without_position(tmp_pat
         FindingItem("CLAUDE.md", 3, "warning", "CORE:E:0006", "x", pi=2),
     )
     places = {("CLAUDE.md", 1): ("docs/style.md", 3), ("CLAUDE.md", 2): ("docs/style.md", 5)}
-    out = apply_suppressions(
-        CombinedResult(findings=findings), project_root=root, alias_fn=rule_aliases, imported=places
-    )
+    out = apply_suppressions(CombinedResult(findings=findings), project_root=root, imported=places)
     assert [(f.rule, f.pi) for f in out.findings] == [("CORE:C:0042", 1), ("CORE:E:0006", 2)]

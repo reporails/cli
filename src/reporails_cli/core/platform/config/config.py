@@ -12,8 +12,14 @@ from typing import Any
 
 import yaml
 
-from reporails_cli.core.platform.config.bootstrap import get_global_config_path, get_reporails_home
+from reporails_cli.core.platform.config.bootstrap import (
+    get_global_config_path,
+    get_local_config_path,
+    get_project_config_path,
+    get_reporails_home,
+)
 from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.dto.results import (
     AgentConfig,
     GlobalConfig,
@@ -22,7 +28,7 @@ from reporails_cli.core.platform.dto.results import (
     ProjectConfig,
     SubagentHooks,
 )
-from reporails_cli.core.platform.utils.utils import is_first_yaml_failure, load_yaml_file, yaml_error_line
+from reporails_cli.core.platform.utils.utils import load_yaml_file, yaml_error_line
 
 logger = logging.getLogger(__name__)
 
@@ -139,34 +145,24 @@ def get_global_config() -> GlobalConfig:
     can keep its default semantics.
     """
 
-    config_path = get_global_config_path()
-    if not config_path.exists():
-        return GlobalConfig()
-
-    try:
-        raw = load_yaml_file(config_path) or {}
-        data: dict[str, object] = raw if isinstance(raw, dict) else {}
-        framework_path = data.get("framework_path")
-        gs_raw = data.get("generic_scanning")
-        generic_scanning = bool(gs_raw) if isinstance(gs_raw, bool) else None
-        return GlobalConfig(
-            framework_path=Path(framework_path) if isinstance(framework_path, str) else None,
-            default_agent=str(data.get("default_agent", "")) if isinstance(data.get("default_agent"), str) else "",
-            tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
-            disabled_rules=_data_str_list(data, "disabled_rules"),
-            exclude_dirs=_data_str_list(data, "exclude_dirs"),
-            exclude_files=_data_str_list(data, "exclude_files"),
-            rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
-            generic_scanning=generic_scanning,
-            packages=_data_str_list(data, "packages"),
-            agents=_data_str_dict(data, "agents"),
-            surfaces=_data_str_dict(data, "surfaces"),
-            segmentation=_coerce_segmentation(data.get("segmentation")),
-        )
-    except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError: not UTF-8
-        if is_first_yaml_failure(config_path):
-            logger.warning("Global config %s is not read: %s", config_path, yaml_error_line(exc))
-        return GlobalConfig()
+    data = read_config_file(get_global_config_path())
+    framework_path = data.get("framework_path")
+    gs_raw = data.get("generic_scanning")
+    generic_scanning = bool(gs_raw) if isinstance(gs_raw, bool) else None
+    return GlobalConfig(
+        framework_path=Path(framework_path) if isinstance(framework_path, str) else None,
+        default_agent=str(data.get("default_agent", "")) if isinstance(data.get("default_agent"), str) else "",
+        tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
+        disabled_rules=_data_str_list(data, "disabled_rules"),
+        exclude_dirs=_data_str_list(data, "exclude_dirs"),
+        exclude_files=_data_str_list(data, "exclude_files"),
+        rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
+        generic_scanning=generic_scanning,
+        packages=_data_str_list(data, "packages"),
+        agents=_data_str_dict(data, "agents"),
+        surfaces=_data_str_dict(data, "surfaces"),
+        segmentation=_coerce_segmentation(data.get("segmentation")),
+    )
 
 
 def _deep_merge_config(base: dict[str, object], overlay: dict[str, object]) -> dict[str, object]:
@@ -192,22 +188,23 @@ def _deep_merge_config(base: dict[str, object], overlay: dict[str, object]) -> d
     return merged
 
 
-def _load_yaml_dict(config_path: Path) -> dict[str, object] | None:
-    """Read a YAML file and return its top-level dict, or None on error/missing."""
+def read_config_file(config_path: Path) -> dict[str, object]:
+    """Read a config file's top-level mapping; an absent or empty file reads as an empty mapping.
+
+    Raises ConfigUnreadableError naming the file and the problem (with its line)
+    when the file cannot be read, is not UTF-8, is not valid YAML, or is not a mapping.
+    """
     if not config_path.exists():
-        return None
+        return {}
     try:
         data = load_yaml_file(config_path)
-        if not data:
-            return None
-        if not isinstance(data, dict):
-            logger.warning("Config file %s did not parse to a mapping", config_path)
-            return None
-        return data
     except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError: not UTF-8
-        if is_first_yaml_failure(config_path):
-            logger.warning("Project config %s is not read: %s", config_path, yaml_error_line(exc))
-        return None
+        raise ConfigUnreadableError(f"{config_path}: {yaml_error_line(exc)}") from exc
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigUnreadableError(f"{config_path}: the file is not a mapping of settings")
+    return data
 
 
 def get_project_config(project_root: Path) -> ProjectConfig:
@@ -224,8 +221,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     `generic_scanning` use the project value when set, otherwise inherit
     from the global layer.
 
-    Returns default config if neither file exists or both are malformed,
-    still applying global defaults.
+    Returns default config if neither file exists, still applying global
+    defaults. Raises ConfigUnreadableError when any config file is unreadable.
 
     Args:
         project_root: Root directory of the project
@@ -234,8 +231,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         ProjectConfig with loaded or default values, layered with globals.
     """
 
-    base = _load_yaml_dict(project_root / ".ails" / "config.yml") or {}
-    local = _load_yaml_dict(project_root / ".ails" / "config.local.yml") or {}
+    base = read_config_file(get_project_config_path(project_root))
+    local = read_config_file(get_local_config_path(project_root))
     data = _deep_merge_config(base, local)
     global_cfg = get_global_config()
 

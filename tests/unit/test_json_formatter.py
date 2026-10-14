@@ -207,11 +207,20 @@ class TestLeverageAndRegime:
                 message="scatter",
                 impact_tier="conditional",
             ),
-            FindingItem(file="a.md", line=2, severity="info", rule="bold", message="bold", impact_tier="cosmetic"),
+            FindingItem(
+                file="a.md",
+                line=2,
+                severity="info",
+                rule="CORE:E:0003",
+                message="bold",
+                impact_tier="cosmetic",
+                source="client_check",
+                check_id="bold",
+            ),
         )
         data = format_combined_result(_result(findings=findings))
         by_rule = {e["rule"]: e for e in data["files"]["a.md"]["findings"]}
-        # `bold` canonicalizes to CORE:E:0003 on the wire (raw token kept under `label`).
+        # A client check reports under its rule id (the check that raised it is kept under `label`).
         assert by_rule["CORE:C:0044"]["leverage"] == "conditional"
         assert by_rule["CORE:E:0003"]["leverage"] == "cosmetic"
         assert by_rule["CORE:E:0003"]["label"] == "bold"
@@ -393,12 +402,21 @@ class TestPerFindingCategory:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_bare_token_canonicalized_to_category(self) -> None:
-        """Bare-token rule ids are canonicalized on the wire, so they
-        now carry a category and preserve the raw token under `label`."""
+    def test_client_check_finding_carries_category_and_label(self) -> None:
+        """A client check's finding carries its rule's category and names the check under `label`."""
         from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
-        findings = (FindingItem(file="a.md", line=1, severity="warning", rule="format", message="x"),)
+        findings = (
+            FindingItem(
+                file="a.md",
+                line=1,
+                severity="warning",
+                rule="CORE:E:0003",
+                message="x",
+                source="client_check",
+                check_id="format",
+            ),
+        )
         data = format_combined_result(_result(findings=findings))
         entry = data["files"]["a.md"]["findings"][0]
         assert entry["rule"] == "CORE:E:0003"
@@ -425,14 +443,13 @@ class TestSurfaceCategoryBreakdown:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_breakdown_includes_canonicalized_bare_tokens(self) -> None:
-        """Bare-token rule ids are canonicalized before the breakdown,
-        so the breakdown now sums to finding_count instead of dropping them."""
+    def test_breakdown_includes_client_check_findings(self) -> None:
+        """A client check's finding counts in the breakdown, so it sums to finding_count."""
         from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         findings = (
             FindingItem(file="CLAUDE.md", line=1, severity="error", rule="CORE:C:0001", message="x"),
-            FindingItem(file="CLAUDE.md", line=2, severity="warning", rule="format", message="x"),
+            FindingItem(file="CLAUDE.md", line=2, severity="warning", rule="CORE:E:0003", message="x"),
         )
         data = format_combined_result(_result(findings=findings))
         sh = data["surface_health"][0]

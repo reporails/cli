@@ -99,3 +99,13 @@ def test_test_stops_with_a_short_error_when_offline_and_no_model(monkeypatch) ->
     assert result.exit_code == 2
     assert "needs the reporails model" in result.output
     assert "Traceback" not in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_score_is_not_an_option_of_test() -> None:
+    """`ails test --score` is rejected as an unknown option."""
+    result = runner.invoke(app, ["test", "--score"])
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output

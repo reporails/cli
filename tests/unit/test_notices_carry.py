@@ -119,7 +119,6 @@ def test_assemble_result_puts_notices_on_the_result(tmp_path: Path) -> None:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=lambda _r: set(),
         notices=(WARN, INFO),
     )
     assert assemble_result(inp).reply.notices == (WARN, INFO)

@@ -17,7 +17,6 @@ from typing import Any
 from reporails_cli.core.platform.dto.models import Severity
 from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters import json as json_formatter
-from reporails_cli.formatters.text.rule_meta import display_rule_id
 
 
 def _severity_to_command(severity: Severity) -> str:
@@ -117,7 +116,7 @@ def format_combined_annotations(
     for f in result.findings:
         command = _FINDING_COMMANDS.get(f.severity, "warning")
         # Canonical rule id, matching the trailing JSON summary's `rule` field.
-        title = _escape_workflow_property(f"[{display_rule_id(f.rule)}]")
+        title = _escape_workflow_property(f"[{f.rule}]")
         file_val = _escape_workflow_property(f.file)
         message = _escape_workflow_data(f.message)
         lines.append(_finding_annotation(command, file_val, f.line, title, message))

@@ -20,7 +20,6 @@ class TestGetProjectConfig:
         config = get_project_config(tmp_path)
         assert config.packages == []
         assert config.disabled_rules == []
-        assert config.framework_version is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -29,16 +28,6 @@ class TestGetProjectConfig:
         config = get_project_config(tmp_path)
         assert config.packages == ["custom"]
         assert config.disabled_rules == ["S1"]
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_framework_version_is_a_dead_key_never_parsed(self, tmp_path: Path, make_config_file) -> None:
-        """`framework_version` is retired: nothing in the codebase reads it, `ails config
-        set` rejects it, and `get_project_config` no longer carries it up from disk even
-        when a stale `.ails/config.yml` still sets it."""
-        make_config_file("framework_version: '0.1.0'\n")
-        config = get_project_config(tmp_path)
-        assert config.framework_version is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -59,24 +48,12 @@ class TestGetProjectConfig:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_returns_defaults_on_malformed_yaml(self, tmp_path: Path, make_config_file) -> None:
-        make_config_file(": : :\n  bad yaml [[[")
-        config = get_project_config(tmp_path)
-        assert config.packages == []
-        assert config.disabled_rules == []
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_cli_ux
-    def test_malformed_yaml_inherits_global(self, tmp_path: Path, make_config_file) -> None:
-        from reporails_cli.core.platform.dto.results import GlobalConfig
+    def test_malformed_yaml_is_refused(self, tmp_path: Path, make_config_file) -> None:
+        from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 
         make_config_file(": : :\n  bad yaml [[[")
-        with patch(
-            "reporails_cli.core.platform.config.config.get_global_config",
-            return_value=GlobalConfig(default_agent="claude"),
-        ):
-            config = get_project_config(tmp_path)
-        assert config.default_agent == "claude"
+        with pytest.raises(ConfigUnreadableError):
+            get_project_config(tmp_path)
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

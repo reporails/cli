@@ -7,7 +7,11 @@ from typing import Any
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, has_api_key
-from reporails_cli.core.platform.config.bootstrap import get_global_config_path
+from reporails_cli.core.platform.config.bootstrap import (
+    get_global_config_path,
+    get_local_config_path,
+    get_project_config_path,
+)
 from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import credentials_path
 from reporails_cli.interfaces.mcp.tools import _discover_files
@@ -32,8 +36,8 @@ def scan_inputs_base(scan_root: Path) -> str:
     if not scanned:
         return ""
     config_files = [
-        scan_root / ".ails" / "config.yml",
-        scan_root / ".ails" / "config.local.yml",
+        get_project_config_path(scan_root),
+        get_local_config_path(scan_root),
         get_global_config_path(),
         credentials_path(),
     ]

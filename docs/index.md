@@ -1,7 +1,7 @@
 ---
 title: "Reporails CLI Documentation"
 description: "AI Instruction Diagnostics for coding agents — index of all CLI docs"
-version: "0.6.1"
+version: "0.6.4"
 last_updated: 2026-10-08
 ---
 

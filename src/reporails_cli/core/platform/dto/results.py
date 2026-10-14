@@ -25,31 +25,10 @@ class HookEntry:
 
 
 @dataclass
-class LayoutFeatures:
-    """Directory structure signals of a project."""
-
-    is_abstracted: bool = False  # .claude/rules/, .claude/skills/, etc.
-    has_shared_files: bool = False  # .shared/, shared/
-    has_backbone: bool = False  # .ails/backbone.yml
-
-
-@dataclass
 class DiscoveryFeatures:
-    """What discovery found: instruction file counts and nesting."""
+    """What discovery found: whether the project has more than one instruction file."""
 
-    instruction_file_count: int = 0
     has_multiple_instruction_files: bool = False
-    has_hierarchical_structure: bool = False  # nested instruction files
-    component_count: int = 0  # components from backbone.yml
-
-
-@dataclass
-class ContentFeatures:
-    """L2 capabilities read from the root instruction file's content."""
-
-    is_size_controlled: bool = False  # root instruction file under size threshold
-    has_explicit_constraints: bool = False  # MUST/NEVER keywords in content
-    has_imports: bool = False  # @import references in content
 
 
 @dataclass
@@ -64,17 +43,13 @@ class MemoryFeatures:
 class DetectedFeatures:
     """Features detected in a project for capability-gate level detection.
 
-    Used by determine_level_from_gates() for project level assignment,
-    by display summaries, and for symlink resolution.
+    Used by determine_level_from_gates() for project level assignment.
     """
 
     # Base existence
     has_instruction_file: bool = False
-    has_claude_md: bool = False  # CLAUDE.md at root
 
-    layout: LayoutFeatures = field(default_factory=LayoutFeatures)
     discovery: DiscoveryFeatures = field(default_factory=DiscoveryFeatures)
-    content: ContentFeatures = field(default_factory=ContentFeatures)
 
     # L3 capabilities (Scoped)
     has_path_scoped_rules: bool = False  # an agent's rule files (with or without `paths:`), or nested instruction files
@@ -89,9 +64,6 @@ class DetectedFeatures:
     ] = ()  # repo-scoped hook files that count toward L6: a dedicated file, or a shared one with hooks
     hooks: tuple[HookEntry, ...] = ()  # every hook found in every scope of each agent's hooks surface
     memory: MemoryFeatures = field(default_factory=MemoryFeatures)
-
-    # Symlink resolution (for regex engine extra targets)
-    resolved_symlinks: list[Path] = field(default_factory=list)
 
 
 # =============================================================================
@@ -173,7 +145,6 @@ class GlobalConfig:
 class ProjectConfig:
     """Project-level configuration (.ails/config.yml + .ails/config.local.yml)."""
 
-    framework_version: str | None = None  # Pin version
     packages: list[str] = field(default_factory=list)  # Project rule packages
     disabled_rules: list[str] = field(default_factory=list)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude

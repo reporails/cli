@@ -22,7 +22,7 @@ from reporails_cli.formatters.text.display_constants import (
     get_term_width,
 )
 from reporails_cli.formatters.text.funnel_cta import no_score_reason
-from reporails_cli.formatters.text.rule_meta import display_rule_id, rule_docs_url, rule_severity
+from reporails_cli.formatters.text.rule_meta import rule_docs_url, rule_severity
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.triage import LeverageTier, resolve_leverage, split_conventions
 
@@ -150,7 +150,7 @@ def _top_error_rule(errors: list[Any]) -> tuple[str, int]:
     counts: Counter[str] = Counter()
     grade: dict[str, int] = {}
     for f in errors:
-        rule = display_rule_id(f.rule or "")
+        rule = f.rule or ""
         counts[rule] += 1
         tier = resolve_leverage(f)
         grade[rule] = min(grade.get(rule, _UNGRADED_RANK), _GRADE_RANK[tier] if tier else _UNGRADED_RANK)

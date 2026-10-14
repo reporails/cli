@@ -45,7 +45,7 @@ class TestUnformattedCode:
     def test_unformatted_tokens_detected(self) -> None:
         atoms = [_atom(10, +1, unformatted_code=["build.sh"])]
         findings = run_client_checks(_make_map(atoms))
-        fmt = [f for f in findings if f.rule == "format"]
+        fmt = [f for f in findings if f.check_id == "format"]
         assert len(fmt) == 1
         assert "build.sh" in fmt[0].message
 
@@ -54,7 +54,7 @@ class TestUnformattedCode:
     def test_no_unformatted_no_finding(self) -> None:
         atoms = [_atom(10, +1, unformatted_code=[])]
         findings = run_client_checks(_make_map(atoms))
-        fmt = [f for f in findings if f.rule == "format"]
+        fmt = [f for f in findings if f.check_id == "format"]
         assert len(fmt) == 0
 
     @pytest.mark.unit
@@ -65,7 +65,7 @@ class TestUnformattedCode:
         text also matched by its mixed-case shape) — reported once, not twice."""
         atoms = [_atom(10, +1, unformatted_code=["fastapi", "FastAPI"]), _atom(11, +1, named_tokens=["FastAPI"])]
         findings = run_client_checks(_make_map(atoms))
-        fmt = [f for f in findings if f.rule == "format"]
+        fmt = [f for f in findings if f.check_id == "format"]
         assert len(fmt) == 1, [f.message for f in fmt]
 
     @pytest.mark.unit

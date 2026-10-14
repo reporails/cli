@@ -9,6 +9,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.interfaces.cli.config_command import config_app
 
 runner = CliRunner()
@@ -29,7 +30,7 @@ class TestGlobalSet:
     def test_writes_to_home_config(self, tmp_path: Path) -> None:
         global_home = tmp_path / ".reporails"
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["set", "--global", "default_agent", "claude"])
@@ -41,9 +42,9 @@ class TestGlobalSet:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_rejects_non_global_key(self) -> None:
-        result = runner.invoke(config_app, ["set", "--global", "exclude_dirs", "vendor"])
+        result = runner.invoke(config_app, ["set", "--global", "tier", "pro"])
         assert result.exit_code == 2
-        assert "not supported in global config" in result.output
+        assert "Unknown config key" in result.output
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
@@ -62,7 +63,7 @@ class TestGlobalGet:
         global_home = tmp_path / ".reporails"
         _write_global_config(global_home, "default_agent: cursor\n")
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["get", "--global", "default_agent"])
@@ -75,7 +76,7 @@ class TestGlobalGet:
         global_home = tmp_path / ".reporails"
         global_home.mkdir(parents=True)
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["get", "--global", "default_agent"])
@@ -92,7 +93,7 @@ class TestGlobalList:
         global_home = tmp_path / ".reporails"
         _write_global_config(global_home, "default_agent: claude\ntier: pro\n")
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["list", "--global"])
@@ -106,7 +107,7 @@ class TestGlobalList:
         global_home = tmp_path / ".reporails"
         global_home.mkdir(parents=True)
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["list", "--global"])
@@ -130,7 +131,7 @@ class TestListMerge:
         _write_global_config(global_home, "default_agent: claude\n")
 
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["list", "--path", str(project)])
@@ -150,7 +151,7 @@ class TestListMerge:
         _write_global_config(global_home, "default_agent: claude\n")
 
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["list", "--path", str(project)])
@@ -168,7 +169,7 @@ class TestConfigEdgeCases:
         """Setting a key twice should persist the second value, not the first."""
         global_home = tmp_path / ".reporails"
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             runner.invoke(config_app, ["set", "--global", "default_agent", "claude"])
@@ -205,15 +206,60 @@ class TestConfigEdgeCases:
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_malformed_global_config_handled(self, tmp_path: Path) -> None:
-        """Malformed YAML in global config should not crash config list."""
+    def test_malformed_global_config_is_reported(self, tmp_path: Path) -> None:
+        """Malformed YAML in the global config stops `config list` with an error naming the file."""
         global_home = tmp_path / ".reporails"
         _write_global_config(global_home, "default_agent: [unclosed\n  bad: yaml: :\n")
 
         with patch(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             return_value=global_home / "config.yml",
         ):
             result = runner.invoke(config_app, ["list", "--global"])
 
-        assert result.exit_code == 0, f"Should not crash on malformed YAML, got: {result.output}"
+        assert isinstance(result.exception, ConfigUnreadableError)
+        assert str(global_home / "config.yml") in str(result.exception)
+
+
+class TestSettableKeysPerScope:
+    """The project file takes every project setting; the global file only those it is read for."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_global_set_refuses_a_project_only_key_and_lists_the_global_keys(self, tmp_path: Path) -> None:
+        with patch(
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
+            return_value=tmp_path / "config.yml",
+        ):
+            result = runner.invoke(config_app, ["set", "--global", "heal_exclude", "x"])
+        assert result.exit_code == 2
+        assert "Unknown config key: heal_exclude" in result.output
+        assert "exclude_dirs" in result.output
+        assert not (tmp_path / "config.yml").exists()
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_project_set_takes_a_project_only_key(self, tmp_path: Path) -> None:
+        result = runner.invoke(config_app, ["set", "heal_exclude", "x", "--path", str(tmp_path)])
+        assert result.exit_code == 0, result.output
+        assert yaml.safe_load((tmp_path / ".ails" / "config.yml").read_text())["heal_exclude"] == ["x"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_get_prints_a_key_the_file_holds_and_refuses_an_unsettable_absent_one(self, tmp_path: Path) -> None:
+        (tmp_path / ".ails").mkdir()
+        (tmp_path / ".ails" / "config.yml").write_text("segmentation: legacy\n", encoding="utf-8")
+        held = runner.invoke(config_app, ["get", "segmentation", "--path", str(tmp_path)])
+        assert held.exit_code == 0
+        assert "segmentation: legacy" in held.output
+
+        absent = runner.invoke(config_app, ["get", "mapper", "--path", str(tmp_path)])
+        assert absent.exit_code == 2
+        assert "Unknown config key: mapper" in absent.output
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_get_says_not_set_for_a_settable_absent_key(self, tmp_path: Path) -> None:
+        result = runner.invoke(config_app, ["get", "heal_exclude", "--path", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "(not set)" in result.output

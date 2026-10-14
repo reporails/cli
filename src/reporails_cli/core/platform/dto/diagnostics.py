@@ -103,6 +103,13 @@ class Diagnostic(FindingBase):
     overlap_pct: int | None = None  # the share of this file's instructions that overlap, 0-100, when named
 
 
+# The check ids a client check reports under rule `CORE:E:0003`: unformatted code tokens and bold
+# on terms. A finding whose `check_id` is one of these is that client check's own detection.
+FORMAT_CHECK = "format"
+BOLD_CHECK = "bold"
+CLIENT_CHECK_KINDS = frozenset({FORMAT_CHECK, BOLD_CHECK})
+
+
 @dataclass(frozen=True)
 class FindingItem(FindingBase):
     """A single finding in the combined output, from any source."""
@@ -138,6 +145,10 @@ class Hint:
     warning_count: int = 0  # how many were warnings
 
 
+# The rule each cross-file finding type reports under.
+CROSS_FILE_RULES = {"repetition": "CORE:C:0040", "overlap": "CORE:C:0044"}
+
+
 @dataclass(frozen=True)
 class CrossFileCoordinate:
     """Aggregated cross-file finding (no lines, no detail).
@@ -150,6 +161,11 @@ class CrossFileCoordinate:
     finding_type: str  # "repetition" | "overlap" ("conflict" is dropped at merge)
     count: int
 
+    @property
+    def rule(self) -> str:
+        """The rule this finding type reports under; empty for a type no rule carries."""
+        return CROSS_FILE_RULES.get(self.finding_type, "")
+
 
 @dataclass(frozen=True)
 class CrossFileFinding:
@@ -160,6 +176,11 @@ class CrossFileFinding:
     line_1: int
     line_2: int
     finding_type: str  # "repetition" | "overlap" ("conflict" is dropped at merge)
+
+    @property
+    def rule(self) -> str:
+        """The rule this finding type reports under; empty for a type no rule carries."""
+        return CROSS_FILE_RULES.get(self.finding_type, "")
 
 
 @dataclass(frozen=True)

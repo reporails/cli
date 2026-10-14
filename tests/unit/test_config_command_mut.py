@@ -22,7 +22,7 @@ from reporails_cli.interfaces.cli.config_command import (
 
 runner = CliRunner()
 
-_GLOBAL_PATH = "reporails_cli.interfaces.cli.config_command._global_config_path"
+_GLOBAL_PATH = "reporails_cli.interfaces.cli.config_command.get_global_config_path"
 
 
 @pytest.mark.unit

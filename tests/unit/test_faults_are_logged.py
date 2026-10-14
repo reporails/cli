@@ -9,7 +9,6 @@ import pytest
 
 from reporails_cli.core.classify import file_tags
 from reporails_cli.core.discovery import agent_config, project_root
-from reporails_cli.core.discovery.features import _count_components
 from reporails_cli.core.mapper import inspect as mapper_inspect
 
 
@@ -53,27 +52,6 @@ def test_config_surface_patterns_warns_about_an_unreadable_agent_config(broken_r
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_count_components_warns_when_backbone_is_not_yaml(tmp_path: Path, caplog) -> None:
-    backbone = tmp_path / "backbone.yml"
-    backbone.write_text("components: [unclosed\n", encoding="utf-8")
-    with caplog.at_level(logging.WARNING):
-        assert _count_components(backbone) == 0
-    assert str(backbone) in caplog.text
-    assert "line 2" in caplog.text
-    assert len(caplog.records) == 1
-    assert "\n" not in caplog.records[0].getMessage()
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_runtime
-def test_count_components_of_a_list_backbone_is_zero(tmp_path: Path) -> None:
-    backbone = tmp_path / "backbone.yml"
-    backbone.write_text("- a\n- b\n", encoding="utf-8")
-    assert _count_components(backbone) == 0
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_runtime
 def test_unreadable_tokenizer_file_is_warned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     from reporails_cli.core.mapper import atom_build
 
@@ -103,36 +81,6 @@ def test_a_fault_while_reading_credentials_is_not_hidden_by_error_rendering(
     monkeypatch.setattr("reporails_cli.formatters.text.funnel_cta.has_api_key", boom)
     with pytest.raises(RuntimeError, match="credential store exploded"):
         funnel_cta._has_key()
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_runtime
-def test_a_project_config_that_is_not_utf8_is_warned_and_defaults_apply(tmp_path: Path, caplog) -> None:
-    from reporails_cli.core.classify import _apply_project_overrides
-    from reporails_cli.core.platform.config.config import get_project_config
-
-    (tmp_path / ".ails").mkdir()
-    config = tmp_path / ".ails" / "config.yml"
-    config.write_bytes(b"exclude_dirs: [\xff\xfe]\n")
-    with caplog.at_level(logging.WARNING):
-        assert get_project_config(tmp_path).exclude_dirs == []
-        assert _apply_project_overrides([], "claude", tmp_path) == []
-    assert str(config) in caplog.text
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_runtime
-def test_a_global_config_that_is_not_utf8_is_warned_and_defaults_apply(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
-) -> None:
-    from reporails_cli.core.platform.config.config import get_global_config
-
-    config = tmp_path / "config.yml"
-    config.write_bytes(b"tier: \xff\xfe\n")
-    monkeypatch.setattr("reporails_cli.core.platform.config.config.get_global_config_path", lambda: config)
-    with caplog.at_level(logging.WARNING):
-        assert get_global_config().tier == ""
-    assert str(config) in caplog.text
 
 
 @pytest.mark.unit
@@ -167,21 +115,17 @@ def test_key_and_extra_key_checks_leave_a_block_that_is_not_yaml_to_the_yaml_che
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
-def test_a_project_config_that_is_not_yaml_is_reported_once_in_one_line(tmp_path: Path, caplog) -> None:
+def test_a_project_config_that_is_not_yaml_is_refused_in_one_line(tmp_path: Path) -> None:
     from reporails_cli.core.platform.config.config import get_project_config
-    from reporails_cli.core.platform.utils.utils import clear_yaml_cache
+    from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 
-    clear_yaml_cache()
     (tmp_path / ".ails").mkdir()
     config = tmp_path / ".ails" / "config.yml"
     config.write_text("exclude_dirs: [unclosed\n  x: : y\n", encoding="utf-8")
-    with caplog.at_level(logging.WARNING):
-        for _ in range(5):
-            get_project_config(tmp_path)
-    clear_yaml_cache()
-    assert len(caplog.records) == 1
-    assert str(config) in caplog.text
-    assert "\n" not in caplog.records[0].getMessage()
+    with pytest.raises(ConfigUnreadableError) as caught:
+        get_project_config(tmp_path)
+    assert str(config) in str(caught.value)
+    assert "\n" not in str(caught.value)
 
 
 @pytest.mark.unit

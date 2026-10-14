@@ -70,7 +70,7 @@ class TestLocalEntries:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_instruction_level_findings_are_sent(self) -> None:
-        rules = ("CORE:E:0006", "CORE:S:0039", "format", "bold", "heading_instruction")
+        rules = ("CORE:E:0006", "CORE:S:0039", "CORE:E:0003", "CORE:C:0058", "CORE:C:0060")
         findings = [_finding(rule) for rule in rules]
         assert [e[0] for e in _entries(findings)] == list(rules)
 

@@ -18,11 +18,8 @@ class TestDetectFeaturesFilesystem:
 
         features = detect_features_filesystem(tmp_path)
 
-        assert features.has_claude_md is False
         assert features.has_instruction_file is False
-        assert features.discovery.instruction_file_count == 0
-        assert features.layout.is_abstracted is False
-        assert features.layout.has_backbone is False
+        assert features.has_path_scoped_rules is False
         assert features.discovery.has_multiple_instruction_files is False
 
     @pytest.mark.unit
@@ -35,14 +32,12 @@ class TestDetectFeaturesFilesystem:
 
         features = detect_features_filesystem(tmp_path)
 
-        assert features.has_claude_md is True
         assert features.has_instruction_file is True
-        assert features.discovery.instruction_file_count == 1
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_claude_rules_dir_is_abstracted(self, tmp_path: Path) -> None:
-        """Presence of .claude/rules/ with content should set is_abstracted."""
+    def test_claude_rules_dir_is_path_scoped(self, tmp_path: Path) -> None:
+        """Presence of .claude/rules/ with content should set has_path_scoped_rules."""
         from reporails_cli.core.discovery.features import detect_features_filesystem
 
         rules_dir = tmp_path / ".claude" / "rules"
@@ -53,4 +48,4 @@ class TestDetectFeaturesFilesystem:
 
         features = detect_features_filesystem(tmp_path)
 
-        assert features.layout.is_abstracted is True
+        assert features.has_path_scoped_rules is True

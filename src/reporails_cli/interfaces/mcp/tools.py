@@ -40,7 +40,6 @@ from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.host_hooks import host_hooks_field
 from reporails_cli.formatters.text.funnel_cta import plain_cta
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +408,6 @@ def _build_assemble_inputs(
         filter_agents=filter_agents,
         effective_agent=effective_agent,
         lint_result=None,
-        alias_fn=rule_aliases,
         rule_agents=rule_agents,
         not_evaluated=not_evaluated,
     )

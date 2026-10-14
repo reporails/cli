@@ -60,7 +60,7 @@ _FORMAT_CASES = [
 @pytest.mark.parametrize(("line", "fmt", "token", "reported", "fixed"), _FORMAT_CASES)
 def test_format_finding(line: str, fmt: str, token: str, reported: bool, fixed: bool) -> None:
     atom = _atom(line, fmt=fmt, unformatted_code=[token])
-    found = [f for f in run_client_checks(_map(atom)) if f.rule == "format"]
+    found = [f for f in run_client_checks(_map(atom)) if f.check_id == "format"]
     lines = [line + "\n"]
     healed = fix_unformatted_code([atom], lines)
     assert bool(healed) is fixed, line
@@ -100,7 +100,7 @@ def test_fully_italic_constraint_is_not_reported() -> None:
 
 
 def _bold_reported(atom: Atom) -> list[str]:
-    return [f.message for f in run_client_checks(_map(atom)) if f.rule == "bold"]
+    return [f.message for f in run_client_checks(_map(atom)) if f.check_id == "bold"]
 
 
 @pytest.mark.unit

@@ -22,12 +22,12 @@ from reporails_cli.core.lint.client_checks import PACKED_SENTENCE_RULE
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.formatters.text.display_constants import (
     AGG_ORDER,
-    AGGREGATE_KEY,
     AGGREGATE_LABELS,
     AGGREGATE_RULES,
     HINT_TYPE_LABELS,
     SEV_WEIGHT,
     Element,
+    aggregate_key,
     conventions_phrase,
     counted,
     element_labels,
@@ -229,11 +229,11 @@ def _group_shown(shown: tuple[TriageFinding, ...]) -> list[tuple[str, str, str, 
     keeps its full message; repeats collapse to a generalized message + `(xN)`.
     """
     ordered = sorted(shown, key=lambda tf: (SEV_WEIGHT.get(tf.display_severity, 9), tf.finding.rule, tf.finding.line))
-    by_rule: dict[tuple[str, str], list[TriageFinding]] = {}
+    by_rule: dict[tuple[str, str, str], list[TriageFinding]] = {}
     for tf in ordered:
-        by_rule.setdefault((tf.display_severity, tf.finding.rule), []).append(tf)
+        by_rule.setdefault((tf.display_severity, tf.finding.rule, aggregate_key(tf.finding)), []).append(tf)
     rows: list[tuple[str, str, str, int]] = []
-    for (sev, rule), tfs in by_rule.items():
+    for (sev, rule, _kind), tfs in by_rule.items():
         msgs = [tf.finding.message or AGGREGATE_LABELS.get(tf.finding.rule, tf.finding.rule) for tf in tfs]
         message = msgs[0] if len(msgs) == 1 else _generalize_message(msgs[0], rule)
         rows.append((sev, message, rule, len(tfs)))
@@ -383,9 +383,7 @@ def _render_card_body(
     if verbose:
         _render_quality_verbose([f for f in findings if id(f) not in nested_ids], border, msg_width, nested, sev_icons)
     else:
-        quality_counts: Counter[str] = Counter(
-            AGGREGATE_KEY.get(f.rule, f.rule) for f in findings if f.rule in AGGREGATE_RULES
-        )
+        quality_counts: Counter[str] = Counter(aggregate_key(f) for f in findings if f.rule in AGGREGATE_RULES)
         _render_quality_compact(quality_counts, border, msg_width + 35)
 
 

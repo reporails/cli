@@ -120,3 +120,10 @@ def rule_title(rule_id: str) -> str:
     """The title of a bundled rule, or an empty string when none is known."""
     rule = find_rule_by_id(rule_id)
     return (rule.title or "") if rule else ""
+
+
+@lru_cache(maxsize=256)
+def rule_slug(rule_id: str) -> str:
+    """The slug of a bundled rule, or an empty string when none is known."""
+    rule = find_rule_by_id(rule_id)
+    return (rule.slug or "") if rule else ""

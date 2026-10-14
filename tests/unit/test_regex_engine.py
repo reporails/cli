@@ -924,29 +924,6 @@ class TestIntegration:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_symlink_extra_targets(self, tmp_path: Path) -> None:
-        """Extra targets (from symlinks) should be scanned."""
-        rule_yml = _write_rule(
-            tmp_path,
-            {"checks": [{"id": "SYM", "pattern-regex": "external", "message": "x"}]},
-        )
-        project = tmp_path / "project"
-        project.mkdir()
-        _write_target(project, "# Project\n")
-
-        external_file = tmp_path / "external.md"
-        external_file.write_text("external content\n")
-
-        sarif = run_validation(
-            [rule_yml],
-            project,
-            extra_targets=[external_file],
-        )
-        results = _sarif_results(sarif)
-        assert len(results) == 1
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
     def test_instruction_files_explicit(self, tmp_path: Path) -> None:
         """When instruction_files is provided, only those files should be scanned."""
         rule_yml = _write_rule(
