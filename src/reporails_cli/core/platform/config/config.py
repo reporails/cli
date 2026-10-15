@@ -35,7 +35,12 @@ from reporails_cli.core.platform.dto.results import (
     ProjectConfig,
     SubagentHooks,
 )
-from reporails_cli.core.platform.utils.utils import load_yaml_file, non_text_items, yaml_error_line
+from reporails_cli.core.platform.utils.utils import (
+    load_yaml_file,
+    non_text_items,
+    unreadable_file_problem,
+    yaml_error_line,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,29 +56,40 @@ def get_agent_config(agent: str, rules_root: Path | None = None) -> AgentConfig:
         AgentConfig with excludes and overrides, or defaults if missing/malformed
     """
 
-    config_path = get_agent_config_path(agent, rules_root)
-    if not config_path.exists():
+    data = read_agent_config(get_agent_config_path(agent, rules_root))
+    if data is None:
         return AgentConfig()
+    return AgentConfig(
+        prefix=as_str(data.get("prefix", "")),
+        name=as_str(data.get("name", "")),
+        excludes=str_list(data.get("excludes", [])),
+        overrides={key: as_object(val) for key, val in as_object(data.get("overrides", {})).items()},
+        subagent_hooks=_subagent_hooks(data.get("subagent_hooks")),
+        intercept_events=_intercept_events(data.get("intercept_events")),
+    )
 
+
+def read_agent_config(config_path: Path) -> JsonObject | None:
+    """Read an agent `config.yml` as its top-level mapping.
+
+    An absent file reads as None. A file that cannot be read, is not UTF-8, is not valid YAML, is
+    empty or is not a mapping is logged as a warning on each read and also reads as None.
+    """
+    if not config_path.exists():
+        return None
     try:
         data = load_yaml_file(config_path)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        problem = unreadable_file_problem(exc)
+    else:
         if not data:
-            msg = f"Agent config is empty: {config_path}"
-            raise ValueError(msg)
-        if not isinstance(data, dict):
-            msg = f"Agent config is not a mapping: {config_path}"
-            raise ValueError(msg)
-        return AgentConfig(
-            prefix=as_str(data.get("prefix", "")),
-            name=as_str(data.get("name", "")),
-            excludes=str_list(data.get("excludes", [])),
-            overrides={key: as_object(val) for key, val in as_object(data.get("overrides", {})).items()},
-            subagent_hooks=_subagent_hooks(data.get("subagent_hooks")),
-            intercept_events=_intercept_events(data.get("intercept_events")),
-        )
-    except (yaml.YAMLError, OSError, ValueError) as exc:
-        logger.warning("Failed to parse agent config %s: %s", config_path, exc)
-        return AgentConfig()
+            problem = "is empty"
+        elif not isinstance(data, dict):
+            problem = "is not a mapping"
+        else:
+            return data
+    logger.warning("Skipping agent config %s: %s", config_path, problem)
+    return None
 
 
 def _hook_fact(raw: object) -> HookFact:
@@ -427,18 +443,12 @@ def get_agent_config_path(agent: str, rules_root: Path | None = None) -> Path:
 def iter_agent_configs(rules_dir: Path) -> Iterator[tuple[Path, JsonObject]]:
     """Each readable `*/config.yml` under `rules_dir`, in path order, as `(folder, parsed mapping)`.
 
-    A config that cannot be read, or that is empty or not a mapping, is logged and skipped.
+    A config that `read_agent_config` cannot read is skipped.
     """
     for config_path in sorted(rules_dir.glob("*/config.yml")):
-        try:
-            data = load_yaml_file(config_path)
-        except (OSError, ValueError, yaml.YAMLError) as exc:  # unreadable or non-YAML agent config
-            logger.warning("Skipping agent config %s: %s", config_path, exc)
-            continue
-        if not data or not isinstance(data, dict):
-            logger.warning("Agent config is empty or malformed: %s — agent skipped", config_path)
-            continue
-        yield config_path.parent, data
+        data = read_agent_config(config_path)
+        if data is not None:
+            yield config_path.parent, data
 
 
 def is_initialized() -> bool:

@@ -21,14 +21,14 @@ from reporails_cli.core.platform.config.config import (
     iter_agent_configs,
 )
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_str
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
 from reporails_cli.core.platform.utils.utils import (
     load_yaml_file,
     read_frontmatter,
-    yaml_error_line,
+    unreadable_file_problem,
 )
 
 logger = logging.getLogger(__name__)
@@ -169,23 +169,21 @@ def _rejected_fields(
     return ()
 
 
-def _read_checks_file(yml_path: Path, frontmatter: JsonObject) -> JsonValue:
-    """The `checks` of a rule's `checks.yml`; raises RuleReadError when the file is unreadable or malformed."""
+def read_checks_document(yml_path: Path) -> JsonObject:
+    """The top-level mapping of the `checks.yml` at `yml_path` (empty for an empty file).
+
+    Raises RuleReadError naming the file and the problem when it is unreadable, not UTF-8,
+    not valid YAML, or not a mapping.
+    """
     try:
         data = load_yaml_file(yml_path)
-    except OSError as exc:
-        raise RuleReadError(yml_path, f"cannot be read ({exc.strerror or exc})", frontmatter) from exc
-    except UnicodeDecodeError as exc:
-        raise RuleReadError(yml_path, "is not UTF-8 text", frontmatter) from exc
-    except yaml.YAMLError as exc:
-        raise RuleReadError(yml_path, f"is not valid YAML ({yaml_error_line(exc)})", frontmatter) from exc
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise RuleReadError(yml_path, unreadable_file_problem(exc), {}) from exc
     if data is None:
-        return []
+        return {}
     if not isinstance(data, dict):
-        raise RuleReadError(
-            yml_path, f"must be a mapping with a `checks` list, not a {type(data).__name__}", frontmatter
-        )
-    return data.get("checks") or []
+        raise RuleReadError(yml_path, f"must be a mapping with a `checks` list, not a {type(data).__name__}", {})
+    return data
 
 
 class RuleRead(NamedTuple):
@@ -225,10 +223,14 @@ def read_rule(md_path: Path) -> RuleRead | None:
     if yml_path is not None and not frontmatter.get("checks"):
         checks_source = yml_path
         try:
-            frontmatter["checks"] = _read_checks_file(yml_path, frontmatter)
+            frontmatter["checks"] = read_checks_document(yml_path).get("checks") or []
         except RuleReadError as exc:
-            exc.field_problems = _rejected_fields(frontmatter, md_path, yml_path, [])
-            raise
+            raise RuleReadError(
+                exc.path,
+                exc.problem,
+                frontmatter,
+                field_problems=_rejected_fields(frontmatter, md_path, yml_path, []),
+            ) from exc
     try:
         checks = load_checks(frontmatter)
     except ValueError as exc:

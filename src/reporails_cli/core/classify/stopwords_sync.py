@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+import regex
 import yaml
 
-from reporails_cli.core.classify.stopwords import REGEX_PATTERN_FIELDS, decompose, is_guard, recompose
+from reporails_cli.core.classify.stopwords import REGEX_PATTERN_FIELDS, PatternParts, decompose, is_guard, recompose
+from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
     JsonValue,
@@ -16,7 +19,7 @@ from reporails_cli.core.platform.contract.json_value import (
     as_str,
     str_list,
 )
-from reporails_cli.core.platform.utils.utils import fast_yaml_load, non_text_items
+from reporails_cli.core.platform.utils.utils import fast_yaml_load, non_text_items, unreadable_file_problem
 
 
 def _find_check_by_suffix(
@@ -93,11 +96,35 @@ def _unusable_terms(value: JsonValue) -> tuple[str, ...]:
     """Why `value` cannot be a vocab term list; empty when it can."""
     if value is None:
         return ("is empty; give it a list of terms",)
+    if isinstance(value, dict):
+        return ("holds a mapping, not a list of terms",)
     if not isinstance(value, list):
         return ("holds a single value, not a list of terms",)
     if not value:
         return ("is empty; give it a list of terms",)
-    return tuple(reading for _, reading in non_text_items(value))
+    if len(value) == 1:
+        return ("holds one term; a term list needs two or more terms",)
+    blanks = tuple(
+        f"item {position} is blank text; remove it"
+        for position, item in enumerate(value, start=1)
+        if isinstance(item, str) and not item.strip()
+    )
+    return (*(reading for _, reading in non_text_items(value)), *blanks)
+
+
+def _rewrite(container: JsonObject, key: str, parts: PatternParts, terms: list[str]) -> _FieldOutcome:
+    """The outcome of putting `terms` into the pattern at `container[key]`: unchanged, a write, or invalid."""
+    new = recompose(parts, terms)
+    if new == container[key]:
+        return _FieldOutcome("unchanged")
+    try:
+        regex.compile(new)
+    except regex.error as exc:
+        return _invalid(f"the pattern {new!r} does not compile ({exc})")
+    read_back = decompose(new)
+    if read_back is None or read_back.terms != terms:
+        return _invalid(f"the pattern {new!r} does not read back as the term list")
+    return _FieldOutcome("changed", write=(container, key, new))
 
 
 def _walk_field(check: JsonObject, field_name: str, value: JsonValue) -> _FieldOutcome:
@@ -112,12 +139,12 @@ def _walk_field(check: JsonObject, field_name: str, value: JsonValue) -> _FieldO
     decomposed = [(slot, decompose(as_str(slot[0][slot[1]]))) for slot in slots]
     for (container, key), parts in decomposed:
         if parts is not None:
-            new = recompose(parts, terms)
-            if new == container[key]:
-                return _FieldOutcome("unchanged")
-            return _FieldOutcome("changed", write=(container, key, new))
+            return _rewrite(container, key, parts, terms)
     return _invalid(
-        f"the pattern {as_str(slots[0][0][slots[0][1]])!r} is not an alternation of terms; it cannot take terms"
+        *(
+            f"the pattern {as_str(container[key])!r} is not an alternation of terms; it cannot take terms"
+            for container, key in slots
+        )
     )
 
 
@@ -143,15 +170,15 @@ def _entry_messages(suffix: str, outcomes: list[tuple[str, _FieldOutcome]]) -> l
     return messages
 
 
-def _load_yaml(path: Path) -> tuple[JsonValue, str | None]:
-    """Load a YAML file. Returns (data, error_message)."""
+def _read_vocab_file(path: Path) -> tuple[JsonValue, str | None]:
+    """Load a vocab.yml. Returns (data, error_message)."""
     if not path.exists():
         return None, f"no {path.name}"
     try:
         data = fast_yaml_load(path.read_text(encoding="utf-8"))
         return data, None
-    except (yaml.YAMLError, OSError) as e:
-        return None, f"failed to read {path.name}: {e}"
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        return None, f"{path.name} {unreadable_file_problem(exc)}"
 
 
 @dataclass
@@ -189,7 +216,7 @@ def sync_vocab(rule_dir: Path, *, dry_run: bool = False) -> SyncResult:
     result = SyncResult(rule_dir=rule_dir)
     checks_path = rule_dir / "checks.yml"
 
-    vocab, err = _load_yaml(rule_dir / "vocab.yml")
+    vocab, err = _read_vocab_file(rule_dir / "vocab.yml")
     if err:
         result.messages.append(err)
         return result
@@ -197,12 +224,16 @@ def sync_vocab(rule_dir: Path, *, dry_run: bool = False) -> SyncResult:
         result.messages.append("vocab.yml is not a mapping")
         return result
 
-    checks_data, err = _load_yaml(checks_path)
-    if err:
-        result.messages.append(err)
+    if not checks_path.exists():
+        result.messages.append(f"no {checks_path.name}")
+        return result
+    try:
+        checks_data = deepcopy(read_checks_document(checks_path))
+    except RuleReadError as exc:
+        result.messages.append(str(exc))
         return result
 
-    checks = as_list(checks_data.get("checks")) if isinstance(checks_data, dict) else []
+    checks = as_list(checks_data.get("checks"))
     if not checks:
         result.messages.append("checks.yml has no checks")
         return result

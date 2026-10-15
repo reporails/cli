@@ -41,4 +41,5 @@
 - Each set of names the code compares against (formats, charges, severities and others) is defined once as a typed set of values, and a build check fails on a second copy.
 - A build check fails on a function, class, record field or defaulted parameter that only tests reach; code that only tests reached is removed.
 - The source is strictly typed: an untyped value appears only where a file, a reply or a third-party object is read, and the type check fails on any other.
-- The maintainer command that keeps rule word lists in step with their patterns says why it leaves an entry unchanged.
+- The maintainer command that keeps rule word lists in step with their patterns says why it leaves an entry unchanged, refuses a one-word list, a blank word, a word that would change the pattern's structure and a pattern that does not compile, names every pattern it cannot update, and reports a word list or `checks.yml` that is not UTF-8 text instead of stopping; extracting word lists names a `checks.yml` it cannot read instead of skipping it silently.
+- Each file the cli reads (a rule's `checks.yml`, an agent's `config.yml`, a rule's word list, the config and lexicon files) has one reader, and a build check fails on a second one. An agent `config.yml` that cannot be read is skipped with a warning naming the file and the problem.

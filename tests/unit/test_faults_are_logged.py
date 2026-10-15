@@ -10,6 +10,7 @@ import pytest
 from reporails_cli.core.classify import file_tags
 from reporails_cli.core.discovery import agent_config, project_root
 from reporails_cli.core.mapper import inspect as mapper_inspect
+from reporails_cli.core.platform.config import config as platform_config
 from reporails_cli.core.platform.contract.errors import BundledConfigMissingError
 
 
@@ -30,7 +31,7 @@ def broken_rules_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_root_markers_warns_about_an_unreadable_agent_config(broken_rules_dir: Path, caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name):
+    with caplog.at_level(logging.WARNING, logger=platform_config.logger.name):
         assert project_root.root_markers() == ()
     assert str(broken_rules_dir / "broken" / "config.yml") in caplog.text
 
@@ -38,7 +39,7 @@ def test_root_markers_warns_about_an_unreadable_agent_config(broken_rules_dir: P
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_memory_surface_dirs_warns_about_an_unreadable_agent_config(broken_rules_dir: Path, caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name), pytest.raises(BundledConfigMissingError):
+    with caplog.at_level(logging.WARNING, logger=platform_config.logger.name), pytest.raises(BundledConfigMissingError):
         file_tags._memory_surface_dirs()
     assert str(broken_rules_dir / "broken" / "config.yml") in caplog.text
 
@@ -46,7 +47,7 @@ def test_memory_surface_dirs_warns_about_an_unreadable_agent_config(broken_rules
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_config_surface_patterns_warns_about_an_unreadable_agent_config(broken_rules_dir: Path, caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name), pytest.raises(BundledConfigMissingError):
+    with caplog.at_level(logging.WARNING, logger=platform_config.logger.name), pytest.raises(BundledConfigMissingError):
         file_tags._config_surface_patterns()
     assert str(broken_rules_dir / "broken" / "config.yml") in caplog.text
 

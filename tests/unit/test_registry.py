@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.adapters.rule_builder import build_rule, load_checks
 from reporails_cli.core.platform.dto.models import Category, Rule, RuleType
 
@@ -405,3 +406,45 @@ class TestScanRulesNonMappingCheck:
         assert not rules
         assert "check 1 must be a mapping, not a str" in caplog.text
         assert str(slug_dir / "checks.yml") in caplog.text
+
+
+class TestReadChecksDocument:
+    """`read_checks_document` is the one reader of a `checks.yml`."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_returns_the_top_level_mapping(self, tmp_path: Path) -> None:
+        path = tmp_path / "checks.yml"
+        path.write_text("checks:\n  - id: a\n", encoding="utf-8")
+        assert read_checks_document(path) == {"checks": [{"id": "a"}]}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_empty_file_is_an_empty_mapping(self, tmp_path: Path) -> None:
+        path = tmp_path / "checks.yml"
+        path.write_text("", encoding="utf-8")
+        assert read_checks_document(path) == {}
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.parametrize(
+        ("content", "problem"),
+        [
+            (b"checks: \xff\xfe\n", "is not UTF-8 text"),
+            (b"checks: [unclosed\n", "is not valid YAML"),
+            (b"- a\n- b\n", "must be a mapping with a `checks` list, not a list"),
+        ],
+    )
+    def test_raises_naming_file_and_problem(self, tmp_path: Path, content: bytes, problem: str) -> None:
+        path = tmp_path / "checks.yml"
+        path.write_bytes(content)
+        with pytest.raises(RuleReadError) as err:
+            read_checks_document(path)
+        assert err.value.path == path
+        assert problem in err.value.problem
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_missing_file_cannot_be_read(self, tmp_path: Path) -> None:
+        with pytest.raises(RuleReadError, match="cannot be read"):
+            read_checks_document(tmp_path / "checks.yml")

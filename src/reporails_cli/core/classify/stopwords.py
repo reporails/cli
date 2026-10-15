@@ -8,8 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
-from reporails_cli.core.platform.utils.utils import fast_yaml_load
 
 # The check fields that hold a regex alternation.
 REGEX_PATTERN_FIELDS = ("pattern-regex", "pattern-not-regex")
@@ -223,16 +223,14 @@ def _analyze_check(check: JsonObject) -> list[_PatternInfo]:
 
 
 def extract_vocab(rule_dir: Path) -> JsonObject | None:
-    """Extract vocab.yml content from a rule's checks.yml."""
+    """Extract vocab.yml content from a rule's checks.yml; None when there is nothing to extract.
+
+    Raises RuleReadError naming the file and the problem when the checks.yml cannot be read.
+    """
     checks_path = rule_dir / "checks.yml"
     if not checks_path.exists():
         return None
-    try:
-        data = fast_yaml_load(checks_path.read_text(encoding="utf-8"))
-    except (yaml.YAMLError, OSError):
-        return None
-
-    checks = as_list(data.get("checks")) if isinstance(data, dict) else []
+    checks = as_list(read_checks_document(checks_path).get("checks"))
     vocab: JsonObject = {}
 
     for check in checks:
@@ -262,6 +260,7 @@ class ExtractResult:
     rule_dir: Path
     vocab: JsonObject | None
     message: str
+    problem: str = ""  # why the rule's checks.yml was skipped; empty when it was read
 
 
 def extract_all(rules_root: Path) -> list[ExtractResult]:
@@ -272,7 +271,11 @@ def extract_all(rules_root: Path) -> list[ExtractResult]:
         if "tests" in checks_path.parts:
             continue
         rule_dir = checks_path.parent
-        vocab = extract_vocab(rule_dir)
+        try:
+            vocab = extract_vocab(rule_dir)
+        except RuleReadError as exc:
+            results.append(ExtractResult(rule_dir, None, "skipped", exc.problem))
+            continue
         if vocab:
             results.append(ExtractResult(rule_dir, vocab, f"{len(vocab)} check(s)"))
         else:

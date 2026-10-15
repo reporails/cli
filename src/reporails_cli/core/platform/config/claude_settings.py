@@ -24,9 +24,9 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from reporails_cli.core.platform.config.config import get_agent_config_path
+from reporails_cli.core.platform.config.config import get_agent_config_path, read_agent_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
-from reporails_cli.core.platform.utils.utils import is_rooted_pattern, load_yaml_file
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,8 @@ MODES_WITHOUT_AGENTS_MD = frozenset({MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
 
 def _settings_patterns() -> dict[str, list[str]]:
     """Scope name -> settings-file patterns, from Claude's `config` file type."""
-    try:
-        data = as_object(load_yaml_file(get_agent_config_path("claude")))
-    except (OSError, ValueError):
-        logger.debug("Claude agent config unreadable; no Claude settings read", exc_info=True)
+    data = read_agent_config(get_agent_config_path("claude"))
+    if data is None:
         return {}
     scopes = as_object(as_object(as_object(data.get("file_types")).get("config")).get("scopes"))
     return {str(name): pattern_list(as_object(spec).get("patterns")) for name, spec in scopes.items()}

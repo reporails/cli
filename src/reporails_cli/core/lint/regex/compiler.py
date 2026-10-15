@@ -7,12 +7,11 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import regex as re
-import yaml
 
+from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, str_list
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.models import Severity
-from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 logger = logging.getLogger(__name__)
 
@@ -231,18 +230,18 @@ def compile_rules(yml_paths: list[Path]) -> CompiledRuleSet:
             continue
 
         try:
-            data = load_yaml_file(yml_path)
-            if not isinstance(data, dict) or not data:
-                logger.warning("Rule file %s has no valid data, skipping", yml_path)
-                continue
+            data = read_checks_document(yml_path)
+        except RuleReadError as e:
+            logger.warning("Failed to load rule file %s: %s", yml_path, e.problem)
+            continue
+        if not data:
+            logger.warning("Rule file %s has no valid data, skipping", yml_path)
+            continue
 
-            entries = _parse_entries(data, yml_path)
-            if entries is None:
-                continue
+        entries = _parse_entries(data, yml_path)
+        if entries is None:
+            continue
 
-            _compile_entries(entries, result)
-
-        except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
-            logger.warning("Failed to load rule file %s: %s", yml_path, e)
+        _compile_entries(entries, result)
 
     return result

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 
 from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
@@ -48,6 +49,10 @@ def stopwords_extract(
             written += 1
         else:
             skipped += 1
+            if er.problem:
+                console.print(
+                    f"  [yellow]![/yellow] {escape(str(er.rule_dir / 'checks.yml'))}: skipped, {escape(er.problem)}"
+                )
 
     console.print()
     console.print(f"Extracted: {written} vocab.yml files written, {skipped} skipped")
@@ -93,7 +98,7 @@ def stopwords_sync(
         if sr.skipped:
             total_skipped += sr.skipped
         for msg in sr.messages:
-            console.print(f"  [yellow]![/yellow] {slug}: {msg}")
+            console.print(f"  [yellow]![/yellow] {escape(slug)}: {escape(msg)}")
 
     console.print()
     label = "Would update" if dry_run else "Updated"

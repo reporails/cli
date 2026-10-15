@@ -100,6 +100,15 @@ def yaml_error_line(exc: Exception) -> str:
     return f"{problem} (line {mark.line + 1})" if mark is not None else str(problem)
 
 
+def unreadable_file_problem(exc: OSError | UnicodeDecodeError | yaml.YAMLError) -> str:
+    """What is wrong with a file whose read or parse raised `exc`, as text that follows the file's path."""
+    if isinstance(exc, UnicodeDecodeError):
+        return "is not UTF-8 text"
+    if isinstance(exc, yaml.YAMLError):
+        return f"is not valid YAML ({yaml_error_line(exc)})"
+    return f"cannot be read ({exc.strerror or exc})"
+
+
 def non_text_reading(position: int, item: JsonValue) -> str:
     """What YAML read the non-text item at 1-based `position` of a list as, and what to do about it."""
     if item is None:

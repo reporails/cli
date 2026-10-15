@@ -7,21 +7,16 @@ properties a file type declares, which discovery bucket it falls in, and how the
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Literal
 
-import yaml
-
 from reporails_cli.core.discovery import plugin_roots
 from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
-from reporails_cli.core.platform.config.config import get_agent_config_path, iter_agent_configs
+from reporails_cli.core.platform.config.config import get_agent_config_path, iter_agent_configs, read_agent_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, pattern_list
 from reporails_cli.core.platform.policy.matching import DECLARED_PROPERTIES
-from reporails_cli.core.platform.utils.utils import is_rooted_pattern, load_yaml_file
-
-logger = logging.getLogger(__name__)
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 # The discovery bucket a file type's files are collected into.
 SurfaceBucket = Literal["instruction", "rule", "config"]
@@ -125,15 +120,8 @@ def load_config_file_types(
     candidates.append(get_agent_config_path(agent_id))
 
     for path in candidates:
-        if not path.exists():
-            continue
-        try:
-            data = load_yaml_file(path)
-        except (OSError, ValueError, yaml.YAMLError) as exc:  # agent config parsing; skip broken configs
-            logger.warning("Failed to parse agent file_types %s: %s", path, exc)
-            continue
-        if not data or not isinstance(data, dict):
-            logger.warning("Agent config is empty: %s", path)
+        data = read_agent_config(path)
+        if data is None:
             continue
         file_types = data.get("file_types")
         if file_types and isinstance(file_types, dict):
