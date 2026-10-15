@@ -21,7 +21,6 @@ import stat
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.cache.map_cache import _CACHE_VERSION
 from reporails_cli.core.platform.config.bootstrap import get_daemon_dir
@@ -106,12 +105,16 @@ def daemon_pid() -> int | None:
         return None
 
 
-def retire_daemon(pid: Any, timeout: float = 5.0) -> bool:
+# Seconds a retired daemon is given to answer and to exit.
+_RETIRE_TIMEOUT_S = 5.0
+
+
+def retire_daemon(pid: object) -> bool:
     """Shut down the daemon running as `pid` and wait for it to exit. True once it is gone.
 
     Only a daemon that still owns the daemon files is asked, and it removes its own files
     as it exits, so a daemon started in the meantime is never touched. A daemon too busy to
-    answer, or one that has not exited within `timeout`, is not waited for: it stops once its
+    answer, or one that has not exited within `_RETIRE_TIMEOUT_S`, is not waited for: it stops once its
     current request is done.
     """
     if sys.platform == "win32" or not isinstance(pid, int):
@@ -120,13 +123,13 @@ def retire_daemon(pid: Any, timeout: float = 5.0) -> bool:
         return False
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
+            sock.settimeout(_RETIRE_TIMEOUT_S)
             sock.connect(str(socket_path()))
             sock.sendall(json.dumps({"cmd": "shutdown"}).encode() + b"\n")
             sock.recv(4096)
     except OSError:
         return False
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + _RETIRE_TIMEOUT_S
     while time.monotonic() < deadline:
         try:
             os.kill(pid, 0)

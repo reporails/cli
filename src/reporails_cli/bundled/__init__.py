@@ -1,7 +1,6 @@
 """Bundled configuration files for reporails CLI.
 
 This package contains CLI-owned configuration:
-- project-types.yml: Project type detection data for backbone discovery
 - models/: an in-package copy of the ML model directory used by dev checkouts
   and CI. The published wheel is lean and does not carry it; the mapper's
   ``model_store`` resolves and fetches the model set.
@@ -15,11 +14,6 @@ from pathlib import Path
 def get_bundled_path() -> Path:
     """Get path to bundled configuration directory."""
     return Path(__file__).parent
-
-
-def get_project_types_path() -> Path:
-    """Get path to bundled project-types.yml."""
-    return get_bundled_path() / "project-types.yml"
 
 
 def get_lexicon_path() -> Path:

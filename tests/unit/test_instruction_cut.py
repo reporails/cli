@@ -6,7 +6,7 @@ import pytest
 
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.mapper import bio_pipeline
-from reporails_cli.core.mapper.instructions import instruction_count, instruction_texts
+from reporails_cli.core.mapper.instructions import instruction_starts, instruction_texts
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
@@ -49,7 +49,7 @@ def _charged(atoms: list[Atom]) -> list[str]:
     ],
 )
 def test_a_sentence_giving_two_instructions_is_counted_as_two(text: str) -> None:
-    assert instruction_count(text) >= 2
+    assert len(instruction_starts(text)) >= 2
 
 
 @pytest.mark.unit
@@ -84,7 +84,7 @@ def test_a_sentence_giving_two_instructions_is_counted_as_two(text: str) -> None
     ],
 )
 def test_a_sentence_giving_one_instruction_is_counted_as_one(text: str) -> None:
-    assert instruction_count(text) <= 1
+    assert len(instruction_starts(text)) <= 1
 
 
 @pytest.mark.unit

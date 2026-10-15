@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import walk_glob_matches
-from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets, run_exclusions, target_texts
+from reporails_cli.core.lint.mechanical.checks import (
+    CheckArgs,
+    _resolve_glob_targets,
+    arg_value,
+    match_type_arg,
+    run_exclusions,
+    target_texts,
+)
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.policy.matching import _prop_matches
@@ -58,7 +64,7 @@ def _resolve_scope_dir(match_type: str | list[str], classified_files: list[Class
 
 def file_absent(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that NO file matching the pattern exists.
@@ -66,10 +72,10 @@ def file_absent(
     When ``_match_type`` is injected (from rule.match.type), scopes the search
     to the target directory instead of the project root.
     """
-    pattern = str(args.get("pattern", ""))
+    pattern = str(arg_value(args, "pattern", ""))
     if not pattern:
         return CheckResult(passed=False, message="file_absent: no pattern specified")
-    match_type = args.get("_match_type", "")
+    match_type = match_type_arg(args)
     exclusions = run_exclusions(args, root)
     scope_dir = _resolve_scope_dir(match_type, classified_files)
 
@@ -102,11 +108,11 @@ def file_absent(
 
 def content_absent(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that a regex pattern does NOT appear in matching files."""
-    pattern = str(args.get("pattern", ""))
+    pattern = str(arg_value(args, "pattern", ""))
     if not pattern:
         return CheckResult(passed=False, message="content_absent: no pattern specified")
     try:

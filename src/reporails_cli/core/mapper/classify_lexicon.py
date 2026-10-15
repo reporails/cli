@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from reporails_cli.core.mapper.classify_no import NO_DESCRIPTIVE_PREPS
+from reporails_cli.core.mapper.classify_no import NO_CLAUSE_OPENERS, NO_DESCRIPTIVE_PREPS
 
 # CORE: high-confidence charged verbs
 VERBS_CORE: set[str] = {
@@ -83,8 +83,10 @@ VERBS_CORE: set[str] = {
     "wrap",
     "write",
 }
+# Verbs that also name tools (`find`, `make`, `mock`).
+VERBS_NAMING_TOOLS: frozenset[str] = frozenset({"find", "make", "mock"})
 # SUPPLEMENT: legitimate but lower-frequency charged verbs
-VERBS_SUPPLEMENT: set[str] = {
+VERBS_SUPPLEMENT: set[str] = set(VERBS_NAMING_TOOLS) | {
     "accept",
     "achieve",
     "activate",
@@ -292,17 +294,20 @@ VERBS_AMBIGUOUS: set[str] = {
 }
 ALL_VERBS = VERBS_CORE | VERBS_SUPPLEMENT | VERBS_AMBIGUOUS
 
-CONDITIONAL_MARKERS: set[str] = {
+# The openers of a condition on a situation, a time or a place (`If`, `When`, `Whenever`, `Where`).
+SITUATIONAL_OPENERS: frozenset[str] = frozenset({"if", "when", "whenever", "where"})
+# `possible` after one of these, ending its clause, hedges an instruction (`Run it where possible`):
+# the situational openers plus `wherever`, which opens no condition on its own.
+HEDGE_POSSIBLE_LEADS: frozenset[str] = SITUATIONAL_OPENERS | {"wherever"}
+
+CONDITIONAL_MARKERS: set[str] = set(SITUATIONAL_OPENERS) | {
     # Conditional
-    "if",
     "unless",
     "provided",
     "given",
     "assuming",
     "whether",
     # Temporal
-    "when",
-    "whenever",
     "before",
     "after",
     "while",
@@ -312,7 +317,6 @@ CONDITIONAL_MARKERS: set[str] = {
     "upon",
     # Restrictive
     "except",
-    "where",
     # General
     "for",
 }
@@ -328,109 +332,120 @@ CONDITION_QUANTIFIERS: frozenset[str] = frozenset(
 
 # Words that join two conditions of one frame (`If the tests fail and the branch is main, ...`).
 CONDITION_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or"})
+# Words that start the next clause of a packed sentence (`Bump the version and update the docs`, `lint, then test`).
+CLAUSE_JOINERS: frozenset[str] = frozenset({"and", "then"})
+# The pronoun and copula of `it is` / `it's`.
+IT_IS: tuple[str, str] = ("it", "is")
 
 # Context words that can precede an imperative verb without blocking detection.
-CONTEXT_WORDS = CONDITIONAL_MARKERS | {
-    # Determiners, articles, adverbs
-    "each",
-    "every",
-    "all",
-    "any",
-    "first",
-    "then",
-    "also",
-    "next",
-    "finally",
-    "immediately",
-    "the",
-    "a",
-    "an",
-    "this",
-    "that",
-    "these",
-    "those",
-    "now",
-    "here",
-    "there",
-    "instead",
-    "to",
-    "and",
-    "or",
-    "not",
-    "with",
-    "in",
-    "on",
-    "at",
-    "by",
-    "from",
-    "into",
-    "only",
-    "just",
-    "simply",
-    "please",
-    "automatically",
-    "optionally",
-    "alternatively",
-    "additionally",
-    # CLI tools — invocation context preceding a verb
-    "npm",
-    "npx",
-    "bun",
-    "pnpm",
-    "yarn",
-    "cargo",
-    "pip",
-    "uv",
-    "dotnet",
-    "docker",
-    "git",
-    "go",
-    "python",
-    "node",
-    "deno",
-    "make",
-    "composer",
-    "mix",
-    "flutter",
-    "dart",
-    "swift",
-    "java",
-    "mvn",
-    "gradle",
-    "gradlew",
-    "ruby",
-    "zig",
-    "nix",
-    "brew",
-    "apt",
-    "snap",
-    "curl",
-    "wget",
-    "pytest",
-    "ruff",
-    "eslint",
-    "prettier",
-    "vitest",
-    "jest",
-    "mocha",
-    "turbo",
-    "nx",
-    "lerna",
-    "rushx",
-    "hatch",
-    "poetry",
-    "pipx",
-    "uvx",
-    "helm",
-    "kubectl",
-    "terraform",
-    "ansible",
-    "ssh",
-    "scp",
-}
+CONTEXT_WORDS = (
+    CONDITIONAL_MARKERS
+    | {
+        # Determiners, articles, adverbs
+        "each",
+        "every",
+        "all",
+        "any",
+        "first",
+        "also",
+        "next",
+        "finally",
+        "immediately",
+        "the",
+        "a",
+        "an",
+        "this",
+        "that",
+        "these",
+        "those",
+        "now",
+        "here",
+        "there",
+        "instead",
+        "to",
+        "not",
+        "with",
+        "in",
+        "on",
+        "at",
+        "by",
+        "from",
+        "into",
+        "only",
+        "just",
+        "simply",
+        "please",
+        "automatically",
+        "optionally",
+        "alternatively",
+        "additionally",
+        # CLI tools — invocation context preceding a verb
+        "npm",
+        "npx",
+        "bun",
+        "pnpm",
+        "yarn",
+        "cargo",
+        "pip",
+        "uv",
+        "dotnet",
+        "docker",
+        "git",
+        "go",
+        "python",
+        "node",
+        "deno",
+        "make",
+        "composer",
+        "mix",
+        "flutter",
+        "dart",
+        "swift",
+        "java",
+        "mvn",
+        "gradle",
+        "gradlew",
+        "ruby",
+        "zig",
+        "nix",
+        "brew",
+        "apt",
+        "snap",
+        "curl",
+        "wget",
+        "pytest",
+        "ruff",
+        "eslint",
+        "prettier",
+        "vitest",
+        "jest",
+        "mocha",
+        "turbo",
+        "nx",
+        "lerna",
+        "rushx",
+        "hatch",
+        "poetry",
+        "pipx",
+        "uvx",
+        "helm",
+        "kubectl",
+        "terraform",
+        "ansible",
+        "ssh",
+        "scp",
+    }
+    | CONDITION_CONJUNCTIONS
+    | CLAUSE_JOINERS
+)
 
 # The words that open a condition clause; a bare `for` opens none.
 CONDITION_OPENERS = CONDITIONAL_MARKERS - {"for"}
+
+# The people an instruction addresses or speaks for (`you must`, `we always`).
+ADDRESSEE_SUBJECTS: frozenset[str] = frozenset({"you", "we"})
+# Personal pronouns: after an ambiguous opening verb they start a clause of their own (`Fix tests you can reproduce`).
+SUBJECT_PRONOUNS: frozenset[str] = ADDRESSEE_SUBJECTS | {"i", "they", "he", "she", "it"}
 
 # Phase 2: Modals / Adverbs
 MODAL_ABSOLUTE: set[str] = {"must", "shall"}
@@ -443,15 +458,37 @@ SCOPE_PREPOSITIONS: frozenset[str] = frozenset({"on", "in", "at", "during", "wit
 # Words that quantify over a whole class (`every gate`, `any file`, `no exception`): naming one member
 # right after one narrows what the line covers.
 GENERAL_QUANTIFIERS: frozenset[str] = frozenset({"every", "each", "all", "any", "no", "one"})
-DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"}) | (
-    GENERAL_QUANTIFIERS - {"no", "one"}
-)
+DEFINITE_DETERMINERS: frozenset[str] = frozenset({"the", "this", "that", "these", "those"})
+DETERMINERS: frozenset[str] = DEFINITE_DETERMINERS | (GENERAL_QUANTIFIERS - {"no", "one"})
+
+# Common English function words, dropped from content-word coverage: polarity already tracks
+# negation/modality (`charge_value`), so these words would only pad an overlap between two
+# otherwise-unrelated instructions without adding topic signal.
+STOPWORDS: frozenset[str] = (
+    CONDITION_CONJUNCTIONS
+    | CLAUSE_JOINERS
+    | frozenset(IT_IS)
+    | MODAL_ABSOLUTE
+    | MODAL_HEDGED
+    | GENERAL_QUANTIFIERS
+    | DEFINITE_DETERMINERS
+    | frozenset(
+        {
+            "a", "after", "again", "also", "always", "an", "are", "as", "at", "be", "been", "before",
+            "being", "but", "by", "can", "did", "do", "does", "down", "few", "for", "from", "here", "if",
+            "in", "into", "its", "just", "may", "more", "most", "never", "nor", "not", "of", "on", "once",
+            "only", "onto", "other", "out", "over", "own", "per", "so", "some", "such", "than", "there",
+            "to", "too", "under", "up", "very", "was", "were", "when", "will", "with", "would", "you",
+            "your",
+        }
+    )
+)  # fmt: skip
 
 # scope prepositions and the prepositions above less the words that open a clause rather than a phrase
 # (`unless`, `when`, `while`, `except`, `since`; `before` / `after` stay, opening a time phrase), with a few more.
 PHRASE_PREPOSITIONS: frozenset[str] = (
     SCOPE_PREPOSITIONS
-    | (NO_DESCRIPTIVE_PREPS - {"unless", "when", "while", "except", "since"})
+    | (NO_DESCRIPTIVE_PREPS - NO_CLAUSE_OPENERS)
     | frozenset({"into", "onto", "over", "through", "against", "between", "via"})
 )
 

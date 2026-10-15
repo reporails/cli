@@ -8,19 +8,21 @@ configured to the same file.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from reporails_cli.core.mapper import bio_graphs, bio_tagger
+from reporails_cli.core.mapper import bio_graphs, bio_tagger, multislot_frames
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_the_four_graphs_are_distinct_files() -> None:
     paths = [
-        bio_tagger._enc_a_path(),
-        bio_tagger._head_a_path(),
-        bio_tagger._enc_b_path(),
-        bio_tagger._head_b_path(),
+        bio_graphs._enc_a_path(),
+        bio_graphs._head_a_path(),
+        bio_graphs._enc_b_path(),
+        bio_graphs._head_b_path(),
     ]
     assert len({str(p) for p in paths}) == 4  # no graph aliased to another's file
 
@@ -30,20 +32,20 @@ def test_the_four_graphs_are_distinct_files() -> None:
 def test_charge_pass_reads_the_first_graph_and_span_pass_reads_the_second(monkeypatch) -> None:
     if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
-    enc_a, enc_b = bio_tagger._enc_a(), bio_tagger._enc_b()
-    assert enc_a is not enc_b
+    seen: list[tuple[Path, tuple[str, ...]]] = []
+    real = multislot_frames._extract_pass_from_states
 
-    seen: list[object] = []
-    real = bio_tagger._word_features
+    def spy(hidden, offsets, text, head_path, outputs):
+        seen.append((head_path, tuple(outputs)))
+        return real(hidden, offsets, text, head_path, outputs)
 
-    def spy(text: str, encoder=None):
-        seen.append(encoder)
-        return real(text, encoder=encoder)
-
-    monkeypatch.setattr(bio_tagger, "_word_features", spy)
-    bio_tagger.tag_atom_multislot("Do not commit secrets to the repository.")
-    # First extraction pass reads the first graph; second reads the second.
-    assert seen == [enc_a, enc_b]
+    monkeypatch.setattr(multislot_frames, "_extract_pass_from_states", spy)
+    multislot_frames._decode_logits_batch(["Do not commit secrets to the repository."])
+    # First extraction pass reads the first head for charge+modality; second reads the second for the spans.
+    assert seen == [
+        (bio_graphs._head_a_path(), bio_tagger.CHARGE_OUTPUTS),
+        (bio_graphs._head_b_path(), bio_tagger.SPAN_OUTPUTS),
+    ]
 
 
 @pytest.mark.unit

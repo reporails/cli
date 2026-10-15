@@ -46,7 +46,7 @@ async def _idle_watchdog() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_server: MCPServer) -> AsyncIterator[None]:
+async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
     """Run the idle-unload watchdog for the server's lifetime."""
     watchdog = asyncio.create_task(_idle_watchdog())
     try:

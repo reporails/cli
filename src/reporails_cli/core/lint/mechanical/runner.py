@@ -6,16 +6,17 @@ Produces Violation objects compatible with the scoring pipeline.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.walk import is_under, shared_dir_listings
 from reporails_cli.core.lint.mechanical.checks import get_target_files
 from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
+from reporails_cli.core.platform.contract.json_value import JsonValue
 from reporails_cli.core.platform.dto.checks import CheckResult
-from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Severity, Violation
+from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, Rule, Violation
 from reporails_cli.core.platform.policy.matching import match_files
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def run_mechanical_check(
     root: Path,
     classified_files: list[ClassifiedFile],
     *,
-    extra_args: dict[str, Any] | None = None,
+    extra_args: Mapping[str, JsonValue] | None = None,
     match_type: str | list[str] | None = None,
     exclusions: RunExclusions | None = None,
 ) -> CheckResult | None:
@@ -48,12 +49,12 @@ def run_mechanical_check(
     fn = MECHANICAL_CHECKS.get(check.check or "")
     if fn is None:
         raise UnknownCheckError(check.check)
-    args: dict[str, Any] = {}
+    args: dict[str, JsonValue | RunExclusions] = {}
     if extra_args:
         args.update(extra_args)
     args.update(check.args or {})
     if match_type and "_targets" not in args:
-        args["_match_type"] = match_type
+        args["_match_type"] = [*match_type] if isinstance(match_type, list) else match_type
     if exclusions is not None:
         args["_exclusions"] = exclusions
     if args.get("entry_only") and not get_target_files(args, classified_files, root):
@@ -69,7 +70,7 @@ def dispatch_single_check(
     classified_files: list[ClassifiedFile],
     location: str,
     *,
-    extra_args: dict[str, Any] | None = None,
+    extra_args: Mapping[str, JsonValue] | None = None,
     exclusions: RunExclusions | None = None,
 ) -> tuple[Violation | None, CheckResult | None]:
     """Dispatch a single mechanical check and return (violation, raw_result).
@@ -109,7 +110,7 @@ def dispatch_single_check(
     passed = result.passed if check.expect == "present" else not result.passed
     if not passed:
         # Check-level severity/message override rule-level defaults
-        sev = Severity(check.severity) if check.severity else rule.severity
+        sev = check.severity or rule.severity
         msg = check.message or result.message
         violation = Violation(
             rule_id=rule.id,
@@ -187,7 +188,7 @@ def _run_mechanical_checks(
         # `extract_imports` writes `discovered_imports` into its CheckResult;
         # `check_import_targets_exist` later in the same rule reads it via
         # the extra_args injection in `dispatch_single_check`.
-        accumulated_args: dict[str, Any] = {}
+        accumulated_args: dict[str, JsonValue] = {}
         for check in rule.checks:
             if check.type != "mechanical":
                 continue
@@ -208,16 +209,6 @@ def _run_mechanical_checks(
                 accumulated_args.update(result.annotations)
 
     return violations
-
-
-def _relativize(path: Path, root: Path | None) -> str:
-    """Return path relative to root, or its basename if outside root."""
-    if root is not None:
-        try:
-            return path.relative_to(root).as_posix()
-        except ValueError:
-            pass
-    return path.name
 
 
 def _classified_display(cf: ClassifiedFile, root: Path | None) -> str:

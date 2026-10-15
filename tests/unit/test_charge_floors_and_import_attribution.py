@@ -56,7 +56,7 @@ def _span(text: str = "", offset: tuple[int, int] | None = None) -> Span:
 
 def _heading_tuple(text: str, polarity: int, predicate: Span) -> AtomTuple:
     empty = _span()
-    return AtomTuple(polarity, "imperative", empty, predicate, empty, empty, 0.0, False, text)
+    return AtomTuple(polarity, "imperative", empty, predicate, empty, empty, text)
 
 
 def _charged(text: str) -> list[Atom]:

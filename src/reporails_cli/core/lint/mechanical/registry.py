@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from pathlib import Path
 
 from reporails_cli.core.lint.mechanical.checks import (
+    CheckArgs,
     byte_size,
     directory_contains,
     directory_exists,
@@ -38,9 +40,14 @@ from reporails_cli.core.lint.mechanical.checks_links import (
     extract_markdown_links,
 )
 from reporails_cli.core.lint.mechanical.hook_handlers import hook_handlers
+from reporails_cli.core.platform.dto.checks import CheckResult
+from reporails_cli.core.platform.dto.models import ClassifiedFile
+
+# A mechanical check: the project root, the check's arguments and the classified files in scope.
+type MechanicalCheck = Callable[[Path, CheckArgs, list[ClassifiedFile]], CheckResult]
 
 # Registry of mechanical checks
-MECHANICAL_CHECKS: dict[str, Any] = {
+MECHANICAL_CHECKS: dict[str, MechanicalCheck] = {
     "file_exists": file_exists,
     "directory_exists": directory_exists,
     "directory_contains": directory_contains,

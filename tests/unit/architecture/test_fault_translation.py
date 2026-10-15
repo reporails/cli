@@ -9,8 +9,7 @@ absence — see `core/platform/contract/errors.py`.
 
 Each flagged site is keyed by (path, enclosing-function, handler-exception-type) so the
 allowlist survives line shifts and a NEW sentinel-collapse in a seeded function is still
-caught. `_KNOWN_EXCEPTIONS` carries two classes: legitimate logged-isolation / dependency
-degrades, and grandfathered debt tagged with a `# TODO`.
+caught. `_KNOWN_EXCEPTIONS` carries only legitimate logged-isolation / dependency degrades.
 """
 
 from __future__ import annotations
@@ -47,23 +46,7 @@ _KNOWN_EXCEPTIONS: set[tuple[str, str, str]] = {
     # absent / unreadable / malformed entry means "no cooldown" (one extra request, never a blocked run).
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "FileNotFoundError"),
     ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "_load", "OSError,ValueError"),
-    ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "active_cooldown", "KeyError,TypeError,ValueError"),
-    # Grandfathered debt — collapses a load fault to an empty result. TODO: raise a typed fault.
-    (
-        "src/reporails_cli/core/platform/adapters/registry.py",
-        "structural_rule_ids",
-        "OSError,ValueError,KeyError",
-    ),  # TODO: raise a typed fault
-    (
-        "src/reporails_cli/core/platform/adapters/registry.py",
-        "_load_from_path",
-        "Exception",
-    ),  # TODO: raise a typed fault
-    (
-        "src/reporails_cli/core/platform/adapters/registry.py",
-        "_apply_agent_overrides",
-        "ValueError",
-    ),  # TODO: raise a typed fault
+    ("src/reporails_cli/core/platform/adapters/rate_cooldown.py", "active_cooldown", "ValueError"),
 }
 
 

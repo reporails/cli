@@ -9,11 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field
 
-from reporails_cli.core.platform.dto.models import Check
+from reporails_cli.core.platform.dto.models import Check, FieldProblem
 
 CASE_PREFIXES = ("pass-", "fail-")
 _FIXTURE_EXCLUDES = frozenset({".gitkeep", ".DS_Store"})
@@ -54,20 +53,17 @@ class HarnessResult:
     cases_not_run: list[str] = field(default_factory=list)  # case directories with an unrecognised name or no files
 
 
-class RuleInfo(BaseModel):
+class RuleInfo(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """Lightweight rule descriptor for harness discovery.
 
     A pydantic model so a `checks=[{...}]` construction coerces each dict to a
-    `Check` and a schema-invalid entry fails loudly at construction. `match` stays
-    an open dict — its values are not further constrained here.
+    `Check` and a schema-invalid entry fails loudly at construction.
     """
 
     rule_id: str
     slug: str
     title: str
     category: str
-    rule_type: str
-    match: dict[str, Any]
     checks: list[Check]
     rule_dir: Path
     checks_yml: Path
@@ -78,8 +74,28 @@ class RuleInfo(BaseModel):
     # a `deterministic` check looks its pattern up by id in a single checks.yml file, so an
     # inherited check must resolve against its origin file, not the child's.
     inherited_checks_yml: dict[str, Path] = Field(default_factory=dict)
+    # What the rule.md frontmatter declares, for the structural lint.
+    frontmatter_read: bool = False  # a frontmatter mapping was recovered from rule.md
+    severity_declared: bool = False
+    enforcement_required: bool = False
+    enforcement_mechanism_named: bool = False
     # Set when the rule's check definitions could not be read: names the file and what is wrong.
     load_error: str = ""
+    # The rule.md fields the build rejected, one record each, and the rule.md path they are reported under.
+    field_problems: tuple[FieldProblem, ...] = ()
+    rule_md_label: str = ""
+
+    @property
+    def load_failure(self) -> str:
+        """Why the rule cannot run: its load error and one line per rejected field; empty when it loads."""
+        lines = [self.load_error] if self.load_error else []
+        lines.extend(f"{self.rule_md_label}: {p.field}: {p.message}" for p in self.field_problems)
+        return "\n".join(lines)
+
+    @property
+    def rejected_fields(self) -> frozenset[str]:
+        """The top-level rule.md field names the build rejected."""
+        return frozenset(p.field.split(".")[0] for p in self.field_problems)
 
     @property
     def has_checks(self) -> bool:

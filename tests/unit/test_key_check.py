@@ -41,7 +41,8 @@ def _header(notices: list[dict[str, str]]) -> dict[str, str]:
 @pytest.mark.subsys_cli_ux
 def test_request_is_an_empty_json_body_with_the_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = _patch(monkeypatch, _reply(200, {"tier": "free"}))
-    check_api_key("tok_1", base_url="http://srv/")
+    monkeypatch.setenv("AILS_SERVER_URL", "http://srv/")
+    check_api_key("tok_1")
     assert seen["url"] == "http://srv/v1/diagnose"
     headers = seen["headers"]
     assert isinstance(headers, dict)
@@ -94,7 +95,8 @@ def test_key_error_body_is_rejected_whatever_the_status(monkeypatch: pytest.Monk
 @pytest.mark.subsys_cli_ux
 def test_403_page_without_a_key_error_is_unavailable_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, _reply(403, text="<html>Just a moment...</html>"))
-    result = check_api_key("tok_1", base_url="http://srv")
+    monkeypatch.setenv("AILS_SERVER_URL", "http://srv")
+    result = check_api_key("tok_1")
     assert result.status == "unavailable"
     assert "403" in result.reason
 
@@ -103,7 +105,8 @@ def test_403_page_without_a_key_error_is_unavailable_not_rejected(monkeypatch: p
 @pytest.mark.subsys_cli_ux
 def test_network_error_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch(monkeypatch, httpx.ConnectError("down"))
-    result = check_api_key("tok_1", base_url="http://srv")
+    monkeypatch.setenv("AILS_SERVER_URL", "http://srv")
+    result = check_api_key("tok_1")
     assert (result.status, result.reason) == ("unavailable", "could not reach http://srv/v1/diagnose")
 
 

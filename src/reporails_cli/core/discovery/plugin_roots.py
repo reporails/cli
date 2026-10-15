@@ -12,10 +12,11 @@ manifest is never read as a plugin's skills.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import ListedEntry, list_dir
+from reporails_cli.core.platform.contract.json_value import JsonObject, pattern_list
 from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 PLUGIN_SCOPE = "plugin"
@@ -25,12 +26,10 @@ PLUGIN_SCOPE = "plugin"
 _MAX_ROOT_DEPTH = 4
 
 
-def plugin_scope_patterns(scope_spec: dict[str, Any], key: str = "patterns") -> list[str]:
+def plugin_scope_patterns(scope_spec: JsonObject, key: str = "patterns") -> list[str]:
     """A `plugin` scope's patterns (under `key`) in `<marker>/pattern` form (empty without a marker)."""
     marker = scope_spec.get("root_marker")
-    patterns = scope_spec.get(key, [])
-    if isinstance(patterns, str):
-        patterns = [patterns]
+    patterns = pattern_list(scope_spec.get(key, []))
     if not isinstance(marker, str) or not marker:
         return []
     return [f"<{marker}>/{pattern}" for pattern in patterns]
@@ -130,7 +129,7 @@ def plugin_relative_path(path: Path, scan_root: Path, marker: str) -> str | None
         directory = directory.parent
 
 
-def matches_plugin_pattern(path: Path, scan_root: Path, pattern: str, match: Any) -> bool | None:
+def matches_plugin_pattern(path: Path, scan_root: Path, pattern: str, match: Callable[[str, str], bool]) -> bool | None:
     """For a `<marker>/pattern`: whether `path` sits under a plugin root and its path from
     that root satisfies `match(relative_path, pattern)`. None for any other pattern, so
     the caller falls back to its own matching."""

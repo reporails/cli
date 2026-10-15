@@ -236,7 +236,7 @@ class TestSurfaceMutations:
         # output), not re-deriving the internal dir-name set.
         import yaml
 
-        from reporails_cli.core.classify.file_tags import _MEMORY_SURFACE_FILE_TYPES
+        from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
         from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
 
         rules_dir = get_bundled_rules_path()
@@ -246,7 +246,7 @@ class TestSurfaceMutations:
         for config_path in rules_dir.glob("*/config.yml"):
             data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             for ft_name, ft in (data.get("file_types") or {}).items():
-                if ft_name not in _MEMORY_SURFACE_FILE_TYPES or not isinstance(ft, dict):
+                if ft_name not in MEMORY_SURFACES or not isinstance(ft, dict):
                     continue
                 for scope in (ft.get("scopes") or {}).values():
                     for pattern in (scope or {}).get("patterns", []) or []:

@@ -20,9 +20,9 @@ from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.surface_config import surface_include_patterns
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
-from reporails_cli.core.platform.policy.matching import match_files
-from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_loose_leaf_pattern
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 
 def load_file_types(
@@ -84,7 +84,7 @@ def _apply_project_overrides(
     return out
 
 
-def _parse_file_types(data: dict[str, object]) -> list[FileTypeDeclaration]:
+def _parse_file_types(data: JsonObject) -> list[FileTypeDeclaration]:
     """Parse file_types dict from agent config into FileTypeDeclaration list.
 
     Supports both v0.3.0 (patterns + properties nested) and v0.5.0
@@ -96,36 +96,17 @@ def _parse_file_types(data: dict[str, object]) -> list[FileTypeDeclaration]:
             continue
         patterns = extract_patterns(spec)
         # v0.3.0: properties nested; v0.5.0: flattened at file type level
-        raw_props = spec.get("properties")
-        if isinstance(raw_props, dict):
-            props = _stringify_properties(raw_props)
-        else:
-            props = _stringify_properties(extract_properties(spec))
+        props = extract_properties(spec)
         declarations.append(
             FileTypeDeclaration(
                 name=name,
                 patterns=tuple(str(p) for p in patterns),
-                required=spec.get("required", False),
+                required=spec.get("required", False) is True,
                 properties=props,
                 entry_patterns=tuple(str(p) for p in extract_patterns(spec, "entry_patterns")),
             )
         )
     return declarations
-
-
-def _stringify_properties(props: dict[str, object] | None) -> dict[str, str | list[str]]:
-    """Extract properties from config. Preserves lists for multi-valued properties."""
-    if not props:
-        return {}
-    result: dict[str, str | list[str]] = {}
-    for k, v in props.items():
-        if v is None:
-            continue
-        if isinstance(v, list):
-            result[k] = [str(item) for item in v]
-        else:
-            result[k] = str(v)
-    return result
 
 
 def _compute_ancestor_chain(scan_root: Path) -> set[Path]:
@@ -326,50 +307,3 @@ def _classify_generic_via_links(
     return [
         make_generic_classified(target, target_edges, scan_root) for target, target_edges in sorted(by_target.items())
     ]
-
-
-def resolve_match_to_paths(
-    classified: list[ClassifiedFile],
-    match: FileMatch | None,
-    scan_root: Path,
-) -> list[str]:
-    """Resolve match criteria to relative path strings for the regex runner.
-
-    Args:
-        classified: Previously classified files
-        match: Match criteria, or None for all files
-        scan_root: Project root for relative paths
-
-    Returns:
-        List of relative path strings
-    """
-    targets = classified if match is None else match_files(classified, match)
-
-    paths: list[str] = []
-    for cf in targets:
-        try:
-            paths.append(cf.path.relative_to(scan_root).as_posix())
-        except ValueError:
-            paths.append(cf.path.as_posix())
-    return paths
-
-
-def _matches_any_pattern(rel_path: str, patterns: tuple[str, ...]) -> bool:
-    """Check if a relative path matches any glob pattern.
-
-    Glob matching is `glob_matches`: ``**`` spans zero or more directory components
-    (``a/**/b`` matches ``a/b`` and ``a/x/b``).
-    """
-    return _first_matching_pattern(rel_path, patterns) is not None
-
-
-def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | None:
-    """Return the first pattern that matches `rel_path`, or None.
-
-    Used by `_matches_any_pattern` and by callers that only need "does any
-    pattern match", with no location-mode disambiguation. `classify_files`
-    itself calls `config_pattern_matches` directly so a pattern that matches
-    but fails the location check does not block a later pattern of the
-    same file_type from getting a turn.
-    """
-    return next((pattern for pattern in patterns if config_pattern_matches(rel_path, pattern)), None)

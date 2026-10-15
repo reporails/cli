@@ -14,6 +14,8 @@ import pytest
 from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_fail_fixture,
     _scaffold_fixture,
+    _scaffold_glob_count,
+    _scaffold_glob_count_deficit,
 )
 from reporails_cli.core.platform.dto.models import Check
 
@@ -216,3 +218,22 @@ class TestScaffoldFilePresentNestedParent:
         assert result is not None
         assert (result / "a" / "b" / "forbidden.md").exists()
         shutil.rmtree(result)
+
+
+class TestScaffoldReadsMinAsTheCheckDoes:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_numeric_text_min_scaffolds_that_many_files(self, tmp_path: Path) -> None:
+        _scaffold_glob_count({"pattern": "*.md", "min": "3"}, tmp_path)
+
+        assert len(list(tmp_path.glob("*.md"))) == 3
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_numeric_text_min_is_left_unmet_by_the_deficit(self, tmp_path: Path) -> None:
+        for i in range(5):
+            (tmp_path / f"{i}.md").touch()
+
+        _scaffold_glob_count_deficit({"pattern": "*.md", "min": "3"}, tmp_path)
+
+        assert len(list(tmp_path.glob("*.md"))) == 2

@@ -5,7 +5,6 @@ every check and builds the `preservation` block a rewrite check returns.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.heal.preservation import conditions, structure
 from reporails_cli.core.heal.preservation.fragments import dangling_fragments
@@ -29,6 +28,8 @@ from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
 from reporails_cli.core.platform.adapters.project_environment import LocalProjectEnvironment
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
@@ -47,38 +48,37 @@ PRESERVATION_CONTRACT = (
 
 # Findings that are reported but never fail the rewrite.
 _LISTED_ONLY = frozenset({"removed_structure", "made_direct", "made_specific"})
-# The block entries that are not checks.
-_NOT_CHECKS = frozenset({"ok", "score_before", "score_after", "kept"})
+# The `compare` block entries that carry a score or a count and name no check.
+SUMMARY_KEYS = frozenset({"ok", "score_before", "score_after", "kept"})
 
 
-def _negative_heading_texts(new_map: Any, file_path: str) -> list[str]:
+def _negative_heading_texts(new_map: RulesetMap | None, file_path: str) -> list[str]:
     """The text of each bare negative heading the mapper reads in `new_map`'s `file_path`,
     whatever its markdown style (`##`, underlined, inside a quote)."""
     atoms = own_atoms_for_file(new_map, file_path) if new_map is not None else ()
     return [a.text for a in atoms if a.kind == "heading" and is_negative_heading(a.text)]
 
 
-def _pair_checks(pairs: list[conditions.Pair], old_by_line: conditions.ByLine, invented: set[str]) -> dict[str, Any]:
+def _pair_checks(pairs: list[conditions.Pair], old_by_line: conditions.ByLine, invented: set[str]) -> JsonObject:
     """The checks that read each matched instruction against its rewrite; `invented` is the lowered
     names reported as invented."""
     narrowed = conditions.narrowed_instructions(pairs, old_by_line)
+    flagged = {(as_int(e["line"], 0), as_int(e["new_line"], 0)) for e in narrowed}
     return {
-        "dropped_conditions": conditions.dropped_conditions(pairs),
-        "narrowed_instructions": narrowed,
-        "hedge_made_absolute": conditions.hedge_made_absolute(pairs, old_by_line),
-        "made_specific": conditions.made_specific(
-            pairs, old_by_line, {(e["line"], e["new_line"]) for e in narrowed}, invented
-        ),
+        "dropped_conditions": [*conditions.dropped_conditions(pairs)],
+        "narrowed_instructions": [*narrowed],
+        "hedge_made_absolute": [*conditions.hedge_made_absolute(pairs, old_by_line)],
+        "made_specific": [*conditions.made_specific(pairs, old_by_line, flagged, invented)],
     }
 
 
 def _run_checks(
     snapshot: Snapshot,
     snap_atoms: list[SnapshotAtom],
-    new: tuple[list[Any], str, list[Any], DocumentStructure],
+    new: tuple[list[Atom], str, list[Atom], DocumentStructure],
     grounding: tuple[ProjectEnvironment | None, tuple[str, ...]],
     negative_headings: tuple[list[SnapshotAtom], list[str]],
-) -> dict[str, Any]:
+) -> JsonObject:
     """Every preservation check's finding list/dict, keyed exactly as `compare()`'s reply.
     `new` is the rewrite's instruction atoms, its text and its whole-file atoms; `grounding` is the
     project environment and the original text of the sibling files; `negative_headings` is the snapshot's
@@ -89,38 +89,42 @@ def _run_checks(
     pairs = conditions.pair_up(snap_atoms, matched_new_for, *sentences)
     invented = invented_named(snapshot.text, new_atoms, *grounding, snap_atoms)
     return {
-        "lost_instructions": lost_instructions,
-        "polarity_flips": polarity_flips,
-        "added_instructions": added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for),
-        "lost_named": lost_named_tokens(snap_atoms, new_text, new_atoms),
-        "invented_named": invented,
-        "repeated_named": repeated_named(
-            snap_atoms,
-            new_atoms,
-            matched_new_for=matched_new_for,
-            split_covering_for=split_covering_for,
-            original_text=snapshot.text,
-            new_text=new_text,
-        ),
-        "detached_constraints": structure.detached_constraints(snap_atoms, matched_new_for, new[3]),
-        "prohibition_scope_changed": prohibition_scope_changes(snap_atoms, matched_new_for),
-        "added_conditions": conditions.added_conditions(snap_atoms, matched_new_for),
-        **_pair_checks(pairs, sentences[0], {named_key(e["token"]) for e in invented}),
-        "dangling_fragments": dangling_fragments(snapshot.atoms, new_all),
-        "padded_lines": structure.padded_lines(list(snapshot.atoms), new_atoms),
-        "made_direct": conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences),
-        "relabelled_negative_headings": structure.relabelled_negative_headings(snapshot.text, *negative_headings),
-        "lost_context": lost_context(snap_atoms, new_text),
-        "moved_list_items": structure.moved_list_items(
-            snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms
-        ),
-        "removed_structure": structure.removed_structure(
-            snapshot.structure, new[3], snapshot.relation_lines, (snapshot.imports, import_refs(new_text))
-        ),
+        "lost_instructions": [*lost_instructions],
+        "polarity_flips": [*polarity_flips],
+        "added_instructions": [*added_instructions(snapshot.text, new_atoms, matched_new_for, split_covering_for)],
+        "lost_named": [*lost_named_tokens(snap_atoms, new_text, new_atoms)],
+        "invented_named": [*invented],
+        "repeated_named": [
+            *repeated_named(
+                snap_atoms,
+                new_atoms,
+                matched_new_for=matched_new_for,
+                split_covering_for=split_covering_for,
+                original_text=snapshot.text,
+                new_text=new_text,
+            )
+        ],
+        "detached_constraints": [*structure.detached_constraints(snap_atoms, matched_new_for, new[3])],
+        "prohibition_scope_changed": [*prohibition_scope_changes(snap_atoms, matched_new_for)],
+        "added_conditions": [*conditions.added_conditions(snap_atoms, matched_new_for)],
+        **_pair_checks(pairs, sentences[0], {named_key(as_str(e["token"])) for e in invented}),
+        "dangling_fragments": [*dangling_fragments(snapshot.atoms, new_all)],
+        "padded_lines": [*structure.padded_lines(list(snapshot.atoms), new_atoms)],
+        "made_direct": [*conditions.made_direct(pairs, snap_atoms, new_atoms, matched_new_for, sentences)],
+        "relabelled_negative_headings": [*structure.relabelled_negative_headings(snapshot.text, *negative_headings)],
+        "lost_context": [*lost_context(snap_atoms, new_text)],
+        "moved_list_items": [
+            *structure.moved_list_items(snap_atoms, matched_new_for, snapshot.structure, new[3], new_atoms)
+        ],
+        "removed_structure": {
+            **structure.removed_structure(
+                snapshot.structure, new[3], snapshot.relation_lines, (snapshot.imports, import_refs(new_text))
+            )
+        },
     }
 
 
-def _kept_counts(snap_atoms: list[SnapshotAtom], snapshot: Snapshot, checks: dict[str, Any]) -> dict[str, int]:
+def _kept_counts(snap_atoms: list[SnapshotAtom], snapshot: Snapshot, checks: JsonObject) -> dict[str, int]:
     """What the rewrite kept, as counts: the snapshot's own totals minus what the checks found
     lost / removed. `instructions` is the snapshot's charged-atom count minus `lost_instructions`
     (a flipped or moved instruction is still present, just changed — only a true loss subtracts);
@@ -129,22 +133,22 @@ def _kept_counts(snap_atoms: list[SnapshotAtom], snapshot: Snapshot, checks: dic
     the snapshot's own total."""
     total_instructions = sum(1 for sa in snap_atoms if sa.charge_value != 0)
     totals = structure.structure_totals(snapshot.structure, snapshot.relation_lines, snapshot.imports)
-    removed = checks["removed_structure"]
+    removed = as_object(checks["removed_structure"])
     return {
-        "instructions": max(0, total_instructions - len(checks["lost_instructions"])),
-        **{key: max(0, total - removed[key]) for key, total in totals.items()},
+        "instructions": max(0, total_instructions - len(as_list(checks["lost_instructions"]))),
+        **{key: max(0, total - as_int(removed[key], 0)) for key, total in totals.items()},
     }
 
 
 def compare(
     snapshot: Snapshot,
-    new_map: Any,
+    new_map: RulesetMap | None,
     new_text: str,
     score_after: float | None,
     *,
     environment: ProjectEnvironment | None = None,
     sibling_texts: tuple[str, ...] = (),
-) -> dict[str, Any]:
+) -> JsonObject:
     """Compare `snapshot` against the file's current map + text; returns the `preservation`
     block a `validate(path=<file>)` reply carries for a snapshotted file.
 
@@ -192,31 +196,31 @@ def compare(
         negative_headings,
     )
     ok = not any(v for k, v in checks.items() if k not in _LISTED_ONLY) and all(
-        v == 0 for v in checks["removed_structure"].values()
+        v == 0 for v in as_object(checks["removed_structure"]).values()
     )
     kept = _kept_counts(snap_atoms, snapshot, checks)
-    return {"ok": ok, "score_before": snapshot.score, "score_after": score_after, **checks, "kept": kept}
+    return {"ok": ok, "score_before": snapshot.score, "score_after": score_after, **checks, "kept": {**kept}}
 
 
 def check_rewrite(
     snapshot: Snapshot,
     file_path: Path,
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     new_text: str,
     *,
     score: float | None,
     scan_root: Path | None,
     siblings: tuple[str, ...] = (),
-) -> dict[str, Any]:
+) -> JsonObject:
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
     against `snapshot`, with the project on disk answering which names and paths exist."""
     environment = LocalProjectEnvironment(scan_root, file_path.parent)
     return compare(snapshot, ruleset_map, new_text, score, environment=environment, sibling_texts=siblings)
 
 
-def failed_checks(block: dict[str, Any]) -> list[str]:
+def failed_checks(block: JsonObject) -> list[str]:
     """The names of the checks that fail a `compare` block, in the order it lists them."""
-    names = [k for k, v in block.items() if k not in _LISTED_ONLY and k not in _NOT_CHECKS and v]
-    if any(block["removed_structure"].values()):
+    names = [k for k, v in block.items() if k not in _LISTED_ONLY and k not in SUMMARY_KEYS and v]
+    if any(as_object(block["removed_structure"]).values()):
         names.append("removed_structure")
     return names

@@ -5,10 +5,10 @@ Handles formatting rule details for `ails explain` command.
 
 from __future__ import annotations
 
-from typing import Any
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, as_str
 
 
-def _append_examples(lines: list[str], examples: dict[str, Any]) -> None:
+def _append_examples(lines: list[str], examples: JsonObject) -> None:
     """Render Pass / Fail examples, naming their absence rather than omitting silently."""
     pass_ex, fail_ex = examples.get("pass"), examples.get("fail")
     if not pass_ex and not fail_ex:
@@ -18,15 +18,15 @@ def _append_examples(lines: list[str], examples: dict[str, Any]) -> None:
     lines.append("Examples:")
     if pass_ex:
         lines.append("  Pass:")
-        lines.append(pass_ex)
+        lines.append(as_str(pass_ex))
         lines.append("")
     if fail_ex:
         lines.append("  Fail:")
-        lines.append(fail_ex)
+        lines.append(as_str(fail_ex))
         lines.append("")
 
 
-def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
+def format_rule(rule_id: str, rule_data: JsonObject) -> str:
     """Format rule explanation for terminal."""
     lines = []
 
@@ -44,13 +44,16 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         lines.append(f"Severity: {rule_data['severity']}")
     if rule_data.get("execution") == "server":
         lines.append("Execution: server (needs a server connection; the remedies are part of Pro)")
-    match = rule_data.get("match") or {}
+    match = as_object(rule_data.get("match"))
     if match:
         # Single-sourced from `serialize_match` (the same dict `ails rules list` emits) so a
         # rule author who sets e.g. `content_format` / `loading_verb` / `link_source_type` sees
         # it here too, not only in the JSON listing.
         lines.append(
-            "Match: " + ", ".join(f"{k}: {', '.join(v) if isinstance(v, list) else v}" for k, v in match.items())
+            "Match: "
+            + ", ".join(
+                f"{k}: {', '.join(str(item) for item in v) if isinstance(v, list) else v}" for k, v in match.items()
+            )
         )
     lines.append("")
 
@@ -60,13 +63,14 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
         lines.append("")
 
     if "examples" in rule_data:
-        _append_examples(lines, rule_data["examples"] or {})
+        _append_examples(lines, as_object(rule_data["examples"]))
 
     # Support both checks and legacy antipatterns
-    checks = rule_data.get("checks", rule_data.get("antipatterns", []))
+    checks = as_list(rule_data.get("checks", rule_data.get("antipatterns", [])))
     if checks:
         lines.append("Checks:")
-        for check in checks:
+        for check_value in checks:
+            check = as_object(check_value)
             label = check.get("name") or check.get("type", "unknown")
             lines.append(f"  - {check.get('id', '?')}: {label} [{check.get('type', '?')}]")
             # A check's own severity overrides the rule's; an unset check severity
@@ -75,7 +79,7 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
             lines.append(f"    Severity: {severity}")
         lines.append("")
 
-    see_also = rule_data.get("see_also", [])
+    see_also = as_list(rule_data.get("see_also", []))
     if see_also:
         lines.append("See Also:")
         lines.extend(f"  - {ref}" for ref in see_also)

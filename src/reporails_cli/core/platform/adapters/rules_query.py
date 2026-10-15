@@ -7,7 +7,6 @@ authoring-workflow order.
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 
 from reporails_cli.core.platform.adapters.registry import _load_from_path, apply_agent_excludes, get_rules_dir
 from reporails_cli.core.platform.config.config import get_agent_config
@@ -24,20 +23,20 @@ _CATEGORY_ORDER: dict[Category, int] = {
 }
 
 
-def list_known_agents(rules_dir: Path | None = None) -> list[str]:
+def list_known_agents() -> list[str]:
     """Agent IDs declared under `framework/rules/<agent>/`, excluding `core`."""
-    root = rules_dir if rules_dir is not None else get_rules_dir()
+    root = get_rules_dir()
     if not root.exists():
         return []
     return sorted(p.name for p in root.iterdir() if p.is_dir() and p.name != "core" and not p.name.startswith("_"))
 
 
-def load_all_rules(agents: list[str] | None = None, rules_dir: Path | None = None) -> list[Rule]:
+def load_all_rules(agents: list[str] | None = None) -> list[Rule]:
     """Load CORE + every requested agent's rules; apply per-agent excludes."""
-    root = rules_dir if rules_dir is not None else get_rules_dir()
+    root = get_rules_dir()
     if not root.exists():
         return []
-    agent_ids = agents if agents is not None else list_known_agents(root)
+    agent_ids = agents if agents is not None else list_known_agents()
     by_id: dict[str, Rule] = {}
     by_id.update(_load_from_path(root / "core"))
     for agent in agent_ids:
@@ -89,27 +88,14 @@ def sort_rules_for_authoring(rules: list[Rule]) -> list[Rule]:
     )
 
 
-def rules_for_capability(
-    capability: str,
-    agents: list[str] | None = None,
-    min_severity: Severity | None = None,
-    rules_dir: Path | None = None,
-) -> list[Rule]:
-    """Composite: load + filter (capability + optional severity) + sort."""
-    rules = load_all_rules(agents=agents, rules_dir=rules_dir)
-    rules = filter_rules_by_capability(rules, capability)
-    if min_severity is not None:
-        rules = filter_rules_by_severity(rules, min_severity)
-    return sort_rules_for_authoring(rules)
+def rules_for_capability(capability: str, agents: list[str] | None = None) -> list[Rule]:
+    """Composite: load + filter by capability + sort."""
+    return sort_rules_for_authoring(filter_rules_by_capability(load_all_rules(agents=agents), capability))
 
 
-def find_rule_by_id(
-    rule_id: str,
-    agents: list[str] | None = None,
-    rules_dir: Path | None = None,
-) -> Rule | None:
+def find_rule_by_id(rule_id: str) -> Rule | None:
     """Return the rule with `rule_id`, or None."""
-    for rule in load_all_rules(agents=agents, rules_dir=rules_dir):
+    for rule in load_all_rules():
         if rule.id == rule_id:
             return rule
     return None

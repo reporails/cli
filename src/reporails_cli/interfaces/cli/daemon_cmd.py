@@ -5,11 +5,12 @@ from __future__ import annotations
 import typer
 
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
 
 daemon_app = typer.Typer(
     name="daemon",
     help="Manage the background analysis daemon.",
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 
 

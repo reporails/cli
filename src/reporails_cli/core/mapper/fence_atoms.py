@@ -10,7 +10,8 @@ import ast
 import json
 import re
 import tomllib
-from typing import Any
+
+from markdown_it.token import Token
 
 from reporails_cli.core.mapper.atom_build import _make_inline_atom
 from reporails_cli.core.mapper.charge_floors import _classify_content
@@ -30,7 +31,7 @@ def is_fence_block(atom: Atom) -> bool:
     )
 
 
-def _make_fence_atom(tok: Any, line_offset: int) -> Atom:
+def _make_fence_atom(tok: Token, line_offset: int) -> Atom:
     """Create a code block atom from a fence (or indented code_block) token."""
     lang = (tok.info or "").strip().lower()
     return Atom(
@@ -156,7 +157,7 @@ def _fence_parses_as_code(content: str) -> bool:
 
 
 def _fence_directive_atoms(
-    tok: Any,
+    tok: Token,
     line_offset: int,
     pos_idx: int,
     current_heading: str,
@@ -200,7 +201,7 @@ def _fence_directive_atoms(
 
 
 def _process_fence(
-    tok: Any,
+    tok: Token,
     line_offset: int,
     pos_idx: int,
     current_heading: str,

@@ -45,7 +45,6 @@ class TestGetAgentConfig:
         with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
-        assert result.agent == "claude"
         assert result.excludes == ["S4", "S5"]
         assert result.overrides["E2-no-ritual-section"] == {"severity": "medium"}
         assert result.overrides["E5-no-grep-guidance"] == {"severity": "low", "disabled": True}
@@ -92,7 +91,6 @@ class TestGetAgentConfig:
         with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
-        assert result.agent == "claude"
         assert result.excludes == []
         assert result.overrides == {}
 
@@ -113,7 +111,6 @@ class TestGetAgentConfig:
 
         assert result.prefix == "CLAUDE"
         assert result.name == "Claude Code"
-        assert result.core is False
         assert result.excludes == ["CODEX:*"]
 
     @pytest.mark.unit
@@ -128,20 +125,6 @@ class TestGetAgentConfig:
 
         assert result.prefix == ""
         assert result.name == ""
-        assert result.core is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_core_agent_config(self, tmp_path: Path, make_config_file) -> None:
-        """Core agent (generic) sets core=True."""
-        config_data = {"agent": "generic", "prefix": "CORE", "core": True}
-        config_path = make_config_file(yaml.dump(config_data), subdir="agents/generic")
-
-        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("generic")
-
-        assert result.core is True
-        assert result.prefix == "CORE"
 
 
 # =============================================================================
@@ -264,8 +247,11 @@ class TestLoadRulesExcludes:
                 f"targets: '{{{{instruction_files}}}}'\nbacked_by:\n  - anthropic-docs\n---\n"
             )
 
-        agent_config = AgentConfig(agent="test", excludes=["CORE:S:0001"])
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig(excludes=["CORE:S:0001"])
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules
@@ -283,8 +269,11 @@ class TestLoadRulesExcludes:
             "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )
 
-        agent_config = AgentConfig(agent="test", excludes=["NONEXISTENT"])
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig(excludes=["NONEXISTENT"])
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" in rules
@@ -325,11 +314,13 @@ class TestLoadRulesExcludes:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         agent_config = AgentConfig(
-            agent="copilot",
             prefix="COPILOT",
             excludes=["CLAUDE:*", "CODEX:*"],
         )
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="copilot")
 
         assert "CORE:S:0001" in rules
@@ -356,10 +347,12 @@ class TestLoadRulesExcludes:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         agent_config = AgentConfig(
-            agent="test",
             excludes=["CORE:S:0001", "CLAUDE:*"],
         )
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules  # exact exclude
@@ -389,7 +382,7 @@ class TestPrefixNamespaceFiltering:
         ],
     )
     def test_is_other_agent_rule(self, rule_id: str, agent_prefix: str, expected: bool) -> None:
-        assert _is_other_agent_rule(rule_id, agent_prefix) == expected
+        assert _is_other_agent_rule(rule_id, agent_prefix, frozenset({"CLAUDE", "CODEX"})) == expected
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -410,8 +403,11 @@ class TestPrefixNamespaceFiltering:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
-        agent_config = AgentConfig(agent="myagent", prefix="MYPREFIX")
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig(prefix="MYPREFIX")
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="myagent")
 
         assert "CORE:S:0001" in rules
@@ -437,8 +433,11 @@ class TestPrefixNamespaceFiltering:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         # No prefix — agent.upper() = "CLAUDE" used for filtering
-        agent_config = AgentConfig(agent="claude")
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig()
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="claude")
 
         assert "CORE:S:0001" in rules

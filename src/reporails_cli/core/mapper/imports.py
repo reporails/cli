@@ -32,11 +32,14 @@ IMPORT_REF_RE = re.compile(
     r")"
 )
 
+# The suffixes of an agent's path-scoped rule files (`.mdc` is Cursor's).
+MARKDOWN_RULE_SUFFIXES: frozenset[str] = frozenset({".md", ".mdc"})
+
 # Markdown-compatible extensions that ARE expanded. Everything else — including
 # binary/non-text formats (`.png`, `.pdf`, `.svg`, `.zip`, `.jpg`, …) that a
 # deny-list would otherwise miss one-by-one — is left as a literal reference.
 # Empty suffix covers bare filenames (`README`, `AGENTS`, `CHANGELOG`).
-_EXPANDABLE_EXT = frozenset({"", ".md", ".mdc", ".markdown", ".mdx"})
+_EXPANDABLE_EXT = MARKDOWN_RULE_SUFFIXES | {"", ".markdown", ".mdx"}
 
 _MAX_IMPORT_DEPTH = 5
 
@@ -276,16 +279,3 @@ def expand_imports_with_origins(
             line_map.append(idx + 1)
             origins.append(None if path is None else (path, line_no))
     return "\n".join(out_lines), line_map, origins
-
-
-def expand_imports_with_line_map(
-    content: str,
-    source_path: Path,
-) -> tuple[str, list[int]]:
-    """Expand @path imports in `content` and return `(expanded_content, line_map)`.
-
-    The line map of :func:`expand_imports_with_origins`, for a caller that needs
-    only the importing file's own line of each expanded line.
-    """
-    expanded, line_map, _origins = expand_imports_with_origins(content, source_path)
-    return expanded, line_map

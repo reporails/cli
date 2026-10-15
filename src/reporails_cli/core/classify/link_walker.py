@@ -14,6 +14,9 @@ from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 
 logger = logging.getLogger(__name__)
 
+# How many link hops from a seed file the walk follows.
+MAX_LINK_DEPTH = 3
+
 
 @dataclass(frozen=True)
 class LinkEdge:
@@ -54,7 +57,6 @@ def walk_markdown_links(
     start_paths: dict[Path, str],
     project_root: Path,
     classified_paths: set[Path],
-    max_depth: int = 3,
     exclusions: RunExclusions | None = None,
 ) -> list[LinkEdge]:
     """BFS outgoing Markdown links + `@<path>` imports from `start_paths`; emit one edge per `(source, target)`.
@@ -78,7 +80,7 @@ def walk_markdown_links(
 
     while frontier:
         current, depth, source_type = frontier.pop(0)
-        if depth >= max_depth:
+        if depth >= MAX_LINK_DEPTH:
             continue
         for resolved, verb in _reachable_links(current, reachable):
             edges.setdefault(

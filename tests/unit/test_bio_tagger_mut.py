@@ -1,8 +1,7 @@
 """Mutation-kill tests for bio_tagger decode internals.
 
-The span-decode helpers (`_spans_from_tags`, `_finalize_spans`,
-`_decode_span_axis`, `_decode_span_axis_runs`, `_sentence_charge`,
-`_multislot_tuple`) are pure numpy — they take hand-built tag/logit arrays and
+The span-decode helpers (`_decode_span_axis_runs`, `_charge_runs`, `_assign_span`) are pure numpy —
+they take hand-built tag/logit arrays and
 return spans, so they are exercised here with synthetic inputs and NO ONNX
 model. The availability/fingerprint gates are exercised via monkeypatch.
 
@@ -20,16 +19,7 @@ import numpy as np
 import pytest
 
 from reporails_cli.core.mapper import bio_graphs, bio_tagger, graph_hash
-from reporails_cli.core.mapper.bio_tagger import (
-    _B_DIR,
-    _I_DIR,
-    BioSpan,
-    Span,
-    _decode_span_axis,
-    _finalize_spans,
-    _sentence_charge,
-    _spans_from_tags,
-)
+from reporails_cli.core.mapper.bio_tagger import Span
 from reporails_cli.core.mapper.multislot_frames import (
     _assign_span,
     _charge_runs,
@@ -55,99 +45,6 @@ def _mod_logits(n: int) -> np.ndarray:
 
 def _word_spans(text: str) -> list[tuple[int, int]]:
     return [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
-
-
-# ── _spans_from_tags ────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_spans_from_tags_emits_a_decoded_span() -> None:
-    """A B/I run must produce one span (kills `cur_cls is None` -> `is not None`)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    out = _spans_from_tags([_B_DIR, _I_DIR], [0.9, 0.9], np.array([1, 1]), ws, text)
-    assert len(out) == 1
-    assert out[0][0] == "foo bar"
-    assert out[0][1] == "DIRECTIVE"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_spans_from_tags_two_begins_are_two_spans() -> None:
-    """B B of the same class start two spans (kills `is_begin or ...` -> `and`)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    out = _spans_from_tags([_B_DIR, _B_DIR], [0.9, 0.9], np.array([1, 1]), ws, text)
-    assert len(out) == 2
-    assert [s[0] for s in out] == ["foo", "bar"]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_spans_from_tags_i_tag_continues_span() -> None:
-    """B then I of same class stay one span (kills `cls != cur_cls` -> `==`)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    out = _spans_from_tags([_B_DIR, _I_DIR], [0.9, 0.9], np.array([1, 1]), ws, text)
-    assert len(out) == 1
-    assert out[0][0] == "foo bar"
-
-
-# ── _finalize_spans ─────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_finalize_charged_none_modality_falls_back_to_direct() -> None:
-    """A charged span with modality 'none' must be lifted to 'direct'
-    (kills `modality == "none"` -> `!=`)."""
-    spans = _finalize_spans([("do it", "DIRECTIVE", 0.9, "none")], tau=0.6)
-    assert len(spans) == 1
-    assert spans[0].charge == "DIRECTIVE"
-    assert spans[0].modality == "direct"
-
-
-# ── _decode_span_axis ───────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_decode_span_axis_b_starts_span() -> None:
-    """A B word must be captured (kills `tag == _SPAN_B` -> `!=`)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    logits = np.array([[0.0, 5.0, 0.0], [5.0, 0.0, 0.0]])  # B, O
-    span_text, conf, offset = _decode_span_axis(logits, ws, text)
-    assert span_text == "foo"
-    assert conf > 0.0
-    assert offset == (0, 1)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_decode_span_axis_i_extends_span() -> None:
-    """An I word must extend the B span (kills `tag == _SPAN_I` -> `!=`)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    logits = np.array([[0.0, 5.0, 0.0], [0.0, 0.0, 5.0]])  # B, I
-    span_text, _conf, offset = _decode_span_axis(logits, ws, text)
-    assert span_text == "foo bar"
-    assert offset == (0, 2)
-
-
-# ── _sentence_charge ────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_sentence_charge_ignores_neutral_spans() -> None:
-    """The charged filter keeps non-neutral spans (kills `!= "NEUTRAL"` -> `==`)."""
-    spans = [
-        BioSpan("a", "DIRECTIVE", 0.9, False, "direct"),
-        BioSpan("b", "NEUTRAL", 0.5, False, "none"),
-    ]
-    assert _sentence_charge(spans) == (1, "direct")
 
 
 # ── _decode_span_axis_runs ──────────────────────────────────────────
@@ -281,55 +178,6 @@ def test_assign_span_non_overlapping_run_is_empty() -> None:
     """A span not overlapping the atom's extent contributes nothing."""
     got = _assign_span([Span("eek", 0.9, (5, 6))], 0, 3, _SENT_WS, _SENT)
     assert got.text == "" and got.offset is None
-
-
-# ── _multislot_tuple ────────────────────────────────────────────────
-
-
-def _multislot_out(text: str) -> dict:
-    """Build a decoded-logits dict for _multislot_tuple with an object span."""
-    n = len(_word_spans(text))
-    zeros7 = np.zeros((n, 7), dtype=np.float32)
-    zeros5 = np.zeros((n, 5), dtype=np.float32)
-    empty3 = np.tile(np.array([5.0, 0.0, 0.0], dtype=np.float32), (n, 1))  # all-O
-    # object axis: first word B, rest I → a real span
-    obj = empty3.copy()
-    obj[0] = np.array([0.0, 5.0, 0.0], dtype=np.float32)
-    for i in range(1, n):
-        obj[i] = np.array([0.0, 0.0, 5.0], dtype=np.float32)
-    return {
-        "logits_subject": empty3.copy(),
-        "logits_predicate": empty3.copy(),
-        "logits_object": obj,
-        "logits_scope": empty3.copy(),
-        "logits_charge": zeros7,
-        "logits_modality": zeros5,
-    }
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_multislot_tuple_keeps_span_at_threshold() -> None:
-    """A span whose confidence equals span_tau is kept (kills `>=` -> `>`)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    out = _multislot_out(text)
-    # Decode the object axis to learn its exact confidence, then gate AT it.
-    _txt, conf, _offset = bio_tagger._decode_span_axis(out["logits_object"], ws, text)
-    tup = bio_tagger._multislot_tuple(out, ws, text, tau=0.6, span_tau=conf, _compound_threshold=0.5)
-    assert tup.object.text == "foo bar"
-    assert tup.object.offset == (0, 2)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_multislot_tuple_compound_candidate_defaults_false() -> None:
-    """The assembled tuple never flags compound (kills `compound_candidate=False` -> True)."""
-    text = "foo bar"
-    ws = _word_spans(text)
-    out = _multislot_out(text)
-    tup = bio_tagger._multislot_tuple(out, ws, text, tau=0.6, span_tau=0.9, _compound_threshold=0.5)
-    assert tup.compound_candidate is False
 
 
 # ── availability / fingerprint gates ────────────────────────────────
@@ -693,25 +541,13 @@ def test_concurrent_cold_graph_hash_does_not_raise(tmp_path: Path, monkeypatch: 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-def test_word_features_pool_each_word_distinctly() -> None:
+def test_pooled_words_each_pool_their_own_token() -> None:
     """Each whitespace word pools its own token, not the global fallback mean
-    (kills L212 `ws <= s` -> `ws < s`, which drops each word's first token and
+    (kills `ws <= s` -> `ws < s`, which drops each word's first token and
     collapses every row to the shared all-token mean)."""
     if not bio_graphs.multislot_available():
         pytest.skip("encoder not bundled")
-    feats, _word_spans, _covered = bio_tagger._word_features("alpha beta", bio_tagger._enc_a())
+    ((hidden, offsets),) = bio_tagger._enc_a().forward_bucket(["alpha beta"])
+    feats, _word_spans, _covered = bio_tagger._pool_words(hidden, offsets, "alpha beta")
     assert feats.shape[0] == 2
     assert not np.allclose(feats[0], feats[1])
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_tag_atom_multislot_whitespace_is_empty_tuple() -> None:
-    """Whitespace pools to no words → a neutral empty 5-tuple, never compound
-    (kills L545 compound_candidate False->True; and L520 == -> != which then runs
-    the head on empty feats and raises)."""
-    if not bio_graphs.multislot_available():
-        pytest.skip("dev multi-slot graphs not bundled")
-    tup = bio_tagger.tag_atom_multislot("   ")
-    assert tup.polarity == 0
-    assert tup.compound_candidate is False

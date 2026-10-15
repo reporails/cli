@@ -12,21 +12,21 @@ import os
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import httpx
 
 from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, resolve_api_key
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER, notices_from_header
-from reporails_cli.core.platform.adapters.payload import encode_msgpack, project_local, project_payload
+from reporails_cli.core.platform.adapters.payload import encode_msgpack, mapped_paths, project_local, project_payload
 from reporails_cli.core.platform.adapters.rate_cooldown import active_cooldown, record_cooldown
-from reporails_cli.core.platform.adapters.workflow_wire import _opt_int, deserialize_workflow
+from reporails_cli.core.platform.adapters.workflow_wire import deserialize_workflow
 from reporails_cli.core.platform.config.bootstrap import env_flag
 from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import (
     refresh_stored_tier,
     signed_in_recently,
 )
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, as_str, opt_int
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
     STILL_REACHING_MESSAGE,
@@ -34,6 +34,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileFinding,
     Diagnostic,
     FileAnalysis,
+    FindingSeverity,
     FunnelError,
     Hint,
     LintResponse,
@@ -42,6 +43,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     Notice,
     QualityResult,
     RulesetReport,
+    is_finding_severity,
 )
 from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
@@ -50,8 +52,10 @@ from reporails_cli.core.platform.utils.version import installed_version
 
 logger = logging.getLogger(__name__)
 
+_REQUEST_TIMEOUT_S = 30.0
 
-def _reply_notices(response: Any) -> tuple[Notice, ...]:
+
+def _reply_notices(response: httpx.Response) -> tuple[Notice, ...]:
     """The notices a reply carries in its notices header; none when it has no headers or no header."""
     headers = getattr(response, "headers", None) or {}
     return notices_from_header(headers.get(NOTICES_HEADER))
@@ -86,17 +90,10 @@ class AilsClient:
     the default server. Returns None when the server is unreachable.
     """
 
-    def __init__(
-        self,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        tier: str | None = None,
-        timeout: float = 30.0,
-    ) -> None:
-        self.base_url = base_url or os.environ.get("AILS_SERVER_URL") or DEFAULT_SERVER_URL
+    def __init__(self, api_key: str | None = None) -> None:
+        self.base_url = os.environ.get("AILS_SERVER_URL") or DEFAULT_SERVER_URL
         self.api_key = api_key or resolve_api_key()
-        self.tier = tier or os.environ.get("AILS_TIER") or _tier_from_config() or "free"
-        self.timeout = timeout
+        self.tier = os.environ.get("AILS_TIER") or _tier_from_config() or "free"
 
     def lint(
         self,
@@ -117,9 +114,6 @@ class AilsClient:
         Returns LintResponse — `.result` on 2xx, `.funnel_error` on a tier-aware 4xx or
         local preflight rejection, both None on network failure.
         """
-        if not self.base_url:
-            logger.debug("No server URL configured — diagnostics unavailable offline")
-            return LintResponse()
         return self._lint_remote(ruleset_map, local, structural_required, root)
 
     def _lint_remote(
@@ -132,7 +126,7 @@ class AilsClient:
         """POST the projected RulesetMap to the diagnostic backend."""
         payload = project_payload(ruleset_map, root)
         if local:
-            payload.update(project_local(local, [f["path"] for f in payload["files"]], root))
+            payload.update(project_local(local, mapped_paths(payload), root))
         if structural_required:
             payload["structural_required"] = structural_required
         if not payload.get("files"):
@@ -149,7 +143,7 @@ class AilsClient:
         body = encode_msgpack(payload)
         return self._post_payload(body)
 
-    def _status_error(self, response: Any) -> FunnelError:
+    def _status_error(self, response: httpx.Response) -> FunnelError:
         """The funnel error for a non-2xx reply: a busy or slow server, a tier-aware 4xx, or a plain HTTP error."""
         status = response.status_code
         retry_after = getattr(response, "headers", {}).get("Retry-After")
@@ -204,13 +198,13 @@ class AilsClient:
         """Execute the HTTP round-trip; isolated so _lint_remote stays within return-count budget."""
         url, headers = self.diagnose_request("application/msgpack")
         try:
-            resp = httpx.post(url, content=body, headers=headers, timeout=self.timeout)
+            resp = httpx.post(url, content=body, headers=headers, timeout=_REQUEST_TIMEOUT_S)
             resp.raise_for_status()
             result = _deserialize_lint_result(resp.json())
             self._remember_tier(result.tier)
             return LintResponse(result=result, notices=_reply_notices(resp))
         except httpx.TimeoutException:
-            logger.warning("Remote diagnostic request timed out after %.1fs", self.timeout)
+            logger.warning("Remote diagnostic request timed out after %.1fs", _REQUEST_TIMEOUT_S)
             return LintResponse(funnel_error=FunnelError(error="timeout", reset_in=DEFAULT_RETRY_AFTER_S))
         except httpx.HTTPStatusError as exc:
             return LintResponse(funnel_error=self._status_error(exc.response), notices=_reply_notices(exc.response))
@@ -232,80 +226,109 @@ class AilsClient:
             )
 
 
-def _deserialize_per_file(report_data: dict[str, Any]) -> tuple[FileAnalysis, ...]:
+def _severity(value: object, owner: str) -> FindingSeverity:
+    """`value` when it is a known severity; otherwise `info`, with a warning naming the value and `owner`."""
+    if is_finding_severity(value):
+        return value
+    logger.warning("Finding %r has unknown severity %r; showing it as info", owner, value)
+    return "info"
+
+
+def _section(data: JsonObject, key: str) -> list[JsonValue]:
+    """The list under `key` in a reply object; empty when absent, `ValueError` when it is not a list."""
+    raw = data.get(key, [])
+    if not isinstance(raw, list):
+        raise ValueError(f"response `{key}` is {type(raw).__name__}, not a list")
+    return raw
+
+
+def _score(value: JsonValue) -> float | None:
+    """`value` when it is a number (not a bool), else None."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _diagnostic(d: JsonObject, fa_file: str) -> Diagnostic | None:
+    """One `diagnostics[]` row of a file; None (with a warning) when a required field is missing or mistyped."""
+    d_line, d_severity, d_rule = opt_int(d.get("line")), d.get("severity"), d.get("rule")
+    if d_line is None or d_severity is None or not isinstance(d_rule, str):
+        logger.warning("Skipping diagnostic with missing required field in file %s: %s", fa_file, d)
+        return None
+    d_file = d.get("file", fa_file)
+    return Diagnostic(
+        file=d_file if isinstance(d_file, str) else fa_file,
+        line=d_line,
+        severity=_severity(d_severity, d_rule),
+        rule=d_rule,
+        message=as_str(d.get("message")),
+        fix=as_str(d.get("fix")),
+        impact_tier=as_str(d.get("impact_tier", "")),
+        pi=opt_int(d.get("pi")),
+        partner_line=opt_int(d.get("partner_line")),
+        partner_file=as_str(d.get("partner_file")) or None,
+        overlap_pct=opt_int(d.get("overlap_pct")),
+    )
+
+
+def _deserialize_per_file(report_data: JsonObject) -> tuple[FileAnalysis, ...]:
     """Deserialize the per_file section of the API response."""
     items: list[FileAnalysis] = []
-    for fa in report_data.get("per_file", []):
+    for fa in _section(report_data, "per_file"):
         if not isinstance(fa, dict):
             logger.warning("Skipping per_file entry that is not an object: %s", fa)
             continue
-        fa_file: Any = fa.get("file")
-        if fa_file is None:
+        fa_file = fa.get("file")
+        if not isinstance(fa_file, str):
             logger.warning("Skipping per_file entry with missing 'file' key")
             continue
         diagnostics: list[Diagnostic] = []
-        for d in fa.get("diagnostics", []):
+        for d in _section(fa, "diagnostics"):
             if not isinstance(d, dict):
                 logger.warning("Skipping diagnostic that is not an object in file %s: %s", fa_file, d)
                 continue
-            d_line = d.get("line")
-            d_severity = d.get("severity")
-            d_rule = d.get("rule")
-            if d_line is None or d_severity is None or d_rule is None:
-                logger.warning(
-                    "Skipping diagnostic with missing required field in file %s: %s",
-                    fa_file,
-                    d,
-                )
-                continue
-            diagnostics.append(
-                Diagnostic(
-                    file=d.get("file", fa_file),
-                    line=d_line,
-                    severity=d_severity,
-                    rule=d_rule,
-                    message=d.get("message") or "",
-                    fix=d.get("fix") or "",
-                    impact_tier=d.get("impact_tier", ""),
-                    pi=_opt_int(d.get("pi")),
-                    partner_line=_opt_int(d.get("partner_line")),
-                    partner_file=d.get("partner_file") or None,
-                    overlap_pct=_opt_int(d.get("overlap_pct")),
-                )
-            )
+            diagnostic = _diagnostic(d, fa_file)
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
         items.append(
             FileAnalysis(
                 file=fa_file,
                 diagnostics=tuple(diagnostics),
-                stats=fa.get("stats", {}),
-                display_score=fa.get("display_score"),
+                stats=as_object(fa.get("stats", {})),
+                display_score=_score(fa.get("display_score")),
             )
         )
     return tuple(items)
 
 
-def _deserialize_cross_file(report_data: dict[str, Any]) -> tuple[CrossFileFinding, ...]:
+def _cross_file_row(cf: JsonObject) -> CrossFileFinding | None:
+    """One `cross_file[]` row; None (with a warning) when a required field is missing or mistyped."""
+    file_1, file_2, finding_type = cf.get("file_1"), cf.get("file_2"), cf.get("finding_type")
+    line_1, line_2 = opt_int(cf.get("line_1")), opt_int(cf.get("line_2"))
+    if not (
+        isinstance(file_1, str)
+        and isinstance(file_2, str)
+        and isinstance(finding_type, str)
+        and line_1 is not None
+        and line_2 is not None
+    ):
+        logger.warning("Skipping cross_file entry with missing required field: %s", cf)
+        return None
+    return CrossFileFinding(file_1=file_1, file_2=file_2, line_1=line_1, line_2=line_2, finding_type=finding_type)
+
+
+def _deserialize_cross_file(report_data: JsonObject) -> tuple[CrossFileFinding, ...]:
     """Deserialize the cross_file section of the API response."""
     items: list[CrossFileFinding] = []
-    _required_keys = ("file_1", "file_2", "line_1", "line_2", "finding_type")
-    for cf in report_data.get("cross_file", []):
-        vals = {k: cf.get(k) for k in _required_keys}
-        if any(v is None for v in vals.values()):
-            logger.warning("Skipping cross_file entry with missing required field: %s", cf)
+    for cf in _section(report_data, "cross_file"):
+        row = _cross_file_row(cf) if isinstance(cf, dict) else None
+        if row is None:
+            if not isinstance(cf, dict):
+                logger.warning("Skipping cross_file entry that is not an object: %s", cf)
             continue
-        items.append(
-            CrossFileFinding(
-                file_1=vals["file_1"],
-                file_2=vals["file_2"],
-                line_1=vals["line_1"],
-                line_2=vals["line_2"],
-                finding_type=vals["finding_type"],
-            )
-        )
+        items.append(row)
     return tuple(items)
 
 
-def _deserialize_local_tiers(report_data: dict[str, Any]) -> tuple[LocalTier, ...]:
+def _deserialize_local_tiers(report_data: JsonObject) -> tuple[LocalTier, ...]:
     """Deserialize the local_tiers section of the report; a malformed row is skipped."""
     raw = report_data.get("local_tiers")
     rows: list[LocalTier] = []
@@ -324,53 +347,59 @@ def _deserialize_local_tiers(report_data: dict[str, Any]) -> tuple[LocalTier, ..
     return tuple(rows)
 
 
-def _deserialize_quality(report_data: dict[str, Any]) -> QualityResult | None:
+def _deserialize_quality(report_data: JsonObject) -> QualityResult | None:
     """Deserialize the quality section of the API response; None when the reply carries none."""
     q_data = report_data.get("quality")
     if not isinstance(q_data, dict):
         return None
-    return QualityResult(display_score=q_data.get("display_score"))
+    return QualityResult(display_score=_score(q_data.get("display_score")))
 
 
-def _deserialize_hints(data: dict[str, Any]) -> tuple[Hint, ...]:
+def _hint(h: JsonObject) -> Hint | None:
+    """One `hints[]` row; None (with a warning) when a required field is missing or mistyped."""
+    h_file, h_type, h_count = h.get("file"), h.get("diagnostic_type"), opt_int(h.get("count"))
+    if not (isinstance(h_file, str) and isinstance(h_type, str) and h_count is not None):
+        logger.warning("Skipping hint entry with missing required field: %s", h)
+        return None
+    return Hint(
+        file=h_file,
+        diagnostic_type=h_type,
+        count=h_count,
+        severity=_severity(h.get("severity", "warning"), f"{h_type} hint"),
+        error_count=as_int(h.get("error_count", 0), 0),
+        warning_count=as_int(h.get("warning_count", 0), 0),
+    )
+
+
+def _deserialize_hints(data: JsonObject) -> tuple[Hint, ...]:
     """Deserialize the hints section of the API response."""
     items: list[Hint] = []
-    for h in data.get("hints", []):
-        h_file = h.get("file")
-        h_type = h.get("diagnostic_type")
-        h_count = h.get("count")
-        if any(v is None for v in (h_file, h_type, h_count)):
-            logger.warning("Skipping hint entry with missing required field: %s", h)
+    for h in _section(data, "hints"):
+        if not isinstance(h, dict):
+            logger.warning("Skipping hint entry that is not an object: %s", h)
             continue
-        items.append(
-            Hint(
-                file=h_file,
-                diagnostic_type=h_type,
-                count=h_count,
-                severity=h.get("severity", "warning"),
-                error_count=h.get("error_count", 0),
-                warning_count=h.get("warning_count", 0),
-            )
-        )
+        hint = _hint(h)
+        if hint is not None:
+            items.append(hint)
     return tuple(items)
 
 
-def _deserialize_cross_file_coordinates(data: dict[str, Any]) -> tuple[CrossFileCoordinate, ...]:
+def _deserialize_cross_file_coordinates(data: JsonObject) -> tuple[CrossFileCoordinate, ...]:
     """Deserialize the cross_file_coordinates section of the API response."""
     items: list[CrossFileCoordinate] = []
-    for c in data.get("cross_file_coordinates", []):
-        f1 = c.get("file_1")
-        f2 = c.get("file_2")
-        ft = c.get("finding_type")
-        cnt = c.get("count")
-        if any(v is None for v in (f1, f2, ft, cnt)):
+    for c in _section(data, "cross_file_coordinates"):
+        if not isinstance(c, dict):
+            logger.warning("Skipping cross_file_coordinate that is not an object: %s", c)
+            continue
+        f1, f2, ft, cnt = c.get("file_1"), c.get("file_2"), c.get("finding_type"), opt_int(c.get("count"))
+        if not (isinstance(f1, str) and isinstance(f2, str) and isinstance(ft, str) and cnt is not None):
             logger.warning("Skipping cross_file_coordinate with missing field: %s", c)
             continue
         items.append(CrossFileCoordinate(file_1=f1, file_2=f2, finding_type=ft, count=cnt))
     return tuple(items)
 
 
-def _deserialize_lint_result(data: dict[str, Any]) -> LintResult:
+def _deserialize_lint_result(data: JsonValue) -> LintResult:
     """Deserialize API JSON response to LintResult; a body that is not an object is a malformed response."""
     if not isinstance(data, dict):
         raise ValueError(f"response body is {type(data).__name__}, not an object")

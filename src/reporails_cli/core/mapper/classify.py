@@ -13,9 +13,12 @@ import re
 from typing import NamedTuple
 
 from reporails_cli.core.mapper.classify_lexicon import (
+    ADDRESSEE_SUBJECTS,
     ALL_VERBS,
     CONDITION_OPENERS,
     CONDITIONAL_MARKERS,
+    HEDGE_POSSIBLE_LEADS,
+    IT_IS,
     MODAL_ABSOLUTE,
     MODAL_HEDGED,
     WORD_RE,
@@ -24,10 +27,12 @@ from reporails_cli.core.mapper.classify_lexicon import (
 from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
 from reporails_cli.core.mapper.classify_phases import (
     SUBJECT_ENDS,
+    ChargeVerdict,
     classify_phase3_lexicon,
 )
 from reporails_cli.core.mapper.markers import strip_markdown_inline, without_list_marker
 from reporails_cli.core.mapper.md_parser import leading_bold_run, replace_code_spans
+from reporails_cli.core.platform.dto.ruleset import Modality
 
 # ──────────────────────────────────────────────────────────────────
 # RULE-BASED CHARGE CLASSIFIER
@@ -50,19 +55,14 @@ _MID_NEGATION_RE = re.compile(
 _LATE_DONOT_RE = re.compile(r"\bdo not\b|\bdon't\b|\bdo NOT\b", re.IGNORECASE)
 
 
-# Words that make an instruction a suggestion rather than an order.
-HEDGE_WORDS: frozenset[str] = MODAL_HEDGED | frozenset(
-    {
-        "maybe", "probably", "perhaps", "possibly", "try", "consider",
-        "ideally", "generally", "usually", "prefer", "preferably",
-    }
-)  # fmt: skip
+# The hedge leads that can be dropped alone, leaving the instruction (`Perhaps run the linter`).
+HEDGE_ADVERB_LEADS: frozenset[str] = frozenset({"perhaps", "maybe", "possibly", "ideally"})
 # The hedge words that, opening an instruction (after `you` / `we` / `please`), make all of it a
 # suggestion (`Prefer real objects`, `Try not to mock`, `Perhaps run the linter`).
-HEDGE_LEADS: frozenset[str] = frozenset(
-    {"prefer", "preferably", "consider", "try", "perhaps", "maybe", "possibly", "ideally"}
-)
-_HEDGE_LEAD_SKIP = frozenset({"you", "we", "please"})
+HEDGE_LEADS: frozenset[str] = HEDGE_ADVERB_LEADS | {"prefer", "preferably", "consider", "try"}
+# Words that make an instruction a suggestion rather than an order.
+HEDGE_WORDS: frozenset[str] = MODAL_HEDGED | HEDGE_LEADS | frozenset({"probably", "generally", "usually"})
+_HEDGE_LEAD_SKIP = ADDRESSEE_SUBJECTS | {"please"}
 # Words that give an instruction as an order that admits no exception. `must` and `shall` read as
 # absolute modality in the classifier but are not among these cues.
 ABSOLUTE_CUES: frozenset[str] = frozenset({"never", "always", "exclusively"})
@@ -71,9 +71,12 @@ AFFIRMATIVE_ABSOLUTES: frozenset[str] = ABSOLUTE_CUES - {"never"}
 # Capitalised words that mark a line as a hard constraint.
 CONSTRAINT_WORDS: frozenset[str] = frozenset({"MUST", "NEVER", "ALWAYS", "IMPORTANT"})
 _ABSOLUTE_ADVERBS: frozenset[str] = AFFIRMATIVE_ABSOLUTES | {"only"}
+# Restricting words that exclude (`except`, `excluding`, `outside`): what they open is a condition
+# on its own, so an addition to it widens the instruction.
+EXCLUDING_RESTRICTORS: frozenset[str] = frozenset({"except", "excluding", "outside"})
 # Words that narrow where, when or to what an instruction applies, whatever follows them ...
-SCOPE_RESTRICTORS: frozenset[str] = frozenset({"solely", "except", "excluding", "outside", "absent"}) | (
-    _ABSOLUTE_ADVERBS - {"always"}
+SCOPE_RESTRICTORS: frozenset[str] = (
+    EXCLUDING_RESTRICTORS | frozenset({"solely", "absent"}) | (_ABSOLUTE_ADVERBS - {"always"})
 )
 # ... and prepositions that narrow it when followed by a place, time or thing the line did not name.
 
@@ -179,7 +182,7 @@ def _classify_phase1(
     words: list[str],
     lowers: list[str],
     has_cond_prefix: bool,
-) -> tuple[str, int, str, str, bool] | None:
+) -> ChargeVerdict | None:
     """Phase 1: Negation/prohibition patterns → CONSTRAINT."""
     if _NEGATION_PHRASES_RE.match(clean):
         return "CONSTRAINT", -1, "direct", "p1_negation_phrase", False
@@ -220,10 +223,10 @@ DIRECTIVE_CUES: frozenset[str] = (
 
 def _modal_result(
     next_negated: bool,
-    modality: str,
+    modality: Modality,
     directive_trace: str,
     negated_trace: str,
-) -> tuple[str, int, str, str, bool]:
+) -> ChargeVerdict:
     """Return CONSTRAINT if negated, DIRECTIVE otherwise."""
     if next_negated:
         return "CONSTRAINT", -1, modality, negated_trace, False
@@ -234,7 +237,7 @@ def _check_modal_word(
     w: str,
     i: int,
     lowers: list[str],
-) -> tuple[str, int, str, str, bool] | None:
+) -> ChargeVerdict | None:
     """Check a single word for modal/hedged/you-will patterns. Returns result or None."""
     next_negated = i + 1 < len(lowers) and lowers[i + 1] in NEGATION_WORDS
     if w in MODAL_ABSOLUTE:
@@ -245,7 +248,7 @@ def _check_modal_word(
         is_positioned = (
             w == "should"
             or i == 0
-            or (i > 0 and lowers[i - 1] in ("you", "we"))
+            or (i > 0 and lowers[i - 1] in ADDRESSEE_SUBJECTS)
             or (i > 0 and lowers[i - 1] in CONDITIONAL_MARKERS)
         )
         return ("DIRECTIVE", 1, "hedged", f"p2_hedged_{w}", False) if is_positioned else None
@@ -256,7 +259,7 @@ def _check_modal_word(
 
 def _classify_phase2(
     lowers: list[str],
-) -> tuple[str, int, str, str, bool] | None:
+) -> ChargeVerdict | None:
     """Phase 2: Modal verbs and absolute adverbs → DIRECTIVE."""
     for i, w in enumerate(lowers):
         result = _check_modal_word(w, i, lowers)
@@ -270,10 +273,10 @@ def _classify_phase2(
     return None
 
 
-_NEUTRAL_RESULT: tuple[str, int, str, str, bool] = ("NEUTRAL", 0, "none", "fallthrough", False)
+_NEUTRAL_RESULT: ChargeVerdict = ("NEUTRAL", 0, "none", "fallthrough", False)
 
 
-def _classify_phase3b_bold(md_text: str) -> tuple[str, int, str, str, bool] | None:
+def _classify_phase3b_bold(md_text: str) -> ChargeVerdict | None:
     """Phase 3b: Bold label + verb after it — shallow recursive call."""
     after = _after_bold_label(md_text)
     if after is None:
@@ -297,7 +300,7 @@ def _classify_phase3(
     lowers: list[str],
     *,
     shallow: bool,
-) -> tuple[str, int, str, str, bool]:
+) -> ChargeVerdict:
     """Phase 3: Imperative verb detection (embedding-free / spaCy-free lexicon)."""
     # 3b: Bold label recursive
     if not shallow:
@@ -337,15 +340,14 @@ def hedges_with_lead(text: str) -> bool:
     return start < len(lowers) and lowers[start] in HEDGE_LEADS
 
 
-# `possible` after one of these, ending its clause, hedges an instruction (`Run it where possible`);
-# `as soon as possible` is urgency and `if possible duplicates exist` uses the adjective.
-_HEDGE_POSSIBLE_LEADS: frozenset[str] = frozenset({"if", "when", "where"}) | {"whenever", "wherever"}
+# `as soon as possible` is urgency and `if possible duplicates exist` uses the adjective; only a
+# `HEDGE_POSSIBLE_LEADS` word followed by `possible` ending its clause hedges.
 _HEDGE_POSSIBLE_RE = re.compile(
-    rf"\b(?:{'|'.join(sorted(_HEDGE_POSSIBLE_LEADS))})\s+possible\s*(?:$|[.,;:!?)\]\u2014])",
+    rf"\b(?:{'|'.join(sorted(HEDGE_POSSIBLE_LEADS))})\s+possible\s*(?:$|[.,;:!?)\]\u2014])",
     re.IGNORECASE,
 )
 # `it's` / `it is` / `it s` (a curly apostrophe splits the word) in front of `best`.
-_IT_IS_FORMS: tuple[tuple[str, ...], ...] = (("it's",), ("it", "is"), ("it", "s"))
+_IT_IS_FORMS: tuple[tuple[str, ...], ...] = (("it's",), IT_IS, (IT_IS[0], "s"))
 
 
 def _prose(text: str) -> str:
@@ -410,7 +412,7 @@ def classify_charge(
     *,
     plain_text: str | None = None,
     _shallow: bool = False,
-) -> tuple[str, int, str, str, bool]:
+) -> ChargeVerdict:
     """Classify an atom's charge and modality using deterministic rules (:func:`_classify_lexical`),
     then read `where possible` (and its kin) and `It's best (not) to …` as the hedges they are."""
     result = _classify_lexical(md_text, plain_text=plain_text, _shallow=_shallow)
@@ -431,7 +433,7 @@ def _classify_lexical(
     *,
     plain_text: str | None = None,
     _shallow: bool = False,
-) -> tuple[str, int, str, str, bool]:
+) -> ChargeVerdict:
     """Classify an atom's charge and modality using deterministic rules.
 
     Input: raw markdown text (with formatting markers intact).

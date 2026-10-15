@@ -114,3 +114,61 @@ def test_mcp_validate_returns_the_structured_error(tmp_path: Path, global_path: 
     assert str(root / ".ails" / "config.yml") in payload["message"]
     healed = asyncio.run(_run_heal_apply(str(root)))
     assert healed.startswith("heal_apply: ") and str(root / ".ails" / "config.yml") in healed
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_mcp_explain_returns_the_structured_error(
+    tmp_path: Path, global_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from reporails_cli.interfaces.mcp import server
+
+    global_path.write_text(_BAD, encoding="utf-8")
+    monkeypatch.chdir(_project(tmp_path))
+    payload = json.loads(asyncio.run(server.explain("CORE:E:0003")))
+    assert payload["error"] == "config_unreadable"
+    assert str(global_path) in payload["message"]
+
+
+_NOT_TEXT = {
+    "exclude_dirs: [2024, archive]\n": "exclude_dirs: item 1 reads as the number 2024, not text; quote it",
+    "exclude_dirs: [docs, 12:30, on, ~]\n": "exclude_dirs: item 2 reads as the number 750, not text; quote it",
+    "exclude_dirs: [docs, 0755]\n": "exclude_dirs: item 2 reads as the number 493, not text; quote it",
+    "disabled_rules: [CORE:E:0003, yes]\n": (
+        "disabled_rules: item 2 reads as true/false (yes, no, on, off, true and false all do), not text; quote it"
+    ),
+    "exclude_dirs: [docs, .nan]\n": "exclude_dirs: item 2 reads as a special number (.nan or .inf), not text; quote it",
+    "exclude_dirs: [.inf]\n": "exclude_dirs: item 1 reads as a special number (.nan or .inf), not text; quote it",
+    "exclude_dirs: [a, [b]]\n": "exclude_dirs: item 2 is a nested list, not text",
+    "exclude_dirs: [a, {b: c}]\n": "exclude_dirs: item 2 is a nested mapping, not text",
+    "exclude_dirs:\n  - archive\n  -\n": "exclude_dirs: item 2 is empty; remove it",
+    "packages: yes\n": "packages must be a list of text items",
+    "agents: [claude]\n": "agents must be a mapping",
+    "surfaces: {claude: 3}\n": "surfaces.claude must be a mapping",
+}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(("body", "problem"), _NOT_TEXT.items(), ids=range(len(_NOT_TEXT)))
+def test_a_setting_of_the_wrong_shape_is_unreadable_not_dropped(
+    tmp_path: Path, global_path: Path, body: str, problem: str
+) -> None:
+    root = _project(tmp_path, "config.yml", body)
+    with pytest.raises(ConfigUnreadableError) as raised:
+        config_mod.get_project_config(root)
+    assert str(raised.value) == f"{root / '.ails' / 'config.yml'}: {problem}"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_check_stops_on_a_non_text_setting(tmp_path: Path, global_path: Path) -> None:
+    root = _project(tmp_path, "config.yml", "exclude_dirs: [2024, archive]\n")
+    result = runner.invoke(app, ["check", str(root)])
+    assert result.exit_code == 2
+    assert (
+        f"Error: {root / '.ails' / 'config.yml'}: exclude_dirs: item 1 reads as the number 2024, not text; quote it"
+        in result.output
+    )

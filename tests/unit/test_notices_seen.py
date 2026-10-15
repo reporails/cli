@@ -8,12 +8,34 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters.notices_seen import due_notices, visible_notices
+from reporails_cli.core.platform.adapters import notices_seen
+from reporails_cli.core.platform.adapters.notices_seen import visible_notices
 from reporails_cli.core.platform.dto.diagnostics import Notice
 
 WARN = Notice("w", "warn", "Payment failed")
 INFO = Notice("i", "info", "Pro ends soon")
 NOON = datetime(2026, 5, 10, 12, 0)
+
+
+class _Clock(datetime):
+    """The `datetime` the adapter reads, fixed to `moment` by `_due`."""
+
+    moment = NOON
+
+    @classmethod
+    def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+        return cls.moment
+
+
+def _due(notices: tuple[Notice, ...], moment: datetime) -> tuple[Notice, ...]:
+    """What `due_notices` returns when the local time is `moment`."""
+    _Clock.moment = moment
+    return notices_seen.due_notices(notices)
+
+
+@pytest.fixture(autouse=True)
+def clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(notices_seen, "datetime", _Clock)
 
 
 @pytest.fixture(autouse=True)
@@ -30,24 +52,24 @@ def _state(home: Path) -> dict[str, str]:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_warn_is_due_every_time_and_never_recorded(home: Path) -> None:
-    assert due_notices((WARN,), now=NOON) == (WARN,)
-    assert due_notices((WARN,), now=NOON) == (WARN,)
+    assert _due((WARN,), NOON) == (WARN,)
+    assert _due((WARN,), NOON) == (WARN,)
     assert not (home / ".reporails" / "notices-seen.json").exists()
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_info_is_due_once_per_day_then_again_the_next_day() -> None:
-    assert due_notices((INFO,), now=NOON) == (INFO,)
-    assert due_notices((INFO,), now=NOON.replace(hour=20)) == ()
-    assert due_notices((INFO,), now=NOON + timedelta(days=1)) == (INFO,)
+    assert _due((INFO,), NOON) == (INFO,)
+    assert _due((INFO,), NOON.replace(hour=20)) == ()
+    assert _due((INFO,), NOON + timedelta(days=1)) == (INFO,)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_mixed_batch_keeps_warn_and_drops_a_seen_info() -> None:
-    due_notices((INFO,), now=NOON)
-    assert due_notices((WARN, INFO), now=NOON) == (WARN,)
+    _due((INFO,), NOON)
+    assert _due((WARN, INFO), NOON) == (WARN,)
 
 
 @pytest.mark.unit
@@ -56,7 +78,7 @@ def test_entries_older_than_thirty_days_are_pruned(home: Path) -> None:
     state = home / ".reporails" / "notices-seen.json"
     state.parent.mkdir()
     state.write_text(json.dumps({"old": "2026-03-01", "recent": "2026-05-01", "junk": "not a date"}), encoding="utf-8")
-    due_notices((INFO,), now=NOON)
+    _due((INFO,), NOON)
     assert _state(home) == {"recent": "2026-05-01", "i": "2026-05-10"}
 
 
@@ -67,7 +89,7 @@ def test_unreadable_state_still_shows_the_notice(home: Path, content: str) -> No
     state = home / ".reporails" / "notices-seen.json"
     state.parent.mkdir()
     state.write_text(content, encoding="utf-8")
-    assert due_notices((INFO,), now=NOON) == (INFO,)
+    assert _due((INFO,), NOON) == (INFO,)
     assert _state(home) == {"i": "2026-05-10"}
 
 
@@ -75,13 +97,13 @@ def test_unreadable_state_still_shows_the_notice(home: Path, content: str) -> No
 @pytest.mark.subsys_cli_ux
 def test_unwritable_state_still_shows_the_notice(home: Path) -> None:
     (home / ".reporails").write_text("a file where the directory should be", encoding="utf-8")
-    assert due_notices((INFO,), now=NOON) == (INFO,)
+    assert _due((INFO,), NOON) == (INFO,)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_no_notices_touches_nothing(home: Path) -> None:
-    assert due_notices((), now=NOON) == ()
+    assert _due((), NOON) == ()
     assert not (home / ".reporails").exists()
 
 
@@ -92,17 +114,17 @@ WARN_PROMO = Notice("wp", "warn", "Loud announcement", kind="promo")
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_a_promo_is_once_per_day_even_at_level_warn(home: Path) -> None:
-    assert due_notices((WARN_PROMO, PROMO), now=NOON) == (WARN_PROMO, PROMO)
+    assert _due((WARN_PROMO, PROMO), NOON) == (WARN_PROMO, PROMO)
     assert _state(home) == {"wp": "2026-05-10", "p": "2026-05-10"}
-    assert due_notices((WARN_PROMO, PROMO), now=NOON) == ()
-    assert due_notices((WARN_PROMO,), now=NOON + timedelta(days=1)) == (WARN_PROMO,)
+    assert _due((WARN_PROMO, PROMO), NOON) == ()
+    assert _due((WARN_PROMO,), NOON + timedelta(days=1)) == (WARN_PROMO,)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_a_warn_notice_that_is_not_a_promo_shows_every_run(home: Path) -> None:
-    assert due_notices((WARN,), now=NOON) == (WARN,)
-    assert due_notices((WARN,), now=NOON) == (WARN,)
+    assert _due((WARN,), NOON) == (WARN,)
+    assert _due((WARN,), NOON) == (WARN,)
 
 
 @pytest.mark.unit

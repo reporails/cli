@@ -8,18 +8,21 @@ All file paths are normalized to project-relative before dedup and output.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
     CLIENT_CHECK_KINDS,
+    SEVERITY_RANK,
+    CrossFileCoordinate,
     CrossFileFinding,
     FileAnalysis,
     FindingItem,
     FunnelError,
+    Hint,
     LocalTier,
     Notice,
     QualityResult,
@@ -29,8 +32,6 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
 from reporails_cli.core.platform.dto.results import HookEntry
-
-_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
 def normalize_finding_path(file_path: str, project_root: Path | None = None) -> str:
@@ -131,8 +132,8 @@ class CombinedResult:
     per_file_analysis: tuple[FileAnalysis, ...] = ()
     stats: CombinedStats = field(default_factory=CombinedStats)
     offline: bool = True
-    hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
-    cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
+    hints: tuple[Hint, ...] = ()  # from tier gating
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = ()  # free tier
     level: Level = Level.L0
     reply: ServerReply = field(default_factory=ServerReply)
     # The hooks found in the project's agent hook configs, set by the assemble spine from the
@@ -143,7 +144,7 @@ class CombinedResult:
 
 def _collect_server_diagnostics(
     server_report: RulesetReport,
-    norm_fn: object,
+    norm_fn: Callable[[str], str],
 ) -> tuple[list[FindingItem], set[tuple[str, int, str]]]:
     """Extract server diagnostics as FindingItems and build dedup key set.
 
@@ -162,7 +163,7 @@ def _collect_server_diagnostics(
         for diag in fa.diagnostics:
             if not diag.message:
                 diag = replace(diag, message=rule_title(diag.rule))
-            norm_file = norm_fn(diag.file)  # type: ignore[operator]
+            norm_file = norm_fn(diag.file)
             server_keys.add((norm_file, diag.line, diag.rule))
             same = (
                 norm_file,
@@ -200,7 +201,7 @@ def _merge_local_findings(
     local_findings: list[LocalFinding],
     server_keys: set[tuple[str, int, str]],
     source: str,
-    norm_fn: object,
+    norm_fn: Callable[[str], str],
 ) -> tuple[list[FindingItem], int]:
     """Convert local findings to FindingItems, deduplicating against server keys.
 
@@ -209,7 +210,7 @@ def _merge_local_findings(
     items: list[FindingItem] = []
     reported: set[tuple[str, int, str, str, str, str]] = set()
     for finding in local_findings:
-        norm_file = norm_fn(finding.file)  # type: ignore[operator]
+        norm_file = norm_fn(finding.file)
         key = (norm_file, finding.line, finding.rule)
         # An identical finding reached through two passes over the same file is one finding.
         identity = (norm_file, finding.line, finding.rule, finding.check_id, finding.message, finding.signature)
@@ -241,7 +242,7 @@ _SAME_SECRET_RULES = ("CORE:G:0009", "CORE:G:0002")
 
 def _same_secret_rank(item: FindingItem) -> tuple[int, int]:
     """Sort key for the finding kept: more severe first, then the subagent rule."""
-    return _SEVERITY_ORDER.get(item.severity, 9), _SAME_SECRET_RULES.index(item.rule)
+    return SEVERITY_RANK.get(item.severity, 9), _SAME_SECRET_RULES.index(item.rule)
 
 
 def _dedup_same_secret(items: tuple[FindingItem, ...]) -> list[FindingItem]:
@@ -268,7 +269,16 @@ def _dedup_same_secret(items: tuple[FindingItem, ...]) -> list[FindingItem]:
     return keep
 
 
-def _severity_counts(findings: Sequence[FindingItem]) -> dict[str, Any]:
+class _SeverityCounts(TypedDict):
+    """The `CombinedStats` fields holding the total and per-severity finding counts."""
+
+    total_findings: int
+    errors: int
+    warnings: int
+    infos: int
+
+
+def _severity_counts(findings: Sequence[FindingItem]) -> _SeverityCounts:
     """The total and per-severity finding counts, keyed by their `CombinedStats` field."""
     return {
         "total_findings": len(findings),
@@ -310,7 +320,7 @@ def collapse_same_secret(result: CombinedResult) -> CombinedResult:
 
 
 def _served_tiers(
-    workflow: Any, project_root: Path | None
+    workflow: RemediationWorkflow, project_root: Path | None
 ) -> tuple[dict[tuple[str, str, int], str], dict[tuple[str, str], str]]:
     """The tiers a workflow serves, by (file, rule, line) and, for a line-0 row, by (file, rule)."""
     exact: dict[tuple[str, str, int], str] = {}
@@ -394,7 +404,7 @@ def stamp_local_tiers(
 
 def count_cross_file_repetitions(
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> int:
     """Count cross-file repetitions from whichever form the run carries.
 
@@ -415,7 +425,7 @@ def _unordered(file_1: str, file_2: str) -> tuple[str, str]:
 
 def overlapping_pairs(
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> list[tuple[str, str]]:
     """The file pairs that overlap in topic, most shared instructions first.
 
@@ -437,7 +447,7 @@ def overlapping_pairs(
 
 def count_cross_file_overlaps(
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> int:
     """Count the distinct file pairs that overlap in topic, from whichever form the run carries."""
     return len(overlapping_pairs(cross_file, cross_file_coordinates))
@@ -446,7 +456,7 @@ def count_cross_file_overlaps(
 def rebuild_cross_file_stats(
     stats: CombinedStats,
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> CombinedStats:
     """The stats with the cross-file counts recomputed over the cross-file data the run keeps."""
     return replace(
@@ -461,7 +471,7 @@ def _compute_stats(
     cross_file: tuple[CrossFileFinding, ...],
     m_probe_count: int,
     client_count: int,
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> CombinedStats:
     """Compute aggregate statistics from merged findings."""
     return CombinedStats(
@@ -478,7 +488,7 @@ def _merged_items(
     m_probe_findings: list[LocalFinding],
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
-    norm_fn: Any,
+    norm_fn: Callable[[str], str],
 ) -> tuple[list[FindingItem], int, int]:
     """Every finding as one sorted list, with the M-probe and client-check counts.
 
@@ -492,7 +502,7 @@ def _merged_items(
     c_items, c_count = _merge_local_findings(client_check_findings, server_keys, "client_check", norm_fn)
     items.extend(m_items)
     items.extend(c_items)
-    items.sort(key=lambda f: (f.file, _SEVERITY_ORDER.get(f.severity, 9), f.line))
+    items.sort(key=lambda f: (f.file, SEVERITY_RANK.get(f.severity, 9), f.line))
     return items, m_count, c_count
 
 
@@ -501,8 +511,8 @@ def merge_results(
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
     *,
-    hints: tuple[Any, ...] = (),
-    cross_file_coordinates: tuple[Any, ...] = (),
+    hints: tuple[Hint, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
     project_root: Path | None = None,
     level: Level = Level.L0,
     tier: str = "",

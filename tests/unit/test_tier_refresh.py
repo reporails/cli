@@ -13,10 +13,10 @@ import httpx
 import pytest
 import yaml
 
-from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL
 from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
+from tests.conftest import ails_client
 from tests.unit.test_api_client import _make_map, _payload_with_file
 
 _ROOT = Path("/tmp/reporails-test-scan-root")
@@ -73,7 +73,7 @@ def _lint(
         patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
         patch("httpx.post", return_value=reply),
     ):
-        return AilsClient(base_url=base_url).lint(_make_map(), root=_ROOT)
+        return ails_client(base_url).lint(_make_map(), root=_ROOT)
 
 
 def _stored(path: Path) -> dict[str, str]:
@@ -193,6 +193,6 @@ def test_refresh_never_overwrites_a_concurrent_sign_in(monkeypatch: pytest.Monke
         return real(text)
 
     monkeypatch.setattr(owner.yaml, "safe_load", _login_lands_between_reads)
-    owner.refresh_stored_tier("rr_stored", "pro", path)
+    owner.refresh_stored_tier("rr_stored", "pro")
     assert _stored(path)["tier"] == "free"
     assert [p.name for p in path.parent.iterdir()] == ["credentials.yml"]

@@ -14,6 +14,7 @@ import typer
 
 from reporails_cli.core.platform.config.credentials import effective_tier
 from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 from reporails_cli.core.platform.utils.version import UNKNOWN_VERSION, installed_version
 from reporails_cli.interfaces.cli.helpers import console, run_uv_tool
 from reporails_cli.interfaces.cli.typer_app import app
@@ -106,13 +107,18 @@ def _install_to_path() -> bool:
         return False
 
 
+def _is_local_path(source: str) -> bool:
+    """Whether a marketplace source names a folder (rooted, home-relative or `.`-relative) rather than a repo."""
+    return is_rooted_pattern(source) or source.startswith(".")
+
+
 def _plugin_source() -> str:
     """Marketplace source for the plugin: `AILS_PLUGIN_SOURCE`, else the public repo.
 
     A path is made absolute so every command resolves it to the same folder.
     """
     value = os.environ.get(_PLUGIN_SOURCE_ENV, "").strip() or _PLUGIN_REPO
-    if value.startswith(("/", "~", ".")):
+    if _is_local_path(value):
         return os.path.abspath(os.path.expanduser(value))
     return value
 
@@ -161,7 +167,7 @@ def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess
 def _normalize_source(value: str) -> str:
     """Comparable form of a marketplace source: a real path, or `owner/repo` for a GitHub URL."""
     value = value.strip().rstrip("/")
-    if value.startswith(("/", "~", ".")):
+    if _is_local_path(value):
         return os.path.realpath(os.path.expanduser(value))
     value = re.sub(r"^(https://|git@)github\.com[/:]", "", value)
     return value.removesuffix(".git")
@@ -251,7 +257,7 @@ def _inspect(agent: str, exe: str, source: str, root: Path | None) -> tuple[str,
         elif listed and listed.returncode == 0:
             found = (_claude_marketplaces if agent == "claude" else _codex_marketplaces)(listed.stdout or "")
             if _MARKETPLACE in found:
-                is_path = source.startswith(("/", "~", "."))
+                is_path = _is_local_path(source)
                 if agent == "claude" or is_path:
                     same = _same_source(found[_MARKETPLACE], source)
                 else:

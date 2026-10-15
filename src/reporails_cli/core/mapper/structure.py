@@ -12,12 +12,15 @@ from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import mdurl
+from markdown_it.token import Token
+from markdown_it.utils import EnvType
 
 from reporails_cli.core.mapper.markdown_extract import _extract_texts
 from reporails_cli.core.mapper.md_parser import (
+    CODE_BLOCK_TOKENS,
     EmphasisRun,
     code_spans,
     definition_ranges,
@@ -31,7 +34,7 @@ from reporails_cli.core.mapper.md_parser import (
 from reporails_cli.core.mapper.parse import inline_line, parse_blocks
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 
-_LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "fence", "code_block", "table_open", "html_block", "hr"})
+_LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "table_open", "html_block", "hr", *CODE_BLOCK_TOKENS})
 
 # A URL written in running text rather than as a markdown link.
 _BARE_URL_RE = re.compile(r"https?://\S+")
@@ -44,7 +47,7 @@ def _written(href: str) -> str:
     return mdurl.decode(href.strip())
 
 
-def _inline_links(tok: Any, offset: int, *, written_only: bool = False) -> list[tuple[int, str]]:
+def _inline_links(tok: Token, offset: int, *, written_only: bool = False) -> list[tuple[int, str]]:
     """`(line, target)` of each link, image and bare URL in the inline token `tok`, in source order; a
     line is the file line the link's own source position falls on. With `written_only`, a bare URL and
     a link written as a reference to a definition elsewhere are left out."""
@@ -62,7 +65,7 @@ def _inline_links(tok: Any, offset: int, *, written_only: bool = False) -> list[
     return [(inline_line(tok, offset, pos), target) for pos, target in sorted(found, key=lambda f: f[0])]
 
 
-def _bare_urls(tok: Any) -> list[tuple[int, str]]:
+def _bare_urls(tok: Token) -> list[tuple[int, str]]:
     """`(source position, target)` of each URL written in the running text of the inline token `tok`:
     the target is the URL as the parse reads its text, the position is where it starts in the source."""
     recorded = recorded_spans(tok)
@@ -95,12 +98,12 @@ def _scheme_position(source: str, cursor: int, taken: Sequence[tuple[int, int]])
     return cursor
 
 
-def _is_list(tok: Any, nesting: int) -> bool:
+def _is_list(tok: Token, nesting: int) -> bool:
     """Whether `tok` opens (`nesting` 1) or closes (-1) a bullet or ordered list."""
     return tok.tag in ("ul", "ol") and tok.nesting == nesting
 
 
-def _is_after_list(tokens: list[Any], i: int) -> bool:
+def _is_after_list(tokens: list[Token], i: int) -> bool:
     """Whether the list opening at `i` directly follows a list closed at the same level; a code
     fence between the two does not split them."""
     j = i - 1
@@ -125,31 +128,32 @@ class _Reading:
     block: int = 0
     item_just_opened: bool = False
 
-    def line(self, tok: Any) -> int:
+    def line(self, tok: Token) -> int:
         """The file line `tok` starts on."""
         return tok_line(tok, self.offset)
 
-    def open_list(self, tokens: list[Any], i: int) -> None:
+    def open_list(self, tokens: list[Token], i: int) -> None:
         """Enter a list, starting a new list group unless it continues the previous list."""
         if not self.lists and not _is_after_list(tokens, i):
             self.group += 1
         self.lists.append(self.group)
 
-    def open_item(self, tok: Any) -> None:
+    def open_item(self, tok: Token) -> None:
         """Record a list item with its list group and open a new block for it."""
         self.items.append((self.line(tok), self.lists[-1] if self.lists else self.group))
         self.block += 1
         self.item_just_opened = True
 
-    def leaf(self, tok: Any) -> None:
+    def leaf(self, tok: Token) -> None:
         """A leaf block's lines join the current block, or a new one; the first leaf of a list
         item belongs to the item's own block."""
         self.block += not self.item_just_opened
         self.item_just_opened = False
         first = self.line(tok)
-        self.block_of.update(dict.fromkeys(range(first, first + tok.map[1] - tok.map[0]), self.block))
+        height = tok.map[1] - tok.map[0] if tok.map else 0
+        self.block_of.update(dict.fromkeys(range(first, first + height), self.block))
 
-    def visit(self, tokens: list[Any], i: int) -> None:
+    def visit(self, tokens: list[Token], i: int) -> None:
         """Update the walk state for the token at `i`."""
         tok = tokens[i]
         if _is_list(tok, 1):
@@ -207,7 +211,7 @@ def section_span(content: str, heading: str) -> tuple[int, int] | None:
 
 @lru_cache(maxsize=64)
 def _link_targets(content: str) -> tuple[tuple[int, str], ...]:
-    env: dict[str, Any] = {}
+    env: EnvType = {}
     tokens, offset = parse_blocks(content, env)
     found = [link for tok in tokens if tok.type == "inline" for link in _inline_links(tok, offset, written_only=True)]
     found.extend((ref["map"][0] + offset + 1, _written(str(ref["href"]))) for ref in env.get("references", {}).values())
@@ -257,7 +261,7 @@ def _source_columns(piece: str, line: str, after: int) -> list[int] | None:
     return None if at < 0 else source_col[at : at + len(piece) + 1]
 
 
-def _token_columns(tok: Any, lines: list[str], first_line: int, cursor: dict[int, int]) -> list[list[int]] | None:
+def _token_columns(tok: Token, lines: list[str], first_line: int, cursor: dict[int, int]) -> list[list[int]] | None:
     """For each line of the inline token `tok`'s text, the column in its file line of each char and of
     the char after it; None when a line of the file does not hold the text.
 
@@ -278,7 +282,7 @@ def _token_columns(tok: Any, lines: list[str], first_line: int, cursor: dict[int
     return columns
 
 
-def _text_starts(tok: Any, columns: list[list[int]], first_line: int) -> list[tuple[int, int]]:
+def _text_starts(tok: Token, columns: list[list[int]], first_line: int) -> list[tuple[int, int]]:
     """`(file line, column)` where each line of the inline token `tok`'s text starts, after its
     container's markers and any indent."""
     out = []
@@ -289,7 +293,7 @@ def _text_starts(tok: Any, columns: list[list[int]], first_line: int) -> list[tu
 
 
 def _inline_span_ranges(
-    tok: Any, columns: list[list[int]], starts: list[int], first_line: int
+    tok: Token, columns: list[list[int]], starts: list[int], first_line: int
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]], list[EmphasisRun], list[tuple[int, int]]]:
     """Char ranges, in the whole file, of each code span, of each link or image and of each inline HTML
     tag the inline token `tok` holds, and its emphasis runs placed the same way (every position a file
@@ -476,7 +480,7 @@ class _SourceRanges(NamedTuple):
 
 
 def _place_inline(
-    tok: Any, lines: list[str], starts: list[int], first: int, cursor: dict[int, int]
+    tok: Token, lines: list[str], starts: list[int], first: int, cursor: dict[int, int]
 ) -> _SourceRanges | None:
     """Where the inline token `tok` puts its text, code spans and links in the file; None when the
     file's lines do not hold its text."""
@@ -492,7 +496,7 @@ def _place_inline(
 @lru_cache(maxsize=64)
 def _source_ranges(content: str) -> _SourceRanges:
     """The code, link and inline HTML ranges, the text starts and the emphasis runs of `content`, placed in the file."""
-    env: dict[str, Any] = {}
+    env: EnvType = {}
     tokens, offset = parse_blocks(content, env)
     lines = content.split("\n")
     starts = line_offsets(lines)
@@ -500,7 +504,7 @@ def _source_ranges(content: str) -> _SourceRanges:
     parts: list[_SourceRanges] = []
     cursor: dict[int, int] = {}
     for tok in tokens:
-        if tok.type in ("fence", "code_block") and tok.map:
+        if tok.type in CODE_BLOCK_TOKENS and tok.map:
             block = (starts[tok.map[0] + offset], min(starts[tok.map[1] + offset], len(content)))
             parts.append(_SourceRanges((block,), (), (), (), ()))
         elif tok.type == "inline" and tok.map:

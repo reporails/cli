@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import regex as re
 
@@ -12,7 +11,6 @@ from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_markdown
 from reporails_cli.core.lint.regex import matching
 from reporails_cli.core.lint.regex.compiler import (
-    CombinedPattern,
     CompiledCheck,
     CompiledRuleSet,
     compile_rules,
@@ -24,14 +22,18 @@ from reporails_cli.core.lint.regex.expect import (
 )
 from reporails_cli.core.lint.regex.not_evaluated import PatternTimeoutError
 from reporails_cli.core.mapper.imports import expand_imports_with_origins
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, as_object, as_str
 from reporails_cli.core.platform.dto.models import LocalFinding
 
 logger = logging.getLogger(__name__)
 
 
-def _get_snippet(match: re.Match[str], max_len: int = 200) -> str:
+_SNIPPET_MAX_LEN = 200
+
+
+def _get_snippet(match: re.Match[str]) -> str:
     text: str = match.group(0)
-    return text[:max_len] + "..." if len(text) > max_len else text
+    return text[:_SNIPPET_MAX_LEN] + "..." if len(text) > _SNIPPET_MAX_LEN else text
 
 
 def _resolve_scan_targets(
@@ -67,10 +69,10 @@ def _is_text_file(file_path: Path) -> bool:
 
 
 def _build_sarif(
-    rule_results: list[dict[str, Any]],
-    rule_definitions: list[dict[str, Any]],
+    rule_results: list[JsonObject],
+    rule_definitions: list[JsonObject],
     unfinished: list[tuple[str, str]] | None = None,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Build SARIF output dict matching downstream pipeline format.
 
     `unfinished` lists the `(check id, file uri)` pairs whose search ran out of time; they
@@ -80,8 +82,8 @@ def _build_sarif(
         "notEvaluated": [{"checkId": cid, "uri": uri} for cid, uri in dict.fromkeys(unfinished or ())],
         "runs": [
             {
-                "tool": {"driver": {"rules": rule_definitions}},
-                "results": rule_results,
+                "tool": {"driver": {"rules": [*rule_definitions]}},
+                "results": [*rule_results],
             }
         ],
     }
@@ -140,8 +142,8 @@ def _emit_results(
     file_uri: str,
     content: str,
     *,
-    results: list[dict[str, Any]],
-    rule_defs: dict[str, dict[str, Any]],
+    results: list[JsonObject],
+    rule_defs: dict[str, JsonObject],
     imports: tuple[list[int], list[tuple[Path, int] | None], Path] | None = None,
 ) -> None:
     """Append SARIF results for matched check.
@@ -185,66 +187,6 @@ def _emit_results(
         )
 
 
-def _retry_shadowed(
-    group_to_check: dict[str, CompiledCheck],
-    matched_checks: set[str],
-    content: str,
-    file_uri: str,
-    *,
-    results: list[dict[str, Any]],
-    rule_defs: dict[str, dict[str, Any]],
-) -> None:
-    """Retry shadowed checks. No per-pattern timeout — see matching.match_check note."""
-    for group_name, check in group_to_check.items():
-        if group_name in matched_checks:
-            continue
-        if check.patterns:
-            m = check.patterns[0].search(content)
-            if m:
-                _emit_results(check, [m], file_uri, content, results=results, rule_defs=rule_defs)
-        elif check.either_patterns:
-            for pat in check.either_patterns:
-                m = pat.search(content)
-                if m:
-                    _emit_results(check, [m], file_uri, content, results=results, rule_defs=rule_defs)
-                    break
-
-
-def _scan_combined(
-    content: str,
-    file_uri: str,
-    combined_patterns: list[CombinedPattern],
-    *,
-    results: list[dict[str, Any]],
-    rule_defs: dict[str, dict[str, Any]],
-    unfinished: list[tuple[str, str]],
-) -> None:
-    """Scan content using combined alternation patterns for batch matching.
-
-    A combined pattern that runs out of time leaves every check it carries unevaluated for this file.
-    """
-    for combined in combined_patterns:
-        matched_checks: set[str] = set()
-        try:
-            found = matching.safe_finditer(combined.regex, content)
-        except PatternTimeoutError:
-            unfinished.extend((c.id, file_uri) for c in combined.group_to_check.values())
-            continue
-        for m in found:
-            group_name = m.lastgroup
-            if group_name and group_name not in matched_checks:
-                check = combined.group_to_check[group_name]
-                _emit_results(check, [m], file_uri, content, results=results, rule_defs=rule_defs)
-                matched_checks.add(group_name)
-                if len(matched_checks) == len(combined.group_to_check):
-                    break
-
-        if len(matched_checks) < len(combined.group_to_check):
-            _retry_shadowed(
-                combined.group_to_check, matched_checks, content, file_uri, results=results, rule_defs=rule_defs
-            )
-
-
 _MAX_FILE_SIZE = 1_048_576  # 1 MB
 
 
@@ -269,19 +211,16 @@ def _scan_file(
     file_path: Path,
     scan_root: Path,
     checks: list[CompiledCheck],
-    results: list[dict[str, Any]],
-    rule_defs: dict[str, dict[str, Any]],
+    results: list[JsonObject],
+    rule_defs: dict[str, JsonObject],
     *,
-    first_match_only: bool = False,
-    combined_patterns: list[CombinedPattern] | None = None,
-    unfinished: list[tuple[str, str]] | None = None,
+    unfinished: list[tuple[str, str]],
 ) -> None:
     """Scan a single file against compiled checks, appending to results.
 
     A check whose search runs out of time yields no matches and is added to `unfinished`
     as `(check id, file uri)`.
     """
-    unfinished = [] if unfinished is None else unfinished
     try:
         if file_path.stat().st_size > _MAX_FILE_SIZE:
             logger.debug("Skipping oversized file: %s", file_path)
@@ -295,11 +234,6 @@ def _scan_file(
     except ValueError:
         file_uri = file_path.as_posix()
 
-    if combined_patterns:
-        _scan_combined(
-            content, file_uri, combined_patterns, results=results, rule_defs=rule_defs, unfinished=unfinished
-        )
-
     expanded = expand_imports_with_origins(content, file_path) if any(c.follow_imports for c in checks) else None
     for check in checks:
         try:
@@ -310,7 +244,7 @@ def _scan_file(
         if matches:
             _emit_results(
                 check,
-                matches[:1] if first_match_only else matches,
+                matches,
                 file_uri,
                 text,
                 results=results,
@@ -324,10 +258,10 @@ def _scan_all_targets(
     scan_root: Path,
     universal: list[CompiledCheck],
     by_pattern: dict[str, list[CompiledCheck]],
-) -> dict[str, Any]:
+) -> JsonObject:
     """Scan all targets and return SARIF-shaped dict."""
-    results: list[dict[str, Any]] = []
-    rule_defs: dict[str, dict[str, Any]] = {}
+    results: list[JsonObject] = []
+    rule_defs: dict[str, JsonObject] = {}
     unfinished: list[tuple[str, str]] = []
     for file_path in scan_targets:
         if not file_path.is_file():
@@ -339,22 +273,22 @@ def _scan_all_targets(
     return _build_sarif(results, list(rule_defs.values()), unfinished)
 
 
-def _compile_ruleset(yml_paths: list[Path], body_only_paths: set[Path] | None) -> CompiledRuleSet:
+def _compile_ruleset(yml_paths: list[Path]) -> CompiledRuleSet:
     """Compile the rule files that exist, warning about rules with unsupported operators."""
     valid_paths = [p for p in yml_paths if p and p.exists()]
     if not valid_paths:
         return CompiledRuleSet()
-    ruleset = compile_rules(valid_paths, body_only_paths=body_only_paths)
+    ruleset = compile_rules(valid_paths)
     if ruleset.skipped:
         logger.warning("Skipped rules with unsupported operators: %s", ", ".join(ruleset.skipped))
     return ruleset
 
 
-def _scan_ruleset(
+def scan_ruleset(
     ruleset: CompiledRuleSet,
     target: Path,
     instruction_files: list[Path] | None = None,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Run a compiled ruleset over the scan targets, returns SARIF-shaped dict."""
     if not ruleset.checks:
         return {"runs": []}
@@ -366,19 +300,21 @@ def _scan_ruleset(
     return _scan_all_targets(scan_targets, scan_root, universal, by_pattern)
 
 
-def run_validation(
-    yml_paths: list[Path],
-    target: Path,
-    instruction_files: list[Path] | None = None,
-    body_only_paths: set[Path] | None = None,
-) -> dict[str, Any]:
-    """Execute regex validation with specified rule configs, returns SARIF-shaped dict."""
-    ruleset = _compile_ruleset(yml_paths, body_only_paths)
-    return _scan_ruleset(ruleset, target, instruction_files)
+def _first_location(result: JsonObject) -> tuple[str, int, str]:
+    """The file, line and matched text of a result's first location; `("", 0, "")` when it names none."""
+    for loc in as_list(result.get("locations")):
+        phys = as_object(as_object(loc).get("physicalLocation"))
+        region = as_object(phys.get("region"))
+        return (
+            as_str(as_object(phys.get("artifactLocation")).get("uri")),
+            as_int(region.get("startLine"), 0),
+            as_str(as_object(region.get("snippet")).get("text")),
+        )
+    return "", 0, ""
 
 
 def _collect_sarif_matches(
-    sarif: dict[str, Any],
+    sarif: JsonObject,
 ) -> tuple[set[tuple[str, str]], dict[tuple[str, str], list[tuple[int, str, str]]]]:
     """Extract matched (check_id, file) pairs and details from SARIF output.
 
@@ -389,18 +325,12 @@ def _collect_sarif_matches(
     """
     pairs: set[tuple[str, str]] = set()
     details: dict[tuple[str, str], list[tuple[int, str, str]]] = {}
-    for run in sarif.get("runs", []):
-        for result in run.get("results", []):
-            cid = result.get("ruleId", "")
-            msg = result.get("message", {}).get("text", "")
-            fp, ln, snippet = "", 0, ""
-            for loc in result.get("locations", []):
-                phys = loc.get("physicalLocation", {})
-                fp = phys.get("artifactLocation", {}).get("uri", "")
-                region = phys.get("region", {})
-                ln = region.get("startLine", 0)
-                snippet = region.get("snippet", {}).get("text", "")
-                break
+    for run in as_list(sarif.get("runs")):
+        for raw in as_list(as_object(run).get("results")):
+            result = as_object(raw)
+            cid = as_str(result.get("ruleId"))
+            msg = as_str(as_object(result.get("message")).get("text"))
+            fp, ln, snippet = _first_location(result)
             pairs.add((cid, fp))
             entry = (ln, msg, snippet)
             if entry not in details.setdefault((cid, fp), []):
@@ -408,9 +338,10 @@ def _collect_sarif_matches(
     return pairs, details
 
 
-def _collect_not_evaluated(sarif: dict[str, Any]) -> set[tuple[str, str]]:
+def _collect_not_evaluated(sarif: JsonObject) -> set[tuple[str, str]]:
     """The `(check id, file)` pairs whose search ran out of time, from SARIF output."""
-    return {(e["checkId"], e["uri"]) for e in sarif.get("notEvaluated", ())}
+    entries = [as_object(e) for e in as_list(sarif.get("notEvaluated"))]
+    return {(as_str(e.get("checkId")), as_str(e.get("uri"))) for e in entries}
 
 
 def _resolve_scanned_files(
@@ -454,9 +385,9 @@ def run_checks(
     registry; propagates to `LocalFinding.fix` so MCP / JSON consumers
     can render the per-finding suggested edit.
     """
-    ruleset = _compile_ruleset(yml_paths, None)
+    ruleset = _compile_ruleset(yml_paths)
     checks = apply_min_lines_overrides(ruleset.checks, min_lines_overrides) if min_lines_overrides else ruleset.checks
-    sarif = _scan_ruleset(ruleset, target, instruction_files=instruction_files)
+    sarif = scan_ruleset(ruleset, target, instruction_files=instruction_files)
     matched_pairs, match_details = _collect_sarif_matches(sarif)
     scanned_files = _resolve_scanned_files(target, instruction_files)
     return emit_expect_findings(
@@ -469,30 +400,3 @@ def run_checks(
         skill_entries=skill_entries,
         not_evaluated=_collect_not_evaluated(sarif),
     )
-
-
-def checks_per_file(
-    yml_paths: list[Path],
-    scan_root: Path,
-    instruction_files: list[Path] | None = None,
-) -> dict[str, list[str]]:
-    """List compiled regex check IDs applicable to each file."""
-    ruleset = compile_rules([p for p in yml_paths if p and p.exists()])
-    if not ruleset.checks:
-        return {}
-
-    universal, by_pattern = _partition_checks(ruleset.checks)
-    base_ids = [c.id for c in universal]
-
-    result: dict[str, list[str]] = {}
-    for file_path in instruction_files or []:
-        if not file_path.is_file():
-            continue
-        try:
-            rel = file_path.relative_to(scan_root).as_posix()
-        except ValueError:
-            rel = file_path.as_posix()
-        path_ids = [c.id for c in _get_applicable_checks(file_path, scan_root, [], by_pattern)]
-        result[rel] = base_ids + path_ids
-
-    return result

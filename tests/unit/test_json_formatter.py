@@ -15,6 +15,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     QualityResult,
 )
 from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, Omissions, ServerReply
 from reporails_cli.formatters.json import format_combined_result
 
@@ -534,7 +535,13 @@ class TestContentChecksSkippedWhenMappingFailed:
     @pytest.mark.subsys_diagnostic
     def test_flag_false_when_the_run_mapped_its_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("reporails_cli.formatters.json.multislot_available", lambda: True)
-        assert format_combined_result(_result(), ruleset_map=object())["content_checks_skipped"] is False
+        assert (
+            format_combined_result(
+                _result(),
+                ruleset_map=RulesetMap(schema_version="1", embedding_model="m", generated_at="t", files=(), atoms=()),
+            )["content_checks_skipped"]
+            is False
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic

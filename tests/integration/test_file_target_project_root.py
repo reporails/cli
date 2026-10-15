@@ -140,7 +140,7 @@ def test_validating_a_user_level_file_reads_nothing_outside_its_folder(
 ) -> None:
     main, config = _write_user_level(scratch_home)
     for target in (main, config):
-        payload = tools.validate_tool(str(target), full=True)
+        payload = tools.run_pipeline_for_path(str(target), full=True)[0]
         assert reads_outside == []
         assert list(payload["files"]) == [target.name]
 
@@ -233,5 +233,5 @@ def test_a_misspelled_hook_event_is_reported_in_a_project_with_no_git_checked_fr
     cli = _check(elsewhere, settings)
     assert list(cli["files"]) == [".claude/settings.json"]
     assert ("CLAUDE:G:0001", 1) in _findings(cli)
-    mcp = tools.validate_tool(str(settings), full=True)
+    mcp = tools.run_pipeline_for_path(str(settings), full=True)[0]
     assert _findings(mcp) == _findings(cli)

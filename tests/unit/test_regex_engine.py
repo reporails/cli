@@ -20,8 +20,8 @@ from reporails_cli.core.lint.regex.compiler import (
 )
 from reporails_cli.core.lint.regex.expect import file_matches_path_filter
 from reporails_cli.core.lint.regex.matching import find_line_number, match_check
-from reporails_cli.core.lint.regex.runner import run_validation
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
+from tests.conftest import run_rule_files
 
 
 class TestLineAndFrontmatterEdges:
@@ -44,7 +44,7 @@ class TestLineAndFrontmatterEdges:
     def test_unterminated_frontmatter_is_left_intact(self) -> None:
         content = "---\nkey: val\nno closing fence here"
         # No `\n---` close → returns content unchanged; kills `end == -1 -> != -1`.
-        assert strip_frontmatter(content, keep_lines=True) == content
+        assert strip_frontmatter(content) == content
 
 
 # ---------------------------------------------------------------------------
@@ -452,7 +452,7 @@ class TestMatchCheck:
 
 
 class TestRunValidation:
-    """Test run_validation SARIF output shape and correctness."""
+    """Test the SARIF output shape and correctness."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -464,7 +464,7 @@ class TestRunValidation:
         )
         _write_target(tmp_path, "# Doc\nhello world\n")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
 
         assert "runs" in sarif
         assert len(sarif["runs"]) == 1
@@ -499,7 +499,7 @@ class TestRunValidation:
         )
         _write_target(tmp_path, "# Title\nBody\n")
 
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         assert results[0]["locations"][0]["physicalLocation"]["region"]["startLine"] == 1
 
     @pytest.mark.unit
@@ -513,7 +513,7 @@ class TestRunValidation:
         content = "line1\nline2\nline3\nthe end"
         _write_target(tmp_path, content)
 
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         assert results[0]["locations"][0]["physicalLocation"]["region"]["startLine"] == 4
 
     @pytest.mark.unit
@@ -526,7 +526,7 @@ class TestRunValidation:
         )
         _write_target(tmp_path, "# Nothing here\n")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
     @pytest.mark.unit
@@ -544,7 +544,7 @@ class TestRunValidation:
         _write_target(tmp_path, "TODO: first\nok\nTODO: second\nTODO: third\n")
 
         # pattern-regex uses re.search which finds only the first match
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         assert len(results) == 1  # search returns first match only
 
     @pytest.mark.unit
@@ -562,7 +562,7 @@ class TestRunValidation:
         )
         _write_target(tmp_path, "hello world\n")
 
-        rule_ids = _sarif_rule_ids(run_validation([rule_yml], tmp_path))
+        rule_ids = _sarif_rule_ids(run_rule_files([rule_yml], tmp_path))
         assert "R-A" in rule_ids
         assert "R-B" in rule_ids
 
@@ -580,7 +580,7 @@ class TestRunValidation:
         target = tmp_path / "project"
         target.mkdir()
 
-        sarif = run_validation([rule_yml], target)
+        sarif = run_rule_files([rule_yml], target)
         assert _sarif_results(sarif) == []
 
     @pytest.mark.unit
@@ -594,7 +594,7 @@ class TestRunValidation:
         binary_file = tmp_path / "CLAUDE.md"
         binary_file.write_bytes(b"# Title\n\x00\x01binary junk\n")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
     @pytest.mark.unit
@@ -608,7 +608,7 @@ class TestRunValidation:
         bad_file = tmp_path / "CLAUDE.md"
         bad_file.write_bytes(b"# Title\n\xff\xfe invalid utf8\n")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
     @pytest.mark.unit
@@ -621,7 +621,7 @@ class TestRunValidation:
         )
         _write_target(tmp_path, "A" * 500 + "\n")
 
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         snippet = results[0]["locations"][0]["physicalLocation"]["region"]["snippet"]["text"]
         assert len(snippet) <= 203  # 200 + "..."
         assert snippet.endswith("...")
@@ -690,7 +690,7 @@ class TestPathFiltering:
         _write_target(tmp_path, "test content", "CLAUDE.md")
         _write_target(tmp_path, "test content", "OTHER.md")
 
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         uris = [r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for r in results]
 
         assert any("CLAUDE.md" in u for u in uris)
@@ -725,7 +725,7 @@ class TestNegativePatterns:
             },
         )
         _write_target(tmp_path, "password is hashed with bcrypt\n")
-        assert _sarif_results(run_validation([rule_yml], tmp_path)) == []
+        assert _sarif_results(run_rule_files([rule_yml], tmp_path)) == []
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -747,7 +747,7 @@ class TestNegativePatterns:
             },
         )
         _write_target(tmp_path, "password is stored in plaintext\n")
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         assert len(results) == 1
         assert results[0]["ruleId"] == "NEG-2"
 
@@ -773,15 +773,15 @@ class TestNegativePatterns:
         )
         # Case 1: only first negative matches → blocks
         _write_target(tmp_path, "internal API for testing\n")
-        assert _sarif_results(run_validation([rule_yml], tmp_path)) == []
+        assert _sarif_results(run_rule_files([rule_yml], tmp_path)) == []
 
         # Case 2: only second negative matches → blocks
         _write_target(tmp_path, "deprecated API v1\n")
-        assert _sarif_results(run_validation([rule_yml], tmp_path)) == []
+        assert _sarif_results(run_rule_files([rule_yml], tmp_path)) == []
 
         # Case 3: neither negative matches → fires
         _write_target(tmp_path, "public API v2\n")
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         assert len(results) == 1
 
     @pytest.mark.unit
@@ -805,7 +805,7 @@ class TestNegativePatterns:
             },
         )
         _write_target(tmp_path, "this has no positive word\n")
-        results = _sarif_results(run_validation([rule_yml], tmp_path))
+        results = _sarif_results(run_rule_files([rule_yml], tmp_path))
         # Bug or design choice? No positive patterns → never matches.
         assert results == []
 
@@ -834,7 +834,7 @@ class TestPerformance:
         _write_target(tmp_path, adversarial + "\n")
 
         start = time.monotonic()
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         elapsed = time.monotonic() - start
 
         assert _sarif_results(sarif) == []
@@ -858,7 +858,7 @@ class TestPerformance:
         _write_target(tmp_path, content)
 
         start = time.monotonic()
-        run_validation([rule_yml], tmp_path)
+        run_rule_files([rule_yml], tmp_path)
         elapsed = time.monotonic() - start
 
         assert elapsed < 2.0, f"Greedy .* took {elapsed:.1f}s"
@@ -875,7 +875,7 @@ class TestPerformance:
             _write_target(tmp_path, f"# File {i}\n## Structure\nContent\n", f"doc_{i}.md")
 
         start = time.monotonic()
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         elapsed = time.monotonic() - start
 
         assert len(_sarif_results(sarif)) == 100
@@ -884,13 +884,13 @@ class TestPerformance:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_validation_completes_on_simple_pattern(self, tmp_path: Path) -> None:
-        """run_validation produces correct results — sanity check the regex library wiring."""
+        """the regex engine produces correct results — sanity check the regex library wiring."""
         rule_yml = _write_rule(
             tmp_path,
             {"checks": [{"id": "SIMPLE", "pattern-regex": "hello", "message": "found it"}]},
         )
         _write_target(tmp_path, "hello world\n")
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         assert len(_sarif_results(sarif)) == 1
 
 
@@ -917,7 +917,7 @@ class TestIntegration:
         # File mentions MCP → match → expect=present means this is evidence → pass
         _write_target(tmp_path, "# MCP Config\nUse MCP servers\n")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         results = _sarif_results(sarif)
         # Should produce a match (expect logic happens downstream in pipeline)
         assert len(results) == 1
@@ -933,7 +933,7 @@ class TestIntegration:
         a = _write_target(tmp_path, "content in A\n", "a.md")
         _write_target(tmp_path, "content in B\n", "b.md")
 
-        sarif = run_validation([rule_yml], tmp_path, instruction_files=[a])
+        sarif = run_rule_files([rule_yml], tmp_path, instruction_files=[a])
         uris = [r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for r in _sarif_results(sarif)]
 
         assert any("a.md" in u for u in uris)
@@ -949,7 +949,7 @@ class TestIntegration:
         )
         (tmp_path / "empty.md").write_text("")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
     @pytest.mark.unit
@@ -962,7 +962,7 @@ class TestIntegration:
         )
         (tmp_path / "newlines.md").write_text("\n\n\n\n")
 
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         assert _sarif_results(sarif) == []
 
     @pytest.mark.unit
@@ -978,7 +978,7 @@ class TestIntegration:
         _write_target(tmp_path, content)
 
         start = time.monotonic()
-        sarif = run_validation([rule_yml], tmp_path)
+        sarif = run_rule_files([rule_yml], tmp_path)
         elapsed = time.monotonic() - start
 
         results = _sarif_results(sarif)

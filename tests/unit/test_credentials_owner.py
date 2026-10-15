@@ -17,6 +17,23 @@ from reporails_cli.core.platform.contract.errors import CredentialsUnreadableErr
 NOW = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
 
 
+class _Clock(datetime):
+    """The `datetime` the credentials owner reads, fixed to `NOW`."""
+
+    @classmethod
+    def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+        return NOW
+
+
+@pytest.fixture(autouse=True)
+def _fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(credentials, "datetime", _Clock)
+
+
+def _signed_in_recently(key: str) -> bool:
+    return credentials.signed_in_recently(key)
+
+
 @pytest.fixture(autouse=True)
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -104,23 +121,24 @@ def test_clear_credentials_removes_the_file_and_tolerates_none(home: Path) -> No
 def test_signed_in_recently(home: Path, stamp: str | None, key: str, expected: bool) -> None:
     suffix = f"signed_in_at: '{stamp}'\n" if stamp is not None else ""
     _store(home, f"api_key: rr_k\n{suffix}")
-    assert credentials.signed_in_recently(key, now=NOW) is expected
+    assert _signed_in_recently(key) is expected
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_signed_in_recently_with_no_file_or_a_corrupt_one(home: Path) -> None:
-    assert credentials.signed_in_recently("rr_k", now=NOW) is False
+    assert _signed_in_recently("rr_k") is False
     _store(home, "api_key: [unclosed")
-    assert credentials.signed_in_recently("rr_k", now=NOW) is False
+    assert _signed_in_recently("rr_k") is False
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_signed_in_recently_honours_within_s(home: Path) -> None:
+def test_signed_in_recently_honours_the_window(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _store(home, f"api_key: rr_k\nsigned_in_at: '{(NOW - timedelta(seconds=300)).isoformat()}'\n")
-    assert credentials.signed_in_recently("rr_k", now=NOW) is False
-    assert credentials.signed_in_recently("rr_k", within_s=600, now=NOW) is True
+    assert _signed_in_recently("rr_k") is False
+    monkeypatch.setattr(credentials, "SIGN_IN_WINDOW_S", 600)
+    assert _signed_in_recently("rr_k") is True
 
 
 # --- write_credentials_file: permissions and atomic replace (moved from the retired auth command tests) ---

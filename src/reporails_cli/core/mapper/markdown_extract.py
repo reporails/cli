@@ -1,4 +1,3 @@
-# ruff: noqa: PERF401
 """Markdown text extraction — the charge-free half of the atomizer.
 
 Frontmatter stripping, softbreak segmentation, and the md-text / plain-text /
@@ -10,11 +9,12 @@ out of ``parse.py`` while the charge layer stays put.
 from __future__ import annotations
 
 import re
-from typing import Any
+
+from markdown_it.token import Token
 
 from reporails_cli.core.mapper.lexicon import load_markdown_tokens
-from reporails_cli.core.mapper.md_parser import md_parser
-from reporails_cli.core.platform.dto.ruleset import InlineToken
+from reporails_cli.core.mapper.md_parser import CODE_BLOCK_TOKENS, LINE_BREAK_TOKENS, md_parser
+from reporails_cli.core.platform.dto.ruleset import AtomFormat
 from reporails_cli.core.platform.utils.utils import frontmatter_block, strip_frontmatter
 
 # Emoji, pictographic, and box-drawing ranges stripped from atom text. Covers the
@@ -74,14 +74,6 @@ _FILE_HEADER_RE = re.compile(r"^File:\s*\S")
 # the code-block path claim the block. An inline mention keeps text on the line,
 # so the line anchors (`^…$`) never match it.
 _ESCAPED_FENCE_RE = re.compile(r"^(\s*)(?:\\`){3,}\s*([\w+-]*)\s*$")
-
-
-def _is_prose_line(line: str) -> bool:
-    """A content line that is neither a ``#`` heading, a YAML key, nor a YAML list item."""
-    s = line.strip()
-    if not s or s == "---" or s.startswith("#") or s.startswith("- "):
-        return False
-    return not _YAML_KEY_RE.match(line)
 
 
 def _body_is_all_yaml_shaped(body: list[str]) -> bool:
@@ -173,7 +165,7 @@ def _fence_mask(text: str, line_count: int) -> list[bool]:
     if not any(line.strip() == "---" for line in text.split("\n")):
         return mask
     for tok in md_parser.parse(text):
-        if tok.type in ("fence", "code_block") and tok.map:
+        if tok.type in CODE_BLOCK_TOKENS and tok.map:
             for idx in range(tok.map[0], min(tok.map[1], line_count)):
                 mask[idx] = True
     return mask
@@ -268,79 +260,52 @@ def _strip_frontmatter(content: str) -> tuple[str, int]:
     return _convert_escaped_fences(_blank_repo_dump_headers(_blank_body_yaml_blocks(rest))), block.body_line
 
 
-def _split_at_softbreaks(children: list[Any]) -> list[list[Any]]:
+def _split_at_softbreaks(children: list[Token]) -> list[list[Token]]:
     """Split inline children into per-line segments at line-break boundaries.
 
     Both `softbreak` (a bare newline) and `hardbreak` (a trailing two-space or `\\` break)
     end a logical line. A hardbreak that was not split merged the two lines into one atom —
     gluing the trailing and leading words together and dropping the second line's charge.
     """
-    segments: list[list[Any]] = [[]]
+    segments: list[list[Token]] = [[]]
     for child in children:
-        if child.type in ("softbreak", "hardbreak"):
+        if child.type in LINE_BREAK_TOKENS:
             segments.append([])
         else:
             segments[-1].append(child)
     return [s for s in segments if s]
 
 
-def _append_content_tokens(
-    content: str,
-    fmt: str,
-    md_parts: list[str],
-    plain_parts: list[str],
-    inline_tokens: list[InlineToken],
-    *,
-    md_prefix: str = "",
-) -> None:
-    """Append text content with format tracking to md/plain/inline collectors."""
-    md_parts.append(f"{md_prefix}{content}" if md_prefix else content)
-    plain_parts.append(content)
-    for word in content.split():
-        inline_tokens.append(InlineToken(text=word, format=fmt))
-
-
-def _extract_texts(
-    segment: list[Any],
-) -> tuple[str, str, list[InlineToken]]:
-    """Extract md_text, plain_text, and inline_tokens from AST children.
+def _extract_texts(segment: list[Token]) -> tuple[str, str]:
+    """Extract md_text and plain_text from AST children.
 
     md_text preserves `backtick`, **bold**, *italic* markers for check_specificity().
     plain_text strips all markers for 3rd-person detection.
-    inline_tokens provides per-word format context for Phase 3 backtick filter.
     """
     tokens = load_markdown_tokens()
-    format_open = tokens.format_open
-    format_close = tokens.format_close
+    format_open, format_close = tokens.format_open, tokens.format_close
     md_parts: list[str] = []
     plain_parts: list[str] = []
-    inline_tokens: list[InlineToken] = []
-    format_stack: list[str] = ["plain"]
 
     for child in segment:
         if child.type in ("text", "html_inline"):
-            _append_content_tokens(child.content, format_stack[-1], md_parts, plain_parts, inline_tokens)
+            md_parts.append(child.content)
+            plain_parts.append(child.content)
         elif child.type == "code_inline":
             md_parts.append(f"`{child.content}`")
             plain_parts.append(child.content)
-            for word in child.content.split():
-                inline_tokens.append(InlineToken(text=word, format="backtick"))
         elif child.type in format_open:
-            marker, fmt = format_open[child.type]
-            md_parts.append(marker)
-            format_stack.append(fmt)
+            md_parts.append(format_open[child.type][0])
         elif child.type in format_close:
             md_parts.append(format_close[child.type])
-            if len(format_stack) > 1:
-                format_stack.pop()
         # link_open, link_close: skip — text child handles content
 
     md_text = _strip_decoration("".join(md_parts).strip())
     plain_text = _strip_decoration("".join(plain_parts).strip())
-    return md_text, plain_text, inline_tokens
+    return md_text, plain_text
 
 
-def _determine_format(block_stack: list[str]) -> str:
+def _determine_format(block_stack: list[str]) -> AtomFormat:
     """Map the current block nesting stack to a format string."""
     for tag in reversed(block_stack):
         if tag == "table":

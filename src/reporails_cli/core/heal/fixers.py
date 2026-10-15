@@ -240,18 +240,6 @@ def suggest_single_section(
     return suggester(violation, scan_root, classified_files, rules)
 
 
-def partition_violations(violations: list[Violation]) -> tuple[list[Violation], list[Violation]]:
-    """Split violations into (suggestible, non_suggestible) based on SECTION_SUGGESTERS registry."""
-    suggestible: list[Violation] = []
-    non_suggestible: list[Violation] = []
-    for v in violations:
-        if v.rule_id in SECTION_SUGGESTERS:
-            suggestible.append(v)
-        else:
-            non_suggestible.append(v)
-    return suggestible, non_suggestible
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

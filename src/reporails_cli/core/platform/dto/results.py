@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from reporails_cli.core.platform.dto.analytics import AnalyticsEntry
+from reporails_cli.core.platform.contract.json_value import JsonValue
 
 # =============================================================================
 # Feature Detection Models
@@ -93,12 +92,10 @@ class SubagentHooks:
 class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
 
-    agent: str = ""
     prefix: str = ""  # Uppercase namespace prefix (e.g., "CLAUDE")
     name: str = ""  # Display name (e.g., "Claude Code")
-    core: bool = False  # True for CORE config (generic agent)
     excludes: list[str] = field(default_factory=list)
-    overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    overrides: dict[str, dict[str, JsonValue]] = field(default_factory=dict)
     subagent_hooks: SubagentHooks = field(default_factory=SubagentHooks)
     # Hook events that run before a file tool and can block it, each with the tools of Read/Edit/Write it gates.
     intercept_events: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -169,82 +166,3 @@ class ProjectConfig:
     # Mapper atomizer tuning. `mapper.segmentation` picks the boundary policy
     # ("legacy" | "structure-aware"), defaulting to the shipped behavior.
     mapper: MapperConfig = field(default_factory=MapperConfig)
-
-
-# =============================================================================
-# Result Models
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class ScanDelta:
-    """Comparison between current and previous scan."""
-
-    score_delta: float | None  # None if no previous or unchanged
-    level_previous: str | None  # None if unchanged or no previous
-    level_improved: bool | None  # True=up, False=down, None=unchanged/no previous
-    violations_delta: int | None  # Negative=improvement, positive=regression, None if unchanged
-
-    @classmethod
-    def compute(
-        cls,
-        current_score: float,
-        current_level: str,
-        current_violations: int,
-        previous: AnalyticsEntry | None,
-    ) -> ScanDelta:
-        """Compute delta from current values and previous scan entry.
-
-        Args:
-            current_score: Current scan score
-            current_level: Current level (e.g., "L3")
-            current_violations: Current violation count
-            previous: Previous AnalyticsEntry or None
-
-        Returns:
-            ScanDelta with computed differences
-        """
-        if previous is None:
-            return cls(None, None, None, None)
-
-        # Score delta (round to 1 decimal, None if unchanged)
-        raw_score_delta = round(current_score - previous.score, 1)
-        score_delta = raw_score_delta if raw_score_delta != 0 else None
-
-        # Level comparison (extract number from "L3" etc)
-        curr_num = int(current_level[1:]) if current_level.startswith("L") and current_level[1:].isdigit() else 0
-        prev_num = int(previous.level[1:]) if previous.level.startswith("L") and previous.level[1:].isdigit() else 0
-        if curr_num != prev_num:
-            level_previous = previous.level
-            level_improved = curr_num > prev_num
-        else:
-            level_previous = None
-            level_improved = None
-
-        # Violations delta (None if unchanged)
-        viol_delta = current_violations - previous.violations_count
-        violations_delta = viol_delta if viol_delta != 0 else None
-
-        return cls(score_delta, level_previous, level_improved, violations_delta)
-
-
-@dataclass(frozen=True)
-class InitResult:
-    """Result of initialization."""
-
-    success: bool
-    rules_path: Path | None
-    framework_version: str | None
-    errors: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class UpdateResult:
-    """Result of framework update."""
-
-    success: bool
-    message: str
-    old_version: str | None = None
-    new_version: str | None = None
-    rules_path: Path | None = None
-    rules_count: int = 0

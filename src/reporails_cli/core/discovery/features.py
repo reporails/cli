@@ -9,13 +9,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import (
+    MEMORY_SURFACES,
     claude_project_folder_name,
     glob_file_type_patterns,
-    is_external_pattern,
 )
 from reporails_cli.core.discovery.agents import (
     DetectedAgent,
@@ -25,9 +24,10 @@ from reporails_cli.core.discovery.agents import (
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.walk import is_under, safe_resolve
+from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.results import DetectedFeatures, HookEntry
 from reporails_cli.core.platform.utils.hook_config import HookConfig, hook_sites, read_hook_config
-from reporails_cli.core.platform.utils.utils import matches_any_glob
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern, matches_any_glob
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def detect_features_filesystem(
     features.memory.has_memory_dir = any(
         _agent_has_surface(target, agent_id, surface, scan)
         for agent_id in agent_ids
-        for surface in ("memory", "subagent_memory")
+        for surface in sorted(MEMORY_SURFACES)
     )
     features.memory.has_auto_memory = "claude" in agent_ids and _detect_auto_memory(target)
 
@@ -160,7 +160,7 @@ def _scan_for(target: Path, scan: _SurfaceScan | None) -> _SurfaceScan:
 
 
 def _surface_patterns(
-    target: Path, spec: dict[str, Any], scan: _SurfaceScan | None = None, *, repo_only: bool = True
+    target: Path, spec: JsonObject, scan: _SurfaceScan | None = None, *, repo_only: bool = True
 ) -> list[str]:
     """A file type's project-level patterns, with plugin-root patterns expanded against the
     plugin roots found under `target` exactly as discovery expands them (excluded folders
@@ -168,7 +168,7 @@ def _surface_patterns(
     scan = _scan_for(target, scan)
     patterns = extract_patterns(spec)
     return expand_plugin_patterns(
-        [p for p in patterns if not is_external_pattern(p)] if repo_only else patterns,
+        [p for p in patterns if not is_rooted_pattern(p)] if repo_only else patterns,
         target,
         scan.exclude_dirs,
         scan.roots_by_marker,
@@ -202,7 +202,7 @@ def _agent_has_surface(target: Path, agent_id: str, surface_name: str, scan: _Su
     return bool(_agent_surface_files(target, agent_id, surface_name, scan))
 
 
-def _hooks_spec(agent_id: str) -> dict[str, Any] | None:
+def _hooks_spec(agent_id: str) -> JsonObject | None:
     """`agent_id`'s `hooks` file type from its own `config.yml`; None when it declares none."""
     file_types = load_config_file_types(agent_id)
     spec = file_types.get("hooks") if file_types else None
@@ -255,7 +255,7 @@ def _agent_hook_files(target: Path, agent_id: str, scan: _SurfaceScan | None = N
     file_types = load_config_file_types(agent_id) or {}
     config_spec = file_types.get("config")
     config_patterns = extract_patterns(config_spec) if isinstance(config_spec, dict) else []
-    shared_patterns = list({p for p in extract_patterns(spec) if not is_external_pattern(p)} & set(config_patterns))
+    shared_patterns = list({p for p in extract_patterns(spec) if not is_rooted_pattern(p)} & set(config_patterns))
     counted: list[Path] = []
     for _scope, match in _hook_scope_matches(target, agent_id, scan, repo_only=True):
         dedicated = not shared_patterns or not matches_any_glob(match, shared_patterns, target)

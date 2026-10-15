@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from itertools import pairwise
 
 # Segmentation modes (config flag `.ails/config.yml` `segmentation:`).
 SEGMENTATION_LEGACY = "legacy"
@@ -157,7 +158,7 @@ _TERM_RE = re.compile(r"[.!?\u2026]+[\"'\u201d\u2019)\]]*")
 _WORD_RUN_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 
 
-def _carries_word(text: str) -> bool:
+def carries_word(text: str) -> bool:
     """True when a span holds a word: two adjacent letters, or one non-Latin letter."""
     return bool(_WORD_RUN_RE.search(text)) or any(ch.isalpha() and ord(ch) > 127 for ch in text)
 
@@ -479,27 +480,49 @@ def _drop_contentless_cuts(text: str, cuts: list[int]) -> list[int]:
     around it, so a bare figure is a marker too.
     """
     bounds = [*cuts, len(text)]
-    return [cut for i, cut in enumerate(cuts) if _carries_word(text[cut : bounds[i + 1]])]
+    return [cut for i, cut in enumerate(cuts) if carries_word(text[cut : bounds[i + 1]])]
 
 
-def split_prose_sentences(text: str, code_tokens: Iterable[str] | None = None) -> list[str]:
-    """Split a prose run into whole sentences (no sub-sentence fragments).
+def sentence_spans(text: str, code_tokens: Iterable[str] | None = None) -> list[tuple[int, int]]:
+    """[start, end) of each whole sentence in `text`, trimmed of the whitespace around it.
 
     `code_tokens` optionally names the run's code identifiers (an atom's
     backtick-wrapped tokens). Supplying them lets a lowercase identifier open a
     sentence — `PASS. pytest exits non-zero` splits only when `pytest` is known
     to be an identifier rather than an ordinary word.
 
+    A run with no internal sentence boundary is one span; a blank run has none.
+    """
+    lead = len(text) - len(text.lstrip())
+    body = text.strip()
+    if not body:
+        return []
+    mask = _protected_mask(body)
+    cuts = _drop_contentless_cuts(body, _cut_offsets(body, mask, frozenset(code_tokens or ())))
+    bounds = [0, *cuts, len(body)]
+    spans: list[tuple[int, int]] = []
+    for start, end in pairwise(bounds):
+        piece = body[start:end]
+        if piece.strip():
+            first = start + len(piece) - len(piece.lstrip())
+            spans.append((lead + first, lead + start + len(piece.rstrip())))
+    return spans
+
+
+def split_prose_sentences(text: str, code_tokens: Iterable[str] | None = None) -> list[str]:
+    """Split a prose run into whole sentences (no sub-sentence fragments), per `sentence_spans`.
+
     Returns the trimmed non-empty sentences. A run with no internal sentence
     boundary returns a single-element list, so the caller keeps the atom whole.
     """
-    text = text.strip()
-    if not text:
-        return []
-    mask = _protected_mask(text)
-    cuts = _drop_contentless_cuts(text, _cut_offsets(text, mask, frozenset(code_tokens or ())))
-    if not cuts:
-        return [text]
-    bounds = [0, *cuts, len(text)]
-    out = [text[bounds[i] : bounds[i + 1]].strip() for i in range(len(bounds) - 1)]
-    return [s for s in out if s]
+    return [text[start:end] for start, end in sentence_spans(text, code_tokens)]
+
+
+# A sentence mark closing a text: a full stop, question or exclamation mark or an ellipsis, then any closing
+# quotes, brackets and emphasis or code markers.
+_ENDS_SENTENCE_RE = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]*_`]*\s*$")
+
+
+def ends_with_sentence_mark(text: str) -> bool:
+    """Whether `text` ends with a sentence mark."""
+    return _ENDS_SENTENCE_RE.search(text) is not None

@@ -84,10 +84,9 @@ def test_delimiters_tolerate_trailing_whitespace_and_crlf() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_strip_frontmatter_drops_the_block_or_blanks_its_lines() -> None:
+def test_strip_frontmatter_drops_the_block() -> None:
     content = "---\nname: a\n---\nbody\n"
     assert strip_frontmatter(content) == "body\n"
-    assert strip_frontmatter(content, keep_lines=True) == "\n\n\nbody\n"
     assert strip_frontmatter("no block\n") == "no block\n"
 
 

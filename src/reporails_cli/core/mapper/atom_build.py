@@ -7,13 +7,17 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, TypedDict
 
 from reporails_cli.core.mapper.annotate import check_specificity
 from reporails_cli.core.mapper.charge_floors import _classify_content
+from reporails_cli.core.mapper.classify_phases import ChargeVerdict
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.model_manifest import get_models_path
-from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Specificity
+
+if TYPE_CHECKING:
+    import tokenizers
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +32,7 @@ def _strip_backtick_delims(text: str) -> str:
 
 
 @lru_cache(maxsize=1)
-def _subword_tokenizer() -> Any | None:
+def _subword_tokenizer() -> tokenizers.Tokenizer | None:
     """The bundled subword tokenizer, loaded once, or `None` when it is not on disk yet.
 
     Token counting needs only the fast tokenizer file, not the ONNX charge graphs, so
@@ -72,14 +76,35 @@ def _count_tokens(text: str) -> int:
     return len(enc.ids) - sum(mask) if mask else len(enc.ids)
 
 
-def _specificity_fields(text: str, counted: str | None = None) -> dict[str, Any]:
+class _AppearanceFields(TypedDict):
+    """The specificity and token-list fields of an Atom, passed on as keyword arguments."""
+
+    specificity: Specificity
+    named_tokens: list[str]
+    unformatted_code: list[str]
+    italic_tokens: list[str]
+    bold_tokens: list[str]
+
+
+class _SpecificityFields(_AppearanceFields):
+    """The appearance fields with the token count of the line."""
+
+    token_count: int
+
+
+def _specificity_of(spec: str) -> Specificity:
+    """The specificity `check_specificity` named: `named`, otherwise `abstract`."""
+    return "named" if spec == "named" else "abstract"
+
+
+def _specificity_fields(text: str, counted: str | None = None) -> _SpecificityFields:
     """Build specificity-related Atom fields from text.
 
     The length is counted on `counted` (the text without inline formatting) when given.
     """
     spec, named, unformatted, italic, bold = check_specificity(text)
     return {
-        "specificity": spec,
+        "specificity": _specificity_of(spec),
         "named_tokens": named,
         "unformatted_code": unformatted,
         "italic_tokens": italic,
@@ -91,12 +116,12 @@ def _specificity_fields(text: str, counted: str | None = None) -> dict[str, Any]
 def _make_inline_atom(
     md_text: str,
     plain_text: str,
-    fmt: str,
+    fmt: AtomFormat,
     line: int,
     *,
     pos_idx: int,
     current_heading: str,
-    precomputed: tuple[str, int, str, str, bool] | None = None,
+    precomputed: ChargeVerdict | None = None,
 ) -> Atom:
     """Create an inline content atom with charge classification.
 
@@ -150,11 +175,11 @@ def _ends_with_colon(plain_text: str) -> bool:
     return plain_text.rstrip().endswith(":")
 
 
-def _appearance_fields(text: str, *, literal: bool) -> dict[str, Any]:
+def _appearance_fields(text: str, *, literal: bool) -> _AppearanceFields:
     """The specificity and rendered-appearance fields of `text`; a literal (fenced) line renders nothing."""
     spec, named, unformatted, italic, bold = check_specificity(text)
     return {
-        "specificity": spec,
+        "specificity": _specificity_of(spec),
         "named_tokens": named,
         "italic_tokens": [] if literal else italic,
         "bold_tokens": [] if literal else bold,
@@ -165,7 +190,7 @@ def _appearance_fields(text: str, *, literal: bool) -> dict[str, Any]:
 def _atom_from_sentence(
     sent: str,
     atom: Atom,
-    verdict: tuple[str, int, str, str, bool],
+    verdict: ChargeVerdict,
     *,
     plain_sent: str,
 ) -> Atom:

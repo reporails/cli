@@ -1306,17 +1306,6 @@ def test_snapshot_persists_until_replaced(tmp_path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_clear_snapshots_drops_every_baseline(tmp_path) -> None:
-    target = tmp_path / "CLAUDE.md"
-    target.write_text("# Project\n\nNever skip tests.\n", encoding="utf-8")
-    snapshots.snapshot_file(target, _new_map(()), 5.0, [])
-    assert snapshots.has_snapshot(target)
-    snapshots.clear_snapshots()
-    assert not snapshots.has_snapshot(target)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
 def test_instruction_atoms_for_file_leaves_out_list_objects() -> None:
     from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
     from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE
@@ -2407,14 +2396,10 @@ def test_sibling_texts_leave_out_a_project_that_shares_a_name_prefix(tmp_path: P
     def snap(path: Path, text: str) -> Snapshot:
         return Snapshot(file_path=str(path), text=text, atoms=(), score=None)
 
-    snapshots.clear_snapshots()
-    try:
-        own, mine, other = tmp_path / "proj" / "a.md", tmp_path / "proj" / "b.md", tmp_path / "proj2" / "c.md"
-        for path, text in ((own, "own"), (mine, "mine"), (other, "other")):
-            snapshots._snapshots[snapshots._key(path)] = snap(path, text)
-        assert snapshots.sibling_texts(snapshots._snapshots[snapshots._key(own)], tmp_path / "proj") == ("mine",)
-    finally:
-        snapshots.clear_snapshots()
+    own, mine, other = tmp_path / "proj" / "a.md", tmp_path / "proj" / "b.md", tmp_path / "proj2" / "c.md"
+    for path, text in ((own, "own"), (mine, "mine"), (other, "other")):
+        snapshots._snapshots[snapshots._key(path)] = snap(path, text)
+    assert snapshots.sibling_texts(snapshots._snapshots[snapshots._key(own)], tmp_path / "proj") == ("mine",)
 
 
 _ESCAPED_LINE = "Rewrite hedges as an imperative: `Use \\`ruff\\`` or `run \\`uv run ails check .\\``."

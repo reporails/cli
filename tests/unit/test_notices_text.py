@@ -9,7 +9,7 @@ import pytest
 from rich.console import Console
 
 from reporails_cli.core.platform.dto.diagnostics import Notice
-from reporails_cli.formatters.text.notices import notice_lines, print_notices
+from reporails_cli.formatters.text.notices import _notice_lines, print_notices
 
 
 def _printed(notices: list[Notice]) -> str:
@@ -40,7 +40,7 @@ def test_markup_in_text_carries_no_style_when_rendered() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_warn_is_yellow_and_info_is_plain() -> None:
-    warn, info = (notice_lines([Notice("a", level, "msg")])[0] for level in ("warn", "info"))
+    warn, info = (_notice_lines(Notice("a", level, "msg"), "→")[0] for level in ("warn", "info"))
     assert warn == "[yellow]msg[/yellow]"
     assert info == "msg"
 
@@ -48,7 +48,7 @@ def test_warn_is_yellow_and_info_is_plain() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_https_url_renders_as_a_link_and_brackets_cannot_close_the_tag() -> None:
-    lines = notice_lines([Notice("a", "info", "msg", "https://example.test/a[1]")])
+    lines = _notice_lines(Notice("a", "info", "msg", "https://example.test/a[1]"), "→")
     assert lines[1].startswith("→ [link=https://example.test/a%5B1%5D]")
     assert "https://example.test/a[1]" not in lines[1].split("]", 1)[0]
 
@@ -56,7 +56,7 @@ def test_https_url_renders_as_a_link_and_brackets_cannot_close_the_tag() -> None
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_non_web_url_is_text_not_a_link() -> None:
-    lines = notice_lines([Notice("a", "info", "msg", "file:///etc/passwd")])
+    lines = _notice_lines(Notice("a", "info", "msg", "file:///etc/passwd"), "→")
     assert "[link" not in lines[1]
     assert "file:///etc/passwd" in lines[1]
 

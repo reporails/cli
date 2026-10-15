@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.lint.client_checks import run_client_checks
@@ -33,8 +33,12 @@ from reporails_cli.formatters.text.path_filter import filter_result_to_paths, fi
 from reporails_cli.interfaces.cli.check_notices import _agent_is_pinned
 from reporails_cli.interfaces.cli.check_orchestration import logger
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.output_formats import MACHINE_READABLE_CHECK_FORMATS
 
 if TYPE_CHECKING:
+    from rich.status import Status
+
+    from reporails_cli.core.platform.dto.diagnostics import LintResult
     from reporails_cli.interfaces.cli.check_flow import CheckState
 
 
@@ -62,24 +66,24 @@ def _flow_pipeline(state: CheckState) -> None:
     state.pipeline.stage_timer = get_stage_timer()
     state.pipeline.stage_timer.configure(enabled=env_flag("AILS_STAGE_TIMING"))
 
-    show_progress = sys.stdout.isatty() and state.targets.output_format not in ("json", "github")
+    show_progress = sys.stdout.isatty() and state.targets.output_format not in MACHINE_READABLE_CHECK_FORMATS
     progress: Callable[[str], None] = (
         (lambda msg: print(msg, file=sys.stderr, flush=True))
         if state.inputs.verbose and not show_progress
         else (lambda _: None)
     )
-    spinner = console.status("[bold]Starting...[/bold]") if show_progress else nullcontext()
+    spinner = console.status("[bold]Starting...[/bold]") if show_progress else None
 
-    with spinner:
+    with spinner if spinner is not None else nullcontext():
 
         def map_progress(msg: str) -> None:
-            if show_progress:
-                spinner.update(f"[bold]{msg}[/bold]")  # type: ignore[union-attr]
+            if spinner is not None:
+                spinner.update(f"[bold]{msg}[/bold]")
             progress(msg)
 
         try:
-            if show_progress:
-                spinner.update("[bold]Mapping...[/bold]")  # type: ignore[union-attr]
+            if spinner is not None:
+                spinner.update("[bold]Mapping...[/bold]")
             progress("Mapping instruction files...")
             state.pipeline.ruleset_map = map_instruction_files(
                 state.targets.target,
@@ -93,8 +97,8 @@ def _flow_pipeline(state: CheckState) -> None:
                 console.print(f"[dim]Mapper unavailable: {exc}. Content checks skipped.[/dim]")
         state.pipeline.stage_timer.mark("map")
 
-        if show_progress:
-            spinner.update("[bold]Checking rules...[/bold]")  # type: ignore[union-attr]
+        if spinner is not None:
+            spinner.update("[bold]Checking rules...[/bold]")
         progress("Checking rules...")
         pairs = _agent_file_pairs(state)
         state.pipeline.rule_agents = tuple(dict.fromkeys(agent_id for agent_id, _ in pairs))
@@ -111,13 +115,13 @@ def _flow_pipeline(state: CheckState) -> None:
         state.pipeline.stage_timer.mark("m_probe")
 
         if state.pipeline.ruleset_map is not None:
-            if show_progress:
-                spinner.update("[bold]Running content checks...[/bold]")  # type: ignore[union-attr]
+            if spinner is not None:
+                spinner.update("[bold]Running content checks...[/bold]")
             progress("Running content checks...")
             _run_content_checks(state)
         state.pipeline.stage_timer.mark("content")
 
-        _flow_server_lint(state, show_progress, spinner)
+        _flow_server_lint(state, spinner)
 
 
 def _run_content_checks(state: CheckState) -> None:
@@ -130,20 +134,23 @@ def _run_content_checks(state: CheckState) -> None:
     Client checks are agent-agnostic and run once over the whole map.
     """
 
+    ruleset_map = state.pipeline.ruleset_map
+    if ruleset_map is None:
+        return
     state.pipeline.content_findings = [
         finding
         for agent_id, files in _agent_file_pairs(state)
         for finding in run_content_quality_checks(
-            state.pipeline.ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
+            ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
         )
     ]
-    state.pipeline.client_findings = run_client_checks(state.pipeline.ruleset_map)
+    state.pipeline.client_findings = run_client_checks(ruleset_map)
 
 
-def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> None:
+def _flow_server_lint(state: CheckState, spinner: Status | None) -> None:
     """Send local findings to the server and unpack the lint response onto the pipeline state."""
 
-    if show_progress:
+    if spinner is not None:
         spinner.update("[bold]Diagnosing...[/bold]")
     response = None
     if state.pipeline.ruleset_map is not None:
@@ -155,7 +162,7 @@ def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> N
     state.pipeline.stage_timer.mark("server")
 
 
-def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
+def _assemble_inputs(state: CheckState, lint_result: LintResult | None = None) -> AssembleInputs:
     """The shared assemble spine's inputs from the check state (`lint_result` None before the lint)."""
 
     return AssembleInputs(

@@ -11,15 +11,24 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from functools import lru_cache
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from markdown_it import MarkdownIt
+from markdown_it.rules_inline import StateInline
 from markdown_it.rules_inline import autolink as _autolink_rule
 from markdown_it.rules_inline import backtick as _backtick_rule
 from markdown_it.rules_inline import emphasis as _emphasis_rule
 from markdown_it.rules_inline import html_inline as _html_inline_rule
 from markdown_it.rules_inline import image as _image_rule
 from markdown_it.rules_inline import link as _link_rule
+from markdown_it.token import Token
+from markdown_it.utils import EnvType
+
+# markdown-it token types: a fenced or an indented code block; a line break inside a paragraph; the opening of
+# a link or an image.
+CODE_BLOCK_TOKENS = frozenset({"fence", "code_block"})
+LINE_BREAK_TOKENS = frozenset({"softbreak", "hardbreak"})
+LINK_TOKENS = frozenset({"link_open", "image"})
 
 
 class CodeSpan(NamedTuple):
@@ -60,10 +69,12 @@ class InlineSpans(NamedTuple):
     html: tuple[tuple[int, int], ...] = ()
 
 
-def _record_span(rule: Callable[[Any, bool], bool], types: tuple[str, ...]) -> Callable[[Any, bool], bool]:
+def _record_span(
+    rule: Callable[[StateInline, bool], bool], types: tuple[str, ...]
+) -> Callable[[StateInline, bool], bool]:
     """`rule`, with the source span it consumed left on `meta` of its first token of a type in `types`."""
 
-    def wrapped(state: Any, silent: bool) -> bool:
+    def wrapped(state: StateInline, silent: bool) -> bool:
         start, opened = state.pos, len(state.tokens)
         matched = rule(state, silent)
         if matched and not silent:
@@ -76,18 +87,18 @@ def _record_span(rule: Callable[[Any, bool], bool], types: tuple[str, ...]) -> C
     return wrapped
 
 
-def _record_link_form(rule: Callable[[Any, bool], bool]) -> Callable[[Any, bool], bool]:
+def _record_link_form(rule: Callable[[StateInline, bool], bool]) -> Callable[[StateInline, bool], bool]:
     """The inline rule `rule`, with `meta["reference"]` set on the link or image token it opens: true
     when the link was written as a reference (`[text][ref]`, `[ref]`) rather than with its target
     in parentheses."""
 
-    def wrapped(state: Any, silent: bool) -> bool:
+    def wrapped(state: StateInline, silent: bool) -> bool:
         opened = len(state.tokens)
         matched = rule(state, silent)
         if matched and not silent:
             by_reference = state.src[state.pos - 1] != ")"
             for tok in state.tokens[opened:]:
-                if tok.type in ("link_open", "image"):
+                if tok.type in LINK_TOKENS:
                     tok.meta["reference"] = by_reference
                     break
         return matched
@@ -95,12 +106,12 @@ def _record_link_form(rule: Callable[[Any, bool], bool]) -> Callable[[Any, bool]
     return wrapped
 
 
-def _record_delimiters(rule: Callable[[Any, bool], bool]) -> Callable[[Any, bool], bool]:
+def _record_delimiters(rule: Callable[[StateInline, bool], bool]) -> Callable[[StateInline, bool], bool]:
     """The emphasis inline rule `rule`, with the source position of each delimiter character it pushes
     left on `meta["pos"]` of its token. The post-process turns the paired tokens into the open and close
     tokens of a run and keeps the token objects, so the position survives on them."""
 
-    def wrapped(state: Any, silent: bool) -> bool:
+    def wrapped(state: StateInline, silent: bool) -> bool:
         start = state.pos
         matched = rule(state, silent)
         if matched and not silent:
@@ -126,7 +137,7 @@ def _build_parser() -> MarkdownIt:
 md_parser = _build_parser()
 
 
-def _emphasis_run(opener: Any, closer: Any) -> EmphasisRun:
+def _emphasis_run(opener: Token, closer: Token) -> EmphasisRun:
     """The run an `em_open` / `strong_open` token and its closing token delimit. A bold opener is the
     second character of its pair and a bold closer the first, so the run's edges are counted from them."""
     width = len(opener.markup)
@@ -139,14 +150,14 @@ def _emphasis_run(opener: Any, closer: Any) -> EmphasisRun:
     )
 
 
-def recorded_spans(tok: Any) -> InlineSpans:
+def recorded_spans(tok: Token) -> InlineSpans:
     """The code spans, written links and images, inline HTML tags and emphasis runs the inline token
     `tok` holds, as the inline rules recorded them: positions within the token's own text."""
     code: list[CodeSpan] = []
     links: list[tuple[int, int]] = []
     html: list[tuple[int, int]] = []
     emphasis: list[EmphasisRun] = []
-    open_runs: list[Any] = []
+    open_runs: list[Token] = []
     for child in tok.children or []:
         if child.type in ("em_open", "strong_open"):
             open_runs.append(child)
@@ -156,7 +167,7 @@ def recorded_spans(tok: Any) -> InlineSpans:
             continue
         elif child.type == "code_inline":
             code.append(CodeSpan(span[0], span[1], child.content))
-        elif child.type in ("link_open", "image"):
+        elif child.type in LINK_TOKENS:
             links.append((span[0], span[1]))
         elif child.type == "html_inline":
             html.append((span[0], span[1]))
@@ -230,7 +241,7 @@ def has_bold_label(text: str, runs: Iterable[EmphasisRun]) -> bool:
     return any(run.strong and text[run.end :].lstrip().startswith(":") for run in runs)
 
 
-def tok_line(tok: Any, line_offset: int) -> int:
+def tok_line(tok: Token, line_offset: int) -> int:
     """Extract line number from a markdown-it token."""
     return (tok.map[0] if tok.map else 0) + line_offset + 1
 
@@ -250,7 +261,7 @@ def line_offsets(lines: list[str]) -> list[int]:
     return starts
 
 
-def definition_ranges(env: dict[str, Any], starts: list[int], offset: int) -> tuple[tuple[int, int], ...]:
+def definition_ranges(env: EnvType, starts: list[int], offset: int) -> tuple[tuple[int, int], ...]:
     """The character range of each link reference definition a parse recorded in `env`: `starts` holds
     where each line begins (and the end of the text after the last), `offset` the lines stripped from
     the top before the parse."""
@@ -267,7 +278,7 @@ def _definition_spans(text: str) -> tuple[tuple[int, int], ...]:
     definition it is link syntax, not words. A definition that only follows a paragraph line
     without a blank line between is not one in markdown, and is not listed.
     """
-    env: dict[str, Any] = {}
+    env: EnvType = {}
     md_parser.parse(text, env)
     return definition_ranges(env, [*line_offsets(text.split("\n")), len(text)], 0)
 
@@ -281,7 +292,9 @@ def link_spans(text: str) -> tuple[tuple[int, int], ...]:
     return (*_inline_spans(text).links, *_definition_spans(text))
 
 
-def replace_spans[S: tuple[Any, ...]](text: str, spans: Iterable[S], replace: Callable[[S], str]) -> str:
+def replace_spans[S: tuple[int, int, *tuple[object, ...]]](
+    text: str, spans: Iterable[S], replace: Callable[[S], str]
+) -> str:
     """`text` with each span (a tuple opening with its start and end) replaced by `replace(span)`.
 
     Spans are taken in order of start; one that begins inside the span before it is part of it

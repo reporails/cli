@@ -25,7 +25,6 @@ requires_model = pytest.mark.skipif(not _has_model, reason="Bundled ONNX model n
 @pytest.fixture(autouse=True)
 def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AILS_SERVER_URL", "http://127.0.0.1:9")
-    snapshots.clear_snapshots()
 
 
 def _finding(rule: str, line: int, op: str, **extra: Any) -> dict[str, Any]:

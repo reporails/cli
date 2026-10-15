@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from difflib import SequenceMatcher
 
 from reporails_cli.core.heal.plan import apply_edits
 from reporails_cli.core.lint.client_checks import running_sentences, sentence_instructions
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs
 from reporails_cli.core.mapper.structure import read_structure
-from reporails_cli.core.platform.dto.heal_plan import Deviation, Edit, Plan, Slot
+from reporails_cli.core.platform.dto.heal_plan import Deviation, Edit, HealOp, Plan, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 
@@ -77,7 +77,7 @@ def _code_met(before: str, _new_line: int, text: str, _atoms: _Atoms, _nth: _Nth
     return None if more else ("code:+1", "code:same")
 
 
-_OP_CHECKS = {
+_OP_CHECKS: dict[HealOp, Callable[[str, int, str, _Atoms, _Nth], _Found]] = {
     "split": _split_met,
     "direct": _direct_met,
     "negation-form": _negation_met,

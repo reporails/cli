@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper import bio_graphs, bio_pipeline, bio_tagger, multislot_frames, pipeline
+from reporails_cli.core.mapper import bio_graphs, bio_pipeline, multislot_frames, pipeline
 from reporails_cli.core.mapper.bio_tagger import AtomTuple, Span
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.pipeline import _apply_charge_stage
@@ -70,11 +70,12 @@ def test_multislot_head_decodes_all_seven_outputs() -> None:
     # the decode depends on — including a missing `logits_subject`.
     if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
-    t = bio_tagger.tag_atom_multislot("Always run the tests before committing.")
+    text = "Always run the tests before committing."
+    (decoded,) = multislot_frames._decode_logits_batch([text])
+    (t,) = multislot_frames._frames_from_decoded(decoded, text)
     assert t.polarity in (-1, 0, 1)
     assert t.modality in {"imperative", "direct", "absolute", "hedged", "none"}
     assert all(isinstance(s.text, str) for s in (t.subject, t.predicate, t.object, t.scope))
-    assert 0.0 <= t.compound_prob <= 1.0
 
 
 @pytest.mark.unit
@@ -84,7 +85,9 @@ def test_multislot_per_span_confidence_in_unit_range() -> None:
     # report a probability in [0, 1] (0.0 exactly when the axis decodes no span).
     if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
-    t = bio_tagger.tag_atom_multislot("Do not commit secrets to the repository.")
+    text = "Do not commit secrets to the repository."
+    (decoded,) = multislot_frames._decode_logits_batch([text])
+    (t,) = multislot_frames._frames_from_decoded(decoded, text)
     for span in (t.subject, t.predicate, t.object, t.scope):
         assert 0.0 <= span.conf <= 1.0
         # A span with text carries positive confidence; an empty span reads exactly 0.0.
@@ -222,9 +225,7 @@ def _empty_span() -> Span:
 
 def _tuple(polarity: int, text: str, *, subject: Span | None = None) -> AtomTuple:
     empty = _empty_span()
-    return AtomTuple(
-        polarity, "direct" if polarity else "none", subject or empty, empty, empty, empty, 0.0, False, text
-    )
+    return AtomTuple(polarity, "direct" if polarity else "none", subject or empty, empty, empty, empty, text)
 
 
 @pytest.mark.unit

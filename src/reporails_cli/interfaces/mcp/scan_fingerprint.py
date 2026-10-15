@@ -1,9 +1,11 @@
 """The change fingerprint of a `validate` scan: what a reply depends on, hashed."""
 
+from __future__ import annotations
+
 import hashlib
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
 from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, has_api_key
@@ -14,6 +16,8 @@ from reporails_cli.core.platform.config.bootstrap import (
 )
 from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import credentials_path
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.interfaces.mcp.tools import _discover_files
 
 
@@ -51,7 +55,7 @@ def scan_inputs_base(scan_root: Path) -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
-def _stat_parts(files: Any) -> list[str]:
+def _stat_parts(files: Iterable[Path]) -> list[str]:
     """One `path:size:mtime_ns:content-hash` line per file (`path:absent` when it cannot be
     read), sorted. The content is hashed too, so an edit that keeps a file's size and
     modification time is still seen."""
@@ -66,7 +70,7 @@ def _stat_parts(files: Any) -> list[str]:
     return parts
 
 
-def combine_scan_inputs(base: str, files: Any = ()) -> str:
+def combine_scan_inputs(base: str, files: Iterable[Path]) -> str:
     """The change fingerprint: `base` plus the size, modification time and content of each of
     `files` (supporting and imported files a run mapped, or the target file),
     each in nanoseconds, so an edit inside one clock tick that changes the size, or that
@@ -76,18 +80,14 @@ def combine_scan_inputs(base: str, files: Any = ()) -> str:
     return hashlib.sha256("\n".join([base, *_stat_parts(files)]).encode()).hexdigest()
 
 
-def scan_inputs_fingerprint(scan_root: Path, files: Any = ()) -> str:
-    """A fingerprint of everything that can change a `validate` reply for `scan_root`: the
-    walk's inputs (`scan_inputs_base`) and `files`."""
-    return combine_scan_inputs(scan_inputs_base(scan_root), files)
-
-
-def dependency_files(ruleset_map: Any, target: Path, scan_root: Path, payload: Any = None) -> list[Path]:
+def dependency_files(
+    ruleset_map: RulesetMap | None, target: Path, scan_root: Path, payload: JsonObject | None
+) -> list[Path]:
     """Every file a reply depends on beyond the scan's own list: the files the last run mapped,
     every file the last reply reported on (a skill's supporting files, imported files) and, for
     a file target, the target itself."""
-    names = [r.path for r in getattr(ruleset_map, "files", None) or ()]
-    names += list((payload.get("files") or {}) if isinstance(payload, dict) else ())
+    names = [r.path for r in ruleset_map.files] if ruleset_map is not None else []
+    names += list(as_object(payload.get("files")) if payload is not None else ())
     files = [target] if target.is_file() else []
     for name in names:
         p = Path(name).expanduser()
@@ -95,7 +95,9 @@ def dependency_files(ruleset_map: Any, target: Path, scan_root: Path, payload: A
     return files
 
 
-def compute_scan_fingerprint(scan_root: Path, ruleset_map: Any, payload: Any, target: Path) -> tuple[str, str]:
+def compute_scan_fingerprint(
+    scan_root: Path, ruleset_map: RulesetMap | None, payload: JsonObject | None, target: Path
+) -> tuple[str, str]:
     """Fingerprint every input of a `validate` reply, to detect changes between calls.
 
     Returns the walk's part (reused to restamp after a fresh run, with no second walk) and the

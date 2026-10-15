@@ -43,11 +43,11 @@ def _finding(severity: str) -> FindingItem:
 
 
 class TestSeverityCounts:
-    """Per-item error/warning/info counts come from `== <severity>` filters."""
+    """Per-item error counts come from an `== error` filter."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_counts_are_per_severity_equality(self) -> None:
+    def test_error_count_is_severity_equality(self) -> None:
         # 1 error, 2 warnings, 4 infos — every count differs from its
         # complement, so `== -> !=` on any line changes the reported count.
         findings = (
@@ -68,8 +68,6 @@ class TestSeverityCounts:
         item = compute_item_scores(result, ruleset_map=ruleset)[0]
 
         assert item.errors == 1  # kills L58 == -> !=
-        assert item.warnings == 2  # kills L59 == -> !=
-        assert item.infos == 4  # kills L60 == -> !=
 
 
 # ── Item ordering (L82) ──────────────────────────────────────────────

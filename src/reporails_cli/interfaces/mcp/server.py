@@ -15,14 +15,15 @@ import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from reporails_cli.core.mapper.model_manifest import ModelFetchError
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime import _torch_blocker
+from reporails_cli.core.platform.utils.utils import compact_json
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels
 from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices
@@ -65,7 +66,7 @@ class _CircuitState:
     # follow-up to a bounded call (the response's own hint tells the caller to make exactly
     # this call) is served from here instead of re-running the pipeline, and does not count
     # as an unchanged repeat — only a re-run after a content change counts.
-    full_payload: dict[str, Any] | None = None
+    full_payload: JsonObject | None = None
     # The last fresh reply came to a signed-in user on a non-paid tier: it is never reused, since
     # the user may have upgraded since (the sign-in on disk still names the old tier).
     unpaid_reply: bool = False
@@ -75,7 +76,7 @@ class _CircuitState:
     # The ruleset map + file score from the last fresh pipeline run against `last_mtime_hash` —
     # a cached (unchanged-content) reply's preservation check reuses these instead of
     # re-running the pipeline a second time just to get them again.
-    last_ruleset_map: Any = None
+    last_ruleset_map: RulesetMap | None = None
     last_score: float | None = None
     # The notices a text view already showed for this path: each shows once per run.
     shown_notices: set[str] = field(default_factory=set)
@@ -103,7 +104,7 @@ def _state_key(path: str, tokens: tuple[str, ...]) -> str:
 
 def _serve_remedy_brief(
     path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
-) -> dict[str, Any]:
+) -> JsonObject:
     """`remedy_brief(path, location, targets, has_guide)`'s body: a caller that does not
     carry the rewrite guide (`has_guide` false) is refused with `plugin_update_required` before
     anything else — no state read, no build, no snapshot, no breaker counter touched. Reads the last `validate(path,
@@ -146,7 +147,7 @@ def _serve_remedy_brief(
             "error": "no_workflow",
             "message": "Call validate for this path (and these targets) first; remedy_brief reads its workflow.",
         }
-    locations = workflow.get("locations") or []
+    locations = as_list(workflow.get("locations"))
     loc = next((entry for entry in locations if isinstance(entry, dict) and entry.get("order") == location), None)
     if loc is None:
         return {
@@ -160,7 +161,7 @@ def _serve_remedy_brief(
     return reply
 
 
-def _with_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> dict[str, Any]:
+def _with_feedback(payload: JsonObject, target: Path, scan_root: Path) -> JsonObject:
     """Add the `feedback` block to `payload` when `target` is a file `remedy_brief`
     snapshotted — same gate as `_with_preservation`, so the two blocks always ride together on
     a snapshotted file's reply."""
@@ -170,12 +171,12 @@ def _with_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> di
         return payload
     state = _validate_states.get(_state_key(str(scan_root), ()))
     stored = state.full_payload if state is not None else None
-    return {**payload, "feedback": file_feedback(payload, target, scan_root, stored)}
+    return {**payload, "feedback": [*file_feedback(payload, target, scan_root, stored)]}
 
 
 def _with_preservation(
-    payload: dict[str, Any], target: Path, ruleset_map: Any, score: float | None, scan_root: Path | None
-) -> dict[str, Any]:
+    payload: JsonObject, target: Path, ruleset_map: RulesetMap | None, score: float | None, scan_root: Path | None
+) -> JsonObject:
     """Add the `preservation` block, and the `conformance` block (the file against the plan its
     brief listed), to `payload` when `target` is a file `remedy_brief` snapshotted.
     Carried on both the bounded and full replies — the caller bounds afterward.
@@ -210,7 +211,7 @@ def _with_preservation(
 
 async def _fresh_validate_payload(
     path: str, tokens: tuple[str, ...], scan_root: Path, state: _CircuitState
-) -> dict[str, Any] | tuple[dict[str, Any], Any, float | None]:
+) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`) — resolve `tokens` to a
     location selection first when targeted, narrow the payload's `workflow.locations` to it
     (`keep_target_locations`), and memoize the map/score on `state` for the next same-content
@@ -265,15 +266,20 @@ async def _begin_validate_call(
     return state, unchanged, base_hash
 
 
-async def _run_validate(path: str, full: bool, targets: list[str] | None = None) -> dict[str, Any]:
+def _config_unreadable(exc: ConfigUnreadableError) -> JsonObject:
+    """The one `config_unreadable` error payload every MCP tool answers for an unreadable config."""
+    return {"error": "config_unreadable", "message": str(exc)}
+
+
+async def _run_validate(path: str, full: bool, targets: list[str] | None = None) -> JsonObject:
     """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
     try:
         return await _validate_reply(path, full, targets)
     except ConfigUnreadableError as exc:
-        return {"error": "config_unreadable", "message": str(exc)}
+        return _config_unreadable(exc)
 
 
-async def _validate_reply(path: str, full: bool, targets: list[str] | None = None) -> dict[str, Any]:
+async def _validate_reply(path: str, full: bool, targets: list[str] | None = None) -> JsonObject:
     """Compute the `validate` payload with the content-aware circuit breaker.
 
     With `targets`, the whole project is diagnosed as without them and the reply's
@@ -363,7 +369,7 @@ async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
     try:
         return await _heal_apply_reply(path, targets)
     except ConfigUnreadableError as exc:
-        return heal_apply_message({"error": "config_unreadable", "message": str(exc)})
+        return heal_apply_message(_config_unreadable(exc))
 
 
 async def _heal_apply_reply(path: str, targets: list[str] | None = None) -> str:
@@ -398,7 +404,7 @@ server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifes
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 
-def _result(payload: dict[str, Any]) -> CallToolResult:
+def _result(payload: JsonObject) -> CallToolResult:
     """Wrap a payload as a compact structured result.
 
     Returns `structuredContent` (machine-readable, ending the consumer string-parse)
@@ -408,7 +414,7 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
     economy the bounded envelope exists to protect.
     """
     return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload, separators=(",", ":")))],
+        content=[TextContent(type="text", text=compact_json(payload))],
         structured_content=payload,
     )
 
@@ -544,39 +550,11 @@ async def explain(rule_id: str) -> str:
     caller still reads one shape.
     """
     touch_activity()
-    result = explain_tool(rule_id)
-    return result if isinstance(result, str) else json.dumps(result)
-
-
-# Module-level callables that list and invoke the registered tools.
-
-
-async def list_tools() -> list[Any]:
-    """List the registered tools (`validate`, `preflight`, `explain`)."""
-    return await server.list_tools()
-
-
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[Any]:
-    """Invoke a tool and return its content blocks (the text/structured result).
-
-    An unknown tool name is a protocol error the high-level server raises; the shim
-    maps it to a structured error block so an internal caller reads one shape. An unknown
-    argument name is rejected the same way (`StrictArgsMCPServer.call_tool`), before the
-    tool body ever runs.
-    """
     try:
-        result = await server.call_tool(name, arguments or {})
-    except ToolError as exc:
-        return [TextContent(type="text", text=json.dumps({"error": str(exc)}))]
-    if not isinstance(result, CallToolResult):
-        # Our read-only tools never request elicitation input (InputRequiredResult).
-        return [TextContent(type="text", text=json.dumps({"error": "unexpected input-required result"}))]
-    content = list(result.content)
-    if not content:
-        # A structured-only result: surface its JSON as a text block so callers
-        # that read `content[0].text` still see the payload.
-        content = [TextContent(type="text", text=json.dumps(result.structured_content or {}))]
-    return content
+        result = explain_tool(rule_id)
+    except ConfigUnreadableError as exc:
+        result = _config_unreadable(exc)
+    return result if isinstance(result, str) else json.dumps(result)
 
 
 def _prewarm_models() -> None:

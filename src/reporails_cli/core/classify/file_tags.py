@@ -13,8 +13,11 @@ import functools
 from pathlib import Path, PurePosixPath
 
 from reporails_cli.core.discovery.agent_config import bundled_file_types
+from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
 from reporails_cli.core.discovery.agent_surfaces import agent_main_names
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.platform.contract.errors import BundledConfigMissingError
+from reporails_cli.core.platform.contract.json_value import as_object, pattern_list
 from reporails_cli.core.platform.utils.utils import glob_matches
 
 _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings.local.json"))
@@ -25,23 +28,6 @@ _CONFIG_NAMES = frozenset(("settings.json", ".mcp.json", "config.yml", "settings
 # routes them there. The surfaces themselves are derived from the bundled agent
 # configs — see `_config_surface_patterns`.
 _SCHEMA_VALIDATED = "schema_validated"
-
-# Fallback used only when the bundled configs cannot be read (a broken install —
-# the configs ship in the wheel). A suffix guess, which is what the derivation
-# replaces: it covers the JSON/TOML surfaces but misses the declared ones that are
-# neither (`.codex/rules/*.rules`, `**/agents/openai.yaml`, `.gemini/extensions/**`).
-_CONFIG_SUFFIXES_FALLBACK = frozenset((".json", ".toml"))
-# The config `file_types` whose contents are agent-maintained memory surfaces
-# (an index `MEMORY.md` plus recalled sibling entries, not authored instruction
-# prose). Their directory names are derived from config, never hardcoded here —
-# see `_memory_surface_dirs`.
-_MEMORY_SURFACE_FILE_TYPES = frozenset(("memory", "subagent_memory"))
-
-# Fallback used only when the bundled configs cannot be read (a broken install —
-# the configs ship in the wheel). Mirrors the live config so the memory surface
-# never silently regresses to `file`; kept in lockstep by the drift-guard test
-# `test_memory_surface_dirs_match_config`.
-_MEMORY_SURFACE_DIRS_FALLBACK = frozenset(("memory", "agent-memory", "agent-memory-local"))
 
 
 def _dir_name_from_pattern(pattern: str) -> str | None:
@@ -64,20 +50,21 @@ def _memory_surface_dirs() -> frozenset[str]:
     Derived once from the bundled `framework/rules/*/config.yml` `memory` +
     `subagent_memory` file_type scope patterns, so a memory scope added to config
     is recognized here without a second edit and every declared scope is covered.
-    Falls back to `_MEMORY_SURFACE_DIRS_FALLBACK` when the bundled configs are
-    unreadable.
+    Raises `BundledConfigMissingError` when no bundled config declares a memory scope.
     """
     names: set[str] = set()
     for file_types in bundled_file_types():
         for ft_name, ft in file_types.items():
-            if ft_name not in _MEMORY_SURFACE_FILE_TYPES or not isinstance(ft, dict):
+            if ft_name not in MEMORY_SURFACES or not isinstance(ft, dict):
                 continue
-            for scope in (ft.get("scopes") or {}).values():
-                for pattern in (scope or {}).get("patterns", []) or []:
-                    name = _dir_name_from_pattern(str(pattern))
+            for scope in as_object(ft.get("scopes")).values():
+                for pattern in pattern_list(as_object(scope).get("patterns")):
+                    name = _dir_name_from_pattern(pattern)
                     if name:
                         names.add(name)
-    return frozenset(names) or _MEMORY_SURFACE_DIRS_FALLBACK
+    if not names:
+        raise BundledConfigMissingError("no bundled agent config declares a memory surface")
+    return frozenset(names)
 
 
 @functools.lru_cache(maxsize=1)
@@ -93,21 +80,22 @@ def _config_surface_patterns() -> tuple[str, ...]:
     includes `.codex/rules/*.rules`, `**/agents/openai.yaml` and
     `.gemini/extensions/**`, which a suffix test tags as prose and so leaves the
     prose-quality rules firing on machine config. Patterns are lowercased, with the
-    home and any-depth prefixes dropped, for `_matches_config_surface`. Empty on an unreadable
-    install, which sends `_classify_by_name` to the suffix fallback.
+    home and any-depth prefixes dropped, for `_matches_config_surface`. Raises
+    `BundledConfigMissingError` when no bundled config declares one.
     """
     patterns: set[str] = set()
     for file_types in bundled_file_types():
         for ft in file_types.values():
             if not isinstance(ft, dict) or ft.get("format") != _SCHEMA_VALIDATED:
                 continue
-            for scope in (ft.get("scopes") or {}).values():
-                for pattern in (scope or {}).get("patterns", []) or []:
-                    segs = tuple(
-                        seg for seg in str(pattern).strip("/").lower().split("/") if seg and seg not in ("~", "**")
-                    ) + (("**",) if str(pattern).rstrip("/").endswith("**") else ())
+            for scope in as_object(ft.get("scopes")).values():
+                for pattern in pattern_list(as_object(scope).get("patterns")):
+                    parts = (seg for seg in pattern.strip("/").lower().split("/") if seg and seg not in ("~", "**"))
+                    segs = (*parts, *(("**",) if pattern.rstrip("/").endswith("**") else ()))
                     if segs and segs != ("**",):
                         patterns.add("/".join(segs))
+    if not patterns:
+        raise BundledConfigMissingError("no bundled agent config declares a machine-config surface")
     return tuple(sorted(patterns))
 
 
@@ -157,9 +145,7 @@ def _classify_by_name(name: str, parts: tuple[str, ...], p: Path | None = None, 
     if _memory_surface_dirs() & set(parts):
         return "memory"
     # A declared machine-config surface wins over a main-file name inside it.
-    if _matches_config_surface(PurePosixPath(*parts).as_posix().lower()) or (
-        not _config_surface_patterns() and p is not None and p.suffix.lower() in _CONFIG_SUFFIXES_FALLBACK
-    ):
+    if _matches_config_surface(PurePosixPath(*parts).as_posix().lower()):
         return "config"
     # Case-sensitive — matches discovery (walk_glob) and agent specs.
     # Wrong-case copies (e.g. `agents.md` lowercase) are not instruction files.

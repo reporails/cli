@@ -26,7 +26,6 @@ import pytest
 from reporails_cli.core.classify import (
     _parse_file_types,
     location_matches_mode,
-    resolve_match_to_paths,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
 from reporails_cli.core.platform.policy.matching import _prop_matches, file_matches
@@ -156,34 +155,6 @@ class TestPropMatches:
         cf = ClassifiedFile(path=Path("/proj/x.md"), file_type="skills", properties={})
         assert file_matches(cf, FileMatch(type="main")) is False
         assert file_matches(cf, FileMatch(type="skills")) is True
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# resolve_match_to_paths — None-match wildcard (L409)
-# ═══════════════════════════════════════════════════════════════════════
-
-
-class TestResolveMatchToPaths:
-    @pytest.mark.unit
-    @pytest.mark.subsys_classify
-    def test_none_match_returns_all_paths(self) -> None:
-        """match=None is the all-files wildcard — kills L409 is→is not (which inverts it)."""
-        root = Path("/proj")
-        classified = [
-            ClassifiedFile(path=root / "a.md", file_type="main", properties={}),
-            ClassifiedFile(path=root / "sub" / "b.md", file_type="skills", properties={}),
-        ]
-        assert resolve_match_to_paths(classified, None, root) == ["a.md", "sub/b.md"]
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_classify
-    def test_specific_match_filters(self) -> None:
-        root = Path("/proj")
-        classified = [
-            ClassifiedFile(path=root / "a.md", file_type="main", properties={}),
-            ClassifiedFile(path=root / "b.md", file_type="skills", properties={}),
-        ]
-        assert resolve_match_to_paths(classified, FileMatch(type="skills"), root) == ["b.md"]
 
 
 # ═══════════════════════════════════════════════════════════════════════

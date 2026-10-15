@@ -35,14 +35,12 @@ def _fail(rule_dir: Path, content: str, name: str = "CLAUDE.md") -> None:
     (d / name).write_text(content)
 
 
-def _info(rule_dir: Path, checks: list[dict], rule_id: str = "CORE:S:0001", rtype: str = "deterministic") -> RuleInfo:
+def _info(rule_dir: Path, checks: list[dict], rule_id: str = "CORE:S:0001") -> RuleInfo:
     return RuleInfo(
         rule_id=rule_id,
         slug=rule_dir.name,
         title="T",
         category="structure",
-        rule_type=rtype,
-        match={},
         checks=checks,
         rule_dir=rule_dir,
         checks_yml=rule_dir / "checks.yml",
@@ -200,7 +198,7 @@ def test_fail_fixture_without_violation_is_failed(tmp_path: Path) -> None:
         "check": "file_exists",
         "args": {"path": "**/*.md"},
     }
-    result = run_rule(_info(rd, [check], rtype="mechanical"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.FAILED
     assert _fail_run(result).passed is True
 
@@ -227,7 +225,7 @@ def test_content_query_passes_on_pass_fixture(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "cq-pass")
     _pass(rd, "# ok\n")
     check = {"id": "CORE.S.0001.cq", "type": "content_query", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="content_query"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.PASSED
     run = _pass_run(result)
     assert run.passed is True
@@ -243,7 +241,7 @@ def test_content_query_fail_fixture_finds_no_violation(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "cq-fail")
     _fail(rd, "# ok\n")
     check = {"id": "CORE.S.0001.cq", "type": "content_query", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="content_query"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.FAILED
     assert "content_query" in _fail_run(result).message
 
@@ -259,7 +257,7 @@ def test_unknown_check_type_pass_fixture_fails(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "unknown-pass")
     _pass(rd, "# ok\n")
     check = {"id": "CORE.S.0001.x", "type": "bogus", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="bogus"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.FAILED
     assert _pass_run(result).passed is False
 
@@ -296,6 +294,6 @@ def test_unknown_check_type_fail_fixture_no_violation(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "unknown-fail")
     _fail(rd, "# ok\n")
     check = {"id": "CORE.S.0001.x", "type": "bogus", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="bogus"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.FAILED
     assert _fail_run(result).passed is False

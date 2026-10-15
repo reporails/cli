@@ -12,8 +12,9 @@ import glob as globmod
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
 
+from reporails_cli.core.lint.mechanical.checks import arg_int
+from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.models import Check, FileTypeDeclaration
 
 
@@ -45,6 +46,8 @@ def _glob_to_concrete(pattern: str) -> str:
     return "/".join(concrete) if concrete else "scaffold.md"
 
 
+# The mechanical checks whose pass fixture can be built on disk, each with the kind of scaffold it needs:
+# a deliberate subset of `MECHANICAL_CHECKS`.
 _SCAFFOLDABLE_CHECKS: dict[str, str] = {
     "file_exists": "file",
     "glob_match": "file",
@@ -59,9 +62,9 @@ _SCAFFOLDABLE_CHECKS: dict[str, str] = {
 
 def _collect_scaffold_actions(
     checks: list[Check],
-) -> list[tuple[str, dict[str, Any]]]:
+) -> list[tuple[str, JsonObject]]:
     """Extract scaffoldable actions from mechanical checks."""
-    actions: list[tuple[str, dict[str, Any]]] = []
+    actions: list[tuple[str, JsonObject]] = []
     for check in checks:
         if check.type != "mechanical":
             continue
@@ -74,7 +77,7 @@ def _collect_scaffold_actions(
 
 def _apply_scaffold_action(
     action_type: str,
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
     file_types: list[FileTypeDeclaration],
 ) -> None:
@@ -97,7 +100,7 @@ def _apply_scaffold_action(
 
 
 def _scaffold_file(
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
     file_types: list[FileTypeDeclaration],
 ) -> None:
@@ -130,12 +133,12 @@ def _scaffold_file(
 
 
 def _scaffold_glob_count(
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
 ) -> None:
     """Scaffold files for glob_count/file_count checks."""
     raw_pattern = str(args.get("pattern", "**/*"))
-    min_count = int(args.get("min", 1))
+    min_count = arg_int(args, "min", 1)
     existing = list(tmp_dir.glob(raw_pattern))
     needed = max(0, min_count - len(existing))
     for i in range(needed):
@@ -317,7 +320,7 @@ def _scaffold_fixture(
 
 
 def _scaffold_file_removal(
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
 ) -> None:
     """Remove forbidden file from pass scaffold (for file_absent checks)."""
@@ -337,6 +340,8 @@ def _scaffold_file_removal(
 # ── Fail fixture scaffolding ─────────────────────────────────────────
 
 
+# The mechanical checks whose fail fixture can be built on disk, each with the breakage it needs:
+# a deliberate subset of `MECHANICAL_CHECKS`.
 _SCAFFOLDABLE_FAIL_CHECKS: dict[str, str] = {
     "filename_matches_pattern": "filename_mismatch",
     "glob_count": "glob_count_deficit",
@@ -347,9 +352,9 @@ _SCAFFOLDABLE_FAIL_CHECKS: dict[str, str] = {
 
 def _collect_fail_scaffold_actions(
     checks: list[Check],
-) -> list[tuple[str, dict[str, Any]]]:
+) -> list[tuple[str, JsonObject]]:
     """Extract scaffoldable fail actions from mechanical checks."""
-    actions: list[tuple[str, dict[str, Any]]] = []
+    actions: list[tuple[str, JsonObject]] = []
     for check in checks:
         if check.type != "mechanical":
             continue
@@ -362,7 +367,7 @@ def _collect_fail_scaffold_actions(
 
 def _apply_fail_scaffold_action(
     action_type: str,
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
     file_types: list[FileTypeDeclaration],
 ) -> None:
@@ -376,7 +381,7 @@ def _apply_fail_scaffold_action(
 
 
 def _get_target_patterns_from_args(
-    args: dict[str, Any],
+    args: JsonObject,
     file_types: list[FileTypeDeclaration],
 ) -> list[str]:
     """Get file patterns from args or file_types for scaffolding."""
@@ -390,7 +395,7 @@ def _get_target_patterns_from_args(
 
 
 def _scaffold_filename_mismatch(
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
     file_types: list[FileTypeDeclaration],
 ) -> None:
@@ -417,12 +422,12 @@ def _scaffold_filename_mismatch(
 
 
 def _scaffold_glob_count_deficit(
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
 ) -> None:
     """Remove files to get count below min for glob_count/file_count checks."""
     raw_pattern = str(args.get("pattern", "**/*"))
-    min_count = int(args.get("min", 1))
+    min_count = arg_int(args, "min", 1)
     existing = sorted(tmp_dir.glob(raw_pattern))
     existing_files = [f for f in existing if f.is_file()]
     # Remove files until count is below min
@@ -433,7 +438,7 @@ def _scaffold_glob_count_deficit(
 
 
 def _scaffold_file_present(
-    args: dict[str, Any],
+    args: JsonObject,
     tmp_dir: Path,
 ) -> None:
     """Create the forbidden file so file_absent fails."""

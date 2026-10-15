@@ -8,13 +8,13 @@ decides whether to ask again.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import httpx
 
 from reporails_cli.core.platform.adapters.api_client import _user_agent
 from reporails_cli.core.platform.adapters.notices_wire import notices_from_list
 from reporails_cli.core.platform.contract.errors import PlatformRefusedError, PlatformUnavailableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, opt_int
 from reporails_cli.core.platform.dto.sign_in import PollOutcome, PollStatus, SignedIn, SignInGrant
 from reporails_cli.core.platform.policy.preflight import parse_retry_after
 from reporails_cli.core.platform.utils.utils import json_object
@@ -37,13 +37,28 @@ def _headers() -> dict[str, str]:
     return {"User-Agent": _user_agent(), "Accept": "application/json"}
 
 
-def _post(url: str, **kwargs: Any) -> httpx.Response:
+def _post(url: str, data: dict[str, str] | None = None, headers: dict[str, str] | None = None) -> httpx.Response:
     """One POST; a transport fault is raised as `PlatformUnavailableError`."""
     try:
-        return httpx.post(url, headers=_headers() | kwargs.pop("headers", {}), timeout=_TIMEOUT_S, **kwargs)
+        return httpx.post(url, headers=_headers() | (headers or {}), timeout=_TIMEOUT_S, data=data)
     except (httpx.HTTPError, OSError) as exc:
         logger.debug("Could not reach %s: %s", url, exc)
         raise PlatformUnavailableError(f"Could not reach {url}: {exc}") from exc
+
+
+def _whole(value: JsonValue) -> int:
+    """The integer a reply field holds: an int, a digit string or an integral float.
+
+    Raises `TypeError` naming the value for anything else.
+    """
+    number = opt_int(value)
+    if number is not None:
+        return number
+    if isinstance(value, str) and value.strip().isascii() and value.strip().isdigit():
+        return int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    raise TypeError(f"expected a whole number, got {value!r}")
 
 
 def start_sign_in(site: str, machine: str) -> SignInGrant:
@@ -69,14 +84,14 @@ def start_sign_in(site: str, machine: str) -> SignInGrant:
             device_code=str(body["device_code"]),
             user_code=str(body["user_code"]),
             verification_url=str(body["verification_uri_complete"]),
-            expires_in=int(body["expires_in"]),
-            interval=int(body["interval"]),
+            expires_in=_whole(body["expires_in"]),
+            interval=_whole(body["interval"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise PlatformUnavailableError("The website answered the sign-in start without the expected fields") from exc
 
 
-def _signed_in(body: dict[str, Any]) -> PollOutcome:
+def _signed_in(body: JsonObject) -> PollOutcome:
     """A 200 token reply as an outcome; `failed` when it carries no credential."""
     token = body.get("access_token")
     account = body.get("account")

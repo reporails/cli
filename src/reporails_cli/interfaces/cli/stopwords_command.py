@@ -7,12 +7,13 @@ from pathlib import Path
 import typer
 
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
 
 stopwords_app = typer.Typer(
     name="stopwords",
     help="Manage term-based regex patterns via vocab.yml.",
     no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 
 
@@ -92,8 +93,7 @@ def stopwords_sync(
         if sr.skipped:
             total_skipped += sr.skipped
         for msg in sr.messages:
-            if "no check matching" in msg or "failed" in msg:
-                console.print(f"  [yellow]![/yellow] {slug}: {msg}")
+            console.print(f"  [yellow]![/yellow] {slug}: {msg}")
 
     console.print()
     label = "Would update" if dry_run else "Updated"

@@ -10,10 +10,10 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.mapper.imports import import_refs, import_target
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 MAX_REACH = 50
 
@@ -61,13 +61,12 @@ def file_reach(file_path: Path, root: Path, tokens: list[str]) -> tuple[str, ...
     return tuple(sorted(found))[:MAX_REACH]
 
 
-def record_reach(ruleset_map: Any, root: Path) -> None:
+def record_reach(ruleset_map: RulesetMap, root: Path) -> None:
     """Record each file's `reach` in place, from its atoms' backticked tokens, its links and its imports."""
-    files = getattr(ruleset_map, "files", None)
-    if not files:
+    if not ruleset_map.files:
         return
     tokens: dict[str, list[str]] = defaultdict(list)
     for atom in ruleset_map.atoms:
         tokens[atom.file_path].extend(atom.named_tokens)
-    for rec in files:
+    for rec in ruleset_map.files:
         rec.reach = file_reach(Path(rec.path), root, tokens.get(rec.path, []))

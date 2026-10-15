@@ -15,7 +15,6 @@ import time
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
@@ -28,6 +27,9 @@ from reporails_cli.core.mapper.daemon import (
     start_daemon,
 )
 from reporails_cli.core.mapper.serialize import load_ruleset_map
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,11 @@ class DaemonStatus(str, Enum):
     UNAVAILABLE = "unavailable"  # Windows, fork failure, or process died
 
 
-def connect(timeout: float = 5.0) -> socket.socket | None:
+# Seconds a connection to the daemon socket may take.
+_CONNECT_TIMEOUT_S = 5.0
+
+
+def connect() -> socket.socket | None:
     """Connect to global daemon socket. Returns None if unreachable."""
     if sys.platform == "win32":
         return None
@@ -50,18 +56,18 @@ def connect(timeout: float = 5.0) -> socket.socket | None:
         return None
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
+        sock.settimeout(_CONNECT_TIMEOUT_S)
         sock.connect(str(sock_path))
         return sock
     except (OSError, TimeoutError):
         return None
 
 
-def send_request(sock: socket.socket, request: dict[str, Any], timeout: float = 120.0) -> dict[str, Any] | None:
+def send_request(sock: socket.socket, request: JsonObject, timeout: float = 120.0) -> JsonObject | None:
     """Send JSON-line request, read JSON-line response."""
     try:
         sock.settimeout(timeout)
-        sock.sendall(json.dumps(request, separators=(",", ":")).encode() + b"\n")
+        sock.sendall(compact_json(request).encode() + b"\n")
 
         data = b""
         while b"\n" not in data:
@@ -71,15 +77,15 @@ def send_request(sock: socket.socket, request: dict[str, Any], timeout: float = 
             data += chunk
 
         line = data.split(b"\n", 1)[0]
-        result: dict[str, Any] = json.loads(line)
-        return result
+        result: JsonValue = json.loads(line)
+        return result if isinstance(result, dict) else None
     except (OSError, TimeoutError, json.JSONDecodeError):
         return None
     finally:
         sock.close()
 
 
-def ping() -> dict[str, Any] | None:
+def ping() -> JsonObject | None:
     """Ping daemon. Returns response dict or None if unreachable."""
     sock = connect()
     if sock is None:
@@ -87,7 +93,7 @@ def ping() -> dict[str, Any] | None:
     return send_request(sock, {"cmd": "ping"}, timeout=5.0)
 
 
-def _code_key(code: str) -> tuple[Any, int] | None:
+def _code_key(code: str) -> tuple[Version, int] | None:
     """`(package version, map version)` of a code identity, or None when it does not parse."""
     package, sep, mapper = code.rpartition("+map")
     try:
@@ -96,7 +102,7 @@ def _code_key(code: str) -> tuple[Any, int] | None:
         return None
 
 
-def runs_older_code(pong: dict[str, Any]) -> bool:
+def runs_older_code(pong: JsonObject) -> bool:
     """Whether a daemon reply comes from an older version than this process: one from before
     the reply carried its code, or one whose package or map version is lower."""
     code = pong.get("code")
@@ -106,7 +112,7 @@ def runs_older_code(pong: dict[str, Any]) -> bool:
     return theirs is not None and ours is not None and theirs < ours
 
 
-def runs_newer_code(pong: dict[str, Any]) -> bool:
+def runs_newer_code(pong: JsonObject) -> bool:
     """Whether a daemon reply comes from a newer version than this process."""
     code = pong.get("code")
     theirs = _code_key(code) if isinstance(code, str) else None
@@ -114,7 +120,7 @@ def runs_newer_code(pong: dict[str, Any]) -> bool:
     return theirs is not None and ours is not None and theirs > ours
 
 
-def serves_this_code(pong: dict[str, Any] | None) -> bool:
+def serves_this_code(pong: JsonObject | None) -> bool:
     """Whether a daemon reply (a ping or a map) comes from a daemon that maps with this
     process's code.
 
@@ -126,10 +132,10 @@ def serves_this_code(pong: dict[str, Any] | None) -> bool:
 
 def _stream_map_response(
     sock: socket.socket,
-    request: dict[str, Any],
+    request: JsonObject,
     progress: Callable[[str], None] | None,
     timeout: float,
-) -> dict[str, Any] | None:
+) -> JsonObject | None:
     """Send a map request, forward streamed progress lines, return the result line.
 
     Reads newline-delimited JSON objects: a ``{"type": "progress", "msg": ...}``
@@ -139,7 +145,7 @@ def _stream_map_response(
     """
     try:
         sock.settimeout(timeout)
-        sock.sendall(json.dumps(request, separators=(",", ":")).encode() + b"\n")
+        sock.sendall(compact_json(request).encode() + b"\n")
 
         buf = b""
         while True:
@@ -151,7 +157,10 @@ def _stream_map_response(
             line, buf = buf.split(b"\n", 1)
             if not line.strip():
                 continue
-            obj: dict[str, Any] = json.loads(line)
+            parsed: JsonValue = json.loads(line)
+            if not isinstance(parsed, dict):
+                return None
+            obj = parsed
             if obj.get("type") == "progress":
                 if progress is not None:
                     # A spinner/render error in the caller's callback must never
@@ -172,7 +181,7 @@ def map_ruleset_via_daemon(
     paths: list[Path],
     root: Path,
     progress: Callable[[str], None] | None = None,
-) -> Any:
+) -> RulesetMap | None:
     """Map ruleset via global daemon. Returns RulesetMap or None on failure.
 
     Caller should fall back to in-process mapping when this returns None.
@@ -187,7 +196,7 @@ def map_ruleset_via_daemon(
     if sock is None:
         return None
 
-    request = {
+    request: JsonObject = {
         "cmd": "map_ruleset",
         "paths": [str(p) for p in paths],
         "root": str(root),

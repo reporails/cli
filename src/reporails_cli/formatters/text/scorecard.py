@@ -7,22 +7,26 @@ from __future__ import annotations
 
 import fnmatch
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from rich.text import Text
 
 from reporails_cli.core.discovery.agent_surfaces import agent_main_literal_paths, agent_rule_surface_markers
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.adapters.rules_query import rule_title
-from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, FindingSeverity
+from reporails_cli.core.platform.dto.models import CATEGORY_CODES
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
-from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
+from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path, overlapping_pairs
 from reporails_cli.formatters.text.display_constants import (
+    HEALTH_BAR_WIDTH,
     HRULE,
     NAMED_OVERLAP_PAIRS,
+    RECLASSIFIABLE_PATH_TAGS,
+    SURFACE_BAR_ORDER,
     Element,
     counted,
     element_namer,
@@ -44,7 +48,7 @@ from reporails_cli.formatters.text.verdict import (
     compute_score,
     console,
 )
-from reporails_cli.formatters.triage import split_conventions
+from reporails_cli.formatters.triage import split_conventions, tally_rules
 
 __all__ = ["ScopeInfo", "ScorecardDetail", "compute_score", "compute_surface_scores", "print_scorecard"]
 
@@ -52,12 +56,12 @@ __all__ = ["ScopeInfo", "ScorecardDetail", "compute_score", "compute_surface_sco
 # ── Score computation ─────────────────────────────────────────────────
 
 
-def _hint_totals(result: Any) -> tuple[int, int]:
+def _hint_totals(result: CombinedResult) -> tuple[int, int]:
     """Sum hint error and warning counts from result.hints."""
     if not result.hints:
         return 0, 0
-    errors = sum(getattr(h, "error_count", 0) for h in result.hints)
-    warnings = sum(getattr(h, "warning_count", 0) for h in result.hints)
+    errors = sum(h.error_count for h in result.hints)
+    warnings = sum(h.warning_count for h in result.hints)
     return errors, warnings
 
 
@@ -75,7 +79,6 @@ _SURFACE_NAMES = {
 # `imported` (eager `@`-imports) earns a scored bar. `referenced` (discoverable markdown
 # links) deliberately gets NO surface bar — the harness never loads it, so a score would be
 # a false signal; its findings surface in the Referenced file-panel group instead.
-_SURFACE_ORDER = ["main", "nested", "rules", "skills", "agents", "memory", "imported"]
 
 
 def _surface_key(rel: str, ft_by_path: dict[str, str], skill_of: dict[str, str] | None) -> str:
@@ -97,7 +100,7 @@ def _surface_key(rel: str, ft_by_path: dict[str, str], skill_of: dict[str, str] 
     if ft_by_path.get(rel, "") == "generic":
         return "imported"
     tag = path_tag(rel, skill_of).split(":")[0]
-    if tag in ("nested", "file") and rel.lstrip("/") in agent_main_literal_paths():
+    if tag in RECLASSIFIABLE_PATH_TAGS and rel.lstrip("/") in agent_main_literal_paths():
         return "main"
     if tag == "file":
         parts = Path(rel).parts
@@ -109,7 +112,7 @@ def _surface_key(rel: str, ft_by_path: dict[str, str], skill_of: dict[str, str] 
 
 
 def _surface_paths(
-    ruleset_map: Any, root: Path, ft_by_path: dict[str, str], skill_of: dict[str, str] | None
+    ruleset_map: RulesetMap | None, root: Path, ft_by_path: dict[str, str], skill_of: dict[str, str] | None
 ) -> dict[str, set[str]]:
     """Files per surface from the ruleset map's authoritative file list."""
     surface_paths: dict[str, set[str]] = {}
@@ -123,15 +126,15 @@ def _surface_paths(
     return surface_paths
 
 
-def _group_by_surface(
-    items: Any, root: Path, ft_by_path: dict[str, str], skill_of: dict[str, str] | None
-) -> dict[str, list[Any]]:
+def _group_by_surface[T: (FindingItem, FileAnalysis)](
+    items: Iterable[T], root: Path, ft_by_path: dict[str, str], skill_of: dict[str, str] | None
+) -> dict[str, list[T]]:
     """Group findings or per-file analyses by surface, re-normalizing defensively.
 
     Server per-file paths are absolute, but `main` keys on root-level path depth, so each path is
     normalized to the project-relative form first or every absolute path falls out of `main`.
     """
-    grouped: dict[str, list[Any]] = {}
+    grouped: dict[str, list[T]] = {}
     for it in items:
         key = _surface_key(normalize_finding_path(it.file, root), ft_by_path, skill_of)
         grouped.setdefault(key, []).append(it)
@@ -140,8 +143,8 @@ def _group_by_surface(
 
 def _surface_health(
     key: str,
-    findings: list[Any],
-    analyses: list[Any],
+    findings: list[FindingItem],
+    analyses: list[FileAnalysis],
     *,
     known_paths: set[str] | None,
     root: Path,
@@ -161,16 +164,14 @@ def _surface_health(
         item_count=len({(skill_of or {}).get(p, p) for p in paths}),
         finding_count=len(findings),
         errors=by_severity["error"],
-        warnings=by_severity["warning"],
-        infos=by_severity["info"],
         category_breakdown=_count_categories(findings),
     )
 
 
 def compute_surface_scores(
-    result: Any,
-    ruleset_map: Any = None,
-    project_root: Any = None,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | None = None,
+    project_root: Path | str | None = None,
     file_type_by_path: dict[str, str] | None = None,
     skill_of: dict[str, str] | None = None,
 ) -> list[SurfaceHealth]:
@@ -208,12 +209,12 @@ def compute_surface_scores(
             root=root,
             skill_of=skill_of,
         )
-        for key in _SURFACE_ORDER
+        for key in SURFACE_BAR_ORDER
         if key in all_keys
     ]
 
 
-def _count_categories(findings: list[Any]) -> dict[str, int]:
+def _count_categories(findings: list[FindingItem]) -> dict[str, int]:
     """Group findings by rule-id-derived Category value.
 
     Takes the second segment of each finding's rule id and maps it via `CATEGORY_CODES`.
@@ -233,11 +234,9 @@ def _count_categories(findings: list[Any]) -> dict[str, int]:
     return dict(counts)
 
 
-def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13, count_width: int = 0) -> str:
+def _surface_cell(s: SurfaceHealth, label_width: int = 13, count_width: int = 0) -> str:
     """Format one surface as a Rich-markup cell: 'Name (N):  ▓▓▓▓▓▓▓▓▓▓▓░░░░  7.2  27 findings · 10 errors'.
 
-    bar_width=15 is the smallest width that visually distinguishes 6.9 from 7.2
-    under integer rounding — at width 10, scores 6.5-7.4 all map to 7 filled cells.
     label_width pads the name column to the widest label in the set so the two
     columns stay aligned when a long name carries a 2-digit count; count_width
     right-aligns the finding counts the same way.
@@ -245,10 +244,10 @@ def _surface_cell(s: SurfaceHealth, bar_width: int = 15, label_width: int = 13, 
     label = f"{s.name} ({s.item_count}):"
     tag = count_tag(s, count_width)
     if s.score is None:
-        empty = "░" * bar_width
+        empty = "░" * HEALTH_BAR_WIDTH
         return f"{label:<{label_width}s} [dim]{empty}[/dim]  [dim]not scored[/dim]{tag}"
     color = score_color(s.score)
-    health_bar = _score_bar(s.score, bar_width, color)
+    health_bar = _score_bar(s.score, HEALTH_BAR_WIDTH, color)
     return f"{label:<{label_width}s} {health_bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{tag}"
 
 
@@ -321,16 +320,16 @@ def _render_overlap_groups(groups: list[tuple[str, list[str]]], n_pairs: int) ->
 
 
 def _render_cross_file_counts(
-    result: Any, project_root: Path | None = None, element_of: Callable[[str], Element] | None = None
+    result: CombinedResult, project_root: Path | None = None, element_of: Callable[[str], Element] | None = None
 ) -> None:
     """Render the cross-file repetition and topic-overlap counts.
     With detailed rows the headline counts the element pairs named below; else the `stats` count stands.
     """
 
-    n_reps = getattr(result.stats, "cross_file_repetitions", 0)
+    n_reps = result.stats.cross_file_repetitions
     if n_reps:
         console.print(f"  {n_reps} cross-file repetition{'s' if n_reps != 1 else ''}")
-    n_pairs = getattr(result.stats, "cross_file_overlaps", 0)
+    n_pairs = result.stats.cross_file_overlaps
     if not n_pairs:
         return
     groups: list[tuple[str, list[str]]] = []
@@ -343,30 +342,20 @@ def _render_cross_file_counts(
     _render_overlap_groups(groups, n_pairs)
 
 
-_RULE_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
+_TOP_RULES_SHOWN = 4
 _RULE_SEVERITY_LABEL = {"error": "[red]err [/red]", "warning": "[yellow]warn[/yellow]", "info": "info"}
 
 
-def _aggregate_top_rules(findings: Any, limit: int = 4) -> list[tuple[str, int, str, str]]:
-    """Return up to `limit` rules ranked by finding count.
+def _top_rule_rows(findings: Iterable[FindingItem]) -> list[tuple[str, int, FindingSeverity, str]]:
+    """Return up to four rules ranked by finding count.
 
     Each entry: (rule_id, count, severity, sample_message). Severity is the
     worst severity (error > warning > info) recorded for that rule across
     the findings list; sample_message is the first finding's message,
     truncated for the scorecard column.
     """
-    buckets: dict[str, dict[str, Any]] = {}
-    for f in findings:
-        bucket = buckets.setdefault(
-            f.rule,
-            {"count": 0, "severity": f.severity, "message": f.message},
-        )
-        bucket["count"] += 1
-        if _RULE_SEVERITY_RANK.get(f.severity, 3) < _RULE_SEVERITY_RANK.get(bucket["severity"], 3):
-            bucket["severity"] = f.severity
-    rows = [(rule, b["count"], b["severity"], b["message"]) for rule, b in buckets.items()]
-    rows.sort(key=lambda r: (-r[1], r[0]))
-    return rows[:limit]
+    rows = [(t.rule, t.count, t.severity, t.message) for t in tally_rules(findings)]
+    return rows[:_TOP_RULES_SHOWN]
 
 
 _QUOTE_CHARS = "'\"`"
@@ -427,7 +416,7 @@ def _top_rule_row(rule: str, count: int, severity: str, message: str, widths: tu
     return f"    {rule_cell}{pad} x{count:<{count_w}} {label}  {snippet}"
 
 
-def _render_top_rules(result: Any, verbose: bool = True) -> None:
+def _render_top_rules(result: CombinedResult, verbose: bool = True) -> None:
     """Render the Top-rules block in the whole-repo scorecard.
 
     Outside verbose output the documentation conventions are left out, as they are in the file cards.
@@ -435,7 +424,7 @@ def _render_top_rules(result: Any, verbose: bool = True) -> None:
     findings, _ = split_conventions(result.findings, verbose)
     if not findings:
         return
-    rows = _aggregate_top_rules(findings)
+    rows = _top_rule_rows(findings)
     if not rows:
         return
     tw = get_term_width()
@@ -452,7 +441,7 @@ def _render_top_rules(result: Any, verbose: bool = True) -> None:
 
 
 def _render_results_summary(
-    result: Any,
+    result: CombinedResult,
     hint_errors: int,
     hint_warnings: int,
     project_root: Path | None = None,
@@ -490,7 +479,7 @@ class ScorecardDetail:
     element_of: Callable[[str], Element] | None = None
 
 
-def _render_agent_and_level(result: Any, agent: str) -> None:
+def _render_agent_and_level(result: CombinedResult, agent: str) -> None:
     """Render the Agent and Level lines."""
     if agent:
         console.print(f"  Agent: {agent.title()}")
@@ -498,7 +487,7 @@ def _render_agent_and_level(result: Any, agent: str) -> None:
         console.print("  Agent: not determined, only the rules every agent shares ran")
         console.print("  [dim]Name your agent: --agent <name>, or ails config set default_agent <name>[/dim]")
 
-    level = getattr(result, "level", Level.L0)
+    level = result.level
     label = LEVEL_LABELS.get(level, "Unknown")
     console.print(f"  Level: {level.value} [bold]{label}[/bold]")
 
@@ -524,7 +513,7 @@ def _render_health_bars(has_quality: bool, scope: ScopeInfo | None, detail: Scor
         render_item_health(item_health)
 
 
-def _render_tier_footer(result: Any, tier: str) -> None:
+def _render_tier_footer(result: CombinedResult, tier: str) -> None:
     """One line per run for an unpaid tier, in place of any per-finding remedy.
 
     The reply carries none for an anonymous or free run. The line is keyed on whether a
@@ -548,7 +537,7 @@ def _render_tier_footer(result: Any, tier: str) -> None:
 
 
 def print_scorecard(
-    result: Any,
+    result: CombinedResult,
     has_quality: bool,
     *,
     tier: str = "",

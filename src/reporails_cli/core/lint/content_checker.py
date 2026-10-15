@@ -12,11 +12,11 @@ one per place it finds it.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from reporails_cli.core.lint.content_queries import QUERY_REGISTRY
 from reporails_cli.core.lint.regex.compiler import display_severity
-from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, LocalFinding, Rule
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
+from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileMatch, LocalFinding, Rule
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.matching import file_matches, is_wildcard_match
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -50,29 +50,29 @@ def _matching_files(
 
 def _evaluate_check(
     ruleset_map: RulesetMap,
-    check: Any,
+    check: Check,
     rule: Rule,
     classified: list[ClassifiedFile],
 ) -> list[LocalFinding]:
     """Evaluate a single content_query check. Returns its findings: one for a check that requires
     something and finds it missing, one per match for a check that forbids something."""
-    query_fn = QUERY_REGISTRY.get(check.query)
+    query_fn = QUERY_REGISTRY.get(check.query or "")
     if query_fn is None:
         logger.warning("Unknown content query: %s (check %s)", check.query, check.id)
         return []
 
-    check_args: dict[str, Any] = dict(check.args or {})
+    check_args: JsonObject = dict(check.args or {})
     target_files = _matching_files(ruleset_map, classified, rule.match)
     if not target_files:
         return []
 
-    results = [r for r in (query_fn(ruleset_map, fp, **check_args) for fp in target_files) if r.found]
+    results = [r for r in (query_fn(ruleset_map, fp, check_args) for fp in target_files) if r.found]
     if check.expect == "present" and results:
         return []
     if check.expect != "present" and not results:
         return []
 
-    message = check_args.get("message", "")
+    message = as_str(check_args.get("message"))
     if not message:
         message = f"Content check failed: {check.query} (expect={check.expect})"
 
@@ -87,7 +87,7 @@ def _evaluate_check(
     ]
 
 
-def _finding(rule: Rule, check: Any, message: str, file: str, line: int) -> LocalFinding:
+def _finding(rule: Rule, check: Check, message: str, file: str, line: int) -> LocalFinding:
     """A rule's content-check finding at `file`:`line`."""
     return LocalFinding(
         file=_relative_path(file),

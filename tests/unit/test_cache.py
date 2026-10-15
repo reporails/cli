@@ -1,25 +1,16 @@
-"""Unit tests for caching system — project-local cache and global analytics.
+"""Unit tests for caching system — the project-local caches.
 
-Uses tmp_path fixtures; only mocks subprocess calls (get_git_remote).
+Uses tmp_path fixtures.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from reporails_cli.core.cache.hashing import file_bytes_digest
-from reporails_cli.core.platform.dto.analytics import ProjectAnalytics
-from reporails_cli.core.platform.observability.analytics import (
-    get_project_name,
-    load_project_analytics,
-    record_scan,
-    save_project_analytics,
-)
-from reporails_cli.core.platform.utils.utils import get_project_id
 
 # ---------------------------------------------------------------------------
 # file_bytes_digest
@@ -37,166 +28,6 @@ class TestContentHash:
         assert h1 == h2
         assert h1.startswith("sha256:")
         assert len(h1) == len("sha256:") + 16
-
-
-# ---------------------------------------------------------------------------
-# Project identification
-# ---------------------------------------------------------------------------
-
-
-class TestGetProjectId:
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_with_git_remote(self, tmp_path: Path) -> None:
-        with patch(
-            "reporails_cli.core.platform.utils.utils.get_git_remote",
-            return_value="git@github.com:org/repo.git",
-        ):
-            pid = get_project_id(tmp_path)
-        assert len(pid) == 12
-        assert pid.isalnum()
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_without_git_remote(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.platform.utils.utils.get_git_remote", return_value=None):
-            pid = get_project_id(tmp_path)
-        assert len(pid) == 12
-        assert pid.isalnum()
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_different_remotes_different_ids(self, tmp_path: Path) -> None:
-        with patch(
-            "reporails_cli.core.platform.utils.utils.get_git_remote",
-            return_value="git@github.com:org/a.git",
-        ):
-            id_a = get_project_id(tmp_path)
-        with patch(
-            "reporails_cli.core.platform.utils.utils.get_git_remote",
-            return_value="git@github.com:org/b.git",
-        ):
-            id_b = get_project_id(tmp_path)
-        assert id_a != id_b
-
-
-class TestGetProjectName:
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_returns_directory_name(self, tmp_path: Path) -> None:
-        name = get_project_name(tmp_path)
-        assert name == tmp_path.resolve().name
-
-
-# ---------------------------------------------------------------------------
-# Global analytics round-trip
-# ---------------------------------------------------------------------------
-
-
-class TestProjectAnalytics:
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_save_load_round_trip(self, tmp_path: Path) -> None:
-        analytics = ProjectAnalytics(
-            project_id="abc123def456",
-            project_name="test-project",
-            project_path="/tmp/test",
-            first_seen="2024-01-01T00:00:00Z",
-            last_seen="2024-01-01T00:00:00Z",
-            scan_count=1,
-            history=[],
-        )
-
-        with patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=tmp_path):
-            save_project_analytics(analytics)
-            loaded = load_project_analytics("abc123def456")
-
-        assert loaded is not None
-        assert loaded.project_id == "abc123def456"
-        assert loaded.project_name == "test-project"
-        assert loaded.scan_count == 1
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_load_returns_none_on_missing(self, tmp_path: Path) -> None:
-        with patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=tmp_path):
-            assert load_project_analytics("nonexistent") is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_load_returns_none_on_corrupt(self, tmp_path: Path) -> None:
-        (tmp_path / "bad.json").write_text("not json")
-        with patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=tmp_path):
-            assert load_project_analytics("bad") is None
-
-
-# ---------------------------------------------------------------------------
-# record_scan
-# ---------------------------------------------------------------------------
-
-
-class TestRecordScan:
-    def _record(self, target: Path, analytics_dir: Path, score: float = 7.5) -> None:
-        with (
-            patch("reporails_cli.core.platform.utils.utils.get_git_remote", return_value=None),
-            patch("reporails_cli.core.platform.observability.analytics.get_analytics_dir", return_value=analytics_dir),
-        ):
-            record_scan(
-                target=target,
-                score=score,
-                level="L3",
-                violations_count=3,
-                rules_checked=10,
-                elapsed_ms=50.0,
-                instruction_files=1,
-            )
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_creates_new_analytics(self, tmp_path: Path) -> None:
-        target = tmp_path / "project"
-        target.mkdir()
-        analytics_dir = tmp_path / "analytics"
-
-        self._record(target, analytics_dir)
-
-        # Should have created a file
-        files = list(analytics_dir.glob("*.json"))
-        assert len(files) == 1
-        data = json.loads(files[0].read_text())
-        assert data["scan_count"] == 1
-        assert len(data["history"]) == 1
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_appends_to_existing(self, tmp_path: Path) -> None:
-        target = tmp_path / "project"
-        target.mkdir()
-        analytics_dir = tmp_path / "analytics"
-
-        self._record(target, analytics_dir, score=6.0)
-        self._record(target, analytics_dir, score=7.0)
-
-        files = list(analytics_dir.glob("*.json"))
-        assert len(files) == 1
-        data = json.loads(files[0].read_text())
-        assert data["scan_count"] == 2
-        assert len(data["history"]) == 2
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_caching
-    def test_caps_at_100_entries(self, tmp_path: Path) -> None:
-        target = tmp_path / "project"
-        target.mkdir()
-        analytics_dir = tmp_path / "analytics"
-
-        for i in range(105):
-            self._record(target, analytics_dir, score=float(i % 10))
-
-        files = list(analytics_dir.glob("*.json"))
-        data = json.loads(files[0].read_text())
-        assert len(data["history"]) == 100
-        assert data["scan_count"] == 105
 
 
 class TestMapCacheRehydrateTolerance:
@@ -348,9 +179,9 @@ class TestSlotCoordsPersisted:
         )
         dicts = atoms_to_dicts([atom])
         # The wire-adjacent coordinate half persists on the cache entry ...
-        assert dicts[0]["slot_coords"]["predicate_span"] == (0, 1)
-        assert dicts[0]["slot_coords"]["object_span"] == (1, 2)
-        assert dicts[0]["slot_coords"]["scope_span"] == (2, 4)
+        assert dicts[0]["slot_coords"]["predicate_span"] == [0, 1]
+        assert dicts[0]["slot_coords"]["object_span"] == [1, 2]
+        assert dicts[0]["slot_coords"]["scope_span"] == [2, 4]
         assert dicts[0]["slot_coords"]["predicate_conf"] == pytest.approx(0.91)
         # ... but the dict never carries a "slots" key with slot TEXT on it.
         assert "slots" not in dicts[0]
@@ -456,12 +287,15 @@ class TestFullMapIdentity:
 
     @pytest.mark.unit
     @pytest.mark.subsys_caching
-    def test_identity_changes_on_model(self, tmp_path: Path) -> None:
-        from reporails_cli.core.cache.full_map_cache import compute_identity
+    def test_identity_changes_on_model(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from reporails_cli.core.cache import full_map_cache
 
         a = tmp_path / "a.md"
         a.write_text("alpha")
-        assert compute_identity([a], root=tmp_path, model="m1") != compute_identity([a], root=tmp_path, model="m2")
+        monkeypatch.setattr(full_map_cache, "EMBEDDING_MODEL", "m1")
+        first = full_map_cache.compute_identity([a], root=tmp_path)
+        monkeypatch.setattr(full_map_cache, "EMBEDDING_MODEL", "m2")
+        assert full_map_cache.compute_identity([a], root=tmp_path) != first
 
     @pytest.mark.unit
     @pytest.mark.subsys_caching
@@ -498,7 +332,7 @@ class TestFullMapIdentity:
     def test_identity_changes_with_the_project_root(self, tmp_path: Path) -> None:
         """The same file set mapped against a different root is a different map.
 
-        `_detect_file_loading` matches `path.relative_to(root)` against the registry, so the
+        `_detect_file_activation` matches `path.relative_to(root)` against the registry, so the
         root decides whether `.cursor/rules/x.mdc` reads as a cursor rule or as an unmatched
         generic file. Two roots must therefore never share one cache entry.
         """

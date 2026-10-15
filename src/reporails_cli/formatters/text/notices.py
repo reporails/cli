@@ -19,8 +19,7 @@ from rich.text import Text
 
 from reporails_cli.core.platform.dto.diagnostics import Notice
 from reporails_cli.formatters.text.chars import ASCII_MODE, get_chars
-
-_LINK_SCHEMES = ("https://", "http://")
+from reporails_cli.formatters.text.funnel_cta import LINK_SCHEMES
 
 
 def _link_target(url: str) -> str:
@@ -40,17 +39,11 @@ def _notice_lines(notice: Notice, arrow: str, *, bold: bool = False) -> list[str
     elif bold:
         text = f"[bold]{text}[/bold]"
     lines = [text]
-    if notice.url.startswith(_LINK_SCHEMES):
+    if notice.url.startswith(LINK_SCHEMES):
         lines.append(f"{arrow} [link={_link_target(notice.url)}]{escape(notice.url)}[/link]")
     elif notice.url:
         lines.append(f"{arrow} {escape(notice.url)}")
     return lines
-
-
-def notice_lines(notices: Iterable[Notice]) -> list[str]:
-    """Rich-markup body lines for `notices`, in order, without the indent."""
-    arrow = get_chars()["arrow"]
-    return [line for notice in notices for line in _notice_lines(notice, arrow)]
 
 
 def _print_body(console: Console, lines: list[str], width: int) -> None:

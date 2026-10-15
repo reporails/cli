@@ -7,12 +7,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import typer
 from rich.markup import escape
 
-from reporails_cli.core.lint.harness_models import HarnessStatus
+from reporails_cli.core.lint.harness_models import HarnessResult, HarnessStatus
 from reporails_cli.core.platform.config.config import get_rules_path
 from reporails_cli.interfaces.cli.helpers import console
 from reporails_cli.interfaces.cli.option_groups import command_options
@@ -239,7 +238,7 @@ def _run_coverage_check(
     raise typer.Exit(1)
 
 
-def _print_text(results: list[Any], verbose: bool) -> None:
+def _print_text(results: list[HarnessResult], verbose: bool) -> None:
     """Print human-readable test results."""
     passed = [r for r in results if r.status == HarnessStatus.PASSED]
     failed = [r for r in results if r.status == HarnessStatus.FAILED]
@@ -248,7 +247,7 @@ def _print_text(results: list[Any], verbose: bool) -> None:
     skipped = [r for r in results if r.status == HarnessStatus.SKIPPED]
 
     # Progress line
-    icons = {
+    icons: dict[str, str] = {
         HarnessStatus.PASSED: ".",
         HarnessStatus.FAILED: "F",
         HarnessStatus.NOT_IMPLEMENTED: "-",
@@ -304,7 +303,7 @@ def _print_text(results: list[Any], verbose: bool) -> None:
         console.print()
 
 
-def _print_case_summary(results: list[Any]) -> None:
+def _print_case_summary(results: list[HarnessResult]) -> None:
     """Print how many fixture cases ran and name each case directory that did not."""
     cases_run = sum(len(r.cases_run) for r in results)
     cases_not_run = [(r, name) for r in results for name in r.cases_not_run]
@@ -320,7 +319,7 @@ def _print_case_summary(results: list[Any]) -> None:
         console.print()
 
 
-def _print_json(results: list[Any]) -> None:
+def _print_json(results: list[HarnessResult]) -> None:
     """Print JSON test results."""
     data = {
         "rules": [

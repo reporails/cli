@@ -223,6 +223,7 @@ max-complexity = 12
 [tool.mypy]
 python_version = "3.12"
 strict = true
+disallow_any_explicit = true
 warn_return_any = true
 warn_unused_ignores = true
 no_implicit_optional = true

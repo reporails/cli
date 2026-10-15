@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.adapters import rules_query
 from reporails_cli.core.platform.adapters.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
@@ -54,8 +55,9 @@ def test_list_known_agents_includes_claude_excludes_core() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_list_known_agents_empty_when_dir_missing(tmp_path: Path) -> None:
-    assert list_known_agents(tmp_path / "missing") == []
+def test_list_known_agents_empty_when_dir_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rules_query, "get_rules_dir", lambda: tmp_path / "missing")
+    assert list_known_agents() == []
 
 
 @pytest.mark.unit

@@ -127,6 +127,20 @@ Install a pinned version as shown (or `uvx --from "reporails-cli==<version>" ail
 
 When `ails` downloads the model inside GitHub Actions, it prints a line pointing to this section.
 
+## Rule packages
+
+A rule package is a folder of your own rules, laid out like the bundled ones: one folder per rule, each holding a `rule.md` and, for rules with checks, a `checks.yml`.
+
+Put the package at `.ails/packages/<name>/` in your project, or at `~/.reporails/packages/<name>/` to share it across projects. When both exist for the same name, the project one is used. Then list its name under `packages:` in `.ails/config.yml` or in the global config:
+
+```yaml
+# PROJECT_ROOT/.ails/config.yml
+packages:
+  - mypack
+```
+
+The package's rules run alongside the bundled rules. A package rule must use an ID no bundled rule uses, under its own prefix (`MYPACK:S:0001`); one that reuses a bundled rule's ID stops the run with an error naming it. `disabled_rules` turns package rules off like any other rule. A package listed under `packages:` that is found in neither folder stops the run with an error naming the package and both folders.
+
 ## Disabling rules
 
 The single most common config change is disabling rules you disagree with:

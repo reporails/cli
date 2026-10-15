@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 
 
 def env_flag(var_name: str) -> bool:
@@ -71,7 +70,7 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
 
     Checks project-local (.ails/packages/<name>) first, then falls back
     to global (~/.reporails/packages/<name>). Project-local overrides global
-    for the same package name. Silently skips packages not found in either.
+    for the same package name. A package found in neither raises ConfigUnreadableError.
 
     Args:
         project_root: Root directory of the project
@@ -79,6 +78,9 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
 
     Returns:
         List of existing package directory paths
+
+    Raises:
+        ConfigUnreadableError: a listed package is in neither folder
     """
     global_base = get_global_packages_path()
     paths: list[Path] = []
@@ -92,4 +94,6 @@ def get_package_paths(project_root: Path, packages: list[str]) -> list[Path]:
         global_dir = global_base / name
         if global_dir.is_dir():
             paths.append(global_dir)
+            continue
+        raise ConfigUnreadableError(f"packages: rule package '{name}' not found in {local_dir} or {global_dir}")
     return paths

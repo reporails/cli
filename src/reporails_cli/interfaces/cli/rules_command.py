@@ -18,17 +18,15 @@ from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.platform.adapters.rules_query import list_known_agents
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.interfaces.cli.helpers import console
-from reporails_cli.interfaces.cli.typer_app import app
+from reporails_cli.interfaces.cli.output_formats import RULES_LIST_FORMATS, RULES_PLAIN_FORMATS
+from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS, app
 
 rules_app = typer.Typer(
     help="Browse the framework rule registry.",
     no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 app.add_typer(rules_app, name="rules", rich_help_panel="Explore")
-
-_LIST_FORMATS = ("text", "md", "json")
-_SIMPLE_FORMATS = ("text", "json")
 
 
 def _require_format(output_format: str, valid: tuple[str, ...]) -> None:
@@ -77,7 +75,7 @@ def rules_list(
     no_examples: bool = typer.Option(False, "--no-examples", help="Strip Pass / Fail blocks from md output."),
 ) -> None:
     """List rules in the registry, optionally filtered by capability / agent / severity."""
-    _require_format(output_format, _LIST_FORMATS)
+    _require_format(output_format, RULES_LIST_FORMATS)
     _require_known_capabilities(capabilities, agent)
     from reporails_cli.interfaces.cli.checks_command import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
         list_checks,
@@ -97,7 +95,7 @@ def rules_agents(
     output_format: str = typer.Option("text", "--format", "-f", help="Output format: text | json."),
 ) -> None:
     """List known agents."""
-    _require_format(output_format, _SIMPLE_FORMATS)
+    _require_format(output_format, RULES_PLAIN_FORMATS)
     agents = list_known_agents()
     if output_format == "json":
         sys.stdout.write(_json.dumps({"agents": agents}, indent=2) + "\n")
@@ -141,7 +139,7 @@ def rules_capabilities(
     output_format: str = typer.Option("text", "--format", "-f", help="Output format: text | json."),
 ) -> None:
     """List the capabilities you can target and what each resolves to."""
-    _require_format(output_format, _SIMPLE_FORMATS)
+    _require_format(output_format, RULES_PLAIN_FORMATS)
     effective_agent = _capability_agent(agent)
     if not effective_agent:
         msg = "No agent detected; pass --agent <name>."

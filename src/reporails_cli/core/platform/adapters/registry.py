@@ -3,57 +3,50 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from fnmatch import fnmatch
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
-from typing import Any
+from typing import NamedTuple
 
 import yaml
 
-from reporails_cli.core.platform.adapters.rule_builder import build_rule
-from reporails_cli.core.platform.config.capabilities import agent_capabilities, clear_capability_cache
-from reporails_cli.core.platform.config.config import get_agent_config, get_project_config, get_rules_path
-from reporails_cli.core.platform.dto.models import Execution, Rule, RuleType, Severity
+from reporails_cli.core.platform.adapters.rule_builder import RuleFieldError, build_rule, load_checks
+from reporails_cli.core.platform.config.bootstrap import get_package_paths
+from reporails_cli.core.platform.config.capabilities import agent_capabilities
+from reporails_cli.core.platform.config.config import (
+    get_agent_config,
+    get_project_config,
+    get_rules_path,
+    iter_agent_configs,
+)
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_str
+from reporails_cli.core.platform.dto.models import Check, Execution, FieldProblem, Rule, RuleType, Severity
 from reporails_cli.core.platform.dto.results import AgentConfig, ProjectConfig
 from reporails_cli.core.platform.policy.applicability import filter_by_capability
-from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file, read_frontmatter
+from reporails_cli.core.platform.utils.utils import (
+    load_yaml_file,
+    read_frontmatter,
+    yaml_error_line,
+)
 
 logger = logging.getLogger(__name__)
-
-# Module-level cache for loaded rules — framework rules don't change between
-# MCP invocations (only ails update changes them).
-_path_cache: dict[str, dict[str, Rule]] = {}
-
-
-def clear_rule_cache() -> None:
-    """Clear the rule loading cache. Called by --refresh and after ails update."""
-    _path_cache.clear()
-    clear_yaml_cache()
-    clear_capability_cache()
-    structural_rule_ids.cache_clear()
-    registry_rule_ids.cache_clear()
-    file_level_check_ids.cache_clear()
-    convention_check_ids.cache_clear()
-    rule_dependencies.cache_clear()
-    whole_run_check_ids.cache_clear()
 
 
 @lru_cache(maxsize=8)
 def structural_rule_ids(agent: str = "") -> frozenset[str]:
-    """Rule ids of the structural family — mechanical rules that run locally.
+    """Bundled rule ids of the structural family — mechanical rules that run locally (bundled rules only).
 
     These check section / config / file presence and hygiene. Sourced from the registry
-    (single source of truth); empty if none load.
+    (single source of truth).
 
     Must be resolved with the SAME agent the findings were produced under: an agent
     rule that supersedes a core structural rule (e.g. `CODEX:E:0001` superseding
     `CORE:E:0001`) replaces it under the agent's id, so the no-agent (core-only) set
     would miss it and the finding under the agent's id would not be counted as structural.
     """
-    try:
-        rules = load_rules(agent=agent)
-    except (OSError, ValueError, KeyError):
-        return frozenset()
+    rules = load_rules(agent=agent)
     return frozenset(
         rid for rid, rule in rules.items() if rule.type == RuleType.MECHANICAL and rule.execution == Execution.LOCAL
     )
@@ -61,55 +54,51 @@ def structural_rule_ids(agent: str = "") -> frozenset[str]:
 
 @lru_cache(maxsize=8)
 def registry_rule_ids(agent: str = "") -> frozenset[str]:
-    """Every rule id the registry defines under `agent`."""
+    """Every bundled rule id the registry defines under `agent` (bundled rules only; package rules are not in it)."""
     return frozenset(load_rules(agent=agent))
 
 
-@lru_cache(maxsize=8)
-def file_level_check_ids(agent: str = "") -> frozenset[str]:
-    """Ids of the content checks that require something in a file.
-
-    A finding from one of these concerns the whole file: there is no line to point at.
-    """
+def _file_level_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
+    """Ids of the content checks of `rules` that require something in a file."""
     return frozenset(
         check.id
-        for rule in load_rules(agent=agent).values()
+        for rule in rules.values()
         for check in rule.checks
         if check.type == "content_query" and check.expect == "present" and check.id
     )
 
 
 @lru_cache(maxsize=8)
-def convention_check_ids(agent: str = "") -> frozenset[str]:
-    """Ids of the checks flagged `convention: true`: their finding names a missing documentation convention."""
-    return frozenset(
-        check.id for rule in load_rules(agent=agent).values() for check in rule.checks if check.convention and check.id
-    )
+def file_level_check_ids(agent: str = "") -> frozenset[str]:
+    """Ids of the bundled content checks that require something in a file (bundled rules only).
+
+    A finding from one of these concerns the whole file: there is no line to point at.
+    """
+    return _file_level_ids(load_rules(agent=agent))
 
 
-@lru_cache(maxsize=8)
-def whole_run_check_ids(agent: str = "") -> frozenset[str]:
-    """Ids of the checks whose finding stands for the matched files as a whole.
+def convention_check_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
+    """Ids of the checks of `rules` flagged `convention: true`: their finding names a missing convention."""
+    return frozenset(check.id for rule in rules.values() for check in rule.checks if check.convention and check.id)
+
+
+def whole_run_check_ids(rules: Mapping[str, Rule]) -> frozenset[str]:
+    """Ids of the checks of `rules` whose finding stands for the matched files as a whole.
 
     These are the content checks that require something in a file and the project-aggregate
     checks: neither points at one file or line.
     """
-    return file_level_check_ids(agent) | frozenset(
-        check.id
-        for rule in load_rules(agent=agent).values()
-        for check in rule.checks
-        if check.project_scope and check.id
+    return _file_level_ids(rules) | frozenset(
+        check.id for rule in rules.values() for check in rule.checks if check.project_scope and check.id
     )
 
 
-@lru_cache(maxsize=8)
-def rule_dependencies(agent: str = "") -> dict[str, frozenset[str]]:
-    """`{rule id: the rule ids it depends on}` under `agent`, resolved through supersession.
+def rule_dependencies(rules: Mapping[str, Rule]) -> dict[str, frozenset[str]]:
+    """`{rule id: the rule ids it depends on}` across `rules`, resolved through supersession.
 
     A dependency on a rule an agent rule supersedes names the superseding rule, which carries
     the findings under its own id.
     """
-    rules = load_rules(agent=agent)
     successor = {r.supersedes: rid for rid, r in rules.items() if r.supersedes}
     return {
         rid: frozenset(successor.get(dep, dep) for dep in rule.depends_on)
@@ -124,62 +113,194 @@ def get_rules_dir() -> Path:
 
 
 def _load_from_path(path: Path) -> dict[str, Rule]:
-    """Load rules from a single directory, returning {id: Rule}.
-
-    Results are cached per path string for MCP performance — framework
-    rules don't change between invocations.
-    """
-    path_key = str(path)
-    cached = _path_cache.get(path_key)
-    if cached is not None:
-        return dict(cached)  # shallow copy to prevent mutation
-
-    rules: dict[str, Rule] = {}
-
+    """Load the bundled framework rules of a single directory, returning {id: Rule}. Cached per path."""
     if not path.exists():
-        return rules
+        return {}
+    return dict(_read_rules(path))
+
+
+@cache
+def _read_rules(path: Path) -> dict[str, Rule]:
+    """Read every rule under a framework `path`. Cached per path: framework rules do not change within a run."""
+    return _scan_rules(path)
+
+
+class RuleReadError(ValueError):
+    """A rule that cannot be built from its `rule.md` and `checks.yml`.
+
+    `path` is the file at fault and `problem` what is wrong with it; the message is `<path>: <problem>`.
+    `problem` is empty when the failure is only rejected `rule.md` fields: the message is then one
+    `<path>: <field>: <message>` line per entry of `field_problems`.
+    `frontmatter` is whatever the rule's frontmatter yielded before the failure (empty when unread).
+    `checks` are the checks that built (empty when the checks failed); `field_problems` the
+    `rule.md` fields the build rejected.
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        problem: str,
+        frontmatter: JsonObject,
+        *,
+        checks: list[Check] | None = None,
+        field_problems: tuple[FieldProblem, ...] = (),
+    ) -> None:
+        if problem or not field_problems:
+            super().__init__(f"{path}: {problem}")
+        else:
+            super().__init__("\n".join(f"{path}: {p.field}: {p.message}" for p in field_problems))
+        self.path = path
+        self.problem = problem
+        self.frontmatter = frontmatter
+        self.checks = checks or []
+        self.field_problems = field_problems
+
+
+def _rejected_fields(
+    frontmatter: JsonObject, md_path: Path, yml_path: Path | None, checks: list[Check]
+) -> tuple[FieldProblem, ...]:
+    """The `rule.md` fields of a non-empty `frontmatter` that do not validate; empty when it is unread."""
+    if not frontmatter:
+        return ()
+    try:
+        build_rule(frontmatter, md_path, yml_path, checks)
+    except RuleFieldError as exc:
+        return tuple(exc.problems)
+    return ()
+
+
+def _read_checks_file(yml_path: Path, frontmatter: JsonObject) -> JsonValue:
+    """The `checks` of a rule's `checks.yml`; raises RuleReadError when the file is unreadable or malformed."""
+    try:
+        data = load_yaml_file(yml_path)
+    except OSError as exc:
+        raise RuleReadError(yml_path, f"cannot be read ({exc.strerror or exc})", frontmatter) from exc
+    except UnicodeDecodeError as exc:
+        raise RuleReadError(yml_path, "is not UTF-8 text", frontmatter) from exc
+    except yaml.YAMLError as exc:
+        raise RuleReadError(yml_path, f"is not valid YAML ({yaml_error_line(exc)})", frontmatter) from exc
+    if data is None:
+        return []
+    if not isinstance(data, dict):
+        raise RuleReadError(
+            yml_path, f"must be a mapping with a `checks` list, not a {type(data).__name__}", frontmatter
+        )
+    return data.get("checks") or []
+
+
+class RuleRead(NamedTuple):
+    """A rule built from its files, with the frontmatter mapping it was built from."""
+
+    rule: Rule
+    frontmatter: JsonObject
+
+
+def read_rule(md_path: Path) -> RuleRead | None:
+    """The rule built from the `rule.md` at `md_path` and its sibling `checks.yml`, fresh from disk.
+
+    Returns None when the file has no frontmatter mapping. Raises RuleReadError naming the file
+    and the problem when the rule or its checks cannot be read or built.
+    """
+    try:
+        raw = md_path.read_bytes()
+    except OSError as exc:
+        raise RuleReadError(md_path, f"cannot be read ({exc.strerror or exc})", {}) from exc
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        recovered = read_frontmatter(raw.decode("utf-8", errors="replace")).data
+        raise RuleReadError(
+            md_path,
+            "is not UTF-8 text",
+            recovered or {},
+            field_problems=_rejected_fields(recovered or {}, md_path, None, []),
+        ) from exc
+    frontmatter = read_frontmatter(content).data
+    if not frontmatter:
+        return None
+
+    checks_yml = md_path.parent / "checks.yml"
+    yml_path: Path | None = checks_yml if checks_yml.exists() else None
+    checks_source = md_path
+    if yml_path is not None and not frontmatter.get("checks"):
+        checks_source = yml_path
+        try:
+            frontmatter["checks"] = _read_checks_file(yml_path, frontmatter)
+        except RuleReadError as exc:
+            exc.field_problems = _rejected_fields(frontmatter, md_path, yml_path, [])
+            raise
+    try:
+        checks = load_checks(frontmatter)
+    except ValueError as exc:
+        raise RuleReadError(
+            checks_source,
+            str(exc),
+            frontmatter,
+            field_problems=_rejected_fields(frontmatter, md_path, yml_path, []),
+        ) from exc
+    try:
+        return RuleRead(build_rule(frontmatter, md_path, yml_path, checks), frontmatter)
+    except RuleFieldError as exc:
+        raise RuleReadError(md_path, "", frontmatter, checks=checks, field_problems=tuple(exc.problems)) from exc
+
+
+def _scan_rules(path: Path) -> dict[str, Rule]:
+    """Read every rule under `path`, fresh from disk; a rule that cannot be read is logged and skipped."""
+    rules: dict[str, Rule] = {}
 
     for md_path in path.rglob("rule.md"):
         # Skip test fixtures and deferred (not-yet-ready) rules
         if "tests" in md_path.parts or "_deferred" in md_path.parts:
             continue
-
         try:
-            content = md_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            # An unreadable rule.md (e.g. permission-denied) must not crash every command
-            # that loads the pack it lives in — skip it and name the file, matching the
-            # checks.yml parse-failure handling below.
-            logger.warning("Skipping unreadable rule.md %s: %s", md_path, exc)
+            read = read_rule(md_path)
+        except RuleReadError as exc:
+            logger.warning("Skipping rule: %s", exc)
             continue
+        if read is not None:
+            rules[read.rule.id] = read.rule
 
-        try:
-            frontmatter = read_frontmatter(content).data
-
-            if not frontmatter:
-                continue
-
-            # Look for corresponding checks.yml file
-            checks_yml = md_path.parent / "checks.yml"
-            yml_path: Path | None = checks_yml if checks_yml.exists() else None
-
-            # Pre-parse checks.yml so build_rule doesn't re-parse it
-            if yml_path is not None and not frontmatter.get("checks"):
-                try:
-                    yml_data = load_yaml_file(yml_path)
-                    frontmatter["checks"] = (yml_data or {}).get("checks", [])
-                except (OSError, yaml.YAMLError) as exc:
-                    logger.warning("Skipping unreadable checks.yml %s: %s", yml_path, exc)
-
-            rule = build_rule(frontmatter, md_path, yml_path)
-            rules[rule.id] = rule
-
-        except (ValueError, KeyError):
-            # Skip files without valid frontmatter
-            continue
-
-    _path_cache[path_key] = dict(rules)  # cache a copy
     return rules
+
+
+def _load_packages(
+    root: Path,
+    packages: list[str],
+    bundled_ids: set[str],
+    owners: dict[str, str],
+) -> dict[str, Rule]:
+    """The rules of the listed packages; a package rule never reuses a bundled or another package's ID.
+
+    `owners` maps each package rule ID already loaded to its package name and is updated here.
+    Raises ConfigUnreadableError naming the package and the ID on a collision.
+    """
+    loaded: dict[str, Rule] = {}
+    for pkg_path in get_package_paths(root, packages):
+        name = pkg_path.name
+        for rule_id, rule in _scan_rules(pkg_path).items():
+            if rule_id in bundled_ids:
+                raise ConfigUnreadableError(
+                    f"packages: rule package '{name}' redefines bundled rule {rule_id}; "
+                    f"give package rules their own ID prefix such as {name.upper()}:S:0001"
+                )
+            other = owners.get(rule_id)
+            if other is not None and other != name:
+                raise ConfigUnreadableError(
+                    f"packages: rule packages '{other}' and '{name}' both define rule {rule_id}; "
+                    "give each package's rules their own ID prefix"
+                )
+            owners[rule_id] = name
+            loaded[rule_id] = rule
+    return loaded
+
+
+def _load_all_packages(roots: list[tuple[Path, list[str]]], bundled_ids: set[str]) -> dict[str, Rule]:
+    """The rules of every root's listed packages, checked against the bundled IDs and each other."""
+    owners: dict[str, str] = {}
+    loaded: dict[str, Rule] = {}
+    for root, packages in roots:
+        loaded.update(_load_packages(root, packages, bundled_ids, owners))
+    return loaded
 
 
 def load_rules(
@@ -199,19 +320,27 @@ def load_rules(
         return {}
 
     rules: dict[str, Rule] = {}
+    config = _load_project_config(project_root)
+    scan_config = _load_project_config(scan_root) if scan_root and scan_root != project_root else ProjectConfig()
 
     # 1. Load framework rules from primary path (core + selected agent)
-    core_path = primary / "core"
-    rules.update(_load_from_path(core_path))
+    rules.update(_load_from_path(primary / "core"))
 
     if agent:
-        agent_rules_path = primary / agent
-        rules.update(_load_from_path(agent_rules_path))
+        rules.update(_load_from_path(primary / agent))
 
     # 2. Load additional rule sources
     for extra in extra_paths:
         if extra.exists():
             rules.update(_load_from_path(extra))
+
+    # 2b. Load the project's rule packages after the framework rules: a package rule
+    # reusing a bundled rule's ID (or another package's) stops the run.
+    if project_root is not None:
+        roots = [(project_root, config.packages)]
+        if scan_root and scan_root != project_root:
+            roots.append((scan_root, scan_config.packages))
+        rules.update(_load_all_packages(roots, set(rules)))
 
     on_disk_ids = set(rules)
 
@@ -233,11 +362,7 @@ def load_rules(
     _validate_depends_on(rules, superseded_by, on_disk_ids)
 
     # 5. Remove disabled rules (merge from project_root + scan_root configs)
-    config = _load_project_config(project_root)
-    disabled: set[str] = set(config.disabled_rules or [])
-    if scan_root and scan_root != project_root:
-        scan_config = _load_project_config(scan_root)
-        disabled |= set(scan_config.disabled_rules or [])
+    disabled: set[str] = set(config.disabled_rules or []) | set(scan_config.disabled_rules or [])
     if disabled:
         rules = {k: v for k, v in rules.items() if k not in disabled}
 
@@ -266,7 +391,8 @@ def _filter_by_agent(rules: dict[str, Rule], agent: str) -> dict[str, Rule]:
 
     if agent:
         agent_prefix = agent_config.prefix or agent.upper()
-        rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix)}
+        known = _agent_prefixes()
+        rules = {k: v for k, v in rules.items() if not _is_other_agent_rule(k, agent_prefix, known)}
         rules = filter_by_capability(rules, agent_capabilities(agent))
 
     return rules
@@ -287,17 +413,22 @@ def infer_agent_from_rule_id(rule_id: str) -> str:
     return prefix.lower()
 
 
-def _is_other_agent_rule(rule_id: str, agent_prefix: str) -> bool:
-    """Check if a rule belongs to a different agent.
+def _agent_prefixes() -> frozenset[str]:
+    """The rule-id prefixes the bundled agent configs declare."""
+    return frozenset(p for _, data in iter_agent_configs(get_rules_dir()) if (p := as_str(data.get("prefix"))))
 
-    Agent-agnostic namespaces (CORE, RRAILS) are always kept.
-    Agent-specific namespaces (CLAUDE, CODEX, RRAILS_CLAUDE, etc.)
-    are kept only if they contain the selected agent's prefix.
+
+def _is_other_agent_rule(rule_id: str, agent_prefix: str, known_prefixes: frozenset[str]) -> bool:
+    """Check if a rule belongs to a different known agent.
+
+    Agent-agnostic namespaces (CORE, RRAILS) and namespaces no agent config declares
+    (a rule package's own prefix) are always kept. A namespace naming another agent's
+    prefix is kept only if it also contains the selected agent's prefix.
     """
     namespace = rule_id.split(":")[0]
-    if namespace in ("CORE", "RRAILS"):
+    if namespace in _AGNOSTIC_PREFIXES or agent_prefix in namespace:
         return False
-    return agent_prefix not in namespace
+    return any(prefix in namespace for prefix in known_prefixes)
 
 
 def _apply_supersession(rules: dict[str, Rule]) -> dict[str, str]:
@@ -400,9 +531,20 @@ def _detect_dependency_cycles(rules: dict[str, Rule]) -> None:
             logger.warning("Circular depends_on chain detected involving %s", rule_id)
 
 
+def _parse_override_severity(raw: object, owner: str) -> Severity | None:
+    """The `Severity` an override names, or None when it names none or an invalid one (logged)."""
+    parsed = None
+    if raw:
+        try:
+            parsed = Severity(raw)
+        except ValueError:
+            logger.warning("Invalid severity '%s' in override for %s, skipping", raw, owner)
+    return parsed
+
+
 def _apply_agent_overrides(
     rules: dict[str, Rule],
-    overrides: dict[str, dict[str, Any]],
+    overrides: dict[str, JsonObject],
 ) -> dict[str, Rule]:
     """Apply agent overrides: severity at rule level, disabled at check level."""
     result = {}
@@ -411,13 +553,9 @@ def _apply_agent_overrides(
         rule_override = overrides.get(rule_id)
         new_rule = rule
         if rule_override:
-            new_severity = rule_override.get("severity")
-            if new_severity:
-                try:
-                    parsed_severity = Severity(new_severity)
-                    new_rule = new_rule.model_copy(update={"severity": parsed_severity})
-                except ValueError:
-                    logger.warning("Invalid severity '%s' in override for %s, skipping", new_severity, rule_id)
+            parsed_severity = _parse_override_severity(rule_override.get("severity"), rule_id)
+            if parsed_severity is not None:
+                new_rule = new_rule.model_copy(update={"severity": parsed_severity})
 
         # Check-level overrides: only handle disabled
         new_checks = []
@@ -427,13 +565,9 @@ def _apply_agent_overrides(
                 continue  # Drop this check
             # Legacy: check-level severity override → lift to rule
             if override and not rule_override:
-                check_severity = override.get("severity")
-                if check_severity:
-                    try:
-                        parsed_severity = Severity(check_severity)
-                        new_rule = new_rule.model_copy(update={"severity": parsed_severity})
-                    except ValueError:
-                        pass
+                parsed_severity = _parse_override_severity(override.get("severity"), check.id)
+                if parsed_severity is not None:
+                    new_rule = new_rule.model_copy(update={"severity": parsed_severity})
             new_checks.append(check)
         result[rule_id] = new_rule.model_copy(update={"checks": new_checks})
     return result

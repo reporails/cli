@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.core.heal.keyed import KeyedResult
+from reporails_cli.core.heal.keyed import KeyedResult, put_back_line
 from reporails_cli.core.lint.client_checks import run_client_checks
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.dto.diagnostics import LocationFinding, RemediationWorkflow, WorkflowLocation
@@ -185,6 +185,25 @@ def test_a_file_that_departs_from_its_plan_is_put_back(tmp_path: Path, monkeypat
     assert path.read_bytes() == DOC.encode()
     assert res.fixes == []
     assert [(p["op"], p["rule"], p["line"]) for p in res.put_back] == [("outside", "", 1)]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_heal
+@pytest.mark.requires_model
+def test_a_written_file_is_put_back_when_the_remap_yields_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No mapper can check the result: every written file is restored and reported under the `remap` check."""
+    import reporails_cli.core.heal.apply as heal_apply
+
+    monkeypatch.setattr(heal_apply, "map_instruction_files", lambda *_a, **_k: None)
+    path = tmp_path / "CLAUDE.md"
+    path.write_bytes(DOC.encode())
+    res, _ = _run(tmp_path, (7, "code", "format"))
+    assert path.read_bytes() == DOC.encode()
+    assert res.fixes == []
+    assert [(p["file"], p["check"]) for p in res.put_back] == [(str(path), "remap")]
+    assert put_back_line(res.put_back[0]) == (f"put back: {path} (the written file could not be re-mapped to check it)")
 
 
 @pytest.mark.unit
@@ -544,3 +563,32 @@ def test_ops_folded_on_one_line_apply_in_any_order(tmp_path: Path, ops: tuple[st
     )
     assert res.decisions == [] and res.put_back == []
     assert len(res.fixes) == 2
+
+
+def test_build_ops_keeps_only_the_ops_the_heal_vocabulary_names(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from reporails_cli.core.heal.keyed import build_ops
+    from reporails_cli.core.platform.dto.diagnostics import LocationRelation
+
+    path = tmp_path / "CLAUDE.md"
+    path.write_bytes(DOC.encode())
+    items = tuple(
+        LocationFinding("CORE:C:0001", str(path), 7, None, op) for op in ("code", "together", "frobnicate", "")
+    )
+    relations = tuple(
+        LocationRelation("CORE:C:0002", str(path), 9, str(path), 3, op) for op in ("together", "reshuffle")
+    )
+    wf = RemediationWorkflow(
+        locations=(WorkflowLocation(1, "main", "main", "always", (str(path),), "", items, relations),)
+    )
+
+    with caplog.at_level("WARNING", logger="reporails_cli.core.heal.keyed"):
+        ops, keys = build_ops(wf, {str(path): []}, tmp_path)
+
+    assert [o.op for o in ops] == ["code"]
+    assert keys == {(ops[0].file, 7, None, "code")}
+    warned = [r.getMessage() for r in caplog.records]
+    assert len(warned) == 2
+    assert "frobnicate" in warned[0] and "CORE:C:0001" in warned[0]
+    assert "reshuffle" in warned[1] and "CORE:C:0002" in warned[1]

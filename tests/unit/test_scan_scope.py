@@ -525,9 +525,9 @@ class TestUserScopeSubagentMemoryExclusion:
         ids=["home", "absolute", "drive", "repo-local", "repo-local-2", "glob"],
     )
     def test_external_pattern_classifier(self, pattern: str, external: bool) -> None:
-        from reporails_cli.core.discovery.agent_discovery import is_external_pattern
+        from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
-        assert is_external_pattern(pattern) is external
+        assert is_rooted_pattern(pattern) is external
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

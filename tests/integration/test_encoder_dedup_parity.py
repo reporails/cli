@@ -1,4 +1,4 @@
-"""Distinct-text bucketed encoding must equal the per-text path for every input position."""
+"""Decoding a text alone and inside a larger batch must give identical results for every input position."""
 
 from __future__ import annotations
 
@@ -36,14 +36,14 @@ _TEXTS = [
 @pytest.mark.integration
 @pytest.mark.subsys_map
 @requires_model
-def test_decode_logits_batch_with_duplicates_equals_per_text(deterministic_ort: None) -> None:
-    from reporails_cli.core.mapper.multislot_frames import _decode_logits, _decode_logits_batch
+def test_decode_logits_batch_with_duplicates_equals_batch_of_one(deterministic_ort: None) -> None:
+    from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch
 
     progress: list[tuple[int, int]] = []
     batch = _decode_logits_batch(_TEXTS, lambda d, t: progress.append((d, t)))
     assert len(batch) == len(_TEXTS)
     for text, got in zip(_TEXTS, batch, strict=True):
-        want = _decode_logits(text)
+        (want,) = _decode_logits_batch([text])
         if want is None:
             assert got is None
             continue

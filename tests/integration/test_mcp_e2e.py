@@ -60,11 +60,19 @@ def _run_async(coro: Any) -> Any:
 
 def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Call an MCP tool and return the text content."""
-    from reporails_cli.interfaces.mcp.server import call_tool
+    from mcp.server.mcpserver.exceptions import ToolError
+    from mcp.types import CallToolResult, TextContent
 
-    results = _run_async(call_tool(name, arguments))
-    assert len(results) == 1
-    return results[0].text
+    from reporails_cli.interfaces.mcp.server import server as mcp_server
+
+    try:
+        result = _run_async(mcp_server.call_tool(name, arguments or {}))
+    except ToolError as exc:
+        return json.dumps({"error": str(exc)})
+    assert isinstance(result, CallToolResult)
+    content = list(result.content) or [TextContent(type="text", text=json.dumps(result.structured_content or {}))]
+    assert len(content) == 1
+    return content[0].text
 
 
 def _bounded_reply(path: Path) -> dict[str, Any]:
@@ -116,9 +124,9 @@ class TestStructuredOutput:
     @pytest.mark.subsys_server
     def test_all_tools_are_read_only(self) -> None:
         """All three tools carry the read-only annotation for clients that read hints."""
-        from reporails_cli.interfaces.mcp.server import list_tools
+        from reporails_cli.interfaces.mcp.server import server as mcp_server
 
-        tools = {t.name: t for t in _run_async(list_tools())}
+        tools = {t.name: t for t in _run_async(mcp_server.list_tools())}
         for name in ("validate", "remedy_brief", "preflight", "explain"):
             assert tools[name].annotations is not None
             assert tools[name].annotations.read_only_hint is True
@@ -135,9 +143,9 @@ class TestListTools:
     @pytest.mark.subsys_api
     def test_all_tools_present(self) -> None:
         """list_tools should return the current surface: validate, remedy_brief, heal_apply, preflight, explain."""
-        from reporails_cli.interfaces.mcp.server import list_tools
+        from reporails_cli.interfaces.mcp.server import server as mcp_server
 
-        tools = _run_async(list_tools())
+        tools = _run_async(mcp_server.list_tools())
         names = {t.name for t in tools}
         assert names == {"validate", "remedy_brief", "heal_apply", "preflight", "explain"}
 
@@ -146,9 +154,9 @@ class TestListTools:
     @pytest.mark.subsys_api
     def test_validate_tool_path_optional(self) -> None:
         """validate tool should not require path (has default)."""
-        from reporails_cli.interfaces.mcp.server import list_tools
+        from reporails_cli.interfaces.mcp.server import server as mcp_server
 
-        tools = _run_async(list_tools())
+        tools = _run_async(mcp_server.list_tools())
         validate = next(t for t in tools if t.name == "validate")
         assert "required" not in validate.input_schema
 
@@ -159,9 +167,9 @@ class TestListTools:
         """The `validate` description promised a `compliance band` in its JSON — no
         such field reaches the JSON/MCP envelope (`formatters/json.py`'s `quality` key is a
         bare float score); the claim is stale."""
-        from reporails_cli.interfaces.mcp.server import list_tools
+        from reporails_cli.interfaces.mcp.server import server as mcp_server
 
-        tools = _run_async(list_tools())
+        tools = _run_async(mcp_server.list_tools())
         validate = next(t for t in tools if t.name == "validate")
         assert "compliance band" not in validate.description.lower()
 
@@ -474,11 +482,12 @@ class TestExplainTool:
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
     @pytest.mark.subsys_api
-    def test_known_rule_returns_details(self, dev_rules_dir: Path) -> None:
+    def test_known_rule_returns_details(self, dev_rules_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Explaining a known rule should return readable text with rule ID and title."""
         from reporails_cli.interfaces.mcp.rule_tools import explain_tool
 
-        result = explain_tool("CORE:S:0002", rules_paths=[dev_rules_dir])
+        monkeypatch.setattr("reporails_cli.core.platform.adapters.registry.get_rules_dir", lambda: dev_rules_dir)
+        result = explain_tool("CORE:S:0002")
         assert isinstance(result, str)
         assert "CORE:S:0002" in result
         assert "Section Headers Present" in result
@@ -966,54 +975,6 @@ class TestDisplayScoreHelper:
 
 
 # ---------------------------------------------------------------------------
-# ScanDelta — corrupted cache resilience
-# ---------------------------------------------------------------------------
-
-
-class TestScanDeltaResilience:
-    """ScanDelta.compute must not crash on corrupted analytics cache."""
-
-    def _compute(self, prev_level: str) -> Any:
-        from reporails_cli.core.platform.dto.results import ScanDelta
-
-        class FakePrev:
-            score = 5.0
-            violations_count = 2
-
-        FakePrev.level = prev_level  # type: ignore[attr-defined]
-        return ScanDelta.compute(5.0, "L3", 2, FakePrev())  # type: ignore[arg-type]
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_normal_level(self) -> None:
-        d = self._compute("L2")
-        assert d.level_improved is True
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_truncated_level(self) -> None:
-        """'L' with no digit must not crash."""
-        d = self._compute("L")
-        assert d is not None  # No IndexError
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_empty_level(self) -> None:
-        d = self._compute("")
-        assert d is not None
-
-    @pytest.mark.e2e
-    @pytest.mark.subsys_cli_ux
-    @pytest.mark.subsys_api
-    def test_garbage_level(self) -> None:
-        d = self._compute("garbage")
-        assert d is not None
-
-
-# ---------------------------------------------------------------------------
 # remedy_brief serves one location's rewrite brief from the last validate's payload
 # ---------------------------------------------------------------------------
 
@@ -1156,10 +1117,9 @@ class TestPreservationWiring:
     `tests/unit/test_preservation.py`; this pins the wiring at the MCP seam."""
 
     def setup_method(self) -> None:
-        from reporails_cli.interfaces.mcp import server, snapshots
+        from reporails_cli.interfaces.mcp import server
 
         server._validate_states.clear()
-        snapshots.clear_snapshots()
 
     teardown_method = setup_method
 
@@ -1497,10 +1457,9 @@ class TestFeedbackWiring:
     payload, carries none."""
 
     def setup_method(self) -> None:
-        from reporails_cli.interfaces.mcp import server, snapshots
+        from reporails_cli.interfaces.mcp import server
 
         server._validate_states.clear()
-        snapshots.clear_snapshots()
 
     teardown_method = setup_method
 
@@ -1548,10 +1507,9 @@ class TestFeedbackNewKinds:
     reaches `validate(path=<file>)`'s `feedback`, through the real tool function."""
 
     def setup_method(self) -> None:
-        from reporails_cli.interfaces.mcp import server, snapshots
+        from reporails_cli.interfaces.mcp import server
 
         server._validate_states.clear()
-        snapshots.clear_snapshots()
 
     teardown_method = setup_method
 
@@ -1667,10 +1625,9 @@ class TestFeedbackFiredBefore:
     plain per-file findings) is not a new kind."""
 
     def setup_method(self) -> None:
-        from reporails_cli.interfaces.mcp import server, snapshots
+        from reporails_cli.interfaces.mcp import server
 
         server._validate_states.clear()
-        snapshots.clear_snapshots()
 
     teardown_method = setup_method
 

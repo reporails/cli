@@ -11,15 +11,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
-
-import yaml
-from pydantic import ValidationError
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.lint.harness_models import _FIXTURE_EXCLUDES, RuleInfo
-from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration
-from reporails_cli.core.platform.utils.utils import read_frontmatter
+from reporails_cli.core.platform.adapters.registry import RuleReadError, read_rule
+from reporails_cli.core.platform.config.config import get_agent_config, get_agent_config_path, iter_agent_configs
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
+from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FieldProblem, FileTypeDeclaration, Rule
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +35,11 @@ def load_agent_config(
     Returns:
         Tuple of (file_type declarations, exclude_patterns).
     """
-    config_path = rules_root / agent / "config.yml"
+    config_path = get_agent_config_path(agent, rules_root)
     if not config_path.exists():
         logger.warning("Agent config not found: %s", config_path)
         return [], []
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except (yaml.YAMLError, OSError) as exc:
-        logger.warning("Failed to load agent config: %s", exc)
-        return [], []
-
-    file_types = load_file_types(agent, [rules_root])
-    return file_types, data.get("excludes", [])
+    return load_file_types(agent, [rules_root]), get_agent_config(agent, rules_root).excludes
 
 
 def _classify_fixture(
@@ -63,30 +54,23 @@ def _classify_fixture(
 def _build_prefix_to_agent_map(rules_root: Path) -> dict[str, str]:
     """Build NAMESPACE_PREFIX → agent_name map from agent configs.
 
-    Reads each {agent}/config.yml for the ``prefix`` field.
-    Agent directories sit alongside core/ (flat layout).
+    Reads the ``prefix`` field of each agent config.
     Returns mapping like ``{"CLAUDE": "claude", "CODEX": "codex"}``.
     """
-    mapping: dict[str, str] = {}
-    if not rules_root.is_dir():
-        return mapping
-    for agent_dir in sorted(rules_root.iterdir()):
-        if not agent_dir.is_dir() or agent_dir.name == "core":
-            continue
-        config_path = agent_dir / "config.yml"
-        if not config_path.exists():
-            continue
-        try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            prefix = data.get("prefix", "")
-            if prefix:
-                mapping[prefix] = agent_dir.name
-        except (yaml.YAMLError, OSError):
-            continue
-    return mapping
+    prefixes: dict[str, str] = {}
+    for _, data in iter_agent_configs(rules_root):
+        prefix, agent = as_str(data.get("prefix")), as_str(data.get("agent"))
+        if prefix and agent:
+            prefixes[prefix] = agent
+    return prefixes
 
 
 # ── Rule discovery ──────────────────────────────────────────────────
+
+
+def _relative(path: Path, root: Path) -> str:
+    """`path` relative to `root` as posix text, `path` itself when it lies outside `root`."""
+    return path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
 
 
 def _rule_matches_exclude(rule_id: str, patterns: list[str]) -> bool:
@@ -102,8 +86,7 @@ def _rule_matches_exclude(rule_id: str, patterns: list[str]) -> bool:
 def _scan_root(root: Path, agent: str | None = None) -> list[Path]:
     """Find rule directories under a single root.
 
-    Layout: core/{slug}/ for core rules, {agent}/{slug}/ for agent rules.
-    Agent directories sit alongside core/ and contain a config.yml.
+    Layout: core/{slug}/ for core rules, {agent}/{slug}/ for each agent folder.
     """
     dirs: list[Path] = []
 
@@ -111,56 +94,12 @@ def _scan_root(root: Path, agent: str | None = None) -> list[Path]:
     if core_dir.exists():
         dirs.extend(d for d in sorted(core_dir.iterdir()) if d.is_dir())
 
-    # Agent dirs are siblings of core/ that contain a config.yml
-    if root.is_dir():
-        for candidate in sorted(root.iterdir()):
-            if not candidate.is_dir() or candidate.name == "core":
-                continue
-            if not (candidate / "config.yml").exists():
-                continue
-            if agent and candidate.name != agent:
-                continue
-            dirs.extend(d for d in sorted(candidate.iterdir()) if d.is_dir() and d.name != "tests")
+    for folder, _ in iter_agent_configs(root):
+        if folder.name == "core" or (agent and folder.name != agent):
+            continue
+        dirs.extend(d for d in sorted(folder.iterdir()) if d.is_dir() and d.name != "tests")
 
     return dirs
-
-
-def _read_checks_yml(checks_yml: Path, source: str) -> tuple[Any, str]:
-    """`(raw checks, error)` from a rule's checks.yml; the error names the file and the problem."""
-    try:
-        data = yaml.safe_load(checks_yml.read_text(encoding="utf-8"))
-    except OSError as exc:
-        return [], f"{source}: cannot be read ({exc.strerror or exc})"
-    except yaml.YAMLError as exc:
-        problem = str(getattr(exc, "problem", "") or exc).strip().splitlines()[0]
-        return [], f"{source}: is not valid YAML ({problem})"
-    if data is None:
-        return [], ""
-    if not isinstance(data, dict):
-        return [], f"{source}: must be a mapping with a `checks` list, not a {type(data).__name__}"
-    return data.get("checks") or [], ""
-
-
-def _validate_checks(raw_checks: Any, source: str) -> tuple[list[Check], str]:
-    """`(checks, error)`: every entry validated against the Check model; the error names the first problems."""
-    if not isinstance(raw_checks, list):
-        return [], f"{source}: `checks` must be a list, not a {type(raw_checks).__name__}"
-    checks: list[Check] = []
-    problems: list[str] = []
-    for index, raw in enumerate(raw_checks, start=1):
-        if not isinstance(raw, dict):
-            problems.append(f"check {index} must be a mapping, not a {type(raw).__name__}")
-            continue
-        try:
-            checks.append(Check.model_validate(raw))
-        except ValidationError as exc:
-            label = f"check {index}" + (f" ({raw['id']})" if isinstance(raw.get("id"), str) else "")
-            for err in exc.errors()[:2]:
-                field_name = ".".join(str(part) for part in err["loc"]) or "value"
-                problems.append(f"{label}: {field_name}: {err['msg']}")
-    if problems:
-        return [], f"{source}: " + "; ".join(problems[:3])
-    return checks, ""
 
 
 def discover_rules(
@@ -199,51 +138,54 @@ def _load_rule(
     filter_rule: str | None,
     excludes: list[str],
 ) -> RuleInfo | None:
-    """The rule in `slug_dir`, or None when it has no readable `rule.md` or a filter or exclude drops it."""
+    """The rule in `slug_dir`, or None when it has no `rule.md` frontmatter or a filter or exclude drops it.
+
+    A rule whose checks cannot be read is returned with `load_error` set; one whose `rule.md` fields are
+    rejected is returned with them in `field_problems`.
+    """
     rule_md = slug_dir / "rule.md"
-    checks_yml = slug_dir / "checks.yml"
     if not rule_md.exists():
         return None
     rel_dir = slug_dir.relative_to(root).as_posix()
     if filter_path and not rel_dir.startswith(filter_path.rstrip("/")):
         return None
-    try:
-        content = rule_md.read_text(encoding="utf-8")
-    except OSError:
-        return None
 
-    meta = read_frontmatter(content).data
-    if not meta:
-        return None
-    rule_id = meta.get("id", "")
+    rule: Rule | None = None
+    meta: JsonObject = {}
+    load_error = ""
+    built_checks: list[Check] = []
+    problems: tuple[FieldProblem, ...] = ()
+    try:
+        read = read_rule(rule_md)
+    except RuleReadError as exc:
+        meta = exc.frontmatter
+        load_error = f"{_relative(exc.path, root)}: {exc.problem}" if exc.problem else ""
+        built_checks, problems = exc.checks, exc.field_problems
+    else:
+        if read is None:
+            return None
+        rule, meta = read
+    rule_id = rule.id if rule else as_str(meta.get("id"))
     if (filter_rule and rule_id != filter_rule) or _rule_matches_exclude(rule_id, excludes):
         return None
 
-    raw_checks = meta.get("checks", [])
-    source = f"{rel_dir}/rule.md"
-    load_error = ""
-    if not raw_checks and checks_yml.exists():
-        source = f"{rel_dir}/checks.yml"
-        raw_checks, load_error = _read_checks_yml(checks_yml, source)
-    # Route every check through the Check model so a schema-invalid entry is
-    # reported against its file instead of silently loading as an untyped dict.
-    checks: list[Check] = []
-    if not load_error:
-        checks, load_error = _validate_checks(raw_checks, source)
-
     return RuleInfo(
         rule_id=rule_id,
-        slug=meta.get("slug", ""),
-        title=meta.get("title", ""),
-        category=meta.get("category", ""),
-        rule_type=meta.get("type", ""),
-        match=meta.get("match") or {},
-        checks=checks,
+        slug=rule.slug if rule else as_str(meta.get("slug")),
+        title=rule.title if rule else as_str(meta.get("title")),
+        category=rule.category.value if rule else as_str(meta.get("category")),
+        checks=list(rule.checks) if rule else built_checks,
         rule_dir=slug_dir,
-        checks_yml=checks_yml,
-        supersedes=meta.get("supersedes") or "",
-        inherited=meta.get("inherited") or "",
+        checks_yml=slug_dir / "checks.yml",
+        supersedes=(rule.supersedes if rule else as_str(meta.get("supersedes"))) or "",
+        inherited=(rule.inherited if rule else as_str(meta.get("inherited"))) or "",
+        frontmatter_read=bool(meta),
+        severity_declared=bool(meta.get("severity")),
+        enforcement_required=bool(meta.get("enforcement_required")),
+        enforcement_mechanism_named=bool(meta.get("enforcement_mechanism")),
         load_error=load_error,
+        field_problems=problems,
+        rule_md_label=_relative(rule_md, root),
     )
 
 
@@ -251,16 +193,12 @@ def discover_agent_rules(
     rules_root: Path,
     agent: str,
     *,
-    filter_path: str | None = None,
-    filter_rule: str | None = None,
     package_roots: list[Path] | None = None,
 ) -> list[RuleInfo]:
     """Discover the rules of one agent: its own rules plus core, minus what its config excludes."""
     _, excludes = load_agent_config(rules_root, agent)
     return discover_rules(
         rules_root,
-        filter_path=filter_path,
-        filter_rule=filter_rule,
         package_roots=package_roots,
         excludes=excludes,
         agent=agent,
@@ -290,7 +228,7 @@ def apply_check_inheritance(rules: list[RuleInfo]) -> None:
     leaves the child's checks unmerged — the same fixture-only scope that
     `discover_rules`'s filters already impose elsewhere.
     """
-    by_id = {r.rule_id: r for r in rules}
+    by_id = {r.rule_id: r for r in rules if not r.load_failure}
     for rule in rules:
         parent_id = rule.supersedes or rule.inherited
         if not parent_id:

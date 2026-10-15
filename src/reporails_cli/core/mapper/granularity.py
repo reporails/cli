@@ -7,11 +7,17 @@ whose clauses sit below the coherence floor is flagged `over_merged`.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
+
+import numpy as np
+from numpy.typing import NDArray
 
 from reporails_cli.core.mapper.charge_floors import is_quoted_line
 from reporails_cli.core.mapper.lexical import split_clauses
 from reporails_cli.core.platform.dto.ruleset import Atom
+
+if TYPE_CHECKING:
+    from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
 # Clauses of one atom sitting below this similarity count as distinct topics.
 _OVER_MERGED_COSINE = 0.5
@@ -34,14 +40,14 @@ def _audit_eligible(atom: Atom) -> bool:
     )
 
 
-def _min_pairwise_cosine(vecs: Any) -> float:
+def _min_pairwise_cosine(vecs: NDArray[np.float32]) -> float:
     """Minimum off-diagonal cosine of L2-normalized row vectors (k >= 2)."""
     sims = vecs @ vecs.T
     k = sims.shape[0]
     return min(float(sims[i, j]) for i in range(k) for j in range(i + 1, k))
 
 
-def audit_over_merged(atoms: list[Atom], encoder: Any) -> int:
+def audit_over_merged(atoms: list[Atom], encoder: OnnxEmbedder) -> int:
     """Flag multi-clause atoms whose clauses are topically incoherent.
 
     Sets `over_merged` and `min_clause_cosine` in place on each eligible

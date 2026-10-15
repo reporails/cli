@@ -5,9 +5,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
+
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
+from reporails_cli.core.platform.utils.utils import fast_yaml_load
+
+# The check fields that hold a regex alternation.
+REGEX_PATTERN_FIELDS = ("pattern-regex", "pattern-not-regex")
 
 _GUARD_PATTERNS = frozenset(
     {
@@ -181,24 +186,26 @@ def _try_decompose(pattern: str, target: str) -> _PatternInfo | None:
     return _PatternInfo(target, d.terms) if d else None
 
 
-def _analyze_patterns_array(patterns: list[dict[str, Any]]) -> list[_PatternInfo]:
+def _analyze_patterns_array(patterns: list[JsonValue]) -> list[_PatternInfo]:
     """Extract alternation info from a patterns: array."""
     infos: list[_PatternInfo] = []
     for entry in patterns:
-        for fld in ("pattern-regex", "pattern-not-regex"):
+        if not isinstance(entry, dict):
+            continue
+        for fld in REGEX_PATTERN_FIELDS:
             if fld in entry:
-                info = _try_decompose(entry[fld], fld)
+                info = _try_decompose(as_str(entry[fld]), fld)
                 if info:
                     infos.append(info)
     return infos
 
 
-def _analyze_check(check: dict[str, Any]) -> list[_PatternInfo]:
+def _analyze_check(check: JsonObject) -> list[_PatternInfo]:
     """Find extractable alternation patterns in a check definition."""
-    ctype = check.get("type", "")
+    ctype = as_str(check.get("type", ""))
 
     if ctype == "mechanical" and check.get("check") == "content_absent":
-        pat = (check.get("args") or {}).get("pattern", "")
+        pat = as_str(as_object(check.get("args")).get("pattern", ""))
         info = _try_decompose(pat, "args.pattern")
         return [info] if info else []
 
@@ -206,30 +213,32 @@ def _analyze_check(check: dict[str, Any]) -> list[_PatternInfo]:
         return []
 
     if "pattern-regex" in check and "patterns" not in check:
-        info = _try_decompose(check["pattern-regex"], "pattern-regex")
+        info = _try_decompose(as_str(check["pattern-regex"]), "pattern-regex")
         return [info] if info else []
 
     if "patterns" in check:
-        return _analyze_patterns_array(check["patterns"])
+        return _analyze_patterns_array(as_list(check["patterns"]))
 
     return []
 
 
-def extract_vocab(rule_dir: Path) -> dict[str, Any] | None:
+def extract_vocab(rule_dir: Path) -> JsonObject | None:
     """Extract vocab.yml content from a rule's checks.yml."""
     checks_path = rule_dir / "checks.yml"
     if not checks_path.exists():
         return None
     try:
-        data = yaml.safe_load(checks_path.read_text(encoding="utf-8"))
+        data = fast_yaml_load(checks_path.read_text(encoding="utf-8"))
     except (yaml.YAMLError, OSError):
         return None
 
-    checks = (data.get("checks") or []) if isinstance(data, dict) else []
-    vocab: dict[str, Any] = {}
+    checks = as_list(data.get("checks")) if isinstance(data, dict) else []
+    vocab: JsonObject = {}
 
     for check in checks:
-        cid = check.get("id", "")
+        if not isinstance(check, dict):
+            continue
+        cid = as_str(check.get("id", ""))
         suffix = cid.rsplit(".", 1)[-1] if "." in cid else cid
         if not suffix:
             continue
@@ -239,9 +248,9 @@ def extract_vocab(rule_dir: Path) -> dict[str, Any] | None:
             continue
 
         if len(infos) == 1:
-            vocab[suffix] = infos[0].terms
+            vocab[suffix] = [*infos[0].terms]
         else:
-            vocab[suffix] = {info.target: info.terms for info in infos}
+            vocab[suffix] = {info.target: [*info.terms] for info in infos}
 
     return vocab if vocab else None
 
@@ -251,7 +260,7 @@ class ExtractResult:
     """Result of extracting vocab from one rule directory."""
 
     rule_dir: Path
-    vocab: dict[str, Any] | None
+    vocab: JsonObject | None
     message: str
 
 
@@ -272,7 +281,7 @@ def extract_all(rules_root: Path) -> list[ExtractResult]:
     return results
 
 
-def write_vocab(rule_dir: Path, vocab: dict[str, Any]) -> Path:
+def write_vocab(rule_dir: Path, vocab: JsonObject) -> Path:
     """Write vocab.yml to a rule directory."""
     vocab_path = rule_dir / "vocab.yml"
     vocab_path.write_text(

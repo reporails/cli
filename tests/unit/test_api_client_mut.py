@@ -17,6 +17,7 @@ from reporails_cli.core.platform.adapters.api_client import (
     _deserialize_per_file,
     _deserialize_quality,
 )
+from tests.conftest import ails_client
 
 # --- L517: per_file diagnostic required-field guard (or -> and, 3 sites) ---
 
@@ -128,7 +129,7 @@ def test_lint_default_local_forwarded_as_empty(monkeypatch):
         return object()
 
     monkeypatch.setattr(AilsClient, "_lint_remote", _fake_remote, raising=True)
-    client = AilsClient(base_url="https://example.invalid")
+    client = ails_client("https://example.invalid")
     client.lint(_make_map(), root=Path("/tmp/reporails-test-scan-root"))
     assert list(captured["local"]) == []
 
@@ -145,7 +146,7 @@ def test_explicit_tier_wins_over_env(monkeypatch):
     `or -> and` mutant yields env — asserting the explicit tier reddens it.
     """
     monkeypatch.setenv("AILS_TIER", "enterprise")
-    client = AilsClient(base_url="https://example.invalid", tier="pro")
+    client = ails_client("https://example.invalid", tier="pro")
     assert client.tier == "pro"
 
 
@@ -154,7 +155,7 @@ def test_explicit_tier_wins_over_env(monkeypatch):
 def test_env_tier_used_when_no_explicit_tier(monkeypatch):
     """With no explicit tier, the env value is used (second `or` site)."""
     monkeypatch.setenv("AILS_TIER", "enterprise")
-    client = AilsClient(base_url="https://example.invalid")
+    client = ails_client("https://example.invalid")
     assert client.tier == "enterprise"
 
 

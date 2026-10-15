@@ -76,8 +76,6 @@ def compute_identity(
     paths: list[Path],
     *,
     root: Path,
-    model: str = EMBEDDING_MODEL,
-    schema: str = SCHEMA_VERSION,
     segmentation: str = "legacy",
 ) -> str:
     """Compute the identity key for a file set. Deterministic in path order + content.
@@ -93,8 +91,8 @@ def compute_identity(
     """
 
     parts = [
-        f"model={model}",
-        f"schema={schema}",
+        f"model={EMBEDDING_MODEL}",
+        f"schema={SCHEMA_VERSION}",
         f"atoms={_CACHE_VERSION}",
         f"segmentation={segmentation}",
         f"root={root}",

@@ -8,7 +8,6 @@ import regex as re
 
 from reporails_cli.core.lint.regex.compiler import CompiledCheck
 from reporails_cli.core.lint.regex.not_evaluated import PatternTimeoutError
-from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,6 @@ def _any_of_matches(patterns: tuple[re.Pattern[str], ...], content: str) -> list
 def match_check(
     check: CompiledCheck,
     content: str,
-    body_content: str | None = None,
 ) -> list[re.Match[str]]:
     """Execute a single compiled check against file content.
 
@@ -70,8 +68,6 @@ def match_check(
     native `timeout=` bounds a pathological pattern rather than letting it hang
     the scan; the 1 MB file-size cap is the second bound.
     """
-    if check.body_only:
-        content = body_content if body_content is not None else strip_frontmatter(content, keep_lines=True)
     if check.either_patterns:
         return _any_of_matches(check.either_patterns, content)
 
@@ -92,7 +88,6 @@ def match_check(
 def every_match_lines(
     check: CompiledCheck,
     content: str,
-    body_content: str | None = None,
 ) -> list[re.Match[str]]:
     """Every matching line of a check that forbids something: its first match on each line.
 
@@ -100,11 +95,9 @@ def every_match_lines(
     (the earlier ones only gate the check, e.g. "this is a hooks block"), so one forbidden thing
     is one finding, not one per pattern; a single pattern, or an either-set, reports each line it matches.
     """
-    first = match_check(check, content, body_content)
+    first = match_check(check, content)
     if not first:
         return first
-    if check.body_only:
-        content = body_content if body_content is not None else strip_frontmatter(content, keep_lines=True)
     try:
         found = sorted(
             (m for pat in (check.either_patterns or check.patterns[-1:]) for m in safe_finditer(pat, content)),

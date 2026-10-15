@@ -12,13 +12,12 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.discovery.agent_config import (
     categorize_file_type,
     extract_patterns,
     extract_properties,
-    iter_agent_configs,
 )
 from reporails_cli.core.discovery.agent_discovery import discover_from_config
 from reporails_cli.core.discovery.agent_markers import agent_has_marker, dir_prefix_from_glob
@@ -26,7 +25,9 @@ from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
 from reporails_cli.core.discovery.file_aliases import clear_alias_cache, dedupe_with_aliases, store_alias_cache
 from reporails_cli.core.discovery.read_gates import reads_as_fallback
 from reporails_cli.core.discovery.surface_config import config_names_agent
-from reporails_cli.core.platform.config.config import get_project_config, get_rules_path
+from reporails_cli.core.platform.config.config import get_project_config, get_rules_path, iter_agent_configs
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str, str_list
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 if TYPE_CHECKING:
     from reporails_cli.core.discovery.exclusions import RunExclusions
@@ -48,10 +49,10 @@ class AgentType:
     shared_names: tuple[str, ...] = ()  # root file names several agents read; each points at no one agent
 
 
-def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
+def _parse_agent_config(data: JsonObject) -> AgentType | None:
     """Parse a single agent config.yml into an AgentType."""
-    agent_id = data.get("agent")
-    agent_name: str = data.get("name", agent_id) or agent_id or ""
+    agent_id = as_str(data.get("agent"))
+    agent_name = as_str(data.get("name", agent_id)) or agent_id
     file_types = data.get("file_types")
     if not agent_id or not file_types or not isinstance(file_types, dict):
         return None
@@ -71,7 +72,7 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
 
         if bucket == "instruction":
             instr_patterns.extend(
-                root_p for p in patterns if (root_p := p.lstrip("*").lstrip("/")) and not root_p.startswith(("/", "~"))
+                root_p for p in patterns if not is_rooted_pattern(p) and (root_p := p.lstrip("*").lstrip("/"))
             )
         elif bucket == "rule":
             rule_pats.extend(patterns)
@@ -81,7 +82,7 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
                     dir_patterns.append(pair)
         elif bucket == "config":
             cfg_patterns.extend(patterns)
-            instr_patterns.extend(p for p in patterns if not p.startswith(("/", "~", "*")))
+            instr_patterns.extend(p for p in patterns if not is_rooted_pattern(p) and not p.startswith("*"))
 
     return AgentType(
         id=agent_id,
@@ -92,7 +93,7 @@ def _parse_agent_config(data: dict[str, Any]) -> AgentType | None:
         directory_patterns=tuple(dir_patterns),
         core=data.get("core") is True,
         home_dir=str(data.get("home_dir") or ""),
-        shared_names=tuple(str(n) for n in data.get("shared_names") or ()),
+        shared_names=tuple(str_list(data.get("shared_names"))),
     )
 
 
@@ -103,7 +104,7 @@ def _build_agent_registry() -> dict[str, AgentType]:
     if not rules_path or not rules_path.is_dir():
         return registry
 
-    for data in iter_agent_configs(rules_path):
+    for _, data in iter_agent_configs(rules_path):
         agent_type = _parse_agent_config(data)
         if agent_type:
             registry[agent_type.id] = agent_type
@@ -151,7 +152,6 @@ def _detect_agent(
     agent_type: AgentType,
     *,
     known: dict[str, AgentType],
-    rules_paths: list[Path] | None,
     project_excludes: frozenset[str],
     project_config: ProjectConfig | None,
 ) -> DetectedAgent | None:
@@ -165,7 +165,7 @@ def _detect_agent(
 
     # Config-driven discovery from bundled config.yml
     config_result = discover_from_config(
-        target, agent_id, rules_paths, project_excludes, project_config=project_config, repo_scoped=True
+        target, agent_id, project_excludes, project_config=project_config, repo_scoped=True
     )
     if config_result is None:
         return None
@@ -189,10 +189,7 @@ def _detect_agent(
     )
 
 
-def detect_agents(
-    target: Path,
-    rules_paths: list[Path] | None = None,
-) -> list[DetectedAgent]:
+def detect_agents(target: Path) -> list[DetectedAgent]:
     """Detect coding agents in the target directory.
 
     Uses config.yml file_types from bundled framework for discovery.
@@ -220,7 +217,6 @@ def detect_agents(
                 target,
                 agent_type,
                 known=known,
-                rules_paths=rules_paths,
                 project_excludes=project_excludes,
                 project_config=project_config,
             )
@@ -238,16 +234,13 @@ def detect_agents(
 def detect_single_agent(
     target: Path,
     agent_id: str,
-    rules_paths: list[Path] | None = None,
 ) -> DetectedAgent | None:
     """Detect a single agent by ID, bypassing disambiguation."""
     agent_type = get_known_agents().get(agent_id)
     if not agent_type:
         return None
 
-    config_result = discover_from_config(
-        target, agent_id, rules_paths, project_config=get_project_config(target), repo_scoped=True
-    )
+    config_result = discover_from_config(target, agent_id, project_config=get_project_config(target), repo_scoped=True)
     if config_result is None:
         return None
     instruction_files, rule_files, config_files = config_result

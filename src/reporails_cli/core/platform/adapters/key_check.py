@@ -10,12 +10,15 @@ from reporails_cli.core.platform.dto.diagnostics import ACCOUNT_TIERS, AUTH_REJE
 from reporails_cli.core.platform.dto.sign_in import KeyCheck
 from reporails_cli.core.platform.utils.utils import json_object
 
+# Seconds to wait for the server's reply.
+_TIMEOUT_S = 10.0
 
-def check_api_key(api_key: str, *, base_url: str | None = None, timeout: float = 10.0) -> KeyCheck:
+
+def check_api_key(api_key: str) -> KeyCheck:
     """Sends an empty request with the key; reads the tier and notices the reply carries, or the rejection."""
-    url, headers = AilsClient(base_url=base_url, api_key=api_key).diagnose_request("application/json")
+    url, headers = AilsClient(api_key=api_key).diagnose_request("application/json")
     try:
-        resp = httpx.post(url, content=b"{}", headers=headers, timeout=timeout)
+        resp = httpx.post(url, content=b"{}", headers=headers, timeout=_TIMEOUT_S)
     except (httpx.HTTPError, OSError):
         return KeyCheck("unavailable", reason=f"could not reach {url}")
 

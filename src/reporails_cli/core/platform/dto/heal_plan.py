@@ -3,13 +3,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, TypeGuard, get_args
+
+# The operations a finding asks of a heal run; the order is the order of the guide that describes each.
+HealOp = Literal[
+    "elaborate",
+    "category",
+    "keep-cut",
+    "name",
+    "scope",
+    "charge",
+    "split",
+    "rewrite",
+    "hoist",
+    "direct",
+    "move",
+    "negation-form",
+    "unbold",
+    "italic",
+    "code",
+    "dedupe",
+]
+_HEAL_OPS: frozenset[HealOp] = frozenset(get_args(HealOp))
 
 # Ops a script can carry out; every other op is a slot.
-SCRIPTABLE_OPS = frozenset({"split", "direct", "negation-form", "move", "unbold", "italic", "code", "dedupe"})
+SCRIPTABLE_OPS: frozenset[HealOp] = frozenset(
+    {"split", "direct", "negation-form", "move", "unbold", "italic", "code", "dedupe"}
+)
 # Scriptable ops that rewrite the text of their own line in place: a second one on a line the first rewrote
 # folds into that edit.
-IN_PLACE_OPS = frozenset({"direct", "negation-form", "unbold", "italic", "code"})
+IN_PLACE_OPS: frozenset[HealOp] = frozenset({"direct", "negation-form", "unbold", "italic", "code"})
+# The ops whose guide lets the line leave its file: `dedupe` and `keep-cut` delete it, `hoist` moves it away.
+LINE_LEAVING_OPS: frozenset[HealOp] = frozenset({"dedupe", "keep-cut", "hoist"})
+# The in-place ops that change the words of a line; on one line they run before the formatting ops.
+WORD_CHANGING_OPS: frozenset[HealOp] = frozenset({"direct", "negation-form"})
+
+
+def is_heal_op(value: object) -> TypeGuard[HealOp]:
+    """Whether `value`, read from a reply, is one of the heal ops."""
+    return value in _HEAL_OPS
+
+
+# The op a deviation is about: a heal op, or `outside` for a change on a line the plan does not carry.
+DeviationOp = HealOp | Literal["outside"]
 
 
 @dataclass(frozen=True)
@@ -25,7 +61,7 @@ class PlanOp:
     file: str
     line: int
     pi: int | None
-    op: str
+    op: HealOp
     expect: dict[str, list[object]] = field(default_factory=dict)
 
 
@@ -33,7 +69,7 @@ class PlanOp:
 class Folded:
     """An in-place op folded into the edit of its line: its op, rule and the place of its atom on the line."""
 
-    op: str
+    op: HealOp
     rule: str
     nth: int | None = None
 
@@ -52,7 +88,7 @@ class Edit:
     line: int
     before: str
     after: str | None
-    op: str
+    op: HealOp
     rule: str
     move_after: int | None = None
     nth: int | None = None
@@ -79,7 +115,7 @@ class Slot:
     file: str
     line: int
     pi: int | None
-    op: str
+    op: HealOp
     rule: str
     text: str
     bound: Literal["line", "section"]
@@ -109,7 +145,7 @@ class Deviation:
 
     file: str
     line: int
-    op: str
+    op: DeviationOp
     rule: str
     expected: str
     found: str

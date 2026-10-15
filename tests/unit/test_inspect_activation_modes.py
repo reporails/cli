@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.inspect import _detect_file_loading, _load_registry
+from reporails_cli.core.mapper.inspect import _detect_file_activation, _load_registry
 
 COPILOT = ".github/instructions/a.instructions.md"
 CURSOR = ".cursor/rules/a.mdc"
@@ -18,7 +18,7 @@ def _loading(root: Path, rel: str, frontmatter: str, registry=None):
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{frontmatter}---\n\nBody.\n" if frontmatter else "Body.\n", encoding="utf-8")
-    result = _detect_file_loading(path, root, registry or _load_registry())
+    result = _detect_file_activation(path, root, registry or _load_registry())[:5]
     return result[:3]
 
 

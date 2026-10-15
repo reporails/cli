@@ -88,38 +88,6 @@ def _main_location(files: list[str]) -> dict[str, Any]:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-@requires_rules
-def test_the_guide_renders_as_markdown_in_rule_order_and_the_same_every_time() -> None:
-    markdown = remedy_brief.ideal_instruction_markdown()
-
-    guide = remedy_brief.ideal_instruction_guide()
-    headings = [line for line in markdown.splitlines() if line.startswith("### ")]
-    assert headings == [f"### {g['title']} ({g['id']})" for g in guide]
-    assert [g["id"] for g in guide] == list(remedy_brief.IDEAL_INSTRUCTION_RULE_IDS)
-    for entry in guide:
-        assert entry["pass"] in markdown
-        assert entry["antipatterns"] in markdown
-    assert markdown.count("# The Ideal Instruction\n") == 0, "a rule's own title line is not repeated"
-    assert remedy_brief.ideal_instruction_markdown() == markdown
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
-@requires_rules
-def test_ideal_instruction_ids_are_in_fixed_order_with_statement_and_examples() -> None:
-    guide = remedy_brief.ideal_instruction_guide()
-    assert [g["id"] for g in guide] == list(remedy_brief.IDEAL_INSTRUCTION_RULE_IDS)
-    for entry in guide:
-        assert set(entry) == {"id", "title", "statement", "pass", "antipatterns"}
-        assert entry["title"], entry["id"]
-    # At least the well-documented rules carry a non-empty statement / pass / antipatterns —
-    # a wholly-empty guide entry for every field would mean the extraction broke.
-    assert any(e["statement"] for e in guide)
-    assert any(e["pass"] for e in guide)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
 def test_a_file_with_no_map_makes_the_whole_brief_a_structured_error(monkeypatch, tmp_path: Path) -> None:
     """When a file of the location yields no map (a pipeline error, an offline server),
     the whole reply is a structured `brief_unavailable` error naming the file — never an entry
@@ -493,7 +461,6 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
     `plugin_update_required` before any work: no pipeline run, no snapshot, and the circuit
     breaker counters stay as they were."""
     server._validate_states.clear()
-    snapshots.clear_snapshots()
     target = tmp_path / "CLAUDE.md"
     target.write_text("# T\n\nAlways run the tests.\n", encoding="utf-8")
 
@@ -623,7 +590,6 @@ def _op_location(op: str, line: int, expect: dict[str, Any]) -> dict[str, Any]:
 
 
 def _brief_with(monkeypatch, tmp_path: Path, text: str, atoms: list[Any], location: dict[str, Any]) -> dict[str, Any]:
-    snapshots.clear_snapshots()
     (tmp_path / "CLAUDE.md").write_text(text, encoding="utf-8")
     fake_map = SimpleNamespace(atoms=tuple(atoms), files=())
     monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))

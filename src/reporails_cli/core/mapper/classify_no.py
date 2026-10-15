@@ -26,7 +26,9 @@ _NO_ADVERBIAL_FOLLOWERS = frozenset({"longer", "matter", "more", "less", "doubt"
 # boundary`). Every other preposition / subordinator describes an absence instead
 # (`No support for Windows`, `No plans for v2`, `No context unless configured`),
 # so this is the set that disqualifies the prohibition reading.
-NO_DESCRIPTIVE_PREPS = frozenset(
+# The words in it that open a clause rather than a phrase (`No context unless configured`).
+NO_CLAUSE_OPENERS = frozenset({"unless", "when", "while", "except", "since"})
+NO_DESCRIPTIVE_PREPS = NO_CLAUSE_OPENERS | frozenset(
     {
         "for",
         "of",
@@ -36,17 +38,12 @@ NO_DESCRIPTIVE_PREPS = frozenset(
         "by",
         "to",
         "from",
-        "unless",
-        "when",
-        "while",
-        "except",
         "after",
         "before",
         "during",
         "beyond",
         "near",
         "around",
-        "since",
         "per",
     }
 )

@@ -1,29 +1,20 @@
 """Level configuration and project level determination.
 
-Two level mechanisms coexist:
-
-1. Target existence (determine_project_level): computes present file types
-   for rule applicability. Uses axis divergence from file type properties.
-
-2. Capability gates (determine_level_from_gates): computes the displayed
-   project level from detected features. The level is the highest level
-   whose own capability is present — a project may skip a level (e.g.
-   skills + sub-agents + memory with no path-scoped rules) and still reach
-   the level its highest surface supports.
-
-The displayed level comes from (2). Rule applicability comes from (1).
+Capability gates (determine_level_from_gates) compute the displayed project
+level from detected features. The level is the highest level whose own
+capability is present — a project may skip a level (e.g. skills + sub-agents
++ memory with no path-scoped rules) and still reach the level its highest
+surface supports.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.platform.dto.models import Level
 
 if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
     from reporails_cli.core.platform.dto.results import DetectedFeatures
 
 # Level labels — canonical mapping per `docs/capability-levels.md` ladder.
@@ -41,102 +32,6 @@ LEVEL_LABELS: dict[Level, str] = {
 # Ordered levels for walking (L1 → L7)
 _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6, Level.L7]
 
-
-def get_level_labels() -> dict[Level, str]:
-    """Get all level labels."""
-    return LEVEL_LABELS
-
-
-# ===========================================================================
-# Mechanism 1: Target existence (for rule applicability)
-# ===========================================================================
-
-# Baseline property values — "main" instruction file defaults.
-# All 8 axes from the instruction file property space.
-# Properties that match these contribute zero depth.
-_BASELINE: dict[str, str] = {
-    "format": "freeform",
-    "scope": "global",
-    "cardinality": "singleton",
-    "loading": "session_start",
-    "precedence": "project",
-    "lifecycle": "static",
-    "maintainer": "human",
-    "vcs": "committed",
-}
-
-
-def _property_depth(properties: dict[str, str | list[str]]) -> int:
-    """Count how many structural properties diverge from baseline.
-
-    A list-valued property (e.g., format: [frontmatter, freeform]) diverges
-    if it contains values beyond the baseline — the extra values represent
-    additional structural complexity.
-    """
-    count = 0
-    for prop, base in _BASELINE.items():
-        actual = properties.get(prop, base)
-        if isinstance(actual, list):
-            # Diverges if the list contains any non-baseline value
-            count += 1 if any(v != base for v in actual) else 0
-        elif actual != base:
-            count += 1
-    return count
-
-
-def determine_project_level(
-    scan_root: Path,
-    file_types: list[FileTypeDeclaration],
-    classified_files: list[ClassifiedFile],
-) -> tuple[Level, set[str]]:
-    """Determine present file types for rule applicability.
-
-    Returns (level_from_divergence, set of present file type names).
-    The level value is NOT used for display — only present_types matters.
-    """
-    present: set[str] = set()
-    max_depth = 0
-
-    # Types already matched to actual files
-    for cf in classified_files:
-        present.add(cf.file_type)
-        max_depth = max(max_depth, _property_depth(cf.properties))
-
-    # Types declared but not yet in classified_files (check filesystem)
-    for ft in file_types:
-        if ft.name not in present and _type_exists(scan_root, ft.patterns):
-            present.add(ft.name)
-            max_depth = max(max_depth, _property_depth(ft.properties))
-
-    if not present:
-        return Level.L0, present
-
-    return Level(f"L{min(max_depth + 1, 6)}"), present
-
-
-def _type_exists(scan_root: Path, patterns: tuple[str, ...]) -> bool:
-    """Check if any file matching the patterns exists under scan_root."""
-    for pattern in patterns:
-        clean = pattern.removeprefix("./")
-        if clean.startswith("/"):
-            # Absolute paths (e.g., /etc/claude-code/skills/**) are system-level
-            # and cannot be relative-globbed under scan_root — skip
-            continue
-        if "*" not in clean:
-            if (scan_root / clean).exists():
-                return True
-        else:
-            try:
-                next(scan_root.glob(clean))
-                return True
-            except StopIteration:
-                pass
-    return False
-
-
-# ===========================================================================
-# Mechanism 2: Capability gates (for displayed project level)
-# ===========================================================================
 
 # Level → capability mapping per `docs/capability-levels.md` detection table.
 # L1=Primer, L2=Composite, L3=Scoped, L4=Delegated, L5=Abstracted,
@@ -158,7 +53,7 @@ LEVEL_CAPS: dict[str, list[str]] = {
 
 # Capability → detection mapping (CLI-owned).
 # Each lambda takes a DetectedFeatures and returns bool.
-FEATURE_DETECTORS: dict[str, Callable[..., bool]] = {
+FEATURE_DETECTORS: dict[str, Callable[[DetectedFeatures], bool]] = {
     # L1 — Primer: one main file present
     "instruction_file": lambda f: f.has_instruction_file,
     # L2 — Composite: multiple main files in the project (user-scope files do not count)

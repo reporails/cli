@@ -10,7 +10,6 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.cache.map_cache import (
     CachedFileEntry,
@@ -39,7 +38,9 @@ from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE
 from reporails_cli.core.mapper.serialize import validate_atoms
 from reporails_cli.core.mapper.split_topic import split_over_merged_atoms
+from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
+from reporails_cli.core.platform.observability.stage_timer import StageTimer
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer as _get_stage_timer
 from reporails_cli.core.platform.utils.directives import strip_directives
 
@@ -74,7 +75,7 @@ def _translate_atom_lines(
             a.imported_line = origin[1]
 
 
-def _atoms_from_cache(cached: Any, path: Path) -> list[Atom]:
+def _atoms_from_cache(cached: CachedFileEntry, path: Path) -> list[Atom]:
     """Rehydrate cached atoms for `path`.
 
     Lines were already translated to source coordinates the first time this
@@ -119,7 +120,7 @@ def _tokenize_and_cache(
 
 def _classify_file(
     path: Path,
-    map_cache: Any,
+    map_cache: MapCache | None,
     all_atoms: list[Atom],
     atoms_needing_embed: list[Atom],
     segmentation: str = "legacy",
@@ -147,7 +148,7 @@ def _classify_file(
 
 
 def _update_cache_after_embedding(
-    map_cache: Any,
+    map_cache: MapCache,
     all_atoms: list[Atom],
     atoms_needing_embed: list[Atom],
     file_records: list[FileRecord],
@@ -164,7 +165,7 @@ def _update_cache_after_embedding(
                 key = cache_key_for_path(Path(frec.path))
             except OSError:
                 continue
-            map_cache.put(key, CachedFileEntry(key, atoms_to_dicts(file_atoms)))
+            map_cache.put(key, CachedFileEntry(atoms_to_dicts(file_atoms)))
 
 
 def _validate_and_log(ruleset: RulesetMap) -> None:
@@ -173,7 +174,7 @@ def _validate_and_log(ruleset: RulesetMap) -> None:
     for f in findings:
         if f.severity == "error":
             logger.error("Map validation: [%s] L%d: %s — %s", f.rule, f.line, f.message, f.text)
-        elif f.severity == "warn":
+        elif f.severity == "warning":
             logger.warning("Map validation: [%s] L%d: %s — %s", f.rule, f.line, f.message, f.text)
     errors = [f for f in findings if f.severity == "error"]
     if errors:
@@ -221,8 +222,8 @@ def _element_progress_reporter(
 def _classify_all_files(
     paths: list[Path],
     root: Path,
-    map_cache: Any,
-    registry: dict[str, dict[str, Any]],
+    map_cache: MapCache | None,
+    registry: dict[str, JsonObject],
     *,
     segmentation: str = "legacy",
     progress: Callable[[str], None] | None = None,
@@ -259,8 +260,8 @@ def _classify_all_files(
 def _classify_one_file(
     path: Path,
     root: Path,
-    map_cache: Any,
-    registry: dict[str, dict[str, Any]],
+    map_cache: MapCache | None,
+    registry: dict[str, JsonObject],
     *,
     all_atoms: list[Atom],
     atoms_needing_embed: list[Atom],
@@ -288,10 +289,10 @@ def _embed_and_audit_fresh(
     atoms_needing_embed: list[Atom],
     all_atoms: list[Atom],
     file_records: list[FileRecord],
-    map_cache: Any,
+    map_cache: MapCache | None,
     *,
     models: Models,
-    timer: Any,
+    timer: StageTimer,
     structure_aware: bool,
 ) -> None:
     """Embed the fresh atoms, run the granularity audit, and re-put the cache.
@@ -311,7 +312,7 @@ def _embed_and_audit_fresh(
         _update_cache_after_embedding(map_cache, all_atoms, atoms_needing_embed, file_records)
 
 
-def _open_map_cache(cache_dir: Path | None, segmentation: str) -> Any:
+def _open_map_cache(cache_dir: Path | None, segmentation: str) -> MapCache | None:
     """Open the incremental map cache keyed to the current classification-model
     fingerprint, or None.
 
@@ -333,7 +334,7 @@ def _fill_missing_embeddings(all_atoms: list[Atom], models: Models) -> None:
         _embed_atoms_deduped(unembedded, models.st)
 
 
-def _charge_applier() -> Any:
+def _charge_applier() -> Callable[[list[Atom]], list[Atom]] | None:
     """Return the per-file charge function, or None when the bundled classification models are absent."""
     return apply_multislot if multislot_available() else None
 
@@ -397,20 +398,6 @@ def _group_by_file(atoms: list[Atom]) -> list[tuple[str, list[Atom]]]:
     return groups
 
 
-def _count_over_merged(atoms: list[Atom]) -> int:
-    """Count atoms the granularity audit flagged `over_merged`, pre-split.
-
-    `RulesetSummary.n_over_merged` documents this as the audit's flag count
-    (`core/platform/dto/ruleset.py`), which is not the same number as how many
-    units the later split actually cut: a flagged unit whose split
-    yields fewer than two clauses, or that was already cut into several
-    instructions, stays flagged but unsplit. The count is read here, right
-    before `_topic_split_if_enabled` replaces split units with
-    their sub-atoms, so it stays the number of flagged units.
-    """
-    return sum(1 for a in atoms if a.over_merged)
-
-
 def _topic_split_if_enabled(all_atoms: list[Atom], models: Models, *, structure_aware: bool) -> tuple[list[Atom], int]:
     """Boundary-aware topic split, unless structure-aware mode is on.
 
@@ -439,7 +426,7 @@ def _topic_split_if_enabled(all_atoms: list[Atom], models: Models, *, structure_
     )
 
 
-def _embed_file_descriptions_if_any(file_records: list[FileRecord], models: Models, map_cache: Any) -> None:
+def _embed_file_descriptions_if_any(file_records: list[FileRecord], models: Models, map_cache: MapCache | None) -> None:
     """Embed the on_invocation file descriptions that did not come back from the per-file cache.
 
     The embedder (`models.st`, a lazy ONNX-loading property) is handed over as a callable, so
@@ -458,7 +445,7 @@ def _classify_charge_embed_dispatch(
     models: Models,
     *,
     segmentation: str,
-    timer: Any,
+    timer: StageTimer,
     progress: Callable[[str], None] | None = None,
 ) -> tuple[list[FileRecord], list[Atom]]:
     """Classify all files, then charge + embed the fresh atoms, then persist.
@@ -551,13 +538,11 @@ def map_ruleset(
     file_records, all_atoms = _classify_charge_embed_dispatch(
         paths, root, cache_dir, models, segmentation=segmentation, timer=timer, progress=progress
     )
-    n_over_merged = _count_over_merged(all_atoms)
 
     all_atoms, n_split = _topic_split_if_enabled(all_atoms, models, structure_aware=structure_aware)
     timer.mark("embed")
 
     ruleset = build_ruleset_map(file_records, all_atoms)
-    ruleset.summary.n_over_merged = n_over_merged
     if n_split:
         logger.info("Granularity: split %d over-merged atoms at clause boundaries", n_split)
     _validate_and_log(ruleset)

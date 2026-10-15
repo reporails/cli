@@ -179,7 +179,7 @@ def test_detect_single_agent_scans_repo_scoped(monkeypatch: pytest.MonkeyPatch, 
     hijack it (kills L376 `repo_scoped=True` -> False)."""
     captured: dict = {}
 
-    def _spy(target, agent_id, rules_paths, **kwargs):
+    def _spy(target, agent_id, **kwargs):
         captured.update(kwargs)
         return None
 
@@ -432,3 +432,26 @@ def test_partition_by_native_owner_still_falls_back_to_generic_on_a_shared_stand
     owner_by_path = partition_by_native_owner([claude, copilot], target)
     assert owner_by_path["/proj/plugin/dashboard/AGENTS.md"] == "generic"
     assert owner_by_path["/proj/.claude/skills/a/SKILL.md"] == "claude"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_rooted_patterns_are_not_project_markers() -> None:
+    """Home, filesystem-root and drive-rooted patterns sit outside the project, so none becomes a
+    root-level marker (an absolute path once lost its leading `/` and read as a project-relative one)."""
+    data = {
+        "agent": "x",
+        "file_types": {
+            "main": {
+                "patterns": [
+                    "/etc/claude-code/CLAUDE.md",
+                    "~/.claude/CLAUDE.md",
+                    "C:/ProgramData/x/CLAUDE.md",
+                    "**/CLAUDE.md",
+                ]
+            }
+        },
+    }
+    at = _parse_agent_config(data)
+    assert at is not None
+    assert at.instruction_patterns == ("CLAUDE.md",)

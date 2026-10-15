@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
 
 from reporails_cli.core.mapper.atom_build import _atom_from_sentence
 from reporails_cli.core.mapper.bio_graphs import multislot_available
@@ -38,6 +38,7 @@ from reporails_cli.core.mapper.instructions import fold_lead_ins, instruction_te
 from reporails_cli.core.mapper.markers import reformat_spans
 from reporails_cli.core.mapper.multislot_frames import (
     _decode_logits_batch,
+    _Decoded,
     _frames_from_decoded,
     _heading_tuple_from_decoded,
 )
@@ -47,13 +48,13 @@ from reporails_cli.core.mapper.parse import (
     reindex_positions,
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
-from reporails_cli.core.platform.dto.ruleset import Atom, AtomSlots
+from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, AtomSlots, Charge
 
 # Running-text formats this module rebuilds into spans. Headings are read too, but
 # re-charged in place. A table row is running text too — its cells are joined into
 # one line — and so is a line read out of a fence that reads as an instruction; it
 # keeps its `code_block` format.
-_HEAD_FORMATS = frozenset({"prose", "list", "numbered", "blockquote", "table", "code_block"})
+_HEAD_FORMATS = RUNNING_TEXT_FORMATS | {"code_block"}
 
 
 def _head_eligible(atom: Atom) -> bool:
@@ -85,7 +86,7 @@ def _span_has_content(text: str) -> bool:
 # MULTI-SLOT PATH — one atom per instruction
 # ──────────────────────────────────────────────────────────────────
 
-_POLARITY_CHARGE = {1: ("DIRECTIVE", 1), -1: ("CONSTRAINT", -1), 0: ("NEUTRAL", 0)}
+_POLARITY_CHARGE: dict[int, tuple[Charge, int]] = {1: ("DIRECTIVE", 1), -1: ("CONSTRAINT", -1), 0: ("NEUTRAL", 0)}
 
 
 def _slots_from_tuple(t: AtomTuple) -> AtomSlots:
@@ -219,8 +220,6 @@ def _merge_cell_edge_frames(frames: list[AtomTuple]) -> list[AtomTuple]:
                     _shift_span(right.predicate, prefix_words),
                     _shift_span(right.object, prefix_words),
                     _shift_span(right.scope, prefix_words),
-                    right.compound_prob,
-                    right.compound_candidate,
                     merged_text,
                 )
             )
@@ -284,33 +283,59 @@ def _with_joining_word(frames: list[AtomTuple], unit: str) -> list[AtomTuple]:
         _shift_span(first.predicate, n),
         _shift_span(first.object, n),
         _shift_span(first.scope, n),
-        first.compound_prob,
-        first.compound_candidate,
         prefix + first.text,
     )
     return [restored, *frames[1:]]
 
 
-def _decode_plan(atoms: list[Atom]) -> tuple[list[str], list[tuple[Any, ...]]]:
+@dataclass(frozen=True, slots=True)
+class _PassEntry:
+    """An atom carried through unchanged."""
+
+    atom: Atom
+
+
+@dataclass(frozen=True, slots=True)
+class _HeadEntry:
+    """A heading atom decoded from the text at `start`."""
+
+    atom: Atom
+    start: int
+
+
+@dataclass(frozen=True, slots=True)
+class _SentEntry:
+    """An instruction atom split into `units`, decoded from the texts from `start`."""
+
+    atom: Atom
+    plain: bool
+    start: int
+    units: list[str]
+
+
+type _PlanEntry = _PassEntry | _HeadEntry | _SentEntry
+
+
+def _decode_plan(atoms: list[Atom]) -> tuple[list[str], list[_PlanEntry]]:
     """Every text to decode, plus the plan that reconstructs atom order from the batch."""
     texts: list[str] = []
-    plan: list[tuple[Any, ...]] = []
+    plan: list[_PlanEntry] = []
     for atom in atoms:
         if atom.kind == "heading":
-            plan.append(("head", atom, len(texts)))
+            plan.append(_HeadEntry(atom, len(texts)))
             texts.append(atom.plain_text or atom.text)
         elif not _head_eligible(atom):
-            plan.append(("pass", atom))
+            plan.append(_PassEntry(atom))
         else:
             text = atom.plain_text or atom.text
             sents = [s for s in (split_prose_sentences(text, atom.named_tokens) or [text]) if _span_has_content(s)]
             units = _instruction_units(atom, sents)
-            plan.append(("sent", atom, bool(atom.plain_text), len(texts), units))
+            plan.append(_SentEntry(atom, bool(atom.plain_text), len(texts), units))
             texts.extend(without_joining_word(u) for u in units)
     return texts, plan
 
 
-def _reconstruct_atoms(texts: list[str], plan: list[tuple[Any, ...]], decoded: list[Any]) -> list[Atom]:
+def _reconstruct_atoms(texts: list[str], plan: list[_PlanEntry], decoded: list[_Decoded | None]) -> list[Atom]:
     """Rebuild one atom list from its decode plan and the decoded logits for its texts.
 
     ``decoded`` is 0-indexed against ``texts``, exactly as ``plan`` addresses it, so a
@@ -321,18 +346,18 @@ def _reconstruct_atoms(texts: list[str], plan: list[tuple[Any, ...]], decoded: l
     """
     result: list[Atom] = []
     for entry in plan:
-        if entry[0] == "pass":
-            result.append(entry[1])
-        elif entry[0] == "head":
-            _, atom, i = entry
-            result.append(_apply_heading_tuple(atom, _heading_tuple_from_decoded(decoded[i], texts[i])))
+        if isinstance(entry, _PassEntry):
+            result.append(entry.atom)
+        elif isinstance(entry, _HeadEntry):
+            i = entry.start
+            result.append(_apply_heading_tuple(entry.atom, _heading_tuple_from_decoded(decoded[i], texts[i])))
         else:
-            _, atom, plain, start, units = entry
+            start = entry.start
             frames = [
                 _with_joining_word(_frames_from_decoded(decoded[start + j], texts[start + j]), unit)
-                for j, unit in enumerate(units)
+                for j, unit in enumerate(entry.units)
             ]
-            result.extend(_span_atoms(atom, frames, plain=plain))
+            result.extend(_span_atoms(entry.atom, frames, plain=entry.plain))
 
     # Deterministic charge floors, in the regex path's own order. The terse-prohibition
     # floor runs first (a verbless `No <what> <where>` the head read as a statement is
@@ -389,7 +414,7 @@ def apply_multislot_groups(
     """
     if not multislot_available():
         return groups
-    plans: list[tuple[list[str], list[tuple[Any, ...]], int]] = []
+    plans: list[tuple[list[str], list[_PlanEntry], int]] = []
     all_texts: list[str] = []
     for group in groups:
         texts, plan = _decode_plan(group)

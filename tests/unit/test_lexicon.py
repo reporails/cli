@@ -46,5 +46,25 @@ class TestParseStageLexicons:
         tokens = load_markdown_tokens()
         assert tokens.block_types["bullet_list_open"] == "bullet_list"
         assert "table_close" in tokens.block_close
-        assert tokens.format_open["strong_open"] == ["**", "bold"]
+        assert tokens.format_open["strong_open"] == ("**", "bold")
         assert tokens.format_close["em_close"] == "*"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    def test_markdown_tokens_with_unknown_inline_format_fails_at_load(self, tmp_path, monkeypatch):
+        from pydantic import ValidationError
+
+        from reporails_cli.bundled import get_lexicon_path
+        from reporails_cli.core.mapper import lexicon
+
+        bundled = get_lexicon_path() / "markdown_tokens.yml"
+        (tmp_path / "markdown_tokens.yml").write_text(
+            bundled.read_text(encoding="utf-8").replace("- bold", "- underlined"), encoding="utf-8"
+        )
+        monkeypatch.setattr(lexicon, "get_lexicon_path", lambda: tmp_path)
+        lexicon.load_markdown_tokens.cache_clear()
+        try:
+            with pytest.raises(ValidationError):
+                lexicon.load_markdown_tokens()
+        finally:
+            lexicon.load_markdown_tokens.cache_clear()

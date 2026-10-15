@@ -12,7 +12,7 @@ from reporails_cli.core.cache.map_cache import CachedFileEntry, MapCache
 
 def _seed(cache_dir: Path, charge: str) -> None:
     cache = MapCache(cache_dir, charge=charge)
-    cache.put("sha256:abc", CachedFileEntry(content_hash="sha256:abc", atoms=[{"text": "x"}]))
+    cache.put("sha256:abc", CachedFileEntry(atoms=[{"text": "x"}]))
     cache.save()
 
 

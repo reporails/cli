@@ -5,21 +5,22 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 from pathlib import Path
-from typing import Any
 
 import typer
 import yaml
 
 from reporails_cli.core.platform.config.bootstrap import get_global_config_path, get_project_config_path
 from reporails_cli.core.platform.config.config import read_config_file
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.results import GlobalConfig, ProjectConfig
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
 
 config_app = typer.Typer(
     name="config",
     help="Get and set project configuration.",
     no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 
 _SETTABLE_TYPES = {"str": str, "list[str]": list, "bool": bool}
@@ -48,15 +49,15 @@ def _settable(global_: bool) -> dict[str, type]:
     return _GLOBAL_SETTABLE if global_ else _PROJECT_SETTABLE
 
 
-def _load_config(path: Path) -> dict[str, Any]:
+def _load_config(path: Path) -> JsonObject:
     return read_config_file(get_project_config_path(path))
 
 
-def _load_global_config() -> dict[str, Any]:
+def _load_global_config() -> JsonObject:
     return read_config_file(get_global_config_path())
 
 
-def _save_config(path: Path, data: dict[str, Any]) -> None:
+def _save_config(path: Path, data: JsonObject) -> None:
     cp = get_project_config_path(path)
     cp.parent.mkdir(parents=True, exist_ok=True)
     cp.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=True), encoding="utf-8")
@@ -95,13 +96,13 @@ def _ensure_ails_gitignore(ails_dir: Path) -> None:
         gitignore.write_text(body, encoding="utf-8")
 
 
-def _save_global_config(data: dict[str, Any]) -> None:
+def _save_global_config(data: JsonObject) -> None:
     cp = get_global_config_path()
     cp.parent.mkdir(parents=True, exist_ok=True)
     cp.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=True), encoding="utf-8")
 
 
-def _parse_value(expected: type, raw: str) -> object:
+def _parse_value(expected: type, raw: str) -> JsonValue:
     """Parse a string value into the type its key takes."""
     if expected is bool:
         return raw.lower() in ("true", "1", "yes")
@@ -176,7 +177,7 @@ def config_list(
     global_data = _load_global_config()
 
     # Merge: show project values, annotate global fallbacks
-    merged: dict[str, tuple[Any, str]] = {}
+    merged: dict[str, tuple[JsonValue, str]] = {}
     for key, val in project_data.items():
         merged[key] = (val, "")
     for key in sorted(_GLOBAL_SETTABLE):

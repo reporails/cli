@@ -13,7 +13,9 @@ Public entry point: `tokenize(content)`.
 from __future__ import annotations
 
 import re
-from typing import Any
+
+from markdown_it.token import Token
+from markdown_it.utils import EnvType
 
 from reporails_cli.core.mapper.atom_build import (
     _atom_from_sentence,
@@ -36,21 +38,15 @@ from reporails_cli.core.mapper.markdown_extract import (
     _strip_decoration,
     _strip_frontmatter,
 )
-from reporails_cli.core.mapper.md_parser import md_parser, replace_code_spans, tok_line
-from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE, split_prose_sentences
-from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, Atom
-
-_WORD_RUN_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
-
-
-def _carries_word(text: str) -> bool:
-    """True when a span holds a word: two adjacent letters, or one non-Latin letter.
-
-    A single CJK character IS a word, so the run-length rule is waived for a
-    non-ASCII LETTER — `…` and `»` are non-ASCII without being letters, and
-    neither makes a span content.
-    """
-    return bool(_WORD_RUN_RE.search(text)) or any(ch.isalpha() and ord(ch) > 127 for ch in text)
+from reporails_cli.core.mapper.md_parser import (
+    CODE_BLOCK_TOKENS,
+    LINE_BREAK_TOKENS,
+    md_parser,
+    replace_code_spans,
+    tok_line,
+)
+from reporails_cli.core.mapper.prose_split import SEGMENTATION_STRUCTURE_AWARE, carries_word, split_prose_sentences
+from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, SENTENCE_SPLIT_FORMATS, Atom, AtomFormat
 
 
 def _drop_contentless_atoms(atoms: list[Atom]) -> list[Atom]:
@@ -70,7 +66,7 @@ def _drop_contentless_atoms(atoms: list[Atom]) -> list[Atom]:
     letters. A non-Latin script is exempt from the run length: a single CJK
     character is a word, and `isalpha` is Unicode-wide.
     """
-    kept = [a for a in atoms if _carries_word(a.text)]
+    kept = [a for a in atoms if carries_word(a.text)]
     reindex_positions(kept)
     return kept
 
@@ -105,13 +101,13 @@ def reindex_positions(atoms: list[Atom]) -> None:
             atom.position_index = 0
 
 
-def inline_line(tok: Any, line_offset: int, pos: int) -> int:
+def inline_line(tok: Token, line_offset: int, pos: int) -> int:
     """The file line that offset `pos` of the inline token `tok`'s source text falls on."""
     content: str = tok.content
     return tok_line(tok, line_offset) + content.count("\n", 0, pos)
 
 
-def _segment_lines(tok: Any, line_offset: int) -> list[int]:
+def _segment_lines(tok: Token, line_offset: int) -> list[int]:
     """The file line each line segment of the inline token `tok` starts on, in the order
     `_split_at_softbreaks` returns them: a line break ends a line, and any inline construct whose
     recorded source span runs onto the next line (code span, inline HTML tag, image, link) moves every
@@ -121,7 +117,7 @@ def _segment_lines(tok: Any, line_offset: int) -> list[int]:
     open_segment = False
     link_end_line: list[int] = []
     for child in tok.children or []:
-        if child.type in ("softbreak", "hardbreak"):
+        if child.type in LINE_BREAK_TOKENS:
             line += 1
             open_segment = False
             continue
@@ -141,8 +137,8 @@ def _segment_lines(tok: Any, line_offset: int) -> list[int]:
 
 
 def _make_heading_atom(
-    tok: Any,
-    tokens: list[Any],
+    tok: Token,
+    tokens: list[Token],
     i: int,
     line_offset: int,
 ) -> tuple[Atom, str]:
@@ -174,7 +170,7 @@ def _make_heading_atom(
     return atom, heading_text
 
 
-def _collect_table_cells(tokens: list[Any], start: int) -> tuple[str, str, int]:
+def _collect_table_cells(tokens: list[Token], start: int) -> tuple[str, str, int]:
     """Join one row's cells into that row's line. Returns (md, plain, next_index).
 
     A row is one LINE and the pipe is a mid-line delimiter, so the cells are
@@ -188,7 +184,7 @@ def _collect_table_cells(tokens: list[Any], start: int) -> tuple[str, str, int]:
     j = start + 1
     while j < len(tokens) and tokens[j].type != "tr_close":
         if tokens[j].type == "inline":
-            md_cell, plain_cell, _toks = _extract_texts(tokens[j].children or [])
+            md_cell, plain_cell = _extract_texts(tokens[j].children or [])
             md_cells.append(md_cell.strip())
             plain_cells.append(plain_cell.strip())
         j += 1
@@ -196,8 +192,8 @@ def _collect_table_cells(tokens: list[Any], start: int) -> tuple[str, str, int]:
 
 
 def _make_table_row_atom(
-    tok: Any,
-    tokens: list[Any],
+    tok: Token,
+    tokens: list[Token],
     i: int,
     line_offset: int,
     *,
@@ -228,7 +224,7 @@ def _make_table_row_atom(
     return atom, next_i
 
 
-def _update_block_stack(tok: Any, block_stack: list[str]) -> None:
+def _update_block_stack(tok: Token, block_stack: list[str]) -> None:
     """Push/pop the block-nesting stack per a markdown-it block open/close token."""
     md_tokens = load_markdown_tokens()
     if tok.type in md_tokens.block_types:
@@ -240,10 +236,10 @@ def _update_block_stack(tok: Any, block_stack: list[str]) -> None:
 _TASK_BOX_RE = re.compile(r"^\[[ xX]\]\s+")
 
 # The blocks a paragraph can introduce: a list, a code block or a table.
-_LEAD_IN_BLOCKS = frozenset({"bullet_list_open", "ordered_list_open", "fence", "code_block", "table_open"})
+_LEAD_IN_BLOCKS = frozenset({"bullet_list_open", "ordered_list_open", "table_open"}) | CODE_BLOCK_TOKENS
 
 
-def _block_follows_paragraph(tokens: list[Any], i: int) -> bool:
+def _block_follows_paragraph(tokens: list[Token], i: int) -> bool:
     """True when the inline token at `i` ends its paragraph and a list, code block or table is the
     next block, whatever list items or quotes the paragraph's own block closes first."""
     if i + 1 >= len(tokens) or tokens[i + 1].type != "paragraph_close":
@@ -261,10 +257,10 @@ def keep_lead_in_on_last(pieces: list[Atom]) -> None:
 
 
 def _segment_atom(
-    segment: list[Any], fmt: str, line: int, pos_idx: int, current_heading: str, *, task_box: bool
+    segment: list[Token], fmt: AtomFormat, line: int, pos_idx: int, current_heading: str, *, task_box: bool
 ) -> Atom | None:
     """The atom of one line segment of an inline token, or None when the line is too short to read."""
-    md_text, plain_text = _extract_texts(segment)[:2]
+    md_text, plain_text = _extract_texts(segment)
     if task_box:
         md_text, plain_text = _TASK_BOX_RE.sub("", md_text), _TASK_BOX_RE.sub("", plain_text)
     if len(md_text) < 5:
@@ -273,7 +269,7 @@ def _segment_atom(
 
 
 def _process_inline_segments(
-    tok: Any,
+    tok: Token,
     line_offset: int,
     block_stack: list[str],
     *,
@@ -291,7 +287,7 @@ def _process_inline_segments(
     if fmt == "table":
         return pos_idx
     list_depth = sum(1 for tag in block_stack if tag in ("bullet_list", "ordered_list"))
-    segments = _split_at_softbreaks(tok.children)
+    segments = _split_at_softbreaks(tok.children or [])
     for seg_idx, (segment, seg_line) in enumerate(zip(segments, _segment_lines(tok, line_offset), strict=True)):
         # A task list's checkbox marks the item's state; it is not a word of the item.
         atom = _segment_atom(
@@ -306,7 +302,7 @@ def _process_inline_segments(
     return pos_idx
 
 
-def parse_blocks(content: str, env: dict[str, Any] | None = None) -> tuple[list[Any], int]:
+def parse_blocks(content: str, env: EnvType | None = None) -> tuple[list[Token], int]:
     """The markdown-it token stream of `content` (front matter stripped) and the number of lines the
     stripping removed from the top, the offset every token's `map` line needs to be a file line.
 
@@ -489,10 +485,6 @@ def _split_prose_atom(atom: Atom) -> list[Atom]:
     return subs
 
 
-# Formats whose unit is a running line, so the sentence rule decides its edges.
-_SENTENCE_SPLIT_FORMATS = frozenset({"prose", "table"})
-
-
 def _segment_structure_aware(atoms: list[Atom]) -> list[Atom]:
     """Format-aware segmentation — the structure-aware alternative to the split.
 
@@ -515,7 +507,7 @@ def _segment_structure_aware(atoms: list[Atom]) -> list[Atom]:
     for atom in atoms:
         if (
             atom.kind != "heading"
-            and atom.format in _SENTENCE_SPLIT_FORMATS
+            and atom.format in SENTENCE_SPLIT_FORMATS
             and atom.rule != TABLE_HEADER_RULE
             and not is_quoted_line(atom.text)
         ):

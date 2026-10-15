@@ -15,39 +15,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.heal.file_io import split_lines
-from reporails_cli.core.heal.keyed import mapped_path_resolver, resolve_expect
+from reporails_cli.core.heal.keyed import heal_op, mapped_path_resolver, resolve_expect
 from reporails_cli.core.heal.op_guide import change_lines, op_lines
 from reporails_cli.core.heal.plan import PartnerKey, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
 from reporails_cli.core.heal.transforms import atoms_at
 from reporails_cli.core.lint.content_queries import atoms_for_file
-from reporails_cli.core.lint.rule_pages import load_rule_description, load_rule_examples, load_rule_guides
-from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, load_all_rules, rule_title
-from reporails_cli.core.platform.adapters.workflow_wire import _opt_int
+from reporails_cli.core.lint.rule_pages import EXAMPLE_KINDS, load_rule_examples
+from reporails_cli.core.platform.adapters.rules_query import find_rule_by_id, rule_title
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_int, as_list, opt_int, str_list
 from reporails_cli.core.platform.dto.diagnostics import subtree_tier_rank, walk_findings
-from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
-from reporails_cli.core.platform.dto.ruleset import Atom
-from reporails_cli.formatters.mcp import remedy_brief_payload
+from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.formatters.mcp import LOCATION_INDEX_KEYS, remedy_brief_payload
 from reporails_cli.interfaces.mcp import snapshots
 from reporails_cli.interfaces.mcp.tools import run_pipeline_for_path
-
-# The ideal-instruction rule ids, in the fixed order `remedy_brief` presents them.
-IDEAL_INSTRUCTION_RULE_IDS = (
-    "CORE:C:0053",
-    "CORE:E:0004",
-    "CORE:E:0003",
-    "CORE:E:0006",
-    "CORE:C:0042",
-    "CORE:C:0043",
-    "CORE:D:0003",
-    "CORE:D:0002",
-    "CORE:C:0047",
-    "CORE:S:0039",
-    "CORE:C:0058",
-)
 
 
 def resolve_from_root(rel: str, scan_root: Path) -> Path:
@@ -59,61 +43,11 @@ def resolve_from_root(rel: str, scan_root: Path) -> Path:
     return p if p.is_absolute() else (scan_root / p).resolve()
 
 
-def _ideal_instruction_entry(rule_id: str, guides: dict[str, Any], by_id: dict[str, Any]) -> dict[str, Any]:
-    """One `ideal_instruction[]` entry: title/pass/antipatterns from its guide, statement from
-    the rule description body before its first `##` sub-heading."""
-
-    guide = guides.get(rule_id, {})
-    rule = by_id.get(rule_id)
-    description = load_rule_description(rule) if rule is not None else None
-    statement = (description or "").split("\n## ", 1)[0].strip()
-    return {
-        "id": rule_id,
-        "title": guide.get("title", rule.title if rule is not None else ""),
-        "statement": statement,
-        "pass": guide.get("pass", ""),
-        "antipatterns": guide.get("antipatterns", ""),
-    }
+def _finding_sort_key(f: JsonObject) -> tuple[int, str, int]:
+    return (subtree_tier_rank(f), str(f.get("file") or ""), as_int(f.get("line"), 0))
 
 
-def ideal_instruction_guide() -> list[dict[str, Any]]:
-    """The ideal-instruction rules, in their fixed order: id, title, statement (the rule
-    description body before its first `##` sub-heading, trimmed), pass example, antipatterns."""
-
-    guides = load_rule_guides(list(IDEAL_INSTRUCTION_RULE_IDS))
-    by_id = {r.id: r for r in load_all_rules()}
-    return [_ideal_instruction_entry(rule_id, guides, by_id) for rule_id in IDEAL_INSTRUCTION_RULE_IDS]
-
-
-def _without_title_line(statement: str) -> str:
-    """`statement` without the `# Title` line a rule description opens with — the rendered guide
-    already heads each rule with its title."""
-    first, _, rest = statement.partition("\n")
-    return rest.strip() if first.startswith("# ") else statement
-
-
-def ideal_instruction_markdown() -> str:
-    """The ideal-instruction guide (`ideal_instruction_guide`) as Markdown, the same content
-    for a remedy agent definition to carry: per rule, in `IDEAL_INSTRUCTION_RULE_IDS` order, a
-    `### <Title> (<ID>)` heading, the statement, then the pass example and the antipatterns.
-    The same rules always give the same text."""
-    sections = []
-    for entry in ideal_instruction_guide():
-        parts = [
-            f"### {entry['title']} ({entry['id']})",
-            _without_title_line(entry["statement"]),
-            f"**Pass example**\n\n{entry['pass']}",
-            f"**Antipatterns**\n\n{entry['antipatterns']}",
-        ]
-        sections.append("\n\n".join(p for p in parts if p.strip()))
-    return "\n\n".join(sections) + "\n"
-
-
-def _finding_sort_key(f: dict[str, Any]) -> tuple[int, str, int]:
-    return (subtree_tier_rank(f), str(f.get("file") or ""), int(f.get("line") or 0))
-
-
-def _sorted_findings(findings: list[Any]) -> list[Any]:
+def _sorted_findings(findings: list[JsonObject]) -> list[JsonObject]:
     """`findings`, weakest-first by the heaviest `impact_tier` in each finding and its members
     (gate_mover -> conditional -> cosmetic -> ""), then by file then line — a stable order, used
     for the `feedback` list."""
@@ -125,7 +59,7 @@ def _sorted_findings(findings: list[Any]) -> list[Any]:
 _NO_MAP_FALLBACK = "its pipeline run produced no map"
 
 
-def _pipeline_failure_reason(payload: dict[str, Any]) -> str:
+def _pipeline_failure_reason(payload: JsonObject) -> str:
     """The best available cause string from a pipeline `payload` that yielded no map:
     the mapper's own swallowed exception text (`mapper_error` — see
     `interfaces/mcp/tools.py::_build_map`) when there is one, else the payload's own
@@ -152,7 +86,7 @@ class _BuiltFile:
 
     rel: str
     abs_file: Path
-    ruleset_map: Any
+    ruleset_map: RulesetMap
     score: float | None
     rule_counts: dict[str, int]
     lines: list[str]
@@ -176,7 +110,7 @@ def _build_file(rel: str, scan_root: Path) -> _BuiltFile | str:
     )
 
 
-def _build_files(location: dict[str, Any], scan_root: Path) -> list[_BuiltFile] | dict[str, Any]:
+def _build_files(location: JsonObject, scan_root: Path) -> list[_BuiltFile] | JsonObject:
     """Every real file of the location built — or the structured `brief_unavailable` error naming
     the file, when any of them yields no map. A `files[]` entry that names a directory — a folder
     that only groups skills and has no `SKILL.md` of its own — has no pipeline of its own to run:
@@ -185,7 +119,7 @@ def _build_files(location: dict[str, Any], scan_root: Path) -> list[_BuiltFile] 
     file first, so a reply that is never delivered never commits a partial set of snapshots."""
     built: list[_BuiltFile] = []
     directories: list[str] = []
-    for rel in location.get("files") or []:
+    for rel in str_list(location.get("files")):
         if resolve_from_root(rel, scan_root).is_dir():
             directories.append(rel)
             continue
@@ -205,31 +139,32 @@ def _build_files(location: dict[str, Any], scan_root: Path) -> list[_BuiltFile] 
     return built
 
 
-def _location_ops(location: dict[str, Any], scan_root: Path, files: list[str]) -> tuple[list[PlanOp], dict[str, str]]:
+def _location_ops(location: JsonObject, scan_root: Path, files: list[str]) -> tuple[list[PlanOp], dict[str, str]]:
     """One `PlanOp` per finding (owners and members alike, `together` skipped) and per relation of
     the location that names an op, with the file as an absolute path; and each op file's
     project-relative display name. A repeat of one rule, place and op is one op."""
-    ops: dict[tuple[Any, ...], PlanOp] = {}
+    ops: dict[tuple[str, str, int, int | None, HealOp], PlanOp] = {}
     names: dict[str, str] = {}
     resolve = mapped_path_resolver(files, scan_root)
-    rows = [*walk_findings(location.get("findings") or ()), *(location.get("relations") or ())]
-    for row in rows:
-        op = str(row.get("op") or "")
+    findings = [f for f in as_list(location.get("findings")) if isinstance(f, dict)]
+    for row in [*walk_findings(findings), *as_list(location.get("relations"))]:
+        if not isinstance(row, dict):
+            continue
+        rule = str(row.get("rule") or "")
+        op = heal_op(row.get("op"), rule)
         rel = str(row.get("file") or "")
-        if not op or op == "together" or not rel:
+        if op is None or not rel:
             continue
         abs_name = str(resolve_from_root(rel, scan_root))
         names[abs_name] = rel
         raw = row.get("expect")
         expect = resolve_expect(raw, resolve) if isinstance(raw, dict) else {}
-        plan_op = PlanOp(
-            str(row.get("rule") or ""), abs_name, int(row.get("line") or 0), _opt_int(row.get("pi")), op, expect
-        )
+        plan_op = PlanOp(rule, abs_name, as_int(row.get("line"), 0), opt_int(row.get("pi")), op, expect)
         ops.setdefault((plan_op.rule, plan_op.file, plan_op.line, plan_op.pi, plan_op.op), plan_op)
     return list(ops.values()), names
 
 
-def _partner_atoms(ops: list[PlanOp], scan_root: Path, maps: list[Any]) -> dict[PartnerKey, Atom]:
+def _partner_atoms(ops: list[PlanOp], scan_root: Path, maps: list[RulesetMap]) -> dict[PartnerKey, Atom]:
     """The atom each dedupe or keep-cut op's `expect["keep"]` names, looked up in `maps` (the
     project map first)."""
 
@@ -298,11 +233,11 @@ def _widened(
     return start, end, before, after
 
 
-def _edit_entries(plan: Plan, lines_by_file: dict[str, list[str]], names: dict[str, str]) -> list[dict[str, Any]]:
+def _edit_entries(plan: Plan, lines_by_file: dict[str, list[str]], names: dict[str, str]) -> list[JsonObject]:
     """The plan's edits as single contiguous block replacements, bottom to top within each file. Edits
     whose blocks meet or overlap (a move spans the lines between its two places) share one block. Each
     block's `before` is unique in its file."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for file in sorted({e.file for e in plan.edits}):
         out.extend(_file_edit_entries(file, _edit_groups(plan, file), lines_by_file[file], names))
     return out
@@ -329,9 +264,9 @@ def _edit_groups(plan: Plan, file: str) -> list[tuple[int, int, list[Edit]]]:
 
 def _file_edit_entries(
     file: str, groups: list[tuple[int, int, list[Edit]]], lines: list[str], names: dict[str, str]
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """One file's block replacements, bottom to top, each widened until its `before` is unique."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for index, (_lo, _hi, group) in reversed(list(enumerate(groups))):
         start, end, before, after = _block(group, lines)
         others = [(a, b) for i, (a, b, _) in enumerate(groups) if i != index]
@@ -353,16 +288,16 @@ def _file_edit_entries(
     return out
 
 
-def _coordinate(value: Any, scan_root: Path) -> list[Any] | None:
+def _coordinate(value: object, scan_root: Path) -> tuple[str, int] | None:
     """An `expect` `[file, line]` pair with the file as an absolute path; None when it is not one."""
-    if not isinstance(value, list) or len(value) < 2 or not isinstance(value[0], str):
+    if not isinstance(value, list) or len(value) < 2 or not isinstance(value[0], str) or not isinstance(value[1], int):
         return None
-    return [str(resolve_from_root(value[0], scan_root)), value[1]]
+    return str(resolve_from_root(value[0], scan_root)), value[1]
 
 
 def _slot_entries(
     plan: Plan, names: dict[str, str], ops: list[PlanOp], scan_root: Path, lines_by_file: dict[str, list[str]]
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """The plan's slots. A slot whose op names a target (`expect["to"]`) or a partner
     (`expect["also"]`) carries them as `to` (absolute path) and `also` (`[absolute path, line]`). A slot's
     `line` is its line once the plan's edits are applied: the brief's edits come first, then the slots."""
@@ -371,7 +306,7 @@ def _slot_entries(
         for file in {e.file for e in plan.edits}
     }
     expects = {(o.rule, o.file, o.line, o.pi, o.op): o.expect for o in ops}
-    out: list[dict[str, Any]] = [
+    out: list[JsonObject] = [
         {
             "file": names.get(s.file, s.file),
             "path": s.file,
@@ -392,11 +327,11 @@ def _slot_entries(
         if to:
             entry["to"] = to[0]
         if also:
-            entry["also"] = also
+            entry["also"] = [also[0], also[1]]
     return out
 
 
-def _refused_entries(plan: Plan, names: dict[str, str]) -> list[dict[str, Any]]:
+def _refused_entries(plan: Plan, names: dict[str, str]) -> list[JsonObject]:
     return [
         {
             "file": names.get(r.op.file, r.op.file),
@@ -416,11 +351,7 @@ def _guides(rule_ids: set[str]) -> dict[str, dict[str, str]]:
     for rule_id in sorted(rule_ids):
         rule = find_rule_by_id(rule_id)
         examples = load_rule_examples(rule) if rule is not None else {}
-        out[rule_id] = {
-            "title": rule_title(rule_id),
-            "pass": examples.get("pass") or "",
-            "fail": examples.get("fail") or "",
-        }
+        out[rule_id] = {"title": rule_title(rule_id), **{kind: examples.get(kind) or "" for kind in EXAMPLE_KINDS}}
     return out
 
 
@@ -451,7 +382,7 @@ def _commit_snapshots(built: list[_BuiltFile], held: dict[str, tuple[str, Plan]]
         )
 
 
-def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: Any = None) -> dict[str, Any]:
+def build_remedy_brief(location: JsonObject, scan_root: Path, project_map: RulesetMap | None = None) -> JsonObject:
     """Build the `remedy_brief` reply for one already-resolved workflow `location` (a location dict
     from the stored full `validate` payload, so its findings and relations are already
     relative-pathed): the plan's exact edits, the slots that need a decision with each slot rule's
@@ -485,16 +416,16 @@ def build_remedy_brief(location: dict[str, Any], scan_root: Path, project_map: A
     _commit_snapshots(built, held, plan)
 
     slots = _slot_entries(plan, names, ops, scan_root, lines_by_file)
-    location_out = {
-        **{k: location[k] for k in ("order", "element", "kind", "loading", "importance", "files") if k in location},
+    location_out: JsonObject = {
+        **{k: location[k] for k in LOCATION_INDEX_KEYS if k in location},
         "root": str(scan_root),
     }
     return remedy_brief_payload(
         location=location_out,
         edits=_edit_entries(plan, lines_by_file, names),
         slots=slots,
-        guides=_guides({s["rule"] for s in slots}),
-        ops={**op_lines({s["op"] for s in slots}), **change_lines({s["change"] for s in slots if "change" in s})},
+        guides=_guides({s.rule for s in plan.slots}),
+        ops={**op_lines({s.op for s in plan.slots}), **change_lines({s.change for s in plan.slots if s.change})},
         refused=_refused_entries(plan, names),
         preservation_contract=PRESERVATION_CONTRACT,
     )

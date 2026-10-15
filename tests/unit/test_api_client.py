@@ -24,6 +24,7 @@ from reporails_cli.core.platform.contract.errors import (
 from reporails_cli.core.platform.dto.diagnostics import LintResponse, LintResult
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap, RulesetSummary
 from reporails_cli.core.platform.policy.preflight import UNIVERSAL_ATOM_CAP, WIRE_MAX_FILES, preflight_oversized
+from tests.conftest import ails_client
 
 _ROOT = Path("/tmp/reporails-test-scan-root")
 
@@ -42,18 +43,8 @@ def _make_map() -> RulesetMap:
 class TestAilsClient:
     @pytest.mark.unit
     @pytest.mark.subsys_api
-    def test_lint_empty_response_without_server(self) -> None:
-        """No local fallback — lint requires the API."""
-        client = AilsClient(base_url="")
-        response = client.lint(_make_map(), root=_ROOT)
-        assert isinstance(response, LintResponse)
-        assert response.result is None
-        assert response.funnel_error is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_api
     def test_lint_empty_response_on_unreachable_server(self) -> None:
-        client = AilsClient(base_url="https://localhost:1")
+        client = ails_client("https://localhost:1")
         response = client.lint(_make_map(), root=_ROOT)
         assert isinstance(response, LintResponse)
         assert response.result is None
@@ -61,7 +52,7 @@ class TestAilsClient:
     @pytest.mark.unit
     @pytest.mark.subsys_api
     def test_custom_base_url(self) -> None:
-        client = AilsClient(base_url="https://custom.example.com")
+        client = ails_client("https://custom.example.com")
         assert client.base_url == "https://custom.example.com"
 
 
@@ -139,6 +130,38 @@ class TestFaultDistinction:
         assert any(rec.levelno == logging.WARNING for rec in caplog.records)
 
 
+class TestServerSeverityChecked:
+    """A severity the server sends outside `FindingSeverity` is shown as `info`, with a WARNING."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    def test_unknown_severities_become_info_with_a_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        logger_name = "reporails_cli.core.platform.adapters.api_client"
+        report = {"per_file": [{"file": "a.md", "diagnostics": [{"line": 1, "severity": "critical", "rule": "R:1"}]}]}
+        hints = {"hints": [{"file": "a.md", "diagnostic_type": "t", "count": 1, "severity": "warn"}]}
+        with caplog.at_level(logging.WARNING, logger=logger_name):
+            (analysis,) = api_client_mod._deserialize_per_file(report)
+            (hint,) = api_client_mod._deserialize_hints(hints)
+        assert analysis.diagnostics[0].severity == "info"
+        assert hint.severity == "info"
+        text = caplog.text
+        assert "critical" in text and "R:1" in text and "warn" in text
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_api
+    @pytest.mark.parametrize("severity", ["error", "warning", "info"])
+    def test_known_severities_pass_through(self, severity: str, caplog: pytest.LogCaptureFixture) -> None:
+        report = {"per_file": [{"file": "a.md", "diagnostics": [{"line": 1, "severity": severity, "rule": "R:1"}]}]}
+        hints = {"hints": [{"file": "a.md", "diagnostic_type": "t", "count": 1, "severity": severity}]}
+        (analysis,) = api_client_mod._deserialize_per_file(report)
+        (hint,) = api_client_mod._deserialize_hints(hints)
+        assert analysis.diagnostics[0].severity == severity
+        assert hint.severity == severity
+        assert not caplog.records
+
+
 class TestScanRootThreading:
     """The wire scan root is the checked project's own root, never the terminal's cwd."""
 
@@ -174,7 +197,7 @@ class TestScanRootThreading:
             ),
             patch("httpx.post") as mock_post,
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             client.lint(_make_map(), root=project_root)
 
         assert captured == [project_root]
@@ -215,7 +238,7 @@ class TestScanRootThreading:
             ),
             patch("httpx.post") as mock_post,
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             client.lint(_make_map(), local, root=project_root)
 
         assert captured == [project_root]
@@ -285,7 +308,7 @@ class TestPayloadCaps:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=oversized),
             patch("httpx.post") as mock_post,
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(rm, root=_ROOT)
         assert response.result is None
         assert response.funnel_error is not None
@@ -320,7 +343,7 @@ class TestPayloadCaps:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=empty_payload),
             patch("httpx.post") as mock_post,
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(rm, root=_ROOT)
         assert response.result is None
         assert response.funnel_error is None
@@ -360,7 +383,7 @@ class TestTransportFailureFunnelError:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_raise_timeout),
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(_make_map(), root=_ROOT)
         assert response.result is None
         assert response.funnel_error is not None
@@ -381,7 +404,7 @@ class TestTransportFailureFunnelError:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_raise_connect_error),
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(_make_map(), root=_ROOT)
         assert response.result is None
         assert response.funnel_error is not None
@@ -408,7 +431,7 @@ class TestTransportFailureFunnelError:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_fake_post),
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(_make_map(), root=_ROOT)
         assert response.result is None
         assert response.funnel_error is not None
@@ -436,7 +459,7 @@ class TestTransportFailureFunnelError:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", side_effect=_fake_post),
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(_make_map(), root=_ROOT)
         assert response.result is None
         assert response.funnel_error is not None
@@ -461,7 +484,7 @@ class TestTransportFailureFunnelError:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", return_value=_FakeResponse()),
         ):
-            client = AilsClient(base_url="https://example.test", tier="pro")
+            client = ails_client("https://example.test", tier="pro")
             response = client.lint(_make_map(), root=_ROOT)
         assert response.result is None
         assert response.funnel_error is not None
@@ -529,7 +552,7 @@ class TestOutgoingHeaders:
             return _FakeResponse()
 
         with patch("httpx.post", side_effect=_fake_post):
-            client = AilsClient(base_url="https://example.test", tier="anonymous", api_key=None)
+            client = ails_client("https://example.test", tier="anonymous", api_key=None)
             client.lint(rm, root=_ROOT)
 
         ua = captured["headers"].get("User-Agent", "")
@@ -576,7 +599,7 @@ class TestOutgoingHeaders:
             return _FakeResponse()
 
         with patch("httpx.post", side_effect=_fake_post):
-            client = AilsClient(base_url="https://example.test", tier="pro", api_key="test-key")
+            client = ails_client("https://example.test", tier="pro", api_key="test-key")
             client.lint(rm, root=_ROOT)
 
         headers = captured["headers"]
@@ -773,7 +796,7 @@ class TestRateLimitCooldown:
             patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload_with_file()),
             patch("httpx.post", mock_post),
         ):
-            client = AilsClient(base_url="https://example.test", api_key=api_key or None, tier="free")
+            client = ails_client("https://example.test", api_key=api_key or None, tier="free")
             client.api_key = api_key
             response = client.lint(_make_map(), root=_ROOT)
         return response, mock_post.call_count
@@ -840,14 +863,15 @@ class TestRateLimitCooldown:
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
-    def test_keyed_free_429_writes_no_cooldown_entry(self) -> None:
+    def test_keyed_free_429_writes_no_cooldown_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import json
 
         from reporails_cli.core.platform.adapters import rate_cooldown
         from reporails_cli.core.platform.dto.diagnostics import FunnelError
 
         err = FunnelError(error="rate_limit_exceeded", tier="free", reset_in=600)
-        rate_cooldown.record_cooldown("https://example.test", "rr_key", err, now=0.0)
+        monkeypatch.setattr(rate_cooldown.time, "time", lambda: 0.0)
+        rate_cooldown.record_cooldown("https://example.test", "rr_key", err)
         path = rate_cooldown._cooldown_path()
         assert not path.exists() or json.loads(path.read_text(encoding="utf-8")) == {}
 
@@ -892,19 +916,19 @@ class TestRateLimitCooldown:
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
-    def test_cooldown_never_exceeds_the_cap(self) -> None:
+    def test_cooldown_never_exceeds_the_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from reporails_cli.core.platform.adapters import rate_cooldown
         from reporails_cli.core.platform.dto.diagnostics import FunnelError
 
         err = FunnelError(error="rate_limit_exceeded", reset_in=10 * 86400)
-        rate_cooldown.record_cooldown("https://example.test", "", err, now=0.0)
-        stored = rate_cooldown.active_cooldown("https://example.test", "", now=1.0)
+        monkeypatch.setattr(rate_cooldown.time, "time", lambda: 0.0)
+        rate_cooldown.record_cooldown("https://example.test", "", err)
+        monkeypatch.setattr(rate_cooldown.time, "time", lambda: 1.0)
+        stored = rate_cooldown.active_cooldown("https://example.test", "")
         assert stored is not None
         assert stored.reset_in <= rate_cooldown.MAX_COOLDOWN_SECONDS
-        assert (
-            rate_cooldown.active_cooldown("https://example.test", "", now=rate_cooldown.MAX_COOLDOWN_SECONDS + 1)
-            is None
-        )
+        monkeypatch.setattr(rate_cooldown.time, "time", lambda: rate_cooldown.MAX_COOLDOWN_SECONDS + 1)
+        assert rate_cooldown.active_cooldown("https://example.test", "") is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_api
@@ -921,7 +945,7 @@ class TestRateLimitCooldown:
 @pytest.mark.subsys_api
 def test_diagnose_request_sends_bearer_key_to_v1(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AILS_DEV_MODE", raising=False)
-    url, headers = AilsClient(base_url="https://x.example/", api_key="rr_k", tier="free").diagnose_request("a/b")
+    url, headers = ails_client("https://x.example/", api_key="rr_k", tier="free").diagnose_request("a/b")
     assert url == "https://x.example/v1/diagnose"
     assert headers["Authorization"] == "Bearer rr_k"
     assert headers["Content-Type"] == "a/b"
@@ -932,7 +956,7 @@ def test_diagnose_request_sends_bearer_key_to_v1(monkeypatch: pytest.MonkeyPatch
 def test_diagnose_request_without_key_sends_no_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AILS_DEV_MODE", raising=False)
     monkeypatch.setattr(api_client_mod, "resolve_api_key", lambda: "")
-    _, headers = AilsClient(base_url="https://x.example", tier="free").diagnose_request("a/b")
+    _, headers = ails_client("https://x.example", tier="free").diagnose_request("a/b")
     assert "Authorization" not in headers
 
 
@@ -940,7 +964,7 @@ def test_diagnose_request_without_key_sends_no_authorization(monkeypatch: pytest
 @pytest.mark.subsys_api
 def test_diagnose_request_dev_mode_uses_tier_header(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AILS_DEV_MODE", "1")
-    url, headers = AilsClient(base_url="http://localhost:8001", api_key="rr_k", tier="pro").diagnose_request("a/b")
+    url, headers = ails_client("http://localhost:8001", api_key="rr_k", tier="pro").diagnose_request("a/b")
     assert url == "http://localhost:8001/diagnose"
     assert headers["X-Tier"] == "pro"
     assert "Authorization" not in headers

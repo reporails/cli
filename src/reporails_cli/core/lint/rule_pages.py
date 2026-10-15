@@ -3,15 +3,13 @@ description and the public guides, with each section taken from the page's markd
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import Literal, get_args
 
 from reporails_cli.core.mapper.structure import section_span
-from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.models import FileMatch, Rule
 from reporails_cli.core.platform.policy.matching import MATCH_PROPERTIES
-from reporails_cli.core.platform.utils.utils import frontmatter_block, read_frontmatter
+from reporails_cli.core.platform.utils.utils import read_frontmatter
 
 
 def _section(text: str, heading: str) -> str | None:
@@ -24,43 +22,22 @@ def _section(text: str, heading: str) -> str | None:
     return "\n".join(lines[span[0] : span[1] - 1]).strip() or None
 
 
-def load_rule_examples(rule: Rule) -> dict[str, str | None]:
-    """Extract `### Pass` and `### Fail` sections from rule.md body."""
-    result: dict[str, str | None] = {"pass": None, "fail": None}
+ExampleKind = Literal["pass", "fail"]
+EXAMPLE_KINDS: tuple[ExampleKind, ...] = get_args(ExampleKind)
+
+
+def load_rule_examples(rule: Rule) -> dict[ExampleKind, str | None]:
+    """Extract `### Pass` and `### Fail` sections from rule.md body, keyed by example kind."""
+    result: dict[ExampleKind, str | None] = dict.fromkeys(EXAMPLE_KINDS)
     if rule.md_path is None or not rule.md_path.exists():
         return result
     try:
         text = rule.md_path.read_text(encoding="utf-8")
     except OSError:
         return result
-    result["pass"] = _section(text, "Pass")
-    result["fail"] = _section(text, "Fail")
+    for kind in EXAMPLE_KINDS:
+        result[kind] = _section(text, kind.capitalize())
     return result
-
-
-def load_rule_guides(rule_ids: list[str], rules_dir: Path | None = None) -> dict[str, dict[str, str]]:
-    """Each named rule's public guide — its title, Pass example and antipatterns — once per rule,
-    in first-named order. An id no rule file declares is left out, and so is a missing or
-    unreadable section."""
-    ids = list(dict.fromkeys(rule_ids))
-    agents = sorted({agent for agent in map(infer_agent_from_rule_id, ids) if agent})
-    by_id = {rule.id: rule for rule in load_all_rules(agents, rules_dir)}
-    guides: dict[str, dict[str, str]] = {}
-    for rule_id in ids:
-        rule = by_id.get(rule_id)
-        if rule is None:
-            continue
-        guide = {"title": rule.title}
-        try:
-            text = rule.md_path.read_text(encoding="utf-8") if rule.md_path is not None else ""
-        except OSError:
-            text = ""
-        for key, heading in (("pass", "Pass"), ("antipatterns", "Antipatterns")):
-            section = _section(text, heading)
-            if section:
-                guide[key] = section
-        guides[rule_id] = guide
-    return guides
 
 
 def load_rule_description(rule: Rule) -> str | None:
@@ -76,29 +53,47 @@ def load_rule_description(rule: Rule) -> str | None:
     if read.block is None or read.problem is not None:
         return None
     lines = text.split("\n")
-    frontmatter_lines = frontmatter_block(text).body_line  # type: ignore[union-attr]
+    frontmatter_lines = read.block.body_line
     span = section_span(text, "Pass / Fail")
     kept = lines[frontmatter_lines:] if span is None else lines[frontmatter_lines : span[0] - 1] + lines[span[1] - 1 :]
     return "\n".join(kept).strip() or None
 
 
-def serialize_match(match: FileMatch | None) -> dict[str, object]:
+def _match_value(value: list[str] | str) -> JsonValue:
+    """A match property as it serializes: a string, or a copy of its list."""
+    return [*value] if isinstance(value, list) else value
+
+
+def serialize_match(match: FileMatch | None) -> JsonObject:
     """Serialize FileMatch to dict, including all non-None properties."""
     if match is None:
         return {}
-    result: dict[str, object] = {}
+    result: JsonObject = {}
     if match.type is not None:
-        result["type"] = match.type
+        result["type"] = _match_value(match.type)
     for prop in MATCH_PROPERTIES:
-        val = getattr(match, prop)
+        val: list[str] | str | None = getattr(match, prop)
         if val is not None:
-            result[prop] = val
+            result[prop] = _match_value(val)
     return result
 
 
-def rule_page_data(rule: Rule) -> dict[str, Any]:
+def rule_page_summary(rule: Rule) -> JsonObject:
+    """A rule's identity and targeting without its description or examples."""
+    return {
+        "id": rule.id,
+        "title": rule.title,
+        "slug": rule.slug,
+        "category": rule.category.value,
+        "severity": rule.severity.value,
+        "type": rule.type.value,
+        "match": serialize_match(rule.match),
+    }
+
+
+def rule_page_data(rule: Rule) -> JsonObject:
     """A rule page as the explain surfaces show it: metadata, checks, body and Pass / Fail examples."""
-    data: dict[str, Any] = {
+    data: JsonObject = {
         "title": rule.title,
         "category": rule.category.value,
         "type": rule.type.value,
@@ -106,11 +101,11 @@ def rule_page_data(rule: Rule) -> dict[str, Any]:
         "match": serialize_match(rule.match),
         "severity": rule.severity.value,
         "execution": rule.execution.value,
-        "checks": [{"id": c.id, "type": c.type, "severity": c.severity or rule.severity.value} for c in rule.checks],
-        "see_also": rule.see_also,
+        "checks": [{"id": c.id, "type": c.type, "severity": (c.severity or rule.severity).value} for c in rule.checks],
+        "see_also": [*rule.see_also],
     }
     description = load_rule_description(rule)
     if description:
         data["description"] = description
-    data["examples"] = load_rule_examples(rule)
+    data["examples"] = {str(kind): text for kind, text in load_rule_examples(rule).items()}
     return data

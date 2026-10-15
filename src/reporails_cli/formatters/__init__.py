@@ -3,10 +3,7 @@
 Each formatter is a submodule (``github``, ``json``, ``mcp``, ``text``) imported by name where used;
 this package imports none of them.
 
-Each formatter implements the same interface:
-- format_rule(rule_id: str, rule_data: dict) -> T
-
-Where T is dict for json/mcp, str for text.
+The ``text`` and ``mcp`` formatters each expose ``format_rule(rule_id, rule_data) -> str``.
 """
 
 from __future__ import annotations

@@ -41,7 +41,7 @@ def test_assemble_folds_memory_validation(tmp_path):
     """Surface 1: a broken memory link on a ruleset-map file surfaces in the merged findings."""
     memory_file = tmp_path / "MEMORY.md"
     memory_file.write_text("# Memory\n\n- [broken](does-not-exist.md)\n", encoding="utf-8")
-    ruleset_map = SimpleNamespace(files=[SimpleNamespace(path=str(memory_file), type="memory")])
+    ruleset_map = SimpleNamespace(files=[SimpleNamespace(path=str(memory_file), type="memory")], atoms=())
 
     result = assemble_result(_inputs(ruleset_map=ruleset_map, scan_root=tmp_path))
 

@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.agent_config import load_config_file_types
-from reporails_cli.core.discovery.agent_discovery import glob_file_type_patterns
+from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, glob_file_type_patterns
 from reporails_cli.core.discovery.exclusions import load_project_exclude_dirs
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def memory_entries_for_agent(
     if not file_types:
         return []
     entries: list[MemoryEntry] = []
-    for capability in ("memory", "subagent_memory"):
+    for capability in sorted(MEMORY_SURFACES):
         spec = file_types.get(capability)
         if not isinstance(spec, dict):
             continue
@@ -53,7 +53,7 @@ def memory_entries_for_agent(
 def _entries_from_directory_globs(
     agent: str,
     capability: str,
-    spec: dict[str, Any],
+    spec: JsonObject,
     project_root: Path,
     exclude_dirs: frozenset[str] | None = None,
 ) -> list[MemoryEntry]:
@@ -68,11 +68,7 @@ def _entries_from_directory_globs(
         return []
     patterns: list[str] = []
     for scope in scopes.values():
-        if not isinstance(scope, dict):
-            continue
-        ps = scope.get("patterns")
-        if isinstance(ps, list):
-            patterns.extend(str(p) for p in ps)
+        patterns.extend(pattern_list(as_object(scope).get("patterns")))
     if not patterns:
         return []
     # Pass empty properties — directory-glob dispatch in glob_file_type_patterns

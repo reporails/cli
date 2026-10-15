@@ -20,15 +20,17 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.mapper.daemon import code_identity, pid_path, socket_path
-from reporails_cli.core.mapper.models import get_models
+from reporails_cli.core.mapper.models import Models, get_models
 from reporails_cli.core.mapper.pipeline import map_ruleset
 from reporails_cli.core.mapper.serialize import save_ruleset_map
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir, parse_idle_timeout_env
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str, str_list
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime import _torch_blocker
+from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +63,7 @@ def _init_daemon_process() -> None:
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def _start_model_warmup() -> tuple[Any, threading.Event]:
+def _start_model_warmup() -> tuple[Models, threading.Event]:
     """Start model warmup in a background thread. Returns (models, warmup_done)."""
     models = get_models()
     warmup_done = threading.Event()
@@ -150,7 +152,7 @@ def run_daemon() -> None:
 
 def _handle_connection(
     conn: socket.socket,
-    models: Any,
+    models: Models,
     warmup_done: threading.Event,
 ) -> None:
     """Handle a single client connection.
@@ -173,28 +175,30 @@ def _handle_connection(
 
     line = data.split(b"\n", 1)[0]
     try:
-        request = json.loads(line)
+        decoded: JsonValue = json.loads(line)
     except json.JSONDecodeError:
         conn.sendall(json.dumps({"ok": False, "error": "invalid JSON"}).encode() + b"\n")
         return
+
+    request = as_object(decoded)
 
     def _send_progress(msg: str) -> None:
         # Stream a per-element progress line to the client mid-map. A closed/
         # half-open client connection raises here; swallow it — a progress write
         # failure must never crash the daemon or abort the map.
         with contextlib.suppress(OSError):
-            conn.sendall(json.dumps({"type": "progress", "msg": msg}, separators=(",", ":")).encode() + b"\n")
+            conn.sendall(compact_json({"type": "progress", "msg": msg}).encode() + b"\n")
 
     response = _dispatch(request, models, warmup_done, _send_progress)
-    conn.sendall(json.dumps(response, separators=(",", ":")).encode() + b"\n")
+    conn.sendall(compact_json(response).encode() + b"\n")
 
 
 def _dispatch(
-    request: dict[str, Any],
-    models: Any,
+    request: JsonObject,
+    models: Models,
     warmup_done: threading.Event,
     progress: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Dispatch a request to the appropriate handler.
 
     ``progress`` (map_ruleset only) streams per-element progress lines back to
@@ -223,27 +227,27 @@ def _resolve_segmentation(root: Path | None) -> str:
     return get_project_config(root).mapper.segmentation
 
 
-def _ruleset_map_to_dict(ruleset_map: Any) -> dict[str, Any]:
+def _ruleset_map_to_dict(ruleset_map: RulesetMap) -> JsonObject:
     """Serialize a RulesetMap to a JSON-compatible dict via a temp round-trip."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
         save_ruleset_map(ruleset_map, Path(f.name))
         tmp_path = f.name
     result_json = Path(tmp_path).read_text(encoding="utf-8")
     Path(tmp_path).unlink()
-    data: dict[str, Any] = json.loads(result_json)
-    return data
+    data: JsonValue = json.loads(result_json)
+    return as_object(data)
 
 
 def _handle_map_ruleset(
-    request: dict[str, Any], models: Any, progress: Callable[[str], None] | None = None
-) -> dict[str, Any]:
+    request: JsonObject, models: Models, progress: Callable[[str], None] | None = None
+) -> JsonObject:
     """Handle map_ruleset request — build RulesetMap from paths.
 
     ``progress`` streams per-element mapping messages back to the client, so the
     daemon path shows the same per-harness-element counter as the in-process path.
     """
-    paths = [Path(p) for p in request.get("paths", [])]
-    root = Path(request["root"]) if "root" in request else None
+    paths = [Path(p) for p in str_list(request.get("paths"))]
+    root = Path(as_str(request["root"])) if "root" in request else None
 
     try:
         ruleset_map = map_ruleset(

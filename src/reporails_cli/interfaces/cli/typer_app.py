@@ -8,8 +8,6 @@ imports no command module; each command module imports ``app`` from here and
 
 from __future__ import annotations
 
-from typing import Any
-
 import click
 import typer
 from typer.core import TyperGroup
@@ -23,7 +21,7 @@ _torch_blocker.install()
 class _AilsGroup(TyperGroup):
     """Root command group: an unreadable config file ends any command with one error line and exit code 2."""
 
-    def invoke(self, ctx: click.Context) -> Any:
+    def invoke(self, ctx: click.Context) -> object:
         try:
             return super().invoke(ctx)
         except ConfigUnreadableError as exc:
@@ -31,10 +29,13 @@ class _AilsGroup(TyperGroup):
             raise typer.Exit(2) from exc
 
 
+# Click context settings that give every command and sub-app both `-h` and `--help`.
+HELP_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 app = typer.Typer(
     cls=_AilsGroup,
     name="ails",
     help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your project's instructions"),
     no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )

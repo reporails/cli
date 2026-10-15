@@ -8,11 +8,16 @@ own graph path + max length and adds the forward pass.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
+import numpy.typing as npt
 
 from reporails_cli.core.mapper.encode_pool import ort_intra_threads
+
+if TYPE_CHECKING:
+    import onnxruntime as ort
+    import tokenizers
 
 # Texts tokenized per call when counting tokens for bucket ordering.
 _COUNT_CHUNK = 1024
@@ -35,8 +40,8 @@ class _OnnxEncoderSession:
     pass the subclass implements.
     """
 
-    _session: Any
-    _tokenizer: Any
+    _session: ort.InferenceSession
+    _tokenizer: tokenizers.Tokenizer
     _needs_token_type_ids: bool
 
     def _init_session(
@@ -44,7 +49,6 @@ class _OnnxEncoderSession:
         onnx_path: Path,
         tokenizer_path: Path,
         max_length: int,
-        threads: int | None = None,
     ) -> None:
         """Build the CPU-tuned ORT session and configure the bundled tokenizer."""
         # Local imports so the module imports cheaply without pulling ORT up-front.
@@ -55,7 +59,7 @@ class _OnnxEncoderSession:
         opts = ort.SessionOptions()
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-        opts.intra_op_num_threads = ort_intra_threads() if threads is None else int(threads)
+        opts.intra_op_num_threads = ort_intra_threads()
         opts.inter_op_num_threads = 1
         opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         opts.enable_cpu_mem_arena = True
@@ -105,7 +109,7 @@ class _OnnxEncoderSession:
             tokens.append(_Tokens(t, e.ids[:n], list(e.offsets[:n])))
         return tokens
 
-    def encode_feed(self, bucket: list[_Tokens]) -> dict[str, Any]:
+    def encode_feed(self, bucket: list[_Tokens]) -> dict[str, npt.NDArray[np.int64]]:
         """Build the ORT feed (int64 ids / attention mask / type-ids) for one bucket, zero-padded."""
         width = max(len(t.ids) for t in bucket)
         ids = np.zeros((len(bucket), width), dtype=np.int64)
@@ -113,7 +117,7 @@ class _OnnxEncoderSession:
         for i, t in enumerate(bucket):
             ids[i, : len(t.ids)] = t.ids
             masks[i, : len(t.ids)] = 1
-        feed: dict[str, Any] = {"input_ids": ids, "attention_mask": masks}
+        feed: dict[str, npt.NDArray[np.int64]] = {"input_ids": ids, "attention_mask": masks}
         if self._needs_token_type_ids:
             feed["token_type_ids"] = np.zeros_like(ids)
         return feed

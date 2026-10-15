@@ -13,6 +13,7 @@ from reporails_cli.core.lint.mechanical.checks_advanced import frontmatter_valid
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.payload import project_payload
 from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy import preflight
 
 
@@ -74,7 +75,7 @@ def test_section_suggestions_classify_only_the_checked_set(tmp_path: Path, monke
     _collect_section_suggestions(
         project,
         [project / "CLAUDE.md"],
-        object(),
+        RulesetMap(schema_version="1", embedding_model="m", generated_at="t", files=(), atoms=()),
         "claude",
         show_progress=False,
         console=_Console(),

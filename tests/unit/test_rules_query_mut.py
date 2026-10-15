@@ -40,5 +40,6 @@ def test_load_all_rules_applies_agent_excludes(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr(rules_query, "_load_from_path", fake_load)
     monkeypatch.setattr(rules_query, "get_agent_config", lambda _agent: AgentConfig(excludes=["AGT:S:0002"]))
 
-    out = {r.id for r in load_all_rules(agents=["agt"], rules_dir=tmp_path)}
+    monkeypatch.setattr(rules_query, "get_rules_dir", lambda: tmp_path)
+    out = {r.id for r in load_all_rules(agents=["agt"])}
     assert out == {"AGT:S:0001"}

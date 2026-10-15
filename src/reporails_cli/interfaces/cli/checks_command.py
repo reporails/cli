@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 import typer
 
-from reporails_cli.core.lint.rule_pages import load_rule_examples, serialize_match
+from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_page_summary
 from reporails_cli.core.platform.adapters.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
@@ -22,7 +22,7 @@ from reporails_cli.core.platform.adapters.rules_query import (
     sort_rules_for_authoring,
 )
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
-from reporails_cli.core.platform.dto.models import Rule, Severity
+from reporails_cli.core.platform.dto.models import CATEGORY_DISPLAY_ORDER, Rule, Severity
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 from reporails_cli.interfaces.cli.helpers import console
 
@@ -147,24 +147,12 @@ def _payload(rules: list[Rule], *, capabilities: list[str] | None, agent: str | 
         "agent": agent,
         "agents_loaded": list_known_agents(),
         "count": len(rules),
-        "checks": [_rule_to_dict(r) for r in rules],
-    }
-
-
-def _rule_to_dict(rule: Rule) -> dict[str, object]:
-    return {
-        "id": rule.id,
-        "title": rule.title,
-        "slug": rule.slug,
-        "category": rule.category.value,
-        "severity": rule.severity.value,
-        "type": rule.type.value,
-        "match": serialize_match(rule.match),
+        "checks": [rule_page_summary(r) for r in rules],
     }
 
 
 def _category_order(present: Iterable[str]) -> list[str]:
-    order = ["structure", "direction", "coherence", "efficiency", "maintenance", "governance"]
+    order = [category.value for category in CATEGORY_DISPLAY_ORDER]
     present_set: set[str] = set(present)
     out = [c for c in order if c in present_set]
     return out + sorted(present_set - set(order))

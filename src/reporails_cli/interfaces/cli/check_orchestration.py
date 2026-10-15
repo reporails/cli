@@ -17,12 +17,12 @@ import time
 from contextlib import AbstractContextManager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import typer
 
 from reporails_cli.core.classify.capability_paths import TargetError, looks_like_windows_path, sniff_agent
-from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
+from reporails_cli.core.classify.focus_expansion import UnresolvedSkill, resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.project_root import (
     agent_dir_names,
@@ -36,7 +36,7 @@ from reporails_cli.core.platform.adapters.notices_seen import due_notices
 from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, FunnelError
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
-from reporails_cli.core.platform.runtime.merger import normalize_finding_path
+from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
 from reporails_cli.formatters import github as github_formatter
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters.text.display import print_text_result
@@ -46,6 +46,13 @@ from reporails_cli.interfaces.cli.heal import (
     _output_heal_results,
 )
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.output_formats import CHECK_FORMATS
+
+if TYPE_CHECKING:
+    from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.ruleset import RulesetMap
+    from reporails_cli.core.platform.observability.stage_timer import StageTimer
+    from reporails_cli.interfaces.cli.check_flow import CheckState
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +62,8 @@ def _resolve_capability_paths_one(
     capability_name: str,
     effective_agent: str,
     project_root: Path,
-    exclusions: Any = None,
-) -> tuple[set[Path], list[Any]]:
+    exclusions: RunExclusions | None = None,
+) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Resolve one (capability, name) spec to its file set + unresolved-skill list; a spec that
     names no file prints why and exits 2."""
 
@@ -85,11 +92,11 @@ def _resolve_capability_paths(
     specs: list[tuple[str, str]],
     effective_agent: str,
     project_root: Path,
-    exclusions: Any = None,
-) -> tuple[set[Path], list[Any]]:
+    exclusions: RunExclusions | None = None,
+) -> tuple[set[Path], list[UnresolvedSkill]]:
     """Union of every (capability, name) spec resolved against the agent's vocabulary."""
     paths: set[Path] = set()
-    unresolved: list[Any] = []
+    unresolved: list[UnresolvedSkill] = []
     for capability, capability_name in specs:
         one_paths, one_unresolved = _resolve_capability_paths_one(
             capability, capability_name, effective_agent, project_root, exclusions
@@ -99,7 +106,7 @@ def _resolve_capability_paths(
     return paths, unresolved
 
 
-def _named_paths(state: Any, capability_paths: frozenset[Path]) -> frozenset[Path]:
+def _named_paths(state: CheckState, capability_paths: frozenset[Path]) -> frozenset[Path]:
     """The files the run names: capability paths, path targets that are files, and the single file."""
     single = state.targets.single_file
     return frozenset(
@@ -353,18 +360,11 @@ def _relativize_paths(paths: set[Path], project_root: Path) -> set[str]:
     return {p.relative_to(project_root).as_posix() if p.is_relative_to(project_root) else p.as_posix() for p in paths}
 
 
-# The formats `_dispatch_output` actually routes — the live registry, and the only
-# values `ails check --format` accepts. Keep it beside the dispatcher it describes:
-# a retired formatter (`compact`, `brief`) that stayed accepted fell through to the
-# human scorecard at exit 0, so a CI job pinned to it silently stopped machine-parsing.
-OUTPUT_FORMATS = ("text", "json", "github")
-
-
 def _validate_output_format(output_format: str | None) -> None:
     """Reject an unknown `--format` with a usage error naming the formats that exist."""
-    if output_format and output_format not in OUTPUT_FORMATS:
+    if output_format and output_format not in CHECK_FORMATS:
         console.print(f"[red]Error:[/red] Unknown format: {output_format}")
-        console.print(f"Valid formats: {', '.join(OUTPUT_FORMATS)}")
+        console.print(f"Valid formats: {', '.join(CHECK_FORMATS)}")
         raise typer.Exit(2)
 
 
@@ -378,7 +378,9 @@ class RenderContext(NamedTuple):
     verbose: bool = False
 
 
-def _emit_json(result: Any, ruleset_map: Any, elapsed_ms: float, context: RenderContext) -> None:
+def _emit_json(
+    result: CombinedResult, ruleset_map: RulesetMap | None, elapsed_ms: float, context: RenderContext
+) -> None:
     """Print the result as one JSON object, with the run's elapsed time and any named paths."""
     data = json_formatter.format_combined_result(
         result,
@@ -389,19 +391,19 @@ def _emit_json(result: Any, ruleset_map: Any, elapsed_ms: float, context: Render
     data["elapsed_ms"] = round(elapsed_ms, 1)
     timer = get_stage_timer()
     if timer.enabled:
-        data["timing"] = timer.as_dict()
+        data["timing"] = [*timer.as_dict()]
     if context.capability_paths:
-        data["capability_paths"] = sorted(_relativize_paths(context.capability_paths, context.project_root))
+        data["capability_paths"] = [*sorted(_relativize_paths(context.capability_paths, context.project_root))]
     print(json.dumps(data, indent=2))
 
 
 def _dispatch_output(
     output_format: str,
-    display_result: Any,
-    ruleset_map: Any,
+    display_result: CombinedResult,
+    ruleset_map: RulesetMap | None,
     elapsed_ms: float,
     *,
-    funnel_error: Any,
+    funnel_error: FunnelError | None,
     context: RenderContext,
 ) -> None:
     """Route formatted output to JSON / GitHub / text.
@@ -445,7 +447,7 @@ def _dispatch_output(
     )
 
 
-def _emit_stage_timing(stage_timer: Any, output_format: str) -> None:
+def _emit_stage_timing(stage_timer: StageTimer, output_format: str) -> None:
     """Print the per-stage timing table (dev-only, gated by `AILS_STAGE_TIMING`).
 
     Only renders when the timer was enabled via the env var; the internal stage
@@ -469,12 +471,12 @@ class HealScope(NamedTuple):
 def _run_heal_pass(
     target: Path,
     scope: HealScope,
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     dry_run: bool,
     output_format: str,
     *,
-    notices: Any = (),
-    workflow: Any = None,
+    notices: tuple[Notice, ...] = (),
+    workflow: RemediationWorkflow | None = None,
 ) -> None:
     """Fix each finding at its own place and collect section suggestions using the already-built map.
 
@@ -530,8 +532,8 @@ def _should_exit_strict(
     strict: bool,
     capability_paths: set[Path],
     project_root: Path,
-    result: Any,
-    funnel_error: Any = None,
+    result: CombinedResult,
+    funnel_error: FunnelError | None = None,
 ) -> bool:
     if not strict:
         return False

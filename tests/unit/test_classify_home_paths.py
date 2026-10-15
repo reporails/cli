@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify import _first_matching_pattern, classify_files, load_file_types
+from reporails_cli.core.classify import classify_files, load_file_types
+from reporails_cli.core.platform.utils.utils import config_pattern_matches
 
 
 @pytest.fixture
@@ -29,28 +30,27 @@ def home(monkeypatch, tmp_path) -> Path:
     return home_dir
 
 
-class TestFirstMatchingPatternExpandsHome:
+class TestConfigPatternMatchesExpandsHome:
     @pytest.mark.unit
     @pytest.mark.subsys_classify
     def test_home_rooted_leaf_pattern_matches_the_absolute_path_it_found(self, home: Path) -> None:
         """`~/.claude/CLAUDE.md` matches the absolute path discovery expanded to find it."""
         rel_path = (home / ".claude" / "CLAUDE.md").as_posix()
-        assert _first_matching_pattern(rel_path, ("~/.claude/CLAUDE.md",)) == "~/.claude/CLAUDE.md"
+        assert config_pattern_matches(rel_path, "~/.claude/CLAUDE.md")
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
     def test_home_rooted_directory_glob_matches_an_entry_file_inside_it(self, home: Path) -> None:
         """A trailing-slash home pattern (`~/.claude/projects/*/memory/`) matches a note inside."""
         rel_path = (home / ".claude" / "projects" / "proj-slug" / "memory" / "notes.md").as_posix()
-        patterns = ("~/.claude/projects/*/memory/",)
-        assert _first_matching_pattern(rel_path, patterns) == "~/.claude/projects/*/memory/"
+        assert config_pattern_matches(rel_path, "~/.claude/projects/*/memory/")
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
     def test_project_relative_path_is_unaffected_by_a_home_pattern_in_the_same_list(self) -> None:
         """A project file still matches its own project pattern first, home pattern present or not."""
-        patterns = ("**/CLAUDE.md", "~/.claude/CLAUDE.md")
-        assert _first_matching_pattern("CLAUDE.md", patterns) == "**/CLAUDE.md"
+        assert config_pattern_matches("CLAUDE.md", "**/CLAUDE.md")
+        assert not config_pattern_matches("CLAUDE.md", "~/.claude/CLAUDE.md")
 
 
 class TestClassifyFilesTypesHomeRootedFiles:

@@ -11,6 +11,7 @@ import re
 from reporails_cli.core.mapper.charge_floors import TABLE_HEADER_RULE
 from reporails_cli.core.mapper.fence_atoms import is_fence_block
 from reporails_cli.core.mapper.md_parser import code_spans, link_spans, replace_spans
+from reporails_cli.core.mapper.prose_split import sentence_spans
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Patterns that indicate charge language in text classified as neutral.
@@ -30,7 +31,7 @@ _EMBEDDED_DIRECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 _EMBEDDED_IMPERATIVE_RE = re.compile(
-    r"(?:^|[.!?]\s+)("
+    r"("
     # Only non-ambiguous verbs — words that are almost always imperative
     # at sentence start. Excludes verb-noun words (test, build, set, check,
     # run, read, trace, etc.) that produce false positives on descriptions.
@@ -48,7 +49,8 @@ def _strip_refs_for_marker_scan(text: str) -> str:
     A charge word inside a link label or a code span is referential, not
     instructional, so it must not promote a neutral atom to AMBIGUOUS.
     """
-    return replace_spans(text, (*code_spans(text), *link_spans(text)), lambda _span: " ")
+    spans: list[tuple[int, int, *tuple[object, ...]]] = [*code_spans(text), *link_spans(text)]
+    return replace_spans(text, spans, lambda _span: " ")
 
 
 def _constraint_markers(text: str) -> list[str]:
@@ -58,8 +60,9 @@ def _constraint_markers(text: str) -> list[str]:
 
 def _directive_markers(text: str) -> list[str]:
     """The `directive:<word>` and `imperative:<word>` markers `text` carries."""
+    sentence_starts = (_EMBEDDED_IMPERATIVE_RE.match(text, start, end) for start, end in sentence_spans(text))
     return [f"directive:{m.group().strip()}" for m in _EMBEDDED_DIRECTIVE_RE.finditer(text)] + [
-        f"imperative:{m.group(1).strip()}" for m in _EMBEDDED_IMPERATIVE_RE.finditer(text)
+        f"imperative:{m.group(1).strip()}" for m in sentence_starts if m
     ]
 
 

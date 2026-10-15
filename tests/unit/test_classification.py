@@ -601,7 +601,7 @@ class TestMatchFilesLoadingVerbAndLinkSourceType:
         )
 
     def _rule_match(self, match_frontmatter: dict[str, object]) -> FileMatch:
-        from reporails_cli.core.platform.adapters.rule_builder import build_rule
+        from reporails_cli.core.platform.adapters.rule_builder import build_rule, load_checks
 
         frontmatter = {
             "id": "CORE:S:0999",
@@ -611,7 +611,7 @@ class TestMatchFilesLoadingVerbAndLinkSourceType:
             "slug": "probe",
             "match": match_frontmatter,
         }
-        rule = build_rule(frontmatter, Path("test.md"), None)
+        rule = build_rule(frontmatter, Path("test.md"), None, load_checks(frontmatter))
         assert rule.match is not None
         return rule.match
 

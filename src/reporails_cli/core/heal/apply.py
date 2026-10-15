@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.keyed import KeyedResult, keyed_heal
@@ -12,7 +11,8 @@ from reporails_cli.core.lint.suppression import suppressed_lines
 from reporails_cli.core.pipeline.mapping import map_instruction_files
 from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, tiers_unpaid
+from reporails_cli.core.platform.dto.diagnostics import AUTH_REJECTED_ERRORS, RemediationWorkflow, tiers_unpaid
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.utils.utils import matches_any_glob
 
 HEAL_PRO_REQUIRED = "Applying fixes needs a Pro account."
@@ -81,9 +81,9 @@ def suppressed_by_path(files: Iterable[Path], target: Path) -> dict[Path, set[in
 
 
 def apply_keyed_heal(
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     target: Path,
-    workflow: Any,
+    workflow: RemediationWorkflow | None,
     *,
     dry_run: bool,
     allowed_files: Iterable[Path] | None,
@@ -98,7 +98,7 @@ def apply_keyed_heal(
     if ruleset_map is None or workflow is None:
         return KeyedResult()
 
-    def remap(files: list[Path]) -> Any:
+    def remap(files: list[Path]) -> RulesetMap | None:
         return map_instruction_files(target, files, spawn_daemon=False)
 
     return keyed_heal(

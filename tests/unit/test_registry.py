@@ -1,4 +1,4 @@
-"""Unit tests for rule registry: build_rule and backed_by parsing."""
+"""Unit tests for rule registry: build_rule, inheritance and dependency validation."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.adapters.rule_builder import build_rule
-from reporails_cli.core.platform.dto.models import Category, PatternConfidence, Rule, RuleType
+from reporails_cli.core.platform.adapters.rule_builder import build_rule, load_checks
+from reporails_cli.core.platform.dto.models import Category, Rule, RuleType
 
 MINIMAL_FRONTMATTER = {
     "id": "CORE:S:0001",
@@ -19,70 +19,13 @@ MINIMAL_FRONTMATTER = {
 }
 
 
-class TestBuildRuleBackedBy:
-    """Test backed_by parsing in build_rule (now plain string list)."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_backed_by_parsed(self) -> None:
-        fm = {
-            **MINIMAL_FRONTMATTER,
-            "backed_by": ["anthropic-docs", "community-practice"],
-        }
-        rule = build_rule(fm, Path("test.md"), None)
-        assert len(rule.backed_by) == 2
-        assert rule.backed_by[0] == "anthropic-docs"
-        assert rule.backed_by[1] == "community-practice"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_backed_by_empty_when_absent(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
-        assert rule.backed_by == []
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_backed_by_skips_non_string_entries(self) -> None:
-        fm = {
-            **MINIMAL_FRONTMATTER,
-            "backed_by": [
-                "valid-source",
-                {"source": "dict-entry"},  # not a string — skipped
-                42,  # not a string — skipped
-            ],
-        }
-        rule = build_rule(fm, Path("test.md"), None)
-        assert len(rule.backed_by) == 1
-        assert rule.backed_by[0] == "valid-source"
-
-
-class TestBuildRuleSources:
-    """Test that sources accepts string lists."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_sources_as_strings(self) -> None:
-        fm = {
-            **MINIMAL_FRONTMATTER,
-            "sources": ["https://example.com/doc1", "https://example.com/doc2"],
-        }
-        rule = build_rule(fm, Path("test.md"), None)
-        assert rule.sources == ["https://example.com/doc1", "https://example.com/doc2"]
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_sources_default_empty(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
-        assert rule.sources == []
-
-
 class TestBuildRuleBasic:
     """Test basic build_rule construction."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_minimal_rule(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None, load_checks(MINIMAL_FRONTMATTER))
         assert rule.id == "CORE:S:0001"
         assert rule.title == "Test Rule"
         assert rule.category == Category.STRUCTURE
@@ -102,7 +45,7 @@ class TestBuildRuleBasic:
             **MINIMAL_FRONTMATTER,
             "match": {"type": "generic", "loading_verb": ["read"], "link_source_type": ["main"]},
         }
-        rule = build_rule(fm, Path("test.md"), None)
+        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
         assert rule.match is not None
         assert rule.match.loading_verb == ["read"]
         assert rule.match.link_source_type == ["main"]
@@ -117,7 +60,7 @@ class TestBuildRuleBasic:
                 {"id": "CORE:S:0001:check:0002", "type": "deterministic", "severity": "high"},
             ],
         }
-        rule = build_rule(fm, Path("test.md"), None)
+        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
         assert len(rule.checks) == 2
         assert rule.checks[0].id == "CORE:S:0001:check:0001"
         assert rule.checks[0].type == "mechanical"
@@ -143,7 +86,7 @@ class TestBuildRuleBasic:
                 },
             ],
         }
-        rule = build_rule(fm, Path("test.md"), None)
+        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
         assert rule.checks[0].args == {"max": 300}
 
     @pytest.mark.unit
@@ -153,33 +96,8 @@ class TestBuildRuleBasic:
             **MINIMAL_FRONTMATTER,
             "supersedes": "CORE:S:0003",
         }
-        rule = build_rule(fm, Path("test.md"), None)
+        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
         assert rule.supersedes == "CORE:S:0003"
-
-
-class TestBuildRulePatternConfidence:
-    """Test pattern_confidence parsing in build_rule."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    @pytest.mark.parametrize("level", ["very_high", "high", "medium", "low", "very_low"])
-    def test_confidence_level_parsed(self, level: str) -> None:
-        fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": level}
-        rule = build_rule(fm, Path("test.md"), None)
-        assert rule.pattern_confidence == PatternConfidence(level)
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_none_when_absent(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
-        assert rule.pattern_confidence is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_invalid_value_raises(self) -> None:
-        fm = {**MINIMAL_FRONTMATTER, "pattern_confidence": "bogus"}
-        with pytest.raises(ValueError):
-            build_rule(fm, Path("test.md"), None)
 
 
 class TestBuildRuleNewFields:
@@ -189,26 +107,26 @@ class TestBuildRuleNewFields:
     @pytest.mark.subsys_lint
     def test_inherited_parsed(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "inherited": "CORE:S:0038"}
-        rule = build_rule(fm, Path("test.md"), None)
+        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
         assert rule.inherited == "CORE:S:0038"
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_inherited_none_when_absent(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None, load_checks(MINIMAL_FRONTMATTER))
         assert rule.inherited is None
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_depends_on_parsed(self) -> None:
         fm = {**MINIMAL_FRONTMATTER, "depends_on": ["CORE:S:0001", "CORE:S:0002"]}
-        rule = build_rule(fm, Path("test.md"), None)
+        rule = build_rule(fm, Path("test.md"), None, load_checks(fm))
         assert rule.depends_on == ["CORE:S:0001", "CORE:S:0002"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_depends_on_empty_when_absent(self) -> None:
-        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None)
+        rule = build_rule(MINIMAL_FRONTMATTER, Path("test.md"), None, load_checks(MINIMAL_FRONTMATTER))
         assert rule.depends_on == []
 
 
@@ -340,12 +258,12 @@ class TestValidateDependsOn:
         from reporails_cli.core.platform.adapters import registry
 
         rules_dir = Path(__file__).resolve().parents[2] / "framework" / "rules"
-        registry.clear_rule_cache()
+        registry._read_rules.cache_clear()
         try:
             with caplog.at_level("WARNING"):
                 rules = registry.load_rules(rules_paths=[rules_dir], agent="copilot")
         finally:
-            registry.clear_rule_cache()
+            registry._read_rules.cache_clear()
         assert "which is not loaded" not in caplog.text
         assert "CORE:S:0026" in rules
         assert "CORE:S:0024" not in rules
@@ -422,12 +340,15 @@ class TestRuleDependencies:
         self._write(tmp_path, "core/dependent", "CORE:S:0902", "depends_on: [CORE:S:0901]\n")
         self._write(tmp_path, "claude/base", "CLAUDE:S:0901", "supersedes: CORE:S:0901\n")
         monkeypatch.setattr(registry, "get_rules_dir", lambda: tmp_path)
-        registry.clear_rule_cache()
+        registry._read_rules.cache_clear()
         try:
-            assert registry.rule_dependencies("claude") == {"CORE:S:0902": frozenset({"CLAUDE:S:0901"})}
-            assert registry.rule_dependencies("") == {"CORE:S:0902": frozenset({"CORE:S:0901"})}
+            claude = registry.rule_dependencies(registry.load_rules(agent="claude"))
+            assert claude == {"CORE:S:0902": frozenset({"CLAUDE:S:0901"})}
+            assert registry.rule_dependencies(registry.load_rules(agent="")) == {
+                "CORE:S:0902": frozenset({"CORE:S:0901"})
+            }
         finally:
-            registry.clear_rule_cache()
+            registry._read_rules.cache_clear()
 
 
 class TestProjectScopeModes:
@@ -458,8 +379,29 @@ class TestProjectScopeModes:
     @pytest.mark.subsys_lint
     def test_both_modes_stand_for_the_run_as_a_whole(self, dev_rules_dir: Path) -> None:
         """The once-per-project git check reports on the first matched file, like the aggregate checks."""
-        from reporails_cli.core.platform.adapters.registry import whole_run_check_ids
+        from reporails_cli.core.platform.adapters.registry import load_rules, whole_run_check_ids
 
-        whole_run = whole_run_check_ids("claude")
+        whole_run = whole_run_check_ids(load_rules(agent="claude"))
         assert "CORE.G.0001.check" in whole_run
         assert "CORE.E.0001.check" in whole_run
+
+
+class TestScanRulesNonMappingCheck:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_string_check_entry_skips_the_rule_and_names_the_problem(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from reporails_cli.core.platform.adapters.registry import _scan_rules
+
+        slug_dir = tmp_path / "core" / "demo"
+        slug_dir.mkdir(parents=True)
+        (slug_dir / "rule.md").write_text(
+            "---\nid: CORE:S:0999\nslug: demo\ntitle: Demo\ncategory: structure\ntype: mechanical\n---\n"
+        )
+        (slug_dir / "checks.yml").write_text("checks:\n  - just a string\n")
+        with caplog.at_level("WARNING"):
+            rules = _scan_rules(tmp_path)
+        assert not rules
+        assert "check 1 must be a mapping, not a str" in caplog.text
+        assert str(slug_dir / "checks.yml") in caplog.text

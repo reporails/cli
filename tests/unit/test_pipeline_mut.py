@@ -28,8 +28,8 @@ def _finding(sev):
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_warn_finding_logs_warning_not_error(monkeypatch, caplog):
-    """A 'warn' finding logs at WARNING, never ERROR (L121/L123 `==`)."""
-    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warn")])
+    """A 'warning' finding logs at WARNING, never ERROR (L121/L123 `==`)."""
+    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warning")])
     ruleset = SimpleNamespace(atoms=())
     with caplog.at_level("WARNING"):
         pl._validate_and_log(ruleset)  # no error findings -> no raise
@@ -52,7 +52,7 @@ def test_error_finding_raises(monkeypatch):
 @pytest.mark.subsys_map
 def test_warn_only_does_not_raise(monkeypatch):
     """Warn-only findings must NOT raise (guards L125)."""
-    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warn")])
+    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warning")])
     pl._validate_and_log(SimpleNamespace(atoms=()))  # must not raise
 
 
@@ -334,9 +334,7 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     monkeypatch.setattr(pl, "_fill_missing_embeddings", lambda *a, **k: None)
     monkeypatch.setattr(pl, "_topic_split_if_enabled", _fake_split)
     monkeypatch.setattr(pl, "_embed_file_descriptions", lambda *a, **k: None)
-    monkeypatch.setattr(
-        pl, "build_ruleset_map", lambda *a, **k: SimpleNamespace(summary=SimpleNamespace(n_over_merged=0), atoms=())
-    )
+    monkeypatch.setattr(pl, "build_ruleset_map", lambda *a, **k: SimpleNamespace(summary=SimpleNamespace(), atoms=()))
     monkeypatch.setattr(pl, "_validate_and_log", lambda *a, **k: None)
 
     pl.map_ruleset(
@@ -349,52 +347,6 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     assert classify_args["root"] is sentinel_root  # L312
     assert split_args["structure_aware"] is False  # L308
     assert split_args["models"] is sentinel_models  # L310
-
-
-# --- n_over_merged: audit-flag count, not the split count ---
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_n_over_merged_is_audit_flag_count_not_split_count(monkeypatch):
-    """RulesetSummary.n_over_merged documents the granularity audit's flag count
-    (core/platform/dto/ruleset.py). A flagged unit the later split does not
-    actually cut (clause split < 2, or stage == 'multislot') must still count —
-    2 atoms flagged, 0 atoms split, must report n_over_merged == 2, not 0."""
-    flagged_atoms = [
-        SimpleNamespace(over_merged=True),
-        SimpleNamespace(over_merged=True),
-        SimpleNamespace(over_merged=False),
-    ]
-
-    def _fake_classify(paths, root, map_cache, registry, segmentation, progress=None):
-        return [], list(flagged_atoms), []
-
-    def _fake_split(all_atoms, models, *, structure_aware):
-        return all_atoms, 0  # audit flagged 2, but nothing actually split
-
-    captured = {}
-
-    def _fake_build(file_records, all_atoms):
-        captured["ruleset"] = SimpleNamespace(summary=SimpleNamespace(n_over_merged=0), atoms=())
-        return captured["ruleset"]
-
-    monkeypatch.setattr("reporails_cli.core.mapper.pipeline.multislot_available", lambda: True)
-    monkeypatch.setattr(pl, "_get_stage_timer", lambda: SimpleNamespace(mark=lambda *a, **k: None))
-    monkeypatch.setattr(pl, "get_models", lambda: SimpleNamespace(st=object()))
-    monkeypatch.setattr(pl, "_open_map_cache", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_load_registry", lambda: {})
-    monkeypatch.setattr(pl, "_classify_all_files", _fake_classify)
-    monkeypatch.setattr(pl, "_embed_and_audit_fresh", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_fill_missing_embeddings", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_topic_split_if_enabled", _fake_split)
-    monkeypatch.setattr(pl, "_embed_file_descriptions_if_any", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "build_ruleset_map", _fake_build)
-    monkeypatch.setattr(pl, "_validate_and_log", lambda *a, **k: None)
-
-    pl.map_ruleset([Path("/some/dir/file.md")], segmentation="legacy")
-
-    assert captured["ruleset"].summary.n_over_merged == 2
 
 
 @pytest.mark.unit
@@ -434,7 +386,7 @@ def _seed_entry(cache, path):
     from reporails_cli.core.cache.map_cache import CachedFileEntry, cache_key_for_path
 
     key = cache_key_for_path(path)
-    cache.put(key, CachedFileEntry(key, [{"text": "x"}]))
+    cache.put(key, CachedFileEntry([{"text": "x"}]))
     return key
 
 

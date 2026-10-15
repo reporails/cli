@@ -19,6 +19,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from reporails_cli.core.platform.config.bootstrap import env_flag
+from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import Notice
 from reporails_cli.core.platform.utils.utils import write_json_atomic
 
@@ -58,7 +59,8 @@ def _recent(day: str, cutoff: date) -> bool:
 
 def _save(entries: dict[str, str]) -> None:
     try:
-        write_json_atomic(_seen_path(), entries)
+        payload: JsonObject = dict(entries)
+        write_json_atomic(_seen_path(), payload)
     except OSError as exc:
         logger.debug("Could not persist notices-seen: %s", exc)
 
@@ -75,11 +77,11 @@ def visible_notices(notices: tuple[Notice, ...], *, no_promo: bool = False) -> t
     return tuple(n for n in notices if n.kind != "promo")
 
 
-def due_notices(notices: tuple[Notice, ...], *, now: datetime | None = None) -> tuple[Notice, ...]:
+def due_notices(notices: tuple[Notice, ...]) -> tuple[Notice, ...]:
     """The notices to show now; the ones that do not show every run are recorded as shown today."""
     if not notices:
         return ()
-    today = (now or datetime.now()).astimezone().date()
+    today = datetime.now().astimezone().date()
     stored = _load()
     entries = {k: v for k, v in stored.items() if _recent(v, today - timedelta(days=KEEP_DAYS))}
     due = tuple(n for n in notices if _every_run(n) or entries.get(n.id) != today.isoformat())

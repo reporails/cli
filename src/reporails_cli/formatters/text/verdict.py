@@ -8,13 +8,14 @@ console here is the one the whole scorecard prints through.
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
 
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Severity
+from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters.text.display_constants import (
     conventions_phrase,
     counted,
@@ -29,7 +30,7 @@ from reporails_cli.formatters.triage import LeverageTier, resolve_leverage, spli
 console = Console()
 
 
-def compute_score(result: Any, has_quality: bool) -> float | None:
+def compute_score(result: CombinedResult, has_quality: bool) -> float | None:
     """Return the reported whole-project display score verbatim.
 
     The CLI renders it without re-deriving. Falls back to 0.0 when offline (no server quality).
@@ -62,7 +63,7 @@ def _score_bar(score: float, bar_width: int, color: str) -> str:
 _VERDICT_LABEL_W = 10  # widest label is "Findings" plus two spaces
 
 
-def _render_quality_line(result: Any, has_quality: bool, elapsed_s: str) -> float | None:
+def _render_quality_line(result: CombinedResult, has_quality: bool, elapsed_s: str) -> float | None:
     """Print the Quality line and return the score it shows (`None` when it shows no score)."""
     bar_width = min(20, max(10, get_term_width() - 48))
     score: float | None = None
@@ -85,7 +86,7 @@ def _render_quality_line(result: Any, has_quality: bool, elapsed_s: str) -> floa
 
 
 def _render_verdict_block(
-    result: Any,
+    result: CombinedResult,
     has_quality: bool,
     elapsed_ms: float,
     hint_errors: int = 0,
@@ -110,7 +111,7 @@ def _render_verdict_block(
     _render_findings_line(len(listed), verbose, len(conventions))
 
 
-def render_excluded_line(result: Any, *, scored: bool) -> None:
+def render_excluded_line(result: CombinedResult, *, scored: bool) -> None:
     """The folders and files the user left out of the run, under the Quality line; nothing when none were."""
 
     omissions = result.omissions
@@ -140,7 +141,7 @@ def _severity_rank(rule_id: str) -> int:
     return SEVERITY_ORDER[Severity(severity)] if severity else len(SEVERITY_ORDER)
 
 
-def _top_error_rule(errors: list[Any]) -> tuple[str, int]:
+def _top_error_rule(errors: list[FindingItem]) -> tuple[str, int]:
     """The rule id with the most error findings and its count.
 
     Ties break on the strongest grade the reply put on the rule's errors (`gate_mover`, then
@@ -158,7 +159,7 @@ def _top_error_rule(errors: list[Any]) -> tuple[str, int]:
     return rule, counts[rule]
 
 
-def _render_fix_now(errors: list[Any], hint_errors: int) -> None:
+def _render_fix_now(errors: list[FindingItem], hint_errors: int) -> None:
     """The next action: the error count and one entry point. Omitted when nothing is listed.
 
     On the free tier the errors held back as Pro diagnostics are named beside the visible

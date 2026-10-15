@@ -14,9 +14,9 @@ embedding of ``texts[i]``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 
 from reporails_cli.core.mapper.encode_pool import run_buckets
 from reporails_cli.core.mapper.model_manifest import get_models_path
@@ -37,13 +37,8 @@ class OnnxEmbedder(_OnnxEncoderSession):
     embeddings, one row per text, in the same order as ``texts``.
     """
 
-    def __init__(
-        self,
-        model_dir: Path | None = None,
-        threads: int | None = None,
-    ) -> None:
-        if model_dir is None:
-            model_dir = get_models_path() / _DEFAULT_MODEL_SUBDIR
+    def __init__(self) -> None:
+        model_dir = get_models_path() / _DEFAULT_MODEL_SUBDIR
 
         onnx_path = model_dir / "onnx" / "model.onnx"
         tokenizer_path = model_dir / "tokenizer.json"
@@ -58,9 +53,9 @@ class OnnxEmbedder(_OnnxEncoderSession):
                 "online once to fetch it, or unset AILS_MODEL_OFFLINE."
             )
 
-        reload_after_repair(lambda: self._init_session(onnx_path, tokenizer_path, _MAX_LENGTH, threads))
+        reload_after_repair(lambda: self._init_session(onnx_path, tokenizer_path, _MAX_LENGTH))
 
-    def encode(self, texts: list[str]) -> np.ndarray:
+    def encode(self, texts: list[str]) -> npt.NDArray[np.float32]:
         """Encode ``texts`` to L2-normalised float32 embeddings.
 
         Each distinct text is encoded once, in buckets of similar token count.
@@ -72,13 +67,13 @@ class OnnxEmbedder(_OnnxEncoderSession):
 
         buckets, slot = self.plan_buckets(texts, _BUCKET_SIZE)
 
-        def _bucket(bucket: list[str]) -> Callable[[], np.ndarray]:
+        def _bucket(bucket: list[str]) -> Callable[[], npt.NDArray[np.float32]]:
             return lambda: self._encode_batch(bucket)
 
         flat = np.concatenate(run_buckets([_bucket(b) for b in buckets]))
         return flat[slot]
 
-    def _encode_batch(self, bucket: list[str]) -> np.ndarray:
+    def _encode_batch(self, bucket: list[str]) -> npt.NDArray[np.float32]:
         """Tokenize one bucket of texts, forward it through the graph, mean-pool and L2-normalise."""
         feed = self.encode_feed(self.tokenize(bucket))
         masks = feed["attention_mask"]
@@ -94,5 +89,5 @@ class OnnxEmbedder(_OnnxEncoderSession):
 
         # L2 normalise (same convention as sentence-transformers default).
         norms = np.linalg.norm(pooled, axis=-1, keepdims=True).clip(min=1e-12)
-        normalised: np.ndarray = (pooled / norms).astype(np.float32)
+        normalised: npt.NDArray[np.float32] = (pooled / norms).astype(np.float32)
         return normalised

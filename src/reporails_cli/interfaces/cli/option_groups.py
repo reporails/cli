@@ -11,10 +11,22 @@ import dataclasses
 import functools
 import inspect
 from collections.abc import Callable
-from typing import Any, cast, get_type_hints
+from typing import TYPE_CHECKING, Protocol, get_type_hints
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
 
 
-def command_options[Options](options_type: type[Options]) -> Callable[[Callable[[Options], None]], Callable[..., None]]:
+class OptionsCommand(Protocol):  # pylint: disable=too-few-public-methods  # a callable protocol is one method
+    """A Typer command taking one keyword argument per option."""
+
+    def __call__(self, **values: object) -> None:
+        """Run the command with each option's parsed value."""
+
+
+def command_options[Options: DataclassInstance](
+    options_type: type[Options],
+) -> Callable[[Callable[[Options], None]], OptionsCommand]:
     """Decorate a callback taking `options_type` so Typer sees one parameter per dataclass field."""
     hints = get_type_hints(options_type)
     parameters = [
@@ -24,15 +36,15 @@ def command_options[Options](options_type: type[Options]) -> Callable[[Callable[
             default=field.default,
             annotation=hints[field.name],
         )
-        for field in dataclasses.fields(cast(Any, options_type))
+        for field in dataclasses.fields(options_type)
     ]
 
-    def decorate(callback: Callable[[Options], None]) -> Callable[..., None]:
+    def decorate(callback: Callable[[Options], None]) -> OptionsCommand:
         @functools.wraps(callback)
-        def command(**values: Any) -> None:
+        def command(**values: object) -> None:
             callback(options_type(**values))
 
-        cast(Any, command).__signature__ = inspect.Signature(parameters, return_annotation=None)
+        command.__dict__["__signature__"] = inspect.Signature(parameters, return_annotation=None)
         command.__annotations__ = {**hints, "return": type(None)}
         return command
 

@@ -10,7 +10,10 @@ from __future__ import annotations
 import functools
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +27,11 @@ class Models:
     """
 
     def __init__(self) -> None:
-        self._st: Any | None = None
+        self._st: OnnxEmbedder | None = None
         self._st_lock = threading.Lock()
 
     @property
-    def st(self) -> Any:
+    def st(self) -> OnnxEmbedder:
         """The loaded embedder, loading it on first access."""
         if self._st is None:
             with self._st_lock:

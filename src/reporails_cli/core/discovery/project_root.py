@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import functools
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.agent_config import bundled_file_types
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, pattern_list
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 
 def resolve_project_root(target: Path) -> Path:
@@ -51,20 +52,20 @@ def root_markers() -> tuple[tuple[tuple[str, ...], frozenset[str]], ...]:
 def _repo_relative_pattern(pattern: str) -> str:
     """Strip a scope pattern to its repo-relative form, or `` for a non-repo one."""
     text = str(pattern)
-    if text.startswith(("~", "/")) or ":" in text.split("/", 1)[0]:
+    if is_rooted_pattern(text):
         return ""
     return text.removeprefix("**/")
 
 
-def _markers_from_file_types(file_types: dict[str, Any]) -> tuple[set[str], set[str]]:
+def _markers_from_file_types(file_types: JsonObject) -> tuple[set[str], set[str]]:
     """Split one agent's `file_types` into its main-file names and its config dir names."""
     mains: set[str] = set()
     dirs: set[str] = set()
     for ft_name, ft in file_types.items():
         if not isinstance(ft, dict):
             continue
-        for scope in (ft.get("scopes") or {}).values():
-            for pattern in (scope or {}).get("patterns", []) or []:
+        for scope in as_object(ft.get("scopes")).values():
+            for pattern in pattern_list(as_object(scope).get("patterns")):
                 rel = _repo_relative_pattern(pattern)
                 if not rel:
                     continue
@@ -96,7 +97,7 @@ def resolve_project_root_for_file(target: Path) -> Path:
     passes only the file path with no cwd to read, so `target.parent` under-roots a
     nested file: `.claude/rules/style.md` resolved at `.claude/rules` instead of the
     project root, which misclassifies the file's `loading`/`scope`
-    (`core/mapper/inspect.py::_detect_file_loading`) and computes a cache identity
+    (`core/mapper/inspect.py::_resolve_activation`) and computes a cache identity
     (`core/cache/full_map_cache.py::compute_identity`) that never matches the CLI's
     same-file run, so the two surfaces never share a whole-map cache entry.
 

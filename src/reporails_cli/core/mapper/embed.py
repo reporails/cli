@@ -7,11 +7,15 @@ Quantises the float32 output to int8.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord
+
+if TYPE_CHECKING:
+    from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
 
 def _embed_text(atom: Atom) -> str:
@@ -26,7 +30,7 @@ def _embed_text(atom: Atom) -> str:
     return atom.plain_text or atom.text
 
 
-def _quantize_int8(vec: Any) -> tuple[int, ...]:
+def _quantize_int8(vec: npt.NDArray[np.float32]) -> tuple[int, ...]:
     """Quantize a float32 embedding vector to int8 (-128..127).
 
     Keeps cosine similarity between vectors close to the float original.
@@ -38,14 +42,14 @@ def _quantize_int8(vec: Any) -> tuple[int, ...]:
     return tuple(int(v) for v in quantized)
 
 
-def _embed_atoms_deduped(atoms: list[Atom], encoder: Any) -> None:
+def _embed_atoms_deduped(atoms: list[Atom], encoder: OnnxEmbedder) -> None:
     """Embed atoms and store each one's int8 embedding."""
     embeddings = encoder.encode([_embed_text(a) for a in atoms])
     for atom, vec in zip(atoms, embeddings, strict=True):
         atom.embedding_int8 = _quantize_int8(vec)
 
 
-def _embed_file_descriptions(file_records: list[FileRecord], encoder: Callable[[], Any]) -> list[FileRecord]:
+def _embed_file_descriptions(file_records: list[FileRecord], encoder: Callable[[], OnnxEmbedder]) -> list[FileRecord]:
     """Embed the frontmatter descriptions of on_invocation files that carry no embedding yet.
 
     `encoder` returns the embedder; it is called only when some description is still

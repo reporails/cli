@@ -10,12 +10,13 @@ its already-shaped parts, and `format_rule` renders one rule as readable text fo
 
 from __future__ import annotations
 
-import json
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from reporails_cli.core.mapper.md_parser import file_lines
 from reporails_cli.core.mapper.parse import parse_blocks
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
+from reporails_cli.core.platform.utils.utils import compact_json
 from reporails_cli.formatters.listed_reasons import listed_reason_text
 from reporails_cli.formatters.text.rule_meta import rule_label
 from reporails_cli.formatters.triage import LeverageTier, resolve_row_leverage
@@ -45,7 +46,7 @@ _ENVELOPE_CROSS_FILE_COORD_LIMIT = 8
 
 # What a `validate` reply's location index carries per location — no findings/relations (those
 # come with `remedy_brief(path, location)`), just enough to route the next call.
-_LOCATION_INDEX_KEYS = ("order", "element", "kind", "loading", "files", "importance")
+LOCATION_INDEX_KEYS = ("order", "element", "kind", "loading", "files", "importance")
 
 # A targeted workflow carries each kept location's findings/relations in the reply only while
 # the whole reply, without its `rules` map, stays within this many characters — a broad target
@@ -65,7 +66,7 @@ _TARGETED_INDEX_HINT = (
 # ---------------------------------------------------------------------------
 
 
-def _collect_rule_ids(node: Any, out: set[str]) -> None:
+def _collect_rule_ids(node: JsonValue, out: set[str]) -> None:
     """Walk a JSON-shaped `validate` payload, collecting every string value found under a
     `rule` key — per-file findings, `top_rules`, workflow findings/relations, and
     `workflow.listed` all name their rule this way."""
@@ -80,7 +81,7 @@ def _collect_rule_ids(node: Any, out: set[str]) -> None:
             _collect_rule_ids(item, out)
 
 
-def rules_block(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
+def rules_block(payload: JsonObject) -> JsonObject:
     """`{<canonical rule id>: {"title": ..., "url": ...}}` for every rule id named anywhere in
     `payload`, once each. A rule id with neither a resolvable title nor a docs url is omitted.
     The key set is sorted for stability.
@@ -88,27 +89,25 @@ def rules_block(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
 
     rule_ids: set[str] = set()
     _collect_rule_ids(payload, rule_ids)
-    rules: dict[str, dict[str, str]] = {}
+    rules: JsonObject = {}
     for rule_id in rule_ids:
         label = rule_label(rule_id)
         if label:
-            rules[rule_id] = label
+            rules[rule_id] = {**label}
     return dict(sorted(rules.items()))
 
 
-def with_rule_labels(payload: dict[str, Any]) -> dict[str, Any]:
+def with_rule_labels(payload: JsonObject) -> JsonObject:
     """Add a top-level `rules` map (title + docs url, once per rule id) to a `validate`
     reply. A no-op when `payload` carries no rule id to label (error / needs_install
     shapes, or an empty result)."""
-    if not isinstance(payload, dict):
-        return payload
     rules = rules_block(payload)
     if not rules:
         return payload
     return {**payload, "rules": rules}
 
 
-def _group_listed(listed: Any) -> Any:
+def _group_listed(listed: JsonValue) -> JsonValue:
     """`workflow.listed` grouped by its reason code, one group per distinct code in
     first-seen order: `{"code": <code>, "reason": <sentence>, "rules": [{"rule": <id>, "count": <n>}, ...]}`.
     The sentence is the cli's own wording for the code (`listed_reason_text`); several rules
@@ -118,19 +117,21 @@ def _group_listed(listed: Any) -> Any:
     if not isinstance(listed, list):
         return listed
     order: list[str] = []
-    groups: dict[str, dict[str, Any]] = {}
+    groups: dict[str, JsonObject] = {}
+    rules_of: dict[str, list[JsonValue]] = {}
     for entry in listed:
         if not isinstance(entry, dict):
             continue
         code = str(entry.get("reason") or "")
         if code not in groups:
-            groups[code] = {"code": code, "reason": listed_reason_text(code), "rules": []}
+            rules_of[code] = []
+            groups[code] = {"code": code, "reason": listed_reason_text(code), "rules": rules_of[code]}
             order.append(code)
-        groups[code]["rules"].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
+        rules_of[code].append({"rule": entry.get("rule", ""), "count": entry.get("count", 0)})
     return [groups[code] for code in order]
 
 
-def _workflow_index(workflow: Any) -> Any:
+def _workflow_index(workflow: JsonValue) -> JsonValue:
     """The workflow as an index: each location without its findings/relations (those come with
     `remedy_brief(path, location)`), each with a true `finding_count`, and `listed` grouped by
     its reason code (`_group_listed`) instead of repeated once per rule. A workflow with
@@ -141,29 +142,29 @@ def _workflow_index(workflow: Any) -> Any:
     whole reply still fits `_TARGETED_REPLY_MAX_CHARS`."""
     if not isinstance(workflow, dict):
         return workflow
-    if not isinstance(workflow.get("locations"), list):
+    raw_locations = workflow.get("locations")
+    if not isinstance(raw_locations, list):
         if "listed" not in workflow:
             return workflow
         return {**workflow, "listed": _group_listed(workflow["listed"])}
-    raw_locations = workflow["locations"]
-    locations = []
+    locations: list[JsonValue] = []
     for loc in raw_locations:
         if not isinstance(loc, dict):
             locations.append(loc)
             continue
-        entry = {k: loc[k] for k in _LOCATION_INDEX_KEYS if k in loc}
-        entry["finding_count"] = sum(1 for _ in walk_findings(loc.get("findings") or ())) + len(
-            loc.get("relations") or ()
+        entry = {k: loc[k] for k in LOCATION_INDEX_KEYS if k in loc}
+        entry["finding_count"] = sum(1 for _ in walk_findings(as_list(loc.get("findings")))) + len(
+            as_list(loc.get("relations"))
         )
         locations.append(entry)
-    index = {k: v for k, v in workflow.items() if k != "locations"}
+    index: JsonObject = {k: v for k, v in workflow.items() if k != "locations"}
     index["locations"] = locations
     if "listed" in index:
         index["listed"] = _group_listed(index["listed"])
     return index
 
 
-def _with_targeted_detail(reply: dict[str, Any], raw_workflow: Any) -> dict[str, Any]:
+def _with_targeted_detail(reply: JsonObject, raw_workflow: JsonValue) -> JsonObject:
     """`reply` (its workflow already an index) with every location's `findings` and `relations`
     put back from `raw_workflow`, when the workflow is targeted and the whole reply, without its
     `rules` map, then stays within `_TARGETED_REPLY_MAX_CHARS`. Otherwise the reply stays an
@@ -176,13 +177,15 @@ def _with_targeted_detail(reply: dict[str, Any], raw_workflow: Any) -> dict[str,
     if not isinstance(index, dict) or not isinstance(raw_locations, list):
         return reply
     detailed = [
-        {**entry, **{k: raw[k] for k in _TARGETED_DETAIL_KEYS if k in raw}} if isinstance(raw, dict) else entry
-        for entry, raw in zip(index["locations"], raw_locations, strict=True)
+        {**entry, **{k: raw[k] for k in _TARGETED_DETAIL_KEYS if k in raw}}
+        if isinstance(raw, dict) and isinstance(entry, dict)
+        else entry
+        for entry, raw in zip(as_list(index.get("locations")), raw_locations, strict=True)
     ]
     candidate = {**reply, "workflow": {**index, "locations": detailed}}
-    if len(json.dumps(candidate, separators=(",", ":"))) <= _TARGETED_REPLY_MAX_CHARS:
+    if len(compact_json(candidate)) <= _TARGETED_REPLY_MAX_CHARS:
         return candidate
-    return {**reply, "truncated": {**reply.get("truncated", {}), "hint": _TARGETED_INDEX_HINT}}
+    return {**reply, "truncated": {**as_object(reply.get("truncated")), "hint": _TARGETED_INDEX_HINT}}
 
 
 def _truncated_block(
@@ -192,7 +195,7 @@ def _truncated_block(
     cross_file: tuple[int, int],
     cross_file_coordinates: tuple[int, int],
     workflow_present: bool,
-) -> dict[str, Any]:
+) -> JsonObject:
     """The `truncated` marker: true counts + the `full=true` hint (workflow-first when a workflow is present).
 
     Each `(shown, total)` pair covers one bounded list — findings, files, `cross_file`,
@@ -210,7 +213,7 @@ def _truncated_block(
         if workflow_present
         else "Bounded view. Call validate(path, full=true) for every finding and location."
     )
-    block = {
+    block: JsonObject = {
         "findings_shown": findings_shown,
         "findings_total": findings_total,
         "files_shown": files_shown,
@@ -225,17 +228,18 @@ def _truncated_block(
     return block
 
 
-def _bound_files(files: dict[str, Any], *, per_file_limit: int, max_files: int) -> tuple[dict[str, Any], int]:
+def _bound_files(files: JsonObject, *, per_file_limit: int, max_files: int) -> tuple[JsonObject, int]:
     """Top-N findings per file over the first `max_files` files; returns `(kept, findings_shown)`."""
-    kept: dict[str, Any] = {}
+    kept: JsonObject = {}
     shown = 0
-    for index, (file_path, entry) in enumerate(files.items()):
+    for index, (file_path, raw_entry) in enumerate(files.items()):
         if index >= max_files:
             break
-        findings = entry.get("findings", [])
+        entry = as_object(raw_entry)
+        findings = as_list(entry.get("findings"))
         if len(findings) > per_file_limit:
             entry = {**entry, "findings": findings[:per_file_limit]}
-        shown += len(entry.get("findings", []))
+        shown += len(as_list(entry.get("findings")))
         kept[file_path] = entry
     return kept, shown
 
@@ -245,19 +249,19 @@ class _BoundList(NamedTuple):
     `bound_validate_payload` holds one of these per capped list (`cross_file`,
     `cross_file_coordinates`) rather than a `kept`/`shown`/`total` name apiece."""
 
-    kept: list[Any]
+    kept: list[JsonValue]
     shown: int
     total: int
 
 
-def _bound_list(items: Any, limit: int) -> _BoundList:
+def _bound_list(items: JsonValue, limit: int) -> _BoundList:
     """Top-`limit` slice of an enumeration list (`cross_file` / `cross_file_coordinates`)."""
-    full = items or []
+    full = as_list(items)
     kept = full[:limit]
     return _BoundList(kept, len(kept), len(full))
 
 
-def _set_or_drop_cut_list(bounded: dict[str, Any], key: str, bl: _BoundList) -> None:
+def _set_or_drop_cut_list(bounded: JsonObject, key: str, bl: _BoundList) -> None:
     """After a cap, set `bounded[key]` to the kept slice, drop the key when the cap emptied
     it, or leave it as the payload's original full list (already present via the `{**payload,
     ...}` spread) when nothing was actually cut."""
@@ -271,27 +275,32 @@ def _set_or_drop_cut_list(bounded: dict[str, Any], key: str, bl: _BoundList) -> 
 _SCORE_MOVING = (LeverageTier.GATE_MOVER, LeverageTier.CONDITIONAL)
 
 
-def _compression(payload: dict[str, Any]) -> dict[str, int] | None:
+def _compression(payload: JsonObject) -> JsonObject | None:
     """How much the rewrite list compresses the findings, counted before the per-file findings
     are withheld: `{findings, locations, moves_score, cosmetic}`. `findings` is the per-file
     findings plus the cross-file rows (the location findings are the same ones, not added);
     `moves_score` counts those rows graded `gate_mover` or `conditional`, `cosmetic` the rest.
     `None` when the reply carries no workflow."""
     workflow = payload.get("workflow")
-    if not isinstance(workflow, dict) or not isinstance(workflow.get("locations"), list):
+    if not isinstance(workflow, dict):
         return None
-    files = payload["files"] if isinstance(payload.get("files"), dict) else {}
-    rows = [f for entry in files.values() for f in entry.get("findings", [])] + list(payload.get("cross_file") or ())
+    locations = workflow.get("locations")
+    if not isinstance(locations, list):
+        return None
+    files = as_object(payload.get("files"))
+    rows = [f for entry in files.values() for f in as_list(as_object(entry).get("findings"))] + as_list(
+        payload.get("cross_file")
+    )
     moves_score = sum(1 for r in rows if isinstance(r, dict) and resolve_row_leverage(r) in _SCORE_MOVING)
     return {
         "findings": len(rows),
-        "locations": len(workflow["locations"]),
+        "locations": len(locations),
         "moves_score": moves_score,
         "cosmetic": len(rows) - moves_score,
     }
 
 
-def bound_validate_payload(payload: dict[str, Any], **limits: int) -> dict[str, Any]:
+def bound_validate_payload(payload: JsonObject, **limits: int) -> JsonObject:
     """`_bounded_payload` plus the reply's `compression` block, counted from the unbounded payload."""
     bounded = _bounded_payload(payload, **limits)
     compression = _compression(payload)
@@ -299,13 +308,13 @@ def bound_validate_payload(payload: dict[str, Any], **limits: int) -> dict[str, 
 
 
 def _bounded_payload(
-    payload: dict[str, Any],
+    payload: JsonObject,
     *,
     per_file_limit: int = _ENVELOPE_PER_FILE_LIMIT,
     max_files: int = _ENVELOPE_MAX_FILES,
     cross_file_limit: int = _ENVELOPE_CROSS_FILE_LIMIT,
     cross_file_coord_limit: int = _ENVELOPE_CROSS_FILE_COORD_LIMIT,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Bound a `validate` JSON payload to a top-N-per-file / top-files envelope.
 
     Keeps every aggregate field (`stats`, `surface_health`, `level`, `tier`, `quality`,
@@ -360,7 +369,7 @@ def _bounded_payload(
         per_file_limit = cross_file_limit = cross_file_coord_limit = 0
 
     kept, findings_shown = _bound_files(files, per_file_limit=per_file_limit, max_files=max_files)
-    findings_total = sum(len(entry.get("findings", [])) for entry in files.values())
+    findings_total = sum(len(as_list(as_object(entry).get("findings"))) for entry in files.values())
     cross_file = _bound_list(payload.get("cross_file"), cross_file_limit)
     coordinates = _bound_list(payload.get("cross_file_coordinates"), cross_file_coord_limit)
 
@@ -373,7 +382,7 @@ def _bounded_payload(
     ):
         return with_rule_labels(payload)
 
-    bounded = {**payload, "files": kept}
+    bounded: JsonObject = {**payload, "files": kept}
     if workflow is not payload.get("workflow"):
         bounded["workflow"] = workflow
     _set_or_drop_cut_list(bounded, "cross_file", cross_file)
@@ -395,14 +404,14 @@ def _bounded_payload(
 
 def remedy_brief_payload(
     *,
-    location: dict[str, Any],
-    edits: list[dict[str, Any]],
-    slots: list[dict[str, Any]],
+    location: JsonObject,
+    edits: list[JsonObject],
+    slots: list[JsonObject],
     guides: dict[str, dict[str, str]],
     ops: dict[str, str],
-    refused: list[dict[str, Any]],
+    refused: list[JsonObject],
     preservation_contract: str,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Assemble the `remedy_brief` reply from its already-shaped plain-dict parts.
 
     `edits` are exact block replacements to apply as written; `slots` are the few lines that need
@@ -411,11 +420,11 @@ def remedy_brief_payload(
     """
     return {
         "location": location,
-        "edits": edits,
-        "slots": slots,
-        "guides": guides,
-        "ops": ops,
-        "refused": refused,
+        "edits": [*edits],
+        "slots": [*slots],
+        "guides": {rule: {**guide} for rule, guide in guides.items()},
+        "ops": {**ops},
+        "refused": [*refused],
         "preservation_contract": preservation_contract,
         "next": (
             "Apply each edit as written, replacing its `before` text with its `after` text in the "
@@ -434,13 +443,13 @@ def remedy_brief_payload(
 # ---------------------------------------------------------------------------
 
 
-def _join_match_value(val: Any) -> str:
+def _join_match_value(val: JsonValue) -> str:
     """A match property's display text: a list joins into one comma-separated string (its
     Python repr otherwise leaked straight into the explain text), a scalar renders as-is."""
-    return ", ".join(val) if isinstance(val, list) else str(val)
+    return ", ".join(str(v) for v in val) if isinstance(val, list) else str(val)
 
 
-def _rule_meta_line(rule_data: dict[str, Any]) -> str:
+def _rule_meta_line(rule_data: JsonObject) -> str:
     """The `severity: ... | category: ... | type: ... | scope: ... | <match property>: ...`
     line: severity always renders; `category` and the rule's own `type` render only when the
     caller's `rule_data` sets them (`explain_tool` always does); `match.type` renders as
@@ -453,10 +462,10 @@ def _rule_meta_line(rule_data: dict[str, Any]) -> str:
     rule_type = rule_data.get("type")
     if rule_type:
         meta.append(f"type: {rule_type}")
-    match = rule_data.get("match", {})
-    if match and match.get("type"):
+    match = as_object(rule_data.get("match"))
+    if match.get("type"):
         meta.append(f"scope: {_join_match_value(match['type'])}")
-    for key, val in (match or {}).items():
+    for key, val in match.items():
         # `type` already rendered above as `scope:`; every other set MATCH_PROPERTIES entry
         # (content_format, loading_verb, link_source_type, ...) is single-sourced from the same
         # `serialize_match` dict `rules list` emits, so it must not go missing here.
@@ -473,23 +482,27 @@ def _without_title_heading(text: str, title: str) -> str:
     dropped = {
         line
         for i, tok in enumerate(tokens)
-        if tok.type == "heading_open" and tok.tag == "h1" and not tok.level and shown in tokens[i + 1].content.lower()
+        if tok.type == "heading_open"
+        and tok.tag == "h1"
+        and not tok.level
+        and tok.map is not None
+        and shown in tokens[i + 1].content.lower()
         for line in range(tok.map[0] + offset, tok.map[1] + offset)
     }
     return "\n".join(line for n, line in enumerate(file_lines(text)) if n not in dropped).strip()
 
 
-def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
+def format_rule(rule_id: str, rule_data: JsonObject) -> str:
     """Format rule explanation as readable text for MCP.
 
     Unlike validate (which returns structured JSON for agent parsing), explain
     returns human-readable text since its purpose is explanation.
     """
-    title = rule_data.get("title", "")
+    title = as_str(rule_data.get("title"))
 
     parts = [f"{rule_id} — {title}", _rule_meta_line(rule_data), ""]
 
-    desc = rule_data.get("description", "")
+    desc = as_str(rule_data.get("description"))
     if desc:
         body = _without_title_heading(desc.strip(), title)
         if body:
@@ -497,8 +510,8 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
             parts.append("")
 
     if "examples" in rule_data:
-        examples = rule_data["examples"] or {}
-        pass_ex, fail_ex = examples.get("pass"), examples.get("fail")
+        examples = as_object(rule_data["examples"])
+        pass_ex, fail_ex = as_str(examples.get("pass")), as_str(examples.get("fail"))
         if not pass_ex and not fail_ex:
             parts.append("Examples: none — this rule has no Pass / Fail examples.")
             parts.append("")
@@ -512,12 +525,12 @@ def format_rule(rule_id: str, rule_data: dict[str, Any]) -> str:
                 parts.append(fail_ex)
             parts.append("")
 
-    checks = rule_data.get("checks", [])
+    checks = as_list(rule_data.get("checks"))
     if checks:
         parts.append("Checks:")
-        parts.extend(f"  {c.get('id', '?')} ({c.get('type', '?')})" for c in checks)
+        parts.extend(f"  {as_object(c).get('id', '?')} ({as_object(c).get('type', '?')})" for c in checks)
 
-    see_also = rule_data.get("see_also", [])
+    see_also = str_list(rule_data.get("see_also"))
     if see_also:
         parts.append("")
         parts.append("See also: " + ", ".join(see_also))

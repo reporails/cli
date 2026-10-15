@@ -17,10 +17,11 @@ from reporails_cli.core.mapper.classify import (
     hedges_with_phrase,
     hedges_with_should,
 )
-from reporails_cli.core.mapper.classify_lexicon import ALL_VERBS, WORD_RE
+from reporails_cli.core.mapper.classify_lexicon import ALL_VERBS, MODAL_ABSOLUTE, WORD_RE
 from reporails_cli.core.mapper.classify_no import is_terse_no_prohibition, starts_bare_no_status
+from reporails_cli.core.mapper.classify_phases import ChargeVerdict
 from reporails_cli.core.mapper.md_parser import code_spans, leading_bold_run
-from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat
 from reporails_cli.core.platform.policy.negative_headings import in_negative_section
 
 # Rule trace of a table header row: a column-label row, kept neutral.
@@ -213,8 +214,8 @@ def _is_structural(md_text: str, fmt: str = "prose") -> bool:
 def _classify_content(
     md_text: str,
     plain_text: str,
-    fmt: str,
-) -> tuple[str, int, str, str, bool]:
+    fmt: AtomFormat,
+) -> ChargeVerdict:
     """Classify an atom's charge and modality.
 
     Uses md_text for structural detection and rule-based classification.
@@ -310,11 +311,10 @@ def _prefix_remainder_charge(remainder: str, *, pointer: bool = False) -> int:
 # command`) is a description, whatever the lexical classifier makes of it.
 _RIDING_ADDRESS_RE = re.compile(r"^(?:you\s+|please\s+)+", re.IGNORECASE)
 _RIDING_DEONTICS = frozenset(
-    {
+    MODAL_ABSOLUTE
+    | {
         "never",
         "always",
-        "must",
-        "shall",
         "should",
         "no",
         "do",

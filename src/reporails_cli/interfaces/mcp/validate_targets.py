@@ -8,22 +8,22 @@ locations, files, and cross-file entries that hold one of them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.classify.capability_paths import TargetError, classify_target_token, sniff_agent
 from reporails_cli.core.classify.focus_expansion import resolve_capability_spec
 from reporails_cli.core.discovery.agents import detect_agents
-from reporails_cli.core.discovery.exclusions import load_run_exclusions
+from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.lint.suppression import renumbered
+from reporails_cli.core.lint.suppression import renumbered_json
 from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str, str_list
 from reporails_cli.interfaces.mcp.remedy_brief import resolve_from_root
 
 
 def _resolve_one_target(
-    token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: Any
-) -> tuple[set[Path], set[Path]] | dict[str, Any]:
+    token: str, token_agent: str, scan_root: Path, effective_agent: str, exclusions: RunExclusions | None
+) -> tuple[set[Path], set[Path]] | JsonObject:
     """One target `token` resolved to the `(files, dirs)` it contributes, or a
     `target_not_found` error payload."""
 
@@ -43,7 +43,7 @@ def _resolve_one_target(
     return set(), set()
 
 
-def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[set[Path], set[Path]] | dict[str, Any]:
+def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[set[Path], set[Path]] | JsonObject:
     """The files and directories `tokens` name under `scan_root`, read the way `ails check` reads
     its targets (`skills`, `skills:<name>`, `agents:<name>`, `@main`, a path; a typed word such
     as `skill` reads as its config key). A relative path is read against `scan_root`. Returns
@@ -69,8 +69,8 @@ def resolve_validate_targets(tokens: tuple[str, ...], scan_root: Path) -> tuple[
 
 
 def keep_target_locations(
-    payload: dict[str, Any], files: set[Path], dirs: set[Path], scan_root: Path, tokens: tuple[str, ...]
-) -> dict[str, Any]:
+    payload: JsonObject, files: set[Path], dirs: set[Path], scan_root: Path, tokens: tuple[str, ...]
+) -> JsonObject:
     """`payload` narrowed to a targeted file (a file in `files`, or under one of `dirs`):
     `files` keeps only the entries keyed by a targeted path, and `cross_file` and
     `cross_file_coordinates` only the entries where either side is targeted — whether or not
@@ -90,34 +90,37 @@ def keep_target_locations(
         return path in files or any(path.is_relative_to(d) for d in dirs)
 
     workflow = payload.get("workflow")
-    kept: list[dict[str, Any]] = []
-    locations: list[dict[str, Any]] = []
+    kept: list[JsonObject] = []
+    locations: list[JsonObject] = []
     if isinstance(workflow, dict):
-        locations = [loc for loc in workflow.get("locations") or () if isinstance(loc, dict)]
-        kept = [loc for loc in locations if any(targeted(f) for f in loc.get("files") or ())]
+        locations = [loc for loc in as_list(workflow.get("locations")) if isinstance(loc, dict)]
+        kept = [loc for loc in locations if any(targeted(f) for f in str_list(loc.get("files")))]
 
-    kept_files = {f for loc in kept for f in loc.get("files") or ()}
+    kept_files = {f for loc in kept for f in str_list(loc.get("files"))}
 
     def keeps(rel: str) -> bool:
         return targeted(rel) or rel in kept_files
 
-    def keeps_pair(pairs: Any) -> list[Any]:
-        return [p for p in pairs if keeps(p.get("file_1", "")) or keeps(p.get("file_2", ""))]
+    def keeps_pair(pairs: list[JsonValue]) -> list[JsonValue]:
+        return [
+            p
+            for p in pairs
+            if isinstance(p, dict) and (keeps(as_str(p.get("file_1"))) or keeps(as_str(p.get("file_2"))))
+        ]
 
     out = dict(payload)
     if isinstance(payload.get("files"), dict):
-        out["files"] = {rel: entry for rel, entry in payload["files"].items() if keeps(rel)}
-    if isinstance(payload.get("cross_file"), list):
-        out["cross_file"] = keeps_pair(payload["cross_file"])
-    if isinstance(payload.get("cross_file_coordinates"), list):
-        out["cross_file_coordinates"] = keeps_pair(payload["cross_file_coordinates"])
+        out["files"] = {rel: entry for rel, entry in as_object(payload["files"]).items() if keeps(rel)}
+    for key in ("cross_file", "cross_file_coordinates"):
+        if isinstance(payload.get(key), list):
+            out[key] = keeps_pair(as_list(payload[key]))
 
     if not isinstance(workflow, dict):
         return out
 
     out["workflow"] = {
         **workflow,
-        "locations": renumbered(kept),
-        "targets": {"tokens": list(tokens), "locations": len(kept), "of": len(locations)},
+        "locations": [*renumbered_json(kept)],
+        "targets": {"tokens": [*tokens], "locations": len(kept), "of": len(locations)},
     }
     return out

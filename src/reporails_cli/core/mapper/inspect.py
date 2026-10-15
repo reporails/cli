@@ -14,18 +14,19 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import NamedTuple
 
-from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, iter_agent_configs
+from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties
 from reporails_cli.core.discovery.agent_discovery import is_eager_global, is_memory_recall_entry, is_nested
 from reporails_cli.core.discovery.plugin_roots import matches_plugin_pattern, split_plugin_pattern
-from reporails_cli.core.platform.config.config import get_rules_path
+from reporails_cli.core.platform.config.config import get_rules_path, iter_agent_configs
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
 from reporails_cli.core.platform.utils.utils import config_pattern_matches, read_frontmatter_file
 
 logger = logging.getLogger(__name__)
 
 
-def _frontmatter_data(path: Path, *, lenient: bool = False) -> dict[str, Any]:
+def _frontmatter_data(path: Path, *, lenient: bool = False) -> JsonObject:
     """The mapping in a file's frontmatter block; empty when the file or a readable block is missing."""
     read = read_frontmatter_file(path, lenient=lenient)
     return (read.data if read is not None else None) or {}
@@ -93,12 +94,12 @@ def _frontmatter_flag(path: Path, key: str) -> bool:
     return _frontmatter_data(path, lenient=True).get(key) is True
 
 
-def _load_registry() -> dict[str, dict[str, Any]]:
+def _load_registry() -> dict[str, JsonObject]:
     """Load all agent registry configs. Returns {agent: config_dict}."""
     registry_dir = get_rules_path()
     if not registry_dir.is_dir():
         return {}
-    return {data["agent"]: data for data in iter_agent_configs(registry_dir) if "agent" in data}
+    return {agent: data for _, data in iter_agent_configs(registry_dir) if isinstance(agent := data.get("agent"), str)}
 
 
 _ACTIVATION_KEYS = (
@@ -112,24 +113,33 @@ _ACTIVATION_KEYS = (
 )
 
 
-def _file_type_patterns_and_props(ft: Any) -> tuple[list[str], dict[str, Any]]:
+class _FileTypeSpec(NamedTuple):
+    """A registry file type read for matching."""
+
+    patterns: list[str]
+    declared: dict[str, str | list[str]]  # the file type's own properties
+    props: JsonObject  # `declared` with the activation keys folded in
+
+
+def _read_file_type(ft: JsonValue) -> _FileTypeSpec:
     """A registry file type's patterns and properties (its activation keys folded in)."""
     if not isinstance(ft, dict):
-        return [], {}
-    props = ft.get("properties", {}) or extract_properties(ft)
+        return _FileTypeSpec([], {}, {})
+    declared = extract_properties(ft)
+    props: JsonObject = {k: ([*v] if isinstance(v, list) else v) for k, v in declared.items()}
     for key in _ACTIVATION_KEYS:
         if key in ft:
-            props = {**props, key: ft[key]}
-    return extract_patterns(ft), props
+            props[key] = ft[key]
+    return _FileTypeSpec(extract_patterns(ft), declared, props)
 
 
-def _scope_activation(ft: Any, pattern: str) -> dict[str, Any]:
+def _scope_activation(ft: JsonValue, pattern: str) -> JsonObject:
     """The activation keys the location scope holding `pattern` declares; they override the file
     type's own (Copilot reads `paths`, not `applyTo`, in the `.claude/rules` scope)."""
     if not isinstance(ft, dict):
         return {}
-    for scope_spec in (ft.get("scopes") or {}).values():
-        if isinstance(scope_spec, dict) and pattern in (scope_spec.get("patterns") or []):
+    for scope_spec in as_object(ft.get("scopes")).values():
+        if isinstance(scope_spec, dict) and pattern in pattern_list(scope_spec.get("patterns")):
             return {k: scope_spec[k] for k in _ACTIVATION_KEYS if k in scope_spec}
     return {}
 
@@ -151,7 +161,7 @@ def _plugin_match_specificity(patterns: list[str], path: Path | None, root: Path
     return max(specificities, default=None)
 
 
-_Match = tuple[int, str, str, dict[str, Any]]  # (specificity, agent, file type, properties)
+_Match = tuple[int, str, str, JsonObject]  # (specificity, agent, file type, properties)
 
 
 def _beats(specificity: int, current: _Match | None) -> bool:
@@ -163,7 +173,7 @@ def _outranks(
     specificity: int,
     agent_id: str,
     current: _Match | None,
-    registry: dict[str, dict[str, Any]],
+    registry: dict[str, JsonObject],
 ) -> bool:
     """Whether a match beats `current`: more specific, or as specific and made by the core agent
     (the shared standard) -- a file name several agents declare (`AGENTS.md`) belongs to none of
@@ -179,7 +189,7 @@ class _RegistryQuery:
     scan root when known, and the registry it is matched against."""
 
     rel_lower: str
-    registry: dict[str, dict[str, Any]]
+    registry: dict[str, JsonObject]
     path: Path | None
     root: Path | None
 
@@ -197,9 +207,9 @@ class _Picks:
     below_root_copy: _Match | None = None
 
 
-def _scan_file_type(query: _RegistryQuery, agent_id: str, type_name: str, ft: Any, picks: _Picks) -> None:
+def _scan_file_type(query: _RegistryQuery, agent_id: str, type_name: str, ft: JsonValue, picks: _Picks) -> None:
     """Match one registry file type against the file, recording what it wins in `picks`."""
-    patterns, props = _file_type_patterns_and_props(ft)
+    patterns, declared, props = _read_file_type(ft)
     plugin_hit = _plugin_match_specificity(patterns, query.path, query.root)
     if plugin_hit is not None and _beats(plugin_hit, picks.best):
         picks.best = (plugin_hit, agent_id, type_name, props)
@@ -207,7 +217,7 @@ def _scan_file_type(query: _RegistryQuery, agent_id: str, type_name: str, ft: An
         if split_plugin_pattern(pat) is not None:
             continue
         pat_lower = pat.lower()
-        if pat_lower.startswith("**/") and not query.below_root and is_nested(props):
+        if pat_lower.startswith("**/") and not query.below_root and is_nested(declared):
             continue
         if not config_pattern_matches(
             query.rel_lower,
@@ -218,7 +228,7 @@ def _scan_file_type(query: _RegistryQuery, agent_id: str, type_name: str, ft: An
         ):
             continue
         specificity = len(pat_lower.split("*")[0])
-        if pat_lower.startswith("**/") and query.below_root and is_eager_global(props):
+        if pat_lower.startswith("**/") and query.below_root and is_eager_global(declared):
             if _outranks(specificity, agent_id, picks.below_root_copy, query.registry):
                 picks.below_root_copy = (
                     specificity,
@@ -233,10 +243,10 @@ def _scan_file_type(query: _RegistryQuery, agent_id: str, type_name: str, ft: An
 
 def _find_best_registry_match(
     rel_lower: str,
-    registry: dict[str, dict[str, Any]],
+    registry: dict[str, JsonObject],
     path: Path | None = None,
     root: Path | None = None,
-) -> tuple[str, str, dict[str, Any]] | None:
+) -> tuple[str, str, JsonObject] | None:
     """Find the most specific registry pattern match for a file path.
 
     A `**/<leaf>` pattern names the file at the root (or above it) under a file type that
@@ -253,7 +263,7 @@ def _find_best_registry_match(
     query = _RegistryQuery(rel_lower, registry, path, root)
     picks = _Picks()
     for agent_id, config in registry.items():
-        for type_name, ft in (config.get("file_types") or {}).items():
+        for type_name, ft in as_object(config.get("file_types")).items():
             _scan_file_type(query, agent_id, type_name, ft, picks)
     found = picks.best or picks.below_root_copy
     if found is None:
@@ -267,12 +277,12 @@ def _frontmatter_text(path: Path, key: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _trigger_activation(path: Path, props: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
+def _trigger_activation(path: Path, props: JsonObject) -> tuple[str, str, tuple[str, ...]]:
     """Loading, scope and globs of a file whose frontmatter `trigger_key` picks its activation mode
     (Antigravity rules). A missing or unrecognised trigger takes the `trigger_missing` row."""
-    modes = props.get("trigger_modes") or {}
+    modes = as_object(props.get("trigger_modes"))
     trigger = _frontmatter_text(path, str(props["trigger_key"])).lower()
-    row = modes.get(trigger) or props.get("trigger_missing") or {}
+    row = as_object(modes.get(trigger) or props.get("trigger_missing"))
     loading = str(row.get("loading", "on_demand"))
     scope = str(row.get("scope", "global"))
     if scope == "path_scoped":
@@ -283,9 +293,7 @@ def _trigger_activation(path: Path, props: dict[str, Any]) -> tuple[str, str, tu
     return loading, scope, ()
 
 
-def _resolve_activation(
-    path: Path, props: dict[str, Any], loading: str, scope: str
-) -> tuple[str, str, tuple[str, ...]]:
+def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str) -> tuple[str, str, tuple[str, ...]]:
     """The loading, scope and globs a file's frontmatter gives it, from the activation keys its
     file type (or location scope) declares.
 
@@ -336,7 +344,7 @@ def activation_code(loading: str, scope: str, globs: tuple[str, ...], file_type:
 def _detect_file_activation(
     path: Path,
     root: Path,
-    registry: dict[str, dict[str, Any]],
+    registry: dict[str, JsonObject],
 ) -> tuple[str, str, tuple[str, ...], str, str, str]:
     """Determine loading/scope/globs/agent/type/activation for an instruction file.
 
@@ -355,8 +363,8 @@ def _detect_file_activation(
         return "session_start", "global", (), "generic", "generic", "always"
 
     agent_id, file_type, props = match
-    loading = props.get("loading", "session_start")
-    scope = props.get("scope", "global")
+    loading = str(props.get("loading", "session_start"))
+    scope = str(props.get("scope", "global"))
     loading, scope, globs = _resolve_activation(path, props, loading, scope)
     # Per-entry memory loading: only MEMORY.md is the eager index; sibling
     # entries are recalled on-demand — same rule the classifier stamps.
@@ -366,17 +374,7 @@ def _detect_file_activation(
     return loading, scope, globs, agent_id, file_type, activation
 
 
-def _detect_file_loading(
-    path: Path,
-    root: Path,
-    registry: dict[str, dict[str, Any]],
-) -> tuple[str, str, tuple[str, ...], str, str]:
-    """Determine loading/scope/globs/agent/type for an instruction file (see
-    `_detect_file_activation`, which also names the activation)."""
-    return _detect_file_activation(path, root, registry)[:5]
-
-
-def file_type_of(path: Path, root: Path, registry: dict[str, dict[str, Any]]) -> str:
+def file_type_of(path: Path, root: Path, registry: dict[str, JsonObject]) -> str:
     """The config key of the file type `path` matches, `generic` when it matches none."""
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), registry, path, root)

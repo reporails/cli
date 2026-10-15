@@ -18,6 +18,9 @@ from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, UNENTITLED_TIERS, FunnelError
 from reporails_cli.core.platform.utils.version import installed_version
 
+# URL schemes the terminal renders as a clickable link.
+LINK_SCHEMES = ("https://", "http://")
+
 BUG_REPORT_URL = "https://github.com/reporails/cli/issues"
 BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
 
@@ -139,15 +142,15 @@ def format_bug_report_url(err: FunnelError) -> str:
     return f"{BUG_REPORT_NEW_URL}?{params}"
 
 
-def merge_utm(url: str, source: str = "cli") -> str:
-    """Append utm_source to URL query string when absent."""
-    if not url or not url.startswith(("http://", "https://")):
+def merge_utm(url: str) -> str:
+    """Append utm_source=cli to URL query string when absent."""
+    if not url or not url.startswith(LINK_SCHEMES):
         return url
     parts = urlsplit(url)
     params = dict(parse_qsl(parts.query, keep_blank_values=True))
     if "utm_source" in params:
         return url
-    params["utm_source"] = source
+    params["utm_source"] = "cli"
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), parts.fragment))
 
 

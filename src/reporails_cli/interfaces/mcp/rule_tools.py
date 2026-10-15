@@ -1,15 +1,14 @@
 """MCP `preflight` and `explain` tool implementations."""
 
-from pathlib import Path
-from typing import Any
-
 from reporails_cli.core.classify import load_file_types
 from reporails_cli.core.discovery.agents import get_known_agents
-from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_page_data, serialize_match
+from reporails_cli.core.lint.rule_pages import load_rule_examples, rule_page_data, rule_page_summary
 from reporails_cli.core.platform.adapters.registry import infer_agent_from_rule_id, load_rules
 from reporails_cli.core.platform.adapters.rules_query import rules_for_capability
 from reporails_cli.core.platform.config.config import is_initialized
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.models import Rule
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.interfaces.mcp.tools import _rules_missing_payload, _unknown_agent_error
 
@@ -27,7 +26,7 @@ def _known_capabilities(agent: str) -> set[str]:
     return declared | set(vocab.input_forms) | set(vocab.fold) | set(vocab.virtual)
 
 
-def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
+def preflight_tool(capability: str, agent: str = "") -> JsonObject:
     """Return workflow-ordered rules for authoring a file of `capability`.
 
     Backs `/reporails:ails preflight <capability>` in the plugin. Returns the
@@ -60,7 +59,7 @@ def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
         return {
             "error": "unknown_capability",
             "capability": capability,
-            "known_capabilities": sorted(known),
+            "known_capabilities": [*sorted(known)],
         }
 
     agents = [agent] if agent else None
@@ -74,18 +73,11 @@ def preflight_tool(capability: str, agent: str = "") -> dict[str, Any]:
     }
 
 
-def _serialize_preflight_rule(rule: Any) -> dict[str, Any]:
+def _serialize_preflight_rule(rule: Rule) -> JsonObject:
     """Shape one rule for the preflight response payload."""
 
     examples = load_rule_examples(rule)
-    payload: dict[str, Any] = {
-        "id": rule.id,
-        "title": rule.title,
-        "category": rule.category.value,
-        "severity": rule.severity.value,
-        "slug": rule.slug,
-        "match": serialize_match(rule.match),
-    }
+    payload: JsonObject = rule_page_summary(rule)
     if examples.get("pass"):
         payload["pass_example"] = examples["pass"]
     if examples.get("fail"):
@@ -93,16 +85,16 @@ def _serialize_preflight_rule(rule: Any) -> dict[str, Any]:
     return payload
 
 
-def explain_tool(rule_id: str, rules_paths: list[Path] | None = None) -> str | dict[str, Any]:
+def explain_tool(rule_id: str) -> str | JsonObject:
     """Get detailed info about a specific rule."""
     rule_id_upper = rule_id.upper()
     agent = infer_agent_from_rule_id(rule_id_upper)
-    rules = load_rules(rules_paths, agent=agent)
+    rules = load_rules(agent=agent)
 
     if rule_id_upper not in rules:
         return {
             "error": f"Unknown rule: {rule_id}",
-            "available_rules": sorted(rules.keys()),
+            "available_rules": [*sorted(rules.keys())],
         }
 
     return mcp_formatter.format_rule(rule_id_upper, rule_page_data(rules[rule_id_upper]))

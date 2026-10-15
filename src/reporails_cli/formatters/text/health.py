@@ -5,9 +5,11 @@ Owns the per-row health record, the atom-weighted mean score, and the finding-co
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
 
+from reporails_cli.core.platform.contract.json_value import as_int
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis
 from reporails_cli.formatters.text.display_constants import counted
 
 
@@ -24,8 +26,6 @@ class SurfaceHealth:
     # Items beside the type name: a skill folder counts once, every other file once.
     item_count: int
     errors: int = 0
-    warnings: int = 0
-    infos: int = 0
     # Findings grouped by Category enum value (`structure`, `direction`,
     # `coherence`, `efficiency`, `maintenance`, `governance`). Empty when no
     # findings have a recognizable category code. Sum of values equals
@@ -34,7 +34,7 @@ class SurfaceHealth:
     category_breakdown: dict[str, int] = field(default_factory=dict)
 
 
-def mean_display_score(analyses: list[Any]) -> float | None:
+def mean_display_score(analyses: Sequence[FileAnalysis | None]) -> float | None:
     """Atom-weighted mean of the reported per-file display scores.
 
     A surface's bar (and the filtered headline) aggregate the same way the
@@ -43,7 +43,7 @@ def mean_display_score(analyses: list[Any]) -> float | None:
     simple mean when atom counts are unavailable; `None` when there is no scored analysis to aggregate.
     """
     scored = [
-        (float(fa.display_score), int(fa.stats.get("atoms", 0)))
+        (float(fa.display_score), as_int(fa.stats.get("atoms"), 0))
         for fa in analyses
         if fa is not None and fa.display_score is not None
     ]

@@ -107,7 +107,7 @@ def test_format_rule_scope_with_list_type_joins_instead_of_python_repr() -> None
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_explain_tool_returns_the_whole_rule_body_without_repeating_examples(tmp_path) -> None:
+def test_explain_tool_returns_the_whole_rule_body_without_repeating_examples(monkeypatch, tmp_path) -> None:
     """MCP `explain` gives the agent the rule's full body (it was cut at 500 characters, which
     dropped every bundled rule's later antipatterns) and stops before the Pass / Fail section,
     whose examples render on their own."""
@@ -123,7 +123,8 @@ def test_explain_tool_returns_the_whole_rule_body_without_repeating_examples(tmp
         "## Pass / Fail\n\n### Pass\n\n~~~~markdown\nUse `ruff`.\n~~~~\n",
         encoding="utf-8",
     )
-    out = explain_tool("CORE:S:0902", [tmp_path])
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.registry.get_rules_dir", lambda: tmp_path)
+    out = explain_tool("CORE:S:0902")
     assert isinstance(out, str)
     assert "Late antipattern" in out
     assert out.count("Use `ruff`.") == 1

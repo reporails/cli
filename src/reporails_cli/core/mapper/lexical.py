@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import re
 
+# The em dash and the en dash, which set a clause off from the one before it.
+DASH_MARKS = frozenset({"\u2014", "\u2013"})
+
 # ── Clause-split markers ───────────────────────────────────────────────
 # STRONG markers: space-flanked em/en-dash, semicolon, colon. Punctuation only, so
 # consuming the marker itself loses no word.

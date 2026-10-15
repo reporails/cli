@@ -174,7 +174,7 @@ def test_deferred_rule_is_not_loaded(tmp_path):
     Normal `"tests" in parts or "_deferred" in parts` -> skip. The `or -> and`
     mutant only skips when BOTH appear, so the deferred rule would load.
     """
-    reg.clear_rule_cache()
+    reg._read_rules.cache_clear()
     _write_rule_md(tmp_path, "_deferred/myrule", "CORE:S:0099")
     result = reg._load_from_path(tmp_path)
     assert "CORE:S:0099" not in result
@@ -184,7 +184,7 @@ def test_deferred_rule_is_not_loaded(tmp_path):
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_normal_rule_is_loaded(tmp_path):
-    reg.clear_rule_cache()
+    reg._read_rules.cache_clear()
     _write_rule_md(tmp_path, "active/myrule", "CORE:S:0098")
     result = reg._load_from_path(tmp_path)
     assert "CORE:S:0098" in result
@@ -207,7 +207,7 @@ def test_unreadable_rule_md_is_skipped_with_warning(tmp_path, caplog):
     CLI's own post-load `explain` guard (`interfaces/cli/main.py`) suggested this case was
     handled. The good sibling rule must still load; only the unreadable one is skipped, and a
     warning names the file (matching the `checks.yml` parse-failure handling)."""
-    reg.clear_rule_cache()
+    reg._read_rules.cache_clear()
     _write_rule_md(tmp_path, "active/goodrule", "CORE:S:0094")
     bad_dir = _write_rule_md(tmp_path, "active/badrule", "CORE:S:0093")
     bad_md = bad_dir / "rule.md"
@@ -235,7 +235,7 @@ def test_inline_checks_win_over_checks_yml(tmp_path):
     pre-parse (keep inline). The `and -> or` mutant overwrites the inline
     checks with the checks.yml contents.
     """
-    reg.clear_rule_cache()
+    reg._read_rules.cache_clear()
     d = _write_rule_md(
         tmp_path,
         "active/myrule",
@@ -267,7 +267,7 @@ def test_scan_root_disabled_rules_are_merged(tmp_path, monkeypatch):
     scan config's disabled set. Kills L195 `!= -> ==` (would skip the merge)
     and L197 `or -> and` (would drop the disabled ids to []).
     """
-    reg.clear_rule_cache()
+    reg._read_rules.cache_clear()
     rules_root = tmp_path / "rules"
     _write_rule_md(rules_root, "core/myrule", "CORE:S:0096")
     project_root = tmp_path / "proj"
@@ -293,7 +293,7 @@ def test_scan_root_disabled_rules_are_merged(tmp_path, monkeypatch):
 @pytest.mark.subsys_lint
 def test_rule_present_without_scan_disable(tmp_path, monkeypatch):
     """Control: with no scan disable, the rule loads (guards the above)."""
-    reg.clear_rule_cache()
+    reg._read_rules.cache_clear()
     rules_root = tmp_path / "rules"
     _write_rule_md(rules_root, "core/myrule", "CORE:S:0095")
     monkeypatch.setattr(reg, "_load_project_config", lambda root: ProjectConfig())

@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper.bio_tagger import tag_atom_multislot
+from reporails_cli.core.mapper.bio_tagger import AtomTuple
+from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch, _frames_from_decoded
 
 # (sentence, expected signed charge, expected modality) — hand-labelled, then
 # confirmed against the real decode. Each row is an independent semantic
@@ -30,6 +31,14 @@ _CASES: list[tuple[str, int, str]] = [
     ("You should prefer composition over inheritance.", +1, "hedged"),
     ("Delete the temporary directory after the run.", +1, "imperative"),
 ]
+
+
+def tag_atom_multislot(text: str) -> AtomTuple:
+    """The one frame-atom of a single-instruction sentence, decoded as the mapper decodes a batch."""
+    (decoded,) = _decode_logits_batch([text])
+    (atom,) = _frames_from_decoded(decoded, text)
+    return atom
+
 
 _MODALITY_VALUES = {"imperative", "direct", "absolute", "hedged", "none"}
 

@@ -7,11 +7,12 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object, as_str
+from reporails_cli.core.platform.utils.utils import fast_yaml_load
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def credentials_path() -> Path:
     return Path.home() / ".reporails" / "credentials.yml"
 
 
-def load_credentials_record(path: Path | None = None) -> dict[str, Any]:
+def load_credentials_record(path: Path | None = None) -> JsonObject:
     """The record in `path` (default: the user's file); `{}` when there is no file or it is not a mapping.
 
     Raises `CredentialsUnreadableError` when the file exists but cannot be read or parsed.
@@ -30,13 +31,13 @@ def load_credentials_record(path: Path | None = None) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = fast_yaml_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         raise CredentialsUnreadableError(f"Could not read credentials file: {exc}") from exc
-    return data if isinstance(data, dict) else {}
+    return as_object(data)
 
 
-def read_credentials() -> dict[str, str]:
+def read_credentials() -> JsonObject:
     """The stored credentials for display; `{}` when the file is absent or unreadable."""
     try:
         return load_credentials_record()
@@ -50,20 +51,20 @@ def env_api_key() -> str:
     return os.environ.get("AILS_API_KEY", "")
 
 
-def identity_and_tier(creds: dict[str, str], api_key: str) -> tuple[bool, str]:
+def identity_and_tier(creds: JsonObject, api_key: str) -> tuple[bool, str]:
     """(stored identity matches the key in effect, stored tier for that key or "").
 
     The stored login and tier are only meaningful when the key in effect IS the
     locally cached one; an env-provided key may not match anything on disk.
     """
     known_identity = bool(creds.get("api_key")) and creds.get("api_key") == api_key
-    return known_identity, creds.get("tier", "") if known_identity else ""
+    return known_identity, as_str(creds.get("tier", "")) if known_identity else ""
 
 
 def effective_tier() -> str:
     """Stored tier for the API key in effect ("" when unknown or the key is not the stored one)."""
     creds = read_credentials()
-    return identity_and_tier(creds, env_api_key() or creds.get("api_key", ""))[1]
+    return identity_and_tier(creds, env_api_key() or as_str(creds.get("api_key", "")))[1]
 
 
 def clear_credentials() -> None:
@@ -73,8 +74,12 @@ def clear_credentials() -> None:
         path.unlink()
 
 
-def signed_in_recently(api_key: str, *, within_s: int = 120, now: datetime | None = None) -> bool:
-    """True when the stored record holds `api_key` and its `signed_in_at` is within `within_s` seconds of now.
+# How many seconds after signing in a stored key still counts as freshly signed in.
+SIGN_IN_WINDOW_S = 120
+
+
+def signed_in_recently(api_key: str) -> bool:
+    """True when the stored record holds `api_key` and its `signed_in_at` is within `SIGN_IN_WINDOW_S` seconds of now.
 
     `signed_in_at` is an ISO-8601 UTC string; an absent or unparseable value is False.
     """
@@ -87,8 +92,8 @@ def signed_in_recently(api_key: str, *, within_s: int = 120, now: datetime | Non
         return False
     if signed_in.tzinfo is None:
         signed_in = signed_in.replace(tzinfo=UTC)
-    elapsed = ((now or datetime.now(UTC)) - signed_in).total_seconds()
-    return 0 <= elapsed <= within_s
+    elapsed = (datetime.now(UTC) - signed_in).total_seconds()
+    return 0 <= elapsed <= SIGN_IN_WINDOW_S
 
 
 def _stored_key(path: Path) -> str:
@@ -142,7 +147,7 @@ def write_credentials_file(path: Path, record: dict[str, str], *, expect_key: st
     return True
 
 
-def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> None:
+def refresh_stored_tier(api_key: str, tier: str) -> None:
     """Rewrite the stored tier to the one a server reply named, when it differs.
 
     Acts only when `api_key` is the key stored in the file (an env override for a
@@ -151,7 +156,7 @@ def refresh_stored_tier(api_key: str, tier: str, path: Path | None = None) -> No
     """
     if not api_key or not tier:
         return
-    target = path or credentials_path()
+    target = credentials_path()
     try:
         data = load_credentials_record(target)
     except CredentialsUnreadableError as exc:

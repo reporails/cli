@@ -18,11 +18,16 @@ from reporails_cli.core.mapper.classify_lexicon import (
     MODAL_ABSOLUTE,
     MODAL_HEDGED,
     PHRASE_PREPOSITIONS,
+    SUBJECT_PRONOUNS,
     VERBS_AMBIGUOUS,
     WORD_RE,
     words_of,
 )
 from reporails_cli.core.mapper.classify_no import DESCRIPTIVE_NO_COPULAS
+from reporails_cli.core.platform.dto.ruleset import Charge, Modality
+
+# One classifier verdict: (charge, charge value, modality, rule trace, scope conditional).
+type ChargeVerdict = tuple[Charge, int, Modality, str, bool]
 
 # Probable sentence subjects — block mid-sentence verb promotion
 _PROBABLE_SUBJECTS = {
@@ -95,8 +100,6 @@ _FINITE_AFTER_SUBJECT: frozenset[str] = (
         }
     )
 )  # fmt: skip
-# Personal pronouns: after an ambiguous opening verb they start a clause of their own (`Fix tests you can reproduce`).
-_SUBJECT_PRONOUNS: frozenset[str] = frozenset({"you", "i", "we", "they", "he", "she", "it"})
 # Words that end a subject noun phrase before any verb: determiners, prepositions, conjunctions,
 # pronouns and the words that open a condition or a relative clause (`once tests exist`, `whose names`).
 SUBJECT_ENDS: frozenset[str] = (
@@ -105,7 +108,7 @@ SUBJECT_ENDS: frozenset[str] = (
     | CONDITIONAL_MARKERS
     | CONDITION_CONJUNCTIONS
     | _DECLARATIVE_STARTS
-    | _SUBJECT_PRONOUNS
+    | SUBJECT_PRONOUNS
     | frozenset({"but", "then", "as", "whose", "which", "who", "what", "whatever", "whoever", "whichever", "how"})
 )
 _SUBJECT_REACH = 5  # a subject noun phrase of up to three words before its finite verb
@@ -129,7 +132,7 @@ def starts_noun_subject(text: str) -> bool:
 
 def _classify_phase3e_break(
     clean: str,
-) -> tuple[str, int, str, str, bool] | None:
+) -> ChargeVerdict | None:
     """Phase 3e: verb after sentence/clause break."""
     sentences = re.split(r"(?<=[.!?:;])\s+", clean)
     for sent in sentences[1:]:
@@ -150,7 +153,7 @@ def _classify_phase3d_context(
     lowers: list[str],
     verb_idx: int,
     pre: set[str],
-) -> tuple[str, int, str, str, bool] | None:
+) -> ChargeVerdict | None:
     """Phase 3d: verb after context words only."""
     if not pre <= CONTEXT_WORDS:
         return None
@@ -167,7 +170,7 @@ def _classify_phase3_deep(
     lowers: list[str],
     verb_idx: int,
     pre: set[str],
-) -> tuple[str, int, str, str, bool]:
+) -> ChargeVerdict:
     """Phase 3 deep detection: sub-phases 3d-3g (mid-sentence verb detection)."""
     # 3d: Verb after context words only
     p3d = _classify_phase3d_context(lowers, verb_idx, pre)
@@ -200,7 +203,7 @@ def classify_phase3_lexicon(
     verb_idx: int,
     *,
     shallow: bool,
-) -> tuple[str, int, str, str, bool]:
+) -> ChargeVerdict:
     """Phase 3 fallback: verb lexicon detection (when spaCy unavailable or returns None).
 
     Covers sub-phases 3c through 3g.

@@ -7,9 +7,9 @@ import hashlib
 import json
 import threading
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object
 
 # ──────────────────────────────────────────────────────────────────
 # Content-hash fingerprint, memoized on disk: hashing the graphs cold on every
@@ -46,7 +46,7 @@ def _sidecar_paths() -> list[Path]:
 
 
 @functools.cache
-def _load_sidecar() -> dict[str, Any]:
+def _load_sidecar() -> JsonObject:
     """Read the sidecar once per process; ``{}`` when no candidate path is readable.
 
     The same dict is returned on every call (reset with ``.cache_clear()``), so a
@@ -55,7 +55,9 @@ def _load_sidecar() -> dict[str, Any]:
     with _sidecar_lock:
         for path in _sidecar_paths():
             try:
-                return dict(json.loads(path.read_text(encoding="utf-8")))
+                loaded: JsonValue = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    return loaded
             except (OSError, ValueError):
                 continue
         return {}
@@ -102,7 +104,7 @@ def graph_content_hash(path: Path) -> str:
 
         key = str(path)
         sidecar = _load_sidecar()
-        entry = sidecar.get(key)
+        entry = as_object(sidecar.get(key))
         digest: str
         if entry and entry.get("size") == st.st_size and entry.get("mtime") == st.st_mtime:
             digest = str(entry["digest"])

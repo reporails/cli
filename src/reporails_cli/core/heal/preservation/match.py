@@ -6,13 +6,14 @@ rewrite added with no basis in the original, and which prose it dropped.
 from __future__ import annotations
 
 import math
-import re
-from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import NEGATION_RE, content_words, named_key
 from reporails_cli.core.mapper.classify import AFFIRMATIVE_ABSOLUTES, leading_prohibition
 from reporails_cli.core.mapper.classify_lexicon import words_of
+from reporails_cli.core.mapper.prose_split import sentence_spans
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Matching thresholds, pinned by tests.
 COSINE_THRESHOLD = 0.75
@@ -91,7 +92,7 @@ def _content_coverage(sa_text: str, na_text: str) -> float:
     return len(wa & content_words(na_text)) / len(wa)
 
 
-def pair_score(sa: SnapshotAtom, na: Any) -> float | None:
+def pair_score(sa: SnapshotAtom, na: Atom) -> float | None:
     """A candidate pair's score, or `None` when it clears neither qualifying threshold —
     content-word coverage of the snapshot instruction, or embedding cosine. A shared named
     token raises the score but never qualifies a pair by itself."""
@@ -104,7 +105,7 @@ def pair_score(sa: SnapshotAtom, na: Any) -> float | None:
     return score + 1.0 if shared_named else score
 
 
-def _assign_matches(snap_atoms: list[SnapshotAtom], new_atoms: list[Any]) -> dict[int, tuple[Any, bool]]:
+def _assign_matches(snap_atoms: list[SnapshotAtom], new_atoms: list[Atom]) -> dict[int, tuple[Atom, bool]]:
     """One-to-one greedy assignment across every snapshot x new candidate pair: every
     same-polarity pair is assigned before any opposite-polarity (flip) pair; within each group
     an instruction left word for word pairs with its unchanged text first, then pairs go by
@@ -115,7 +116,7 @@ def _assign_matches(snap_atoms: list[SnapshotAtom], new_atoms: list[Any]) -> dic
     that is `_mixed_polarity_restated` — the pairing (and ranking preference for a same-
     polarity candidate first) still runs on the true polarity comparison; only the reported
     flag is suppressed."""
-    candidates: list[tuple[tuple[bool, bool, float, bool, int], SnapshotAtom, Any, bool]] = []
+    candidates: list[tuple[tuple[bool, bool, float, bool, int], SnapshotAtom, Atom, bool]] = []
     for sa in snap_atoms:
         for na in new_atoms:
             same_polarity = na.charge_value == sa.charge_value
@@ -133,7 +134,7 @@ def _assign_matches(snap_atoms: list[SnapshotAtom], new_atoms: list[Any]) -> dic
 
     matched_sa: set[int] = set()
     matched_na: set[int] = set()
-    out: dict[int, tuple[Any, bool]] = {}
+    out: dict[int, tuple[Atom, bool]] = {}
     for _rank, sa, na, flipped in candidates:
         if id(sa) in matched_sa or id(na) in matched_na:
             continue
@@ -143,7 +144,7 @@ def _assign_matches(snap_atoms: list[SnapshotAtom], new_atoms: list[Any]) -> dic
     return out
 
 
-def _split_window(sa: SnapshotAtom, new_atoms: list[Any]) -> list[Any] | None:
+def _split_window(sa: SnapshotAtom, new_atoms: list[Atom]) -> list[Atom] | None:
     """The run of consecutive CHARGED new atoms (charge != 0) that covers `sa`'s content words
     and holds at least one atom of `sa`'s own polarity — a packed sentence split into a
     directive half and a prohibition half still counts as kept. Neutral (table cell / example)
@@ -167,8 +168,8 @@ def _split_window(sa: SnapshotAtom, new_atoms: list[Any]) -> list[Any] | None:
 
 
 def instruction_diffs(
-    snap_atoms: list[SnapshotAtom], new_atoms: list[Any]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, Any], dict[int, list[Any]]]:
+    snap_atoms: list[SnapshotAtom], new_atoms: list[Atom]
+) -> tuple[list[JsonObject], list[JsonObject], dict[int, Atom], dict[int, list[Atom]]]:
     """`(lost_instructions, polarity_flips, matched_new_for, split_covering_for)` — each
     snapshot instruction (charge_value != 0) matched, flipped, or lost (unless a
     packed-sentence split covers it). Matching is one-to-one everywhere, split coverage
@@ -182,10 +183,10 @@ def instruction_diffs(
     assignment = _assign_matches(charged, new_atoms)
     claimed_na = {id(match) for match, _flipped in assignment.values()}
     unclaimed_new_atoms = [na for na in new_atoms if id(na) not in claimed_na]
-    lost: list[dict[str, Any]] = []
-    flips: list[dict[str, Any]] = []
-    matched_new_for: dict[int, Any] = {}
-    split_covering_for: dict[int, list[Any]] = {}
+    lost: list[JsonObject] = []
+    flips: list[JsonObject] = []
+    matched_new_for: dict[int, Atom] = {}
+    split_covering_for: dict[int, list[Atom]] = {}
     for sa in charged:
         result = assignment.get(id(sa))
         if result is None:
@@ -204,10 +205,10 @@ def instruction_diffs(
 
 def added_instructions(
     snapshot_text: str,
-    new_atoms: list[Any],
-    matched_new_for: dict[int, Any],
-    split_covering_for: dict[int, list[Any]],
-) -> list[dict[str, Any]]:
+    new_atoms: list[Atom],
+    matched_new_for: dict[int, Atom],
+    split_covering_for: dict[int, list[Atom]],
+) -> list[JsonObject]:
     """Every charged new atom the rewrite carries with no snapshot counterpart at all — not a
     direct or flipped match (`matched_new_for`'s values), not part of a packed-sentence split's
     covering window (`split_covering_for`'s values) — and whose content words are mostly absent
@@ -227,8 +228,13 @@ def added_instructions(
     miss a genuinely added instruction instead."""
     claimed_na = {id(m) for m in matched_new_for.values()}
     used_in_split = {id(x) for window in split_covering_for.values() for x in window}
-    orig_sentences = [w for w in (content_words(sn) for sn in re.split(r"(?<=[.!?])\s+|\n", snapshot_text)) if w]
-    out: list[dict[str, Any]] = []
+    orig_sentences = [
+        w
+        for line in snapshot_text.split("\n")
+        for w in (content_words(line[a:b]) for a, b in sentence_spans(line))
+        if w
+    ]
+    out: list[JsonObject] = []
     for na in new_atoms:
         if na.charge_value == 0 or id(na) in claimed_na or id(na) in used_in_split:
             continue
@@ -241,13 +247,13 @@ def added_instructions(
     return out
 
 
-def lost_context(snap_atoms: list[SnapshotAtom], new_text: str) -> list[dict[str, Any]]:
+def lost_context(snap_atoms: list[SnapshotAtom], new_text: str) -> list[JsonObject]:
     """Snapshot neutral prose atoms (charge 0, format `prose`) whose content words are less
     than half present in the new file's text — factual context a rewrite silently dropped.
     Relation-allowed lines are already excluded from `snap_atoms` by the caller, the same as
     every other check."""
     new_words = content_words(new_text)
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for a in snap_atoms:
         if a.charge_value != 0 or a.format != "prose":
             continue

@@ -13,10 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from reporails_cli.core.platform.contract.json_value import JsonValue
 from reporails_cli.core.platform.dto.diagnostics import FindingBase
 
 
@@ -30,6 +31,16 @@ class Category(str, Enum):
     MAINTENANCE = "maintenance"
     GOVERNANCE = "governance"
 
+
+# The order rule listings show categories in.
+CATEGORY_DISPLAY_ORDER: tuple[Category, ...] = (
+    Category.STRUCTURE,
+    Category.DIRECTION,
+    Category.COHERENCE,
+    Category.EFFICIENCY,
+    Category.MAINTENANCE,
+    Category.GOVERNANCE,
+)
 
 # Category code -> Category enum mapping (first letter of rule ID)
 CATEGORY_CODES: dict[str, Category] = {
@@ -75,16 +86,6 @@ SEVERITY_ORDER: dict[Severity, int] = {
 }
 
 
-class PatternConfidence(str, Enum):
-    """How reliable a rule's detection pattern is."""
-
-    VERY_HIGH = "very_high"  # Exact structural match
-    HIGH = "high"  # Tight regex, rare false positives
-    MEDIUM = "medium"  # Reasonable regex, some edge cases
-    LOW = "low"  # Broad match, known false positives
-    VERY_LOW = "very_low"  # Placeholder or minimal pattern
-
-
 class Level(str, Enum):
     """Project levels from framework."""
 
@@ -103,7 +104,7 @@ class Level(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-class FileTypeDeclaration(BaseModel):
+class FileTypeDeclaration(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A typed file declaration from agent config file_types section."""
 
     model_config = ConfigDict(frozen=True)
@@ -115,7 +116,7 @@ class FileTypeDeclaration(BaseModel):
     entry_patterns: tuple[str, ...] = ()  # where an instance's entry file sits (a skill's SKILL.md)
 
 
-class ClassifiedFile(BaseModel):
+class ClassifiedFile(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A file matched to a type declaration with resolved properties."""
 
     model_config = ConfigDict(frozen=True)
@@ -125,7 +126,7 @@ class ClassifiedFile(BaseModel):
     properties: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
-class FileMatch(BaseModel):
+class FileMatch(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """Property-based file targeting. None properties are wildcards.
 
     Each property can be:
@@ -150,7 +151,7 @@ class FileMatch(BaseModel):
     link_source_type: list[str] | str | None = None
 
 
-class Check(BaseModel):
+class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A specific check within a rule.
 
     Checks have a type matching their gate: mechanical (Python function),
@@ -162,12 +163,11 @@ class Check(BaseModel):
     id: str  # e.g., "CORE.S.0001.file-exists"
     type: str = "deterministic"  # "mechanical" | "deterministic" | "content_query"
     check: str | None = None  # Mechanical function name
-    args: dict[str, Any] | None = None  # Mechanical/content_query arguments
+    args: dict[str, JsonValue] | None = None  # Mechanical/content_query arguments
     query: str | None = None  # Content query function name (type=content_query)
     expect: str = "present"  # "present" = no match is violation; "absent" = match is violation
-    metadata_keys: list[str] = Field(default_factory=list)  # D→M metadata bus keys
     replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
-    severity: str = ""  # Check-level severity override (empty = use rule severity)
+    severity: Severity | None = None  # Check-level severity override (None = use rule severity)
     message: str = ""  # Check-level message (empty = use check result message)
     # "aggregate": project-aggregate check, skipped under a scoped/narrowed run;
     # "once": one project-wide fact, reported once per project and kept on a narrowed run.
@@ -175,7 +175,16 @@ class Check(BaseModel):
     convention: bool = False  # Finding names a documentation convention the file does not follow
 
 
-class Rule(BaseModel):
+@dataclass(frozen=True, slots=True)
+class FieldProblem:
+    """One rejected field of a rule definition: its dotted `field` path, a one-line `message`, and `kind`."""
+
+    field: str
+    message: str
+    kind: Literal["missing", "invalid"]
+
+
+class Rule(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A rule definition loaded from framework frontmatter.
 
     The single source of truth for rule structure. Use Rule.model_json_schema()
@@ -201,22 +210,16 @@ class Rule(BaseModel):
     inherited: str | None = None  # Coordinate of parent rule to inherit checks from (both stay active)
     depends_on: list[str] = Field(default_factory=list)  # Rule coordinates that must pass first
 
-    # Enforcement + capability gating
-    enforcement_required: bool = False  # True when a lint finding alone cannot enforce this concern
-    enforcement_mechanism: str | None = None  # hook | permission | ci | managed_settings | static_analysis
+    # Capability gating
     requires_capability: str | None = None  # Capability ID; rule fires only for agents that have it
-    surface_mutations: dict[str, Any] | None = None  # Per-surface applicable-concern overrides (population deferred)
+    # Per-surface applicable-concern overrides (population deferred)
+    surface_mutations: dict[str, JsonValue] | None = None
 
     # Checks (all rule types)
     checks: list[Check] = Field(default_factory=list)
 
     # References
-    sources: list[str] = Field(default_factory=list)
     see_also: list[str] = Field(default_factory=list)
-    backed_by: list[str] = Field(default_factory=list)  # Source IDs from sources.yml
-
-    # Pattern quality
-    pattern_confidence: PatternConfidence | None = None
 
     # Paths (set after loading)
     md_path: Path | None = None
@@ -268,6 +271,7 @@ class Violation:
 
 __all__ = [
     "CATEGORY_CODES",
+    "CATEGORY_DISPLAY_ORDER",
     "SEVERITY_ORDER",
     "Category",
     "Check",
@@ -275,7 +279,6 @@ __all__ = [
     "FileMatch",
     "FileTypeDeclaration",
     "Level",
-    "PatternConfidence",
     "Rule",
     "RuleType",
     "Severity",

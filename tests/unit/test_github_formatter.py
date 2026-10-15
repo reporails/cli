@@ -14,29 +14,22 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.diagnostics import FunnelError
-from reporails_cli.core.platform.dto.models import Severity
+from reporails_cli.core.platform.dto.diagnostics import FindingSeverity, FunnelError
 from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters import github as github_formatter
 
 
 class TestSeverityMapping:
-    """Test _severity_to_command mapping."""
+    """Test the workflow command each finding severity maps to."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     @pytest.mark.parametrize(
         "severity, expected",
-        [
-            (Severity.CRITICAL, "error"),
-            (Severity.HIGH, "error"),
-            (Severity.MEDIUM, "warning"),
-            (Severity.LOW, "warning"),
-            (Severity.INFO, "notice"),
-        ],
+        [("error", "error"), ("warning", "warning"), ("info", "notice")],
     )
-    def test_severity_to_command(self, severity: Severity, expected: str) -> None:
-        assert github_formatter._severity_to_command(severity) == expected
+    def test_finding_command(self, severity: FindingSeverity, expected: str) -> None:
+        assert github_formatter._finding_command(severity) == expected
 
 
 class TestEscaping:

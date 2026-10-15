@@ -8,21 +8,27 @@ properties a file type declares, which discovery bucket it falls in, and how the
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Literal
 
 import yaml
 
 from reporails_cli.core.discovery import plugin_roots
 from reporails_cli.core.platform.config.bundled import get_bundled_rules_path
-from reporails_cli.core.platform.config.config import get_agent_config_path
-from reporails_cli.core.platform.utils.utils import load_yaml_file
+from reporails_cli.core.platform.config.config import get_agent_config_path, iter_agent_configs
+from reporails_cli.core.platform.contract.json_value import JsonObject, pattern_list
+from reporails_cli.core.platform.policy.matching import DECLARED_PROPERTIES
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern, load_yaml_file
 
 logger = logging.getLogger(__name__)
 
+# The discovery bucket a file type's files are collected into.
+SurfaceBucket = Literal["instruction", "rule", "config"]
+SURFACE_BUCKETS: tuple[SurfaceBucket, ...] = ("instruction", "rule", "config")
 
-def extract_patterns(spec: dict[str, Any], key: str = "patterns") -> list[str]:
+
+def extract_patterns(spec: JsonObject, key: str = "patterns") -> list[str]:
     """Extract all file patterns from a file type spec (`key` names the pattern list: `patterns`, or
     `entry_patterns` for where an instance's entry file sits).
 
@@ -31,11 +37,9 @@ def extract_patterns(spec: dict[str, Any], key: str = "patterns") -> list[str]:
     scope's patterns come back as `<marker>/pattern` (see `plugin_roots`).
     """
     # v0.3.0: patterns at top level
-    patterns = spec.get(key, [])
-    if isinstance(patterns, str):
-        patterns = [patterns]
+    patterns = pattern_list(spec.get(key, []))
     if patterns:
-        return list(patterns)
+        return patterns
 
     # v0.5.0: patterns inside scopes
     scopes = spec.get("scopes", {})
@@ -48,29 +52,29 @@ def extract_patterns(spec: dict[str, Any], key: str = "patterns") -> list[str]:
         if scope_name == plugin_roots.PLUGIN_SCOPE:
             all_patterns.extend(plugin_roots.plugin_scope_patterns(scope_spec, key))
             continue
-        scope_patterns = scope_spec.get(key, [])
-        if isinstance(scope_patterns, str):
-            scope_patterns = [scope_patterns]
-        all_patterns.extend(scope_patterns)
+        all_patterns.extend(pattern_list(scope_spec.get(key, [])))
     return all_patterns
 
 
-def extract_properties(spec: dict[str, Any]) -> dict[str, Any]:
-    """Extract properties from a file type spec.
+def extract_properties(spec: JsonObject) -> dict[str, str | list[str]]:
+    """Extract properties from a file type spec as text, a multi-valued property as a list of text.
 
-    Supports both v0.3.0 (properties nested) and v0.5.0 (flattened).
+    Supports both v0.3.0 (properties nested) and v0.5.0 (flattened). A property set to null is left out.
     """
     # v0.3.0: properties in a nested dict
     props = spec.get("properties")
-    if isinstance(props, dict):
-        return props
+    declared = props if isinstance(props, dict) else {k: v for k, v in spec.items() if k in DECLARED_PROPERTIES}
+    result: dict[str, str | list[str]] = {}
+    for key, value in declared.items():
+        if value is None:
+            continue
+        result[key] = [str(item) for item in value] if isinstance(value, list) else str(value)
+    return result
 
-    # v0.5.0: properties flattened at file type level
-    prop_keys = {"format", "scope", "cardinality", "lifecycle", "maintainer", "vcs", "loading", "precedence"}
-    return {k: v for k, v in spec.items() if k in prop_keys and v is not None}
 
-
-def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str:
+def categorize_file_type(
+    patterns: list[str], properties: Mapping[str, str | list[str]]
+) -> SurfaceBucket | Literal["skip"]:
     """Categorize a file_type entry as instruction/rule/config/skip.
 
     Uses file_type properties from config.yml:
@@ -83,7 +87,7 @@ def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str
     - everything else -> instruction
     """
     # Skip absolute system paths (managed configs)
-    if all(p.startswith(("/", "C:")) for p in patterns):
+    if all(is_rooted_pattern(p) and not p.startswith("~") for p in patterns):
         return "skip"
     # Schema-validated files -> config bucket
     if properties.get("format") == "schema_validated":
@@ -95,29 +99,12 @@ def categorize_file_type(patterns: list[str], properties: dict[str, str]) -> str
     return "instruction"
 
 
-def iter_agent_configs(rules_dir: Path) -> Iterator[dict[str, Any]]:
-    """Each readable `*/config.yml` under `rules_dir`, in path order, as its parsed mapping.
-
-    A config that cannot be read, or that is empty or not a mapping, is logged and skipped.
-    """
-    for config_path in sorted(rules_dir.glob("*/config.yml")):
-        try:
-            data = load_yaml_file(config_path)
-        except (OSError, ValueError, yaml.YAMLError) as exc:  # unreadable or non-YAML agent config
-            logger.warning("Skipping agent config %s: %s", config_path, exc)
-            continue
-        if not data or not isinstance(data, dict):
-            logger.warning("Agent config is empty or malformed: %s — agent skipped", config_path)
-            continue
-        yield data
-
-
-def bundled_file_types() -> Iterator[dict[str, Any]]:
+def bundled_file_types() -> Iterator[JsonObject]:
     """The `file_types` mapping of every bundled agent config that declares one."""
     rules_dir = get_bundled_rules_path()
     if rules_dir is None:
         return
-    for data in iter_agent_configs(rules_dir):
+    for _, data in iter_agent_configs(rules_dir):
         file_types = data.get("file_types")
         if isinstance(file_types, dict):
             yield file_types
@@ -126,7 +113,7 @@ def bundled_file_types() -> Iterator[dict[str, Any]]:
 def load_config_file_types(
     agent_id: str,
     rules_paths: list[Path] | None = None,
-) -> dict[str, Any] | None:
+) -> JsonObject | None:
     """Load file_types section from agent config.yml.
 
     Searches rules_paths first, then falls back to the default config path.

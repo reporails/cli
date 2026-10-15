@@ -7,13 +7,16 @@ Each query inspects the mapper's AST-derived atoms — no regex on raw text.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
-from typing import Any
 
 from reporails_cli.core.mapper.md_parser import wrapping_runs
-from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, Atom, RulesetMap
+from reporails_cli.core.platform.contract.json_value import JsonValue, as_int, as_str, str_list
+from reporails_cli.core.platform.dto.ruleset import DESCRIPTION_FORMATS, LIST_OBJECT_ROLE, Atom, RulesetMap
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
+
+# A check's `args` mapping, as the rule file wrote it.
+QueryArgs = Mapping[str, JsonValue]
 
 
 @dataclass(frozen=True)
@@ -71,11 +74,6 @@ def instruction_atoms_for_file(rm: RulesetMap, file_path: str, *, own: bool = Fa
     return [a for a in atoms if a.role != LIST_OBJECT_ROLE]
 
 
-def _all_file_paths(rm: RulesetMap) -> set[str]:
-    """Get unique file paths from RulesetMap."""
-    return {fr.path for fr in rm.files}
-
-
 # ──────────────────────────────────────────────────────────────────
 # QUERY FUNCTIONS
 # Each takes (rm, file_path, **args) and returns QueryResult.
@@ -83,7 +81,7 @@ def _all_file_paths(rm: RulesetMap) -> set[str]:
 # ──────────────────────────────────────────────────────────────────
 
 
-def has_headings(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_headings(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has any markdown headings."""
     atoms = atoms_for_file(rm, file_path)
     for a in atoms:
@@ -92,9 +90,9 @@ def has_headings(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
     return QueryResult(False, file_path)
 
 
-def has_heading_matching(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
+def has_heading_matching(rm: RulesetMap, file_path: str, args: QueryArgs) -> QueryResult:
     """Check if file has a heading matching any of the given terms."""
-    terms = args.get("terms", [])
+    terms = str_list(args.get("terms"))
     if not terms:
         return QueryResult(False, file_path)
     pattern = re.compile("|".join(re.escape(t) for t in terms), re.IGNORECASE)
@@ -107,11 +105,10 @@ def has_heading_matching(rm: RulesetMap, file_path: str, **args: Any) -> QueryRe
 
 # A lead block is description-shaped when it is uncharged prose, a blockquote, or a list
 # of at least this many words — long enough to say what the project is.
-_LEAD_FORMATS = frozenset({"prose", "blockquote", "list"})
 _LEAD_MIN_TOKENS = 5
 
 
-def has_project_description(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
+def has_project_description(rm: RulesetMap, file_path: str, args: QueryArgs) -> QueryResult:
     """Check if file describes the project: a matching heading, or a lead block under the title.
 
     The lead block is the content under the title, up to the first second-level (or deeper)
@@ -119,7 +116,7 @@ def has_project_description(rm: RulesetMap, file_path: str, **args: Any) -> Quer
     atom there carries at least `_LEAD_MIN_TOKENS` words — the sentence under `# Project` that
     says what it is. An instruction-shaped (ambiguous) sentence is not a description.
     """
-    by_heading = has_heading_matching(rm, file_path, **args)
+    by_heading = has_heading_matching(rm, file_path, args)
     if by_heading.found:
         return by_heading
     for a in sorted(atoms_for_file(rm, file_path), key=lambda a: a.line):
@@ -131,12 +128,12 @@ def has_project_description(rm: RulesetMap, file_path: str, **args: Any) -> Quer
             break
         if a.charge == "AMBIGUOUS":
             continue
-        if a.format in _LEAD_FORMATS and a.token_count >= _LEAD_MIN_TOKENS:
+        if a.format in DESCRIPTION_FORMATS and a.token_count >= _LEAD_MIN_TOKENS:
             return QueryResult(True, file_path, a.line, f"Lead description: {a.text[:60]}")
     return QueryResult(False, file_path)
 
 
-def has_code_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_code_blocks(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has code block content."""
     atoms = atoms_for_file(rm, file_path)
     for a in atoms:
@@ -145,9 +142,9 @@ def has_code_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult
     return QueryResult(False, file_path)
 
 
-def has_layered_structure(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
+def has_layered_structure(rm: RulesetMap, file_path: str, args: QueryArgs) -> QueryResult:
     """Check if file has top-level heading structure (content layering)."""
-    min_headings = args.get("min_headings", 2)
+    min_headings = as_int(args.get("min_headings"), 2)
     atoms = atoms_for_file(rm, file_path)
     top_headings = [a for a in atoms if a.kind == "heading" and a.depth is not None and a.depth <= 2]
     if len(top_headings) >= min_headings:
@@ -155,9 +152,9 @@ def has_layered_structure(rm: RulesetMap, file_path: str, **args: Any) -> QueryR
     return QueryResult(False, file_path)
 
 
-def has_named_tokens_matching(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
+def has_named_tokens_matching(rm: RulesetMap, file_path: str, args: QueryArgs) -> QueryResult:
     """Check if file atoms contain any of the specified named tokens."""
-    tokens = set(args.get("tokens", []))
+    tokens = set(str_list(args.get("tokens")))
     if not tokens:
         return QueryResult(False, file_path)
     atoms = atoms_for_file(rm, file_path)
@@ -168,7 +165,7 @@ def has_named_tokens_matching(rm: RulesetMap, file_path: str, **args: Any) -> Qu
     return QueryResult(False, file_path)
 
 
-def has_constraint_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_constraint_atoms(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has constraint atoms (charge_value == -1)."""
     atoms = atoms_for_file(rm, file_path)
     for a in atoms:
@@ -177,7 +174,7 @@ def has_constraint_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryR
     return QueryResult(False, file_path)
 
 
-def has_directive_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_directive_atoms(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has directive atoms (charge_value == +1)."""
     atoms = atoms_for_file(rm, file_path)
     for a in atoms:
@@ -186,7 +183,7 @@ def has_directive_atoms(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRe
     return QueryResult(False, file_path)
 
 
-def has_role_definition(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_role_definition(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file defines an agent role ('you are', 'your role', role: anchor)."""
     atoms = atoms_for_file(rm, file_path)
     for a in atoms:
@@ -196,7 +193,7 @@ def has_role_definition(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRe
     return QueryResult(False, file_path)
 
 
-def has_valid_markdown(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_valid_markdown(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has any parsed atoms (valid markdown that produced content)."""
     atoms = atoms_for_file(rm, file_path)
     if atoms:
@@ -204,9 +201,9 @@ def has_valid_markdown(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRes
     return QueryResult(False, file_path)
 
 
-def has_frontmatter_field(rm: RulesetMap, file_path: str, **args: Any) -> QueryResult:
+def has_frontmatter_field(rm: RulesetMap, file_path: str, args: QueryArgs) -> QueryResult:
     """Check if the file record has specific frontmatter-derived fields."""
-    field_name = args.get("field", "")
+    field_name = as_str(args.get("field"))
     key = _norm_key(file_path)
     for fr in rm.files:
         if _norm_key(fr.path) != key:
@@ -218,7 +215,7 @@ def has_frontmatter_field(rm: RulesetMap, file_path: str, **args: Any) -> QueryR
     return QueryResult(False, file_path)
 
 
-def has_non_italic_constraints(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_non_italic_constraints(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has constraint atoms not fully wrapped in *italic*.
 
     Returns found=True when a constraint (-1) exists without full-sentence italic,
@@ -241,7 +238,7 @@ def has_non_italic_constraints(rm: RulesetMap, file_path: str, **_args: Any) -> 
     return _every_match(file_path, found)
 
 
-def has_mermaid_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_mermaid_blocks(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has mermaid code blocks (```mermaid)."""
     atoms = atoms_for_file(rm, file_path)
     for a in atoms:
@@ -250,7 +247,7 @@ def has_mermaid_blocks(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRes
     return QueryResult(False, file_path)
 
 
-def has_branching_steps(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_branching_steps(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has numbered list items with conditional/branching language."""
     atoms = atoms_for_file(rm, file_path)
     numbered_count = 0
@@ -265,7 +262,7 @@ def has_branching_steps(rm: RulesetMap, file_path: str, **_args: Any) -> QueryRe
     return QueryResult(False, file_path)
 
 
-def has_charged_headings(rm: RulesetMap, file_path: str, **_args: Any) -> QueryResult:
+def has_charged_headings(rm: RulesetMap, file_path: str, _args: QueryArgs) -> QueryResult:
     """Check if file has heading atoms with charge (instructions in headings). Every one is a match;
     its evidence is the heading text. A bare negative heading (`## Don'ts`) labels a list of
     prohibitions and is not a match."""
@@ -283,7 +280,7 @@ def has_charged_headings(rm: RulesetMap, file_path: str, **_args: Any) -> QueryR
 # REGISTRY — maps query names to functions
 # ──────────────────────────────────────────────────────────────────
 
-QUERY_REGISTRY: dict[str, Any] = {
+QUERY_REGISTRY: dict[str, Callable[[RulesetMap, str, QueryArgs], QueryResult]] = {
     "has_headings": has_headings,
     "has_heading_matching": has_heading_matching,
     "has_project_description": has_project_description,

@@ -25,6 +25,7 @@ from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerRep
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
+from tests.conftest import ails_client
 
 WARN = Notice("pay", "warn", "Payment failed [bold]x[/bold]", "https://example.test/pay")
 INFO = Notice("ends", "info", "Pro ends on 1 June")
@@ -80,7 +81,7 @@ def _lint(status: int, body: Any, headers: dict[str, str], *, key: str = "") -> 
         patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=payload),
         patch("httpx.post", return_value=_Reply(status, body, headers)),
     ):
-        client = AilsClient(base_url="https://example.test", tier="pro")
+        client = ails_client("https://example.test", tier="pro")
         client.api_key = key
         return client.lint(_map(), root=Path("/tmp/notices-carry-root"))
 

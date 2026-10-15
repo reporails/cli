@@ -3,71 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.mapper.bio_graphs import multislot_available
-from reporails_cli.core.platform.dto.diagnostics import CLIENT_CHECK_KINDS, DEFAULT_RETRY_AFTER_S, FunnelError
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.diagnostics import (
+    CLIENT_CHECK_KINDS,
+    DEFAULT_RETRY_AFTER_S,
+    FindingItem,
+    FunnelError,
+    Hint,
+    LocationFinding,
+    LocationRelation,
+    Notice,
+    RemediationWorkflow,
+    WorkflowLocation,
+)
 from reporails_cli.core.platform.dto.models import CATEGORY_CODES, Level
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions, normalize_finding_path
 from reporails_cli.formatters.text.funnel_cta import plain_cta
 from reporails_cli.formatters.text.scorecard import compute_surface_scores
-from reporails_cli.formatters.triage import classify_regime, resolve_leverage
-
-
-def format_rule(rule_id: str, rule_data: dict[str, Any]) -> dict[str, Any]:
-    """Format rule explanation as dict.
-
-    Args:
-        rule_id: Rule identifier
-        rule_data: Rule metadata
-
-    Returns:
-        Dict with rule details
-    """
-    result: dict[str, Any] = {
-        "id": rule_id,
-        "title": rule_data.get("title", ""),
-        "category": rule_data.get("category", ""),
-        "type": rule_data.get("type", ""),
-    }
-    match = rule_data.get("match")
-    if match:
-        result["scope"] = match
-    result["description"] = rule_data.get("description", "")
-    result["checks"] = rule_data.get("checks", [])
-    result["see_also"] = rule_data.get("see_also", [])
-    return result
-
-
-def format_heal_result(
-    auto_fixed: list[dict[str, Any]],
-    judgment_requests: list[dict[str, Any]],
-    *,
-    violations: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Format heal command results as JSON.
-
-    Args:
-        auto_fixed: List of auto-fix entries (rule_id, file_path, description)
-        judgment_requests: List of semantic judgment requests
-        violations: Optional list of non-fixable violations requiring manual attention
-
-    Returns:
-        Dict with auto_fixed, violations, and judgment_requests
-    """
-    result: dict[str, Any] = {
-        "auto_fixed": auto_fixed,
-        "judgment_requests": judgment_requests,
-        "summary": {
-            "auto_fixed_count": len(auto_fixed),
-            "pending_judgments": len(judgment_requests),
-        },
-    }
-    if violations:
-        result["violations"] = violations
-        result["summary"]["violations_count"] = len(violations)
-    return result
+from reporails_cli.formatters.triage import classify_regime, resolve_leverage, tally_rules
 
 
 def _category_for_rule(rule_id: str) -> str:
@@ -86,14 +44,14 @@ def _category_for_rule(rule_id: str) -> str:
     return category.value if category else ""
 
 
-def _regime_by_file(result: Any, project_root: Path) -> dict[str, dict[str, Any]]:
+def _regime_by_file(result: CombinedResult, project_root: Path) -> dict[str, JsonObject]:
     """Build a file-keyed map of the per-file triage tier token.
 
     Keyed by project-relative path; empty for offline runs.
     """
 
-    out: dict[str, dict[str, Any]] = {}
-    for fa in getattr(result, "per_file_analysis", ()):  # absent on offline-only shapes
+    out: dict[str, JsonObject] = {}
+    for fa in result.per_file_analysis:
         regime = classify_regime(fa.stats)
         if regime is not None:
             # Key by the same project-relative form the `files` dict uses
@@ -104,24 +62,24 @@ def _regime_by_file(result: Any, project_root: Path) -> dict[str, dict[str, Any]
     return out
 
 
-def _pro_summary(hints: Any) -> dict[str, int]:
+def _pro_summary(hints: tuple[Hint, ...]) -> JsonObject:
     """Aggregate pro-tier hint counts into the JSON `pro` block."""
     return {
         "count": sum(h.count for h in hints),
-        "errors": sum(getattr(h, "error_count", 0) for h in hints),
-        "warnings": sum(getattr(h, "warning_count", 0) for h in hints),
+        "errors": sum(h.error_count for h in hints),
+        "warnings": sum(h.warning_count for h in hints),
     }
 
 
-def _file_entry(findings: list[dict[str, Any]], regime: dict[str, Any] | None) -> dict[str, Any]:
+def _file_entry(findings: list[JsonValue], regime: JsonObject | None) -> JsonObject:
     """Build one per-file JSON entry, attaching `regime` when available (additive)."""
-    entry: dict[str, Any] = {"findings": findings, "count": len(findings)}
+    entry: JsonObject = {"findings": findings, "count": len(findings)}
     if regime is not None:
         entry["regime"] = regime
     return entry
 
 
-def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
+def _format_workflow(wf: RemediationWorkflow, project_root: Path) -> JsonObject:
     """Serialize the remediation location index for agent consumption.
 
     Each location is a harness element (the root main file, a skill dir, an agent file, a
@@ -141,13 +99,13 @@ def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
     def _rel(path: str) -> str:
         return normalize_finding_path(path, project_root) if path else path
 
-    def _expect(expect: dict[str, Any]) -> dict[str, Any]:
+    def _expect(expect: JsonObject) -> JsonObject:
         return {
             key: [_rel(v[0]), *v[1:]] if isinstance(v, list) and v and isinstance(v[0], str) else v
             for key, v in expect.items()
         }
 
-    def _finding(lf: Any) -> dict[str, Any]:
+    def _finding(lf: LocationFinding) -> JsonObject:
         file = _rel(lf.file)
         return {
             "rule": lf.rule,
@@ -160,7 +118,7 @@ def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
             "members": [_finding(m) for m in lf.members],
         }
 
-    def _relation(lr: Any) -> dict[str, Any]:
+    def _relation(lr: LocationRelation) -> JsonObject:
         return {
             "rule": lr.rule,
             "file": _rel(lr.file),
@@ -171,7 +129,7 @@ def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
             "expect": _expect(lr.expect),
         }
 
-    def _location(loc: Any) -> dict[str, Any]:
+    def _location(loc: WorkflowLocation) -> JsonObject:
         return {
             "order": loc.order,
             "element": _rel(loc.element),
@@ -183,7 +141,7 @@ def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
             "relations": [_relation(r) for r in loc.relations],
         }
 
-    out: dict[str, Any] = {
+    out: JsonObject = {
         "summary": wf.summary,
         "locations": [_location(loc) for loc in wf.locations],
     }
@@ -192,12 +150,12 @@ def _format_workflow(wf: Any, project_root: Path) -> dict[str, Any]:
     return out
 
 
-def format_notices(notices: Any) -> list[dict[str, str]]:
+def format_notices(notices: tuple[Notice, ...]) -> list[JsonValue]:
     """Notices as the JSON documents carry them."""
     return [{"id": n.id, "level": n.level, "text": n.text, "url": n.url, "kind": n.kind} for n in notices]
 
 
-def format_server_error(server_error: Any) -> dict[str, Any] | None:
+def format_server_error(server_error: FunnelError | None) -> JsonObject | None:
     """Format a `FunnelError` outcome (rejection / timeout / network failure) for JSON output.
 
     `None` when a response arrived normally or no request was made, so a machine
@@ -208,7 +166,7 @@ def format_server_error(server_error: Any) -> dict[str, Any] | None:
     terminal CTA's `[link=...][bold]...[/bold][/link]` tags.
     """
 
-    if not isinstance(server_error, FunnelError):
+    if server_error is None:
         return None
     return {
         "status": server_error.status,
@@ -223,7 +181,7 @@ def format_server_error(server_error: Any) -> dict[str, Any] | None:
 
 def empty_result_payload(
     project_root: Path | None = None, excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
-) -> dict[str, Any]:
+) -> JsonObject:
     """The standard envelope for a run that found nothing to check.
 
     A project with no instruction files is an ordinary result over an empty finding
@@ -241,10 +199,16 @@ def empty_result_payload(
 
 # `format_combined_result`'s `ruleset_map` when the caller says nothing about mapping;
 # an explicit `None` means the run tried to map its files and could not.
-_MAP_NOT_STATED: Any = object()
+class _NotStated(Enum):
+    """The one marker, `_MAP_NOT_STATED`, that says the caller gave no `ruleset_map`."""
+
+    MAP_NOT_STATED = "map_not_stated"
 
 
-def _finding_entry(f: Any, project_root: Path) -> dict[str, Any]:
+_MAP_NOT_STATED = _NotStated.MAP_NOT_STATED
+
+
+def _finding_entry(f: FindingItem, project_root: Path) -> JsonObject:
     """One finding as its per-file JSON entry.
 
     `leverage` is additive (raw `severity` is unchanged — the machine baseline); it appears only
@@ -256,7 +220,7 @@ def _finding_entry(f: Any, project_root: Path) -> dict[str, Any]:
     and the share that overlaps, when the reply names them.
     """
 
-    entry: dict[str, Any] = {
+    entry: JsonObject = {
         "line": f.line,
         "severity": f.severity,
         "rule": f.rule,
@@ -281,9 +245,9 @@ def _finding_entry(f: Any, project_root: Path) -> dict[str, Any]:
     return entry
 
 
-def _cross_file_blocks(result: Any) -> dict[str, Any]:
+def _cross_file_blocks(result: CombinedResult) -> JsonObject:
     """The `cross_file` and `cross_file_coordinates` entries of a combined result, each only when it has rows."""
-    out: dict[str, Any] = {}
+    out: JsonObject = {}
     if result.cross_file:
         out["cross_file"] = [
             {
@@ -304,8 +268,8 @@ def _cross_file_blocks(result: Any) -> dict[str, Any]:
 
 
 def _surface_health(
-    result: Any, ruleset_map: Any, root: Path, file_type_by_path: dict[str, str] | None
-) -> list[dict[str, Any]]:
+    result: CombinedResult, ruleset_map: RulesetMap | None, root: Path, file_type_by_path: dict[str, str] | None
+) -> list[JsonValue]:
     """The per-surface score rows of a combined result."""
 
     surfaces = compute_surface_scores(
@@ -324,11 +288,11 @@ def _surface_health(
 
 
 def format_combined_result(
-    result: Any,
-    ruleset_map: Any = _MAP_NOT_STATED,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | _NotStated | None = _MAP_NOT_STATED,
     project_root: Path | None = None,
     file_type_by_path: dict[str, str] | None = None,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Format CombinedResult as JSON dict.
 
     Args:
@@ -343,12 +307,9 @@ def format_combined_result(
         Dict with findings, stats, compliance, tier, category info.
     """
 
-    if not isinstance(result, CombinedResult):
-        return {"error": "Invalid result type"}
-
     # Group findings by file for agent consumption — agents work file-by-file.
     root = project_root or Path.cwd()
-    by_file: dict[str, list[dict[str, Any]]] = {}
+    by_file: dict[str, list[JsonValue]] = {}
     for f in result.findings:
         by_file.setdefault(f.file, []).append(_finding_entry(f, root))
 
@@ -357,10 +318,9 @@ def format_combined_result(
     # A project with no instruction files (level L0) has nothing to map: that is an empty run,
     # not a failed one.
     map_failed = ruleset_map is None and result.level != Level.L0
-    if ruleset_map is _MAP_NOT_STATED:
-        ruleset_map = None
+    mapped = None if isinstance(ruleset_map, _NotStated) else ruleset_map
 
-    data: dict[str, Any] = {
+    data: JsonObject = {
         "offline": result.offline,
         "server_error": format_server_error(result.reply.server_error),
         "tier": result.reply.tier,
@@ -391,7 +351,7 @@ def format_combined_result(
     data.update(_cross_file_blocks(result))
     if result.hints:
         data["pro"] = _pro_summary(result.hints)
-    surfaces = _surface_health(result, ruleset_map, project_root or Path.cwd(), file_type_by_path)
+    surfaces = _surface_health(result, mapped, project_root or Path.cwd(), file_type_by_path)
     if surfaces:
         data["surface_health"] = surfaces
     data["top_rules"] = _aggregate_top_rules(result.findings)
@@ -405,39 +365,27 @@ def format_combined_result(
     return data
 
 
-def _aggregate_top_rules(findings: Any, limit: int = 10) -> list[dict[str, Any]]:
-    """Group findings by rule and return the top `limit` by count.
+_TOP_RULES_SHOWN = 10
+
+
+def _aggregate_top_rules(findings: tuple[FindingItem, ...]) -> list[JsonValue]:
+    """Group findings by rule and return the top ten by count.
 
     Each entry: `{"rule": "<id>", "count": <int>, "severity": "<worst>", "errors": <int>,
     "warnings": <int>}`. `severity` is the worst (error > warning > info) seen for that rule,
     sitting beside the rule's *total* count — a rule with 1 error and 69 warnings reads
     `severity: "error"` at `count: 70`, which an agent reading only those two fields
     over-reports as "70 errors". `errors` and `warnings` are that rule's own per-severity
-    counts, so a consumer never has to infer them from the worst-severity label. Used by
-    both the JSON envelope and the text scorecard so the aggregation has one source of truth.
+    counts, so a consumer never has to infer them from the worst-severity label.
     """
 
-    severity_rank = {"error": 0, "warning": 1, "info": 2}
-    buckets: dict[str, dict[str, Any]] = {}
-    for f in findings:
-        bucket = buckets.setdefault(
-            f.rule, {"count": 0, "severity": f.severity, "errors": 0, "warnings": 0, "infos": 0}
-        )
-        bucket["count"] += 1
-        bucket[f"{f.severity}s"] = bucket.get(f"{f.severity}s", 0) + 1
-        if severity_rank.get(f.severity, 3) < severity_rank.get(bucket["severity"], 3):
-            bucket["severity"] = f.severity
-    ordered = sorted(
-        (
-            {
-                "rule": rule,
-                "count": b["count"],
-                "severity": b["severity"],
-                "errors": b["errors"],
-                "warnings": b["warnings"],
-            }
-            for rule, b in buckets.items()
-        ),
-        key=lambda r: (-r["count"], r["rule"]),
-    )
-    return ordered[:limit]
+    return [
+        {
+            "rule": t.rule,
+            "count": t.count,
+            "severity": t.severity,
+            "errors": t.by_severity.get("error", 0),
+            "warnings": t.by_severity.get("warning", 0),
+        }
+        for t in tally_rules(findings)[:_TOP_RULES_SHOWN]
+    ]

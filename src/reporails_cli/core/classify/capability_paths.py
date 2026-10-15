@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reporails_cli.core.classify import classify_files, load_file_types, location_matches_mode
-from reporails_cli.core.discovery.agent_discovery import discover_from_config, is_external_pattern
+from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_from_config
 from reporails_cli.core.discovery.agents import detect_agents
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
@@ -26,6 +26,7 @@ from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 
 def available_capabilities(agent: str, project_root: Path | None = None) -> list[str]:
@@ -275,7 +276,7 @@ def _is_user_scope_memory(ft_name: str, patterns: tuple[str, ...]) -> bool:
     per-project memory directory — delegate when the file_type name is
     `memory` or `subagent_memory` AND any pattern starts with `~/`.
     """
-    if ft_name not in ("memory", "subagent_memory"):
+    if ft_name not in MEMORY_SURFACES:
         return False
     return any(p.startswith("~/") for p in patterns)
 
@@ -290,7 +291,6 @@ def resolve_capability(
     capability: str,
     name: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
 ) -> Path | None:
     """Resolve `(agent, capability, name)` to a canonical file path.
 
@@ -305,12 +305,10 @@ def resolve_capability(
     - `main` / `override`: filename match against `name` (rarely used
       with an explicit name).
 
-    A named instance resolves whatever is excluded: `exclusions` is the set to resolve under, and
-    `None` means no user exclusions. Returns the first match, or None when no candidate matches.
+    A named instance resolves whatever the user excludes. Returns the first match, or None when no
+    candidate matches.
     """
-    candidates = list_capability_targets(
-        agent, capability, project_root, exclusions if exclusions is not None else RunExclusions.none(project_root)
-    )
+    candidates = list_capability_targets(agent, capability, project_root, RunExclusions.none(project_root))
     extractor = _name_extractor_for(capability)
     for candidate in candidates:
         if extractor(candidate) == name:
@@ -363,7 +361,7 @@ def _glob_patterns(
     expanded = [
         pattern
         for pattern in expand_plugin_patterns(list(patterns), project_root, skip_dirs)
-        if not is_external_pattern(pattern)
+        if not is_rooted_pattern(pattern)
     ]
     if not expanded:
         return []

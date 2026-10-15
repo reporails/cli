@@ -18,7 +18,6 @@ from reporails_cli.core.mapper.markdown_extract import (
     _config_block_end,
     _determine_format,
     _extract_texts,
-    _is_prose_line,
     _split_at_softbreaks,
     _strip_frontmatter,
 )
@@ -30,23 +29,6 @@ class _Child:
     def __init__(self, type_: str, content: str = "") -> None:
         self.type = type_
         self.content = content
-
-
-# ──────────────────────────────────────────────────────────────────
-# _is_prose_line  (L80 or/==, L81 return False)
-# ──────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_is_prose_line_only_content_lines_are_prose() -> None:
-    assert _is_prose_line("This is a prose sentence.") is True
-    # Each non-prose form must be rejected (kills each or→and, the ==→!=, and L81).
-    assert _is_prose_line("") is False
-    assert _is_prose_line("---") is False
-    assert _is_prose_line("# Heading") is False
-    assert _is_prose_line("- list item") is False
-    assert _is_prose_line("key: value") is False
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -192,11 +174,10 @@ def test_split_at_softbreaks_splits_and_drops_break() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-def test_extract_texts_inline_code_becomes_backtick_token() -> None:
-    md_text, plain_text, inline = _extract_texts([_Child("code_inline", "npm")])
+def test_extract_texts_inline_code_keeps_its_backticks_in_md_text() -> None:
+    md_text, plain_text = _extract_texts([_Child("code_inline", "npm")])
     assert plain_text == "npm"
     assert md_text == "`npm`"
-    assert any(t.text == "npm" and t.format == "backtick" for t in inline)
 
 
 # ──────────────────────────────────────────────────────────────────

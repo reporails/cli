@@ -41,7 +41,7 @@ def _concurrent_put_worker(cache_dir_str: str, idx: int, barrier: mp.synchronize
     for r in range(rounds):
         cache = MapCache(cache_dir)
         cache.load()
-        cache.put(f"sha256:worker{idx}-{r}", CachedFileEntry(content_hash=f"sha256:worker{idx}-{r}"))
+        cache.put(f"sha256:worker{idx}-{r}", CachedFileEntry())
         barrier.wait()
         cache.save()
 
@@ -51,7 +51,7 @@ def _concurrent_put_worker(cache_dir_str: str, idx: int, barrier: mp.synchronize
 @pytest.mark.subsys_caching
 def test_put_writes_a_shard_and_get_reads_it_across_instances(tmp_path: Path) -> None:
     writer = MapCache(tmp_path)
-    writer.put("sha256:abc", CachedFileEntry(content_hash="sha256:abc", atoms=[{"text": "x"}]))
+    writer.put("sha256:abc", CachedFileEntry(atoms=[{"text": "x"}]))
 
     # A fresh instance (no shared memory) reads the shard off disk.
     reader = MapCache(tmp_path)
@@ -88,7 +88,7 @@ def test_fresh_cache_save_is_noop(tmp_path: Path) -> None:
 def test_put_creates_missing_parent_dirs(tmp_path: Path) -> None:
     cache_dir = tmp_path / "a" / "b" / "c"  # parents do not exist yet
     cache = MapCache(cache_dir)
-    cache.put("sha256:abc", CachedFileEntry(content_hash="sha256:abc"))
+    cache.put("sha256:abc", CachedFileEntry())
     # `mkdir(parents=True)` in the shard writer creates the whole chain.
     assert _shard_dir(cache).is_dir()
     assert cache.size == 1
@@ -145,7 +145,7 @@ def test_migration_identity_mismatch_removes_monolith_and_serves_nothing(tmp_pat
 @pytest.mark.subsys_caching
 def test_corrupt_shard_returns_none_without_raising(tmp_path: Path) -> None:
     cache = MapCache(tmp_path)
-    cache.put("sha256:abc", CachedFileEntry(content_hash="sha256:abc", atoms=[{"text": "x"}]))
+    cache.put("sha256:abc", CachedFileEntry(atoms=[{"text": "x"}]))
     # Corrupt the shard on disk, then read from a fresh instance.
     shard = next(_shard_dir(cache).glob("*.json"))
     shard.write_text("{ not valid json", encoding="utf-8")
@@ -159,7 +159,7 @@ def test_corrupt_shard_returns_none_without_raising(tmp_path: Path) -> None:
 @pytest.mark.subsys_caching
 def test_identity_change_lands_in_a_fresh_digest_dir(tmp_path: Path) -> None:
     a = MapCache(tmp_path, charge="111:222")
-    a.put("sha256:abc", CachedFileEntry(content_hash="sha256:abc", atoms=[{"text": "x"}]))
+    a.put("sha256:abc", CachedFileEntry(atoms=[{"text": "x"}]))
     # A different charge fingerprint is a different digest subdir → no cross-serve.
     b = MapCache(tmp_path, charge="111:999")
     b.load()
@@ -173,8 +173,8 @@ def test_identity_change_lands_in_a_fresh_digest_dir(tmp_path: Path) -> None:
 def test_enforce_cap_at_exact_cap_evicts_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("reporails_cli.core.cache.map_cache._MAX_CACHE_ENTRIES", 2)
     cache = MapCache(tmp_path)
-    cache.put("a", CachedFileEntry(content_hash="a"))
-    cache.put("b", CachedFileEntry(content_hash="b"))
+    cache.put("a", CachedFileEntry())
+    cache.put("b", CachedFileEntry())
     # `<=`->`<` would fall through the guard at exactly the cap and evict one.
     assert cache.enforce_cap() == 0
     assert cache.size == 2
@@ -186,7 +186,7 @@ def test_enforce_cap_evicts_oldest_by_mtime(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr("reporails_cli.core.cache.map_cache._MAX_CACHE_ENTRIES", 2)
     cache = MapCache(tmp_path)
     for h in ("a", "b", "c", "d"):
-        cache.put(h, CachedFileEntry(content_hash=h))
+        cache.put(h, CachedFileEntry())
     # Force a strict mtime order: a oldest ... d newest.
     shard_dir = _shard_dir(cache)
     for i, h in enumerate(("a", "b", "c", "d")):
@@ -203,7 +203,7 @@ def test_enforce_cap_evicts_oldest_by_mtime(monkeypatch: pytest.MonkeyPatch, tmp
 @pytest.mark.subsys_caching
 def test_save_after_successful_puts_does_not_raise(tmp_path: Path) -> None:
     cache = MapCache(tmp_path)
-    cache.put("sha256:abc", CachedFileEntry(content_hash="sha256:abc"))
+    cache.put("sha256:abc", CachedFileEntry())
     # Shards are written eagerly at put(); save() has no pending writes to retry.
     cache.save()
     assert cache.size == 1
@@ -251,7 +251,7 @@ def test_load_prunes_identity_subdirs_unused_for_a_long_time(tmp_path: Path) -> 
     long_ago = time.time() - 60 * 86400
     os.utime(shard, (long_ago, long_ago))
     os.utime(stale, (long_ago, long_ago))
-    cache.put("sha256:live", CachedFileEntry("sha256:live", [{"a": 1}]))
+    cache.put("sha256:live", CachedFileEntry([{"a": 1}]))
     assert stale.exists()
 
     cache.load()
@@ -269,11 +269,11 @@ def test_load_keeps_another_configurations_warm_cache(tmp_path: Path) -> None:
     that uses another segmentation in place."""
     first = MapCache(tmp_path, segmentation="structure-aware")
     first.load()
-    first.put("sha256:a", CachedFileEntry("sha256:a", [{"a": 1}]))
+    first.put("sha256:a", CachedFileEntry([{"a": 1}]))
 
     second = MapCache(tmp_path, segmentation="legacy")
     second.load()
-    second.put("sha256:b", CachedFileEntry("sha256:b", [{"b": 1}]))
+    second.put("sha256:b", CachedFileEntry([{"b": 1}]))
     second.load()
 
     again = MapCache(tmp_path, segmentation="structure-aware")

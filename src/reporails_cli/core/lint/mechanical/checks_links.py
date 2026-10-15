@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.lint.mechanical.checks import get_target_files
+from reporails_cli.core.lint.mechanical.checks import CheckArgs, annotation_entries, get_target_files
 from reporails_cli.core.mapper.imports import import_target
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 from reporails_cli.core.platform.dto.checks import CheckResult
@@ -15,7 +14,7 @@ from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 def check_import_targets_exist(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that all @import paths from metadata resolve to existing files.
@@ -25,11 +24,7 @@ def check_import_targets_exist(
     agent reads it. Each file with unresolved imports is one occurrence, located on its first
     unresolved import's line.
     """
-    entries: list[str] = []
-    for value in args.values():
-        if isinstance(value, list):
-            entries = value
-            break
+    entries = annotation_entries(args)
     if not entries:
         return CheckResult(passed=True, message="No import paths to check")
     missing: dict[str, list[str]] = {}
@@ -68,7 +63,7 @@ def broken_link_message(target: str) -> str:
 
 def extract_markdown_links(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Discover `[text](path)` + `[ref]: path` link targets in target files.
@@ -104,14 +99,14 @@ def extract_markdown_links(
         return CheckResult(
             passed=True,
             message=f"Found {len(annotations)} markdown link(s)",
-            annotations={"discovered_markdown_links": annotations},
+            annotations={"discovered_markdown_links": [*annotations]},
         )
     return CheckResult(passed=True, message="No markdown links found")
 
 
 def check_markdown_link_targets_exist(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Verify each discovered markdown link resolves to an existing path.
@@ -121,11 +116,7 @@ def check_markdown_link_targets_exist(
     to the source file's parent directory. Each missing target is one occurrence
     located on its own line; passes when all resolve.
     """
-    entries: list[str] = []
-    for value in args.values():
-        if isinstance(value, list):
-            entries = value
-            break
+    entries = annotation_entries(args)
     if not entries:
         return CheckResult(passed=True, message="No markdown links to check")
     missing: list[tuple[str, str]] = []

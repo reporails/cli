@@ -6,14 +6,15 @@ Pure: takes the findings as detected and the resolved dependency map, no IO.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any
+
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
 
 def drop_dependent_findings(
-    findings: Iterable[Any],
+    findings: Iterable[FindingItem],
     dependencies: Mapping[str, frozenset[str]],
     whole_run_checks: frozenset[str],
-) -> list[Any]:
+) -> list[FindingItem]:
     """The findings that remain once those covered by a rule they depend on are dropped.
 
     A finding of rule R is covered when R depends on D and D has a finding on the same file.
@@ -28,9 +29,9 @@ def drop_dependent_findings(
     for f in items:
         files_by_rule.setdefault(f.rule, set()).add(f.file)
 
-    def _covered(f: Any) -> bool:
+    def _covered(f: FindingItem) -> bool:
         deps = dependencies.get(f.rule, frozenset()) - {f.rule}
-        if getattr(f, "check_id", "") in whole_run_checks:
+        if f.check_id in whole_run_checks:
             return any(d in files_by_rule for d in deps)
         return any(f.file in files_by_rule.get(d, ()) for d in deps)
 

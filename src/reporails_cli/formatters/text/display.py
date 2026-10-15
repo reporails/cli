@@ -7,21 +7,21 @@ scorecard rendering lives in scorecard.py.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from rich.console import Console
 
 from reporails_cli.core.platform.adapters.api_key import has_api_key
-from reporails_cli.core.platform.dto.diagnostics import KNOWN_ERRORS, UNENTITLED_TIERS, FunnelError
-from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.dto.diagnostics import KNOWN_ERRORS, UNENTITLED_TIERS, FindingItem, FunnelError, Notice
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
 from reporails_cli.core.platform.runtime.merger import (
     CombinedResult,
     normalize_finding_path,
 )
 from reporails_cli.formatters.text.display_constants import (
+    FILE_PANEL_ORDER,
     HRULE,
     NAMED_OVERLAP_PAIRS,
     Element,
@@ -62,7 +62,6 @@ console = Console()
 
 # ── Group rendering ───────────────────────────────────────────────────
 
-_GROUP_ORDER = ("main", "nested", "agents", "skills", "rules", "config", "memory", "imported", "referenced", "file")
 _GROUP_LABELS = {
     "main": "Main",
     "nested": "Nested",
@@ -79,11 +78,11 @@ _GROUP_LABELS = {
 
 def _render_group_header(
     gkey: str,
-    group_files: list[tuple[str, list[Any]]],
-    ruleset_map: Any,
+    group_files: list[tuple[str, list[FindingItem]]],
+    ruleset_map: RulesetMap | None,
     project_root: Path,
     *,
-    atoms_by_path: dict[str, list[Any]] | None = None,
+    atoms_by_path: dict[str, list[Atom]] | None = None,
     skill_of: dict[str, str] | None = None,
     scanned_items: int | None = None,
 ) -> None:
@@ -101,7 +100,7 @@ def _render_group_header(
     console.print(f"  [dim]\u250c\u2500[/dim] [bold]{label}[/bold] [dim]({n_items})[/dim]{stats}")
 
 
-def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: CardContext) -> None:
+def _render_one_group(gkey: str, group_files: list[tuple[str, list[FindingItem]]], ctx: CardContext) -> None:
     """Render a single file group: header, file cards, footer."""
 
     _render_group_header(
@@ -132,9 +131,9 @@ def _render_one_group(gkey: str, group_files: list[tuple[str, list[Any]]], ctx: 
     console.print(f"  [dim]\u2514\u2500 {shown} findings[/dim]\n")
 
 
-def _render_file_groups(groups: dict[str, list[tuple[str, list[Any]]]], ctx: CardContext) -> None:
+def _render_file_groups(groups: dict[str, list[tuple[str, list[FindingItem]]]], ctx: CardContext) -> None:
     """Render all file groups with cards."""
-    for gkey in _GROUP_ORDER:
+    for gkey in FILE_PANEL_ORDER:
         group_files = groups.get(gkey, [])
         if group_files:
             _render_one_group(gkey, group_files, ctx)
@@ -156,7 +155,7 @@ def _render_detail_cta() -> None:
         )
 
 
-def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str], verbose: bool = False) -> None:
+def _render_cross_file_coordinates(result: CombinedResult, sev_icons: dict[str, str], verbose: bool = False) -> None:
     """Render the cross-file coordinates section (free tier).
 
     Only `repetition` and `overlap` coordinates reach here \u2014 `merge_results`
@@ -184,8 +183,8 @@ def _render_cross_file_coordinates(result: Any, sev_icons: dict[str, str], verbo
 
 
 def _collect_files_and_scope(
-    result: Any,
-    ruleset_map: Any,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | None,
     project_root: Path,
 ) -> tuple[set[str], ScopeInfo]:
     """Collect all file paths and instruction scope breakdown.
@@ -212,7 +211,7 @@ def _collect_files_and_scope(
     return all_files, scope
 
 
-def _count_atoms(atoms: Any) -> ScopeInfo:
+def _count_atoms(atoms: Iterable[Atom]) -> ScopeInfo:
     """Count atom types and return as ScopeInfo."""
     n_dir = n_con = n_amb = n_total = 0
     for a in atoms:
@@ -226,7 +225,7 @@ def _count_atoms(atoms: Any) -> ScopeInfo:
     return ScopeInfo(n_dir=n_dir, n_con=n_con, n_amb=n_amb, n_prose=n_total - n_dir - n_con, n_atoms=n_total)
 
 
-def _detect_agent_name(ruleset_map: Any, run_agents: tuple[str, ...] = ()) -> str:
+def _detect_agent_name(ruleset_map: RulesetMap | None, run_agents: tuple[str, ...] = ()) -> str:
     """Detect the agent(s) whose rules ran, from the ruleset map's file records.
 
     A single resolved agent returns its id, unchanged. Two or more distinct agent ids
@@ -250,7 +249,7 @@ def _detect_agent_name(ruleset_map: Any, run_agents: tuple[str, ...] = ()) -> st
     return " + ".join(sorted({a for a in run_agents if a != "generic"}))
 
 
-def _detect_tier(result: Any, has_quality: bool) -> str:
+def _detect_tier(result: CombinedResult, has_quality: bool) -> str:
     """Determine the display tier string from the wire tier, never local credentials.
 
     `result.reply.tier` is the tier the diagnostic response reported and is the single
@@ -290,7 +289,7 @@ def _print_header(tier: str) -> None:
     console.print(f"\n[bold]Reporails[/bold] \u2014 Diagnostics{tier_badge}\n")
 
 
-def _print_notices(notices: Any, ascii_mode: bool) -> None:
+def _print_notices(notices: Sequence[Notice], ascii_mode: bool) -> None:
     """Print the notices under the header, then a blank line; nothing when there are none."""
     if not notices:
         return
@@ -300,13 +299,13 @@ def _print_notices(notices: Any, ascii_mode: bool) -> None:
 
 
 def print_text_result(
-    result: object,
+    result: CombinedResult,
     elapsed_ms: float,
     ascii_mode: bool,
     verbose: bool,
     *,
-    ruleset_map: object = None,
-    funnel_error: object = None,
+    ruleset_map: RulesetMap | None = None,
+    funnel_error: FunnelError | None = None,
     project_root: Path | None = None,
     file_type_by_path: dict[str, str] | None = None,
 ) -> None:
@@ -320,9 +319,6 @@ def print_text_result(
     from the run's `target` so single-path scans line up with their findings
     instead of falling back to the neutral view. Defaults to cwd.
     """
-
-    if not isinstance(result, CombinedResult):
-        return
 
     root = project_root or Path.cwd()
     all_files, scope = _collect_files_and_scope(result, ruleset_map, root)
@@ -358,13 +354,13 @@ def print_text_result(
 class _SummaryInputs:
     """What the bottom scorecard states about the run: scope, tier and elapsed time."""
 
-    scope: Any
+    scope: ScopeInfo
     tier: str
     elapsed_ms: float
 
 
 def _element_lookups(
-    result: Any, ruleset_map: Any, project_root: Path
+    result: CombinedResult, ruleset_map: RulesetMap | None, project_root: Path
 ) -> tuple[Callable[[str], Element] | None, Callable[[str], list[str]] | None]:
     """The element and partner lookups, built once per run and only when an overlap line or a
     per-file overlap row will name an element."""
@@ -377,8 +373,8 @@ def _element_lookups(
 
 
 def _build_card_context(
-    result: Any,
-    ruleset_map: Any,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | None,
     project_root: Path,
     *,
     ascii_mode: bool,
@@ -389,7 +385,9 @@ def _build_card_context(
     """The per-run card context and the per-surface scores its group headers quote."""
     element_of, partners_of = _element_lookups(result, ruleset_map, project_root)
     atoms_by_path = (
-        index_atoms_by_norm_path(ruleset_map.atoms, project_root) if getattr(ruleset_map, "atoms", None) else {}
+        index_atoms_by_norm_path(ruleset_map.atoms, project_root)
+        if ruleset_map is not None and ruleset_map.atoms
+        else {}
     )
     aliases_by_file = build_aliases_by_file(project_root, result)
     surfaces = compute_surface_scores(
@@ -417,8 +415,8 @@ def _build_card_context(
 
 
 def _render_findings_and_scorecard(
-    result: Any,
-    ruleset_map: Any,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | None,
     *,
     ascii_mode: bool,
     verbose: bool,
@@ -470,10 +468,10 @@ def _render_findings_and_scorecard(
     )
 
 
-def _render_funnel_cta(funnel_error: object) -> None:
+def _render_funnel_cta(funnel_error: FunnelError | None) -> None:
     """Render the conversion CTA + bug-report link when a FunnelError is present."""
 
-    if not isinstance(funnel_error, FunnelError):
+    if funnel_error is None:
         return
     cta = format_cta(funnel_error)
     if not cta:

@@ -31,7 +31,6 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 import httpx
 from filelock import FileLock, Timeout
@@ -107,7 +106,7 @@ def _lock_path(cache_dir: Path, version: str) -> Path:
 
 
 @functools.cache
-def _file_lock_class() -> type:
+def _file_lock_class() -> type[FileLock]:
     """A ``FileLock`` that raises ``NotImplementedError`` where the filesystem has no file locking."""
 
     class _HardFileLock(FileLock):
@@ -131,7 +130,7 @@ def _fetch_lock(cache_dir: Path, version: str) -> Iterator[None]:
                 lock.release()
 
 
-def _acquire_file_lock(lock: Any, cache_dir: Path, version: str) -> bool:
+def _acquire_file_lock(lock: FileLock, cache_dir: Path, version: str) -> bool:
     """Take *lock*, waiting while another process's download of *version* makes progress.
 
     Returns False without the lock when the filesystem has no file locking, or when the
@@ -148,7 +147,7 @@ def _acquire_file_lock(lock: Any, cache_dir: Path, version: str) -> bool:
         return False
 
 
-def _wait_while_progressing(lock: Any, cache_dir: Path, version: str) -> bool:
+def _wait_while_progressing(lock: FileLock, cache_dir: Path, version: str) -> bool:
     """Retry *lock* while the other download grows.
 
     Returns False once the model set is in place (another run finished it) or the other
@@ -187,11 +186,11 @@ def _staged_bytes(cache_dir: Path, version: str) -> int:
     return total
 
 
-def download_in_progress(version: str = MODEL_VERSION) -> bool:
-    """Whether a download of *version* is running now, in this process or another."""
+def download_in_progress() -> bool:
+    """Whether a download of the model version is running now, in this process or another."""
     if _FETCH_LOCK.locked():
         return True
-    lock_path = _lock_path(cache_models_dir(version).parent, version)
+    lock_path = _lock_path(cache_models_dir(MODEL_VERSION).parent, MODEL_VERSION)
     if not lock_path.exists():
         return False
     lock = _file_lock_class()(str(lock_path))

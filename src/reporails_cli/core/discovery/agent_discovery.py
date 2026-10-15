@@ -8,11 +8,14 @@ from __future__ import annotations
 import glob
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.discovery.agent_config import (
+    SURFACE_BUCKETS,
+    SurfaceBucket,
     categorize_file_type,
     extract_patterns,
     extract_properties,
@@ -34,8 +37,9 @@ from reporails_cli.core.discovery.walk import (
     walk_glob_matches,
     walk_markdown,
 )
+from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.policy.exclusion import excluded_by_name
-from reporails_cli.core.platform.utils.utils import config_pattern_matches, matches_any_glob
+from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_rooted_pattern, matches_any_glob
 
 if TYPE_CHECKING:
     from reporails_cli.core.platform.dto.results import ProjectConfig
@@ -43,7 +47,7 @@ if TYPE_CHECKING:
 # Capabilities whose user-scope (home / absolute) patterns are NOT auto-pulled
 # into a repo-scoped check — they enumerate cross-project surfaces reachable
 # only via an explicit capability target (e.g. `ails check subagent_memory`).
-# Filtered via `is_external_pattern` (defined below).
+# Filtered via `is_rooted_pattern`.
 _USER_SCOPE_OPT_IN_CAPABILITIES = frozenset({"subagent_memory"})
 
 # Capabilities whose user-scope patterns are project-specific despite the `~`
@@ -96,7 +100,7 @@ def walk_ancestors(start: Path, filename: str, stop: Path) -> list[Path]:
     return results
 
 
-def is_eager_global(properties: dict[str, str]) -> bool:
+def is_eager_global(properties: Mapping[str, str | list[str]]) -> bool:
     """File_type loads at session start with global scope (e.g., main, override).
 
     These files are loaded by the agent from the cwd ancestor chain — not
@@ -106,7 +110,7 @@ def is_eager_global(properties: dict[str, str]) -> bool:
     return properties.get("scope") == "global" and properties.get("loading") == "session_start"
 
 
-def is_nested(properties: dict[str, str]) -> bool:
+def is_nested(properties: Mapping[str, str | list[str]]) -> bool:
     """File_type whose subtree applicability comes from file LOCATION, not frontmatter.
 
     `scope: nested` declares: this surface applies to a subdirectory subtree
@@ -115,11 +119,6 @@ def is_nested(properties: dict[str, str]) -> bool:
     the agent loads only when descending into those subdirectories.
     """
     return properties.get("scope") == "nested"
-
-
-def is_external_pattern(pattern: str) -> bool:
-    """Pattern resolves outside project (~/..., /abs, C:/...)."""
-    return pattern.startswith("~") or pattern.startswith("/") or (len(pattern) > 1 and pattern[1] == ":")
 
 
 # Memory surfaces share an index-and-recall shape across agents (claude +
@@ -243,7 +242,7 @@ def _run_descendant_recursive(
 def glob_file_type_patterns(
     target: Path,
     patterns: list[str],
-    properties: dict[str, str] | None,
+    properties: Mapping[str, str | list[str]] | None,
     exclude_dirs: frozenset[str],
 ) -> list[Path]:
     """Glob file_type patterns against target directory.
@@ -274,7 +273,7 @@ def glob_file_type_patterns(
             # -> enumerate `*.md` files inside the matched directories.
             _glob_directory_entries(pattern, target, found, exclude_dirs)
             continue
-        if is_external_pattern(pattern):
+        if is_rooted_pattern(pattern):
             _glob_external(pattern, target, found)
             continue
 
@@ -337,7 +336,7 @@ def _glob_directory_entries(
     mis-tagged them `generic`.
     """
     dir_pattern = pattern.rstrip("/")
-    if is_external_pattern(dir_pattern):
+    if is_rooted_pattern(dir_pattern):
         expanded_str = Path(dir_pattern).expanduser().as_posix()
         if "/projects/*/" in expanded_str:
             expanded_str = expanded_str.replace("/projects/*/", f"/projects/{claude_project_folder_name(target)}/")
@@ -389,9 +388,9 @@ def _repo_scoped_patterns(
             return [
                 p.removeprefix(prefix) if p.startswith(prefix) else p
                 for p in patterns
-                if p.startswith(prefix) or not is_external_pattern(p)
+                if p.startswith(prefix) or not is_rooted_pattern(p)
             ]
-        return [p for p in patterns if not is_external_pattern(p)]
+        return [p for p in patterns if not is_rooted_pattern(p)]
     return patterns
 
 
@@ -409,7 +408,7 @@ class _AgentScope:
     plugin_roots: dict[str, list[Path]] = field(default_factory=dict)
 
 
-def _discover_surface(scope: _AgentScope, ft_name: str, spec: dict[str, Any]) -> tuple[str, list[Path]] | None:
+def _discover_surface(scope: _AgentScope, ft_name: str, spec: JsonObject) -> tuple[SurfaceBucket, list[Path]] | None:
     """The bucket and files of one file type, None when the file type contributes nothing."""
     target = scope.target
     patterns = _repo_scoped_patterns(extract_patterns(spec), ft_name, scope.repo_scoped, scope.user_dir)
@@ -438,7 +437,6 @@ def _discover_surface(scope: _AgentScope, ft_name: str, spec: dict[str, Any]) ->
 def discover_from_config(
     target: Path,
     agent_id: str,
-    rules_paths: list[Path] | None = None,
     extra_exclude_dirs: frozenset[str] | None = None,
     *,
     project_config: ProjectConfig | None = None,
@@ -453,7 +451,7 @@ def discover_from_config(
     Returns (instruction_files, rule_files, config_files) or None if
     no config.yml is available for this agent.
     """
-    file_types = load_config_file_types(agent_id, rules_paths)
+    file_types = load_config_file_types(agent_id)
     if file_types is None:
         return None
 
@@ -474,7 +472,7 @@ def discover_from_config(
             g for ft_name in file_types for g in surface_exclude_patterns(agent_id, ft_name, project_config)
         ],
     )
-    buckets: dict[str, list[Path]] = {"instruction": [], "rule": [], "config": []}
+    buckets: dict[SurfaceBucket, list[Path]] = {bucket: [] for bucket in SURFACE_BUCKETS}
     for ft_name, spec in file_types.items():
         if not isinstance(spec, dict):
             continue

@@ -9,10 +9,13 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace as _replace
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.platform.contract.json_value import as_int
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import (
+    CombinedResult,
     CombinedStats,
     count_cross_file_overlaps,
     count_cross_file_repetitions,
@@ -21,7 +24,7 @@ from reporails_cli.core.platform.runtime.merger import (
 from reporails_cli.formatters.text.health import mean_display_score
 
 
-def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) -> Any:
+def filter_result_to_paths(result: CombinedResult, paths: set[Path], project_root: Path) -> CombinedResult:
     """Return a CombinedResult containing only rows for `paths`.
 
     Filters findings, cross-file pairs, per-file analysis, AND the
@@ -71,7 +74,7 @@ def filter_result_to_paths(result: Any, paths: set[Path], project_root: Path) ->
     )
 
 
-def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
+def _filter_quality(quality: QualityResult | None, per_file: tuple[FileAnalysis, ...]) -> QualityResult | None:
     """Rewrite the aggregate display score from the filtered per-file set.
 
     The whole-project `display_score` covers every file; once
@@ -82,19 +85,21 @@ def _filter_quality(quality: Any, per_file: tuple[Any, ...]) -> Any:
     if quality is None:
         return None
 
-    if not any(int(fa.stats.get("atoms", 0) or 0) > 0 for fa in per_file):
+    if not any(as_int(fa.stats.get("atoms"), 0) > 0 for fa in per_file):
         return None
     # All-unscored subset (every file has a None score) → fall back to the reported
     # whole-project aggregate, which itself may be `None` when the whole project has
     # no scorable content — the renderer treats that as "n/a", never as a fabricated
     # score, so passing `None` through here is correct, not a missed case.
-    mean_score = mean_display_score(list(per_file)) if per_file else quality.display_score
+    mean_score = mean_display_score(per_file) if per_file else quality.display_score
     if mean_score is None:
         mean_score = quality.display_score
     return _replace(quality, display_score=mean_score)
 
 
-def filter_ruleset_map_to_paths(ruleset_map: Any, paths: set[Path], project_root: Path) -> Any:
+def filter_ruleset_map_to_paths(
+    ruleset_map: RulesetMap | None, paths: set[Path], project_root: Path
+) -> RulesetMap | None:
     """Return a RulesetMap restricted to `paths` (matching files + their atoms)."""
     if ruleset_map is None or not paths:
         return ruleset_map

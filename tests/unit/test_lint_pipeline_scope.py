@@ -5,8 +5,6 @@ Covers:
   `[text](path)` inside backticks must not surface as a real link.
 - `_resolve_glob_targets` in `core/lint/mechanical/checks.py` — `args.path`
   globs must honor `.ails/config.yml: exclude_dirs`.
-- `_relativize` in `core/lint/mechanical/runner.py` — paths under root
-  serialize as project-relative; anything else falls back to basename.
 - `_classified_display` in `core/lint/mechanical/runner.py` — files the
   classifier marked `precedence: user` serialize with a `~/<rel>` prefix
   when rooted under the user's home; classifier output is the source of
@@ -32,7 +30,6 @@ from reporails_cli.core.lint.mechanical.checks_links import (
 from reporails_cli.core.lint.mechanical.runner import (
     _classified_display,
     _first_classified_path,
-    _relativize,
 )
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
@@ -163,32 +160,6 @@ class TestGetTargetFilesNarrowing:
         cf = ClassifiedFile(path=claude_md, file_type="main", properties={})
         result = get_target_files({"path": "**/*.md"}, [cf], tmp_path)
         assert result == [claude_md]
-
-
-# ── _relativize ───────────────────────────────────────────────────────
-
-
-class TestRelativize:
-    """Pure path/root helper: under root → root-relative; else basename."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_under_root_returns_relative(self, tmp_path: Path) -> None:
-        path = tmp_path / "src" / "x.py"
-        assert _relativize(path, tmp_path) == "src/x.py"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_outside_root_returns_basename(self, tmp_path: Path) -> None:
-        path = Path.home() / ".claude" / "CLAUDE.md"
-        # No classifier context here — _relativize does not consult home.
-        assert _relativize(path, tmp_path) == "CLAUDE.md"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_no_root_returns_basename(self) -> None:
-        path = Path.home() / ".claude" / "CLAUDE.md"
-        assert _relativize(path, None) == "CLAUDE.md"
 
 
 # ── _classified_display ───────────────────────────────────────────────

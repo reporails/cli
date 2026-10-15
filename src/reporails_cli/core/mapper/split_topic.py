@@ -18,7 +18,7 @@ sub-atom keeps the charge `build_split_atom` assigned it.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 from reporails_cli.core.mapper.charge_floors import TABLE_HEADER_RULE, is_quoted_line
 from reporails_cli.core.mapper.embed import _embed_atoms_deduped
@@ -27,10 +27,13 @@ from reporails_cli.core.mapper.markers import reformat_spans
 from reporails_cli.core.mapper.parse import build_split_atom, keep_lead_in_on_last, reindex_positions
 from reporails_cli.core.platform.dto.ruleset import Atom
 
+if TYPE_CHECKING:
+    from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
+
 
 def split_over_merged_atoms(
     atoms: list[Atom],
-    encoder: Any,
+    encoder: OnnxEmbedder,
     recharge: Callable[[list[Atom]], None] | None = None,
 ) -> tuple[list[Atom], int]:
     """Split over-merged atoms into per-clause sub-atoms; re-index positions.

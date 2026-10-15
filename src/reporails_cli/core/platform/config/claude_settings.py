@@ -21,11 +21,12 @@ from __future__ import annotations
 import glob
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.platform.config.config import get_agent_config_path
-from reporails_cli.core.platform.utils.utils import load_yaml_file
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, pattern_list
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern, load_yaml_file
 
 logger = logging.getLogger(__name__)
 
@@ -43,23 +44,19 @@ MODES_WITHOUT_AGENTS_MD = frozenset({MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
 def _settings_patterns() -> dict[str, list[str]]:
     """Scope name -> settings-file patterns, from Claude's `config` file type."""
     try:
-        data = load_yaml_file(get_agent_config_path("claude")) or {}
+        data = as_object(load_yaml_file(get_agent_config_path("claude")))
     except (OSError, ValueError):
         logger.debug("Claude agent config unreadable; no Claude settings read", exc_info=True)
         return {}
-    scopes = (((data.get("file_types") or {}).get("config") or {}).get("scopes")) or {}
-    out: dict[str, list[str]] = {}
-    for name, spec in scopes.items():
-        patterns = (spec or {}).get("patterns") or []
-        out[str(name)] = [str(p) for p in patterns]
-    return out
+    scopes = as_object(as_object(as_object(data.get("file_types")).get("config")).get("scopes"))
+    return {str(name): pattern_list(as_object(spec).get("patterns")) for name, spec in scopes.items()}
 
 
 def _expand(patterns: list[str], project_root: Path | None) -> list[Path]:
     """Existing files for `patterns`; relative ones resolve against `project_root`."""
     files: list[Path] = []
     for pattern in patterns:
-        if pattern.startswith("~") or pattern.startswith("/") or (len(pattern) > 1 and pattern[1] == ":"):
+        if is_rooted_pattern(pattern):
             expanded = str(Path(pattern).expanduser())
         elif project_root is not None:
             expanded = str(project_root / pattern)
@@ -79,13 +76,13 @@ def _is_readable_file(path: Path) -> bool:
         return False
 
 
-def _read_json(path: Path) -> dict[str, Any]:
+def _read_json(path: Path) -> JsonObject:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data: JsonValue = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         logger.debug("Claude settings file unreadable: %s", path, exc_info=True)
         return {}
-    return data if isinstance(data, dict) else {}
+    return as_object(data)
 
 
 def _managed_files(scopes: dict[str, list[str]]) -> list[Path]:
@@ -93,7 +90,7 @@ def _managed_files(scopes: dict[str, list[str]]) -> list[Path]:
     return _expand(scopes.get("managed", []), None) + _expand(scopes.get("managed_dropin", []), None)
 
 
-def _mode_value(data: dict[str, Any]) -> str | None:
+def _mode_value(data: JsonObject) -> str | None:
     configs = data.get("pluginConfigs")
     entry = configs.get(AGENTS_MD_PLUGIN) if isinstance(configs, dict) else None
     options = entry.get("options") if isinstance(entry, dict) else None
@@ -101,15 +98,15 @@ def _mode_value(data: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _enabled_value(data: dict[str, Any]) -> bool | None:
+def _enabled_value(data: JsonObject) -> bool | None:
     enabled = data.get("enabledPlugins")
     value = enabled.get(AGENTS_MD_PLUGIN) if isinstance(enabled, dict) else None
     return value if isinstance(value, bool) else None
 
 
-def _last_set(files: list[Path], read: Any) -> Any:
+def _last_set[T](files: list[Path], read: Callable[[JsonObject], T | None]) -> T | None:
     """The value the last file in `files` sets (later files override earlier ones), else None."""
-    found = None
+    found: T | None = None
     for path in files:
         value = read(_read_json(path))
         if value is not None:

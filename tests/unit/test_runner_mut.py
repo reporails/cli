@@ -2,7 +2,7 @@
 
 Targets the operators that survived the mutation probe: frontmatter stripping,
 path-filter globstar handling, dedup/existence guards, the OSError/ValueError
-fallbacks, combined-scan group handling, default kwargs, the None-path guards,
+fallbacks, the None-path guards,
 min_lines gating, and the finding-emission paths. Each test asserts an OUTPUT
 that flips when the operator under it is mutated (verified against the probe).
 """
@@ -17,15 +17,13 @@ import pytest
 import regex
 import yaml
 
-from reporails_cli.core.lint.regex.compiler import CombinedPattern, CompiledCheck, compile_rules
+from reporails_cli.core.lint.regex.compiler import CompiledCheck, compile_rules
 from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
+    _compile_ruleset,
     _is_text_file,
     _resolve_scan_targets,
     _scan_all_targets,
-    _scan_combined,
-    checks_per_file,
-    run_validation,
 )
 from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
@@ -37,7 +35,6 @@ def _make_check(
     negative_patterns: tuple[regex.Pattern[str], ...] = (),
     either_patterns: tuple[regex.Pattern[str], ...] = (),
     path_includes: tuple[str, ...] = (),
-    body_only: bool = False,
     every_match: bool = False,
 ) -> CompiledCheck:
     return CompiledCheck(
@@ -48,7 +45,6 @@ def _make_check(
         negative_patterns=negative_patterns,
         either_patterns=either_patterns,
         path_includes=path_includes,
-        body_only=body_only,
         every_match=every_match,
     )
 
@@ -67,12 +63,8 @@ def _write_yml(tmp_path: Path, data: dict[str, Any], name: str = "rule.yml") -> 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_strip_frontmatter_closing_at_eof() -> None:
-    """Frontmatter whose closing '---' is the last line strips to blank lines.
-
-    Kills L32 `==->!=`: without the -1 -> len(content) fixup a trailing char
-    leaks through.
-    """
-    assert strip_frontmatter("---\nkey: val\n---", keep_lines=True) == "\n\n"
+    """Frontmatter whose closing '---' is the last line strips to nothing."""
+    assert strip_frontmatter("---\nkey: val\n---") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -117,34 +109,14 @@ def test_is_text_file_oserror_returns_false(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _scan_combined — None-group guard (L303)
+# _scan_file emits every match
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_scan_combined_skips_unnamed_group_match() -> None:
-    """A match whose lastgroup is None is skipped, not dereferenced (L303 `and->or`)."""
-    check = _make_check("G0")
-    combined = CombinedPattern(
-        regex=regex.compile(r"(?P<g0>foo)|(bar)"),
-        group_to_check={"g0": check},
-    )
-    results: list[dict[str, Any]] = []
-    rule_defs: dict[str, dict[str, Any]] = {}
-    _scan_combined("bar", "f.md", [combined], results=results, rule_defs=rule_defs, unfinished=[])
-    assert results == []
-
-
-# ---------------------------------------------------------------------------
-# _scan_file default first_match_only (L324)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_scan_emits_all_matches_by_default(tmp_path: Path) -> None:
-    """By default every match is emitted, not just the first (L324 `False->True`)."""
+def test_scan_emits_every_match(tmp_path: Path) -> None:
+    """Every match of a check is emitted, not just the first."""
     check = _make_check("M1", either_patterns=(regex.compile("alpha"), regex.compile("beta")))
     f = tmp_path / "CLAUDE.md"
     f.write_text("alpha beta", encoding="utf-8")
@@ -155,30 +127,15 @@ def test_scan_emits_all_matches_by_default(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_validation / checks_per_file None-path guards (L391, L656, L664)
+# _compile_ruleset None-path guard (L391)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_run_validation_filters_none_path(tmp_path: Path) -> None:
+def test_compile_ruleset_filters_none_path() -> None:
     """A falsy yml path is filtered out, not dereferenced (L391 `and->or`)."""
-    assert run_validation([None], tmp_path) == {"runs": []}  # type: ignore[list-item]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_checks_per_file_filters_none_path(tmp_path: Path) -> None:
-    """A falsy yml path is filtered out in checks_per_file (L656 `and->or`)."""
-    assert checks_per_file([None], tmp_path, []) == {}  # type: ignore[list-item]
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_checks_per_file_none_instruction_files(tmp_path: Path) -> None:
-    """instruction_files=None iterates an empty list, not None (L664 `or->and`)."""
-    yml = _write_yml(tmp_path, {"checks": [{"id": "R1", "pattern-regex": "a", "message": "x"}]})
-    assert checks_per_file([yml], tmp_path, None) == {}
+    assert _compile_ruleset([None]).checks == []  # type: ignore[list-item]
 
 
 # ---------------------------------------------------------------------------

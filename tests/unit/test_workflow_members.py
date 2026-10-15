@@ -244,6 +244,20 @@ def test_the_brief_makes_an_op_of_every_nested_member(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
+def test_the_brief_drops_an_unknown_op_with_a_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    wire = _wire(C42, 1, line=3)
+    wire["op"] = "frobnicate"
+    location = {**_loc_wire([wire]), "relations": []}
+
+    with caplog.at_level("WARNING", logger="reporails_cli.core.heal.keyed"):
+        ops, _ = remedy_brief._location_ops(location, tmp_path, [str((tmp_path / "CLAUDE.md").resolve())])
+
+    assert ops == []
+    assert any("frobnicate" in r.getMessage() and C42 in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
 def test_the_mcp_index_counts_owners_and_members_as_findings() -> None:
     from reporails_cli.formatters.mcp import _workflow_index
 

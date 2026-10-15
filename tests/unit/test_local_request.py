@@ -9,14 +9,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from reporails_cli.core.pipeline import assemble as assemble_module
 from reporails_cli.core.pipeline.assemble import AssembleInputs, lint_request_local
 from reporails_cli.core.platform.adapters.payload import project_local
-from reporails_cli.core.platform.dto.models import LocalEntry
+from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
 
 _MAIN = (
@@ -93,7 +92,7 @@ def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
         ),
         atoms=(),
     )
-    finding = SimpleNamespace(rule="CORE:S:0056", file=str(supporting), line=1, severity="error")
+    finding = LocalFinding(rule="CORE:S:0056", file=str(supporting), line=1, severity="error", message="")
     monkeypatch.setattr(assemble_module, "reported_local_findings", lambda inp: (finding,))
 
     inp = AssembleInputs(

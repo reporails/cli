@@ -1,1 +1,1 @@
-"""Caches and content hashes: map, full-map and check caches, plus the hashing helpers."""
+"""Caches and content hashes: map and full-map caches, plus the hashing helpers."""

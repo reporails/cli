@@ -14,6 +14,7 @@ import pytest
 from rich.text import Text
 
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.runtime.merger import CombinedStats, Omissions, ServerReply
 from reporails_cli.formatters.text import item_scorecard, scorecard
 from reporails_cli.formatters.text.health import SurfaceHealth
@@ -48,6 +49,7 @@ class _Result:
     per_file_analysis: tuple = ()
     reply: ServerReply = field(default_factory=ServerReply)
     omissions: Omissions = field(default_factory=Omissions)
+    level: Level = Level.L0
 
 
 def _f(rule: str, severity: str = "warning", tier: str = "", line: int = 1) -> FindingItem:

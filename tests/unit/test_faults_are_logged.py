@@ -10,6 +10,7 @@ import pytest
 from reporails_cli.core.classify import file_tags
 from reporails_cli.core.discovery import agent_config, project_root
 from reporails_cli.core.mapper import inspect as mapper_inspect
+from reporails_cli.core.platform.contract.errors import BundledConfigMissingError
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def test_root_markers_warns_about_an_unreadable_agent_config(broken_rules_dir: P
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_memory_surface_dirs_warns_about_an_unreadable_agent_config(broken_rules_dir: Path, caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name):
+    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name), pytest.raises(BundledConfigMissingError):
         file_tags._memory_surface_dirs()
     assert str(broken_rules_dir / "broken" / "config.yml") in caplog.text
 
@@ -45,7 +46,7 @@ def test_memory_surface_dirs_warns_about_an_unreadable_agent_config(broken_rules
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_config_surface_patterns_warns_about_an_unreadable_agent_config(broken_rules_dir: Path, caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name):
+    with caplog.at_level(logging.WARNING, logger=agent_config.logger.name), pytest.raises(BundledConfigMissingError):
         file_tags._config_surface_patterns()
     assert str(broken_rules_dir / "broken" / "config.yml") in caplog.text
 
@@ -131,9 +132,8 @@ def test_a_project_config_that_is_not_yaml_is_refused_in_one_line(tmp_path: Path
 @pytest.mark.unit
 @pytest.mark.subsys_runtime
 def test_load_yaml_file_rereads_an_edited_file(tmp_path: Path) -> None:
-    from reporails_cli.core.platform.utils.utils import clear_yaml_cache, load_yaml_file
+    from reporails_cli.core.platform.utils.utils import load_yaml_file
 
-    clear_yaml_cache()
     f = tmp_path / "c.yml"
     f.write_text("a: 1\n", encoding="utf-8")
     assert load_yaml_file(f) == {"a": 1}

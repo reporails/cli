@@ -14,7 +14,6 @@ import contextlib
 import logging
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.exclusions import RunExclusions
@@ -25,19 +24,18 @@ from reporails_cli.core.lint.regex.compiler import display_severity
 from reporails_cli.core.mapper.skills import skill_entry_paths, skill_membership
 from reporails_cli.core.platform.adapters.registry import load_rules
 from reporails_cli.core.platform.config.config import get_project_config
-from reporails_cli.core.platform.dto.models import Execution, LocalFinding, Rule, RuleType
+from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK
+from reporails_cli.core.platform.dto.models import ClassifiedFile, Execution, LocalFinding, Rule, RuleType
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.policy.matching import match_files
 
 logger = logging.getLogger(__name__)
 
-_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
-
 
 def _collect_mechanical_findings(
     rules: dict[str, Rule],
     project_dir: Path,
-    classified: list[Any],
+    classified: list[ClassifiedFile],
     *,
     scoped: bool = False,
     project_checks: str = "all",
@@ -89,7 +87,7 @@ def _min_lines_overrides(project_dir: Path) -> dict[str, int]:
     return overrides
 
 
-def _deterministic_targets(rule: Rule, instruction_files: list[Path], classified: list[Any]) -> list[Path]:
+def _deterministic_targets(rule: Rule, instruction_files: list[Path], classified: list[ClassifiedFile]) -> list[Path]:
     """The files a deterministic rule runs on: those its `match` criteria select, else every instruction file."""
     if rule.match:
         return [cf.path for cf in match_files(classified, rule.match)]
@@ -100,7 +98,7 @@ def _collect_deterministic_findings(
     rules: dict[str, Rule],
     project_dir: Path,
     instruction_files: list[Path],
-    classified: list[Any],
+    classified: list[ClassifiedFile],
 ) -> list[LocalFinding]:
     """Run deterministic checks against matched target files.
 
@@ -135,7 +133,7 @@ def _collect_deterministic_findings(
 
 def _extend_with_generic(
     instruction_files: list[Path],
-    classified: list[Any],
+    classified: list[ClassifiedFile],
     generic_scanning: bool,
 ) -> list[Path]:
     """Append link-walked generic-class files so rules without explicit `match` see them."""
@@ -156,7 +154,7 @@ def _classify_agent_files(
     agent: str,
     skills: Mapping[str, str] | None = None,
     exclusions: RunExclusions | None = None,
-) -> tuple[list[Any], bool]:
+) -> tuple[list[ClassifiedFile], bool]:
     """Classify `instruction_files` with `agent`'s file types; also return whether generic scanning is on."""
     file_types = load_file_types(agent or "generic", project_root=project_dir)
     try:
@@ -208,7 +206,7 @@ def run_m_probes(
     if project_checks != "only":
         findings.extend(_collect_deterministic_findings(rules, project_dir, effective_files, classified))
 
-    findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 9), f.line))
+    findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9), f.line))
     return findings
 
 
@@ -229,9 +227,9 @@ def _files_by_first_agent(
     pairs: list[tuple[str, list[Path]]],
     skills: Mapping[str, str] | None,
     exclusions: RunExclusions | None,
-) -> dict[Path, tuple[str, Any]]:
+) -> dict[Path, tuple[str, ClassifiedFile]]:
     """Each file the pairs name, classified by the first agent that lists it: path -> (agent, classified file)."""
-    seen: dict[Path, tuple[str, Any]] = {}
+    seen: dict[Path, tuple[str, ClassifiedFile]] = {}
     for agent_id, agent_files in pairs:
         for cf in _classify_agent_files(project_dir, agent_files, agent_id, skills, exclusions)[0]:
             seen.setdefault(cf.path, (agent_id, cf))
@@ -308,7 +306,7 @@ def run_m_probes_over_pairs(
 
 
 def run_content_quality_checks(
-    ruleset_map: object,
+    ruleset_map: RulesetMap | None,
     project_dir: Path,
     instruction_files: list[Path] | None = None,
     agent: str = "",
@@ -319,14 +317,14 @@ def run_content_quality_checks(
     Atom queries are dispatched against files matching each rule's `match`
     field, using classified file properties from the agent config.
     """
-    if not isinstance(ruleset_map, RulesetMap):
+    if ruleset_map is None:
         return []
 
     scan_dir = project_dir if project_dir.is_dir() else project_dir.parent
     rules = load_rules(project_root=project_dir, scan_root=scan_dir, agent=agent)
 
     # Classify files so content_checker can respect rule.match targeting
-    classified: list[Any] = []
+    classified: list[ClassifiedFile] = []
     if instruction_files:
         classified, _ = _classify_agent_files(
             project_dir, instruction_files, agent, skill_membership(ruleset_map), exclusions

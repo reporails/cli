@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.runtime.merger import Omissions, ServerReply
 from reporails_cli.formatters.text.display_constants import element_namer
 from reporails_cli.formatters.text.health import SurfaceHealth
@@ -88,6 +89,7 @@ class _Result:
     per_file_analysis: tuple = ()
     reply: ServerReply = field(default_factory=ServerReply)
     omissions: Omissions = field(default_factory=Omissions)
+    level: Level = Level.L0
 
 
 def _capture(fn, *args, **kwargs) -> str:
@@ -126,7 +128,6 @@ class TestSurfaceErrorCount:
         surfaces = compute_surface_scores(result, project_root=".")
         main = next(s for s in surfaces if s.name == "Main")
         assert main.errors == 1  # kills L176 == -> != (would count non-errors)
-        assert main.infos == 1  # kills L178 == -> != (would count non-infos)
 
 
 # ── _count_categories ─────────────────────────────────────────────────

@@ -6,8 +6,7 @@ location, or an empty field, never an error.
 
 from __future__ import annotations
 
-from typing import Any
-
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, opt_int
 from reporails_cli.core.platform.dto.diagnostics import (
     ListedFinding,
     LocationFinding,
@@ -17,37 +16,19 @@ from reporails_cli.core.platform.dto.diagnostics import (
 )
 
 
-def _as_int(value: Any, default: int) -> int:
-    """Coerce a wire scalar to int, falling back on null / non-numeric — never raising."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _opt_int(value: Any) -> int | None:
-    """Coerce a wire scalar to int, or `None` when it is null / non-numeric (`pi`)."""
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _strs(raw: Any) -> tuple[str, ...]:
+def _strs(raw: JsonValue) -> tuple[str, ...]:
     """A list of strings as a tuple; empty for anything else."""
     if isinstance(raw, list):
         return tuple(x for x in raw if isinstance(x, str))
     return ()
 
 
-def _expect(raw: Any) -> dict[str, Any]:
+def _expect(raw: JsonValue) -> JsonObject:
     """The `expect` coordinates of a finding or relation; empty for anything but a dict."""
-    return dict(raw) if isinstance(raw, dict) else {}
+    return dict(as_object(raw))
 
 
-def _finding(d: Any) -> LocationFinding | None:
+def _finding(d: JsonValue) -> LocationFinding | None:
     """One `findings[]` entry, with its `members` read the same way; `None` when it is not a dict."""
     if not isinstance(d, dict):
         return None
@@ -58,8 +39,8 @@ def _finding(d: Any) -> LocationFinding | None:
     return LocationFinding(
         rule=str(d.get("rule") or ""),
         file=str(d.get("file") or ""),
-        line=_as_int(d.get("line"), 0),
-        pi=_opt_int(d.get("pi")),
+        line=as_int(d.get("line"), 0),
+        pi=opt_int(d.get("pi")),
         op=str(d.get("op") or ""),
         expect=_expect(d.get("expect")),
         impact_tier=str(d.get("impact_tier") or ""),
@@ -67,22 +48,22 @@ def _finding(d: Any) -> LocationFinding | None:
     )
 
 
-def _relation(d: Any) -> LocationRelation | None:
+def _relation(d: JsonValue) -> LocationRelation | None:
     """One `relations[]` entry; `None` when it is not a dict."""
     if not isinstance(d, dict):
         return None
     return LocationRelation(
         rule=str(d.get("rule") or ""),
         file=str(d.get("file") or ""),
-        line=_as_int(d.get("line"), 0),
+        line=as_int(d.get("line"), 0),
         partner_file=str(d.get("partner_file") or ""),
-        partner_line=_as_int(d.get("partner_line"), 0),
+        partner_line=as_int(d.get("partner_line"), 0),
         op=str(d.get("op") or ""),
         expect=_expect(d.get("expect")),
     )
 
 
-def _location(d: Any, order_fallback: int) -> WorkflowLocation | None:
+def _location(d: JsonValue, order_fallback: int) -> WorkflowLocation | None:
     """One `locations[]` entry; `None` when it is not a dict. A malformed finding/relation
     row is skipped, never crashes the whole location."""
     if not isinstance(d, dict):
@@ -98,7 +79,7 @@ def _location(d: Any, order_fallback: int) -> WorkflowLocation | None:
         else ()
     )
     return WorkflowLocation(
-        order=_as_int(d.get("order"), order_fallback),
+        order=as_int(d.get("order"), order_fallback),
         element=str(d.get("element") or ""),
         kind=str(d.get("kind") or ""),
         loading=str(d.get("loading") or ""),
@@ -109,18 +90,18 @@ def _location(d: Any, order_fallback: int) -> WorkflowLocation | None:
     )
 
 
-def _listed(d: Any) -> ListedFinding | None:
+def _listed(d: JsonValue) -> ListedFinding | None:
     """One `listed[]` entry; `None` when it is not a dict."""
     if not isinstance(d, dict):
         return None
     return ListedFinding(
         rule=str(d.get("rule") or ""),
         reason=str(d.get("reason") or ""),
-        count=_as_int(d.get("count"), 0),
+        count=as_int(d.get("count"), 0),
     )
 
 
-def deserialize_workflow(data: dict[str, Any]) -> RemediationWorkflow | None:
+def deserialize_workflow(data: JsonObject) -> RemediationWorkflow | None:
     """Deserialize the optional remediation workflow.
 
     Tolerant: returns `None` when the key is absent, so such a response degrades

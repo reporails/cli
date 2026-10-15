@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import typer
 
@@ -27,6 +27,8 @@ from reporails_cli.core.pipeline.mapping import (
     discover_scope,
 )
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.interfaces.cli.check_notices import (
     _emit_empty_run,
     _emit_heal_scope_refusal,
@@ -61,6 +63,14 @@ from reporails_cli.interfaces.cli.helpers import (
     _warn_unresolved_skills,
     console,
 )
+
+if TYPE_CHECKING:
+    from reporails_cli.core.discovery.agents import DetectedAgent
+    from reporails_cli.core.discovery.exclusions import RunExclusions
+    from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.models import LocalFinding
+    from reporails_cli.core.platform.dto.ruleset import RulesetMap
+    from reporails_cli.core.platform.observability.stage_timer import StageTimer
 
 
 @dataclass
@@ -104,12 +114,12 @@ class CheckTargets:
 class CheckScope:
     """Agent detection, instruction-file discovery, and scope narrowing."""
 
-    detected: list[Any] = field(default_factory=list)
+    detected: list[DetectedAgent] = field(default_factory=list)
     effective_agent: str = ""
     assumed: bool = False
     mixed: bool = False
-    filtered: list[Any] = field(default_factory=list)
-    exclusions: Any = None
+    filtered: list[DetectedAgent] = field(default_factory=list)
+    exclusions: RunExclusions | None = None
     instruction_files: list[Path] = field(default_factory=list)
     upfront_paths: set[Path] = field(default_factory=set)
     is_targeted: bool = False
@@ -121,26 +131,26 @@ class CheckScope:
 class CheckPipeline:
     """Pipeline outputs — mapping, probes, content/client checks, server lint."""
 
-    stage_timer: Any = None
+    stage_timer: StageTimer = field(default_factory=get_stage_timer)
     start_time: float = 0.0
-    ruleset_map: Any = None
-    m_findings: list[Any] = field(default_factory=list)
-    content_findings: list[Any] = field(default_factory=list)
-    client_findings: list[Any] = field(default_factory=list)
+    ruleset_map: RulesetMap | None = None
+    m_findings: list[LocalFinding] = field(default_factory=list)
+    content_findings: list[LocalFinding] = field(default_factory=list)
+    client_findings: list[LocalFinding] = field(default_factory=list)
     rule_agents: tuple[str, ...] = ()
     not_evaluated: tuple[tuple[str, str], ...] = ()
-    lint_result: Any = None
-    funnel_error: Any = None
-    notices: tuple[Any, ...] = ()
+    lint_result: LintResult | None = None
+    funnel_error: FunnelError | None = None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass
 class CheckRender:
     """Assembled result and the display-path projection rendered to the user."""
 
-    result: Any = None
-    display_result: Any = None
-    display_map: Any = None
+    result: CombinedResult = field(default_factory=CombinedResult)
+    display_result: CombinedResult = field(default_factory=CombinedResult)
+    display_map: RulesetMap | None = None
     capability_paths: set[Path] = field(default_factory=set)
     # The `(folders, file globs)` the run left out because the user set them, recorded where scope resolves.
     excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
@@ -352,7 +362,7 @@ def _flow_render(state: CheckState) -> None:
     )
 
 
-def _heal_workflow(state: CheckState) -> Any:
+def _heal_workflow(state: CheckState) -> RemediationWorkflow | None:
     """The remediation workflow the report was drawn from (after suppressions); None when the reply carries none."""
     return state.render.result.reply.workflow
 

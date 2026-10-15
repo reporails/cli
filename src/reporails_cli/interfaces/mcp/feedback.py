@@ -5,9 +5,9 @@ rewrite, cross-checked against the stored whole-project `validate`'s own workflo
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.platform.adapters.rules_query import rule_title
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.diagnostics import walk_findings
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 from reporails_cli.interfaces.mcp.remedy_brief import _sorted_findings
@@ -18,7 +18,7 @@ from reporails_cli.interfaces.mcp.remedy_brief import _sorted_findings
 _FEEDBACK_LIMIT = 15
 
 
-def _project_workflow_rule_files(stored: dict[str, Any] | None) -> set[tuple[str, str]] | None:
+def _project_workflow_rule_files(stored: JsonObject | None) -> set[tuple[str, str]] | None:
     """Every `(rule, file)` pair anywhere in the STORED whole-project `validate` reply's own
     workflow (`stored`), keyed the same way the original project-wide `validate(path=<project>)`
     call stored it. `None` when no whole-project run is on record, so a caller with nothing to
@@ -35,16 +35,21 @@ def _project_workflow_rule_files(stored: dict[str, Any] | None) -> set[tuple[str
     if not isinstance(workflow, dict):
         return None
     pairs: set[tuple[str, str]] = set()
-    for loc in workflow.get("locations") or ():
+    for loc in as_list(workflow.get("locations")):
         if not isinstance(loc, dict):
             continue
-        for f in walk_findings(loc.get("findings") or ()):
+        for f in walk_findings(_finding_objects(loc.get("findings"))):
             if isinstance(f, dict):
                 pairs.add((str(f.get("rule") or ""), str(f.get("file") or "")))
     return pairs
 
 
-def _rules_fired_before(stored: dict[str, Any] | None, rel: str) -> set[str] | None:
+def _finding_objects(value: JsonValue) -> list[JsonObject]:
+    """The finding objects a reply's `findings` field holds."""
+    return [f for f in as_list(value) if isinstance(f, dict)]
+
+
+def _rules_fired_before(stored: JsonObject | None, rel: str) -> set[str] | None:
     """Every rule that fired on the file `rel` in the STORED whole-project `validate` reply
     (`stored`), whether in its workflow or in its plain per-file findings. `None` when no
     whole-project reply is on record."""
@@ -54,10 +59,10 @@ def _rules_fired_before(stored: dict[str, Any] | None, rel: str) -> set[str] | N
     return {str(f.get("rule") or "") for f in workflow_raw + per_file_raw}
 
 
-def _shaped(f: dict[str, Any]) -> dict[str, Any]:
+def _shaped(f: JsonObject) -> JsonObject:
     """One finding as a `feedback` entry: a workflow finding carries its `op`, a plain per-file
     finding its `fix` and no `impact_tier`. A finding with no message reads as its rule's title."""
-    entry = {
+    entry: JsonObject = {
         "rule": f.get("rule", ""),
         "line": f.get("line"),
         "message": f.get("message") or rule_title(str(f.get("rule") or "")),
@@ -70,29 +75,31 @@ def _shaped(f: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
-def _raw_file_findings(payload: dict[str, Any], rel: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _raw_file_findings(payload: JsonObject, rel: str) -> tuple[list[JsonObject], list[JsonObject]]:
     """`(workflow findings, plain per-file findings)` of the file `rel` in `payload`."""
-    file_entry = (payload.get("files") or {}).get(rel) or {}
-    per_file = [f for f in (file_entry.get("findings") or ()) if isinstance(f, dict)]
-    workflow = payload.get("workflow")
-    from_workflow: list[dict[str, Any]] = []
-    for loc in (workflow.get("locations") or ()) if isinstance(workflow, dict) else ():
+    file_entry = as_object(as_object(payload.get("files")).get(rel))
+    per_file = _finding_objects(file_entry.get("findings"))
+    workflow = as_object(payload.get("workflow"))
+    from_workflow: list[JsonObject] = []
+    for loc in as_list(workflow.get("locations")):
         if isinstance(loc, dict):
             from_workflow.extend(
-                f for f in walk_findings(loc.get("findings") or ()) if isinstance(f, dict) and f.get("file") == rel
+                f
+                for f in walk_findings(_finding_objects(loc.get("findings")))
+                if isinstance(f, dict) and f.get("file") == rel
             )
     return from_workflow, per_file
 
 
 def _new_kind_findings(
-    workflow_raw: list[dict[str, Any]], per_file_raw: list[dict[str, Any]], fired_before: set[str]
-) -> list[dict[str, Any]]:
+    workflow_raw: list[JsonObject], per_file_raw: list[JsonObject], fired_before: set[str]
+) -> list[JsonObject]:
     """The findings whose rule fired nowhere on the file in the stored whole-project reply
     (`fired_before`), error severity first, then by `impact_tier`. A finding with no message that is not an error
     is a single-file-scope artifact and is left out; an error is never left out."""
     error_rules = {str(f.get("rule") or "") for f in per_file_raw if f.get("severity") == "error"}
-    found: list[dict[str, Any]] = []
-    seen: set[tuple[str, Any, str]] = set()
+    found: list[JsonObject] = []
+    seen: set[tuple[str, JsonValue, str]] = set()
     for raw in workflow_raw + per_file_raw:
         c = _shaped(raw)
         key = (str(c["rule"]), c["line"], str(c["message"]))
@@ -108,9 +115,7 @@ def _new_kind_findings(
     return sorted(_sorted_findings(found), key=lambda c: str(c["rule"]) not in error_rules)
 
 
-def file_feedback(
-    payload: dict[str, Any], target: Path, scan_root: Path, stored: dict[str, Any] | None
-) -> list[dict[str, Any]]:
+def file_feedback(payload: JsonObject, target: Path, scan_root: Path, stored: JsonObject | None) -> list[JsonObject]:
     """The `feedback` list for `validate(path=<file>)` on a snapshotted file: `target`'s own
     remaining findings from THIS single-file run, weakest-first (`impact_tier`: gate_mover ->
     conditional -> cosmetic -> ""), at most `_FEEDBACK_LIMIT`.
@@ -135,7 +140,7 @@ def file_feedback(
     rel = normalize_finding_path(str(target), scan_root)
     known_pairs = _project_workflow_rule_files(stored)
 
-    def _counted(rule: Any) -> bool:
+    def _counted(rule: JsonValue) -> bool:
         return known_pairs is None or (str(rule or ""), rel) in known_pairs
 
     workflow_raw, per_file_raw = _raw_file_findings(payload, rel)

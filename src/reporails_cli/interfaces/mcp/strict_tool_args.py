@@ -6,19 +6,22 @@ retired argument was silently dropped with no signal at all.
 
 from __future__ import annotations
 
-from typing import Any
-
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, InputRequiredResult
+
+from reporails_cli.core.platform.contract.json_value import JsonObject
 
 
-class StrictArgsMCPServer(MCPServer):
+class StrictArgsMCPServer(MCPServer[None]):
     """`call_tool` is the one seam every call path shares — the real stdio dispatch
     (`_handle_call_tool` calls `self.call_tool`, so this override binds there too via normal
     Python method resolution) and a module's own convenience shim alike — so overriding it
     here covers both."""
 
-    async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
+    async def call_tool(
+        self, name: str, arguments: JsonObject, context: Context[None, object] | None = None
+    ) -> CallToolResult | InputRequiredResult:
         tool = next((t for t in await self.list_tools() if t.name == name), None)
         if tool is not None:
             known = set((tool.input_schema or {}).get("properties") or {})

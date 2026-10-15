@@ -12,25 +12,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
-from reporails_cli.core.platform.dto.models import Severity
+from reporails_cli.core.platform.contract.json_value import as_str
+from reporails_cli.core.platform.dto.diagnostics import FindingSeverity, Notice
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters import json as json_formatter
-
-
-def _severity_to_command(severity: Severity) -> str:
-    """Map violation severity to GitHub workflow command level.
-
-    critical/high → ::error (blocks PR if repo requires it)
-    medium/low    → ::warning (shown but non-blocking)
-    info          → ::notice (informational, keeps the warning stream clean)
-    """
-    if severity in (Severity.CRITICAL, Severity.HIGH):
-        return "error"
-    if severity is Severity.INFO:
-        return "notice"
-    return "warning"
 
 
 def _escape_workflow_property(value: str) -> str:
@@ -50,7 +37,7 @@ def _escape_workflow_data(value: str) -> str:
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
-def _notice_annotations(notices: Any) -> list[str]:
+def _notice_annotations(notices: tuple[Notice, ...]) -> list[str]:
     """One `::warning` (a `warn` notice) or `::notice` line per notice; announcements get none."""
     return [
         f"::{'warning' if n.level == 'warn' else 'notice'} title=reporails::"
@@ -60,7 +47,11 @@ def _notice_annotations(notices: Any) -> list[str]:
     ]
 
 
-_FINDING_COMMANDS = {"error": "error", "info": "notice"}
+def _finding_command(severity: FindingSeverity) -> str:
+    """The workflow command that carries a finding of this severity."""
+    if severity == "error":
+        return "error"
+    return "notice" if severity == "info" else "warning"
 
 
 def _finding_annotation(command: str, file_val: str, line: int, title: str, message: str) -> str:
@@ -78,8 +69,8 @@ def _finding_annotation(command: str, file_val: str, line: int, title: str, mess
 
 
 def format_combined_annotations(
-    result: Any,
-    ruleset_map: Any = None,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | None = None,
     project_root: Path | None = None,
     file_type_by_path: dict[str, str] | None = None,
     elapsed_ms: float | None = None,
@@ -103,18 +94,15 @@ def format_combined_annotations(
             format sees the same run duration.
     """
 
-    if not isinstance(result, CombinedResult):
-        return ""
-
     lines: list[str] = []
     server_error = json_formatter.format_server_error(result.reply.server_error)
     if server_error is not None:
-        title = _escape_workflow_property(f"reporails: server {server_error['error']}")
-        message = _escape_workflow_data(server_error["message"])
+        title = _escape_workflow_property(f"reporails: server {as_str(server_error['error'])}")
+        message = _escape_workflow_data(as_str(server_error["message"]))
         lines.append(f"::warning title={title}::{message}")
     lines.extend(_notice_annotations(result.reply.notices))
     for f in result.findings:
-        command = _FINDING_COMMANDS.get(f.severity, "warning")
+        command = _finding_command(f.severity)
         # Canonical rule id, matching the trailing JSON summary's `rule` field.
         title = _escape_workflow_property(f"[{f.rule}]")
         file_val = _escape_workflow_property(f.file)

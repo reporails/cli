@@ -19,6 +19,7 @@ from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters.text.verdict import render_excluded_line
 from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
+from reporails_cli.interfaces.cli.output_formats import MACHINE_READABLE_CHECK_FORMATS
 
 if TYPE_CHECKING:
     from reporails_cli.interfaces.cli.check_flow import CheckState
@@ -30,7 +31,7 @@ def _notify_heal_scope_skips(n_skipped: int, output_format: str) -> None:
     Without this a capability/dir heal over symlinks-into-a-shared-tree reports `0 fixes`
     and reads as "nothing to fix" when it actually refused to touch out-of-scope files.
     """
-    if n_skipped <= 0 or output_format in ("json", "github"):
+    if n_skipped <= 0 or output_format in MACHINE_READABLE_CHECK_FORMATS:
         return
     console.print(
         f"[dim]{n_skipped} file(s) skipped — they resolve outside the heal scope "
@@ -50,7 +51,7 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
         funnel_tier=getattr(funnel_error, "tier", None),
         server_replied=server_replied,
     )
-    if output_format in ("json", "github"):
+    if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(json.dumps({"error": code, "message": message}), file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]")
@@ -58,7 +59,7 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
 
 def _emit_heal_scope_refusal(output_format: str) -> None:
     """Emit the --heal scope-safety refusal in the active output format."""
-    if output_format in ("json", "github"):
+    if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(
             json.dumps(
                 {
@@ -99,7 +100,7 @@ def _emit_empty_run(state: CheckState) -> None:
     silently matched nothing indistinguishable from a clean one. Text keeps its
     human message, which says plainly that nothing was found.
     """
-    if state.targets.output_format in ("json", "github"):
+    if state.targets.output_format in MACHINE_READABLE_CHECK_FORMATS:
         _dispatch_output(
             state.targets.output_format,
             with_exclusions(CombinedResult(), state.render.excluded),

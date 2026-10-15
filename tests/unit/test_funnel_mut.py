@@ -34,7 +34,7 @@ def test_parse_error_body_reads_limit_bytes_fallback() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_funnel
 def test_merge_utm_preserves_blank_valued_params() -> None:
-    result = merge_utm("https://example.com/p?foo=&bar=1", "cli")
+    result = merge_utm("https://example.com/p?foo=&bar=1")
     # `keep_blank_values=True -> False` would drop the blank `foo=` param when
     # re-encoding the query.
     assert "foo=" in result

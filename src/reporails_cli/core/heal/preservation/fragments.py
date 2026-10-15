@@ -11,28 +11,31 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Sequence
 
-from reporails_cli.core.heal.preservation.words import WORD_RE, content_words, word_forms
+from reporails_cli.core.heal.preservation.words import WORD_RE, AtomView, content_words, word_forms
+from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import replace_code_spans
 from reporails_cli.core.mapper.parse import inline_plain_text
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
+from reporails_cli.core.platform.contract.json_value import JsonObject
 
 # What opens a list or a closing clause: a colon, or a dash set off by spaces.
 _OPENER_RE = re.compile(r":|\s[—\u2013-]\s")
 _TRIM = " \t.;:*_"
 
 # Stand-ins for the opener marks inside a code span, so a colon or a dash there opens nothing.
-_MASK = str.maketrans({":": "\ue000", "\u2014": "\ue001", "\u2013": "\ue002"})
-_UNMASK = {"\ue000": ":", "\ue001": "\u2014", "\ue002": "\u2013", "\ue003": "-"}
+_STAND_INS = {mark: chr(0xE000 + i) for i, mark in enumerate((":", *sorted(DASH_MARKS), "-"))}
+_MASK = str.maketrans({mark: stand_in for mark, stand_in in _STAND_INS.items() if mark != "-"})
+_UNMASK = {stand_in: mark for mark, stand_in in _STAND_INS.items()}
+_LONE_DASH_STAND_IN = _STAND_INS["-"]
 _LONE_DASH_RE = re.compile(r"(?<=\s)-(?=\s)")
 
 
 def _masked(content: str) -> str:
     """`content` (a code span's text) with its opener marks replaced by stand-ins."""
-    return _LONE_DASH_RE.sub("\ue003", content.translate(_MASK))
+    return _LONE_DASH_RE.sub(_LONE_DASH_STAND_IN, content.translate(_MASK))
 
 
 def _unmasked(text: str) -> str:
@@ -47,7 +50,7 @@ def _masked_plain(text: str) -> str:
     return inline_plain_text(replace_code_spans(text, lambda span: _masked(text[span.start : span.end])))
 
 
-def _plain(atom: Any) -> str:
+def _plain(atom: AtomView) -> str:
     """The atom's plain text with the opener marks inside its code spans masked: each span is masked
     where it stands in the atom's marked-up text, then the markup is read away. An atom whose plain
     text is not its inline reading (a heading, a fenced block) keeps its own."""
@@ -154,7 +157,7 @@ def _rephrased_cut(old_text: str, new_text: str, new_sentences: list[str]) -> bo
     return False
 
 
-def _wholes(atoms: list[Any]) -> list[str]:
+def _wholes(atoms: Sequence[AtomView]) -> list[str]:
     """Each atom's sentence in full: the mapper cuts a long comma list into clause atoms on one
     line, each but the last ending in its comma, so the clauses that follow are joined on."""
     out = []
@@ -256,7 +259,7 @@ def _marks(sentences: list[str], opens: list[bool], follows: list[bool]) -> list
     return [(_step_body(s), o, f) for s, o, f in zip(sentences, opens, follows, strict=True)]
 
 
-def _atom_marks(atoms: list[Any], sentences: list[str]) -> list[tuple[str | None, bool, bool]]:
+def _atom_marks(atoms: Sequence[AtomView], sentences: list[str]) -> list[tuple[str | None, bool, bool]]:
     """`_marks` for the atoms of a file, each sentence read with the line and the atom before it."""
     opens = [i == 0 or atoms[i - 1].line != a.line for i, a in enumerate(atoms)]
     follows = [not o and _ends_sentence(_plain(atoms[i - 1])) for i, o in enumerate(opens)]
@@ -288,7 +291,7 @@ def _step_cuts(
     return cuts
 
 
-def _source_of_cut(new: str, olds: list[Any], wholes: list[str], new_sentences: list[str]) -> Any | None:
+def _source_of_cut[T](new: str, olds: Sequence[T], wholes: list[str], new_sentences: list[str]) -> T | None:
     """The author's sentence the whole rewrite sentence `new` is what a split left behind of, when
     it is one: it keeps the lead-in verbatim with the first item, or rephrases it with the first
     item hung off it. A sentence the original also holds, word for word, is no cut."""
@@ -304,7 +307,7 @@ def _source_of_cut(new: str, olds: list[Any], wholes: list[str], new_sentences: 
     return None
 
 
-def dangling_fragments(old_atoms: Iterable[Any], new_atoms: Iterable[Any]) -> list[dict[str, Any]]:
+def dangling_fragments(old_atoms: Iterable[AtomView], new_atoms: Iterable[AtomView]) -> list[JsonObject]:
     """Each whole sentence of the rewrite that keeps an original sentence's lead-in (up to a colon
     or a dash), verbatim or rephrased, with only the first item the original gave after it, where
     the original went on past a comma and its later items are not each given by a rewrite sentence
@@ -315,7 +318,7 @@ def dangling_fragments(old_atoms: Iterable[Any], new_atoms: Iterable[Any]) -> li
     news = [a for a in new_atoms if a.plain_text]
     wholes, new_sentences = _wholes(olds), _wholes(news)
     steps = _step_cuts(wholes, _atom_marks(olds, wholes), _atom_marks(news, new_sentences))
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for i, (new, sentence) in enumerate(zip(news, new_sentences, strict=True)):
         old = olds[steps[i]] if i in steps else _source_of_cut(sentence, olds, wholes, new_sentences)
         if old is not None:

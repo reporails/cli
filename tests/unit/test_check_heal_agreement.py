@@ -85,7 +85,7 @@ _ITALIC_CASES = [
 @pytest.mark.parametrize(("line", "fmt", "fixed"), _ITALIC_CASES)
 def test_italic_defect_is_reported_even_when_heal_leaves_it(line: str, fmt: str, fixed: bool) -> None:
     atom = _atom(line.removeprefix("- ").removeprefix("1. "), charge_value=-1, fmt=fmt)
-    assert has_non_italic_constraints(_map(atom), "test.md").found is True, line
+    assert has_non_italic_constraints(_map(atom), "test.md", {}).found is True, line
     lines = [line + "\n"]
     assert bool(fix_italic_constraints([atom], lines)) is fixed, line
     if not fixed:
@@ -96,7 +96,7 @@ def test_italic_defect_is_reported_even_when_heal_leaves_it(line: str, fmt: str,
 @pytest.mark.subsys_lint
 def test_fully_italic_constraint_is_not_reported() -> None:
     atom = _atom("*Never push to main.*", charge_value=-1)
-    assert has_non_italic_constraints(_map(atom), "test.md").found is False
+    assert has_non_italic_constraints(_map(atom), "test.md", {}).found is False
 
 
 def _bold_reported(atom: Atom) -> list[str]:
@@ -167,7 +167,7 @@ def test_a_constraint_is_italic_when_one_italic_run_covers_it() -> None:
         ("**Never push.**", False),
         ("Never *push*.", False),
     ]:
-        assert has_non_italic_constraints(_map(_atom(text, charge_value=-1)), "test.md").found is not italic, text
+        assert has_non_italic_constraints(_map(_atom(text, charge_value=-1)), "test.md", {}).found is not italic, text
 
 
 @pytest.mark.unit

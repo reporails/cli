@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
 
 import regex as re
 import yaml
 
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, str_list
+from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
+from reporails_cli.core.platform.dto.models import Severity
 from reporails_cli.core.platform.utils.utils import load_yaml_file
 
 logger = logging.getLogger(__name__)
@@ -24,12 +26,11 @@ class CompiledCheck:
 
     id: str
     message: str
-    severity: str  # "error" | "warning"
+    severity: FindingSeverity
     patterns: tuple[re.Pattern[str], ...]  # AND — all must match
     negative_patterns: tuple[re.Pattern[str], ...]  # AND — none must match
     either_patterns: tuple[re.Pattern[str], ...]  # OR — any must match
     path_includes: tuple[str, ...]  # Resolved path filters
-    body_only: bool = False  # True → strip frontmatter before matching
     every_match: bool = False  # True → report every matching line, not the first (a check that forbids something)
     follow_imports: bool = False  # True → also read the text an `@path` import splices in, reporting at its source
     entry_only: bool = False  # True → only a skill's entry file is checked, once the run records skills
@@ -49,7 +50,20 @@ def _compile_pattern(pattern_str: str) -> re.Pattern[str]:
     return re.compile(pattern_str, re.MULTILINE | re.DOTALL)
 
 
-def _get_operator(rule_entry: dict[str, Any]) -> str | None:
+def _pattern_text(value: JsonValue) -> re.Pattern[str]:
+    """Compile a `pattern-regex` / `pattern-not-regex` value; a value that is not a string is an invalid regex."""
+    if not isinstance(value, str):
+        raise re.error("a pattern must be a string")
+    return _compile_pattern(value)
+
+
+def _text(rule_entry: JsonObject, key: str, default: str) -> str:
+    """The string a rule entry holds under `key`, `default` when it holds none."""
+    value = rule_entry.get(key)
+    return value if isinstance(value, str) else default
+
+
+def _get_operator(rule_entry: JsonObject) -> str | None:
     """Identify which pattern operator a rule entry uses."""
     if "pattern-regex" in rule_entry:
         return "pattern-regex"
@@ -60,27 +74,28 @@ def _get_operator(rule_entry: dict[str, Any]) -> str | None:
     return None
 
 
-def display_severity(raw: str) -> str:
+def display_severity(raw: str) -> FindingSeverity:
     """Normalize a severity to the display vocabulary (`error` / `warning` / `info`).
 
     `Rule.severity` and `Check.severity` carry the SARIF-adjacent
     `critical`/`high`/`medium`/`low`/`info` vocabulary; the merger and
-    text formatters only count `error`/`warning`/`info`.
+    text formatters only count `error`/`warning`/`info`. A check file may
+    also say `error`.
     """
-    if raw in ("error", "critical", "high"):
+    if raw == "error" or raw in (Severity.CRITICAL, Severity.HIGH):
         return "error"
-    if raw in ("low", "info"):
+    if raw in (Severity.LOW, Severity.INFO):
         return "info"
     return "warning"
 
 
-def _min_lines(rule_entry: dict[str, Any]) -> int:
+def _min_lines(rule_entry: JsonObject) -> int:
     """A check's `min_lines` gate, 0 when it declares none or a non-positive one."""
     value = rule_entry.get("min_lines")
     return int(value) if isinstance(value, (int, float)) and value > 0 else 0
 
 
-def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
+def _compile_single_rule(rule_entry: JsonObject) -> CompiledCheck | None:
     """Compile a single YAML rule entry into a CompiledCheck, with its reporting flags.
 
     A check that forbids something (`expect: absent`) reports every match; `follow_imports: true`
@@ -100,21 +115,19 @@ def _compile_single_rule(rule_entry: dict[str, Any]) -> CompiledCheck | None:
     )
 
 
-def _compile_operator(rule_entry: dict[str, Any]) -> CompiledCheck | None:
+def _compile_operator(rule_entry: JsonObject) -> CompiledCheck | None:
     """Compile a rule entry's pattern operator into a CompiledCheck. None for an unsupported one."""
-    rule_id = rule_entry.get("id", "unknown")
-    message = rule_entry.get("message", "")
-    severity = display_severity(rule_entry.get("severity", "WARNING").lower())
+    rule_id = _text(rule_entry, "id", "unknown")
+    message = _text(rule_entry, "message", "")
+    severity = display_severity(_text(rule_entry, "severity", "WARNING").lower())
 
     # Extract path filters
-    paths_config = rule_entry.get("paths", {})
-    path_includes = tuple(paths_config.get("include") or [])
+    path_includes = tuple(str_list(as_object(rule_entry.get("paths")).get("include")))
 
     operator = _get_operator(rule_entry)
 
     if operator == "pattern-regex":
-        pattern_str = rule_entry["pattern-regex"]
-        compiled = _compile_pattern(pattern_str)
+        compiled = _pattern_text(rule_entry["pattern-regex"])
         return CompiledCheck(
             id=rule_id,
             message=message,
@@ -126,11 +139,10 @@ def _compile_operator(rule_entry: dict[str, Any]) -> CompiledCheck | None:
         )
 
     if operator == "pattern-either":
-        either_list = rule_entry["pattern-either"]
         compiled_either = []
-        for item in either_list:
-            if "pattern-regex" in item:
-                compiled_either.append(_compile_pattern(item["pattern-regex"]))
+        for item in as_list(rule_entry["pattern-either"]):
+            if isinstance(item, dict) and "pattern-regex" in item:
+                compiled_either.append(_pattern_text(item["pattern-regex"]))
             else:
                 logger.warning("Unsupported sub-operator in pattern-either for rule %s", rule_id)
         if not compiled_either:
@@ -146,14 +158,13 @@ def _compile_operator(rule_entry: dict[str, Any]) -> CompiledCheck | None:
         )
 
     if operator == "patterns":
-        patterns_list = rule_entry["patterns"]
         positive = []
         negative = []
-        for item in patterns_list:
-            if "pattern-regex" in item:
-                positive.append(_compile_pattern(item["pattern-regex"]))
-            elif "pattern-not-regex" in item:
-                negative.append(_compile_pattern(item["pattern-not-regex"]))
+        for item in as_list(rule_entry["patterns"]):
+            if isinstance(item, dict) and "pattern-regex" in item:
+                positive.append(_pattern_text(item["pattern-regex"]))
+            elif isinstance(item, dict) and "pattern-not-regex" in item:
+                negative.append(_pattern_text(item["pattern-not-regex"]))
             else:
                 logger.warning("Unsupported sub-operator in patterns block for rule %s", rule_id)
         if not positive and not negative:
@@ -171,24 +182,22 @@ def _compile_operator(rule_entry: dict[str, Any]) -> CompiledCheck | None:
     return None
 
 
-def _parse_entries(data: dict[str, Any], yml_path: Path) -> list[dict[str, Any]] | None:
+def _parse_entries(data: JsonObject, yml_path: Path) -> list[JsonObject] | None:
     """Extract deterministic entries from YAML data ('checks' key)."""
     entries = data.get("checks")
     if not isinstance(entries, list):
         logger.warning("Rule file %s has no valid 'checks' list, skipping", yml_path)
         return None
-    return [e for e in entries if e.get("type", "deterministic") == "deterministic"]
+    return [e for e in entries if isinstance(e, dict) and e.get("type", "deterministic") == "deterministic"]
 
 
 def _compile_entries(
-    entries: list[dict[str, Any]],
-    yml_path: Path,
-    body_only_paths: set[Path] | None,
+    entries: list[JsonObject],
     result: CompiledRuleSet,
 ) -> None:
     """Compile each entry into `result`; an entry that cannot be compiled is recorded as skipped."""
     for rule_entry in entries:
-        rule_id = rule_entry.get("id", "unknown")
+        rule_id = _text(rule_entry, "id", "unknown")
         if _get_operator(rule_entry) is None:
             logger.warning("Rule %s has no recognized pattern operator, skipping", rule_id)
             result.skipped.append(rule_id)
@@ -203,15 +212,10 @@ def _compile_entries(
         if check is None:
             result.skipped.append(rule_id)
             continue
-        if body_only_paths and yml_path in body_only_paths:
-            check = replace(check, body_only=True)
         result.checks.append(check)
 
 
-def compile_rules(
-    yml_paths: list[Path],
-    body_only_paths: set[Path] | None = None,
-) -> CompiledRuleSet:
+def compile_rules(yml_paths: list[Path]) -> CompiledRuleSet:
     """Compile YAML rule files into a CompiledRuleSet.
 
     Args:
@@ -228,7 +232,7 @@ def compile_rules(
 
         try:
             data = load_yaml_file(yml_path)
-            if not data:
+            if not isinstance(data, dict) or not data:
                 logger.warning("Rule file %s has no valid data, skipping", yml_path)
                 continue
 
@@ -236,102 +240,9 @@ def compile_rules(
             if entries is None:
                 continue
 
-            _compile_entries(entries, yml_path, body_only_paths, result)
+            _compile_entries(entries, result)
 
         except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
             logger.warning("Failed to load rule file %s: %s", yml_path, e)
 
     return result
-
-
-# Maximum named groups per combined regex (Python re limit is ~100)
-_MAX_GROUPS_PER_BATCH = 99
-
-
-_INLINE_FLAGS_RE = re.compile(r"^\(\?([aiLmsux]+)\)")
-
-
-def _scope_inline_flags(pattern: str) -> str:
-    """Convert global inline flags to scoped flags for embedding in named groups.
-
-    Transforms ``(?i)pattern`` → ``(?i:pattern)`` so the flag is scoped to the
-    enclosing named group instead of being a global flag (which Python rejects
-    when not at position 0).
-    """
-    m = _INLINE_FLAGS_RE.match(pattern)
-    if m:
-        flags = m.group(1)
-        rest = pattern[m.end() :]
-        return f"(?{flags}:{rest})"
-    return pattern
-
-
-def _get_combinable_pattern(check: CompiledCheck) -> str | None:
-    """Get a single embeddable pattern string for combined regex batching."""
-    if check.negative_patterns:
-        return None  # Can't batch negatives (require all-must-not-match logic)
-
-    if check.patterns and not check.either_patterns:
-        if len(check.patterns) == 1:
-            return _scope_inline_flags(check.patterns[0].pattern)
-        return None  # Multiple AND patterns can't be combined into alternation
-
-    if check.either_patterns and not check.patterns:
-        parts = [_scope_inline_flags(p.pattern) for p in check.either_patterns]
-        return "|".join(f"(?:{p})" for p in parts)
-
-    return None
-
-
-@dataclass(frozen=True)
-class CombinedPattern:
-    """A batched alternation of checks with named groups."""
-
-    regex: re.Pattern[str]
-    group_to_check: dict[str, CompiledCheck]
-
-
-def build_combined_patterns(
-    checks: list[CompiledCheck],
-) -> tuple[list[CombinedPattern], list[CompiledCheck]]:
-    """Combine eligible checks into batched alternation patterns with named groups.
-
-    Accepts single-pattern checks (with or without inline flags) and
-    either-pattern checks. Checks with negative patterns or multiple AND
-    patterns are returned as remaining individual checks.
-
-    Args:
-        checks: List of compiled checks to partition
-
-    Returns:
-        Tuple of (combined_patterns, remaining_individual_checks)
-    """
-    combinable: list[tuple[CompiledCheck, str]] = []
-    remaining: list[CompiledCheck] = []
-
-    for check in checks:
-        pat = _get_combinable_pattern(check)
-        if pat is not None:
-            combinable.append((check, pat))
-        else:
-            remaining.append(check)
-
-    if not combinable:
-        return [], remaining
-
-    combined: list[CombinedPattern] = []
-    for batch_start in range(0, len(combinable), _MAX_GROUPS_PER_BATCH):
-        batch = combinable[batch_start : batch_start + _MAX_GROUPS_PER_BATCH]
-        parts: list[str] = []
-        group_map: dict[str, CompiledCheck] = {}
-        for i, (check, pat) in enumerate(batch):
-            group_name = f"g{i}"
-            parts.append(f"(?P<{group_name}>{pat})")
-            group_map[group_name] = check
-        try:
-            combined_re = re.compile("|".join(parts), re.MULTILINE | re.DOTALL)
-            combined.append(CombinedPattern(regex=combined_re, group_to_check=group_map))
-        except re.error as e:
-            logger.warning("Failed to build combined pattern: %s", e)
-            remaining.extend(check for check, _ in batch)
-    return combined, remaining

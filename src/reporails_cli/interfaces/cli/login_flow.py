@@ -13,7 +13,6 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime
-from typing import Any
 from urllib.parse import urlparse
 
 import typer
@@ -33,6 +32,7 @@ from reporails_cli.core.platform.config.credentials import (
 )
 from reporails_cli.core.platform.config.endpoints import platform_url
 from reporails_cli.core.platform.contract.errors import CredentialsUnreadableError, PlatformError, PlatformRefusedError
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
 from reporails_cli.core.platform.dto.diagnostics import ENTITLED_TIERS, STILL_REACHING_MESSAGE, Notice, tier_label
 from reporails_cli.core.platform.dto.sign_in import SignedIn, SignInGrant
 from reporails_cli.formatters.text.funnel_cta import OTHER_AGENT_HEAL_TEXT, UNPAID_PITCH_LINE, upgrade_link_line
@@ -102,16 +102,16 @@ def _note_rejected(stored_key: str) -> None:
     console.print("  Your sign-in on this machine ended; signing in again.")
 
 
-def _confirm_stored_sign_in(record: dict[str, str]) -> None:
+def _confirm_stored_sign_in(record: JsonObject) -> None:
     """Check the stored sign-in with the server. Returns only when it was rejected; otherwise exits 0."""
-    stored_key = record["api_key"]
-    account = record.get("account", "")
+    stored_key = as_str(record.get("api_key"))
+    account = as_str(record.get("account"))
     result = check_api_key(stored_key)
     if result.status == "rejected":
         _note_rejected(stored_key)
         return
     if result.status == "unavailable":
-        console.print(f"{_signed_in_line(account, record.get('tier', ''))} (could not reach the server to confirm)")
+        console.print(f"{_signed_in_line(account, as_str(record.get('tier')))} (could not reach the server to confirm)")
         raise typer.Exit(0)
     console.print(_signed_in_line(account, result.tier))
     _print_notices(result.notices)
@@ -161,15 +161,16 @@ def _open_in_browser(url: str) -> None:
     """Open `url` from a detached child that ignores the working directory and holds none of the caller's streams."""
     if not sys.executable:
         return
-    detach: dict[str, Any] = {"start_new_session": True}
+    creationflags = 0
     if sys.platform == "win32":
-        detach = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     subprocess.Popen(  # pylint: disable=consider-using-with  # detached browser launcher outlives this call
         [sys.executable, "-I", "-m", "webbrowser", "-t", url],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        **detach,
+        start_new_session=sys.platform != "win32",
+        creationflags=creationflags,
     )
 
 
@@ -266,7 +267,7 @@ def run_logout() -> None:
         console.print("  Logged out on this machine.")
         _note_env_still_authenticates()
         raise typer.Exit(0) from None
-    token = record.get("api_key", "")
+    token = as_str(record.get("api_key"))
     if not token:
         console.print("  Not signed in on this machine.")
         _note_env_still_authenticates()

@@ -14,7 +14,7 @@ import dataclasses
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from reporails_cli.core.cache.full_map_cache import FullMapCache, compute_identity
 from reporails_cli.core.classify import classify_files, load_file_types
@@ -45,6 +45,7 @@ from reporails_cli.core.mapper.reach import record_reach
 from reporails_cli.core.mapper.skills import record_skills
 from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.dto.results import MapperConfig
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.observability.log_levels import quiet_loggers
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
@@ -53,11 +54,11 @@ from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 class ScopeDiscovery(NamedTuple):
     """What one discovery pass found at a scan root."""
 
-    detected: list[Any]
+    detected: list[DetectedAgent]
     effective_agent: str
     assumed: bool
     mixed: bool
-    filtered: list[Any]
+    filtered: list[DetectedAgent]
     files: list[Path]
     # The `(folders, file globs)` this pass left out because the user set them; empty when it listed no files.
     excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
@@ -93,7 +94,7 @@ def discover_scope(
 
 def _scan(
     target: Path, agent: str, exclusions: RunExclusions, scan_files: bool
-) -> tuple[list[Any], tuple[str, bool, bool, list[Any]], list[Path]]:
+) -> tuple[list[DetectedAgent], tuple[str, bool, bool, list[DetectedAgent]], list[Path]]:
     """Detect agents, resolve the effective agent and its filtered agents, and list the files under one dir cache."""
 
     with shared_dir_listings():
@@ -105,10 +106,10 @@ def _scan(
 
 def resolve_agent_filters(
     agent: str,
-    all_detected: list[Any],
+    all_detected: list[DetectedAgent],
     target: Path,
     exclusions: RunExclusions | None = None,
-) -> tuple[str, bool, bool, list[Any]]:
+) -> tuple[str, bool, bool, list[DetectedAgent]]:
     """Resolve agent selection and filter detected agents. Returns ``(agent, assumed, mixed, filtered)``.
 
     ``filtered`` is the DISCOVERY scope, not a rule-selection narrowing: an explicit
@@ -137,8 +138,12 @@ def resolve_agent_filters(
 
 
 def _place_named(
-    filtered: list[Any], detected: list[Any], exclusions: RunExclusions, effective_agent: str, target: Path
-) -> list[Any]:
+    filtered: list[DetectedAgent],
+    detected: list[DetectedAgent],
+    exclusions: RunExclusions,
+    effective_agent: str,
+    target: Path,
+) -> list[DetectedAgent]:
     """`filtered` plus the named files that a user pattern matches yet no directory walk listed.
 
     Such a file (its folder pruned from the detection walk by a configured folder) goes to the
@@ -162,7 +167,7 @@ def _place_named(
     return out
 
 
-def _unlisted_named(filtered: list[Any], exclusions: RunExclusions) -> list[Path]:
+def _unlisted_named(filtered: list[DetectedAgent], exclusions: RunExclusions) -> list[Path]:
     """The named paths a user pattern matches that `filtered` does not hold."""
 
     if not exclusions.named or not (exclusions.dirs or exclusions.files):
@@ -172,7 +177,7 @@ def _unlisted_named(filtered: list[Any], exclusions: RunExclusions) -> list[Path
     return sorted(p for p in exclusions.named if p not in held and bare.leaves_out(p))
 
 
-def _append_file(agents: list[Any], owner: str, kind: str, path: Path) -> None:
+def _append_file(agents: list[DetectedAgent], owner: str, kind: str, path: Path) -> None:
     """Add `path` to the `kind` list of the agent `owner`, adding that agent when it is absent."""
 
     holder = next((a for a in agents if a.agent_type.id == owner), None)
@@ -183,7 +188,7 @@ def _append_file(agents: list[Any], owner: str, kind: str, path: Path) -> None:
         getattr(holder, kind).append(path)
 
 
-def _by_resolved_path(agents: list[Any]) -> dict[Path, tuple[str, str, Path]]:
+def _by_resolved_path(agents: list[DetectedAgent]) -> dict[Path, tuple[str, str, Path]]:
     """Each file the agents list, keyed by its resolved path: `(agent id, list name, path as listed)`."""
 
     return {safe_resolve(f): (a.agent_type.id, k, f) for a in agents for k in _KINDS for f in getattr(a, k)}
@@ -205,8 +210,12 @@ def _kind_of(path: Path, agent: str, target: Path) -> str:
     declaration = next((d for d in declarations if d.name == classified[0].file_type), None)
     if declaration is None:
         return "instruction_files"
-    bucket = categorize_file_type(list(declaration.patterns), dict(classified[0].properties))  # type: ignore[arg-type]
-    return {"rule": "rule_files", "config": "config_files"}.get(bucket, "instruction_files")
+    bucket = categorize_file_type(list(declaration.patterns), dict(classified[0].properties))
+    if bucket == "rule":
+        return "rule_files"
+    if bucket == "config":
+        return "config_files"
+    return "instruction_files"
 
 
 def apply_generic_scan(
@@ -255,7 +264,7 @@ def apply_generic_scan(
 
 def agent_file_pairs(
     instruction_files: list[Path],
-    filter_agents: list[Any],
+    filter_agents: list[DetectedAgent],
     target: Path,
     *,
     explicit: bool,
@@ -283,7 +292,7 @@ def agent_file_pairs(
     return list(pairs.items())
 
 
-def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, target: Path) -> None:
+def stamp_file_agents(ruleset_map: RulesetMap, detected_agents: list[DetectedAgent] | None, target: Path) -> None:
     """Correct each file record's ``agent`` to the file's DISTINCTIVE native owner, or to
     ``"generic"`` when no currently-distinctive agent natively owns it.
 
@@ -298,7 +307,7 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
     match it, in place. A no-op when ``detected_agents`` is falsy (nothing to stamp from).
     """
 
-    if not detected_agents or not isinstance(ruleset_map, RulesetMap):
+    if not detected_agents:
         return
     owner_by_path = partition_by_native_owner(detected_agents, target)
     for record in ruleset_map.files:
@@ -307,7 +316,7 @@ def stamp_file_agents(ruleset_map: Any, detected_agents: list[Any] | None, targe
             record.agent = owner
 
 
-def _apply_run_context(ruleset_map: Any, filtered_agents: list[Any] | None, target: Path) -> None:
+def _apply_run_context(ruleset_map: RulesetMap, filtered_agents: list[DetectedAgent] | None, target: Path) -> None:
     """Record skill membership for the run's agents, then stamp each file's owning agent."""
 
     agents = [a.agent_type.id for a in filtered_agents or () if a.agent_type.id != "generic"]
@@ -322,8 +331,8 @@ def map_instruction_files(
     *,
     progress: Callable[[str], None] | None = None,
     spawn_daemon: bool = True,
-    filtered_agents: list[Any] | None = None,
-) -> Any:
+    filtered_agents: list[DetectedAgent] | None = None,
+) -> RulesetMap | None:
     """Map instruction files via the whole-map cache, else the daemon, else in-process.
 
     Checks the whole-map cache FIRST, before any daemon resolution -- a byte-identical cached
@@ -370,7 +379,7 @@ def map_instruction_files(
     return ruleset_map
 
 
-def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -> Any:
+def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -> DaemonStatus:
     """Attach to (or, when allowed, start) the global mapper daemon; return its status.
 
     When ``spawn_daemon`` is False this only ever attaches to an already-running daemon
@@ -407,8 +416,8 @@ def _resolve_daemon(emit: Callable[[str], None], *, spawn_daemon: bool = True) -
 
 
 def _map_via_daemon_or_process(
-    daemon_status: Any, files: list[Path], target: Path, mapper_cfg: Any, emit: Callable[[str], None]
-) -> Any:
+    daemon_status: DaemonStatus, files: list[Path], target: Path, mapper_cfg: MapperConfig, emit: Callable[[str], None]
+) -> RulesetMap | None:
     """Map via the daemon when attached, else in-process with sub-logger noise quieted."""
 
     if daemon_status in (DaemonStatus.ATTACHED, DaemonStatus.STARTED, DaemonStatus.STARTING):
@@ -418,7 +427,7 @@ def _map_via_daemon_or_process(
         # second, redundant model load) while the freshly-spawned daemon warms a copy it never
         # serves for this run. In-process stays the fallback below only when the daemon is
         # UNAVAILABLE or the round-trip returns None.
-        ruleset_map = map_ruleset_via_daemon(files, target, progress=emit)
+        ruleset_map: RulesetMap | None = map_ruleset_via_daemon(files, target, progress=emit)
         if ruleset_map is not None:
             return ruleset_map
         emit("Restarting Reporails...")
@@ -432,7 +441,7 @@ def _map_in_process(
     root: Path,
     segmentation: str,
     progress: Callable[[str], None] | None = None,
-) -> Any:
+) -> RulesetMap | None:
     """Run the mapper in-process, quieting known-noisy loader logs. Returns RulesetMap or None.
 
     ``root`` is the project root and is REQUIRED: every file's ``loading`` / ``scope`` /

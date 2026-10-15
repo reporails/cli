@@ -12,15 +12,15 @@ from __future__ import annotations
 import difflib
 import os
 import re
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
 from reporails_cli.core.heal.preservation.words import (
     NEGATION_RE,
-    STOPWORDS,
     WORD_RE,
+    AtomView,
     blank_named,
     content_words,
     named_key,
@@ -30,6 +30,7 @@ from reporails_cli.core.heal.preservation.words import (
 )
 from reporails_cli.core.mapper.classify import (
     COVERAGE_RESTRICTORS,
+    EXCLUDING_RESTRICTORS,
     SCOPE_RESTRICTORS,
     absolute_cues,
     has_hedge_cue,
@@ -43,8 +44,11 @@ from reporails_cli.core.mapper.classify_lexicon import (
     GENERAL_QUANTIFIERS,
     PHRASE_PREPOSITIONS,
     SCOPE_PREPOSITIONS,
+    STOPWORDS,
 )
 from reporails_cli.core.mapper.prose_split import split_prose_sentences
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.ruleset import Atom
 
 # Thresholds.
 _SCOPE_REACH = 3  # words after a scope cue that make the scope it adds
@@ -61,7 +65,7 @@ _SEGMENT_RE = re.compile(
 _PHRASE_END = PHRASE_PREPOSITIONS | CONDITION_CONJUNCTIONS
 
 # Atoms of a file by line number, in file order.
-ByLine = dict[int, list[Any]]
+ByLine = dict[int, list[AtomView]]
 
 
 @dataclass(frozen=True)
@@ -69,11 +73,11 @@ class Pair:
     """A matched instruction: the original atom and its rewrite, each with the sentence it sits in."""
 
     old: SnapshotAtom
-    new: Any
+    new: Atom
     old_sentence: str
     new_sentence: str
 
-    def entry(self) -> dict[str, Any]:
+    def entry(self) -> JsonObject:
         """The pair as a report entry: each side's line and sentence."""
         return {
             "line": self.old.line,
@@ -83,7 +87,7 @@ class Pair:
         }
 
 
-def by_line(atoms: Any) -> ByLine:
+def by_line(atoms: Iterable[AtomView]) -> ByLine:
     """`atoms` bucketed by line number, in the order given."""
     out: ByLine = {}
     for atom in atoms:
@@ -91,7 +95,7 @@ def by_line(atoms: Any) -> ByLine:
     return out
 
 
-def sentence_of(atoms_by_line: ByLine, atom: Any) -> str:
+def sentence_of(atoms_by_line: ByLine, atom: AtomView) -> str:
     """The sentence of `atom`'s line that holds it (the line's atoms joined, cut by the mapper's
     sentence splitter); the whole line when none does."""
     line = " ".join(a.text for a in atoms_by_line.get(atom.line, ())) or atom.text
@@ -103,7 +107,7 @@ def sentence_of(atoms_by_line: ByLine, atom: Any) -> str:
 
 
 def pair_up(
-    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Any], old_by_line: ByLine, new_by_line: ByLine
+    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], old_by_line: ByLine, new_by_line: ByLine
 ) -> list[Pair]:
     """Each matched instruction as a `Pair`."""
     out = []
@@ -114,7 +118,7 @@ def pair_up(
     return out
 
 
-def _hedged(atom: Any) -> bool:
+def _hedged(atom: AtomView) -> bool:
     """Whether `atom` gives its instruction as a suggestion: the mapper reads a charged atom's
     modality; a line it read as plain prose shows a hedge word."""
     return atom.modality == "hedged" if atom.charge_value != 0 else has_hedge_cue(atom.text)
@@ -123,36 +127,38 @@ def _hedged(atom: Any) -> bool:
 def made_direct(
     pairs: list[Pair],
     snap_atoms: list[SnapshotAtom],
-    new_atoms: list[Any],
-    matched_new_for: dict[int, Any],
+    new_atoms: list[Atom],
+    matched_new_for: dict[int, Atom],
     sentences: tuple[ByLine, ByLine],
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """Each instruction whose original was a suggestion (`prefer`, `consider`, `should`, `try`, ...)
     and whose rewrite is not: the change is allowed and listed with the sentence before and after,
     so the report can show it. A rewritten instruction with no matched original counts when its
     words come from a hedged line the mapper read as plain prose (`You might want to run the
     linter`)."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     seen: set[tuple[int, int]] = set()
+    done: set[int] = set()
     for p in pairs:
         key = (p.old.line, p.new.line)
         if key not in seen and _hedged(p.old) and p.new.modality != "hedged" and p.old_sentence != p.new_sentence:
             seen.add(key)
+            done.add(p.old.line)
             out.append(p.entry())
-    return out + _made_direct_from_prose(snap_atoms, new_atoms, matched_new_for, {e["line"] for e in out}, sentences)
+    return out + _made_direct_from_prose(snap_atoms, new_atoms, matched_new_for, done, sentences)
 
 
 def _made_direct_from_prose(
     snap_atoms: list[SnapshotAtom],
-    new_atoms: list[Any],
-    matched_new_for: dict[int, Any],
+    new_atoms: list[Atom],
+    matched_new_for: dict[int, Atom],
     done: set[int],
     sentences: tuple[ByLine, ByLine],
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     old_by_line, new_by_line = sentences
     claimed = {id(m) for m in matched_new_for.values()}
     hedged_prose = [sa for sa in snap_atoms if sa.charge_value == 0 and not sa.heading and _hedged(sa)]
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for na in new_atoms:
         words = content_words(na.text)
         if na.charge_value == 0 or id(na) in claimed or not words:
@@ -166,10 +172,10 @@ def _made_direct_from_prose(
     return out
 
 
-def hedge_made_absolute(pairs: list[Pair], old_by_line: ByLine) -> list[dict[str, Any]]:
+def hedge_made_absolute(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
     """Each matched suggestion whose rewrite is an absolute (`Never`, `Always`) where the
     author's line had no such word."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for p in pairs:
         if not _hedged(p.old) or p.new.modality != "absolute":
             continue
@@ -252,7 +258,7 @@ def _narrows(words: list[str], known: set[str], placed: set[str]) -> bool:
     return False
 
 
-def _clauses(atom: Any, *, named: bool = False) -> list[list[str]]:
+def _clauses(atom: AtomView, *, named: bool = False) -> list[list[str]]:
     """`atom`'s words, one list per comma / colon / parenthesis separated clause, each named
     construct a placeholder word unless `named` (a condition's words read the same backticked or
     not)."""
@@ -320,7 +326,7 @@ def _qualified_general_noun(p: Pair, known: set[str]) -> bool:
     )
 
 
-def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[str, Any]]:
+def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[JsonObject]:
     """Each matched instruction whose rewrite adds words that restrict where, when or to what it
     applies, without an if / when / before frame (which `added_conditions` already reports): a
     restricting word the line never used, or a scope preposition whose phrase holds a word the
@@ -329,7 +335,7 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[s
     names a construct directly after a general quantifier the author's line already had (`every
     gate` -> `every X gate`); or a prohibition that gains a qualifier before its noun from words
     the line has elsewhere (`file plans` -> `file X or Y plans`)."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for p in pairs:
         if _same_sentence(p):
             continue
@@ -344,11 +350,11 @@ def narrowed_instructions(pairs: list[Pair], old_by_line: ByLine) -> list[dict[s
 
 def made_specific(
     pairs: list[Pair], old_by_line: ByLine, flagged: AbstractSet[tuple[int, int]], invented: AbstractSet[str]
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """Each kept instruction that gained a named construct the author's line lacked and that no
     other check flagged (`flagged` holds the `(line, new_line)` of narrowed pairs, `invented` the
     lowered names reported as invented): allowed and listed so the report can show it."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for p in pairs:
         if (p.old.line, p.new.line) in flagged:
             continue
@@ -358,13 +364,13 @@ def made_specific(
     return out
 
 
-def _marker_words(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> set[str]:
+def _marker_words(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> set[str]:
     """The words of `atom` that may mark a condition: its prose words (a code token such as
     `except` marks nothing) and the code tokens the original already had as prose words."""
     return set(prose_words(atom)) | (set(prose_words(atom, named=True)) & marked_before)
 
 
-def conditional(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> bool:
+def conditional(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> bool:
     """Whether `atom` holds a condition: the mapper reads a conditional frame, or the instruction
     is restricted by a word like `only` / `except` in its prose."""
     return atom.scope_conditional or bool(_marker_words(atom, marked_before) & SCOPE_RESTRICTORS)
@@ -373,10 +379,6 @@ def conditional(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> boo
 # Words that only mark a condition or a quantifier over it: swapping one marker for another
 # ("every time" -> "whenever", "prior to" -> "before") adds no content of its own.
 _CONDITION_WORDS = frozenset(CONDITIONAL_MARKERS) | CONDITION_QUANTIFIERS
-
-# Restricting words that exclude (`except`, `excluding`, `outside`): what they open is a condition
-# on its own, so an addition to it widens the instruction.
-_EXCLUSIONS = frozenset({"except", "excluding", "outside"})
 
 _ENDING_REACH = 4  # letters an ending may add to a word and still be that word
 _CONDITION_COVERAGE = 0.5  # share of the words a condition governs that its rewrite must still hold
@@ -392,7 +394,7 @@ class _Condition:
     restriction: bool
 
 
-def _conditions(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> list[_Condition]:
+def _conditions(atom: AtomView, marked_before: AbstractSet[str] = frozenset()) -> list[_Condition]:
     """The words each condition of `atom` governs, one per condition: a clause with a frame
     marker (`if`, `unless`, `before`, `only`, ...) holds the content words after the marker, and
     conditions joined by `and` / `or` (`When tests fail and the branch is main`) are one each.
@@ -409,7 +411,7 @@ def _conditions(atom: Any, marked_before: AbstractSet[str] = frozenset()) -> lis
                         conjuncts.append([])
                     else:
                         conjuncts[-1].append(tail_word)
-                restriction = word in SCOPE_RESTRICTORS and word not in _EXCLUSIONS
+                restriction = word in SCOPE_RESTRICTORS and word not in EXCLUDING_RESTRICTORS
                 words = (content_words(" ".join(c)) - _CONDITION_WORDS for c in conjuncts)
                 out.extend(_Condition(frozenset(g), restriction) for g in words if g)
                 break
@@ -455,7 +457,7 @@ def _holds(governed: _Condition, rewrite_conditions: list[_Condition], original_
     )
 
 
-def dropped_conditions(pairs: list[Pair]) -> list[dict[str, Any]]:
+def dropped_conditions(pairs: list[Pair]) -> list[JsonObject]:
     """Each matched instruction whose original holds a condition (if / when / before / after /
     unless / only ...) that its rewrite no longer holds: the rewrite has no condition at all, or no
     condition of it stands for one of the original's (`If the build fails, run X before Y`
@@ -483,13 +485,13 @@ def _new_content_words(rewrite: str, original_words: set[str]) -> set[str]:
     return {w for w in content_words(rewrite) - _CONDITION_WORDS if not word_forms(w) & original_words}
 
 
-def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Any]) -> list[dict[str, Any]]:
+def added_conditions(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
     """Each matched instruction that was not conditional, whose rewrite is conditional and carries
     a content word the author's line never had (every snapshot atom on that line counts as the
     author's line; singular and plural forms are the same word, and words that only mark a
     condition are not content). A rewrite that restates the author's own condition in other
     words, or spreads it over several lines, is not listed."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for sa in snap_atoms:
         match = matched_new_for.get(id(sa))
         if sa.charge_value == 0 or match is None or sa.scope_conditional or not match.scope_conditional:

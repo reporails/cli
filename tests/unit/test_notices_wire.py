@@ -80,7 +80,6 @@ def test_undecodable_header_is_logged_as_a_warning(caplog: pytest.LogCaptureFixt
         {"id": "", "level": "info", "text": "empty id"},
         {"id": "x", "level": "info", "text": ""},
         {"id": "x", "level": "info"},
-        {"id": "x", "level": "error", "text": "unknown level"},
         {"id": "x", "level": "info", "text": "t", "url": 5},
         {"id": 3, "level": "info", "text": "t"},
     ],
@@ -141,3 +140,21 @@ def test_unhashable_level_is_dropped_not_raised(level: object) -> None:
 def test_kind_is_promo_only_when_exactly_promo(entry: dict, kind: str) -> None:
     got = notices_from_list([{**GOOD, **entry, "extra": "ignored"}])
     assert got == (Notice("a", "warn", "Payment failed", "https://example.test/pay", kind),)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_unknown_level_and_kind_keep_the_notice(caplog: pytest.LogCaptureFixture) -> None:
+    entry = {
+        "id": "n1",
+        "level": "critical",
+        "kind": "banner",
+        "text": "Maintenance tonight",
+        "url": "https://example.test/s",
+    }
+    with caplog.at_level(logging.WARNING):
+        got = notices_from_header(_header([entry]))
+    assert got == (Notice("n1", "info", "Maintenance tonight", "https://example.test/s", "notice"),)
+    messages = " ".join(r.message for r in caplog.records)
+    assert "'critical'" in messages
+    assert "'banner'" in messages
