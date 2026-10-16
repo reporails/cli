@@ -148,6 +148,37 @@ _EXACT_FAULTS = [
         "Input should be 'critical', 'high', 'medium', 'low' or 'info'",
         id="bad-severity-no-operator",
     ),
+    pytest.param("pattern-regex: x\n  pattern-inside: b", "pattern-inside", "is not a known key", id="unknown-key"),
+    pytest.param(
+        "pattern-regex: x\n  paths:\n    include: [x]\n    exclude: [y]",
+        "paths.exclude",
+        "is not a known key",
+        id="unknown-paths-key",
+    ),
+    pytest.param(
+        "pattern-regex: x\n  paths:\n    include: []",
+        "paths.include",
+        "List should have at least 1 item after validation, not 0",
+        id="paths-include-empty",
+    ),
+    pytest.param(
+        "pattern-regex: x\n  min_lines: 0", "min_lines", "Input should be greater than 0", id="min-lines-zero"
+    ),
+    pytest.param(
+        "pattern-regex: x\n  min_lines: '30'", "min_lines", "Input should be a valid integer", id="min-lines-text"
+    ),
+    pytest.param(
+        "pattern-regex: x\n  follow_imports: 'yes'",
+        "follow_imports",
+        "Input should be a valid boolean",
+        id="follow-imports-text",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  entry_only: true",
+        "entry_only",
+        "is read only on a deterministic check; a mechanical check takes it under args",
+        id="mechanical-entry-only",
+    ),
 ]
 
 
@@ -259,3 +290,15 @@ def test_a_checks_file_without_a_checks_list_is_logged(tmp_path: Path, caplog: p
 
     assert result.checks == []
     assert "has no valid 'checks' list" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.parametrize("pattern", ["(?m)^(?!---)", "^$", "foo|", ".*", "(?:)", "x*", "(?<!\\n)\\Z"])
+def test_a_pattern_that_can_match_empty_text_loads(tmp_path: Path, pattern: str) -> None:
+    yml = tmp_path / "checks.yml"
+    yml.write_text(f"checks:\n- id: A\n  pattern-regex: '{pattern}'\n")
+
+    (check,) = compile_rules([yml]).checks
+
+    assert [p.pattern for p in check.patterns] == [pattern]

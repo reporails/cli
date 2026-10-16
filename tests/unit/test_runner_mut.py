@@ -11,13 +11,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 import regex
-import yaml
 
-from reporails_cli.core.lint.regex.compiler import CompiledCheck, compile_rules
+from reporails_cli.core.lint.regex.compiler import CompiledCheck
 from reporails_cli.core.lint.regex.expect import emit_expect_findings, file_below_min_lines, file_matches_path_filter
 from reporails_cli.core.lint.regex.runner import (
     _compile_ruleset,
@@ -47,12 +45,6 @@ def _make_check(
         path_includes=path_includes,
         every_match=every_match,
     )
-
-
-def _write_yml(tmp_path: Path, data: dict[str, Any], name: str = "rule.yml") -> Path:
-    p = tmp_path / name
-    p.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
-    return p
 
 
 # ---------------------------------------------------------------------------
@@ -141,18 +133,6 @@ def test_compile_ruleset_filters_none_path() -> None:
 # ---------------------------------------------------------------------------
 # compiled min_lines guard
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_compiled_check_ignores_nonpositive_min_lines(tmp_path: Path) -> None:
-    """A min_lines of 0 or below is not recorded."""
-    entries = [
-        {"id": f"CORE.S.0013.c{i}", "type": "deterministic", "pattern-regex": "x", "min_lines": n, "message": "m"}
-        for i, n in enumerate((0, -3, 7))
-    ]
-    yml = _write_yml(tmp_path, {"checks": entries})
-    assert [c.min_lines for c in compile_rules([yml]).checks] == [0, 0, 7]
 
 
 # ---------------------------------------------------------------------------

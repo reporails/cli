@@ -284,7 +284,7 @@ fields:
       pattern-either:
         required: false
         type: array
-        description: "OR-set of regex strings — the check matches when ANY entry matches. Alternative to pattern-regex."
+        description: "OR-set: a list of `{pattern-regex: <str>}` items — the check matches when ANY item matches. Alternative to pattern-regex."
       patterns:
         required: false
         type: array
@@ -299,11 +299,12 @@ fields:
         required_if: "type == deterministic"
         type: string
         description: "Human-readable message describing what was detected or missing. On a non-deterministic check this is the check-level message override."
-      cross_file:
+      paths:
         required: false
-        type: boolean
-        default: false
-        description: "Whether pattern operates across the full target set (not per-file)"
+        type: object
+        description: >
+          Deterministic check only. Limits the check to files matching the globs in `include`
+          (a non-empty list); no other key is read.
       project_scope:
         required: false
         type: enum
@@ -318,7 +319,7 @@ fields:
         required: false
         type: integer
         description: >
-          Minimum file line count below which the check does not run. Read into
+          Deterministic check only. Minimum file line count below which the check does not run. Read into
           the runner's min_lines_map; a project may override it per rule via
           `.ails/config.yml: rule_thresholds.<RULE:ID>.min_lines`.
       follow_imports:
@@ -328,6 +329,13 @@ fields:
         description: >
           Deterministic check only. Also read the text an `@path` import splices into the file,
           and report a match on the imported file and line where it is written.
+      entry_only:
+        required: false
+        type: boolean
+        default: false
+        description: >
+          Deterministic check only. Limits the check to a skill's entry file. A mechanical check
+          takes it as `args.entry_only`.
       # shared optional fields
       replaces:
         required: false

@@ -16,7 +16,16 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import regex
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from reporails_cli.core.platform.contract.json_value import JsonValue
@@ -155,7 +164,7 @@ class FileMatch(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
 
 
 def _compiled(text: str) -> str:
-    """`text` when it compiles as a rule pattern; the compile error otherwise."""
+    """`text` when it is not empty and compiles as a rule pattern; the problem otherwise."""
     if not text:
         raise PydanticCustomError("pattern_empty", "is empty; an empty pattern matches every line", {})
     try:
@@ -233,6 +242,14 @@ REGEX_PATTERN_FIELDS = _aliases(PatternsItem)
 _NOT_REGEX_KEY = _alias_of(PatternsItem, "pattern_not_regex")
 
 
+class CheckPaths(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """The path filter of a check: the globs a file must match."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    include: list[str] = Field(min_length=1)
+
+
 class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A specific check within a rule.
 
@@ -240,7 +257,7 @@ class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__i
     deterministic (regex pattern), or content_query (atom-based).
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str  # e.g., "CORE.S.0001.file-exists"
     type: str = "deterministic"  # "mechanical" | "deterministic" | "content_query"
@@ -259,6 +276,11 @@ class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__i
     pattern_regex: RulePattern | None = Field(default=None, alias="pattern-regex")
     pattern_either: list[PatternEitherItem] | None = Field(default=None, alias="pattern-either", min_length=1)
     patterns: list[PatternsItem] | None = Field(default=None, min_length=1)
+    # Read only on a deterministic check: the file filter and reporting gates of its regex match.
+    paths: CheckPaths | None = None
+    min_lines: Annotated[int, Field(strict=True, gt=0)] | None = None  # files shorter than this are skipped
+    follow_imports: StrictBool = False  # also read the text an `@path` import splices in
+    entry_only: StrictBool = False  # only a skill's entry file is checked
 
     @model_validator(mode="before")
     @classmethod
@@ -272,15 +294,25 @@ class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__i
             )
         return data
 
-    @field_validator("pattern_regex", "pattern_either", "patterns", mode="before")
+    @field_validator(
+        "pattern_regex",
+        "pattern_either",
+        "patterns",
+        "paths",
+        "min_lines",
+        "follow_imports",
+        "entry_only",
+        mode="before",
+    )
     @classmethod
     def _placed_operator(cls, value: object, info: ValidationInfo[None]) -> object:
-        """Refuse a pattern field that is misplaced for the check's type, or given no value."""
+        """Refuse a deterministic-only field that is misplaced for the check's type, or given no value."""
         if "type" not in info.data:
             return value
         deterministic = info.data["type"] == "deterministic"
         if not deterministic:
-            raise PydanticCustomError("pattern_operator", "is read only on a deterministic check", {})
+            home = "; a mechanical check takes it under args" if info.field_name == "entry_only" else ""
+            raise PydanticCustomError("pattern_operator", "is read only on a deterministic check{home}", {"home": home})
         if value is None:
             raise PydanticCustomError("pattern_operator", "needs a value", {})
         return value

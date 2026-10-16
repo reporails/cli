@@ -33,7 +33,6 @@ checks:
   - id: wont-match
     message: "Won't find this"
     severity: medium
-    languages: [generic]
     pattern-regex: "XYZZY_IMPOSSIBLE_STRING_12345"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
@@ -62,7 +61,6 @@ checks:
   - id: finds-hello
     message: "Found hello"
     severity: medium
-    languages: [generic]
     pattern-regex: "Hello"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
@@ -112,7 +110,6 @@ checks:
   - id: rust-only
     message: "Rust check"
     severity: medium
-    languages: [generic]
     pattern-regex: "fn main"
     paths:
       include:
@@ -144,7 +141,6 @@ checks:
   - id: test-structure
     message: "Found TODO"
     severity: medium
-    languages: [generic]
     pattern-regex: "TODO"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
@@ -187,7 +183,6 @@ checks:
   - id: test-defs
     message: "Match"
     severity: medium
-    languages: [generic]
     pattern-regex: "Hello"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)

@@ -341,7 +341,6 @@ class TestDeterministicChecks:
             "- id: CORE.S.0003.check\n"
             "  message: Wall of prose\n"
             "  severity: medium\n"
-            "  languages: [generic]\n"
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '\\.\\s+[A-Z][a-z]+\\s.*\\.\\s+[A-Z][a-z]+\\s.*\\.'\n",
         )
@@ -363,7 +362,6 @@ class TestDeterministicChecks:
                     "id": "CORE.S.0003.check",
                     "type": "deterministic",
                     "severity": "medium",
-                    "name": "wall-of-prose",
                     "pattern-regex": "x",
                     "expect": "absent",
                 }
@@ -395,7 +393,6 @@ class TestDeterministicChecks:
             "- id: CORE.C.0001.check\n"
             "  message: Has project context\n"
             "  severity: medium\n"
-            "  languages: [generic]\n"
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '## (Commands|Architecture)'\n",
         )
@@ -418,7 +415,6 @@ class TestDeterministicChecks:
                     "type": "deterministic",
                     "severity": "medium",
                     "expect": "present",
-                    "name": "has-context",
                     "pattern-regex": "x",
                 }
             ],
@@ -455,7 +451,7 @@ class TestSemanticChecks:
             slug="sem-rule",
             title="Semantic",
             category="coherence",
-            checks=[{"id": "CORE.C.0005.sem", "type": "semantic", "severity": "medium", "name": "sem-eval"}],
+            checks=[{"id": "CORE.C.0005.sem", "type": "semantic", "severity": "medium"}],
             rule_dir=rule_dir,
             checks_yml=rule_dir / "checks.yml",
         )
@@ -552,7 +548,6 @@ class TestFixtureDiscovery:
             "- id: CORE.S.0099.check\n"
             "  message: Bad setting\n"
             "  severity: medium\n"
-            "  languages: [generic]\n"
             "  paths:\n    include: ['**/*.json']\n"
             "  pattern-regex: 'dangerous_setting'\n",
         )

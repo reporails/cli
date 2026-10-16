@@ -27,7 +27,6 @@ checks:
   - id: test-simple
     message: "Found a TODO comment"
     severity: medium
-    languages: [generic]
     pattern-regex: "TODO"
     paths:
       include:
@@ -52,7 +51,6 @@ checks:
   - id: test-either
     message: "Found test framework"
     severity: medium
-    languages: [generic]
     pattern-either:
       - pattern-regex: "(?i)pytest"
       - pattern-regex: "(?i)jest"
@@ -80,7 +78,6 @@ checks:
   - id: test-patterns-and
     message: "File has content but no Commands section"
     severity: medium
-    languages: [generic]
     patterns:
       - pattern-regex: "."
       - pattern-not-regex: "## Commands"
@@ -109,7 +106,6 @@ checks:
   - id: test-neg-suppresses
     message: "Missing commands"
     severity: medium
-    languages: [generic]
     patterns:
       - pattern-regex: "."
       - pattern-not-regex: "## Commands"
@@ -138,7 +134,6 @@ checks:
   - id: test-no-pattern
     message: "No pattern"
     severity: medium
-    languages: [generic]
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "test.md").write_text("# Test\n")
@@ -163,7 +158,6 @@ checks:
   - id: test-path
     message: "Found in md"
     severity: medium
-    languages: [generic]
     pattern-regex: "Hello"
     paths:
       include:
@@ -192,7 +186,6 @@ checks:
   - id: test-no-filter
     message: "Found"
     severity: medium
-    languages: [generic]
     pattern-regex: "Hello"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
@@ -218,7 +211,6 @@ checks:
   - id: test-lines
     message: "Found TODO"
     severity: medium
-    languages: [generic]
     pattern-regex: "TODO"
     paths:
       include:

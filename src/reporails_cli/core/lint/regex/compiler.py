@@ -10,7 +10,6 @@ import regex as re
 
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.adapters.rule_builder import load_checks
-from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, str_list
 from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.models import Check, Severity
@@ -56,13 +55,7 @@ def display_severity(raw: str) -> FindingSeverity:
     return "warning"
 
 
-def _min_lines(rule_entry: JsonObject) -> int:
-    """A check's `min_lines` gate, 0 when it declares none or a non-positive one."""
-    value = rule_entry.get("min_lines")
-    return int(value) if isinstance(value, (int, float)) and value > 0 else 0
-
-
-def _compile_check(check: Check, rule_entry: JsonObject) -> CompiledCheck:
+def _compile_check(check: Check) -> CompiledCheck:
     """Compile a deterministic check into a CompiledCheck, with its reporting flags.
 
     A check that forbids something (`expect: absent`) reports every match; `follow_imports: true`
@@ -83,11 +76,11 @@ def _compile_check(check: Check, rule_entry: JsonObject) -> CompiledCheck:
         patterns=tuple(compile_rule_pattern(text) for text in positive),
         negative_patterns=tuple(compile_rule_pattern(text) for text in negative),
         either_patterns=tuple(compile_rule_pattern(item.pattern_regex) for item in check.pattern_either or []),
-        path_includes=tuple(str_list(as_object(rule_entry.get("paths")).get("include"))),
+        path_includes=tuple(check.paths.include) if check.paths else (),
         every_match=check.expect == "absent",
-        follow_imports=rule_entry.get("follow_imports") is True,
-        min_lines=_min_lines(rule_entry),
-        entry_only=rule_entry.get("entry_only") is True,
+        follow_imports=check.follow_imports,
+        min_lines=check.min_lines or 0,
+        entry_only=check.entry_only,
     )
 
 
@@ -123,10 +116,6 @@ def compile_rules(yml_paths: list[Path]) -> CompiledRuleSet:
             )
             continue
 
-        result.checks.extend(
-            _compile_check(check, as_object(entry))
-            for check, entry in zip(checks, as_list(data.get("checks")), strict=True)
-            if check.type == "deterministic"
-        )
+        result.checks.extend(_compile_check(check) for check in checks if check.type == "deterministic")
 
     return result

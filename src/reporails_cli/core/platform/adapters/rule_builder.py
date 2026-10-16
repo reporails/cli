@@ -76,6 +76,11 @@ def field_problems(exc: ValidationError, model: type[BaseModel]) -> list[FieldPr
     """
     grouped: dict[str, list[tuple[str, str]]] = {}
     for err in exc.errors():
+        if err["type"] == "extra_forbidden":
+            parent = _field_path(model, err["loc"][:-1])
+            path = f"{parent}.{err['loc'][-1]}" if parent else str(err["loc"][-1])
+            grouped.setdefault(path, []).append(("is not a known key", err["type"]))
+            continue
         path = _field_path(model, err["loc"])
         grouped.setdefault(path, []).append((err["msg"], err["type"]))
     return [

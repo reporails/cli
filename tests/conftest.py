@@ -326,7 +326,6 @@ checks:
   - id: test-valid-rule
     message: "Found a TODO comment"
     severity: WARNING
-    languages: [generic]
     pattern-regex: "TODO"
     paths:
       include:
@@ -342,7 +341,6 @@ checks:
   - id: test-patterns-rule
     message: "File missing required section"
     severity: WARNING
-    languages: [generic]
     patterns:
       - pattern-regex: "."
       - pattern-not-regex: "## Commands"
@@ -363,7 +361,6 @@ checks:
   - id: test-invalid-toplevel
     message: "Invalid schema"
     severity: WARNING
-    languages: [generic]
     pattern-not-regex: "something"
     paths:
       include:

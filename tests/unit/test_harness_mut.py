@@ -53,7 +53,6 @@ def _det_check(check_id: str = "CORE.S.0001.check", expect: str = "absent") -> d
         "type": "deterministic",
         "severity": "medium",
         "expect": expect,
-        "name": "d",
         "pattern-regex": "x",
     }
 
@@ -68,7 +67,6 @@ def _one_pattern(check_id: str, pattern: str) -> str:
         f"- id: {check_id}\n"
         "  message: m\n"
         "  severity: medium\n"
-        "  languages: [generic]\n"
         "  paths:\n    include: ['**/*.md']\n"
         f"  pattern-regex: '{pattern}'\n"
     )
@@ -117,10 +115,10 @@ def test_no_matching_rule_reports_no_pattern(tmp_path: Path) -> None:
         rd,
         "checks:\n"
         "- id: CORE.S.9991.other\n"
-        "  message: m\n  severity: medium\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
         "- id: CORE.S.9992.other2\n"
-        "  message: m\n  severity: medium\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'QQQNOMATCH'\n",
     )
     result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0001.check", expect="absent")]), [])
@@ -150,10 +148,10 @@ def test_matching_rule_selected_by_id(tmp_path: Path) -> None:
         rd,
         "checks:\n"
         "- id: CORE.S.0001.check\n"  # WRONG rule: pattern would not fire
-        "  message: m\n  severity: medium\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
         "- id: CORE.S.0002.check\n"  # RIGHT rule: matches the check id + fixture
-        "  message: m\n  severity: medium\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'Commands'\n",
     )
     result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0002.check", expect="present")]), [])
@@ -284,7 +282,7 @@ def test_excluded_fixture_file_is_not_scanned(tmp_path: Path) -> None:
         rd,
         "checks:\n"
         "- id: CORE.S.0001.check\n"
-        "  message: m\n  severity: medium\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*']\n  pattern-regex: 'Commands'\n",
     )
     # expect=present: the match lives only in the excluded file, so a correctly
