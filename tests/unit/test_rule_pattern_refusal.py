@@ -34,33 +34,119 @@ _FAULTS = [
         id="either-wrong-key",
     ),
     pytest.param(
-        "pattern-regex: a\n  patterns:\n    - pattern-regex: b",
-        "",
-        "more than one pattern operator (`pattern-regex`, `patterns`)",
-        id="two-operators",
-    ),
-    pytest.param(
-        "pattern-regex: a\n  pattern-not-regex: b", "", "`pattern-not-regex` is read only inside patterns", id="top-not"
-    ),
-    pytest.param(
         "patterns:\n    - pattern-regex: a\n    - pattern-not-regex: '[bad'",
         "patterns.1.pattern-not-regex",
         "does not compile",
         id="not-regex-no-compile",
     ),
     pytest.param("patterns: []", "patterns", "at least 1 item", id="empty-patterns"),
-    pytest.param("pattern-regex:", "", "`pattern-regex` needs a value", id="null-operator"),
+]
+
+_EXACT_FAULTS = [
     pytest.param(
-        "type: mechanical\n  check: file_exists\n  pattern-regex: x",
+        "pattern-regex: ''",
+        "pattern-regex",
+        "is empty; an empty pattern matches every line",
+        id="empty-pattern-regex",
+    ),
+    pytest.param(
+        "pattern-either:\n    - pattern-regex: ''",
+        "pattern-either.0.pattern-regex",
+        "is empty; an empty pattern matches every line",
+        id="empty-either-item",
+    ),
+    pytest.param(
+        "patterns:\n    - pattern-regex: ''",
+        "patterns.0.pattern-regex",
+        "is empty; an empty pattern matches every line",
+        id="empty-patterns-regex",
+    ),
+    pytest.param(
+        "patterns:\n    - pattern-regex: a\n    - pattern-not-regex: ''",
+        "patterns.1.pattern-not-regex",
+        "is empty; an empty pattern matches every line",
+        id="empty-patterns-not-regex",
+    ),
+    pytest.param(
+        "patterns:\n    - pattern-not-regex: a",
+        "patterns",
+        "holds no `pattern-regex`; `pattern-not-regex` alone matches nothing",
+        id="patterns-without-regex",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  pattern-not-regex: x",
         "",
-        "is read only on a deterministic check",
-        id="mechanical-pattern-regex",
+        "`pattern-not-regex` is read only inside `patterns` on a deterministic check",
+        id="mechanical-top-not",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  pattern-not-regex: '('",
+        "",
+        "`pattern-not-regex` is read only inside `patterns` on a deterministic check",
+        id="mechanical-top-not-uncompilable",
     ),
     pytest.param(
         "type: mechanical\n  check: file_exists\n  patterns: ['*.md']",
-        "",
+        "patterns",
         "is read only on a deterministic check",
-        id="mechanical-patterns",
+        id="mechanical-patterns-strings",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  patterns:\n    - pattern-not-regex: x",
+        "patterns",
+        "is read only on a deterministic check",
+        id="mechanical-patterns-negative-only",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  pattern-regex: '('",
+        "pattern-regex",
+        "is read only on a deterministic check",
+        id="mechanical-uncompilable-regex",
+    ),
+    pytest.param("pattern-regex:", "pattern-regex", "needs a value", id="null-regex"),
+    pytest.param("patterns:", "patterns", "needs a value", id="null-patterns"),
+    pytest.param("pattern-either:", "pattern-either", "needs a value", id="null-either"),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  pattern-regex: x",
+        "pattern-regex",
+        "is read only on a deterministic check",
+        id="mechanical-valid-regex",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  pattern-either:\n    - pattern-regex: x",
+        "pattern-either",
+        "is read only on a deterministic check",
+        id="mechanical-either",
+    ),
+    pytest.param(
+        "pattern-regex: a\n  pattern-not-regex: b",
+        "",
+        "`pattern-not-regex` is read only inside `patterns` on a deterministic check",
+        id="deterministic-top-not",
+    ),
+    pytest.param(
+        "pattern-regex: a\n  patterns:\n    - pattern-regex: b",
+        "",
+        "holds more than one pattern operator (`pattern-regex`, `patterns`); keep one",
+        id="two-operators",
+    ),
+    pytest.param(
+        "message: nothing to match",
+        "",
+        "a deterministic check needs one pattern operator: pattern-regex, pattern-either or patterns",
+        id="no-operator-exact",
+    ),
+    pytest.param(
+        "type: null\n  pattern-regex: x",
+        "type",
+        "Input should be a valid string",
+        id="null-type-with-pattern",
+    ),
+    pytest.param(
+        "severity: bogus",
+        "severity",
+        "Input should be 'critical', 'high', 'medium', 'low' or 'info'",
+        id="bad-severity-no-operator",
     ),
 ]
 
@@ -89,6 +175,19 @@ def test_an_invalid_pattern_operator_refuses_the_rule(tmp_path: Path, body: str,
     assert problem in message
     if field:
         assert f": {field}: " in message
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+@pytest.mark.parametrize(("body", "field", "problem"), _EXACT_FAULTS)
+def test_a_refused_check_reports_exactly_its_problem(tmp_path: Path, body: str, field: str, problem: str) -> None:
+    md = _write_rule(tmp_path, "r", "CORE:S:0001", body)
+
+    with pytest.raises(RuleReadError) as raised:
+        read_rule(md)
+
+    located = f"{field}: {problem}" if field else problem
+    assert str(raised.value) == f"{md.parent / 'checks.yml'}: check 1 (CORE.S.0001.check): {located}"
 
 
 @pytest.mark.unit

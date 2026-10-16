@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import regex
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 from reporails_cli.core.platform.contract.json_value import JsonValue
@@ -154,13 +154,10 @@ class FileMatch(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
     link_source_type: list[str] | str | None = None
 
 
-# The check fields that hold a regex.
-REGEX_PATTERN_FIELDS = ("pattern-regex", "pattern-not-regex")
-_OPERATORS = ("pattern-regex", "pattern-either", "patterns")
-
-
 def _compiled(text: str) -> str:
     """`text` when it compiles as a rule pattern; the compile error otherwise."""
+    if not text:
+        raise PydanticCustomError("pattern_empty", "is empty; an empty pattern matches every line", {})
     try:
         compile_rule_pattern(text)
     except regex.error as exc:
@@ -169,6 +166,16 @@ def _compiled(text: str) -> str:
 
 
 RulePattern = Annotated[str, AfterValidator(_compiled)]
+
+
+def _aliases(model: type[BaseModel]) -> tuple[str, ...]:
+    """The YAML keys of `model`'s fields, as their aliases name them."""
+    return tuple(info.alias or name for name, info in model.model_fields.items())
+
+
+def _alias_of(model: type[BaseModel], name: str) -> str:
+    """The YAML key of `model`'s field `name`."""
+    return model.model_fields[name].alias or name
 
 
 def _item_keys(value: object, owner: str, allowed: tuple[str, ...]) -> object:
@@ -200,7 +207,10 @@ class PatternEitherItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: B
     @classmethod
     def _only_regex(cls, value: object) -> object:
         """Refuse an item holding anything but `pattern-regex`."""
-        return _item_keys(value, "pattern-either", ("pattern-regex",))
+        return _item_keys(value, "pattern-either", _EITHER_KEYS)
+
+
+_EITHER_KEYS = _aliases(PatternEitherItem)
 
 
 class PatternsItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
@@ -216,6 +226,11 @@ class PatternsItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseMo
     def _one_regex(cls, value: object) -> object:
         """Refuse an item holding anything but exactly one of the two regex keys."""
         return _item_keys(value, "patterns", REGEX_PATTERN_FIELDS)
+
+
+# The check fields that hold a regex.
+REGEX_PATTERN_FIELDS = _aliases(PatternsItem)
+_NOT_REGEX_KEY = _alias_of(PatternsItem, "pattern_not_regex")
 
 
 class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
@@ -247,37 +262,65 @@ class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__i
 
     @model_validator(mode="before")
     @classmethod
-    def _one_operator(cls, data: object) -> object:
-        """Refuse a check with a misplaced, empty, repeated or missing pattern operator, by its raw keys."""
-        if not isinstance(data, dict):
-            return data
-        kind = data.get("type", cls.__pydantic_fields__["type"].default)
-        misplaced = [name for name in (*_OPERATORS, "pattern-not-regex") if name in data]
-        if kind != "deterministic" and misplaced:
+    def _no_top_level_negation(cls, data: object) -> object:
+        """Refuse a check holding `pattern-not-regex` outside `patterns`."""
+        if isinstance(data, dict) and _NOT_REGEX_KEY in data:
             raise PydanticCustomError(
                 "pattern_operator",
-                "{names} is read only on a deterministic check",
-                {"names": ", ".join(f"`{name}`" for name in misplaced)},
+                "`{key}` is read only inside `patterns` on a deterministic check",
+                {"key": _NOT_REGEX_KEY},
             )
-        if "pattern-not-regex" in data:
-            raise PydanticCustomError("pattern_operator", "`pattern-not-regex` is read only inside patterns", {})
-        for name in _OPERATORS:
-            if name in data and data[name] is None:
-                raise PydanticCustomError("pattern_operator", "`{name}` needs a value", {"name": name})
-        given = [name for name in _OPERATORS if name in data]
+        return data
+
+    @field_validator("pattern_regex", "pattern_either", "patterns", mode="before")
+    @classmethod
+    def _placed_operator(cls, value: object, info: ValidationInfo[None]) -> object:
+        """Refuse a pattern field that is misplaced for the check's type, or given no value."""
+        if "type" not in info.data:
+            return value
+        deterministic = info.data["type"] == "deterministic"
+        if not deterministic:
+            raise PydanticCustomError("pattern_operator", "is read only on a deterministic check", {})
+        if value is None:
+            raise PydanticCustomError("pattern_operator", "needs a value", {})
+        return value
+
+    @field_validator("patterns")
+    @classmethod
+    def _positive_term(cls, items: list[PatternsItem] | None) -> list[PatternsItem] | None:
+        """Refuse `patterns` holding no `pattern-regex`."""
+        if items is not None and all(item.pattern_regex is None for item in items):
+            raise PydanticCustomError(
+                "pattern_operator", "holds no `pattern-regex`; `pattern-not-regex` alone matches nothing", {}
+            )
+        return items
+
+    @model_validator(mode="after")
+    def _one_operator(self) -> Check:
+        """Refuse a deterministic check holding more than one pattern operator, or none."""
+        given = [key for name, key in _OPERATOR_KEYS.items() if name in self.model_fields_set]
         if len(given) > 1:
             raise PydanticCustomError(
                 "pattern_operator",
                 "holds more than one pattern operator ({names}); keep one",
-                {"names": ", ".join(f"`{name}`" for name in given)},
+                {"names": ", ".join(f"`{key}`" for key in given)},
             )
-        if not given and kind == "deterministic":
+        if not given and self.type == "deterministic":
+            *head, last = _OPERATOR_KEYS.values()
             raise PydanticCustomError(
                 "pattern_operator",
-                "a deterministic check needs one pattern operator: pattern-regex, pattern-either or patterns",
-                {},
+                "a deterministic check needs one pattern operator: {names}",
+                {"names": f"{', '.join(head)} or {last}"},
             )
-        return data
+        return self
+
+
+# The pattern operator fields of a check, each with its YAML key.
+_OPERATOR_KEYS = {
+    name: info.alias or name
+    for name, info in Check.model_fields.items()
+    if name in ("pattern_regex", "pattern_either", "patterns")
+}
 
 
 @dataclass(frozen=True, slots=True)

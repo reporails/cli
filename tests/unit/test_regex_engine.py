@@ -205,12 +205,8 @@ class TestCompilerEdgeCases:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_patterns_only_negative(self, tmp_path: Path) -> None:
-        """patterns block with ONLY pattern-not-regex (no positive patterns).
-
-        This compiles successfully. The runner's match_check returns []
-        for positive patterns (vacuously true) but then checks negatives.
-        """
+    def test_patterns_only_negative(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """A `patterns` block holding only pattern-not-regex matches nothing, so its check is refused at load."""
         p = _write_rule(
             tmp_path,
             {
@@ -223,12 +219,11 @@ class TestCompilerEdgeCases:
                 ]
             },
         )
-        result = compile_rules([p])
-        # Should compile — it has a recognized operator
-        assert len(result.checks) == 1
-        check = result.checks[0]
-        assert check.patterns == ()
-        assert len(check.negative_patterns) == 1
+        assert compile_rules([p]).checks == []
+        assert (
+            "check 1 (NEG-ONLY): patterns: holds no `pattern-regex`; `pattern-not-regex` alone matches nothing"
+            in caplog.text
+        )
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
