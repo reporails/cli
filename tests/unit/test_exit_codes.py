@@ -32,7 +32,7 @@ class TestRegexEngineResults:
 checks:
   - id: wont-match
     message: "Won't find this"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "XYZZY_IMPOSSIBLE_STRING_12345"
 """
@@ -61,7 +61,7 @@ checks:
 checks:
   - id: finds-hello
     message: "Found hello"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "Hello"
 """
@@ -111,7 +111,7 @@ checks:
 checks:
   - id: rust-only
     message: "Rust check"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "fn main"
     paths:
@@ -143,7 +143,7 @@ class TestSARIFOutputFormat:
 checks:
   - id: test-structure
     message: "Found TODO"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "TODO"
 """
@@ -186,7 +186,7 @@ checks:
 checks:
   - id: test-defs
     message: "Match"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "Hello"
 """

@@ -148,7 +148,7 @@ class RuleReadError(ValueError):
         if problem or not field_problems:
             super().__init__(f"{path}: {problem}")
         else:
-            super().__init__("\n".join(f"{path}: {p.field}: {p.message}" for p in field_problems))
+            super().__init__("\n".join(f"{path}: {p.text}" for p in field_problems))
         self.path = path
         self.problem = problem
         self.frontmatter = frontmatter

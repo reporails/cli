@@ -340,7 +340,7 @@ class TestDeterministicChecks:
             "checks:\n"
             "- id: CORE.S.0003.check\n"
             "  message: Wall of prose\n"
-            "  severity: WARNING\n"
+            "  severity: medium\n"
             "  languages: [generic]\n"
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '\\.\\s+[A-Z][a-z]+\\s.*\\.\\s+[A-Z][a-z]+\\s.*\\.'\n",
@@ -364,6 +364,7 @@ class TestDeterministicChecks:
                     "type": "deterministic",
                     "severity": "medium",
                     "name": "wall-of-prose",
+                    "pattern-regex": "x",
                     "expect": "absent",
                 }
             ],
@@ -393,7 +394,7 @@ class TestDeterministicChecks:
             "checks:\n"
             "- id: CORE.C.0001.check\n"
             "  message: Has project context\n"
-            "  severity: WARNING\n"
+            "  severity: medium\n"
             "  languages: [generic]\n"
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '## (Commands|Architecture)'\n",
@@ -418,6 +419,7 @@ class TestDeterministicChecks:
                     "severity": "medium",
                     "expect": "present",
                     "name": "has-context",
+                    "pattern-regex": "x",
                 }
             ],
             rule_dir=rule_dir,
@@ -549,7 +551,7 @@ class TestFixtureDiscovery:
             "checks:\n"
             "- id: CORE.S.0099.check\n"
             "  message: Bad setting\n"
-            "  severity: WARNING\n"
+            "  severity: medium\n"
             "  languages: [generic]\n"
             "  paths:\n    include: ['**/*.json']\n"
             "  pattern-regex: 'dangerous_setting'\n",
@@ -568,7 +570,15 @@ class TestFixtureDiscovery:
             slug="json-rule",
             title="JSON Rule",
             category="structure",
-            checks=[{"id": "CORE.S.0099.check", "type": "deterministic", "severity": "medium", "expect": "absent"}],
+            checks=[
+                {
+                    "id": "CORE.S.0099.check",
+                    "type": "deterministic",
+                    "severity": "medium",
+                    "expect": "absent",
+                    "pattern-regex": "x",
+                }
+            ],
             rule_dir=rule_dir,
             checks_yml=rule_dir / "checks.yml",
         )
@@ -820,7 +830,7 @@ class TestScaffoldFixture:
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [_c({"type": "deterministic", "id": "test", "severity": "medium"})]
+        checks = [_c({"type": "deterministic", "id": "test", "severity": "medium", "pattern-regex": "x"})]
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 

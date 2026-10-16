@@ -13,11 +13,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import regex
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 from reporails_cli.core.platform.contract.json_value import JsonValue
+from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingBase
 
 
@@ -151,6 +154,70 @@ class FileMatch(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel
     link_source_type: list[str] | str | None = None
 
 
+# The check fields that hold a regex.
+REGEX_PATTERN_FIELDS = ("pattern-regex", "pattern-not-regex")
+_OPERATORS = ("pattern-regex", "pattern-either", "patterns")
+
+
+def _compiled(text: str) -> str:
+    """`text` when it compiles as a rule pattern; the compile error otherwise."""
+    try:
+        compile_rule_pattern(text)
+    except regex.error as exc:
+        raise PydanticCustomError("pattern_compile", "does not compile: {reason}", {"reason": str(exc)}) from exc
+    return text
+
+
+RulePattern = Annotated[str, AfterValidator(_compiled)]
+
+
+def _item_keys(value: object, owner: str, allowed: tuple[str, ...]) -> object:
+    """`value` when it is a mapping of an `owner` item holding exactly one `allowed` key, with a value."""
+    if not isinstance(value, dict):
+        return value
+    found = [str(key) for key in value]
+    if len(found) == 1 and found[0] in allowed:
+        if value[found[0]] is None:
+            raise PydanticCustomError("pattern_item", "`{key}` needs a value", {"key": found[0]})
+        return value
+    held = ", ".join(f"`{key}`" for key in found) or "nothing"
+    expected = "one of " + ", ".join(f"`{name}`" for name in allowed)
+    raise PydanticCustomError(
+        "pattern_item",
+        "holds {held}; an item of `{owner}` holds {expected}",
+        {"held": held, "owner": owner, "expected": expected},
+    )
+
+
+class PatternEitherItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """One alternative of a check's `pattern-either`: a `pattern-regex`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pattern_regex: RulePattern = Field(alias="pattern-regex")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _only_regex(cls, value: object) -> object:
+        """Refuse an item holding anything but `pattern-regex`."""
+        return _item_keys(value, "pattern-either", ("pattern-regex",))
+
+
+class PatternsItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """One term of a check's `patterns`: a `pattern-regex` or a `pattern-not-regex`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pattern_regex: RulePattern | None = Field(default=None, alias="pattern-regex")
+    pattern_not_regex: RulePattern | None = Field(default=None, alias="pattern-not-regex")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _one_regex(cls, value: object) -> object:
+        """Refuse an item holding anything but exactly one of the two regex keys."""
+        return _item_keys(value, "patterns", REGEX_PATTERN_FIELDS)
+
+
 class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A specific check within a rule.
 
@@ -173,6 +240,44 @@ class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__i
     # "once": one project-wide fact, reported once per project and kept on a narrowed run.
     project_scope: Literal["", "aggregate", "once"] = ""
     convention: bool = False  # Finding names a documentation convention the file does not follow
+    # The pattern operator of a deterministic check: exactly one of the three.
+    pattern_regex: RulePattern | None = Field(default=None, alias="pattern-regex")
+    pattern_either: list[PatternEitherItem] | None = Field(default=None, alias="pattern-either", min_length=1)
+    patterns: list[PatternsItem] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _one_operator(cls, data: object) -> object:
+        """Refuse a check with a misplaced, empty, repeated or missing pattern operator, by its raw keys."""
+        if not isinstance(data, dict):
+            return data
+        kind = data.get("type", cls.__pydantic_fields__["type"].default)
+        misplaced = [name for name in (*_OPERATORS, "pattern-not-regex") if name in data]
+        if kind != "deterministic" and misplaced:
+            raise PydanticCustomError(
+                "pattern_operator",
+                "{names} is read only on a deterministic check",
+                {"names": ", ".join(f"`{name}`" for name in misplaced)},
+            )
+        if "pattern-not-regex" in data:
+            raise PydanticCustomError("pattern_operator", "`pattern-not-regex` is read only inside patterns", {})
+        for name in _OPERATORS:
+            if name in data and data[name] is None:
+                raise PydanticCustomError("pattern_operator", "`{name}` needs a value", {"name": name})
+        given = [name for name in _OPERATORS if name in data]
+        if len(given) > 1:
+            raise PydanticCustomError(
+                "pattern_operator",
+                "holds more than one pattern operator ({names}); keep one",
+                {"names": ", ".join(f"`{name}`" for name in given)},
+            )
+        if not given and kind == "deterministic":
+            raise PydanticCustomError(
+                "pattern_operator",
+                "a deterministic check needs one pattern operator: pattern-regex, pattern-either or patterns",
+                {},
+            )
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +287,11 @@ class FieldProblem:
     field: str
     message: str
     kind: Literal["missing", "invalid"]
+
+    @property
+    def text(self) -> str:
+        """The problem as one line: `<field>: <message>`, the message alone for a problem of the whole value."""
+        return f"{self.field}: {self.message}" if self.field else self.message
 
 
 class Rule(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any

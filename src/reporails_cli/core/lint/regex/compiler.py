@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import regex as re
 
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
-from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, str_list
+from reporails_cli.core.platform.adapters.rule_builder import load_checks
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object, str_list
+from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
 from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
-from reporails_cli.core.platform.dto.models import Severity
+from reporails_cli.core.platform.dto.models import Check, Severity
 
 logger = logging.getLogger(__name__)
-
-# Pattern operators we support
-_SUPPORTED_OPERATORS = {"pattern-regex", "pattern-either", "patterns"}
 
 
 @dataclass(frozen=True)
@@ -41,36 +40,6 @@ class CompiledRuleSet:
     """All compiled checks from a set of YAML rule files."""
 
     checks: list[CompiledCheck] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)
-
-
-def _compile_pattern(pattern_str: str) -> re.Pattern[str]:
-    """Compile a regex pattern string with MULTILINE and DOTALL flags."""
-    return re.compile(pattern_str, re.MULTILINE | re.DOTALL)
-
-
-def _pattern_text(value: JsonValue) -> re.Pattern[str]:
-    """Compile a `pattern-regex` / `pattern-not-regex` value; a value that is not a string is an invalid regex."""
-    if not isinstance(value, str):
-        raise re.error("a pattern must be a string")
-    return _compile_pattern(value)
-
-
-def _text(rule_entry: JsonObject, key: str, default: str) -> str:
-    """The string a rule entry holds under `key`, `default` when it holds none."""
-    value = rule_entry.get(key)
-    return value if isinstance(value, str) else default
-
-
-def _get_operator(rule_entry: JsonObject) -> str | None:
-    """Identify which pattern operator a rule entry uses."""
-    if "pattern-regex" in rule_entry:
-        return "pattern-regex"
-    if "pattern-either" in rule_entry:
-        return "pattern-either"
-    if "patterns" in rule_entry:
-        return "patterns"
-    return None
 
 
 def display_severity(raw: str) -> FindingSeverity:
@@ -78,10 +47,9 @@ def display_severity(raw: str) -> FindingSeverity:
 
     `Rule.severity` and `Check.severity` carry the SARIF-adjacent
     `critical`/`high`/`medium`/`low`/`info` vocabulary; the merger and
-    text formatters only count `error`/`warning`/`info`. A check file may
-    also say `error`.
+    text formatters only count `error`/`warning`/`info`.
     """
-    if raw == "error" or raw in (Severity.CRITICAL, Severity.HIGH):
+    if raw in (Severity.CRITICAL, Severity.HIGH):
         return "error"
     if raw in (Severity.LOW, Severity.INFO):
         return "info"
@@ -94,134 +62,45 @@ def _min_lines(rule_entry: JsonObject) -> int:
     return int(value) if isinstance(value, (int, float)) and value > 0 else 0
 
 
-def _compile_single_rule(rule_entry: JsonObject) -> CompiledCheck | None:
-    """Compile a single YAML rule entry into a CompiledCheck, with its reporting flags.
+def _compile_check(check: Check, rule_entry: JsonObject) -> CompiledCheck:
+    """Compile a deterministic check into a CompiledCheck, with its reporting flags.
 
     A check that forbids something (`expect: absent`) reports every match; `follow_imports: true`
     makes a check read imported text as well; `min_lines` gates it to files of at least that length;
     `entry_only: true` limits it to a skill's entry file.
-    Returns None if the rule uses unsupported operators.
     """
-    check = _compile_operator(rule_entry)
-    if check is None:
-        return None
-    return replace(
-        check,
-        every_match=rule_entry.get("expect") == "absent",
+    positive: list[str] = []
+    negative: list[str] = []
+    if check.pattern_regex is not None:
+        positive = [check.pattern_regex]
+    elif check.patterns:
+        positive = [item.pattern_regex for item in check.patterns if item.pattern_regex is not None]
+        negative = [item.pattern_not_regex for item in check.patterns if item.pattern_not_regex is not None]
+    return CompiledCheck(
+        id=check.id,
+        message=check.message,
+        severity=display_severity(check.severity.value if check.severity else "warning"),
+        patterns=tuple(compile_rule_pattern(text) for text in positive),
+        negative_patterns=tuple(compile_rule_pattern(text) for text in negative),
+        either_patterns=tuple(compile_rule_pattern(item.pattern_regex) for item in check.pattern_either or []),
+        path_includes=tuple(str_list(as_object(rule_entry.get("paths")).get("include"))),
+        every_match=check.expect == "absent",
         follow_imports=rule_entry.get("follow_imports") is True,
         min_lines=_min_lines(rule_entry),
         entry_only=rule_entry.get("entry_only") is True,
     )
 
 
-def _compile_operator(rule_entry: JsonObject) -> CompiledCheck | None:
-    """Compile a rule entry's pattern operator into a CompiledCheck. None for an unsupported one."""
-    rule_id = _text(rule_entry, "id", "unknown")
-    message = _text(rule_entry, "message", "")
-    severity = display_severity(_text(rule_entry, "severity", "WARNING").lower())
-
-    # Extract path filters
-    path_includes = tuple(str_list(as_object(rule_entry.get("paths")).get("include")))
-
-    operator = _get_operator(rule_entry)
-
-    if operator == "pattern-regex":
-        compiled = _pattern_text(rule_entry["pattern-regex"])
-        return CompiledCheck(
-            id=rule_id,
-            message=message,
-            severity=severity,
-            patterns=(compiled,),
-            negative_patterns=(),
-            either_patterns=(),
-            path_includes=path_includes,
-        )
-
-    if operator == "pattern-either":
-        compiled_either = []
-        for item in as_list(rule_entry["pattern-either"]):
-            if isinstance(item, dict) and "pattern-regex" in item:
-                compiled_either.append(_pattern_text(item["pattern-regex"]))
-            else:
-                logger.warning("Unsupported sub-operator in pattern-either for rule %s", rule_id)
-        if not compiled_either:
-            return None
-        return CompiledCheck(
-            id=rule_id,
-            message=message,
-            severity=severity,
-            patterns=(),
-            negative_patterns=(),
-            either_patterns=tuple(compiled_either),
-            path_includes=path_includes,
-        )
-
-    if operator == "patterns":
-        positive = []
-        negative = []
-        for item in as_list(rule_entry["patterns"]):
-            if isinstance(item, dict) and "pattern-regex" in item:
-                positive.append(_pattern_text(item["pattern-regex"]))
-            elif isinstance(item, dict) and "pattern-not-regex" in item:
-                negative.append(_pattern_text(item["pattern-not-regex"]))
-            else:
-                logger.warning("Unsupported sub-operator in patterns block for rule %s", rule_id)
-        if not positive and not negative:
-            return None
-        return CompiledCheck(
-            id=rule_id,
-            message=message,
-            severity=severity,
-            patterns=tuple(positive),
-            negative_patterns=tuple(negative),
-            either_patterns=(),
-            path_includes=path_includes,
-        )
-
-    return None
-
-
-def _parse_entries(data: JsonObject, yml_path: Path) -> list[JsonObject] | None:
-    """Extract deterministic entries from YAML data ('checks' key)."""
-    entries = data.get("checks")
-    if not isinstance(entries, list):
-        logger.warning("Rule file %s has no valid 'checks' list, skipping", yml_path)
-        return None
-    return [e for e in entries if isinstance(e, dict) and e.get("type", "deterministic") == "deterministic"]
-
-
-def _compile_entries(
-    entries: list[JsonObject],
-    result: CompiledRuleSet,
-) -> None:
-    """Compile each entry into `result`; an entry that cannot be compiled is recorded as skipped."""
-    for rule_entry in entries:
-        rule_id = _text(rule_entry, "id", "unknown")
-        if _get_operator(rule_entry) is None:
-            logger.warning("Rule %s has no recognized pattern operator, skipping", rule_id)
-            result.skipped.append(rule_id)
-            continue
-
-        try:
-            check = _compile_single_rule(rule_entry)
-        except re.error as e:
-            logger.warning("Invalid regex in rule %s: %s", rule_id, e)
-            result.skipped.append(rule_id)
-            continue
-        if check is None:
-            result.skipped.append(rule_id)
-            continue
-        result.checks.append(check)
-
-
 def compile_rules(yml_paths: list[Path]) -> CompiledRuleSet:
     """Compile YAML rule files into a CompiledRuleSet.
+
+    A file that cannot be read, or whose checks do not load, is logged and left out.
 
     Args:
         yml_paths: Paths to YAML rule files
 
     Returns:
-        CompiledRuleSet with compiled checks and skipped rule IDs
+        CompiledRuleSet with the compiled deterministic checks
     """
     result = CompiledRuleSet()
 
@@ -231,17 +110,23 @@ def compile_rules(yml_paths: list[Path]) -> CompiledRuleSet:
 
         try:
             data = read_checks_document(yml_path)
-        except RuleReadError as e:
-            logger.warning("Failed to load rule file %s: %s", yml_path, e.problem)
-            continue
-        if not data:
-            logger.warning("Rule file %s has no valid data, skipping", yml_path)
+            if not data:
+                logger.warning("Rule file %s has no valid data, skipping", yml_path)
+                continue
+            if not isinstance(data.get("checks"), list):
+                logger.warning("Rule file %s has no valid 'checks' list, skipping", yml_path)
+                continue
+            checks = load_checks(data)
+        except (RuleReadError, ValueError) as e:
+            logger.warning(
+                "Failed to load rule file %s: %s", yml_path, e.problem if isinstance(e, RuleReadError) else e
+            )
             continue
 
-        entries = _parse_entries(data, yml_path)
-        if entries is None:
-            continue
-
-        _compile_entries(entries, result)
+        result.checks.extend(
+            _compile_check(check, as_object(entry))
+            for check, entry in zip(checks, as_list(data.get("checks")), strict=True)
+            if check.type == "deterministic"
+        )
 
     return result

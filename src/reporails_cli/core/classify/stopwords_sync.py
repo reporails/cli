@@ -10,7 +10,7 @@ from typing import Literal
 import regex
 import yaml
 
-from reporails_cli.core.classify.stopwords import REGEX_PATTERN_FIELDS, PatternParts, decompose, is_guard, recompose
+from reporails_cli.core.classify.stopwords import PatternParts, decompose, is_guard, recompose
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import (
     JsonObject,
@@ -19,6 +19,8 @@ from reporails_cli.core.platform.contract.json_value import (
     as_str,
     str_list,
 )
+from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
+from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
 from reporails_cli.core.platform.utils.utils import fast_yaml_load, non_text_items, unreadable_file_problem
 
 
@@ -118,7 +120,7 @@ def _rewrite(container: JsonObject, key: str, parts: PatternParts, terms: list[s
     if new == container[key]:
         return _FieldOutcome("unchanged")
     try:
-        regex.compile(new)
+        compile_rule_pattern(new)
     except regex.error as exc:
         return _invalid(f"the pattern {new!r} does not compile ({exc})")
     read_back = decompose(new)

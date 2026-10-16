@@ -108,7 +108,7 @@ def _run_deterministic_check(
         return False, 0, f"checks.yml not found: {checks_yml}"
 
     ruleset = compile_rules([checks_yml])
-    if not ruleset.checks and not ruleset.skipped:
+    if not ruleset.checks:
         return False, 0, "checks.yml has no patterns (checks: [])"
 
     compiled = _find_compiled_check(ruleset, check.id)

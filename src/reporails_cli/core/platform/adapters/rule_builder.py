@@ -16,7 +16,7 @@ class RuleFieldError(ValueError):
     """A `rule.md` whose fields cannot build a rule; `problems` has one record per rejected field."""
 
     def __init__(self, problems: list[FieldProblem]) -> None:
-        super().__init__("; ".join(f"{p.field}: {p.message}" for p in problems))
+        super().__init__("; ".join(p.text for p in problems))
         self.problems = problems
 
 
@@ -34,8 +34,9 @@ def _step(candidates: list[object], part: str | int) -> list[object] | None:
     for ann in members:
         origin, args = get_origin(ann), get_args(ann)
         if isinstance(ann, type) and issubclass(ann, BaseModel):
-            if isinstance(part, str) and part in ann.model_fields:
-                nxt.append(ann.model_fields[part].annotation)
+            for name, info in ann.model_fields.items():
+                if part == (info.alias or name):
+                    nxt.append(info.annotation)
         elif origin in (list, set, frozenset) and isinstance(part, int) and args:
             nxt.append(args[0])
         elif origin is dict and len(args) == 2:
@@ -75,7 +76,7 @@ def field_problems(exc: ValidationError, model: type[BaseModel]) -> list[FieldPr
     """
     grouped: dict[str, list[tuple[str, str]]] = {}
     for err in exc.errors():
-        path = _field_path(model, err["loc"]) or "value"
+        path = _field_path(model, err["loc"])
         grouped.setdefault(path, []).append((err["msg"], err["type"]))
     return [
         FieldProblem(
@@ -105,7 +106,7 @@ def load_checks(frontmatter: JsonObject) -> list[Check]:
             checks.append(Check.model_validate(item))
         except ValidationError as exc:
             label = f"check {index}" + (f" ({item['id']})" if isinstance(item.get("id"), str) else "")
-            problems.extend(f"{label}: {p.field}: {p.message}" for p in field_problems(exc, Check)[:2])
+            problems.extend(f"{label}: {p.text}" for p in field_problems(exc, Check)[:2])
     if problems:
         raise ValueError("; ".join(problems[:3]))
     return checks

@@ -58,7 +58,7 @@ class TestBuildRuleBasic:
             **MINIMAL_FRONTMATTER,
             "checks": [
                 {"id": "CORE:S:0001:check:0001", "type": "mechanical", "check": "file_exists", "severity": "critical"},
-                {"id": "CORE:S:0001:check:0002", "type": "deterministic", "severity": "high"},
+                {"id": "CORE:S:0001:check:0002", "type": "deterministic", "severity": "high", "pattern-regex": "x"},
             ],
         }
         rule = build_rule(fm, Path("test.md"), None, load_checks(fm))

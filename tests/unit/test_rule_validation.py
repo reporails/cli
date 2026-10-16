@@ -26,7 +26,7 @@ class TestPatternOperators:
 checks:
   - id: test-simple
     message: "Found a TODO comment"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "TODO"
     paths:
@@ -51,7 +51,7 @@ checks:
 checks:
   - id: test-either
     message: "Found test framework"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-either:
       - pattern-regex: "(?i)pytest"
@@ -79,7 +79,7 @@ checks:
 checks:
   - id: test-patterns-and
     message: "File has content but no Commands section"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     patterns:
       - pattern-regex: "."
@@ -108,7 +108,7 @@ checks:
 checks:
   - id: test-neg-suppresses
     message: "Missing commands"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     patterns:
       - pattern-regex: "."
@@ -137,7 +137,7 @@ checks:
 checks:
   - id: test-no-pattern
     message: "No pattern"
-    severity: WARNING
+    severity: medium
     languages: [generic]
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
@@ -162,7 +162,7 @@ class TestPathFiltering:
 checks:
   - id: test-path
     message: "Found in md"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "Hello"
     paths:
@@ -191,7 +191,7 @@ checks:
 checks:
   - id: test-no-filter
     message: "Found"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "Hello"
 """
@@ -217,7 +217,7 @@ class TestLineNumbers:
 checks:
   - id: test-lines
     message: "Found TODO"
-    severity: WARNING
+    severity: medium
     languages: [generic]
     pattern-regex: "TODO"
     paths:

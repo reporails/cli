@@ -89,7 +89,7 @@ class RuleInfo(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.
     def load_failure(self) -> str:
         """Why the rule cannot run: its load error and one line per rejected field; empty when it loads."""
         lines = [self.load_error] if self.load_error else []
-        lines.extend(f"{self.rule_md_label}: {p.field}: {p.message}" for p in self.field_problems)
+        lines.extend(f"{self.rule_md_label}: {p.text}" for p in self.field_problems)
         return "\n".join(lines)
 
     @property

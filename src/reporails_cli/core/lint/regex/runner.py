@@ -274,14 +274,11 @@ def _scan_all_targets(
 
 
 def _compile_ruleset(yml_paths: list[Path]) -> CompiledRuleSet:
-    """Compile the rule files that exist, warning about rules with unsupported operators."""
+    """Compile the rule files that exist."""
     valid_paths = [p for p in yml_paths if p and p.exists()]
     if not valid_paths:
         return CompiledRuleSet()
-    ruleset = compile_rules(valid_paths)
-    if ruleset.skipped:
-        logger.warning("Skipped rules with unsupported operators: %s", ", ".join(ruleset.skipped))
-    return ruleset
+    return compile_rules(valid_paths)
 
 
 def scan_ruleset(

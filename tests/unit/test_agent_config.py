@@ -150,7 +150,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_severity_changed(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
 
         overrides = {"E2-check": {"severity": "low"}}
@@ -163,8 +163,8 @@ class TestApplyAgentOverrides:
     @pytest.mark.subsys_lint
     def test_check_disabled(self) -> None:
         checks = [
-            Check(id="E2-check-a"),
-            Check(id="E2-check-b"),
+            Check(id="E2-check-a", type="mechanical"),
+            Check(id="E2-check-b", type="mechanical"),
         ]
         rules = {"E2": _make_rule("E2", checks)}
 
@@ -177,7 +177,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_nonexistent_check_is_noop(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
 
         overrides = {"BOGUS-check": {"severity": "low"}}
@@ -188,7 +188,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_all_checks_disabled_leaves_empty_list(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks)}
 
         overrides = {"E2-check": {"disabled": True}}
@@ -199,7 +199,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_invalid_severity_skipped(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
 
         overrides = {"E2-check": {"severity": "bogus"}}
@@ -211,8 +211,8 @@ class TestApplyAgentOverrides:
     @pytest.mark.subsys_lint
     def test_multiple_rules_overridden(self) -> None:
         rules = {
-            "E2": _make_rule("E2", [Check(id="E2-c1")], severity=Severity.HIGH),
-            "E5": _make_rule("E5", [Check(id="E5-c1")], severity=Severity.MEDIUM),
+            "E2": _make_rule("E2", [Check(id="E2-c1", type="mechanical")], severity=Severity.HIGH),
+            "E5": _make_rule("E5", [Check(id="E5-c1", type="mechanical")], severity=Severity.MEDIUM),
         }
 
         overrides = {

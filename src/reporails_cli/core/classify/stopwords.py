@@ -10,9 +10,7 @@ import yaml
 
 from reporails_cli.core.platform.adapters.registry import RuleReadError, read_checks_document
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
-
-# The check fields that hold a regex alternation.
-REGEX_PATTERN_FIELDS = ("pattern-regex", "pattern-not-regex")
+from reporails_cli.core.platform.dto.models import REGEX_PATTERN_FIELDS
 
 _GUARD_PATTERNS = frozenset(
     {

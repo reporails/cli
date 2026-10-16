@@ -240,14 +240,16 @@ def test_inline_checks_win_over_checks_yml(tmp_path):
         tmp_path,
         "active/myrule",
         "CORE:S:0097",
-        extra_frontmatter='checks:\n  - id: "CORE.S.0097.inline"\n    type: deterministic\n',
+        extra_frontmatter='checks:\n  - id: "CORE.S.0097.inline"\n    type: deterministic\n    pattern-regex: x\n',
     )
     (d / "checks.yml").write_text(
         "checks:\n"
         '  - id: "CORE.S.0097.fromyml"\n'
         "    type: deterministic\n"
+        "    pattern-regex: y\n"
         '  - id: "CORE.S.0097.fromyml2"\n'
-        "    type: deterministic\n",
+        "    type: deterministic\n"
+        "    pattern-regex: z\n",
         encoding="utf-8",
     )
     result = reg._load_from_path(tmp_path)

@@ -76,7 +76,7 @@ def _field_problem_errors(rule: RuleInfo, subject: str) -> list[LintError]:
         LintError(
             rule_id=subject,
             check_name=_PROBLEM_CHECK_NAMES[p.kind],
-            message=f"{rule.rule_md_label}: {p.field}: {p.message}",
+            message=f"{rule.rule_md_label}: {p.text}",
         )
         for p in rule.field_problems
     ]

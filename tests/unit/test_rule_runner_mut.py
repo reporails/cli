@@ -58,7 +58,6 @@ def _rule(**kw: object) -> Rule:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("error", "error"),
         ("critical", "error"),
         ("high", "error"),
         ("low", "info"),
@@ -86,7 +85,12 @@ def test_has_deterministic_true() -> None:
 
     Kills: L78 `c.type == "deterministic" -> !=`.
     """
-    assert _has_deterministic_checks(_rule(checks=[Check(id="c", type="deterministic", check="x", args={})])) is True
+    assert (
+        _has_deterministic_checks(
+            _rule(checks=[Check.model_validate({"id": "c", "type": "deterministic", "pattern-regex": "x"})])
+        )
+        is True
+    )
 
 
 @pytest.mark.unit
@@ -247,7 +251,7 @@ def test_deterministic_rule_without_yml_path_is_skipped(tmp_path: Path, monkeypa
         type=RuleType.DETERMINISTIC,
         match=None,
         yml_path=None,
-        checks=[Check(id="c", type="deterministic", check="x", args={})],
+        checks=[Check.model_validate({"id": "c", "type": "deterministic", "pattern-regex": "x"})],
     )
     assert _collect_deterministic_findings({"R": rule}, tmp_path, [tmp_path / "a.md"], []) == []
 
