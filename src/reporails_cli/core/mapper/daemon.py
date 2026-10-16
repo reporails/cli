@@ -223,7 +223,12 @@ def start_daemon() -> int:
 
 
 def _fork_daemon() -> int:
-    """Fork the daemon child while holding the start lock. Returns the child PID."""
+    """Fork the daemon child while holding the start lock. Returns the child PID.
+
+    Unreachable on Windows: callers gate on sys.platform before forking.
+    """
+    if sys.platform == "win32":
+        return 0
     # Re-check after acquiring lock (another starter may have finished)
     if is_daemon_running():
         return int(pid_path().read_text(encoding="utf-8").strip())
