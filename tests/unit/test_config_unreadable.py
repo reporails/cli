@@ -264,3 +264,65 @@ def test_mcp_remedy_brief_returns_the_structured_error(
     reply = server._serve_remedy_brief(str(root), 1, None, True)
     server._validate_states.clear()
     assert reply == {"error": "config_unreadable", "message": str(problem)}
+
+
+_THRESHOLD = "rule_thresholds:\n  CORE:S:0001:\n    min_lines: {}\n"
+_BAD_THRESHOLDS = {
+    ".nan": "min_lines: reads as a special number (.nan or .inf), not a whole number",
+    ".inf": "min_lines: reads as a special number (.nan or .inf), not a whole number",
+    "ten": "min_lines: reads as the text 'ten', not a whole number",
+    "true": "min_lines: reads as true/false (yes, no, on, off, true and false all do), not a whole number",
+    "5.5": "min_lines: reads as the number 5.5, not a whole number",
+    "": "min_lines: is empty; give a whole number",
+}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize(("written", "problem"), _BAD_THRESHOLDS.items(), ids=list(_BAD_THRESHOLDS))
+def test_a_threshold_that_is_not_a_whole_number_is_unreadable(
+    tmp_path: Path, global_path: Path, written: str, problem: str
+) -> None:
+    root = _project(tmp_path, "config.yml", _THRESHOLD.format(written))
+    with pytest.raises(ConfigUnreadableError) as raised:
+        config_mod.get_project_config(root)
+    expected = f"{root / '.ails' / 'config.yml'}: rule_thresholds.CORE:S:0001.{problem}"
+    assert str(raised.value) == expected
+    global_path.write_text(_THRESHOLD.format(written), encoding="utf-8")
+    with pytest.raises(ConfigUnreadableError) as raised:
+        config_mod.get_global_config()
+    assert str(raised.value) == f"{global_path}: rule_thresholds.CORE:S:0001.{problem}"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_threshold_entry_that_is_not_a_mapping_is_unreadable(tmp_path: Path, global_path: Path) -> None:
+    body = "rule_thresholds:\n  CORE:S:0001: 5\n"
+    root = _project(tmp_path, "config.yml", body)
+    with pytest.raises(ConfigUnreadableError) as raised:
+        config_mod.get_project_config(root)
+    assert str(raised.value) == f"{root / '.ails' / 'config.yml'}: rule_thresholds.CORE:S:0001 must be a mapping"
+    global_path.write_text(body, encoding="utf-8")
+    with pytest.raises(ConfigUnreadableError) as raised:
+        config_mod.get_global_config()
+    assert str(raised.value) == f"{global_path}: rule_thresholds.CORE:S:0001 must be a mapping"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_whole_number_threshold_loads(tmp_path: Path, global_path: Path) -> None:
+    root = _project(tmp_path, "config.yml", _THRESHOLD.format("5"))
+    assert config_mod.get_project_config(root).rule_thresholds == {"CORE:S:0001": {"min_lines": 5}}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_check_stops_on_a_threshold_that_is_not_a_number(tmp_path: Path, global_path: Path) -> None:
+    root = _project(tmp_path, "config.yml", _THRESHOLD.format(".nan"))
+    result = runner.invoke(app, ["check", str(root)])
+    assert result.exit_code == 2
+    assert (
+        f"Error: {root / '.ails' / 'config.yml'}: rule_thresholds.CORE:S:0001.min_lines: "
+        "reads as a special number (.nan or .inf), not a whole number" in result.output
+    )
+    assert "Traceback" not in result.output

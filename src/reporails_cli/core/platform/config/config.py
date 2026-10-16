@@ -40,6 +40,7 @@ from reporails_cli.core.platform.utils.utils import (
     load_yaml_file,
     non_text_items,
     unreadable_file_problem,
+    value_reading,
     yaml_error_line,
 )
 
@@ -154,7 +155,7 @@ def _coerce_rule_thresholds(raw: object) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
     for rule_id, args in raw.items():
         if isinstance(args, dict):
-            out[str(rule_id)] = {str(k): int(v) for k, v in args.items() if isinstance(v, (int, float))}
+            out[str(rule_id)] = {str(k): v for k, v in args.items() if isinstance(v, int) and not isinstance(v, bool)}
     return out
 
 
@@ -217,7 +218,8 @@ def read_config_file(config_path: Path, check_items: bool = True) -> JsonObject:
     Raises ConfigUnreadableError naming the file and the problem (with its line)
     when the file cannot be read, is not UTF-8, is not valid YAML, or is not a mapping.
     With `check_items` (the default) it also raises for a setting of the wrong shape: a list
-    holding a non-text item, or an `agents` / `surfaces` entry that is not a mapping. A caller
+    holding a non-text item, an `agents` / `surfaces` entry that is not a mapping, or a
+    `rule_thresholds` value that is not a whole number. A caller
     that is about to replace such a setting passes False and gets the mapping as written.
     """
     if not config_path.exists():
@@ -235,6 +237,7 @@ def read_config_file(config_path: Path, check_items: bool = True) -> JsonObject:
             _check_text_list(config_path, key, data.get(key))
         for key in _MAPPING_KEYS:
             _check_mapping(config_path, key, data.get(key))
+        _check_thresholds(config_path, data.get("rule_thresholds"))
     return data
 
 
@@ -243,9 +246,7 @@ def _list_keys(config_cls: type) -> tuple[str, ...]:
     return tuple(name for name, kind in get_type_hints(config_cls).items() if kind == list[str])
 
 
-# The one owner of which config keys hold a list of names: every such field of `ProjectConfig`
-# (`GlobalConfig` carries a subset). The reader checks them, `get_project_config` and
-# `get_global_config` fill them, and `ails config set` parses them, all from this tuple.
+# Config keys that hold a list of names: every such field of `ProjectConfig`; `GlobalConfig` carries a subset.
 TEXT_LIST_KEYS = _list_keys(ProjectConfig)
 _GLOBAL_LIST_KEYS = _list_keys(GlobalConfig)
 _MAPPING_KEYS = ("agents", "surfaces")
@@ -270,6 +271,25 @@ def _check_mapping(config_path: Path, key: str, value: JsonValue) -> None:
     for name, entry in value.items():
         if entry is not None and not isinstance(entry, dict):
             raise ConfigUnreadableError(f"{config_path}: {key}.{name} must be a mapping")
+
+
+def _check_thresholds(config_path: Path, value: JsonValue) -> None:
+    """Raise ConfigUnreadableError when `rule_thresholds` holds anything but whole numbers per rule."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ConfigUnreadableError(f"{config_path}: rule_thresholds must be a mapping")
+    for rule, entry in value.items():
+        if entry is None:
+            continue
+        if not isinstance(entry, dict):
+            raise ConfigUnreadableError(f"{config_path}: rule_thresholds.{rule} must be a mapping")
+        for key, number in entry.items():
+            if isinstance(number, int) and not isinstance(number, bool):
+                continue
+            reading = value_reading(number)
+            problem = f"{reading}; give a whole number" if number is None else f"{reading}, not a whole number"
+            raise ConfigUnreadableError(f"{config_path}: rule_thresholds.{rule}.{key}: {problem}")
 
 
 def get_project_config(project_root: Path) -> ProjectConfig:

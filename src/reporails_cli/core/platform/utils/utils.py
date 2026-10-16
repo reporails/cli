@@ -109,17 +109,29 @@ def unreadable_file_problem(exc: OSError | UnicodeDecodeError | yaml.YAMLError) 
     return f"cannot be read ({exc.strerror or exc})"
 
 
+def value_reading(value: JsonValue) -> str:
+    """What YAML read a value as, as a clause that follows the setting or item it belongs to."""
+    if value is None:
+        return "is empty"
+    if isinstance(value, bool):
+        return "reads as true/false (yes, no, on, off, true and false all do)"
+    if isinstance(value, float) and not math.isfinite(value):
+        return "reads as a special number (.nan or .inf)"
+    if isinstance(value, (int, float)):
+        return f"reads as the number {value}"
+    if isinstance(value, str):
+        return f"reads as the text {value!r}"
+    return f"is a nested {'list' if isinstance(value, list) else 'mapping'}"
+
+
 def non_text_reading(position: int, item: JsonValue) -> str:
     """What YAML read the non-text item at 1-based `position` of a list as, and what to do about it."""
+    reading = f"item {position} {value_reading(item)}"
     if item is None:
-        return f"item {position} is empty; remove it"
-    if isinstance(item, bool):
-        return f"item {position} reads as true/false (yes, no, on, off, true and false all do), not text; quote it"
-    if isinstance(item, float) and not math.isfinite(item):
-        return f"item {position} reads as a special number (.nan or .inf), not text; quote it"
-    if isinstance(item, (int, float)):
-        return f"item {position} reads as the number {item}, not text; quote it"
-    return f"item {position} is a nested {'list' if isinstance(item, list) else 'mapping'}, not text"
+        return f"{reading}; remove it"
+    if isinstance(item, (list, dict)):
+        return f"{reading}, not text"
+    return f"{reading}, not text; quote it"
 
 
 def non_text_items(values: list[JsonValue]) -> list[tuple[int, str]]:
