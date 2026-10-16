@@ -1,30 +1,10 @@
-"""Rule metadata for text display: docs links, titles and severities.
-
-One cached read of the bundled framework registry feeds every reader here.
-"""
+"""Rule metadata for text display: docs links and labels."""
 
 from __future__ import annotations
 
-from functools import lru_cache
-
-from reporails_cli.core.platform.adapters.rules_query import load_all_rules, rule_slug, rule_title
+from reporails_cli.core.platform.adapters.rules_query import rule_slug, rule_title
 
 _RULE_DOCS_BASE = "https://reporails.com/rules"
-
-
-@lru_cache(maxsize=1)
-def _severities() -> dict[str, str]:
-    """`{rule_id: severity}` from the bundled framework registry, loaded once per process."""
-
-    try:
-        return {r.id: r.severity.value for r in load_all_rules()}
-    except (OSError, ValueError):
-        return {}
-
-
-def rule_severity(rule_id: str) -> str:
-    """The registry severity (`critical` .. `low`) of a canonical rule ID, or an empty string when none is known."""
-    return _severities().get(rule_id, "")
 
 
 def rule_docs_url(rule_id: str) -> str | None:

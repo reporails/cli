@@ -23,6 +23,7 @@ from reporails_cli.core.lint.rule_runner import (
     run_content_quality_checks,
     run_m_probes,
 )
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
@@ -279,31 +280,18 @@ class TestRunMProbesScopedDefault:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_run_m_probes_config_error_defaults_generic_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When project-config load fails, generic scanning defaults OFF.
-
-    Kills: L201 `generic_scanning = False -> True` in the except branch.
-    """
-    captured: dict[str, object] = {}
+def test_run_m_probes_stops_on_an_unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unreadable project config stops the probe run; it never falls back to generic scanning off."""
 
     def raise_cfg(_pd: Path) -> object:
-        raise ValueError("boom")
-
-    def fake_classify(
-        pd: Path, files: list, ft: object, generic_scanning: bool, skills: object = None, exclusions: object = None
-    ) -> list:
-        captured["gs"] = generic_scanning
-        return []
+        raise ConfigUnreadableError("boom")
 
     monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
     monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
     monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
-    monkeypatch.setattr(f"{_RR}.classify_files", fake_classify)
-    monkeypatch.setattr(f"{_RR}._collect_mechanical_findings", lambda *a, **k: [])
-    monkeypatch.setattr(f"{_RR}._collect_deterministic_findings", lambda *a, **k: [])
 
-    assert run_m_probes(tmp_path, []) == []
-    assert captured["gs"] is False
+    with pytest.raises(ConfigUnreadableError, match="boom"):
+        run_m_probes(tmp_path, [])
 
 
 # --- run_content_quality_checks (L241 agent default, L247 config fallback) --
@@ -339,27 +327,16 @@ def test_content_quality_agent_defaults_to_generic(tmp_path: Path, monkeypatch: 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_content_quality_config_error_defaults_generic_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When project-config load fails, content-quality generic scanning is OFF.
-
-    Kills: L247 `generic_scanning = False -> True` in the except branch.
-    """
-    captured: dict[str, object] = {}
+def test_content_quality_stops_on_an_unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unreadable project config stops the content-quality run; it never falls back to generic scanning off."""
 
     def raise_cfg(_pd: Path) -> object:
-        raise ValueError("boom")
-
-    def fake_classify(
-        pd: Path, files: list, ft: object, generic_scanning: bool, skills: object = None, exclusions: object = None
-    ) -> list:
-        captured["gs"] = generic_scanning
-        return []
+        raise ConfigUnreadableError("boom")
 
     monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
     monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
     monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
     monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
-    monkeypatch.setattr(f"{_RR}.classify_files", fake_classify)
 
-    run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude")
-    assert captured["gs"] is False
+    with pytest.raises(ConfigUnreadableError, match="boom"):
+        run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude")

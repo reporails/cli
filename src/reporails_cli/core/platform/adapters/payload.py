@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import msgpack
 
 from reporails_cli.core.platform.contract.json_value import WireObject, WireValue
-from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.diagnostics import CLIENT_CHECK_KINDS, FindingItem
 from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
 from reporails_cli.core.platform.dto.ruleset import (
     LIST_OBJECT_ROLE,
@@ -211,15 +211,16 @@ def local_entries(
     `findings` are the local findings as they will be reported (suppressions applied);
     `file_level_checks` are the check ids whose finding concerns the whole file, sent at line 0;
     `registry_ids` are the rule ids the registry defines: a finding under any other label stays
-    in the user's output but is not sent;
+    in the user's output but is not sent, and so does a finding from a client check
+    (`CLIENT_CHECK_KINDS`);
     `resolve` maps a reported path to its absolute path, and `type_of` an absolute path to its
     file type.
     """
     entries: list[LocalEntry] = []
     for f in findings:
-        if f.rule not in registry_ids:
-            continue
         check = f.check_id
+        if f.rule not in registry_ids or check in CLIENT_CHECK_KINDS:
+            continue
         line = 0 if check in file_level_checks else max(f.line, 0)
         file = resolve(f.file)
         entries.append(

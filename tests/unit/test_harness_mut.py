@@ -256,19 +256,6 @@ def test_content_query_fail_fixture_finds_no_violation(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_unknown_check_type_pass_fixture_fails(tmp_path: Path) -> None:
-    """An unknown check type does not pass the pass fixture → FAILED
-    (kills L307 False->True and its CheckRun flag)."""
-    rd = _rule_dir(tmp_path, "unknown-pass")
-    _pass(rd, "# ok\n")
-    check = {"id": "CORE.S.0001.x", "type": "bogus", "severity": "medium"}
-    result = run_rule(_info(rd, [check]), [])
-    assert result.status == HarnessStatus.FAILED
-    assert _pass_run(result).passed is False
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
 def test_excluded_fixture_file_is_not_scanned(tmp_path: Path) -> None:
     """A `.gitkeep` fixture file is filtered out before regex scanning, so its
     content produces no finding (kills L124 `is_file() and name not in excludes`
@@ -289,16 +276,3 @@ def test_excluded_fixture_file_is_not_scanned(tmp_path: Path) -> None:
     # filtered scan finds nothing → FAILED; letting .gitkeep through → PASSED.
     result = run_rule(_info(rd, [_det_check(expect="present")]), [])
     assert result.status == HarnessStatus.FAILED
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_unknown_check_type_fail_fixture_no_violation(tmp_path: Path) -> None:
-    """An unknown check type finds no violation on the fail fixture → FAILED
-    (kills L339 violation False->True and its CheckRun flag False->True)."""
-    rd = _rule_dir(tmp_path, "unknown-fail")
-    _fail(rd, "# ok\n")
-    check = {"id": "CORE.S.0001.x", "type": "bogus", "severity": "medium"}
-    result = run_rule(_info(rd, [check]), [])
-    assert result.status == HarnessStatus.FAILED
-    assert _fail_run(result).passed is False

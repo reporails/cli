@@ -426,44 +426,6 @@ class TestDeterministicChecks:
         assert result.status == HarnessStatus.PASSED
 
 
-# ── Semantic check tests ─────────────────────────────────────────────
-
-
-class TestSemanticChecks:
-    """Tests for semantic check handling (always skip)."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_semantic_always_passes(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import HarnessStatus, RuleInfo, run_rule
-
-        rule_dir = _make_rule_dir(
-            tmp_path,
-            "sem-rule",
-            "id: CORE:C:0005\nslug: sem-rule\ntitle: Semantic\n"
-            "category: content\ntype: semantic\nlevel: L1\nmatch: {}\n"
-            "checks:\n- id: CORE.C.0005.sem\n  type: semantic\n  severity: medium\n  name: sem-eval",
-        )
-        _make_fixtures(rule_dir, "# Good content\n", "# Bad content\n")
-
-        info = RuleInfo(
-            rule_id="CORE:C:0005",
-            slug="sem-rule",
-            title="Semantic",
-            category="coherence",
-            checks=[{"id": "CORE.C.0005.sem", "type": "semantic", "severity": "medium"}],
-            rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
-        )
-
-        result = run_rule(info, _fts_claude())
-        # Semantic-only rules have no M/D checks to detect violations in the
-        # fail fixture, so the harness reports FAILED because the fail fixture
-        # produced no violations (a harness failure — the fail case should be
-        # caught but semantic-only rules can't detect it without M/D pre-checks).
-        assert result.status == HarnessStatus.FAILED
-
-
 # ── Batch runner tests ───────────────────────────────────────────────
 
 
@@ -826,18 +788,6 @@ class TestScaffoldFixture:
         fixture_dir.mkdir()
 
         checks = [_c({"type": "deterministic", "id": "test", "severity": "medium", "pattern-regex": "x"})]
-        result = _scaffold_fixture(fixture_dir, checks, [])
-        assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_no_scaffold_for_semantic_only(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
-
-        fixture_dir = tmp_path / "fixture"
-        fixture_dir.mkdir()
-
-        checks = [_c({"type": "semantic", "id": "test"})]
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 

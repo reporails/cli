@@ -147,12 +147,9 @@ def sniff_agent(agent: str, project_root: Path) -> str:
     none is)."""
     if agent:
         return agent
-    try:
-        cfg = get_project_config(project_root)
-        if cfg.default_agent:
-            return cfg.default_agent
-    except (OSError, ValueError):
-        pass
+    default_agent = get_project_config(project_root).default_agent
+    if default_agent:
+        return default_agent
     for det in detect_agents(project_root):
         return det.agent_type.id
     return ""

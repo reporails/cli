@@ -105,6 +105,14 @@ def _state_key(path: str, tokens: tuple[str, ...]) -> str:
 def _serve_remedy_brief(
     path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
 ) -> JsonObject:
+    """`remedy_brief`'s reply; an unreadable config file answers `config_unreadable` naming the file and line."""
+    try:
+        return _remedy_brief_reply(path, location, targets, has_guide)
+    except ConfigUnreadableError as exc:
+        return _config_unreadable(exc)
+
+
+def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has_guide: bool) -> JsonObject:
     """`remedy_brief(path, location, targets, has_guide)`'s body: a caller that does not
     carry the rewrite guide (`has_guide` false) is refused with `plugin_update_required` before
     anything else — no state read, no build, no snapshot, no breaker counter touched. Reads the last `validate(path,
@@ -529,7 +537,10 @@ async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallT
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
     touch_activity()
-    return _result(preflight_tool(capability, agent))
+    try:
+        return _result(preflight_tool(capability, agent))
+    except ConfigUnreadableError as exc:
+        return _result(_config_unreadable(exc))
 
 
 @server.tool(

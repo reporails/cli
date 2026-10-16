@@ -139,7 +139,7 @@ _EXACT_FAULTS = [
     pytest.param(
         "type: null\n  pattern-regex: x",
         "type",
-        "Input should be a valid string",
+        "Input should be 'mechanical', 'deterministic' or 'content_query'",
         id="null-type-with-pattern",
     ),
     pytest.param(
@@ -147,6 +147,18 @@ _EXACT_FAULTS = [
         "severity",
         "Input should be 'critical', 'high', 'medium', 'low' or 'info'",
         id="bad-severity-no-operator",
+    ),
+    pytest.param(
+        "type: mechanicl\n  check: file_exists",
+        "type",
+        "Input should be 'mechanical', 'deterministic' or 'content_query'",
+        id="misspelled-type",
+    ),
+    pytest.param(
+        "type: mechanical\n  check: file_exists\n  expect: presnt",
+        "expect",
+        "Input should be 'present' or 'absent'",
+        id="misspelled-expect",
     ),
     pytest.param("pattern-regex: x\n  pattern-inside: b", "pattern-inside", "is not a known key", id="unknown-key"),
     pytest.param(
@@ -302,3 +314,55 @@ def test_a_pattern_that_can_match_empty_text_loads(tmp_path: Path, pattern: str)
     (check,) = compile_rules([yml]).checks
 
     assert [p.pattern for p in check.patterns] == [pattern]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_ails_test_reports_the_problem_that_refused_the_checks_not_an_empty_file(tmp_path: Path) -> None:
+    from reporails_cli.core.lint.harness import _run_deterministic_check
+    from reporails_cli.core.platform.dto.models import Check
+
+    md = _write_rule(tmp_path, "r", "CORE:S:0001", "pattern-regex: x\n  pattern-inside: b")
+    checks_yml = md.parent / "checks.yml"
+
+    ok, count, message = _run_deterministic_check(
+        checks_yml, Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"}), tmp_path
+    )
+
+    assert (ok, count) == (False, 0)
+    assert message == f"{checks_yml}: check 1 (CORE.S.0001.check): pattern-inside: is not a known key"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_ails_test_keeps_its_message_for_a_file_that_holds_no_checks(tmp_path: Path) -> None:
+    from reporails_cli.core.lint.harness import _run_deterministic_check
+    from reporails_cli.core.platform.dto.models import Check
+
+    checks_yml = tmp_path / "checks.yml"
+    checks_yml.write_text("checks: []\n")
+
+    _, _, message = _run_deterministic_check(
+        checks_yml, Check.model_validate({"id": "CORE.S.0001.check", "pattern-regex": "x"}), tmp_path
+    )
+
+    assert message == "checks.yml has no patterns (checks: [])"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_rules_load_when_the_scanned_root_sits_inside_a_folder_named_tests(tmp_path: Path) -> None:
+    root = tmp_path / "tests" / "_deferred" / "install"
+    _write_rule(root, "r", "CORE:S:0001", "pattern-regex: x")
+
+    assert list(registry._scan_rules(root)) == ["CORE:S:0001"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_a_tests_or_deferred_folder_below_the_root_is_still_skipped(tmp_path: Path) -> None:
+    _write_rule(tmp_path, "r", "CORE:S:0001", "pattern-regex: x")
+    _write_rule(tmp_path / "r" / "tests", "fixture", "CORE:S:0002", "pattern-regex: x")
+    _write_rule(tmp_path / "_deferred", "later", "CORE:S:0003", "pattern-regex: x")
+
+    assert list(registry._scan_rules(tmp_path)) == ["CORE:S:0001"]

@@ -134,10 +134,7 @@ def _classify_for_suggestions(
     file in sorted path order, which is not necessarily the project's main file).
     """
 
-    try:
-        generic_scanning = get_project_config(target).generic_scanning
-    except (OSError, ValueError):
-        generic_scanning = False
+    generic_scanning = get_project_config(target).generic_scanning
     file_types = load_file_types(agent or "generic")
     classified = classify_files(
         target, instruction_files, file_types, generic_scanning=generic_scanning, exclusions=exclusions

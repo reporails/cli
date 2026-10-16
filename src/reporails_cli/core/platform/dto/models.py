@@ -260,11 +260,11 @@ class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__i
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str  # e.g., "CORE.S.0001.file-exists"
-    type: str = "deterministic"  # "mechanical" | "deterministic" | "content_query"
+    type: Literal["mechanical", "deterministic", "content_query"] = "deterministic"
     check: str | None = None  # Mechanical function name
     args: dict[str, JsonValue] | None = None  # Mechanical/content_query arguments
     query: str | None = None  # Content query function name (type=content_query)
-    expect: str = "present"  # "present" = no match is violation; "absent" = match is violation
+    expect: Literal["present", "absent"] = "present"  # "present" = no match is violation; "absent" = match is violation
     replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
     severity: Severity | None = None  # Check-level severity override (None = use rule severity)
     message: str = ""  # Check-level message (empty = use check result message)

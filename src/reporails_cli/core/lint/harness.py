@@ -46,7 +46,8 @@ from reporails_cli.core.lint.rule_scaffold import (
     _scaffold_scoped_rule_file,
 )
 from reporails_cli.core.mapper.pipeline import map_ruleset
-from reporails_cli.core.platform.adapters.registry import _load_from_path
+from reporails_cli.core.platform.adapters.registry import RuleReadError, _load_from_path, read_checks_document
+from reporails_cli.core.platform.adapters.rule_builder import load_checks
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_list, as_object
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import Check, ClassifiedFile, FileTypeDeclaration, Rule
@@ -94,6 +95,17 @@ def _find_compiled_check(ruleset: CompiledRuleSet, check_id: str) -> CompiledChe
     return ruleset.checks[0] if len(ruleset.checks) == 1 else None
 
 
+def _no_checks_message(checks_yml: Path) -> str:
+    """Why `checks_yml` compiled no checks: the problem that refuses its checks, else that it holds none."""
+    try:
+        load_checks(read_checks_document(checks_yml))
+    except RuleReadError as exc:
+        return str(exc)
+    except ValueError as exc:
+        return f"{checks_yml}: {exc}"
+    return "checks.yml has no patterns (checks: [])"
+
+
 def _run_deterministic_check(
     checks_yml: Path,
     check: Check,
@@ -109,7 +121,7 @@ def _run_deterministic_check(
 
     ruleset = compile_rules([checks_yml])
     if not ruleset.checks:
-        return False, 0, "checks.yml has no patterns (checks: [])"
+        return False, 0, _no_checks_message(checks_yml)
 
     compiled = _find_compiled_check(ruleset, check.id)
     if compiled is None:
@@ -353,12 +365,9 @@ def _check_fixture(
         passed = (ok and count > 0) if expect == "present" else (ok and count == 0)
         return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
-    if check_type == "content_query":
-        ok, msg = _run_content_query_check(check, fixture_root, rule, file_types)
-        passed = not ok
-        return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
-
-    return False, CheckRun(check_id, check_type, fixture_name, False, f"unknown check type: {check_type}"), None
+    ok, msg = _run_content_query_check(check, fixture_root, rule, file_types)
+    passed = not ok
+    return passed, CheckRun(check_id, check_type, fixture_name, passed, msg), None
 
 
 def _check_fixture_for_violation(
@@ -388,11 +397,8 @@ def _check_fixture_for_violation(
         violation = (ok and count == 0) if expect == "present" else (ok and count > 0)
         return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
-    if check_type == "content_query":
-        violation, msg = _run_content_query_check(check, fixture_root, rule, file_types)
-        return violation, CheckRun(check_id, check_type, "fail", True, msg), None
-
-    return False, CheckRun(check_id, check_type, "fail", False, f"unknown check type: {check_type}"), None
+    violation, msg = _run_content_query_check(check, fixture_root, rule, file_types)
+    return violation, CheckRun(check_id, check_type, "fail", True, msg), None
 
 
 # ── Batch runner ────────────────────────────────────────────────────

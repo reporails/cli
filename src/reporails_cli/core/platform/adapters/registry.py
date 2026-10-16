@@ -251,8 +251,9 @@ def _scan_rules(path: Path) -> dict[str, Rule]:
     rules: dict[str, Rule] = {}
 
     for md_path in path.rglob("rule.md"):
-        # Skip test fixtures and deferred (not-yet-ready) rules
-        if "tests" in md_path.parts or "_deferred" in md_path.parts:
+        # Skip test fixtures and deferred (not-yet-ready) rules below the scanned root
+        parts = md_path.relative_to(path).parts
+        if "tests" in parts or "_deferred" in parts:
             continue
         try:
             read = read_rule(md_path)

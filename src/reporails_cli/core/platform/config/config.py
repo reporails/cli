@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+from typing import get_type_hints
 
 import yaml
 
@@ -172,20 +173,19 @@ def get_global_config() -> GlobalConfig:
     framework_path = data.get("framework_path")
     gs_raw = data.get("generic_scanning")
     generic_scanning = bool(gs_raw) if isinstance(gs_raw, bool) else None
-    return GlobalConfig(
+    config = GlobalConfig(
         framework_path=Path(framework_path) if isinstance(framework_path, str) else None,
         default_agent=str(data.get("default_agent", "")) if isinstance(data.get("default_agent"), str) else "",
         tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
-        disabled_rules=_data_str_list(data, "disabled_rules"),
-        exclude_dirs=_data_str_list(data, "exclude_dirs"),
-        exclude_files=_data_str_list(data, "exclude_files"),
         rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
         generic_scanning=generic_scanning,
-        packages=_data_str_list(data, "packages"),
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),
         segmentation=_coerce_segmentation(data.get("segmentation")),
     )
+    for key in _GLOBAL_LIST_KEYS:
+        setattr(config, key, _data_str_list(data, key))
+    return config
 
 
 def _deep_merge_config(base: JsonObject, overlay: JsonObject) -> JsonObject:
@@ -211,11 +211,14 @@ def _deep_merge_config(base: JsonObject, overlay: JsonObject) -> JsonObject:
     return merged
 
 
-def read_config_file(config_path: Path) -> JsonObject:
+def read_config_file(config_path: Path, check_items: bool = True) -> JsonObject:
     """Read a config file's top-level mapping; an absent or empty file reads as an empty mapping.
 
     Raises ConfigUnreadableError naming the file and the problem (with its line)
     when the file cannot be read, is not UTF-8, is not valid YAML, or is not a mapping.
+    With `check_items` (the default) it also raises for a setting of the wrong shape: a list
+    holding a non-text item, or an `agents` / `surfaces` entry that is not a mapping. A caller
+    that is about to replace such a setting passes False and gets the mapping as written.
     """
     if not config_path.exists():
         return {}
@@ -227,14 +230,24 @@ def read_config_file(config_path: Path) -> JsonObject:
         return {}
     if not isinstance(data, dict):
         raise ConfigUnreadableError(f"{config_path}: the file is not a mapping of settings")
-    for key in _TEXT_LIST_KEYS:
-        _check_text_list(config_path, key, data.get(key))
-    for key in _MAPPING_KEYS:
-        _check_mapping(config_path, key, data.get(key))
+    if check_items:
+        for key in TEXT_LIST_KEYS:
+            _check_text_list(config_path, key, data.get(key))
+        for key in _MAPPING_KEYS:
+            _check_mapping(config_path, key, data.get(key))
     return data
 
 
-_TEXT_LIST_KEYS = ("disabled_rules", "exclude_dirs", "exclude_files", "heal_exclude", "packages")
+def _list_keys(config_cls: type) -> tuple[str, ...]:
+    """The fields of a config dataclass that hold a list of names, read from the field types."""
+    return tuple(name for name, kind in get_type_hints(config_cls).items() if kind == list[str])
+
+
+# The one owner of which config keys hold a list of names: every such field of `ProjectConfig`
+# (`GlobalConfig` carries a subset). The reader checks them, `get_project_config` and
+# `get_global_config` fill them, and `ails config set` parses them, all from this tuple.
+TEXT_LIST_KEYS = _list_keys(ProjectConfig)
+_GLOBAL_LIST_KEYS = _list_keys(GlobalConfig)
 _MAPPING_KEYS = ("agents", "surfaces")
 
 
@@ -297,11 +310,6 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     seg = _coerce_segmentation(data.get("segmentation"))
 
     config = ProjectConfig(
-        packages=_data_str_list(data, "packages"),
-        disabled_rules=_data_str_list(data, "disabled_rules"),
-        exclude_dirs=_data_str_list(data, "exclude_dirs"),
-        exclude_files=_data_str_list(data, "exclude_files"),
-        heal_exclude=_data_str_list(data, "heal_exclude"),
         default_agent=da if isinstance(da, str) else "",
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),
@@ -309,6 +317,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         generic_scanning=bool(gs_raw) if has_gs_in_project else False,
         mapper=MapperConfig(segmentation=seg or "legacy"),
     )
+    for key in TEXT_LIST_KEYS:
+        setattr(config, key, _data_str_list(data, key))
     return _apply_globals(
         config,
         global_cfg,

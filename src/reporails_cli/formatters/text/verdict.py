@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from reporails_cli.core.platform.adapters.rules_query import rule_severity
 from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import SEVERITY_ORDER, Severity
 from reporails_cli.core.platform.runtime.merger import CombinedResult
@@ -23,7 +24,7 @@ from reporails_cli.formatters.text.display_constants import (
     get_term_width,
 )
 from reporails_cli.formatters.text.funnel_cta import no_score_reason
-from reporails_cli.formatters.text.rule_meta import rule_docs_url, rule_severity
+from reporails_cli.formatters.text.rule_meta import rule_docs_url
 from reporails_cli.formatters.text.score import score_color
 from reporails_cli.formatters.triage import LeverageTier, resolve_leverage, split_conventions
 

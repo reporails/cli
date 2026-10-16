@@ -75,10 +75,7 @@ def _has_deterministic_checks(rule: Rule) -> bool:
 
 def _min_lines_overrides(project_dir: Path) -> dict[str, int]:
     """The per-rule `min_lines` thresholds the project's config sets."""
-    try:
-        thresholds = get_project_config(project_dir).rule_thresholds
-    except (OSError, ValueError):
-        return {}
+    thresholds = get_project_config(project_dir).rule_thresholds
     overrides: dict[str, int] = {}
     for rule_id, args in thresholds.items():
         min_lines = args.get("min_lines")
@@ -157,11 +154,7 @@ def _classify_agent_files(
 ) -> tuple[list[ClassifiedFile], bool]:
     """Classify `instruction_files` with `agent`'s file types; also return whether generic scanning is on."""
     file_types = load_file_types(agent or "generic", project_root=project_dir)
-    try:
-        _config = get_project_config(project_dir)
-        generic_scanning = _config.generic_scanning
-    except (OSError, ValueError):
-        generic_scanning = False
+    generic_scanning = get_project_config(project_dir).generic_scanning
     classified = classify_files(
         project_dir,
         instruction_files,

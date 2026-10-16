@@ -172,3 +172,95 @@ def test_check_stops_on_a_non_text_setting(tmp_path: Path, global_path: Path) ->
         f"Error: {root / '.ails' / 'config.yml'}: exclude_dirs: item 1 reads as the number 2024, not text; quote it"
         in result.output
     )
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_every_list_field_of_the_config_is_a_text_list_key() -> None:
+    import dataclasses
+    from typing import get_type_hints
+
+    from reporails_cli.core.platform.dto.results import GlobalConfig, ProjectConfig
+
+    for config_cls in (ProjectConfig, GlobalConfig):
+        listed = {f.name for f in dataclasses.fields(config_cls) if get_type_hints(config_cls)[f.name] == list[str]}
+        assert listed, config_cls
+        assert listed <= set(config_mod.TEXT_LIST_KEYS), config_cls
+    assert set(config_mod.TEXT_LIST_KEYS) == {
+        f.name for f in dataclasses.fields(ProjectConfig) if get_type_hints(ProjectConfig)[f.name] == list[str]
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_config_set_replaces_a_setting_of_the_wrong_shape_and_the_file_then_reads_clean(
+    tmp_path: Path, global_path: Path
+) -> None:
+    root = _project(tmp_path, "config.yml", "exclude_dirs: [2024]\n")
+    target = root / ".ails" / "config.yml"
+    assert runner.invoke(app, ["check", str(root)]).exit_code == 2
+    result = runner.invoke(app, ["config", "set", "exclude_dirs", "2024", "--path", str(root)])
+    assert result.exit_code == 0, result.output
+    assert config_mod.read_config_file(target)["exclude_dirs"] == ["2024"]
+    assert config_mod.get_project_config(root).exclude_dirs == ["2024"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_config_set_of_another_key_writes_beside_a_setting_of_the_wrong_shape(
+    tmp_path: Path, global_path: Path
+) -> None:
+    root = _project(tmp_path, "config.yml", "agents: [claude]\n")
+    result = runner.invoke(app, ["config", "set", "default_agent", "claude", "--path", str(root)])
+    assert result.exit_code == 0, result.output
+    data = config_mod.read_config_file(root / ".ails" / "config.yml", check_items=False)
+    assert data["default_agent"] == "claude"
+    assert data["agents"] == ["claude"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_config_set_still_refuses_a_file_that_cannot_be_parsed(tmp_path: Path, global_path: Path) -> None:
+    root = _project(tmp_path, "config.yml", "- one\n- two\n")
+    target = root / ".ails" / "config.yml"
+    result = runner.invoke(app, ["config", "set", "exclude_dirs", "docs", "--path", str(root)])
+    assert result.exit_code == 2
+    assert target.read_text(encoding="utf-8") == "- one\n- two\n"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_mcp_preflight_returns_the_structured_error(
+    tmp_path: Path, global_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reporails_cli.interfaces.mcp import server
+
+    global_path.write_text(_BAD, encoding="utf-8")
+    monkeypatch.chdir(_project(tmp_path))
+    result = asyncio.run(server.preflight("skills"))
+    payload = result.structured_content
+    assert payload is not None and payload["error"] == "config_unreadable"
+    assert str(global_path) in payload["message"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_server
+def test_mcp_remedy_brief_returns_the_structured_error(
+    tmp_path: Path, global_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reporails_cli.interfaces.mcp import server
+
+    root = _project(tmp_path, "config.yml")
+    problem = ConfigUnreadableError(f"{root / '.ails' / 'config.yml'}: line 1")
+
+    def unreadable(*_args: object) -> None:
+        raise problem
+
+    monkeypatch.setattr(server, "build_remedy_brief", unreadable)
+    server._validate_states.clear()
+    server._validate_states[str(root.resolve())] = server._CircuitState(
+        full_payload={"workflow": {"locations": [{"order": 1}]}}, scan_root=root
+    )
+    reply = server._serve_remedy_brief(str(root), 1, None, True)
+    server._validate_states.clear()
+    assert reply == {"error": "config_unreadable", "message": str(problem)}

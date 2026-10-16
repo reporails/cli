@@ -46,10 +46,7 @@ def scan_inputs_base(scan_root: Path) -> str:
         credentials_path(),
     ]
     parts = _stat_parts({*scanned, *config_files})
-    try:
-        tier = get_global_config().tier
-    except OSError:
-        tier = ""
+    tier = get_global_config().tier
     server = os.environ.get("AILS_SERVER_URL", "").strip().rstrip("/") or DEFAULT_SERVER_URL
     parts.append(f"signed_in={has_api_key()}:tier={tier}:server={server}")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()

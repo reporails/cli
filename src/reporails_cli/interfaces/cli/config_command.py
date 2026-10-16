@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 from pathlib import Path
+from typing import get_type_hints
 
 import typer
 import yaml
 
 from reporails_cli.core.platform.config.bootstrap import get_global_config_path, get_project_config_path
-from reporails_cli.core.platform.config.config import read_config_file
+from reporails_cli.core.platform.config.config import TEXT_LIST_KEYS, read_config_file
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.results import GlobalConfig, ProjectConfig
 from reporails_cli.interfaces.cli.helpers import console
@@ -23,16 +23,24 @@ config_app = typer.Typer(
     context_settings=HELP_CONTEXT_SETTINGS,
 )
 
-_SETTABLE_TYPES = {"str": str, "list[str]": list, "bool": bool}
-
 
 def _key_types(config_cls: type) -> dict[str, type | None]:
     """Every field of a config dataclass with the type `config set` parses its value into.
 
-    A field holding a string, a list of strings or a bool (optionally unset) maps to
-    `str`, `list` or `bool`; any other field maps to None and is read-only here.
+    A field the config reader holds as a list of names maps to `list`; a string or a bool
+    (optionally unset) to `str` or `bool`; any other field maps to None and is read-only here.
     """
-    return {f.name: _SETTABLE_TYPES.get(str(f.type).removesuffix(" | None")) for f in dataclasses.fields(config_cls)}
+    kinds: dict[str, type | None] = {}
+    for name, hint in get_type_hints(config_cls).items():
+        if name in TEXT_LIST_KEYS:
+            kinds[name] = list
+        elif hint in (str, str | None):
+            kinds[name] = str
+        elif hint in (bool, bool | None):
+            kinds[name] = bool
+        else:
+            kinds[name] = None
+    return kinds
 
 
 # The keys `config set` writes: every settable project field in the project file; in the
@@ -49,12 +57,12 @@ def _settable(global_: bool) -> dict[str, type]:
     return _GLOBAL_SETTABLE if global_ else _PROJECT_SETTABLE
 
 
-def _load_config(path: Path) -> JsonObject:
-    return read_config_file(get_project_config_path(path))
+def _load_config(path: Path, check_items: bool = True) -> JsonObject:
+    return read_config_file(get_project_config_path(path), check_items)
 
 
-def _load_global_config() -> JsonObject:
-    return read_config_file(get_global_config_path())
+def _load_global_config(check_items: bool = True) -> JsonObject:
+    return read_config_file(get_global_config_path(), check_items)
 
 
 def _save_config(path: Path, data: JsonObject) -> None:
@@ -127,14 +135,14 @@ def config_set(
     parsed = _parse_value(settable[key], value)
 
     if global_:
-        data = _load_global_config()
+        data = _load_global_config(check_items=False)
         data[key] = parsed
         _save_global_config(data)
         console.print(f"Set {key} = {data[key]} (global)")
         return
 
     target = Path(path).resolve()
-    data = _load_config(target)
+    data = _load_config(target, check_items=False)
     data[key] = parsed
     _save_config(target, data)
     console.print(f"Set {key} = {data[key]}")
