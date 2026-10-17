@@ -8,7 +8,7 @@ from reporails_cli.core.discovery.agent_discovery import discover_from_config, d
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.read_gates import SkippedFile, claude_agents_md_reads, gated_file_types
-from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.discovery.walk import safe_resolve, shared_dir_listings
 from reporails_cli.core.mapper.inspect import _load_registry, file_read_by
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
@@ -19,6 +19,7 @@ from reporails_cli.core.platform.config.claude_settings import (
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 from reporails_cli.core.platform.dto.results import ProjectConfig
+from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 AGENT = "claude"
 
@@ -31,15 +32,16 @@ def expected_loads(target: Path) -> JsonObject:
     project_config = get_project_config(root)
     registry = _load_registry()
     mode = claude_instruction_files_mode(root)
-    files, read_instructions, switched_off = _loaded_files(exclusions, project_config, root, registry, mode)
+    with shared_dir_listings():
+        files, read_instructions, switched_off = _loaded_files(exclusions, project_config, root, registry, mode)
+        candidates = discover_ungated(
+            root,
+            AGENT,
+            gated_file_types(AGENT),
+            exclusions.walk_dirs,
+            project_config=project_config,
+        )
     skipped = [SkippedFile(path, "setting_off") for path in switched_off]
-    candidates = discover_ungated(
-        root,
-        AGENT,
-        gated_file_types(AGENT),
-        exclusions.walk_dirs,
-        project_config=project_config,
-    )
     reads = claude_agents_md_reads([p for p in candidates if not exclusions.leaves_out(p)], root, read_instructions)
     skipped.extend(reads.skipped)
     skipped_out: list[JsonValue] = [
@@ -97,10 +99,10 @@ def _loaded_files(
 
 
 def _is_blank(path: Path) -> bool:
-    """Whether the file holds nothing but whitespace; Claude Code sends nothing for it. A file that
-    cannot be read stays listed."""
+    """Whether the file holds nothing but whitespace once its byte-order mark and frontmatter are
+    removed; Claude Code sends nothing for it. A file that cannot be read stays listed."""
     try:
-        return not path.read_text(encoding="utf-8").strip()
+        return not strip_frontmatter(path.read_text(encoding="utf-8-sig")).strip()
     except (OSError, UnicodeDecodeError):
         return False
 

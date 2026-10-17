@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 PLUGIN_ID = "cc-plugin-agents-md@builtin"
+# Claude Code's machine-wide managed folders, which `expected-loads` reads whatever HOME is.
+MANAGED_FOLDERS = ("/etc/claude-code", "/Library/Application Support/ClaudeCode", "C:/Program Files/ClaudeCode")
 
 
 def _write(path: Path, text: str = "# Notes\n\nRun the tests.\n") -> None:
@@ -37,6 +39,9 @@ def _expected_loads(project: Path, home: Path) -> dict:
 @pytest.mark.integration
 @pytest.mark.subsys_classify
 def test_managed_only_leaves_out_launch_files_and_keeps_on_demand_ones(tmp_path: Path) -> None:
+    for folder in MANAGED_FOLDERS:
+        if Path(folder).exists():
+            pytest.skip(f"managed Claude Code files at {folder} would be listed beside the isolated HOME's")
     home = tmp_path / "home"
     project = tmp_path / "proj"
     _write(

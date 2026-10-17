@@ -2,7 +2,7 @@
 
 ### Added
 
-- The reporails plugin's context x-ray can now see which instruction files Claude Code should load in a project and why an AGENTS.md is skipped; an AGENTS.md that links to a CLAUDE.md is reported as that file rather than as skipped; your own `~/.claude/CLAUDE.md` and `~/.claude/rules/` files are listed, and under `managed-only` it leaves out exactly the files Claude Code leaves out at launch; an empty file, which Claude Code sends nothing for, is not expected to load.
+- The reporails plugin's context x-ray can now see which instruction files Claude Code should load in a project and why an AGENTS.md is skipped; an AGENTS.md that links to a CLAUDE.md is reported as that file rather than as skipped; your own `~/.claude/CLAUDE.md` and `~/.claude/rules/` files are listed, and under `managed-only` it leaves out exactly the files Claude Code leaves out at launch; an empty file, or one holding only frontmatter, which Claude Code sends nothing for, is not expected to load.
 
 ### Changed
 

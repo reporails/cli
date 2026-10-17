@@ -318,10 +318,13 @@ def test_empty_files_are_not_expected_to_load(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "CLAUDE.md", "")
     _write(root / ".claude" / "rules" / "blank.md", " \n\n")
+    (root / ".claude" / "rules" / "bom.md").write_bytes(b"\xef\xbb\xbf\n")
+    _write(root / ".claude" / "rules" / "fmonly.md", "---\npaths: src/**\n---\n")
     _write(root / ".claude" / "rules" / "real.md")
     out = expected_loads(root)
     names = set(_by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root))
     assert names == {".claude/rules/real.md"}
+    assert not [i for i in out["skipped"] if Path(i["path"]).is_relative_to(root)]
 
 
 @pytest.mark.unit

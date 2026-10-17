@@ -51,6 +51,7 @@ def _loading(root: Path, rel: str, frontmatter: str, registry=None):
         # Claude unchanged
         (".claude/rules/a.md", "", ("session_start", "global", ())),
         ("sub/.claude/rules/a.md", "", ("on_demand", "nested", ())),
+        ("sub/.claude/rules/a.md", 'paths: "src/**"\n', ("on_demand", "path_scoped", ("src/**",))),
         (".claude/rules/a.md", 'paths: "src/**"\n', ("on_demand", "path_scoped", ("src/**",))),
     ],
 )

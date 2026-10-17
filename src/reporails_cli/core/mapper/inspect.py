@@ -295,6 +295,12 @@ def _trigger_activation(path: Path, props: JsonObject) -> tuple[str, str, tuple[
     return loading, scope, ()
 
 
+def _nested_activation(path: Path, props: JsonObject, loading: str, scope: str) -> tuple[str, str, tuple[str, ...]]:
+    """Scope a nested file by location, reading a non-empty `path_key` filter to make it path scoped."""
+    globs = _parse_frontmatter_globs(path, str(props["path_key"])) if "path_key" in props else ()
+    return (loading, "path_scoped", globs) if globs else (loading, scope, ())
+
+
 def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str) -> tuple[str, str, tuple[str, ...]]:
     """The loading, scope and globs a file's frontmatter gives it, from the activation keys its
     file type (or location scope) declares.
@@ -303,10 +309,11 @@ def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str)
     start; a non-empty `path_key` filter makes it path scoped; with no filter, a `description_key`
     value lets the agent pick the file by description (`on_invocation`), and a declared `always_key`
     or `description_key` without either leaves it for manual attachment (`on_demand`). A path-filtered
-    type declaring none of those loads at session start without its filter. A nested file is scoped by
-    where it lives, never by frontmatter.
+    type declaring none of those loads at session start without its filter.
     """
-    if scope == "nested" or loading not in ("on_demand", "on_invocation"):
+    if scope == "nested":
+        return _nested_activation(path, props, loading, scope)
+    if loading not in ("on_demand", "on_invocation"):
         return loading, scope, ()
     always_key = props.get("always_key")
     if loading == "on_demand" and props.get("trigger_key"):
@@ -318,8 +325,10 @@ def _resolve_activation(path: Path, props: JsonObject, loading: str, scope: str)
         return loading, scope, globs
     description_key = props.get("description_key")
     if description_key and _frontmatter_text(path, str(description_key)):
-        return "on_invocation", "global", ()
-    return ("on_demand" if always_key or description_key else "session_start"), "global", ()
+        activation = "on_invocation"
+    else:
+        activation = "on_demand" if always_key or description_key else "session_start"
+    return activation, "global", ()
 
 
 # File types whose body loads when the agent or the user invokes them.
