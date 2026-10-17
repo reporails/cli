@@ -1,7 +1,8 @@
 """Claude Code's own setting for which project instruction files it loads.
 
-Claude Code reads `AGENTS.md` through its built-in `agents-md` plugin. The value at
-`pluginConfigs["agents-md@builtin"].options.instructionFiles` picks what loads:
+Claude Code reads `AGENTS.md` through a built-in plugin. The value at
+`pluginConfigs["cc-plugin-agents-md@builtin"].options.instructionFiles` picks what loads;
+before Claude Code 2.1.285 the plugin's ID was `agents-md@builtin`, and both IDs are read:
 
 - `claude-md-or-agents-md` (the default): `CLAUDE.md` files, or `AGENTS.md` files when
   no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` sits in the working directory
@@ -30,7 +31,9 @@ from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 logger = logging.getLogger(__name__)
 
-AGENTS_MD_PLUGIN = "agents-md@builtin"
+# The built-in plugin's ID since Claude Code 2.1.285, then its earlier one. When one file sets
+# both, the current ID wins.
+AGENTS_MD_PLUGINS = ("cc-plugin-agents-md@builtin", "agents-md@builtin")
 MODE_CLAUDE_MD_OR_AGENTS_MD = "claude-md-or-agents-md"
 MODE_CLAUDE_MD_AND_AGENTS_MD = "claude-md-and-agents-md"
 MODE_CLAUDE_MD = "claude-md"
@@ -40,8 +43,12 @@ _MODES = frozenset({MODE_CLAUDE_MD_OR_AGENTS_MD, MODE_CLAUDE_MD_AND_AGENTS_MD, M
 # Modes under which Claude Code reads no AGENTS.md at all.
 MODES_WITHOUT_AGENTS_MD = frozenset({MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
 
-# Modes under which Claude Code reads no project or user instruction file, `CLAUDE.md` included.
-MODES_WITHOUT_PROJECT_INSTRUCTIONS = frozenset({MODE_MANAGED_ONLY})
+# Modes under which Claude Code leaves out every project, local and user `CLAUDE.md` and rules file
+# that loads at launch, keeping the managed `CLAUDE.md` and everything that loads on demand.
+MODES_WITHOUT_LAUNCH_INSTRUCTIONS = frozenset({MODE_MANAGED_ONLY})
+
+# The file types of Claude's `CLAUDE.md` and rules files, the ones those modes switch off at launch.
+LAUNCH_INSTRUCTION_FILE_TYPES = frozenset({"main", "override", "rules"})
 
 
 def _settings_patterns() -> dict[str, list[str]]:
@@ -93,16 +100,26 @@ def _managed_files(scopes: dict[str, list[str]]) -> list[Path]:
 
 def _mode_value(data: JsonObject) -> str | None:
     configs = data.get("pluginConfigs")
-    entry = configs.get(AGENTS_MD_PLUGIN) if isinstance(configs, dict) else None
-    options = entry.get("options") if isinstance(entry, dict) else None
-    value = options.get("instructionFiles") if isinstance(options, dict) else None
-    return value if isinstance(value, str) else None
+    if not isinstance(configs, dict):
+        return None
+    for plugin in AGENTS_MD_PLUGINS:
+        entry = configs.get(plugin)
+        options = entry.get("options") if isinstance(entry, dict) else None
+        value = options.get("instructionFiles") if isinstance(options, dict) else None
+        if isinstance(value, str):
+            return value
+    return None
 
 
 def _enabled_value(data: JsonObject) -> bool | None:
     enabled = data.get("enabledPlugins")
-    value = enabled.get(AGENTS_MD_PLUGIN) if isinstance(enabled, dict) else None
-    return value if isinstance(value, bool) else None
+    if not isinstance(enabled, dict):
+        return None
+    for plugin in AGENTS_MD_PLUGINS:
+        value = enabled.get(plugin)
+        if isinstance(value, bool):
+            return value
+    return None
 
 
 def _last_set[T](files: list[Path], read: Callable[[JsonObject], T | None]) -> T | None:
@@ -119,7 +136,7 @@ def claude_instruction_files_mode(project_root: Path | None = None) -> str:
     """The Claude Code `instructionFiles` mode in effect for a session in `project_root`.
 
     Managed settings outrank the user's settings. A missing or unknown value is the
-    default mode. When the `agents-md` plugin is turned off, the mode is `claude-md`:
+    default mode. When the built-in `AGENTS.md` plugin is turned off, the mode is `claude-md`:
     `enabledPlugins` is read from every scope, managed first, then the project's local
     and shared settings, then the user's.
     """

@@ -1,6 +1,6 @@
 """Files an agent reads only under a condition its own settings decide.
 
-Claude Code reads `AGENTS.md` through its built-in `agents-md` plugin, so a project's
+Claude Code reads `AGENTS.md` through a built-in plugin, so a project's
 `AGENTS.md` belongs to a Claude check only when Claude would load it:
 
 - With the default setting, only when no `CLAUDE.md`, `.claude/CLAUDE.md` or
@@ -27,7 +27,7 @@ from reporails_cli.core.platform.config.claude_settings import (
     MODE_CLAUDE_MD_AND_AGENTS_MD,
     MODE_CLAUDE_MD_OR_AGENTS_MD,
     MODES_WITHOUT_AGENTS_MD,
-    MODES_WITHOUT_PROJECT_INSTRUCTIONS,
+    MODES_WITHOUT_LAUNCH_INSTRUCTIONS,
     claude_instruction_files_mode,
 )
 
@@ -128,7 +128,7 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
     aliases: list[AliasFile] = []
     claude_above = mode == MODE_CLAUDE_MD_OR_AGENTS_MD and claude_file_at_or_above(root)
     user_file = _user_claude_md()
-    claude_files = {} if mode in MODES_WITHOUT_PROJECT_INSTRUCTIONS else _claude_files_by_identity(read, root)
+    claude_files = {} if mode in MODES_WITHOUT_LAUNCH_INSTRUCTIONS else _claude_files_by_identity(read, root)
     for path in found:
         reason = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
         if reason is None:

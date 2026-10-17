@@ -21,9 +21,9 @@ def _write(path: Path, text: str = "# Notes\n\nRun the tests.\n") -> Path:
     return path
 
 
-def _mode(mode: str) -> None:
+def _mode(mode: str, plugin_id: str = "agents-md@builtin") -> None:
     settings = Path.home() / ".claude" / "settings.json"
-    data = {"pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": mode}}}}
+    data = {"pluginConfigs": {plugin_id: {"options": {"instructionFiles": mode}}}}
     _write(settings, json.dumps(data))
 
 
@@ -46,6 +46,12 @@ def _project(tmp_path: Path) -> Path:
 
 def _by_name(items: list[dict], root: Path) -> dict[str, dict]:
     return {Path(i["path"]).relative_to(root).as_posix(): i for i in items}
+
+
+def _home_items(items: list[dict]) -> dict[str, dict]:
+    """The entries under the user's `~/.claude/`, by path relative to it."""
+    home = Path.home() / ".claude"
+    return {Path(i["path"]).relative_to(home).as_posix(): i for i in items if Path(i["path"]).is_relative_to(home)}
 
 
 @pytest.mark.unit
@@ -253,23 +259,86 @@ def test_agents_md_excluded_in_config_is_not_reported_as_skipped(tmp_path: Path)
     assert set(_skipped_reasons(expected_loads(root), root)) == {"AGENTS.md"}
 
 
-@pytest.mark.unit
-@pytest.mark.subsys_classify
-def test_managed_only_skips_project_instruction_files_and_reports_no_alias(tmp_path: Path) -> None:
-    root = _project(tmp_path)
+def _managed_only_project(root: Path) -> None:
     _write(root / "CLAUDE.md")
+    _write(root / "CLAUDE.local.md")
     _link(root / "AGENTS.md", "CLAUDE.md")
     _write(root / ".claude" / "rules" / "style.md")
-    _mode("managed-only")
+    _write(root / ".claude" / "rules" / "scoped.md", "---\npaths:\n  - src/**\n---\n\nUse type hints.\n")
+    _write(root / "sub" / "CLAUDE.md")
+    _write(root / "sub" / ".claude" / "rules" / "x.md")
+    _write(Path.home() / ".claude" / "CLAUDE.md")
+    _write(Path.home() / ".claude" / "rules" / "pref.md")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize("plugin_id", ["agents-md@builtin", "cc-plugin-agents-md@builtin"])
+def test_managed_only_leaves_out_what_claude_leaves_out_at_launch(tmp_path: Path, plugin_id: str) -> None:
+    root = _project(tmp_path)
+    _managed_only_project(root)
+    _mode("managed-only", plugin_id)
     out = expected_loads(root)
     assert out["aliases"] == []
-    assert set(_by_name(out["files"], root)) == {".claude/rules/style.md"}
-    skipped = _by_name(out["skipped"], root)
-    assert {k: (v["reason"], v["setting"]) for k, v in skipped.items()} == {
-        "CLAUDE.md": ("setting_off", "managed-only"),
-        "AGENTS.md": ("setting_off", "managed-only"),
+    files = _by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root)
+    assert {k: v["loading"] for k, v in files.items()} == {
+        "sub/CLAUDE.md": "on_demand",
+        "sub/.claude/rules/x.md": "on_demand",
+        ".claude/rules/scoped.md": "on_demand",
     }
-    assert (skipped["CLAUDE.md"]["file_type"], skipped["AGENTS.md"]["file_type"]) == ("main", "agents_md")
+    assert not _home_items(out["files"])
+    skipped = _by_name([i for i in out["skipped"] if Path(i["path"]).is_relative_to(root)], root)
+    assert {k: (v["reason"], v["setting"]) for k, v in skipped.items()} == dict.fromkeys(
+        ("CLAUDE.md", "CLAUDE.local.md", ".claude/rules/style.md", "AGENTS.md"), ("setting_off", "managed-only")
+    )
+    assert (skipped[".claude/rules/style.md"]["file_type"], skipped["AGENTS.md"]["file_type"]) == ("rules", "agents_md")
+    home = _home_items(out["skipped"])
+    assert {k: (v["reason"], v["file_type"]) for k, v in home.items()} == {
+        "CLAUDE.md": ("setting_off", "main"),
+        "rules/pref.md": ("setting_off", "rules"),
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_claude_md_mode_keeps_every_instruction_file_loaded(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _write(root / ".claude" / "rules" / "style.md")
+    _mode("claude-md", "cc-plugin-agents-md@builtin")
+    out = expected_loads(root)
+    names = set(_by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root))
+    assert {"CLAUDE.md", ".claude/rules/style.md"} <= names
+    assert out["skipped"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_empty_files_are_not_expected_to_load(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md", "")
+    _write(root / ".claude" / "rules" / "blank.md", " \n\n")
+    _write(root / ".claude" / "rules" / "real.md")
+    out = expected_loads(root)
+    names = set(_by_name([i for i in out["files"] if Path(i["path"]).is_relative_to(root)], root))
+    assert names == {".claude/rules/real.md"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_user_instruction_files_are_listed_with_their_loading(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _write(Path.home() / ".claude" / "CLAUDE.md")
+    _write(Path.home() / ".claude" / "rules" / "pref.md")
+    _write(Path.home() / ".claude" / "rules" / "scoped.md", "---\npaths:\n  - src/**\n---\n\nUse type hints.\n")
+    out = expected_loads(root)
+    home = _home_items(out["files"])
+    assert {k: (v["file_type"], v["loading"], v["precedence"]) for k, v in home.items()} == {
+        "CLAUDE.md": ("main", "session_start", "user"),
+        "rules/pref.md": ("rules", "session_start", "user"),
+        "rules/scoped.md": ("rules", "on_demand", "user"),
+    }
 
 
 @pytest.mark.unit

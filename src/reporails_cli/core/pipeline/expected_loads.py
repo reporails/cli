@@ -4,42 +4,41 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reporails_cli.core.discovery.agent_discovery import discover_ungated
+from reporails_cli.core.discovery.agent_discovery import discover_from_config, discover_ungated
+from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.read_gates import SkippedFile, claude_agents_md_reads, gated_file_types
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.mapper.inspect import _load_registry, file_read_by
-from reporails_cli.core.pipeline.mapping import ScopeDiscovery, discover_scope
 from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
-    MODES_WITHOUT_PROJECT_INSTRUCTIONS,
+    LAUNCH_INSTRUCTION_FILE_TYPES,
+    MODES_WITHOUT_LAUNCH_INSTRUCTIONS,
     claude_instruction_files_mode,
 )
 from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.results import ProjectConfig
 
 AGENT = "claude"
-
-# Precedence scopes whose instruction files an organization-managed-only setting turns off.
-_OWN_SCOPES = frozenset({"project", "user"})
 
 
 def expected_loads(target: Path) -> JsonObject:
     """The files Claude Code loads for a session in `target` (instruction and rule files, no config
     surfaces) with their file type, loading mode and precedence, and the AGENTS.md files it skips."""
     root = resolve_project_root(target)
-    scope = discover_scope(root, AGENT, None, scan_files=False)
+    exclusions = load_run_exclusions(root, None, None)
+    project_config = get_project_config(root)
     registry = _load_registry()
     mode = claude_instruction_files_mode(root)
-    files, read_instructions, switched_off = _loaded_files(scope, root, registry, mode)
+    files, read_instructions, switched_off = _loaded_files(exclusions, project_config, root, registry, mode)
     skipped = [SkippedFile(path, "setting_off") for path in switched_off]
-    exclusions = scope.exclusions
     candidates = discover_ungated(
         root,
         AGENT,
         gated_file_types(AGENT),
         exclusions.walk_dirs,
-        project_config=get_project_config(root),
+        project_config=project_config,
     )
     reads = claude_agents_md_reads([p for p in candidates if not exclusions.leaves_out(p)], root, read_instructions)
     skipped.extend(reads.skipped)
@@ -67,21 +66,26 @@ def expected_loads(target: Path) -> JsonObject:
 
 
 def _loaded_files(
-    scope: ScopeDiscovery, root: Path, registry: dict[str, JsonObject], mode: str
+    exclusions: RunExclusions, project_config: ProjectConfig, root: Path, registry: dict[str, JsonObject], mode: str
 ) -> tuple[list[JsonValue], list[Path], dict[Path, str]]:
-    """The files Claude Code loads among the ones discovery found, the instruction files among
-    them, and the project and user instruction files the `instructionFiles` setting turns off
-    (each with its file type)."""
-    instruction = {p for agent in scope.filtered for p in agent.instruction_files}
-    rules = {p for agent in scope.filtered for p in agent.rule_files}
+    """The non-empty instruction and rule files Claude Code loads (the user's own included), the instruction
+    files among them, and the launch files the `instructionFiles` setting turns off (each with its
+    file type)."""
+    found = discover_from_config(root, AGENT, exclusions.walk_dirs, project_config=project_config, repo_scoped=False)
+    instruction, rules = (set(bucket) for bucket in found[:2]) if found is not None else (set(), set())
     files: list[JsonValue] = []
     read_instructions: list[Path] = []
     switched_off: dict[Path, str] = {}
-    for path in sorted(instruction | rules):
+    for path in sorted(p for p in instruction | rules if not exclusions.leaves_out(p)):
         read = file_read_by(AGENT, path, root, registry)
-        if read is None:
+        if read is None or _is_blank(path):
             continue
-        if path in instruction and mode in MODES_WITHOUT_PROJECT_INSTRUCTIONS and read.precedence in _OWN_SCOPES:
+        if (
+            mode in MODES_WITHOUT_LAUNCH_INSTRUCTIONS
+            and read.file_type in LAUNCH_INSTRUCTION_FILE_TYPES
+            and read.loading == "session_start"
+            and read.precedence != "managed"
+        ):
             switched_off[path] = read.file_type
             continue
         if path in instruction:
@@ -90,6 +94,15 @@ def _loaded_files(
             {"path": str(path), "file_type": read.file_type, "loading": read.loading, "precedence": read.precedence}
         )
     return files, read_instructions, switched_off
+
+
+def _is_blank(path: Path) -> bool:
+    """Whether the file holds nothing but whitespace; Claude Code sends nothing for it. A file that
+    cannot be read stays listed."""
+    try:
+        return not path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _file_type_of_skipped(path: Path, root: Path, registry: dict[str, JsonObject]) -> str:
