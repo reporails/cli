@@ -48,6 +48,7 @@
 - The maintainer command that keeps rule word lists in step with their patterns says why it leaves an entry unchanged, refuses a one-word list, a blank word, a word that would change the pattern's structure and a pattern that does not compile, names every pattern it cannot update, and reports a word list or `checks.yml` that is not UTF-8 text instead of stopping; extracting word lists names a `checks.yml` it cannot read instead of skipping it silently.
 - Each file the cli reads (a rule's `checks.yml`, an agent's `config.yml`, a rule's word list, the config and lexicon files) is read in one place, and CI fails on a second reader. An agent `config.yml` that cannot be read is skipped with a warning naming the file and the problem.
 - Release tooling: `uv run poe release_gates` runs the release checks before a push and records the commit they passed on; pushing `main` or a version branch then goes through at once for that commit, and the push hook checks the branch being pushed instead of the one checked out.
+- Rules: `ails stopwords sync` run twice in a row no longer rewrites a pattern it already updated (seen on Windows).
 
 ## 0.6.3
 
