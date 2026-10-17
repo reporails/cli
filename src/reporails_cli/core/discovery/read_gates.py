@@ -17,12 +17,15 @@ Anything under a `.agents/` directory is never read.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
 from reporails_cli.core.platform.config.claude_settings import (
     MODE_CLAUDE_MD_AND_AGENTS_MD,
+    MODE_CLAUDE_MD_OR_AGENTS_MD,
     MODES_WITHOUT_AGENTS_MD,
     claude_instruction_files_mode,
 )
@@ -80,21 +83,62 @@ def _loads_at_session_start(path: Path, root: Path) -> bool:
     return path.parent in (root, root / ".claude")
 
 
-def claude_agents_md_files(found: list[Path], target: Path) -> list[Path]:
-    """The `AGENTS.md` files among `found` that Claude Code loads for a session in `target`."""
-    if not found:
-        return []
+SkipReason = Literal["claude_md_present", "subdir_has_claude_md", "setting_off", "never_read"]
+
+
+@dataclass(frozen=True)
+class SkippedFile:
+    """An `AGENTS.md` Claude Code does not read, and why."""
+
+    path: Path
+    reason: SkipReason
+
+
+@dataclass(frozen=True)
+class AgentsMdReads:
+    """The `AGENTS.md` files Claude Code loads, the ones it skips, and the setting that decided."""
+
+    kept: list[Path]
+    skipped: list[SkippedFile]
+    mode: str
+
+
+def claude_agents_md_reads(found: list[Path], target: Path) -> AgentsMdReads:
+    """Split the `AGENTS.md` files among `found` into those Claude Code loads for a session in
+    `target` and those it skips, each skipped file with its reason."""
     root = resolve_project_root(target)
     mode = claude_instruction_files_mode(root)
-    if mode in MODES_WITHOUT_AGENTS_MD:
-        return []
-    readable = [f for f in found if not _never_read(f, root)]
-    if mode == MODE_CLAUDE_MD_AND_AGENTS_MD:
-        return readable
-    if claude_file_at_or_above(root):
-        return []
+    kept: list[Path] = []
+    skipped: list[SkippedFile] = []
+    claude_above = mode == MODE_CLAUDE_MD_OR_AGENTS_MD and claude_file_at_or_above(root)
     user_file = _user_claude_md()
-    return [f for f in readable if _loads_at_session_start(f, root) or not _has_claude_file(f.parent, user_file)]
+    for path in found:
+        reason = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
+        if reason is None:
+            kept.append(path)
+        else:
+            skipped.append(SkippedFile(path, reason))
+    return AgentsMdReads(kept, skipped, mode)
+
+
+def _skip_reason(path: Path, root: Path, mode: str, *, claude_above: bool, user_file: Path) -> SkipReason | None:
+    """Why Claude Code skips `path`, None when it loads it."""
+    if _never_read(path, root):
+        return "never_read"
+    if mode in MODES_WITHOUT_AGENTS_MD:
+        return "setting_off"
+    if mode == MODE_CLAUDE_MD_AND_AGENTS_MD:
+        return None
+    if claude_above:
+        return "claude_md_present"
+    if _loads_at_session_start(path, root) or not _has_claude_file(path.parent, user_file):
+        return None
+    return "subdir_has_claude_md"
+
+
+def claude_agents_md_files(found: list[Path], target: Path) -> list[Path]:
+    """The `AGENTS.md` files among `found` that Claude Code loads for a session in `target`."""
+    return claude_agents_md_reads(found, target).kept
 
 
 # (agent, file type) -> the files among a discovered list that the agent really reads.
@@ -105,6 +149,11 @@ _GATES: dict[tuple[str, str], Callable[[list[Path], Path], list[Path]]] = {
 
 # Agent -> file names it reads only in place of its own main file.
 _FALLBACK_READS: dict[str, frozenset[str]] = {"claude": frozenset({_AGENTS_MD})}
+
+
+def gated_file_types(agent_id: str) -> tuple[str, ...]:
+    """The file types of `agent_id` whose files a read gate narrows."""
+    return tuple(file_type for agent, file_type in _GATES if agent == agent_id)
 
 
 def apply_read_gate(agent_id: str, file_type: str, found: list[Path], target: Path) -> list[Path]:

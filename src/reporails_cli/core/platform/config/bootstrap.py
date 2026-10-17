@@ -40,6 +40,11 @@ def get_daemon_dir() -> Path:
     return REPORAILS_HOME / "daemon"
 
 
+def get_xray_log_dir() -> Path:
+    """Get ~/.reporails/xray/ — per-session event logs of the context x-ray."""
+    return REPORAILS_HOME / "xray"
+
+
 def get_global_cache_dir() -> Path:
     """Get ~/.reporails/cache/ — shared map-cache location."""
     return REPORAILS_HOME / "cache"

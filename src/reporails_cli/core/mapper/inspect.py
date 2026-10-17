@@ -103,6 +103,8 @@ def _load_registry() -> dict[str, JsonObject]:
 
 
 _ACTIVATION_KEYS = (
+    "loading",
+    "precedence",
     "activation",
     "path_key",
     "always_key",
@@ -379,3 +381,28 @@ def file_type_of(path: Path, root: Path, registry: dict[str, JsonObject]) -> str
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     match = _find_best_registry_match(rel.lower(), registry, path, root)
     return match[1] if match is not None else "generic"
+
+
+class FileRead(NamedTuple):
+    """How an agent reads a file: its file type, when it loads and from which precedence scope."""
+
+    file_type: str
+    loading: str
+    precedence: str
+
+
+def file_read_by(agent_id: str, path: Path, root: Path, registry: dict[str, JsonObject]) -> FileRead | None:
+    """The file type, loading and precedence `agent_id`'s own file types give `path`, None when none matches.
+
+    Loading is the mapper's own (`_detect_file_activation`); precedence is the matched location scope's.
+    """
+    config = registry.get(agent_id)
+    if config is None:
+        return None
+    own = {agent_id: config}
+    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+    match = _find_best_registry_match(rel.lower(), own, path, root)
+    if match is None:
+        return None
+    loading, _, _, _, file_type, _ = _detect_file_activation(path, root, own)
+    return FileRead(file_type, loading, str(match[2].get("precedence", "")))

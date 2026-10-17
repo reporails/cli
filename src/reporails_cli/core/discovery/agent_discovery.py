@@ -434,6 +434,19 @@ def _discover_surface(scope: _AgentScope, ft_name: str, spec: JsonObject) -> tup
     return bucket, drop_shadowed_fallbacks(found, scope.agent_id, ft_name, scope.project_config)
 
 
+def discover_unread_candidates(
+    target: Path, agent_id: str, file_type_names: tuple[str, ...], excluded: frozenset[str]
+) -> list[Path]:
+    """The files the named file types of `agent_id` match under `target`, before any read gate narrows them."""
+    file_types = load_config_file_types(agent_id) or {}
+    found: list[Path] = []
+    for name in file_type_names:
+        spec = file_types.get(name)
+        if isinstance(spec, dict):
+            found.extend(glob_file_type_patterns(target, extract_patterns(spec), extract_properties(spec), excluded))
+    return _dedupe_by_canonical(found)
+
+
 def discover_from_config(
     target: Path,
     agent_id: str,

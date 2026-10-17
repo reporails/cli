@@ -9,7 +9,15 @@ from __future__ import annotations
 import logging
 import sys
 
-from reporails_cli.interfaces.cli import check_command, commands, install, login_command, rules_command, test_command
+from reporails_cli.interfaces.cli import (
+    check_command,
+    commands,
+    expected_loads_command,
+    install,
+    login_command,
+    rules_command,
+    test_command,
+)
 from reporails_cli.interfaces.cli.config_command import config_app
 from reporails_cli.interfaces.cli.daemon_cmd import daemon_app
 from reporails_cli.interfaces.cli.stopwords_command import stopwords_app
@@ -18,7 +26,15 @@ from reporails_cli.interfaces.cli.typer_app import app
 logger = logging.getLogger(__name__)
 
 # The modules whose commands register on `app` when they are imported.
-COMMAND_MODULES = (check_command, commands, install, login_command, rules_command, test_command)
+COMMAND_MODULES = (
+    check_command,
+    commands,
+    expected_loads_command,
+    install,
+    login_command,
+    rules_command,
+    test_command,
+)
 
 # Force UTF-8 on stdout/stderr so the box-drawing and arrow glyphs in the rich
 # scorecard and the `-f md` output do not crash on consoles whose default
