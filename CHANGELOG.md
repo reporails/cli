@@ -11,6 +11,7 @@
 - Heal: a paragraph that contains an abbreviation such as `e.g.` is split at its real sentence ends, instead of being left whole.
 - Heal: a fix in a heal plan of a kind this version does not know is left out with a warning naming it, instead of being listed as a line that needs a decision.
 - Check: a message from reporails with a level or kind this version does not know is shown as a plain information notice, with a warning in the log, instead of being dropped; a finding from the server with a severity this version does not know is shown as information, with a warning in the log.
+- Check: messages from reporails print at the end of the `ails check` output, after the score, with a blank line between messages, and the text of an announcement stays between its two highlight lines.
 - MCP: `preflight` gives each rule's type.
 - Check: the first `ails check` after upgrading reads every instruction file again instead of reusing what an earlier version stored, so it takes longer once.
 - Rules: `ails test --lint` reports every field of a rule's `rule.md` that a run rejects, all at once and each as its own finding naming the file and the field: `required_frontmatter` when the field is missing, `invalid_frontmatter` when its value is not accepted, such as an unknown `category`. An empty `id`, `slug`, `title` or `severity` is reported as missing. A check in `checks.yml` whose `severity` is not `critical`, `high`, `medium`, `low` or `info` is reported when the rule loads, naming the file and the check, and the rule is left out of the run.
