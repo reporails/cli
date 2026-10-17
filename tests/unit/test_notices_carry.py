@@ -283,9 +283,9 @@ def test_env_var_hides_a_promo_and_keeps_the_warning(promo_project: Path, monkey
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_text_run_shows_a_promo_once_a_day(promo_project: Path) -> None:
+def test_text_run_shows_a_promo_on_every_run(promo_project: Path) -> None:
     assert "Fixture promo [bold]x[/bold]" in _check()
-    assert "Fixture promo" not in _check()
+    assert "Fixture promo [bold]x[/bold]" in _check()
 
 
 @pytest.mark.unit

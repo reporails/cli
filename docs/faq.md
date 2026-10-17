@@ -52,9 +52,9 @@ Run `ails login`. Over SSH without a forwarded display it prints the link and a 
 
 The token command from 0.6.0 no longer exists. Create an API key on [reporails.com/account](https://reporails.com/account) and set it as the CI secret: `AILS_API_KEY` in the environment, or the `api-key` input of the GitHub Action. An API key and a sign-in on the same account share one plan and one hourly limit.
 
-## What are the messages above my results?
+## What are the messages under my results?
 
-They are messages about your account: a failed payment (Pro stays on while the card is retried), Pro ending on a date, Pro having ended, or an announcement. A warning about your account shows on every run; other messages show once a day. An announcement may show as a short highlighted block, once a day; `ails check --no-promo` or `AILS_NO_PROMO=1` hides announcements, and account warnings still show. `ails check -f json` and the MCP `validate` reply carry all of them in a `notices` list, and `--format github` (the GitHub Action) prints each one except announcements as a workflow annotation. See [Tiers and Limits](tiers.md#messages-about-your-account).
+They are messages about your account: a failed payment (Pro stays on while the card is retried), Pro ending on a date, Pro having ended, or an announcement. A warning about your account shows on every run; other messages show once a day. An announcement may show as a short highlighted block, on every run; `ails check --no-promo` or `AILS_NO_PROMO=1` hides announcements, and account warnings still show. `ails check -f json` and the MCP `validate` reply carry all of them in a `notices` list, and `--format github` (the GitHub Action) prints each one except announcements as a workflow annotation. See [Tiers and Limits](tiers.md#messages-about-your-account).
 
 ## Does Reporails read my source code?
 

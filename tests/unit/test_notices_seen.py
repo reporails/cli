@@ -1,4 +1,4 @@
-"""Which notices are due: a warning always, an info once per local day."""
+"""Which notices are due: a warning or an announcement always, an info once per local day."""
 
 from __future__ import annotations
 
@@ -113,11 +113,18 @@ WARN_PROMO = Notice("wp", "warn", "Loud announcement", kind="promo")
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_a_promo_is_once_per_day_even_at_level_warn(home: Path) -> None:
+def test_a_promo_shows_on_every_run_at_any_level_and_is_not_recorded(home: Path) -> None:
     assert _due((WARN_PROMO, PROMO), NOON) == (WARN_PROMO, PROMO)
-    assert _state(home) == {"wp": "2026-05-10", "p": "2026-05-10"}
-    assert _due((WARN_PROMO, PROMO), NOON) == ()
-    assert _due((WARN_PROMO,), NOON + timedelta(days=1)) == (WARN_PROMO,)
+    assert _due((WARN_PROMO, PROMO), NOON.replace(hour=20)) == (WARN_PROMO, PROMO)
+    assert not (home / ".reporails" / "notices-seen.json").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_an_info_that_is_not_a_promo_still_shows_once_a_day_beside_a_promo(home: Path) -> None:
+    assert _due((PROMO, INFO), NOON) == (PROMO, INFO)
+    assert _due((PROMO, INFO), NOON.replace(hour=20)) == (PROMO,)
+    assert _state(home) == {"i": "2026-05-10"}
 
 
 @pytest.mark.unit

@@ -117,13 +117,13 @@ The 10,000-atom cap is the same on every plan, so its message gives a route inst
 
 ## Messages about your account
 
-When something about your account needs your attention, `ails check` prints a short message under its header:
+When something about your account needs your attention, `ails check` prints a short message at the end of its output:
 
 - **A payment failed.** The message says so, and Pro stays on while the card is retried. Update the payment method from your account page.
 - **Pro is ending.** The message names the date Pro ends.
 - **Pro has ended.** The message says so, and the run continues on Free limits.
 
-A warning shows on every run until it is resolved; other messages show once a day. An announcement from reporails may show as a short highlighted block, once a day. `ails check --no-promo` or `AILS_NO_PROMO=1` hides announcements; messages about your account still show. `ails check -f json` and the MCP `validate` reply carry every message as the `notices` list, and `--format github` (the GitHub Action) prints each one except announcements as a workflow annotation (see [Configuration → Output format](configuration.md#output-format)).
+A warning shows on every run until it is resolved; other messages show once a day. An announcement from reporails may show as a short highlighted block, on every run. `ails check --no-promo` or `AILS_NO_PROMO=1` hides announcements; messages about your account still show. `ails check -f json` and the MCP `validate` reply carry every message as the `notices` list, and `--format github` (the GitHub Action) prints each one except announcements as a workflow annotation (see [Configuration → Output format](configuration.md#output-format)).
 
 ## How to sign in
 

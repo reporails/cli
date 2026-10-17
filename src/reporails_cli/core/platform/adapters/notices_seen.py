@@ -1,9 +1,9 @@
-"""Which notices show on this run: a warning always, anything else once per local day.
+"""Which notices show on this run: a warning or an announcement always, anything else once per local day.
 
-An announcement (`kind == "promo"`) shows once per local day whatever its level, and
-`visible_notices` drops announcements when the user opted out (`--no-promo`, or the
-`AILS_NO_PROMO` environment variable on). A notice not marked as an announcement is
-never dropped.
+An announcement (`kind == "promo"`) shows on every run whatever its level and is never
+recorded as seen. `visible_notices` drops announcements when the user opted out
+(`--no-promo`, or the `AILS_NO_PROMO` environment variable on). A notice not marked as
+an announcement is never dropped.
 
 The ids already shown are kept in `~/.reporails/notices-seen.json` as `{id: "YYYY-MM-DD"}`,
 and entries older than 30 days are dropped. Every failure here (unreadable, corrupt or
@@ -66,8 +66,8 @@ def _save(entries: dict[str, str]) -> None:
 
 
 def _every_run(notice: Notice) -> bool:
-    """True for a warning that is not an announcement: it shows on every run."""
-    return notice.level == "warn" and notice.kind != "promo"
+    """True for a warning or an announcement: it shows on every run and is never recorded."""
+    return notice.level == "warn" or notice.kind == "promo"
 
 
 def visible_notices(notices: tuple[Notice, ...], *, no_promo: bool = False) -> tuple[Notice, ...]:
