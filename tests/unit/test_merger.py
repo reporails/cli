@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from reporails_cli.core.lint.suppression import apply_rule_set
 from reporails_cli.core.platform.dto.diagnostics import (
     CrossFileCoordinate,
     CrossFileFinding,
@@ -14,7 +15,14 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RulesetReport,
 )
 from reporails_cli.core.platform.dto.models import LocalFinding
-from reporails_cli.core.platform.runtime.merger import collapse_same_secret, merge_results, overlapping_pairs
+from reporails_cli.core.platform.runtime.merger import (
+    CombinedResult,
+    CombinedStats,
+    collapse_same_secret,
+    drop_findings,
+    merge_results,
+    overlapping_pairs,
+)
 
 
 @pytest.fixture
@@ -415,3 +423,49 @@ class TestSameSecretDedup:
         ]
         result = collapse_same_secret(merge_results(findings, [], None))
         assert result.stats.total_findings == 2
+
+
+def _mixed_result() -> CombinedResult:
+    local = [
+        LocalFinding("CLAUDE.md", 10, "warning", "CORE:S:0005", "probe", source="m_probe"),
+        LocalFinding("CLAUDE.md", 30, "warning", "ordering", "client", source="client_check"),
+    ]
+    server = RulesetReport(
+        per_file=(
+            FileAnalysis(
+                file="CLAUDE.md",
+                diagnostics=(
+                    Diagnostic("CLAUDE.md", 50, "warning", "CORE:E:0004", "server one", "fix"),
+                    Diagnostic("CLAUDE.md", 60, "warning", "CORE:E:0005", "server two", "fix"),
+                ),
+            ),
+        ),
+        quality=QualityResult(),
+    )
+    return merge_results([local[0]], [local[1]], server)
+
+
+def _source_sum(stats: CombinedStats) -> int:
+    return stats.m_probe_count + stats.client_check_count + stats.server_diagnostic_count
+
+
+class TestDroppedServerFindingCounts:
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_dropping_a_server_finding_lowers_the_server_count(self) -> None:
+        result = _mixed_result()
+        assert result.stats.server_diagnostic_count == 2
+        kept = [f for f in result.findings if f.message != "server one"]
+        after = drop_findings(result, kept)
+        assert after.stats.server_diagnostic_count == 1
+        assert after.stats.total_findings == _source_sum(after.stats) == 3
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_disabled_rule_drops_its_server_finding_from_the_server_count(self) -> None:
+        result = _mixed_result()
+        known = {"CORE:S:0005", "CORE:E:0004", "CORE:E:0005"}
+        after = apply_rule_set(result, known - {"CORE:E:0004"}, known)
+        assert [f.rule for f in after.findings if f.source == "server"] == ["CORE:E:0005"]
+        assert after.stats.server_diagnostic_count == 1
+        assert after.stats.total_findings == _source_sum(after.stats) == 3

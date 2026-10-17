@@ -296,8 +296,9 @@ def rebuild_severity_stats(stats: CombinedStats, findings: Sequence[FindingItem]
 def drop_findings(result: CombinedResult, kept: Sequence[FindingItem]) -> CombinedResult:
     """The result holding only `kept`, its counters repaired.
 
-    A dropped finding is the same detection reported another way, not a second one, so its
-    local source count drops with it.
+    The total and per-severity counts are recomputed over `kept`, and each dropped finding
+    is subtracted from the count of its source (probe, client check or server), so the
+    source counts still add up to the total.
     """
     if len(kept) == len(result.findings):
         return result
@@ -306,6 +307,7 @@ def drop_findings(result: CombinedResult, kept: Sequence[FindingItem]) -> Combin
         rebuild_severity_stats(result.stats, kept),
         m_probe_count=result.stats.m_probe_count - dropped["m_probe"],
         client_check_count=result.stats.client_check_count - dropped["client_check"],
+        server_diagnostic_count=result.stats.server_diagnostic_count - dropped["server"],
     )
     return replace(result, findings=tuple(kept), stats=stats)
 

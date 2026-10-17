@@ -55,7 +55,6 @@ from reporails_cli.core.platform.runtime.merger import (
     drop_findings,
     normalize_finding_path,
     rebuild_cross_file_stats,
-    rebuild_severity_stats,
 )
 from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import matches_any_glob
@@ -424,11 +423,9 @@ def apply_suppressions(
         workflow = prune_workflow(workflow, _gone, norm, dropped=dropped, kept_findings=kept)
     if len(kept) == len(result.findings) and (workflow is None or workflow is result.reply.workflow):
         return result
-    stats = rebuild_severity_stats(result.stats, kept) if len(kept) != len(result.findings) else result.stats
+    result = drop_findings(result, kept)
     return replace(
         result,
-        findings=kept,
-        stats=stats,
         reply=replace(result.reply, workflow=workflow if workflow is not None else result.reply.workflow),
     )
 
@@ -527,8 +524,8 @@ def apply_surface_mutations(
     """Return `result` with findings dropped on a surface their rule marks non-applicable.
 
     A finding survives unless its rule declares the finding's surface non-applicable via
-    `surface_mutations`. Stats are rebuilt over the kept findings, mirroring
-    `apply_suppressions`, and the remediation `workflow` loses the same findings.
+    `surface_mutations`. The total, per-severity and per-source counts drop with the dropped
+    findings, and the remediation `workflow` loses the same findings.
     """
     if not result.findings:
         return result
@@ -550,12 +547,8 @@ def apply_surface_mutations(
         workflow = prune_workflow(
             workflow, lambda row: _row_coordinate(row, norm) in gone_rows, norm, dropped=dropped, kept_findings=kept
         )
-    return replace(
-        result,
-        findings=kept,
-        stats=rebuild_severity_stats(result.stats, kept),
-        reply=replace(result.reply, workflow=workflow),
-    )
+    result = drop_findings(result, kept)
+    return replace(result, reply=replace(result.reply, workflow=workflow))
 
 
 def resolve_finding_path(rel: str, project_root: Path | None) -> Path | None:
