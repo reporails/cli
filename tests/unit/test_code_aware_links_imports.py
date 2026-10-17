@@ -13,10 +13,12 @@ import pytest
 
 from reporails_cli.core.classify.link_walker import _outgoing_links
 from reporails_cli.core.lint.mechanical.checks_advanced import (
-    check_markdown_link_targets_exist,
     extract_imports,
-    extract_markdown_links,
     import_depth,
+)
+from reporails_cli.core.lint.mechanical.checks_links import (
+    check_markdown_link_targets_exist,
+    extract_markdown_links,
 )
 from reporails_cli.core.mapper.imports import expand_imports, import_refs
 from reporails_cli.core.mapper.structure import code_ranges, link_targets

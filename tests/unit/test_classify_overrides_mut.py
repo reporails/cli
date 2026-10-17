@@ -23,7 +23,7 @@ from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 def _patch_project_config(monkeypatch: pytest.MonkeyPatch, **attrs: object) -> None:
     cfg = SimpleNamespace(**attrs)
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.config.get_project_config",
+        "reporails_cli.core.classify.get_project_config",
         lambda _root: cfg,
     )
 

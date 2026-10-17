@@ -9,11 +9,12 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Sequence
-from typing import Any
 
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
-from reporails_cli.core.heal.preservation.words import content_words, named_key
+from reporails_cli.core.heal.preservation.words import AtomView, content_words, named_key
 from reporails_cli.core.platform.contract.environment import ProjectEnvironment
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.ruleset import Atom
 
 
 def token_present(inner: str, text: str) -> bool:
@@ -37,12 +38,12 @@ def _span_present(inner: str, text: str, *, fold: bool = False) -> bool:
     return token_present_ci(inner, text) if fold else token_present(inner, text)
 
 
-def _token_inners(atoms: Sequence[Any]) -> set[str]:
+def _token_inners(atoms: Sequence[AtomView]) -> set[str]:
     """The inner text (backticks stripped) of every named token of `atoms`."""
-    return {tok.strip("`") for a in atoms for tok in getattr(a, "named_tokens", None) or ()}
+    return {tok.strip("`") for a in atoms for tok in a.named_tokens}
 
 
-def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: Sequence[Any] = ()) -> list[str]:
+def lost_named_tokens(snap_atoms: list[SnapshotAtom], new_text: str, new_atoms: Sequence[Atom] = ()) -> list[str]:
     """Every named token (backtick span) of any snapshot atom whose inner text is present in
     neither the new file text (as a whole token) nor the named tokens of any new atom, once
     each, in first-seen order."""
@@ -72,7 +73,7 @@ def mentions(inner: str, text: str) -> int:
 
 
 def _unnamed_counterparts(
-    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Any], split_covering_for: dict[int, list[Any]]
+    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], split_covering_for: dict[int, list[Atom]]
 ) -> set[int]:
     """`id()`s of every new atom that stands in for an originally-unnamed snapshot instruction
     — its direct match, or every atom in the split window that covers it — `repeated_named`'s
@@ -84,12 +85,10 @@ def _unnamed_counterparts(
     return was_unnamed
 
 
-def _flag_overruns(
-    order: list[str], allowance: Counter[str], original_text: str, new_text: str
-) -> list[dict[str, Any]]:
+def _flag_overruns(order: list[str], allowance: Counter[str], original_text: str, new_text: str) -> list[JsonObject]:
     """`order`'s tokens (first-seen), each flagged when its new-text mention count exceeds
     `allowance` plus its original mention count. Each entry is `{token, before, after, allowed}`."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for inner in dict.fromkeys(order):
         before, after = mentions(inner, original_text), mentions(inner, new_text)
         allowed = before + allowance[inner]
@@ -100,12 +99,13 @@ def _flag_overruns(
 
 def repeated_named(
     snap_atoms: list[SnapshotAtom],
-    new_atoms: list[Any],
-    matched_new_for: dict[int, Any],
-    split_covering_for: dict[int, list[Any]],
+    new_atoms: list[Atom],
+    *,
+    matched_new_for: dict[int, Atom],
+    split_covering_for: dict[int, list[Atom]],
     original_text: str,
     new_text: str,
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """Every construct the file already names that the rewrite mentions more often than the
     original did, beyond one extra mention per instruction that names it — an instruction the
     original names it in, or one that named nothing before the rewrite and now names it (a
@@ -122,7 +122,7 @@ def repeated_named(
                 order.append(inner)
     was_unnamed = _unnamed_counterparts(snap_atoms, matched_new_for, split_covering_for)
     for na in new_atoms:
-        for inner in dict.fromkeys(t.strip("`") for t in getattr(na, "named_tokens", None) or ()):
+        for inner in dict.fromkeys(t.strip("`") for t in na.named_tokens):
             if inner and not wordless(inner) and token_present(inner, original_text):
                 order.append(inner)
                 allowance[inner] += id(na) in was_unnamed and na.charge_value != 0
@@ -160,11 +160,11 @@ def _is_known_command(inner: str, environment: ProjectEnvironment) -> bool:
 
 def invented_named(
     snapshot_text: str,
-    new_atoms: list[Any],
+    new_atoms: list[Atom],
     environment: ProjectEnvironment | None,
     sibling_texts: tuple[str, ...] = (),
     snap_atoms: Sequence[SnapshotAtom] = (),
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """Every named token (backtick span) of a NEW-file prose atom that names something neither
     the snapshot (its text or the named tokens of its atoms) nor a sibling file of the location
     ever named, that is not an existing path
@@ -176,11 +176,11 @@ def invented_named(
     grounding = (snapshot_text, *sibling_texts)
     snap_inners = {i.lower() for i in _token_inners(snap_atoms)}
     seen: set[str] = set()
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for na in new_atoms:
-        if getattr(na, "format", "") == "code_block":
+        if na.format == "code_block":
             continue
-        for tok in getattr(na, "named_tokens", None) or ():
+        for tok in na.named_tokens:
             inner = tok.strip("`")
             key = inner.lower()
             if not inner or key in seen or key in snap_inners:
@@ -255,7 +255,7 @@ def _in_trailing_illustration(token: str, text: str, clause_end: int | None) -> 
     return pos != -1 and pos >= clause_end
 
 
-def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Any]) -> list[dict[str, Any]]:
+def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom]) -> list[JsonObject]:
     """Every matched prohibition (`charge_value < 0`) whose own forbidden-object set changed —
     a named construct the rewrite now bans that the original instruction never named (widened),
     or one the original named that the rewrite dropped (narrowed) — even when that construct
@@ -276,7 +276,7 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
     dropped from what is forbidden. Each entry is `{line, text, new_line, new_text, added,
     dropped}` (`added`/`dropped` are lowercased construct keys); `line` names the original
     prohibition so a caller can quote it."""
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for sa in snap_atoms:
         if sa.charge_value >= 0:
             continue
@@ -285,7 +285,7 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
             continue
         old_clause_end = _governing_clause_end(sa.text)
         old_named = {named_key(t) for t in sa.named_tokens if not _in_trailing_illustration(t, sa.text, old_clause_end)}
-        new_tokens = getattr(match, "named_tokens", None) or ()
+        new_tokens = match.named_tokens
         new_named = {named_key(t) for t in new_tokens}
         clause_end = _governing_clause_end(match.text)
         illustrated = {named_key(t) for t in new_tokens if _in_trailing_illustration(t, match.text, clause_end)}
@@ -302,8 +302,8 @@ def prohibition_scope_changes(snap_atoms: list[SnapshotAtom], matched_new_for: d
                     "text": sa.text,
                     "new_line": match.line,
                     "new_text": match.text,
-                    "added": added,
-                    "dropped": dropped,
+                    "added": [*added],
+                    "dropped": [*dropped],
                 }
             )
     return out

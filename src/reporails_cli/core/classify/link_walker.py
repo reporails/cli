@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import link_targets, strip_anchor
 
 logger = logging.getLogger(__name__)
+
+# How many link hops from a seed file the walk follows.
+MAX_LINK_DEPTH = 3
 
 
 @dataclass(frozen=True)
@@ -25,19 +29,41 @@ class LinkEdge:
     verb: str
 
 
+def _reachability(
+    project_root: Path, classified_paths: set[Path], exclusions: RunExclusions | None
+) -> Callable[[Path], bool]:
+    """Whether a resolved link target is a new in-tree file the run keeps."""
+    classified_resolved = {safe_resolve(p) for p in classified_paths}
+    project_root_resolved = safe_resolve(project_root)
+
+    def reachable(resolved: Path) -> bool:
+        return (
+            _is_in_tree(resolved, project_root_resolved)
+            and resolved.is_file()
+            and resolved not in classified_resolved
+            and not (exclusions is not None and exclusions.leaves_out(resolved))
+        )
+
+    return reachable
+
+
+def _reachable_links(file_path: Path, reachable: Callable[[Path], bool]) -> list[tuple[Path, str]]:
+    """The resolved `(target, verb)` pairs `file_path` links to that pass `reachable`."""
+    resolved_links = ((safe_resolve(linked), verb) for linked, verb in _outgoing_links(file_path))
+    return [(resolved, verb) for resolved, verb in resolved_links if reachable(resolved)]
+
+
 def walk_markdown_links(
     start_paths: dict[Path, str],
     project_root: Path,
     classified_paths: set[Path],
-    max_depth: int = 3,
     exclusions: RunExclusions | None = None,
 ) -> list[LinkEdge]:
     """BFS outgoing Markdown links + `@<path>` imports from `start_paths`; emit one edge per `(source, target)`.
 
     A target the run's exclusions leave out gets no edge and is not walked further; seeds are always walked.
     """
-    classified_resolved = {safe_resolve(p) for p in classified_paths}
-    project_root_resolved = safe_resolve(project_root)
+    reachable = _reachability(project_root, classified_paths, exclusions)
 
     seeds = {safe_resolve(p): ft for p, ft in start_paths.items() if p.exists()}
     visited: set[Path] = set(seeds)
@@ -54,28 +80,13 @@ def walk_markdown_links(
 
     while frontier:
         current, depth, source_type = frontier.pop(0)
-        if depth >= max_depth:
+        if depth >= MAX_LINK_DEPTH:
             continue
-        next_depth = depth + 1
-        for linked, verb in _outgoing_links(current):
-            resolved = safe_resolve(linked)
-            if not _is_in_tree(resolved, project_root_resolved):
-                continue
-            if not resolved.is_file():
-                continue
-            if resolved in classified_resolved:
-                continue
-            if exclusions is not None and exclusions.leaves_out(resolved):
-                continue
-            key = (current, resolved, verb)
-            if key not in edges:
-                edges[key] = LinkEdge(
-                    target=resolved,
-                    source=current,
-                    source_type=source_type,
-                    depth=next_depth,
-                    verb=verb,
-                )
+        for resolved, verb in _reachable_links(current, reachable):
+            edges.setdefault(
+                (current, resolved, verb),
+                LinkEdge(target=resolved, source=current, source_type=source_type, depth=depth + 1, verb=verb),
+            )
             if resolved in visited:
                 continue
             visited.add(resolved)
@@ -83,7 +94,7 @@ def walk_markdown_links(
             # `file_type: "generic"` as the source_type for any links it
             # emits onward — once outside the seeded surface set, every
             # downstream reach is from a generic file.
-            frontier.append((resolved, next_depth, "generic"))
+            frontier.append((resolved, depth + 1, "generic"))
 
     return list(edges.values())
 

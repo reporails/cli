@@ -32,11 +32,14 @@ IMPORT_REF_RE = re.compile(
     r")"
 )
 
+# The suffixes of an agent's path-scoped rule files (`.mdc` is Cursor's).
+MARKDOWN_RULE_SUFFIXES: frozenset[str] = frozenset({".md", ".mdc"})
+
 # Markdown-compatible extensions that ARE expanded. Everything else — including
 # binary/non-text formats (`.png`, `.pdf`, `.svg`, `.zip`, `.jpg`, …) that a
 # deny-list would otherwise miss one-by-one — is left as a literal reference.
 # Empty suffix covers bare filenames (`README`, `AGENTS`, `CHANGELOG`).
-_EXPANDABLE_EXT = frozenset({"", ".md", ".mdc", ".markdown", ".mdx"})
+_EXPANDABLE_EXT = MARKDOWN_RULE_SUFFIXES | {"", ".markdown", ".mdx"}
 
 _MAX_IMPORT_DEPTH = 5
 
@@ -160,7 +163,9 @@ def _expand_file_lines(content: str, source_path: Path, depth: int, visited: set
     ranges = code_ranges(content) if IMPORT_REF_RE.search(content) else []
     out: list[_Line] = []
     for idx, (line, line_start) in enumerate(zip(lines, line_offsets(lines), strict=True)):
-        out.extend(_expand_one_line(line, line_start, (origin_path, idx + 1), source_path, visited, ranges, depth))
+        out.extend(
+            _expand_one_line(line, line_start, (origin_path, idx + 1), source_path, visited, ranges=ranges, depth=depth)
+        )
     return out
 
 
@@ -191,6 +196,7 @@ def _expand_one_line(
     origin: LineOrigin,
     source_path: Path,
     visited: set[str],
+    *,
     ranges: list[tuple[int, int]],
     depth: int,
 ) -> list[_Line]:
@@ -267,22 +273,9 @@ def expand_imports_with_origins(
     origins: list[tuple[Path, int] | None] = []
     for idx, (line, line_start) in enumerate(zip(orig_lines, line_offsets(orig_lines), strict=True)):
         for text, (path, line_no) in _expand_one_line(
-            line, line_start, (None, idx + 1), source_path, visited, ranges, 0
+            line, line_start, (None, idx + 1), source_path, visited, ranges=ranges, depth=0
         ):
             out_lines.append(text)
             line_map.append(idx + 1)
             origins.append(None if path is None else (path, line_no))
     return "\n".join(out_lines), line_map, origins
-
-
-def expand_imports_with_line_map(
-    content: str,
-    source_path: Path,
-) -> tuple[str, list[int]]:
-    """Expand @path imports in `content` and return `(expanded_content, line_map)`.
-
-    The line map of :func:`expand_imports_with_origins`, for a caller that needs
-    only the importing file's own line of each expanded line.
-    """
-    expanded, line_map, _origins = expand_imports_with_origins(content, source_path)
-    return expanded, line_map

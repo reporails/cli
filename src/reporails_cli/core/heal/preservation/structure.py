@@ -7,20 +7,21 @@ lines the file already has. Blocks come from the mapper's reading of the markdow
 
 from __future__ import annotations
 
-import re
 from bisect import bisect_right
 from collections import Counter
 from collections.abc import Sequence
-from typing import Any
 
 from reporails_cli.core.heal.preservation.conditions import by_line
 from reporails_cli.core.heal.preservation.match import pair_score
 from reporails_cli.core.heal.preservation.snapshot import SnapshotAtom
-from reporails_cli.core.heal.preservation.words import content_words
+from reporails_cli.core.heal.preservation.words import AtomView, content_words
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.ruleset import PROSE_OR_LIST_FORMATS, Atom
 from reporails_cli.core.platform.dto.structure import DocumentStructure
+from reporails_cli.core.platform.policy.negative_headings import heading_label
 
 
-def _live(pairs: tuple[tuple[int, Any], ...], relation_lines: frozenset[int]) -> list[Any]:
+def _live[T](pairs: tuple[tuple[int, T], ...], relation_lines: frozenset[int]) -> list[T]:
     """The values of `pairs` whose line is not one a relation names as a true duplicate."""
     return [value for line, value in pairs if line not in relation_lines]
 
@@ -46,24 +47,19 @@ def _removed_multiset(before: list[str], after: list[str]) -> int:
     return sum((Counter(before) - Counter(after)).values())
 
 
-def _label(text: str) -> str:
-    """A heading's label: case and punctuation folded."""
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", "", text.lower())).strip()
-
-
 def relabelled_negative_headings(
-    before_text: str, before_headings: list[Any], after_heading_texts: list[str]
-) -> list[dict[str, Any]]:
+    before_text: str, before_headings: list[SnapshotAtom], after_heading_texts: list[str]
+) -> list[JsonObject]:
     """Each bare negative heading (`## Don'ts`) of the snapshot with no heading of the same label
     left in the rewrite — at any level, in any case, in any markdown style the mapper reads
     (`#`, underlined, inside a quote). Its items are prohibitions because of that label, so a
     renamed heading weakens every one of them. `before_headings` are the snapshot's heading atoms
     (relation-allowed lines already dropped); an entry's `text` is the heading's line as written."""
-    kept = Counter(_label(text) for text in after_heading_texts)
+    kept = Counter(heading_label(text) for text in after_heading_texts)
     lines = before_text.split("\n")
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for atom in before_headings:
-        label = _label(atom.text)
+        label = heading_label(atom.text)
         if kept[label] > 0:
             kept[label] -= 1
         else:
@@ -114,7 +110,7 @@ def structure_totals(
     }
 
 
-def _is_detached(p_match: Any, d_match: Any, blocks: dict[int, int]) -> bool:
+def _is_detached(p_match: Atom, d_match: Atom, blocks: dict[int, int]) -> bool:
     """Whether the matched prohibition lands neither in the matched directive's block nor in
     the block right after it — detached means apart, not merely a different (adjacent) block."""
     d_block, p_block = blocks.get(d_match.line), blocks.get(p_match.line)
@@ -122,11 +118,11 @@ def _is_detached(p_match: Any, d_match: Any, blocks: dict[int, int]) -> bool:
 
 
 def detached_constraints(
-    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Any], new_structure: DocumentStructure
-) -> list[dict[str, Any]]:
+    snap_atoms: list[SnapshotAtom], matched_new_for: dict[int, Atom], new_structure: DocumentStructure
+) -> list[JsonObject]:
     """A snapshot prohibition that shared its line with a directive, now detached from it."""
     blocks = new_structure.block_of
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for atoms_here in by_line(snap_atoms).values():
         prohibitions = [a for a in atoms_here if a.charge_value == -1]
         directives = [a for a in atoms_here if a.charge_value == 1]
@@ -142,7 +138,7 @@ def detached_constraints(
     return out
 
 
-def _list_landing(atom: SnapshotAtom, matched_new_for: dict[int, Any], new_groups: dict[int, int]) -> int | None:
+def _list_landing(atom: SnapshotAtom, matched_new_for: dict[int, Atom], new_groups: dict[int, int]) -> int | None:
     """The new list-group id `atom`'s match lands in, or `None` when it has no match."""
     match = matched_new_for.get(id(atom))
     return new_groups.get(match.line) if match is not None else None
@@ -165,8 +161,8 @@ def _home_group(
 
 
 def _moved_off_home(
-    members: list[SnapshotAtom], landings: dict[int, int | None], home: int, new_by_group: dict[int, list[Any]]
-) -> list[dict[str, Any]]:
+    members: list[SnapshotAtom], landings: dict[int, int | None], home: int, new_by_group: dict[int, list[Atom]]
+) -> list[JsonObject]:
     """The members whose match landed outside `home` while `home` holds no qualifying candidate
     for them — a near-duplicate the one-to-one assignment paired with its twin in another list
     still has its counterpart at home, so it did not move."""
@@ -180,11 +176,11 @@ def _moved_off_home(
 
 def moved_list_items(
     snap_atoms: list[SnapshotAtom],
-    matched_new_for: dict[int, Any],
+    matched_new_for: dict[int, Atom],
     snapshot_structure: DocumentStructure,
     new_structure: DocumentStructure,
-    new_atoms: list[Any],
-) -> list[dict[str, Any]]:
+    new_atoms: list[Atom],
+) -> list[JsonObject]:
     """A snapshot list item whose matched new atom lands outside the list its own list still
     lives in — a rewrite that moved a bullet out of its list into another one, even though a
     straight instruction/count compare reads it as kept. List membership is the contiguous list
@@ -195,7 +191,7 @@ def moved_list_items(
     new_groups = dict(new_structure.list_items)
     group_section = {group: _sections(new_structure, line) for line, group in new_groups.items()}
     new_by_group = _by_list(new_atoms, new_groups)
-    out: list[dict[str, Any]] = []
+    out: list[JsonObject] = []
     for members in _by_list(snap_atoms, dict(snapshot_structure.list_items)).values():
         landings = {id(m): _list_landing(m, matched_new_for, new_groups) for m in members}
         home = _home_group(members, landings, _sections(snapshot_structure, members[0].line), group_section)
@@ -204,9 +200,9 @@ def moved_list_items(
     return out
 
 
-def _by_list(atoms: list[Any], groups: dict[int, int]) -> dict[int, list[Any]]:
+def _by_list[T: AtomView](atoms: list[T], groups: dict[int, int]) -> dict[int, list[T]]:
     """`atoms` bucketed by the list group their line sits in; an atom outside any list is left out."""
-    out: dict[int, list[Any]] = {}
+    out: dict[int, list[T]] = {}
     for atom in atoms:
         group = groups.get(atom.line)
         if group is not None:
@@ -216,24 +212,23 @@ def _by_list(atoms: list[Any], groups: dict[int, int]) -> dict[int, list[Any]]:
 
 _DUPLICATE_MIN_WORDS = 2  # an atom with fewer content words is never a duplicate
 _DUPLICATE_DIFFERENCE = 0.2  # share of two atoms' joint words they may differ in and still be copies
-_BODY_FORMATS = frozenset({"prose", "list", "numbered"})
 
 
 def _near_copy(a: set[str], b: set[str]) -> bool:
     return len(a ^ b) <= max(1, int(_DUPLICATE_DIFFERENCE * len(a | b)))
 
 
-def _duplicates(atoms: list[Any]) -> list[Any]:
+def _duplicates[T: AtomView](atoms: list[T]) -> list[T]:
     """Each prose / list atom that copies (word for word, or all but a word in five) an atom before it."""
     bodies = [
         (a, w)
         for a in atoms
-        if a.format in _BODY_FORMATS and len(w := content_words(a.plain_text)) >= _DUPLICATE_MIN_WORDS
+        if a.format in PROSE_OR_LIST_FORMATS and len(w := content_words(a.plain_text)) >= _DUPLICATE_MIN_WORDS
     ]
     return [a for i, (a, words) in enumerate(bodies) if any(_near_copy(words, earlier) for _a, earlier in bodies[:i])]
 
 
-def padded_lines(old_atoms: list[Any], new_atoms: list[Any]) -> list[dict[str, Any]]:
+def padded_lines(old_atoms: list[SnapshotAtom], new_atoms: list[Atom]) -> list[JsonObject]:
     """The atoms a rewrite added that copy an atom the file already has — the rewrite carries more
     copies than the original did; the last ones are listed."""
     extra = len(_duplicates(new_atoms)) - len(_duplicates(old_atoms))

@@ -9,7 +9,6 @@ import pytest
 from reporails_cli.core.lint.suppression import apply_suppressions
 from reporails_cli.core.platform.dto.models import LocalFinding
 from reporails_cli.core.platform.runtime.merger import merge_results
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 
 @pytest.mark.unit
@@ -35,7 +34,7 @@ def test_rebuilt_stats_count_each_severity_after_suppression(tmp_path: Path) -> 
     ]
     result = merge_results([], findings, None, project_root=tmp_path)
 
-    out = apply_suppressions(result, project_root=tmp_path, alias_fn=rule_aliases)
+    out = apply_suppressions(result, project_root=tmp_path)
 
     assert out.stats.total_findings == 3
     assert out.stats.errors == 2

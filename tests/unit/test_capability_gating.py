@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.adapters.registry import clear_rule_cache, load_rules
+from reporails_cli.core.platform.adapters.registry import _read_rules, load_rules
 from reporails_cli.core.platform.config.capabilities import (
     agent_capabilities,
-    clear_capability_cache,
     load_capability_matrix,
 )
 from reporails_cli.core.platform.dto.models import Category, FileMatch, Rule, RuleType
@@ -74,7 +73,7 @@ class TestCapabilityMatrix:
     """Loader against the real framework/capabilities_matrix.yml."""
 
     def setup_method(self) -> None:
-        clear_capability_cache()
+        load_capability_matrix.cache_clear()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -111,7 +110,7 @@ class TestLoadRulesGating:
     MEMORY_RULE = "CORE:S:0023"  # agent-memory-directory, requires_capability: memory
 
     def setup_method(self) -> None:
-        clear_rule_cache()
+        _read_rules.cache_clear()
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -132,35 +131,3 @@ class TestLoadRulesGating:
     def test_agent_agnostic_scan_keeps_rule(self) -> None:
         rules = load_rules(agent="")
         assert self.MEMORY_RULE in rules
-
-
-class TestEnforcementFields:
-    """Enforcement fields flow from frontmatter through the DTO."""
-
-    def setup_method(self) -> None:
-        clear_rule_cache()
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_ci_enforcement_rule(self) -> None:
-        rules = load_rules(agent="claude")
-        no_creds = rules["CORE:G:0002"]  # no-credentials
-        assert no_creds.enforcement_required is True
-        assert no_creds.enforcement_mechanism == "ci"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_hook_enforcement_rule(self) -> None:
-        rules = load_rules(agent="claude")
-        hook_rule = rules["CLAUDE:S:0004"]  # hook-command-has-field
-        assert hook_rule.enforcement_required is True
-        assert hook_rule.enforcement_mechanism == "hook"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_non_enforcement_rule_defaults_false(self) -> None:
-        rules = load_rules(agent="claude")
-        # A content-quality rule carries no enforcement partner.
-        directive = rules["CORE:D:0001"]  # directive-density
-        assert directive.enforcement_required is False
-        assert directive.enforcement_mechanism is None

@@ -7,20 +7,22 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import read_lines
-from reporails_cli.core.heal.plan import apply_edits, build_plan, leaving_lines
+from reporails_cli.core.heal.plan import _touched, apply_edits, build_plan, leaving_lines
 from reporails_cli.core.heal.preservation import check_rewrite, failed_checks, take_snapshot
-from reporails_cli.core.platform.dto.diagnostics import walk_findings
-from reporails_cli.core.platform.dto.heal_plan import Edit, Plan, PlanOp
-from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.lint.suppression import finding_surface
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int
+from reporails_cli.core.platform.dto.diagnostics import RemediationWorkflow, walk_findings
+from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, Plan, PlanOp, is_heal_op
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
 
-_DESCRIPTIONS = {
+_DESCRIPTIONS: dict[HealOp, str] = {
     "code": "Wrapped code in backticks",
     "unbold": "Replaced bold with italic",
     "italic": "Wrapped the constraint in italic",
@@ -36,14 +38,12 @@ _DESCRIPTIONS = {
 class KeyedResult:
     """What a keyed heal pass did: fixes written, places left to a decision, files put back."""
 
-    fixes: list[dict[str, Any]] = field(default_factory=list)
-    decisions: list[dict[str, Any]] = field(default_factory=list)
-    put_back: list[dict[str, Any]] = field(default_factory=list)
+    fixes: list[JsonObject] = field(default_factory=list)
+    decisions: list[JsonObject] = field(default_factory=list)
+    put_back: list[JsonObject] = field(default_factory=list)
 
 
 def _aliases(path: str, target: Path) -> set[str]:
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
     p = Path(path)
     out = {path, str(safe_resolve(p)), normalize_finding_path(path)}
     with contextlib.suppress(ValueError):
@@ -63,7 +63,7 @@ def mapped_path_resolver(files: Iterable[str], target: Path) -> Callable[[object
     return resolve
 
 
-def resolve_expect(expect: Mapping[str, Any], resolve: Callable[[object], str | None]) -> dict[str, list[object]]:
+def resolve_expect(expect: Mapping[str, JsonValue], resolve: Callable[[object], str | None]) -> dict[str, list[object]]:
     """`expect` with the file each coordinate names spelled as the mapped path."""
     out: dict[str, list[object]] = {}
     for key, value in expect.items():
@@ -73,8 +73,20 @@ def resolve_expect(expect: Mapping[str, Any], resolve: Callable[[object], str | 
     return out
 
 
+def heal_op(op: object, rule: str) -> HealOp | None:
+    """The heal op a finding or relation names, or None when it names none to apply: no op, or `together`
+    (known, and left to the reader). Any other op that is not a heal op is dropped with a warning that
+    names the op and the rule."""
+    if not op or op == "together":
+        return None
+    if is_heal_op(op):
+        return op
+    logger.warning("Dropped unknown heal op %r of rule %s: it is not an op heal can plan.", op, rule)
+    return None
+
+
 def build_ops(
-    workflow: Any,
+    workflow: RemediationWorkflow,
     atoms_by_file: Mapping[str, list[Atom]],
     target: Path,
 ) -> tuple[list[PlanOp], set[tuple[str, int, int | None, str]]]:
@@ -82,20 +94,22 @@ def build_ops(
     and their keys (the places a decision may be asked)."""
     resolve = mapped_path_resolver(atoms_by_file, target)
     ops: list[PlanOp] = []
-    for loc in getattr(workflow, "locations", ()) or ():
+    for loc in workflow.locations:
         for f in walk_findings(loc.findings):
             file = resolve(f.file)
-            if file is not None and f.op:
-                ops.append(PlanOp(f.rule, file, f.line, f.pi, f.op, resolve_expect(f.expect, resolve)))
+            op = heal_op(f.op, f.rule)
+            if file is not None and op is not None:
+                ops.append(PlanOp(f.rule, file, f.line, f.pi, op, resolve_expect(f.expect, resolve)))
         for r in loc.relations:
             file = resolve(r.file)
-            if file is None or not r.op:
+            op = heal_op(r.op, r.rule)
+            if file is None or op is None:
                 continue
             expect = resolve_expect(r.expect, resolve)
             partner = resolve(r.partner_file)
             if "keep" not in expect and partner is not None and r.partner_line:
                 expect["keep"] = [partner, r.partner_line]
-            ops.append(PlanOp(r.rule, file, r.line, None, r.op, expect))
+            ops.append(PlanOp(r.rule, file, r.line, None, op, expect))
     return ops, {(o.file, o.line, o.pi, o.op) for o in ops}
 
 
@@ -126,9 +140,7 @@ def _partners(atoms_by_file: Mapping[str, list[Atom]]) -> dict[tuple[str, int], 
 
 
 def _drop_suppressed(plan: Plan, suppressed: Mapping[str, set[int]]) -> Plan:
-    from reporails_cli.core.heal.plan import _touched
-
-    kept = tuple(e for e in plan.edits if not (_touched(e) & suppressed.get(e.file, set())))
+    kept = tuple(e for e in plan.edits if not _touched(e) & suppressed.get(e.file, set()))
     return Plan(kept, plan.slots, plan.refused)
 
 
@@ -142,14 +154,14 @@ def _readable(path: Path) -> tuple[list[str], list[str]] | None:
 
 
 def keyed_heal(
-    ruleset_map: Any,
+    ruleset_map: RulesetMap,
     target: Path,
-    workflow: Any,
+    workflow: RemediationWorkflow,
     *,
     dry_run: bool,
     allowed_files: set[Path] | None,
     suppressed: Mapping[Path, set[int]] | None,
-    remap: Callable[[list[Path]], Any],
+    remap: Callable[[list[Path]], RulesetMap | None],
 ) -> KeyedResult:
     """Fix each finding at its own place, list the places left to a decision, and put back a file whose result
     departs from its plan (a re-map of the touched files is read; `dry_run` writes and checks nothing)."""
@@ -165,7 +177,11 @@ def keyed_heal(
         if (s.file, s.line, s.pi, s.op) in workflow_keys
     ]
     originals = {} if dry_run else _write(plan, raw)
-    result.put_back = _put_back(plan, raw, remap, originals, ruleset_map, target) if originals else []
+    result.put_back = (
+        _put_back(plan, raw, remap=remap, originals=originals, ruleset_map=ruleset_map, target=target)
+        if originals
+        else []
+    )
     result.fixes = [f for e in plan.edits if e.file not in {b["file"] for b in result.put_back} for f in _fixes(e)]
     return result
 
@@ -174,8 +190,6 @@ def _eligible(
     atoms_by_file: Mapping[str, list[Atom]], allowed_files: set[Path] | None, suppressed: Mapping[Path, set[int]]
 ) -> tuple[dict[str, tuple[list[str], list[str]]], dict[str, set[int]]]:
     """The mapped files heal may write, with their lines and endings, and the suppressed lines of each."""
-    from reporails_cli.core.lint.suppression import finding_surface
-
     raw: dict[str, tuple[list[str], list[str]]] = {}
     sup: dict[str, set[int]] = {}
     for file in atoms_by_file:
@@ -203,7 +217,7 @@ def _write(plan: Plan, raw: Mapping[str, tuple[list[str], list[str]]]) -> dict[s
     return originals
 
 
-def _fixes(edit: Edit) -> list[dict[str, Any]]:
+def _fixes(edit: Edit) -> list[JsonObject]:
     """One fix per op the edit carries: its own and each op folded into it."""
     return [
         {
@@ -216,22 +230,22 @@ def _fixes(edit: Edit) -> list[dict[str, Any]]:
     ]
 
 
-def _first_line(block: Mapping[str, Any], check: str) -> int:
+def _first_line(block: JsonObject, check: str) -> int:
     """The line of the first entry a failing preservation check lists (0 when it lists none)."""
     value = block.get(check)
-    entries = value if isinstance(value, list) else []
-    return int(entries[0].get("line", 0)) if entries and isinstance(entries[0], dict) else 0
+    first = value[0] if isinstance(value, list) and value else None
+    return as_int(first.get("line", 0), 0) if isinstance(first, dict) else 0
 
 
 def _rewrite_failure(
-    file: str, original: bytes, ruleset_map: Any, fresh: Any, target: Path, deduped: Iterable[int] = ()
-) -> dict[str, Any] | None:
+    file: str, original: bytes, *, ruleset_map: RulesetMap, fresh: RulesetMap, target: Path, deduped: Iterable[int] = ()
+) -> JsonObject | None:
     """The put-back entry for `file` when the preservation check fails its written text against its original;
     the lines in `deduped` are repeats the plan removes, so their going is no loss."""
     text = original.decode("utf-8", errors="replace")
     snapshot = take_snapshot(file, text, ruleset_map, None, deduped)
     written = Path(file).read_text(encoding="utf-8", errors="replace")
-    block = check_rewrite(snapshot, Path(file), fresh, written, None, target)
+    block = check_rewrite(snapshot, Path(file), fresh, written, score=None, scan_root=target)
     failed = failed_checks(block)
     if not failed:
         return None
@@ -244,35 +258,54 @@ def _rewrite_failure(
     }
 
 
-def put_back_line(entry: Mapping[str, Any], file: str | None = None) -> str:
+REMAP_CHECK = "remap"
+
+
+def put_back_line(entry: Mapping[str, JsonValue], file: str | None = None) -> str:
     """The line that names a file put back: `put back: <file> (<reason> line <n>)`, the reason being the
     plan's `<op> <rule>` it departed from, else the check that failed. `file` overrides the entry's path."""
+    name = file if file is not None else entry.get("file", "")
+    if entry.get("check") == REMAP_CHECK:
+        return f"put back: {name} (the written file could not be re-mapped to check it)"
     reason = f"{entry['op']} {entry['rule']}" if entry.get("op") else str(entry.get("check", ""))
-    return f"put back: {file if file is not None else entry.get('file', '')} ({reason} line {entry.get('line', '')})"
+    return f"put back: {name} ({reason} line {entry.get('line', '')})"
 
 
 def _put_back(
     plan: Plan,
     raw: Mapping[str, tuple[list[str], list[str]]],
-    remap: Callable[[list[Path]], Any],
+    *,
+    remap: Callable[[list[Path]], RulesetMap | None],
     originals: Mapping[str, bytes],
-    ruleset_map: Any,
+    ruleset_map: RulesetMap,
     target: Path,
-) -> list[dict[str, Any]]:
+) -> list[JsonObject]:
     """Re-map the written files, check each against its plan and with the rewrite check an agent's rewrite
     passes, and restore the original bytes of any that fail either; the entry names the check."""
     touched = sorted(originals)
     fresh_map = remap([Path(f) for f in touched])
+    out: list[JsonObject] = []
+    if fresh_map is None:
+        for file in touched:
+            Path(file).write_bytes(originals[file])
+            out.append({"file": file, "op": "", "rule": "", "line": 0, "check": REMAP_CHECK})
+        return out
     fresh = _group(fresh_map.atoms)
-    out: list[dict[str, Any]] = []
     for file in touched:
         one = Plan(tuple(e for e in plan.edits if e.file == file), tuple(s for s in plan.slots if s.file == file))
         written, _ = read_lines(Path(file))
         found = check_plan(one, {file: raw[file][0]}, {file: written}, {file: fresh.get(file, ())})
-        failure = (
+        failure: JsonObject | None = (
             {"file": file, "op": found[0].op, "rule": found[0].rule, "line": found[0].line, "check": "conformance"}
             if found
-            else _rewrite_failure(file, originals[file], ruleset_map, fresh_map, target, leaving_lines(one))
+            else _rewrite_failure(
+                file,
+                originals[file],
+                ruleset_map=ruleset_map,
+                fresh=fresh_map,
+                target=target,
+                deduped=leaving_lines(one),
+            )
         )
         if failure is not None:
             Path(file).write_bytes(originals[file])

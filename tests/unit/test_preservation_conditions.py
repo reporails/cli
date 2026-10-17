@@ -111,7 +111,7 @@ def test_added_conditions_on_the_real_mapper(tmp_path, name: str, original: str,
     assert isinstance(snap, Snapshot)
     target.write_text(after_text, encoding="utf-8")
     after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
-    result = compare(snap, after_map, after_text, 5.0, LocalProjectEnvironment(tmp_path))
+    result = compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path))
     assert bool(result["added_conditions"]) is listed
 
 

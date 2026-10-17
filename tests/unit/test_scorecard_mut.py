@@ -13,10 +13,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.runtime.merger import Omissions, ServerReply
 from reporails_cli.formatters.text.display_constants import element_namer
+from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
-    SurfaceHealth,
+    ScorecardDetail,
     _count_categories,
     _render_cross_file_counts,
     _render_scope,
@@ -84,7 +87,9 @@ class _Result:
     cross_file: tuple = ()
     cross_file_coordinates: tuple = ()
     per_file_analysis: tuple = ()
-    server_error: object = None
+    reply: ServerReply = field(default_factory=ServerReply)
+    omissions: Omissions = field(default_factory=Omissions)
+    level: Level = Level.L0
 
 
 def _capture(fn, *args, **kwargs) -> str:
@@ -123,7 +128,6 @@ class TestSurfaceErrorCount:
         surfaces = compute_surface_scores(result, project_root=".")
         main = next(s for s in surfaces if s.name == "Main")
         assert main.errors == 1  # kills L176 == -> != (would count non-errors)
-        assert main.infos == 1  # kills L178 == -> != (would count non-infos)
 
 
 # ── _count_categories ─────────────────────────────────────────────────
@@ -364,7 +368,7 @@ class TestPrintScorecardGating:
             _full_result(),
             True,
             scope=ScopeInfo(type_str="2 files"),
-            surface_health=surfaces,
+            detail=ScorecardDetail(surface_health=surfaces),
         )
         assert "Imported files" not in out  # kills L573 == -> !=
 
@@ -383,7 +387,7 @@ class TestPrintScorecardGating:
             _full_result(),
             False,
             scope=ScopeInfo(type_str="2 files"),
-            surface_health=surfaces,
+            detail=ScorecardDetail(surface_health=surfaces),
         )
         assert "capabilities" in out  # kills L564 and -> or
         # multi_surface is False here, so the surface bars must NOT render; the
@@ -405,7 +409,7 @@ class TestPrintScorecardGating:
             _full_result(),
             True,
             scope=ScopeInfo(type_str="2 files"),
-            surface_health=surfaces,
+            detail=ScorecardDetail(surface_health=surfaces),
         )
         assert "capabilities" not in out  # kills L567 or -> and
 
@@ -427,8 +431,7 @@ class TestPrintScorecardGating:
                 _full_result(),
                 False,
                 scope=ScopeInfo(type_str="2 files"),
-                surface_health=None,
-                item_health=items,
+                detail=ScorecardDetail(item_health=items),
             )
         assert "itemalpha" not in icap.get()  # kills L565 and L575 and -> or
 
@@ -441,7 +444,7 @@ class TestFreeTierCta:
     def test_keyless_free_user_gets_the_login_cta(self, monkeypatch) -> None:
         from reporails_cli.formatters.text import scorecard
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: False)
+        monkeypatch.setattr("reporails_cli.formatters.text.scorecard.has_api_key", lambda: False)
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
@@ -453,7 +456,7 @@ class TestFreeTierCta:
     def test_keyed_free_user_gets_the_upgrade_cta(self, monkeypatch) -> None:
         from reporails_cli.formatters.text import scorecard
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.text.scorecard.has_api_key", lambda: True)
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
@@ -469,7 +472,7 @@ class TestFreeTierCta:
         EVERY finding (some Pro findings carry no remedy either)."""
         from reporails_cli.formatters.text import scorecard
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.text.scorecard.has_api_key", lambda: True)
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get().lower()
@@ -485,7 +488,7 @@ class TestFreeTierCta:
         'See all N findings' wording beside it."""
         from reporails_cli.formatters.text import scorecard
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.text.scorecard.has_api_key", lambda: True)
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
@@ -494,26 +497,27 @@ class TestFreeTierCta:
 
 
 class TestProTierFixLocationLine:
-    """The Pro terminal names where its fix text actually lives (JSON + MCP)."""
+    """The Pro run says how to fix the findings."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_pro_tier_gets_the_fix_location_line(self) -> None:
+    def test_pro_tier_gets_the_fix_line(self) -> None:
         from reporails_cli.formatters.text import scorecard
 
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="Pro", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
-        assert "--format json" in out
-        assert "/reporails:ails heal" in out
-        assert "ask it to run the reporails heal" in out
+        assert "Fix them:" in out
+        assert "ails install" in out
+        assert "ask your coding agent to run the reporails heal" in out
+        assert "The remedies are in" not in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_free_tier_does_not_get_the_pro_fix_location_line(self, monkeypatch) -> None:
         from reporails_cli.formatters.text import scorecard
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.text.scorecard.has_api_key", lambda: True)
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="free", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
@@ -577,7 +581,7 @@ class TestRefusedRunTerminal:
         from reporails_cli.core.platform.dto.diagnostics import FunnelError
 
         err = FunnelError(error="payload_too_large", tier="pro", status=413)
-        out = _capture(print_scorecard, _Result(server_error=err), False, tier="Pro")
+        out = _capture(print_scorecard, _Result(reply=ServerReply(server_error=err)), False, tier="Pro")
         assert "/reporails:ails heal" not in out
         assert "ask it to run the reporails heal" not in out
 
@@ -592,9 +596,9 @@ class TestRefusedRunTerminal:
     ) -> None:
         from reporails_cli.core.platform.dto.diagnostics import FunnelError
 
-        monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: True)
+        monkeypatch.setattr("reporails_cli.formatters.text.scorecard.has_api_key", lambda: True)
         err = FunnelError(error=error, tier=tier, status=status)
-        out = _capture(print_scorecard, _Result(server_error=err), False, tier="free")
+        out = _capture(print_scorecard, _Result(reply=ServerReply(server_error=err)), False, tier="free")
         assert "Upgrade to Pro" not in out
         assert "Pro adds the remedies" not in out
 

@@ -28,8 +28,8 @@ def _finding(sev):
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_warn_finding_logs_warning_not_error(monkeypatch, caplog):
-    """A 'warn' finding logs at WARNING, never ERROR (L121/L123 `==`)."""
-    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warn")])
+    """A 'warning' finding logs at WARNING, never ERROR (L121/L123 `==`)."""
+    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warning")])
     ruleset = SimpleNamespace(atoms=())
     with caplog.at_level("WARNING"):
         pl._validate_and_log(ruleset)  # no error findings -> no raise
@@ -52,7 +52,7 @@ def test_error_finding_raises(monkeypatch):
 @pytest.mark.subsys_map
 def test_warn_only_does_not_raise(monkeypatch):
     """Warn-only findings must NOT raise (guards L125)."""
-    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warn")])
+    monkeypatch.setattr(pl, "validate_atoms", lambda atoms: [_finding("warning")])
     pl._validate_and_log(SimpleNamespace(atoms=()))  # must not raise
 
 
@@ -73,9 +73,6 @@ def test_open_map_cache_none_returns_none():
 @pytest.mark.subsys_map
 def test_open_map_cache_charge_identity(monkeypatch, tmp_path):
     """The cache key is the charge-head fingerprint (a head re-export re-keys)."""
-    import reporails_cli.core.cache.map_cache as mc
-    import reporails_cli.core.mapper.bio_tagger as bt
-
     captured = {}
 
     class _FakeCache:
@@ -85,8 +82,8 @@ def test_open_map_cache_charge_identity(monkeypatch, tmp_path):
         def load(self):
             return None
 
-    monkeypatch.setattr(mc, "MapCache", _FakeCache)
-    monkeypatch.setattr(bt, "multislot_fingerprint", lambda: "MS")
+    monkeypatch.setattr(pl, "MapCache", _FakeCache)
+    monkeypatch.setattr(pl, "multislot_fingerprint", lambda: "MS")
     pl._open_map_cache(tmp_path, "legacy")
     assert captured["charge"] == "MS"
 
@@ -200,7 +197,7 @@ def test_on_invocation_file_gets_description(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "DESC")
-    records, _atoms, _embed = pl._classify_all_files([tmp_path / "f.md"], tmp_path, None, {}, "legacy")
+    records, _atoms, _embed = pl._classify_all_files([tmp_path / "f.md"], tmp_path, None, {}, segmentation="legacy")
     assert records[0].description == "DESC"
 
 
@@ -214,7 +211,7 @@ def test_non_invocation_file_has_empty_description(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(pl, "_classify_file", lambda *a, **k: "sha256:x")
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "DESC")
-    records, _atoms, _embed = pl._classify_all_files([tmp_path / "f.md"], tmp_path, None, {}, "legacy")
+    records, _atoms, _embed = pl._classify_all_files([tmp_path / "f.md"], tmp_path, None, {}, segmentation="legacy")
     assert records[0].description == ""
 
 
@@ -244,7 +241,7 @@ def test_a_skills_supporting_file_takes_the_skill_s_type(monkeypatch, tmp_path):
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
     records, _atoms, _embed = pl._classify_all_files(
-        [skill_md, intake, nested, other], tmp_path, None, _load_registry(), "legacy"
+        [skill_md, intake, nested, other], tmp_path, None, _load_registry(), segmentation="legacy"
     )
     assert {r.path: r.type for r in records}[intake.as_posix()] == "generic"  # mapped as the file type says
     record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
@@ -281,7 +278,7 @@ def test_a_retyped_skill_supporting_file_inherits_the_skill_s_loading_and_scope(
     monkeypatch.setattr(pl, "_parse_frontmatter_description", lambda path: "")
 
     records, _atoms, _embed = pl._classify_all_files(
-        [skill_md, reference, other], tmp_path, None, _load_registry(), "legacy"
+        [skill_md, reference, other], tmp_path, None, _load_registry(), segmentation="legacy"
     )
     record_skills(SimpleNamespace(files=records), ["claude"], tmp_path)
 
@@ -327,7 +324,7 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     sentinel_root = Path("/sentinel/root")
     other_models = SimpleNamespace(st=object())
 
-    monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: True)
+    monkeypatch.setattr("reporails_cli.core.mapper.pipeline.multislot_available", lambda: True)
     monkeypatch.setattr(pl, "_get_stage_timer", lambda: SimpleNamespace(mark=lambda *a, **k: None))
     monkeypatch.setattr(pl, "get_models", lambda: other_models)
     monkeypatch.setattr(pl, "_open_map_cache", lambda *a, **k: None)
@@ -337,9 +334,7 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     monkeypatch.setattr(pl, "_fill_missing_embeddings", lambda *a, **k: None)
     monkeypatch.setattr(pl, "_topic_split_if_enabled", _fake_split)
     monkeypatch.setattr(pl, "_embed_file_descriptions", lambda *a, **k: None)
-    monkeypatch.setattr(
-        pl, "build_ruleset_map", lambda *a, **k: SimpleNamespace(summary=SimpleNamespace(n_over_merged=0), atoms=())
-    )
+    monkeypatch.setattr(pl, "build_ruleset_map", lambda *a, **k: SimpleNamespace(summary=SimpleNamespace(), atoms=()))
     monkeypatch.setattr(pl, "_validate_and_log", lambda *a, **k: None)
 
     pl.map_ruleset(
@@ -354,58 +349,12 @@ def test_map_ruleset_arg_plumbing(monkeypatch):
     assert split_args["models"] is sentinel_models  # L310
 
 
-# --- n_over_merged: audit-flag count, not the split count ---
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_map
-def test_n_over_merged_is_audit_flag_count_not_split_count(monkeypatch):
-    """RulesetSummary.n_over_merged documents the granularity audit's flag count
-    (core/platform/dto/ruleset.py). A flagged unit the later split does not
-    actually cut (clause split < 2, or stage == 'multislot') must still count —
-    2 atoms flagged, 0 atoms split, must report n_over_merged == 2, not 0."""
-    flagged_atoms = [
-        SimpleNamespace(over_merged=True),
-        SimpleNamespace(over_merged=True),
-        SimpleNamespace(over_merged=False),
-    ]
-
-    def _fake_classify(paths, root, map_cache, registry, segmentation, progress=None):
-        return [], list(flagged_atoms), []
-
-    def _fake_split(all_atoms, models, *, structure_aware):
-        return all_atoms, 0  # audit flagged 2, but nothing actually split
-
-    captured = {}
-
-    def _fake_build(file_records, all_atoms):
-        captured["ruleset"] = SimpleNamespace(summary=SimpleNamespace(n_over_merged=0), atoms=())
-        return captured["ruleset"]
-
-    monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: True)
-    monkeypatch.setattr(pl, "_get_stage_timer", lambda: SimpleNamespace(mark=lambda *a, **k: None))
-    monkeypatch.setattr(pl, "get_models", lambda: SimpleNamespace(st=object()))
-    monkeypatch.setattr(pl, "_open_map_cache", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_load_registry", lambda: {})
-    monkeypatch.setattr(pl, "_classify_all_files", _fake_classify)
-    monkeypatch.setattr(pl, "_embed_and_audit_fresh", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_fill_missing_embeddings", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "_topic_split_if_enabled", _fake_split)
-    monkeypatch.setattr(pl, "_embed_file_descriptions_if_any", lambda *a, **k: None)
-    monkeypatch.setattr(pl, "build_ruleset_map", _fake_build)
-    monkeypatch.setattr(pl, "_validate_and_log", lambda *a, **k: None)
-
-    pl.map_ruleset([Path("/some/dir/file.md")], segmentation="legacy")
-
-    assert captured["ruleset"].summary.n_over_merged == 2
-
-
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_map_ruleset_refuses_to_map_without_the_whole_model(monkeypatch):
     """A model set that is only partly on disk is not mapped with a stand-in charge:
     the mapper reports itself unavailable, as it does with no model at all."""
-    monkeypatch.setattr("reporails_cli.core.mapper.bio_tagger.multislot_available", lambda: False)
+    monkeypatch.setattr("reporails_cli.core.mapper.pipeline.multislot_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="not complete on disk"):
         pl.map_ruleset([Path("/some/dir/file.md")], root=Path("/some/dir"))
@@ -437,7 +386,7 @@ def _seed_entry(cache, path):
     from reporails_cli.core.cache.map_cache import CachedFileEntry, cache_key_for_path
 
     key = cache_key_for_path(path)
-    cache.put(key, CachedFileEntry(key, [{"text": "x"}]))
+    cache.put(key, CachedFileEntry([{"text": "x"}]))
     return key
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.mapper import bio_pipeline, bio_tagger, multislot_frames
+from reporails_cli.core.mapper import bio_graphs, bio_pipeline, multislot_frames, pipeline
 from reporails_cli.core.mapper.bio_tagger import AtomTuple, Span
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.mapper.pipeline import _apply_charge_stage
@@ -40,10 +40,10 @@ def test_charge_stage_rebuilds_fresh_files_only(monkeypatch: pytest.MonkeyPatch)
     fresh = _atom("Never commit to main.", file_path="fresh.md")
     replacement = _atom("Never commit to main.", file_path="fresh.md")
     replacement.charge, replacement.charge_value, replacement.stage = "CONSTRAINT", -1, "multislot"
-    monkeypatch.setattr(bio_tagger, "multislot_available", lambda: True)
+    monkeypatch.setattr(pipeline, "multislot_available", lambda: True)
     # The charge stage batches every fresh file's decode in one call; the stub
     # returns one rebuilt group per input group (only the fresh group is passed).
-    monkeypatch.setattr(bio_pipeline, "apply_multislot_groups", lambda groups, *a, **k: [[replacement] for _ in groups])
+    monkeypatch.setattr(pipeline, "apply_multislot_groups", lambda groups, *a, **k: [[replacement] for _ in groups])
 
     all_atoms, fresh_out = _apply_charge_stage([cached, fresh], [fresh])
     assert all_atoms == [cached, replacement]
@@ -54,7 +54,7 @@ def test_charge_stage_rebuilds_fresh_files_only(monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.subsys_map
 def test_charge_stage_noops_when_graphs_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     # No charge-classifier graphs bundled -> the stage is a no-op; atoms keep their lexical charge.
-    monkeypatch.setattr(bio_tagger, "multislot_available", lambda: False)
+    monkeypatch.setattr(pipeline, "multislot_available", lambda: False)
     fresh = _atom("Use pytest.")
     all_atoms, fresh_out = _apply_charge_stage([fresh], [fresh])
     assert all_atoms == [fresh]
@@ -68,13 +68,14 @@ def test_multislot_head_decodes_all_seven_outputs() -> None:
     # outputs (subject split out of the object axis) without a shape error, and returns a
     # well-formed 5-tuple. Reddens if a graph swap changes an output name or shape
     # the decode depends on — including a missing `logits_subject`.
-    if not bio_tagger.multislot_available():
+    if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
-    t = bio_tagger.tag_atom_multislot("Always run the tests before committing.")
+    text = "Always run the tests before committing."
+    (decoded,) = multislot_frames._decode_logits_batch([text])
+    (t,) = multislot_frames._frames_from_decoded(decoded, text)
     assert t.polarity in (-1, 0, 1)
     assert t.modality in {"imperative", "direct", "absolute", "hedged", "none"}
     assert all(isinstance(s.text, str) for s in (t.subject, t.predicate, t.object, t.scope))
-    assert 0.0 <= t.compound_prob <= 1.0
 
 
 @pytest.mark.unit
@@ -82,9 +83,11 @@ def test_multislot_head_decodes_all_seven_outputs() -> None:
 def test_multislot_per_span_confidence_in_unit_range() -> None:
     # The triage consumes per-span confidence; each of the four span axes must
     # report a probability in [0, 1] (0.0 exactly when the axis decodes no span).
-    if not bio_tagger.multislot_available():
+    if not bio_graphs.multislot_available():
         pytest.skip("charge-classifier graphs not bundled")
-    t = bio_tagger.tag_atom_multislot("Do not commit secrets to the repository.")
+    text = "Do not commit secrets to the repository."
+    (decoded,) = multislot_frames._decode_logits_batch([text])
+    (t,) = multislot_frames._frames_from_decoded(decoded, text)
     for span in (t.subject, t.predicate, t.object, t.scope):
         assert 0.0 <= span.conf <= 1.0
         # A span with text carries positive confidence; an empty span reads exactly 0.0.
@@ -222,9 +225,7 @@ def _empty_span() -> Span:
 
 def _tuple(polarity: int, text: str, *, subject: Span | None = None) -> AtomTuple:
     empty = _empty_span()
-    return AtomTuple(
-        polarity, "direct" if polarity else "none", subject or empty, empty, empty, empty, 0.0, False, text
-    )
+    return AtomTuple(polarity, "direct" if polarity else "none", subject or empty, empty, empty, empty, text)
 
 
 @pytest.mark.unit

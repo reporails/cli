@@ -4,7 +4,7 @@ Schema-mapped types (Check, Rule, FileMatch, FileTypeDeclaration, ClassifiedFile
 use Pydantic BaseModel — frozen, validated, and self-documenting. The model IS
 the schema: use Rule.model_json_schema() to export.
 
-Internal types (LocalFinding, Violation, JudgmentRequest, JudgmentResponse)
+Internal types (LocalFinding, Violation)
 remain plain dataclasses — no schema contract needed.
 """
 
@@ -13,9 +13,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import regex
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import PydanticCustomError
+
+from reporails_cli.core.platform.contract.json_value import JsonValue
+from reporails_cli.core.platform.contract.rule_pattern import compile_rule_pattern
+from reporails_cli.core.platform.dto.diagnostics import FindingBase
 
 
 class Category(str, Enum):
@@ -28,6 +43,16 @@ class Category(str, Enum):
     MAINTENANCE = "maintenance"
     GOVERNANCE = "governance"
 
+
+# The order rule listings show categories in.
+CATEGORY_DISPLAY_ORDER: tuple[Category, ...] = (
+    Category.STRUCTURE,
+    Category.DIRECTION,
+    Category.COHERENCE,
+    Category.EFFICIENCY,
+    Category.MAINTENANCE,
+    Category.GOVERNANCE,
+)
 
 # Category code -> Category enum mapping (first letter of rule ID)
 CATEGORY_CODES: dict[str, Category] = {
@@ -73,16 +98,6 @@ SEVERITY_ORDER: dict[Severity, int] = {
 }
 
 
-class PatternConfidence(str, Enum):
-    """How reliable a rule's detection pattern is."""
-
-    VERY_HIGH = "very_high"  # Exact structural match
-    HIGH = "high"  # Tight regex, rare false positives
-    MEDIUM = "medium"  # Reasonable regex, some edge cases
-    LOW = "low"  # Broad match, known false positives
-    VERY_LOW = "very_low"  # Placeholder or minimal pattern
-
-
 class Level(str, Enum):
     """Project levels from framework."""
 
@@ -101,7 +116,7 @@ class Level(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-class FileTypeDeclaration(BaseModel):
+class FileTypeDeclaration(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A typed file declaration from agent config file_types section."""
 
     model_config = ConfigDict(frozen=True)
@@ -113,7 +128,7 @@ class FileTypeDeclaration(BaseModel):
     entry_patterns: tuple[str, ...] = ()  # where an instance's entry file sits (a skill's SKILL.md)
 
 
-class ClassifiedFile(BaseModel):
+class ClassifiedFile(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A file matched to a type declaration with resolved properties."""
 
     model_config = ConfigDict(frozen=True)
@@ -123,7 +138,7 @@ class ClassifiedFile(BaseModel):
     properties: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
-class FileMatch(BaseModel):
+class FileMatch(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """Property-based file targeting. None properties are wildcards.
 
     Each property can be:
@@ -148,32 +163,213 @@ class FileMatch(BaseModel):
     link_source_type: list[str] | str | None = None
 
 
-class Check(BaseModel):
+def _compiled(text: str) -> str:
+    """`text` when it is not empty and compiles as a rule pattern; the problem otherwise."""
+    if not text:
+        raise PydanticCustomError("pattern_empty", "is empty; an empty pattern matches every line", {})
+    try:
+        compile_rule_pattern(text)
+    except regex.error as exc:
+        raise PydanticCustomError("pattern_compile", "does not compile: {reason}", {"reason": str(exc)}) from exc
+    return text
+
+
+RulePattern = Annotated[str, AfterValidator(_compiled)]
+
+
+def _aliases(model: type[BaseModel]) -> tuple[str, ...]:
+    """The YAML keys of `model`'s fields, as their aliases name them."""
+    return tuple(info.alias or name for name, info in model.model_fields.items())
+
+
+def _alias_of(model: type[BaseModel], name: str) -> str:
+    """The YAML key of `model`'s field `name`."""
+    return model.model_fields[name].alias or name
+
+
+def _item_keys(value: object, owner: str, allowed: tuple[str, ...]) -> object:
+    """`value` when it is a mapping of an `owner` item holding exactly one `allowed` key, with a value."""
+    if not isinstance(value, dict):
+        return value
+    found = [str(key) for key in value]
+    if len(found) == 1 and found[0] in allowed:
+        if value[found[0]] is None:
+            raise PydanticCustomError("pattern_item", "`{key}` needs a value", {"key": found[0]})
+        return value
+    held = ", ".join(f"`{key}`" for key in found) or "nothing"
+    expected = "one of " + ", ".join(f"`{name}`" for name in allowed)
+    raise PydanticCustomError(
+        "pattern_item",
+        "holds {held}; an item of `{owner}` holds {expected}",
+        {"held": held, "owner": owner, "expected": expected},
+    )
+
+
+class PatternEitherItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """One alternative of a check's `pattern-either`: a `pattern-regex`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pattern_regex: RulePattern = Field(alias="pattern-regex")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _only_regex(cls, value: object) -> object:
+        """Refuse an item holding anything but `pattern-regex`."""
+        return _item_keys(value, "pattern-either", _EITHER_KEYS)
+
+
+_EITHER_KEYS = _aliases(PatternEitherItem)
+
+
+class PatternsItem(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """One term of a check's `patterns`: a `pattern-regex` or a `pattern-not-regex`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pattern_regex: RulePattern | None = Field(default=None, alias="pattern-regex")
+    pattern_not_regex: RulePattern | None = Field(default=None, alias="pattern-not-regex")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _one_regex(cls, value: object) -> object:
+        """Refuse an item holding anything but exactly one of the two regex keys."""
+        return _item_keys(value, "patterns", REGEX_PATTERN_FIELDS)
+
+
+# The check fields that hold a regex.
+REGEX_PATTERN_FIELDS = _aliases(PatternsItem)
+_NOT_REGEX_KEY = _alias_of(PatternsItem, "pattern_not_regex")
+
+
+class CheckPaths(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
+    """The path filter of a check: the globs a file must match."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    include: list[str] = Field(min_length=1)
+
+
+class Check(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A specific check within a rule.
 
     Checks have a type matching their gate: mechanical (Python function),
     deterministic (regex pattern), or content_query (atom-based).
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str  # e.g., "CORE.S.0001.file-exists"
-    type: str = "deterministic"  # "mechanical" | "deterministic" | "content_query"
+    type: Literal["mechanical", "deterministic", "content_query"] = "deterministic"
     check: str | None = None  # Mechanical function name
-    args: dict[str, Any] | None = None  # Mechanical/content_query arguments
+    args: dict[str, JsonValue] | None = None  # Mechanical/content_query arguments
     query: str | None = None  # Content query function name (type=content_query)
-    expect: str = "present"  # "present" = no match is violation; "absent" = match is violation
-    metadata_keys: list[str] = Field(default_factory=list)  # D→M metadata bus keys
+    expect: Literal["present", "absent"] = "present"  # "present" = no match is violation; "absent" = match is violation
     replaces: str = ""  # Check ID from superseded rule to replace (inheritance)
-    severity: str = ""  # Check-level severity override (empty = use rule severity)
+    severity: Severity | None = None  # Check-level severity override (None = use rule severity)
     message: str = ""  # Check-level message (empty = use check result message)
     # "aggregate": project-aggregate check, skipped under a scoped/narrowed run;
     # "once": one project-wide fact, reported once per project and kept on a narrowed run.
     project_scope: Literal["", "aggregate", "once"] = ""
     convention: bool = False  # Finding names a documentation convention the file does not follow
+    # The pattern operator of a deterministic check: exactly one of the three.
+    pattern_regex: RulePattern | None = Field(default=None, alias="pattern-regex")
+    pattern_either: list[PatternEitherItem] | None = Field(default=None, alias="pattern-either", min_length=1)
+    patterns: list[PatternsItem] | None = Field(default=None, min_length=1)
+    # Read only on a deterministic check: the file filter and reporting gates of its regex match.
+    paths: CheckPaths | None = None
+    min_lines: Annotated[int, Field(strict=True, gt=0)] | None = None  # files shorter than this are skipped
+    follow_imports: StrictBool = False  # also read the text an `@path` import splices in
+    entry_only: StrictBool = False  # only a skill's entry file is checked
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_top_level_negation(cls, data: object) -> object:
+        """Refuse a check holding `pattern-not-regex` outside `patterns`."""
+        if isinstance(data, dict) and _NOT_REGEX_KEY in data:
+            raise PydanticCustomError(
+                "pattern_operator",
+                "`{key}` is read only inside `patterns` on a deterministic check",
+                {"key": _NOT_REGEX_KEY},
+            )
+        return data
+
+    @field_validator(
+        "pattern_regex",
+        "pattern_either",
+        "patterns",
+        "paths",
+        "min_lines",
+        "follow_imports",
+        "entry_only",
+        mode="before",
+    )
+    @classmethod
+    def _placed_operator(cls, value: object, info: ValidationInfo[None]) -> object:
+        """Refuse a deterministic-only field that is misplaced for the check's type, or given no value."""
+        if "type" not in info.data:
+            return value
+        deterministic = info.data["type"] == "deterministic"
+        if not deterministic:
+            home = "; a mechanical check takes it under args" if info.field_name == "entry_only" else ""
+            raise PydanticCustomError("pattern_operator", "is read only on a deterministic check{home}", {"home": home})
+        if value is None:
+            raise PydanticCustomError("pattern_operator", "needs a value", {})
+        return value
+
+    @field_validator("patterns")
+    @classmethod
+    def _positive_term(cls, items: list[PatternsItem] | None) -> list[PatternsItem] | None:
+        """Refuse `patterns` holding no `pattern-regex`."""
+        if items is not None and all(item.pattern_regex is None for item in items):
+            raise PydanticCustomError(
+                "pattern_operator", "holds no `pattern-regex`; `pattern-not-regex` alone matches nothing", {}
+            )
+        return items
+
+    @model_validator(mode="after")
+    def _one_operator(self) -> Check:
+        """Refuse a deterministic check holding more than one pattern operator, or none."""
+        given = [key for name, key in _OPERATOR_KEYS.items() if name in self.model_fields_set]
+        if len(given) > 1:
+            raise PydanticCustomError(
+                "pattern_operator",
+                "holds more than one pattern operator ({names}); keep one",
+                {"names": ", ".join(f"`{key}`" for key in given)},
+            )
+        if not given and self.type == "deterministic":
+            *head, last = _OPERATOR_KEYS.values()
+            raise PydanticCustomError(
+                "pattern_operator",
+                "a deterministic check needs one pattern operator: {names}",
+                {"names": f"{', '.join(head)} or {last}"},
+            )
+        return self
 
 
-class Rule(BaseModel):
+# The pattern operator fields of a check, each with its YAML key.
+_OPERATOR_KEYS = {
+    name: info.alias or name
+    for name, info in Check.model_fields.items()
+    if name in ("pattern_regex", "pattern_either", "patterns")
+}
+
+
+@dataclass(frozen=True, slots=True)
+class FieldProblem:
+    """One rejected field of a rule definition: its dotted `field` path, a one-line `message`, and `kind`."""
+
+    field: str
+    message: str
+    kind: Literal["missing", "invalid"]
+
+    @property
+    def text(self) -> str:
+        """The problem as one line: `<field>: <message>`, the message alone for a problem of the whole value."""
+        return f"{self.field}: {self.message}" if self.field else self.message
+
+
+class Rule(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """A rule definition loaded from framework frontmatter.
 
     The single source of truth for rule structure. Use Rule.model_json_schema()
@@ -199,22 +395,16 @@ class Rule(BaseModel):
     inherited: str | None = None  # Coordinate of parent rule to inherit checks from (both stay active)
     depends_on: list[str] = Field(default_factory=list)  # Rule coordinates that must pass first
 
-    # Enforcement + capability gating
-    enforcement_required: bool = False  # True when a lint finding alone cannot enforce this concern
-    enforcement_mechanism: str | None = None  # hook | permission | ci | managed_settings | static_analysis
+    # Capability gating
     requires_capability: str | None = None  # Capability ID; rule fires only for agents that have it
-    surface_mutations: dict[str, Any] | None = None  # Per-surface applicable-concern overrides (population deferred)
+    # Per-surface applicable-concern overrides (population deferred)
+    surface_mutations: dict[str, JsonValue] | None = None
 
     # Checks (all rule types)
     checks: list[Check] = Field(default_factory=list)
 
     # References
-    sources: list[str] = Field(default_factory=list)
     see_also: list[str] = Field(default_factory=list)
-    backed_by: list[str] = Field(default_factory=list)  # Source IDs from sources.yml
-
-    # Pattern quality
-    pattern_confidence: PatternConfidence | None = None
 
     # Paths (set after loading)
     md_path: Path | None = None
@@ -227,15 +417,9 @@ class Rule(BaseModel):
 
 
 @dataclass(frozen=True)
-class LocalFinding:
+class LocalFinding(FindingBase):
     """A finding from a local check or a client check."""
 
-    file: str  # relative file path
-    line: int  # 1-based line number
-    severity: str  # "error" | "warning" | "info"
-    rule: str  # rule id (local checks) or check label (client checks)
-    message: str  # human-readable description
-    fix: str = ""  # suggested fix text
     source: str = "local"  # "m_probe" | "client_check"
     check_id: str = ""  # specific check that triggered this
     signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
@@ -270,45 +454,16 @@ class Violation:
     fix: str = ""  # Canonical fix text propagated from Rule.fix
 
 
-@dataclass(frozen=True)
-class JudgmentRequest:
-    """Request for host LLM to evaluate semantic rule."""
-
-    rule_id: str
-    rule_title: str
-    content: str  # Text to evaluate
-    location: str  # e.g., "CLAUDE.md"
-    question: str  # What to evaluate
-    criteria: dict[str, str]  # {key: check, ...}
-    examples: dict[str, list[str]]  # {good: [...], bad: [...]}
-    choices: list[str]  # [value, ...]
-    pass_value: str  # Which choice means "pass"
-    severity: Severity
-    points_if_fail: int
-
-
-@dataclass(frozen=True)
-class JudgmentResponse:
-    """Response from host LLM after evaluation."""
-
-    rule_id: str
-    verdict: str  # One of the choice values
-    reason: str  # Explanation
-    passed: bool  # verdict == pass_value
-
-
 __all__ = [
     "CATEGORY_CODES",
+    "CATEGORY_DISPLAY_ORDER",
     "SEVERITY_ORDER",
     "Category",
     "Check",
     "ClassifiedFile",
     "FileMatch",
     "FileTypeDeclaration",
-    "JudgmentRequest",
-    "JudgmentResponse",
     "Level",
-    "PatternConfidence",
     "Rule",
     "RuleType",
     "Severity",

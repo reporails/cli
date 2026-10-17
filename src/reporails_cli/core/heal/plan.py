@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
-from reporails_cli.core.heal.op_guide import LINE_LEAVING_OPS
 from reporails_cli.core.heal.transforms import TRANSFORMS, atoms_at, dedupe, split_or_reason
 from reporails_cli.core.lint.content_queries import own_atoms
 from reporails_cli.core.platform.dto.heal_plan import (
     IN_PLACE_OPS,
+    LINE_LEAVING_OPS,
     SCRIPTABLE_OPS,
+    WORD_CHANGING_OPS,
     Edit,
     Folded,
     Plan,
@@ -109,13 +110,10 @@ def _fold_into(
     return False
 
 
-_TEXT_OPS = frozenset({"direct", "negation-form"})
-
-
 def _order(op: PlanOp) -> tuple[str, int, int, int]:
     """Ops run bottom to top; on one line the ops that change the words come before the formatting ones, which
     then run on the changed text."""
-    return (op.file, -op.line, 0 if op.op in _TEXT_OPS else 1, op.pi or 0)
+    return (op.file, -op.line, 0 if op.op in WORD_CHANGING_OPS else 1, op.pi or 0)
 
 
 def leaving_lines(plan: Plan) -> set[int]:
@@ -146,7 +144,7 @@ def build_plan(
     slots: list[Slot] = []
     refused: list[Refusal] = []
     touched: dict[str, set[int]] = {}
-    for op in sorted((o for o in ops if o.op != "together"), key=_order):
+    for op in sorted(ops, key=_order):
         atoms = atoms_by_file.get(op.file, ())
         lines = lines_by_file.get(op.file, ())
         found = atoms_at(atoms, op.line, op.pi)

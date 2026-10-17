@@ -123,18 +123,22 @@ def _markers_before(runs: list[tuple[int, int, str, str]]) -> list[int]:
     return counts
 
 
-def _nearest(haystack: str, needle: str, hint: int, tolerance: int = 3) -> int | None:
-    """The occurrence of ``needle`` closest to ``hint``, or None when none lies within ``tolerance``."""
+# How far from its hint a needle may sit and still be the one wanted.
+_NEAREST_TOLERANCE = 3
+
+
+def _nearest(haystack: str, needle: str, hint: int) -> int | None:
+    """The occurrence of ``needle`` closest to ``hint``, or None when none lies within ``_NEAREST_TOLERANCE``."""
     best: int | None = None
-    start = max(0, hint - tolerance)
-    stop = max(0, hint + tolerance) + len(needle)
+    start = max(0, hint - _NEAREST_TOLERANCE)
+    stop = max(0, hint + _NEAREST_TOLERANCE) + len(needle)
     while (idx := haystack.find(needle, start, stop)) >= 0:
         if best is None or abs(idx - hint) < abs(best - hint):
             best = idx
         if idx >= hint:
             break
         start = idx + 1
-    return best if best is not None and abs(best - hint) <= tolerance else None
+    return best if best is not None and abs(best - hint) <= _NEAREST_TOLERANCE else None
 
 
 def reformat_span(span: str, start: int, markers: list[Marker]) -> str:

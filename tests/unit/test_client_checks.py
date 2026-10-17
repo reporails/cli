@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reporails_cli.core.heal.mechanical_fixers import fix_unformatted_code
-from reporails_cli.core.lint.client_checks import _check_unformatted_code, run_client_checks
+from reporails_cli.core.lint.client_checks import _check_unformatted_code, run_client_checks, running_sentences
 from reporails_cli.core.mapper.parse import tokenize
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap, RulesetSummary
 
@@ -45,7 +45,7 @@ class TestUnformattedCode:
     def test_unformatted_tokens_detected(self) -> None:
         atoms = [_atom(10, +1, unformatted_code=["build.sh"])]
         findings = run_client_checks(_make_map(atoms))
-        fmt = [f for f in findings if f.rule == "format"]
+        fmt = [f for f in findings if f.check_id == "format"]
         assert len(fmt) == 1
         assert "build.sh" in fmt[0].message
 
@@ -54,7 +54,7 @@ class TestUnformattedCode:
     def test_no_unformatted_no_finding(self) -> None:
         atoms = [_atom(10, +1, unformatted_code=[])]
         findings = run_client_checks(_make_map(atoms))
-        fmt = [f for f in findings if f.rule == "format"]
+        fmt = [f for f in findings if f.check_id == "format"]
         assert len(fmt) == 0
 
     @pytest.mark.unit
@@ -65,7 +65,7 @@ class TestUnformattedCode:
         text also matched by its mixed-case shape) — reported once, not twice."""
         atoms = [_atom(10, +1, unformatted_code=["fastapi", "FastAPI"]), _atom(11, +1, named_tokens=["FastAPI"])]
         findings = run_client_checks(_make_map(atoms))
-        fmt = [f for f in findings if f.rule == "format"]
+        fmt = [f for f in findings if f.check_id == "format"]
         assert len(fmt) == 1, [f.message for f in fmt]
 
     @pytest.mark.unit
@@ -276,3 +276,41 @@ class TestBroadScopeRiskyWording:
     )
     def test_wide_but_harmless_scope_stays_quiet(self, text: str) -> None:
         assert self._scope_findings(text) == [], text
+
+
+class TestSentenceEndsOnAWrappedLine:
+    """A wrapped prose line that ends on an ellipsis or a closing smart quote ends its sentence."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Wait for the build to finish\u2026\nthen run `pytest` before you commit.\n",
+            "Report it as \u201cstop the build.\u201d\nThen run `pytest` before you commit.\n",
+        ],
+    )
+    def test_the_next_line_starts_a_new_sentence(self, text: str) -> None:
+        sentences = running_sentences(tokenize(text))
+        assert [[a.line for a in s] for s in sentences] == [[1], [2]]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_line_with_no_sentence_mark_continues_on_the_next(self) -> None:
+        text = "Wait for the build to finish\nthen run `pytest` before you commit.\n"
+        sentences = running_sentences(tokenize(text))
+        assert [[a.line for a in s] for s in sentences] == [[1, 2]]
+
+
+class TestBroadScopeOpeners:
+    """The condition frame the broad-scope check reads opens with any of the mapper's condition openers."""
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.parametrize("opener", ["While", "Whenever", "Once", "Where", "Given"])
+    def test_an_opener_beyond_when_and_if_is_checked(self, opener: str) -> None:
+        text = f"{opener} external services are slow, retry the request."
+        atoms = [a for a in tokenize(text + "\n") if a.scope_conditional]
+        assert atoms, "the mapper must read the sentence as a conditional frame"
+        findings = [f for f in run_client_checks(_make_map(atoms)) if f.rule == "CORE:C:0060"]
+        assert len(findings) == 1, [f.message for f in findings]

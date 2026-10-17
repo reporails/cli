@@ -5,38 +5,79 @@ All functions are pure (no I/O) except where noted.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
+import math
 import os
 import re
+from collections.abc import Hashable
 from fnmatch import fnmatchcase
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
-from typing import Any, NamedTuple
+from typing import ClassVar, NamedTuple
 
 import yaml
+from yaml.constructor import SafeConstructor
+from yaml.resolver import Resolver
+
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 
 logger = logging.getLogger(__name__)
 
-# Use the C YAML loader when available (faster than the pure Python loader)
-try:
-    from yaml import CSafeLoader as _YamlLoader
-except ImportError:
-    from yaml import SafeLoader as _YamlLoader  # type: ignore[assignment]
+_TIMESTAMP_TAG = "tag:yaml.org,2002:timestamp"
+# Explicit tags whose constructors build values JSON cannot hold (bytes, sets, tuples, dates).
+_NON_JSON_TAGS = frozenset(f"tag:yaml.org,2002:{name}" for name in ("binary", "set", "omap", "pairs", "timestamp"))
 
 
-def fast_yaml_load(content: str) -> Any:
-    """Load YAML content using fastest available loader."""
-    return yaml.load(content, Loader=_YamlLoader)
+class _JsonConstruction(SafeConstructor):
+    """The constructor changes that make a safe-loaded document JSON by construction: a timestamp-looking
+    scalar stays a string, every mapping key is a string and a tag for bytes, sets, pairs or dates is a
+    `yaml.YAMLError`. The tables are copies; PyYAML's own classes are left as they are."""
+
+    yaml_implicit_resolvers: ClassVar[dict[str | None, list[tuple[str, re.Pattern[str]]]]] = {
+        first: [(tag, regexp) for tag, regexp in resolvers if tag != _TIMESTAMP_TAG]
+        for first, resolvers in Resolver.yaml_implicit_resolvers.items()
+    }
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, object]:
+        self.flatten_mapping(node)
+        mapping: dict[Hashable, object] = {}
+        for pair in node.value:  # one pair at a time, so keys that differ only before `str` stay apart
+            single = yaml.MappingNode(node.tag, [pair], node.start_mark, node.end_mark, node.flow_style)
+            mapping.update((str(key), value) for key, value in super().construct_mapping(single, deep=deep).items())
+        return mapping
+
+
+_JsonConstruction.yaml_constructors = {
+    tag: constructor for tag, constructor in SafeConstructor.yaml_constructors.items() if tag not in _NON_JSON_TAGS
+}
+
+
+class _PureYamlLoader(_JsonConstruction, yaml.SafeLoader):  # pylint: disable=too-many-ancestors  # PyYAML's loader chain
+    """The pure-Python safe loader with the JSON changes; its errors name the problem and its line."""
+
+
+_YamlLoader: type[yaml.SafeLoader] | type[yaml.CSafeLoader] = _PureYamlLoader
+if hasattr(yaml, "CSafeLoader"):  # the C loader is faster
+
+    class _CYamlLoader(_JsonConstruction, yaml.CSafeLoader):  # pylint: disable=too-many-ancestors  # PyYAML's loader chain
+        """The C safe loader with the JSON changes."""
+
+    _YamlLoader = _CYamlLoader
+
+
+def fast_yaml_load(content: str) -> JsonValue:
+    """Load YAML content as JSON values using fastest available loader."""
+    loaded: JsonValue = yaml.load(content, Loader=_YamlLoader)
+    return loaded
 
 
 # File-level YAML cache — avoids re-parsing the same file from multiple call sites
 # (e.g., registry loads checks.yml for Rule construction, compiler re-reads for regex).
-_yaml_file_cache: dict[str, tuple[tuple[int, int], Any]] = {}
+_yaml_file_cache: dict[str, tuple[tuple[int, int], JsonValue]] = {}
 
 
-def load_yaml_file(path: Path) -> Any:
+def load_yaml_file(path: Path) -> JsonValue:
     """Load and cache a YAML file using the fastest available loader; a cached read is reused only
     while the file's modification time and size are unchanged, so an edited file is read again."""
     key = str(path)
@@ -50,6 +91,11 @@ def load_yaml_file(path: Path) -> Any:
     return data
 
 
+def forget_yaml_file(path: Path) -> None:
+    """Drop the cached read of a YAML file this process just rewrote, so the next read parses the new content."""
+    _yaml_file_cache.pop(str(path), None)
+
+
 def yaml_error_line(exc: Exception) -> str:
     """One line naming what is wrong in a YAML read: the parser's problem and its line, when it gives them."""
     problem = getattr(exc, "problem", None)
@@ -59,23 +105,47 @@ def yaml_error_line(exc: Exception) -> str:
     return f"{problem} (line {mark.line + 1})" if mark is not None else str(problem)
 
 
-# Paths whose unreadable YAML was already reported, so one broken file is reported once per run.
-_yaml_failures_reported: set[str] = set()
+def unreadable_file_problem(exc: OSError | UnicodeDecodeError | yaml.YAMLError) -> str:
+    """What is wrong with a file whose read or parse raised `exc`, as text that follows the file's path."""
+    if isinstance(exc, UnicodeDecodeError):
+        return "is not UTF-8 text"
+    if isinstance(exc, yaml.YAMLError):
+        return f"is not valid YAML ({yaml_error_line(exc)})"
+    return f"cannot be read ({exc.strerror or exc})"
 
 
-def is_first_yaml_failure(path: Path) -> bool:
-    """True the first time `path` is reported as unreadable YAML since the cache was last cleared."""
-    key = str(path)
-    if key in _yaml_failures_reported:
-        return False
-    _yaml_failures_reported.add(key)
-    return True
+def value_reading(value: JsonValue) -> str:
+    """What YAML read a value as, as a clause that follows the setting or item it belongs to."""
+    if value is None:
+        return "is empty"
+    if isinstance(value, bool):
+        return "reads as true/false (yes, no, on, off, true and false all do)"
+    if isinstance(value, float) and not math.isfinite(value):
+        return "reads as a special number (.nan or .inf)"
+    if isinstance(value, (int, float)):
+        return f"reads as the number {value}"
+    if isinstance(value, str):
+        return f"reads as the text {value!r}"
+    return f"is a nested {'list' if isinstance(value, list) else 'mapping'}"
 
 
-def clear_yaml_cache() -> None:
-    """Clear the YAML file cache and the reported-failure memory. Called alongside rule cache clearing."""
-    _yaml_file_cache.clear()
-    _yaml_failures_reported.clear()
+def non_text_reading(position: int, item: JsonValue) -> str:
+    """What YAML read the non-text item at 1-based `position` of a list as, and what to do about it."""
+    reading = f"item {position} {value_reading(item)}"
+    if item is None:
+        return f"{reading}; remove it"
+    if isinstance(item, (list, dict)):
+        return f"{reading}, not text"
+    return f"{reading}, not text; quote it"
+
+
+def non_text_items(values: list[JsonValue]) -> list[tuple[int, str]]:
+    """`(1-based position, reading)` of each item of `values` that is not text."""
+    return [
+        (position, non_text_reading(position, item))
+        for position, item in enumerate(values, start=1)
+        if not isinstance(item, str)
+    ]
 
 
 # A frontmatter delimiter: a whole `---` line (trailing whitespace allowed). A longer dash run,
@@ -111,7 +181,7 @@ class Frontmatter(NamedTuple):
     """What a file's leading frontmatter block holds: the mapping, or the problem that stops it reading."""
 
     block: FrontmatterBlock | None  # None when the file has no closed block (an opened one is the problem)
-    data: dict[str, Any] | None  # None when there is no block, it is empty, or it does not read
+    data: JsonObject | None  # None when there is no block, it is empty, or it does not read
     problem: FrontmatterProblem | None
 
 
@@ -130,16 +200,12 @@ def frontmatter_block(content: str) -> FrontmatterBlock | None:
     return None
 
 
-def strip_frontmatter(content: str, *, keep_lines: bool = False) -> str:
-    """`content` without its leading frontmatter block; with `keep_lines` the block becomes blank lines.
-
-    Pure function.
-    """
+def strip_frontmatter(content: str) -> str:
+    """`content` without its leading frontmatter block. Pure function."""
     block = frontmatter_block(content)
     if block is None:
         return content
-    rest = content.split("\n")[block.body_line :]
-    return "\n".join([""] * block.body_line + rest if keep_lines else rest)
+    return "\n".join(content.split("\n")[block.body_line :])
 
 
 _CONTROL_CHAR = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
@@ -158,13 +224,14 @@ def _quote_bare_scalars(raw: str) -> str:
     return "\n".join(lines)
 
 
-def _load_block(text: str) -> Any:
+def _load_block(text: str) -> JsonValue:
     """Load a block's YAML with the fast loader; one that fails is loaded again with the pure-Python
     loader, whose error names the problem and its line."""
     try:
         return fast_yaml_load(text)
     except yaml.YAMLError:
-        return yaml.safe_load(text)
+        loaded: JsonValue = yaml.load(text, Loader=_PureYamlLoader)
+        return loaded
 
 
 def _problem(exc: yaml.YAMLError, block: FrontmatterBlock) -> FrontmatterProblem:
@@ -210,71 +277,6 @@ def read_frontmatter_file(path: Path, *, lenient: bool = False) -> Frontmatter |
     except OSError:
         return None
     return read_frontmatter(text, lenient=lenient)
-
-
-def compute_content_hash(file_path: Path) -> str:
-    """Compute SHA256 hash of file content.
-
-    I/O function — reads file.
-
-    Args:
-        file_path: Path to file
-
-    Returns:
-        Hash string in format "sha256:{hash16}"
-    """
-    content = file_path.read_bytes()
-    return f"sha256:{hashlib.sha256(content).hexdigest()[:16]}"
-
-
-def is_valid_path_reference(path: str) -> bool:
-    """Check if a string looks like a valid file path reference.
-
-    Pure function.
-
-    Args:
-        path: Potential path string
-
-    Returns:
-        True if it looks like a valid path reference
-    """
-    # Must have at least one slash or dot
-    if "/" not in path and "." not in path:
-        return False
-
-    # Filter out URLs
-    if path.startswith("http://") or path.startswith("https://"):
-        return False
-
-    # Reject path traversal attempts (../../../etc)
-    if path.count("..") > 2:
-        return False
-
-    # Reject absolute paths outside project
-    if path.startswith("/") and not path.startswith("./"):
-        return False
-
-    # Filter out common false positives
-    false_positives = {"e.g.", "i.e.", "etc.", "vs.", "v1", "v2"}
-    return path.lower() not in false_positives
-
-
-def relative_to_safe(path: Path, base: Path) -> str:
-    """Get relative path safely, with fallback to absolute.
-
-    Pure function.
-
-    Args:
-        path: Path to convert
-        base: Base directory
-
-    Returns:
-        Relative path string, or absolute if not relative to base
-    """
-    try:
-        return path.relative_to(base).as_posix()
-    except ValueError:
-        return path.as_posix()
 
 
 def _segments_match(parts: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
@@ -334,6 +336,15 @@ def expand_home_pattern(pattern: str) -> str:
     return Path(pattern).expanduser().as_posix() if pattern.startswith("~") else pattern
 
 
+def is_rooted_pattern(pattern: str) -> bool:
+    """Whether a pattern is rooted outside the project: the home folder (`~/...`), the filesystem
+    root (`/abs`) or a Windows drive (`C:/...`).
+
+    Pure function. A drive is a single character followed by `:` at the start of the pattern.
+    """
+    return pattern.startswith(("~", "/")) or pattern[1:2] == ":"
+
+
 def is_loose_leaf_pattern(pattern: str) -> bool:
     """Whether a pattern can match a file at any directory depth.
 
@@ -383,27 +394,13 @@ def matches_any_glob(path: Path, patterns: list[str], target: Path) -> bool:
     return any(glob_matches(rel, pattern) or glob_matches(path.as_posix(), pattern) for pattern in patterns)
 
 
-def normalize_rule_id(rule_id: str) -> str:
-    """Normalize rule ID to uppercase.
-
-    Pure function.
-
-    Args:
-        rule_id: Raw rule ID
-
-    Returns:
-        Uppercase rule ID
-    """
-    return rule_id.upper()
-
-
-def json_object(text: str) -> dict[str, Any]:
+def json_object(text: str) -> JsonObject:
     """The JSON object `text` holds; empty when it is not JSON or not an object.
 
     For a reply body read by its fields: a body without them (a proxy's HTML page, a bare
     list) names nothing, and the caller classifies the reply by its status.
     """
-    body: object = None
+    body: JsonValue = None
     try:
         body = json.loads(text)
     except (ValueError, TypeError):
@@ -411,7 +408,7 @@ def json_object(text: str) -> dict[str, Any]:
     return body if isinstance(body, dict) else {}
 
 
-def write_json_atomic(path: Path, data: Any) -> None:
+def write_json_atomic(path: Path, data: JsonValue) -> None:
     """Write `data` as JSON to `path` in one step (I/O).
 
     The JSON goes to a temp file beside `path` and `os.replace` swaps it in, so a
@@ -425,3 +422,11 @@ def write_json_atomic(path: Path, data: Any) -> None:
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def compact_json(value: JsonValue, *, ensure_ascii: bool = True) -> str:
+    """`value` as JSON text with no whitespace between items.
+
+    Non-ASCII characters are written as `\\uXXXX` escapes unless `ensure_ascii` is False.
+    """
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=ensure_ascii)

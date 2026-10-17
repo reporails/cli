@@ -34,20 +34,27 @@ def _prop_matches(match_val: list[str] | str | None, actual: list[str] | str | N
 
 
 # FileMatch properties compared by file_matches(), single-sourced so the
-# serializer (interfaces/cli/check_support._serialize_match) cannot drift from
+# serializer (core/lint/rule_pages.serialize_match) cannot drift from
 # what matching actually compares. `type` is compared separately, first.
-MATCH_PROPERTIES: tuple[str, ...] = (
+# The eight properties an agent config declares on a file type.
+DECLARED_PROPERTIES: tuple[str, ...] = (
     "scope",
     "format",
-    "content_format",
     "cardinality",
     "lifecycle",
     "maintainer",
     "vcs",
     "loading",
     "precedence",
-    "loading_verb",
-    "link_source_type",
+)
+# The properties classification derives from file content and link edges.
+DERIVED_PROPERTIES: tuple[str, ...] = ("content_format", "loading_verb", "link_source_type")
+# Serialization order: `content_format` follows `format`, the other derived properties come last.
+MATCH_PROPERTIES: tuple[str, ...] = (
+    *DECLARED_PROPERTIES[:2],
+    DERIVED_PROPERTIES[0],
+    *DECLARED_PROPERTIES[2:],
+    *DERIVED_PROPERTIES[1:],
 )
 
 

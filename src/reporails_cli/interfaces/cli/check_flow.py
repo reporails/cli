@@ -1,6 +1,6 @@
 """The ``ails check`` command flow as phases over a shared ``CheckState``.
 
-``check()`` in ``main.py`` builds a ``CheckState`` from the CLI options and runs
+``check()`` in ``check_command.py`` builds a ``CheckState`` from the CLI options and runs
 ``run_check_flow`` over it. Each phase mutates the state in place (assigning
 ``state.<group>.x`` rather than returning tuples), so the pipeline's
 intermediate values live on one object instead of exploding the command's
@@ -14,22 +14,22 @@ capability-path resolution) stay in ``check_orchestration.py`` /
 
 from __future__ import annotations
 
-import sys
-import time
-from collections.abc import Callable
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import typer
 
+from reporails_cli.core.classify.capability_paths import canonicalize_capability, classify_target_token
 from reporails_cli.core.discovery.walk import safe_resolve
-from reporails_cli.core.lint.regex.not_evaluated import not_evaluated_scope
-from reporails_cli.core.mapper.skills import skill_membership
-from reporails_cli.core.pipeline.mapping import apply_generic_scan, discover_scope
+from reporails_cli.core.pipeline.mapping import (
+    apply_generic_scan,
+    discover_scope,
+)
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
+from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.interfaces.cli.check_notices import (
-    _agent_is_pinned,
     _emit_empty_run,
     _emit_heal_scope_refusal,
     _emit_heal_withheld,
@@ -37,6 +37,7 @@ from reporails_cli.interfaces.cli.check_notices import (
 )
 from reporails_cli.interfaces.cli.check_orchestration import (
     HealScope,
+    RenderContext,
     _dispatch_output,
     _emit_stage_timing,
     _file_under_target,
@@ -49,8 +50,8 @@ from reporails_cli.interfaces.cli.check_orchestration import (
     _scan_root,
     _should_exit_strict,
     _token_agent,
-    logger,
 )
+from reporails_cli.interfaces.cli.check_pipeline import _flow_assemble, _flow_pipeline
 from reporails_cli.interfaces.cli.check_support import (
     _ensure_model_or_exit,
     _heal_authed,
@@ -63,10 +64,18 @@ from reporails_cli.interfaces.cli.helpers import (
     console,
 )
 
+if TYPE_CHECKING:
+    from reporails_cli.core.discovery.agents import DetectedAgent
+    from reporails_cli.core.discovery.exclusions import RunExclusions
+    from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResult, Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.models import LocalFinding
+    from reporails_cli.core.platform.dto.ruleset import RulesetMap
+    from reporails_cli.core.platform.observability.stage_timer import StageTimer
+
 
 @dataclass
 class CheckInputs:
-    """CLI options as passed to ``ails check`` — filled by the builder in ``main.py``."""
+    """CLI options as passed to ``ails check`` — filled by the builder in ``check_command.py``."""
 
     targets: list[str] | None
     format_opt: str
@@ -105,12 +114,12 @@ class CheckTargets:
 class CheckScope:
     """Agent detection, instruction-file discovery, and scope narrowing."""
 
-    detected: list[Any] = field(default_factory=list)
+    detected: list[DetectedAgent] = field(default_factory=list)
     effective_agent: str = ""
     assumed: bool = False
     mixed: bool = False
-    filtered: list[Any] = field(default_factory=list)
-    exclusions: Any = None
+    filtered: list[DetectedAgent] = field(default_factory=list)
+    exclusions: RunExclusions | None = None
     instruction_files: list[Path] = field(default_factory=list)
     upfront_paths: set[Path] = field(default_factory=set)
     is_targeted: bool = False
@@ -122,26 +131,26 @@ class CheckScope:
 class CheckPipeline:
     """Pipeline outputs — mapping, probes, content/client checks, server lint."""
 
-    stage_timer: Any = None
+    stage_timer: StageTimer = field(default_factory=get_stage_timer)
     start_time: float = 0.0
-    ruleset_map: Any = None
-    m_findings: list[Any] = field(default_factory=list)
-    content_findings: list[Any] = field(default_factory=list)
-    client_findings: list[Any] = field(default_factory=list)
+    ruleset_map: RulesetMap | None = None
+    m_findings: list[LocalFinding] = field(default_factory=list)
+    content_findings: list[LocalFinding] = field(default_factory=list)
+    client_findings: list[LocalFinding] = field(default_factory=list)
     rule_agents: tuple[str, ...] = ()
     not_evaluated: tuple[tuple[str, str], ...] = ()
-    lint_result: Any = None
-    funnel_error: Any = None
-    notices: tuple[Any, ...] = ()
+    lint_result: LintResult | None = None
+    funnel_error: FunnelError | None = None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass
 class CheckRender:
     """Assembled result and the display-path projection rendered to the user."""
 
-    result: Any = None
-    display_result: Any = None
-    display_map: Any = None
+    result: CombinedResult = field(default_factory=CombinedResult)
+    display_result: CombinedResult = field(default_factory=CombinedResult)
+    display_map: RulesetMap | None = None
     capability_paths: set[Path] = field(default_factory=set)
     # The `(folders, file globs)` the run left out because the user set them, recorded where scope resolves.
     excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
@@ -165,8 +174,6 @@ class CheckState:
 def _flow_targets(state: CheckState) -> None:
     """Classify target tokens, pick the scan root + output format, enforce heal scope-safety."""
     if state.inputs.targets:
-        from reporails_cli.core.classify.capability_paths import classify_target_token
-
         sniffed: dict[Path, str] = {}
         for token in state.inputs.targets:
             sniff_agent = _token_agent(token, state.inputs.agent, state.inputs.project_root, sniffed)
@@ -175,8 +182,6 @@ def _flow_targets(state: CheckState) -> None:
                 state.targets.capability_specs.append(payload)
             elif isinstance(payload, Path):
                 if not payload.exists():
-                    from reporails_cli.core.classify.capability_paths import canonicalize_capability
-
                     suggestion = ""
                     if (
                         sniff_agent
@@ -225,7 +230,6 @@ def _resolve_scope_at_target(state: CheckState, capability_paths: frozenset[Path
     already does — a config file left out of the default scan never gets its rules
     run against it at all.
     """
-    from reporails_cli.core.platform.config.config import get_project_config
 
     config = get_project_config(state.targets.target)
     state.scope.generic_scanning = bool(config.generic_scanning)
@@ -327,188 +331,6 @@ def _apply_generic_scan(state: CheckState) -> bool:
     return True
 
 
-def _agent_file_pairs(state: CheckState) -> list[tuple[str, list[Path]]]:
-    """The ``(agent_id, its own scoped files)`` pairs M-probes / content checks run over --
-    the CLI's thin wrapper over the shared ``core.pipeline.mapping.agent_file_pairs`` MCP
-    ``validate`` also calls, so both surfaces score identical ``(rule, file, line)`` triples
-    for the same tree."""
-    from reporails_cli.core.pipeline.mapping import agent_file_pairs
-
-    explicit = _agent_is_pinned(state)
-    return agent_file_pairs(
-        state.scope.instruction_files,
-        state.scope.filtered,
-        state.targets.target,
-        explicit=explicit,
-        effective_agent=state.scope.effective_agent,
-    )
-
-
-def _flow_pipeline(state: CheckState) -> None:
-    """Map instruction files, run M-probes + content/client checks, then the server lint."""
-    from reporails_cli.core.lint.rule_runner import run_m_probes_over_pairs
-    from reporails_cli.core.platform.observability.stage_timer import get_stage_timer
-
-    state.pipeline.start_time = time.perf_counter()
-    from reporails_cli.core.platform.config.bootstrap import env_flag
-
-    state.pipeline.stage_timer = get_stage_timer()
-    state.pipeline.stage_timer.configure(enabled=env_flag("AILS_STAGE_TIMING"))
-
-    show_progress = sys.stdout.isatty() and state.targets.output_format not in ("json", "github")
-    progress: Callable[[str], None] = (
-        (lambda msg: print(msg, file=sys.stderr, flush=True))
-        if state.inputs.verbose and not show_progress
-        else (lambda _: None)
-    )
-    spinner = console.status("[bold]Starting...[/bold]") if show_progress else nullcontext()
-
-    with spinner:
-        from reporails_cli.core.pipeline.mapping import map_instruction_files
-
-        def map_progress(msg: str) -> None:
-            if show_progress:
-                spinner.update(f"[bold]{msg}[/bold]")  # type: ignore[union-attr]
-            progress(msg)
-
-        try:
-            if show_progress:
-                spinner.update("[bold]Mapping...[/bold]")  # type: ignore[union-attr]
-            progress("Mapping instruction files...")
-            state.pipeline.ruleset_map = map_instruction_files(
-                state.targets.target,
-                state.scope.instruction_files,
-                progress=map_progress,
-                filtered_agents=state.scope.filtered,
-            )
-        except (ImportError, RuntimeError) as exc:
-            logger.warning("Mapper unavailable: %s. Content checks skipped.", exc)
-            if state.inputs.verbose:
-                console.print(f"[dim]Mapper unavailable: {exc}. Content checks skipped.[/dim]")
-        state.pipeline.stage_timer.mark("map")
-
-        if show_progress:
-            spinner.update("[bold]Checking rules...[/bold]")  # type: ignore[union-attr]
-        progress("Checking rules...")
-        pairs = _agent_file_pairs(state)
-        state.pipeline.rule_agents = tuple(dict.fromkeys(agent_id for agent_id, _ in pairs))
-        skills = skill_membership(state.pipeline.ruleset_map)
-        with not_evaluated_scope() as unfinished:
-            state.pipeline.m_findings = run_m_probes_over_pairs(
-                state.targets.target,
-                pairs,
-                scoped=state.scope.is_targeted,
-                skills=skills,
-                exclusions=state.scope.exclusions,
-            )
-        state.pipeline.not_evaluated = tuple(unfinished)
-        state.pipeline.stage_timer.mark("m_probe")
-
-        if state.pipeline.ruleset_map is not None:
-            if show_progress:
-                spinner.update("[bold]Running content checks...[/bold]")  # type: ignore[union-attr]
-            progress("Running content checks...")
-            _run_content_checks(state)
-        state.pipeline.stage_timer.mark("content")
-
-        _flow_server_lint(state, show_progress, spinner)
-
-
-def _run_content_checks(state: CheckState) -> None:
-    """Run the content-quality + client checks over the built ruleset map.
-
-    Content-quality checks run once per agent in ``_agent_file_pairs`` (a single pass for
-    a resolved agent, one pass per file each distinctive agent owns when ``mixed`` — a
-    union run), against the SAME whole-project ``ruleset_map`` each time so cross-file
-    checks still see every atom; only which file's rules get matched narrows per pass.
-    Client checks are agent-agnostic and run once over the whole map.
-    """
-    from reporails_cli.core.lint.client_checks import run_client_checks
-    from reporails_cli.core.lint.rule_runner import run_content_quality_checks
-
-    state.pipeline.content_findings = [
-        finding
-        for agent_id, files in _agent_file_pairs(state)
-        for finding in run_content_quality_checks(
-            state.pipeline.ruleset_map, state.targets.target, files, agent=agent_id, exclusions=state.scope.exclusions
-        )
-    ]
-    state.pipeline.client_findings = run_client_checks(state.pipeline.ruleset_map)
-
-
-def _flow_server_lint(state: CheckState, show_progress: bool, spinner: Any) -> None:
-    """Send local findings to the server and unpack the lint response onto the pipeline state."""
-    from reporails_cli.core.pipeline.assemble import lint_request_local
-    from reporails_cli.core.platform.adapters.api_client import AilsClient
-    from reporails_cli.core.platform.adapters.notices_seen import visible_notices
-
-    if show_progress:
-        spinner.update("[bold]Diagnosing...[/bold]")
-    response = None
-    if state.pipeline.ruleset_map is not None:
-        local, structural_required = lint_request_local(_assemble_inputs(state))
-        response = AilsClient().lint(state.pipeline.ruleset_map, local, structural_required, root=state.targets.target)
-    state.pipeline.lint_result = response.result if response else None
-    state.pipeline.funnel_error = response.funnel_error if response else None
-    state.pipeline.notices = visible_notices(response.notices if response else (), no_promo=state.render.no_promo)
-    state.pipeline.stage_timer.mark("server")
-
-
-def _assemble_inputs(state: CheckState, lint_result: Any = None) -> Any:
-    """The shared assemble spine's inputs from the check state (`lint_result` None before the lint)."""
-    from reporails_cli.core.pipeline.assemble import AssembleInputs
-    from reporails_cli.formatters.text.rule_meta import rule_aliases
-
-    return AssembleInputs(
-        m_findings=state.pipeline.m_findings,
-        content_findings=state.pipeline.content_findings,
-        client_findings=state.pipeline.client_findings,
-        ruleset_map=state.pipeline.ruleset_map,
-        scan_root=state.targets.target,
-        filter_agents=state.scope.filtered,
-        effective_agent=state.scope.effective_agent,
-        lint_result=lint_result,
-        alias_fn=rule_aliases,
-        rule_agents=state.pipeline.rule_agents,
-        notices=state.pipeline.notices,
-        not_evaluated=state.pipeline.not_evaluated,
-    )
-
-
-def _flow_assemble(state: CheckState) -> None:
-    """Memory validation, capability level, merge, suppression, and display-path filtering.
-
-    The memory / level / merge / suppress / surface-mutation / credential-duplicate tail is the surface-agnostic
-    assemble spine shared with the MCP `validate` tool (`core/pipeline/assemble.py`); the
-    display-path filtering below stays CLI-only.
-    """
-    from reporails_cli.core.pipeline.assemble import assemble_result, with_exclusions
-    from reporails_cli.formatters.text.display import filter_result_to_paths, filter_ruleset_map_to_paths
-
-    state.render.result = with_exclusions(
-        assemble_result(_assemble_inputs(state, state.pipeline.lint_result), state.scope.exclusions),
-        state.render.excluded,
-    )
-    # `assemble_result` unpacks the lint result (report/hints/cross_file_coordinates/tier)
-    # and attaches the composable remediation `workflow` itself; the path filter below
-    # preserves it via `dataclasses.replace`.
-    state.render.elapsed_ms = (time.perf_counter() - state.pipeline.start_time) * 1000
-
-    state.render.capability_paths = state.scope.upfront_paths
-    if state.targets.single_file is not None:
-        state.render.capability_paths = {safe_resolve(state.targets.single_file)}
-    if state.render.capability_paths:
-        state.render.display_result = filter_result_to_paths(
-            state.render.result, state.render.capability_paths, state.targets.target
-        )
-        state.render.display_map = filter_ruleset_map_to_paths(
-            state.pipeline.ruleset_map, state.render.capability_paths, state.targets.target
-        )
-    else:
-        state.render.display_result = state.render.result
-        state.render.display_map = state.pipeline.ruleset_map
-
-
 def _flow_render(state: CheckState) -> None:
     """Dispatch the diagnosis output (unless an authed JSON heal replaces it) + timing + hint."""
     if state.inputs.heal:
@@ -520,12 +342,14 @@ def _flow_render(state: CheckState) -> None:
             state.render.display_result,
             state.render.display_map,
             state.render.elapsed_ms,
-            state.render.capability_paths,
-            state.targets.target,
-            state.inputs.ascii_mode,
-            state.inputs.verbose,
-            state.pipeline.funnel_error,
-            state.scope.file_type_by_path,
+            funnel_error=state.pipeline.funnel_error,
+            context=RenderContext(
+                project_root=state.targets.target,
+                capability_paths=state.render.capability_paths,
+                file_type_by_path=state.scope.file_type_by_path,
+                ascii_mode=state.inputs.ascii_mode,
+                verbose=state.inputs.verbose,
+            ),
         )
     state.pipeline.stage_timer.mark("render")
     _emit_stage_timing(state.pipeline.stage_timer, state.targets.output_format)
@@ -538,9 +362,9 @@ def _flow_render(state: CheckState) -> None:
     )
 
 
-def _heal_workflow(state: CheckState) -> Any:
+def _heal_workflow(state: CheckState) -> RemediationWorkflow | None:
     """The remediation workflow the report was drawn from (after suppressions); None when the reply carries none."""
-    return getattr(state.render.result, "workflow", None)
+    return state.render.result.reply.workflow
 
 
 def _flow_heal(state: CheckState) -> None:
@@ -553,7 +377,7 @@ def _flow_heal(state: CheckState) -> None:
         _emit_heal_withheld(
             state.targets.output_format,
             funnel_error=state.pipeline.funnel_error,
-            tier=getattr(state.render.result, "tier", None),
+            tier=getattr(state.render.result.reply, "tier", None),
             server_replied=state.pipeline.lint_result is not None,
         )
         return
@@ -571,8 +395,8 @@ def _flow_heal(state: CheckState) -> None:
         state.pipeline.ruleset_map,
         state.inputs.dry_run,
         state.targets.output_format,
-        state.render.result.notices,
-        _heal_workflow(state),
+        notices=state.render.result.reply.notices,
+        workflow=_heal_workflow(state),
     )
 
 

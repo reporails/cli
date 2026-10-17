@@ -12,9 +12,15 @@ import re
 import tomllib
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
 
-from reporails_cli.core.lint.mechanical.checks import _resolve_glob_targets, get_target_files, run_exclusions
+from reporails_cli.core.lint.mechanical.checks import (
+    CheckArgs,
+    _resolve_glob_targets,
+    arg_value,
+    get_target_files,
+    run_exclusions,
+)
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.utils.hook_config import HookPath, read_hook_config, value_at, walk_hooks
@@ -55,7 +61,7 @@ def _toml_line(text: str, path: HookPath) -> int:
     return low
 
 
-def _parse(path: Path) -> tuple[Any, Callable[[dict[str, Any], HookPath], int]] | None:
+def _parse(path: Path) -> tuple[JsonValue, Callable[[JsonObject, HookPath], int]] | None:
     """Parse a config file; return its data and a function giving a handler's line.
 
     None when the file is unreadable, too large, or not valid JSON / TOML.
@@ -65,59 +71,59 @@ def _parse(path: Path) -> tuple[Any, Callable[[dict[str, Any], HookPath], int]] 
         return None
     if path.suffix == ".toml":
         return config.data, lambda _handler, where: _toml_line(config.text, where)
-    return config.data, lambda handler, _where: getattr(handler, "line", 0)
+    return config.data, lambda handler, _where: int(getattr(handler, "line", 0))
 
 
-def _handlers(data: Any, args: dict[str, Any]) -> Iterator[tuple[dict[str, Any], HookPath]]:
+def _handlers(data: JsonValue, args: CheckArgs) -> Iterator[tuple[JsonObject, HookPath]]:
     """Each hook handler the file declares, with its data path."""
     sites = walk_hooks(
         data,
-        block=str(args.get("block") or ""),
-        named_hooks=bool(args.get("named_hooks")),
-        grouped=args.get("handlers") == "grouped",
+        block=str(arg_value(args, "block") or ""),
+        named_hooks=bool(arg_value(args, "named_hooks")),
+        grouped=arg_value(args, "handlers") == "grouped",
     )
     for site in sites:
         yield site.handler, site.path
 
 
-def _type_of(handler: dict[str, Any], args: dict[str, Any]) -> Any:
+def _type_of(handler: JsonObject, args: CheckArgs) -> JsonValue:
     """The handler's type: its own ``type``, else the type an untyped handler runs as."""
-    return handler["type"] if "type" in handler else args.get("default_type")
+    return handler["type"] if "type" in handler else arg_value(args, "default_type")
 
 
-def _listed(value: Any) -> list[Any]:
+def _listed(value: JsonValue) -> list[JsonValue]:
     """An ``args`` value written as one item or as a list, as a list."""
     return value if isinstance(value, list) else [value]
 
 
-def _is_selected(handler: dict[str, Any], args: dict[str, Any]) -> bool:
+def _is_selected(handler: JsonObject, args: CheckArgs) -> bool:
     """Whether the rule judges this handler."""
-    select = args.get("select") or {}
+    select = as_object(arg_value(args, "select"))
     if "type" in select and _type_of(handler, args) not in _listed(select["type"]):
         return False
-    return "has" not in select or any(key in handler for key in _listed(select["has"]))
+    return "has" not in select or any(key in handler for key in str_list(_listed(select["has"])))
 
 
-def _has_text(value: Any) -> bool:
+def _has_text(value: JsonValue) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _verdict(handler: dict[str, Any], args: dict[str, Any]) -> bool | None:
+def _verdict(handler: JsonObject, args: CheckArgs) -> bool | None:
     """True when the handler meets the requirement, False when it does not, None when it is not judged."""
-    require = args["require"]
+    require = as_object(arg_value(args, "require"))
     if "type" in require:
         return _type_of(handler, args) in _listed(require["type"])
     if "non_empty" in require:
-        return any(_has_text(handler.get(key)) for key in _listed(require["non_empty"]))
+        return any(_has_text(handler.get(key)) for key in str_list(_listed(require["non_empty"])))
     wanted = "matches" in require
-    ((key, pattern),) = require["matches" if wanted else "not_matches"].items()
+    ((key, pattern),) = as_object(require["matches" if wanted else "not_matches"]).items()
     value = handler.get(key)
     if not isinstance(value, str) or not value.strip():
         return None
     return bool(re.search(str(pattern), value)) is wanted
 
 
-def _failing_lines(path: Path, args: dict[str, Any]) -> list[int]:
+def _failing_lines(path: Path, args: CheckArgs) -> list[int]:
     """The line of each handler in one file that fails the rule."""
     parsed = _parse(path)
     if parsed is None:
@@ -128,7 +134,7 @@ def _failing_lines(path: Path, args: dict[str, Any]) -> list[int]:
         for handler, where in _handlers(data, args)
         if _is_selected(handler, args) and (verdict := _verdict(handler, args)) is not None
     ]
-    if args.get("any_handler"):
+    if arg_value(args, "any_handler"):
         if not judged or any(verdict for _, _, verdict in judged):
             return []
         first, where, _ = judged[0]
@@ -136,9 +142,9 @@ def _failing_lines(path: Path, args: dict[str, Any]) -> list[int]:
     return [line_of(handler, where) for handler, where, verdict in judged if not verdict]
 
 
-def _target_files(root: Path, args: dict[str, Any], classified_files: list[ClassifiedFile]) -> list[Path]:
+def _target_files(root: Path, args: CheckArgs, classified_files: list[ClassifiedFile]) -> list[Path]:
     """The files to read: the rule's own files, or every JSON / TOML file under ``root`` when none is classified."""
-    if classified_files or args.get("path"):
+    if classified_files or arg_value(args, "path"):
         return get_target_files(args, classified_files, root)
     exclusions = run_exclusions(args, root)
     found = {
@@ -147,13 +153,13 @@ def _target_files(root: Path, args: dict[str, Any], classified_files: list[Class
     return sorted(path for path in found if path.is_file())
 
 
-def _args_problem(args: dict[str, Any]) -> str:
+def _args_problem(args: CheckArgs) -> str:
     """What is wrong with the check's ``args``, or an empty string when they are usable."""
-    if not args.get("message"):
+    if not arg_value(args, "message"):
         return "no message specified"
-    if args.get("handlers") not in ("direct", "grouped"):
+    if arg_value(args, "handlers") not in ("direct", "grouped"):
         return "handlers must be 'direct' or 'grouped'"
-    require = args.get("require")
+    require = arg_value(args, "require")
     forms = [form for form in _REQUIRE_FORMS if form in require] if isinstance(require, dict) else []
     if not isinstance(require, dict) or len(forms) != 1:
         return f"require must hold exactly one of {', '.join(_REQUIRE_FORMS)}"
@@ -170,7 +176,7 @@ def _args_problem(args: dict[str, Any]) -> str:
 
 def hook_handlers(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check the hook handlers a JSON or TOML config file declares.
@@ -215,7 +221,7 @@ def hook_handlers(
     problem = _args_problem(args)
     if problem:
         return CheckResult(passed=False, message=f"hook_handlers: {problem}")
-    message = str(args["message"])
+    message = str(arg_value(args, "message"))
     occurrences: list[tuple[str, str]] = []
     for target in _target_files(root, args, classified_files):
         rel = target.relative_to(root).as_posix() if target.is_relative_to(root) else str(target)

@@ -10,9 +10,15 @@ import shutil
 from collections import Counter
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from reporails_cli.core.classify.file_tags import classify_file
+from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
+from reporails_cli.core.lint.suppression import SHORT_TOKEN
+from reporails_cli.core.mapper.skills import skill_membership
+from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, CLIENT_CHECK_KINDS, FORMAT_CHECK, FindingItem
+from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path, overlapping_pairs
 
 # ── Aggregate rule sets ───────────────────────────────────────────────
 
@@ -39,10 +45,6 @@ AGGREGATE_RULES = {
     "CORE:C:0040",
     "CORE:S:0039",
     "CORE:C:0060",
-    # Client check labels
-    "format",
-    "bold",
-    "heading_instruction",
     # Classifier confidence
     "ambiguous_charge",
 }
@@ -63,25 +65,30 @@ AGGREGATE_LABELS: dict[str, str] = {
     "CORE:C:0050": "context near vague",
     "CORE:C:0052": "default wins",
     "CORE:C:0040": "redundant",
-    "format": "unformatted",
-    "bold": "bold",
+    FORMAT_CHECK: "unformatted",
+    BOLD_CHECK: "bold",
     "heading_instruction": "heading as instruction",
     "CORE:C:0060": "broad scope",
     "ambiguous_charge": "ambiguous",
 }
 
-# Rule ids counted under another aggregate key: the heading rule's findings are grouped under
-# the short heading label.
-AGGREGATE_KEY = {"CORE:S:0039": "heading_instruction"}
+
+def aggregate_key(finding: FindingItem) -> str:
+    """The aggregate a finding is counted under: a client check's own kind (`format`, `bold`),
+    else its rule id, or the short key a rule is grouped under."""
+    if finding.check_id in CLIENT_CHECK_KINDS:
+        return str(finding.check_id)
+    return str(SHORT_TOKEN.get(finding.rule, finding.rule))
+
 
 AGG_ORDER = [
     "CORE:C:0042",
     "CORE:E:0004",
     "CORE:C:0058",
     "CORE:C:0043",
-    "format",
+    FORMAT_CHECK,
     "CORE:E:0003",
-    "bold",
+    BOLD_CHECK,
     "heading_instruction",
     "CORE:C:0060",
     "ambiguous_charge",
@@ -97,7 +104,6 @@ AGG_ORDER = [
     "CORE:C:0040",
 ]
 
-SEV_WEIGHT = {"error": 0, "warning": 1, "info": 2}
 HRULE = "\u2500" * 56
 
 HINT_TYPE_LABELS = {
@@ -117,7 +123,18 @@ HINT_TYPE_LABELS = {
 
 # ── File classification lookup tables ─────────────────────────────────
 
-_TYPE_ORDER = ["main", "nested", "rules", "skills", "agents", "config", "memory", "file"]
+# Order of the per-tag counts in a file-count summary.
+TAG_COUNT_ORDER = ("main", "nested", "rules", "skills", "agents", "config", "memory", "file")
+# Order of the file-panel groups, including the groups that carry no surface bar.
+FILE_PANEL_ORDER = ("main", "nested", "agents", "skills", "rules", "config", "memory", "imported", "referenced", "file")
+PARTNERS_NAMED = 3
+# Cells in a surface or item health bar: the smallest width that tells 6.9 from 7.2 under
+# integer rounding (at width 10, scores 6.5-7.4 all fill 7 cells).
+HEALTH_BAR_WIDTH = 15
+# Order of the scored surface bars.
+SURFACE_BAR_ORDER = ("main", "nested", "rules", "skills", "agents", "memory", "imported")
+# Path tags that a main-file path or a rules-surface path can hide behind.
+RECLASSIFIABLE_PATH_TAGS = ("nested", "file")
 # A tag's count label: (one, many).
 _TYPE_LABELS = {
     "main": ("main", "main"),
@@ -205,15 +222,13 @@ def short_path(file_path: str) -> str:
     return p.name
 
 
-def skill_lookup(ruleset_map: Any, project_root: Path) -> dict[str, str] | None:
+def skill_lookup(ruleset_map: RulesetMap | None, project_root: Path) -> dict[str, str] | None:
     """Project-relative path of each file in a skill -> its skill folder (project-relative).
 
     Reads the skill each file record carries, and each slot folder of a one-level skills root as
     its own skill; a file with none is a plain file. `None` when there is no ruleset map (the
     path-based tags then decide); empty when the map carries no skills.
     """
-    from reporails_cli.core.mapper.skills import skill_membership
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     membership = skill_membership(ruleset_map, project_root)
     if membership is None:
@@ -240,23 +255,24 @@ class Element(NamedTuple):
 
     @property
     def label(self) -> str:
+        """The name with its kind in parentheses, when it has a kind."""
         return f"{self.base} ({self.kind})" if self.kind else self.base
 
 
-def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str], Element]:
+def element_namer(ruleset_map: RulesetMap | None, project_root: Path | None) -> Callable[[str], Element]:
     """Resolve a file to the harness element it belongs to.
 
     A file in a skill folder is that skill (every file of the folder is one element); an agent
     definition, rule file and command are named by their file stem, by the type the ruleset map
     records for the file. Any other file is named by its project-relative path.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     root = project_root if project_root is not None else Path.cwd()
     skill_of = skill_lookup(ruleset_map, root) or {}
-    type_by_path = {normalize_finding_path(fr.path, root): fr.type for fr in getattr(ruleset_map, "files", ())}
+    type_by_path = {
+        normalize_finding_path(fr.path, root): fr.type for fr in (ruleset_map.files if ruleset_map is not None else ())
+    }
     kinds = {"agents": "agent", "rules": "rule", "commands": "command"}
-    from reporails_cli.core.discovery.agent_discovery import MEMORY_INDEX_FILENAME, MEMORY_SURFACES
 
     def element(path: str) -> Element:
         norm = normalize_finding_path(path, root)
@@ -280,21 +296,20 @@ def element_namer(ruleset_map: Any, project_root: Path | None) -> Callable[[str]
     return element
 
 
-def partner_list(partners: list[str], limit: int = 3) -> str:
-    """A summary line's partners, the first `limit` named and the rest counted."""
-    more = [f"+{len(partners) - limit} more"] if len(partners) > limit else []
-    return ", ".join([*partners[:limit], *more])
+def partner_list(partners: list[str]) -> str:
+    """A summary line's partners, the first three named and the rest counted."""
+    more = [f"+{len(partners) - PARTNERS_NAMED} more"] if len(partners) > PARTNERS_NAMED else []
+    return ", ".join([*partners[:PARTNERS_NAMED], *more])
 
 
-def partner_lookup(result: Any, project_root: Path) -> Callable[[str], list[str]]:
+def partner_lookup(result: CombinedResult, project_root: Path) -> Callable[[str], list[str]]:
     """The files a card's file overlaps with, read from the reply's cross-file rows.
 
     Each partner is a full project path, in a stable order; a file with no overlap pair has none.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path, overlapping_pairs
 
     partners: dict[str, set[str]] = {}
-    for left, right in overlapping_pairs(result.cross_file, getattr(result, "cross_file_coordinates", ())):
+    for left, right in overlapping_pairs(result.cross_file, result.cross_file_coordinates):
         l_norm, r_norm = normalize_finding_path(left, project_root), normalize_finding_path(right, project_root)
         partners.setdefault(l_norm, set()).add(r_norm)
         partners.setdefault(r_norm, set()).add(l_norm)
@@ -369,7 +384,7 @@ def file_type_summary(filepaths: set[str], skill_of: dict[str, str] | None = Non
         type_counts[path_tag(fp, skill_of).split(":")[0]] += 1
 
     parts = []
-    for t in _TYPE_ORDER:
+    for t in TAG_COUNT_ORDER:
         n = type_counts.get(t, 0)
         if n > 0:
             one, many = _TYPE_LABELS.get(t, (t, t))
@@ -377,17 +392,16 @@ def file_type_summary(filepaths: set[str], skill_of: dict[str, str] | None = Non
     return ", ".join(parts)
 
 
-def index_atoms_by_norm_path(atoms: Any, project_root: Path) -> dict[str, list[Any]]:
+def index_atoms_by_norm_path(atoms: Iterable[Atom], project_root: Path) -> dict[str, list[Atom]]:
     """Group atoms by normalized file path, normalizing each distinct path once.
 
     Collapses the per-card / per-group re-normalization of every atom (an
     O(atoms x files) render hot loop) into one `normalize_finding_path` call per
-    distinct `file_path`. Built once per render and shared via `_CardContext`.
+    distinct `file_path`. Built once per render and shared via `CardContext`.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     memo: dict[str, str] = {}
-    out: dict[str, list[Any]] = {}
+    out: dict[str, list[Atom]] = {}
     for a in atoms:
         fp = a.file_path
         norm = memo.get(fp)
@@ -400,9 +414,9 @@ def index_atoms_by_norm_path(atoms: Any, project_root: Path) -> dict[str, list[A
 
 def per_file_stats(
     filepath: str,
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     project_root: Path,
-    atoms_by_path: dict[str, list[Any]] | None = None,
+    atoms_by_path: dict[str, list[Atom]] | None = None,
 ) -> str:
     """Compute per-file stats from RulesetMap atoms. Returns compact stat string.
 
@@ -413,8 +427,6 @@ def per_file_stats(
     if ruleset_map is None or len(filepath) < 3:
         return ""
     try:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
         norm_target = normalize_finding_path(filepath, project_root)
         if atoms_by_path is not None:
             atoms = atoms_by_path.get(norm_target, [])
@@ -427,7 +439,7 @@ def per_file_stats(
     return _format_atom_stats(atoms)
 
 
-def _format_atom_stats(atoms: list[Any]) -> str:
+def _format_atom_stats(atoms: list[Atom]) -> str:
     """Format atom stats into a compact display string."""
     n_dir = sum(1 for a in atoms if a.charge_value == +1)
     n_con = sum(1 for a in atoms if a.charge_value == -1)
@@ -447,12 +459,11 @@ def _format_atom_stats(atoms: list[Any]) -> str:
 
 
 def get_group_atoms(
-    group_key: str,  # noqa: ARG001
-    group_files: list[tuple[str, list[Any]]],
-    ruleset_map: Any,
+    group_files: list[tuple[str, list[FindingItem]]],
+    ruleset_map: RulesetMap | None,
     project_root: Path,
-    atoms_by_path: dict[str, list[Any]] | None = None,
-) -> list[Any]:
+    atoms_by_path: dict[str, list[Atom]] | None = None,
+) -> list[Atom]:
     """Get all atoms belonging to files in this group.
 
     Uses the prebuilt `atoms_by_path` index when supplied; otherwise falls back
@@ -461,11 +472,9 @@ def get_group_atoms(
     if ruleset_map is None:
         return []
     try:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
         norm_fps = {normalize_finding_path(fp, project_root) for fp, _ in group_files}
         if atoms_by_path is not None:
-            atoms: list[Any] = []
+            atoms: list[Atom] = []
             for fp in norm_fps:
                 atoms.extend(atoms_by_path.get(fp, []))
             return atoms
@@ -474,7 +483,7 @@ def get_group_atoms(
         return []
 
 
-def group_stats_line(atoms: list[Any]) -> str:
+def group_stats_line(atoms: list[Atom]) -> str:
     """Build a stats summary for a group of atoms."""
     n_dir = sum(1 for a in atoms if a.charge_value == +1)
     n_con = sum(1 for a in atoms if a.charge_value == -1)

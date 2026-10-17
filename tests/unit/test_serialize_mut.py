@@ -9,6 +9,8 @@ Two seams:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from reporails_cli.core.mapper.serialize import (
@@ -106,14 +108,13 @@ def test_scope_conditional_default_false_on_missing_key() -> None:
 @pytest.mark.subsys_map
 def test_atom_round_trip_carries_span_coordinates_and_stage_fields() -> None:
     """An Atom with populated slots/stage/over_merged/min_clause_cosine/
-    cell_straddle/abstained must round-trip through _atom_to_dict/_atom_from_dict
+    abstained must round-trip through _atom_to_dict/_atom_from_dict
     with every field payload.py's _project_atom reads intact, so a daemon or whole-map-cache round-trip serves
     the same payload (`so` block included) as a cold in-process run."""
     atom = _atom(
         charge_value=1,
         charge="DIRECTIVE",
         modality="imperative",
-        cell_straddle=True,
         stage="multislot",
         over_merged=True,
         min_clause_cosine=0.37,
@@ -130,7 +131,6 @@ def test_atom_round_trip_carries_span_coordinates_and_stage_fields() -> None:
         ),
     )
     back = _atom_from_dict(_atom_to_dict(atom))
-    assert back.cell_straddle is True
     assert back.stage == "multislot"
     assert back.over_merged is True
     assert back.min_clause_cosine == pytest.approx(0.37)
@@ -346,3 +346,32 @@ def test_charge_checks_use_the_classifier_s_prohibition_and_absolute_words() -> 
     assert "suspicious_neutral" in _rules_for(_atom(text="The EXCLUSIVELY keyword is reserved."))
     assert "suspicious_neutral" in _rules_for(_atom(text="Files marked FORBIDDEN stay."))
     assert "suspicious_neutral" not in _rules_for(_atom(text="The never keyword is reserved."))
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_map
+def test_file_record_scalars_round_trip_and_disk_keys(tmp_path) -> None:
+    """A file record's scalar fields reach disk under their own keys, in order, and load back equal."""
+    rec = FileRecord(
+        path="a.md", content_hash="sha256:ab", loading="on_demand", scope="path_scoped", agent="claude", type="rules"
+    )
+    rmap = RulesetMap(
+        schema_version="1",
+        embedding_model="m",
+        generated_at="t",
+        files=(rec,),
+        atoms=(),
+        summary=RulesetSummary(n_atoms=0, n_charged=0, n_neutral=0),
+    )
+    out = tmp_path / "map.json"
+    save_ruleset_map(rmap, out)
+    on_disk = json.loads(out.read_text(encoding="utf-8"))["files"][0]
+    assert list(on_disk) == ["path", "content_hash", "loading", "scope", "agent", "type", "activation"]
+    assert on_disk["content_hash"] == "sha256:ab"
+    assert (on_disk["loading"], on_disk["scope"], on_disk["agent"], on_disk["type"]) == (
+        "on_demand",
+        "path_scoped",
+        "claude",
+        "rules",
+    )
+    assert load_ruleset_map(out).files == (rec,)

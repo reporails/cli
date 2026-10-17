@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.classify.capability_paths import _decl_location_matches
+from reporails_cli.core.classify import location_matches_mode
 from reporails_cli.core.discovery.agent_discovery import is_excluded
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
 from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
@@ -26,7 +26,7 @@ def _decl(scope: str, loading: str = "session_start") -> FileTypeDeclaration:
     )
 
 
-# ── _decl_location_matches scope/loading gate (L289, L292, L293) ─────
+# ── location_matches_mode scope/loading gate (L289, L292, L293) ─────
 
 
 class TestDeclLocationMatches:
@@ -38,7 +38,7 @@ class TestDeclLocationMatches:
         # Kills L289 `and -> or`: `or` would enter the clamp on a loose-leaf
         # pattern and reject the nested file via in_ancestor_chain.
         nested = tmp_path / "sub" / "CLAUDE.md"
-        assert _decl_location_matches(nested, _decl("global", "on_demand"), "**/CLAUDE.md", tmp_path) is True
+        assert location_matches_mode(nested, _decl("global", "on_demand"), {tmp_path}, "**/CLAUDE.md") is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
@@ -47,7 +47,7 @@ class TestDeclLocationMatches:
         # through to an unconditional match.
         # Kills L292 `return True -> False`.
         f = tmp_path / "anywhere.md"
-        assert _decl_location_matches(f, _decl("global", "session_start"), ".claude/rules/git.md", tmp_path) is True
+        assert location_matches_mode(f, _decl("global", "session_start"), {tmp_path}, ".claude/rules/git.md") is True
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify
@@ -57,7 +57,7 @@ class TestDeclLocationMatches:
         # Kills L293 `== -> !=`: the mutant skips the nested branch and returns
         # the default True.
         root_file = tmp_path / "CLAUDE.md"
-        assert _decl_location_matches(root_file, _decl("nested"), "**/CLAUDE.md", tmp_path) is False
+        assert location_matches_mode(root_file, _decl("nested"), {tmp_path}, "**/CLAUDE.md") is False
 
 
 # ── is_loose_leaf_pattern (L305) ────────────────────────────────────

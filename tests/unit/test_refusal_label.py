@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.dto.diagnostics import FunnelError
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem, FunnelError
+from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply
 from reporails_cli.formatters.text import display
 
 
 def _render(err: FunnelError | None, tmp_path, capsys) -> str:
     finding = FindingItem(file=str(tmp_path / "CLAUDE.md"), line=2, severity="warning", rule="CORE:S:0001", message="m")
-    result = CombinedResult(findings=(finding,), quality=None, server_error=err)
+    result = CombinedResult(findings=(finding,), quality=None, reply=ServerReply(server_error=err))
     display.print_text_result(
         result, elapsed_ms=0, ascii_mode=True, verbose=False, funnel_error=err, project_root=tmp_path
     )

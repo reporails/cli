@@ -20,9 +20,3 @@ def read_lines(path: Path) -> tuple[list[str], list[str]]:
     """The file's lines and the ending each was written with (see `split_lines`)."""
     with path.open(encoding="utf-8", newline="") as handle:
         return split_lines(handle.read())
-
-
-def write_lines(path: Path, lines: list[str], endings: list[str]) -> None:
-    """Write `lines` back, each with the ending it was read with."""
-    out = "".join(line.removesuffix("\n") + endings[i] if i < len(endings) else line for i, line in enumerate(lines))
-    path.write_text(out, encoding="utf-8", newline="")

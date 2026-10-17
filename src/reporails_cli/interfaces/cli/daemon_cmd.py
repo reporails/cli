@@ -5,19 +5,29 @@ from __future__ import annotations
 import typer
 
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
 
 daemon_app = typer.Typer(
     name="daemon",
     help="Manage the background analysis daemon.",
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 
 
 @daemon_app.command()
 def start() -> None:
     """Start the analysis daemon (keeps models loaded in background)."""
-    from reporails_cli.core.mapper.daemon import is_daemon_running, retire_daemon, start_daemon
-    from reporails_cli.core.mapper.daemon_client import ping, runs_newer_code, runs_older_code, serves_this_code
+    from reporails_cli.core.mapper.daemon import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        is_daemon_running,
+        retire_daemon,
+        start_daemon,
+    )
+    from reporails_cli.core.mapper.daemon_client import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        ping,
+        runs_newer_code,
+        runs_older_code,
+        serves_this_code,
+    )
 
     if is_daemon_running():
         pong = ping()
@@ -50,7 +60,9 @@ def start() -> None:
 @daemon_app.command()
 def stop() -> None:
     """Stop the analysis daemon."""
-    from reporails_cli.core.mapper.daemon import stop_daemon
+    from reporails_cli.core.mapper.daemon import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        stop_daemon,
+    )
 
     if stop_daemon():
         console.print("[green]Daemon stopped.[/green]")
@@ -61,8 +73,15 @@ def stop() -> None:
 @daemon_app.command()
 def status() -> None:
     """Show daemon status."""
-    from reporails_cli.core.mapper.daemon import is_daemon_running
-    from reporails_cli.core.mapper.daemon_client import ping, runs_newer_code, runs_older_code, serves_this_code
+    from reporails_cli.core.mapper.daemon import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        is_daemon_running,
+    )
+    from reporails_cli.core.mapper.daemon_client import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        ping,
+        runs_newer_code,
+        runs_older_code,
+        serves_this_code,
+    )
 
     if not is_daemon_running():
         console.print("Daemon: [dim]not running[/dim]")

@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.classify import classify_files, load_file_types
-from reporails_cli.core.mapper.inspect import _detect_file_loading, _load_registry
+from reporails_cli.core.mapper.inspect import _detect_file_activation, _load_registry
 
 
 def _write(path: Path, text: str = "# Instructions\n") -> Path:
@@ -66,7 +66,7 @@ class TestNestedFileUnderAPinnedPatternIsNotTheProjectMain:
 
         file_types = load_file_types("claude")
         classified = classify_files(project, [nested], file_types)
-        loading, scope, _globs, agent, file_type = _detect_file_loading(nested, project, _load_registry())
+        loading, scope, _globs, agent, file_type = _detect_file_activation(nested, project, _load_registry())[:5]
 
         assert classified[0].file_type == file_type == "child_instruction"
         assert classified[0].properties.get("loading") == loading == "on_demand"
@@ -98,7 +98,7 @@ class TestRootPinnedPatternStillMatchesItsOwnFile:
 
         file_types = load_file_types("claude")
         classified = classify_files(project, [root_file], file_types)
-        loading, scope, _globs, agent, file_type = _detect_file_loading(root_file, project, _load_registry())
+        loading, scope, _globs, agent, file_type = _detect_file_activation(root_file, project, _load_registry())[:5]
 
         assert classified[0].file_type == file_type == "main"
         assert classified[0].properties.get("loading") == loading == "session_start"
@@ -134,7 +134,7 @@ class TestHomeRootedPatternWinsOverAProjectPattern:
 
         file_types = load_file_types("claude")
         classified = classify_files(project, [user_file], file_types)
-        loading, scope, _globs, agent, file_type = _detect_file_loading(user_file, project, _load_registry())
+        loading, scope, _globs, agent, file_type = _detect_file_activation(user_file, project, _load_registry())[:5]
 
         assert classified[0].file_type == file_type == "main"
         assert classified[0].properties.get("loading") == loading == "session_start"
@@ -165,7 +165,7 @@ class TestDoubleStarSpansNestedFolders:
         path = _write(tmp_path / rel, "# Notes\n\nUse the shared client.\n")
         classified = classify_files(tmp_path, [path], load_file_types("claude", project_root=tmp_path))
         assert [c.file_type for c in classified] == [expected]
-        assert _detect_file_loading(path, tmp_path, _load_registry())[4] == expected
+        assert _detect_file_activation(path, tmp_path, _load_registry())[:5][4] == expected
 
     @pytest.mark.unit
     @pytest.mark.subsys_classify

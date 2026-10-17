@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 from typer.testing import CliRunner
 
-import reporails_cli
+from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.interfaces.cli import install as install_module
 from reporails_cli.interfaces.cli.main import app
 
@@ -64,7 +64,7 @@ def test_install_to_path_pins_a_floor_not_an_exact_version(monkeypatch: pytest.M
     assert len(calls) == 1
     assert calls[0][:3] == ["/usr/bin/uv", "tool", "install"]
     spec = calls[0][3]
-    assert spec == f"reporails-cli>={reporails_cli.__version__}"
+    assert spec == f"reporails-cli>={installed_version()}"
     assert "==" not in spec
 
 
@@ -107,7 +107,7 @@ def _setup(
     monkeypatch.setattr(install_module, "_install_to_path", lambda: True)
     monkeypatch.setattr(install_module.shutil, "which", lambda cmd: f"/bin/{cmd}" if cmd in present else None)
     monkeypatch.setattr(install_module.subprocess, "run", runner)
-    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.has_api_key", lambda: key)
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_key.has_api_key", lambda: key)
     if tmp_path is not None:
         monkeypatch.chdir(tmp_path)
 
@@ -246,7 +246,7 @@ def test_install_plugin_source_override(monkeypatch: pytest.MonkeyPatch) -> None
 def test_warm_step_uses_the_plugin_pin(monkeypatch: pytest.MonkeyPatch, version: str, spec: str) -> None:
     runner = _Runner()
     _setup(monkeypatch, runner, {"uvx"})
-    monkeypatch.setattr(reporails_cli, "__version__", version)
+    monkeypatch.setattr(install_module, "installed_version", lambda: version)
 
     install_module._warm_engine()
 

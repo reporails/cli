@@ -8,25 +8,30 @@ All file paths are normalized to project-relative before dedup and output.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
+from reporails_cli.core.platform.adapters.rules_query import rule_title
 from reporails_cli.core.platform.dto.diagnostics import (
+    CLIENT_CHECK_KINDS,
+    SEVERITY_RANK,
+    CrossFileCoordinate,
     CrossFileFinding,
     FileAnalysis,
+    FindingItem,
     FunnelError,
+    Hint,
     LocalTier,
     Notice,
     QualityResult,
     RemediationWorkflow,
     RulesetReport,
+    walk_findings,
 )
 from reporails_cli.core.platform.dto.models import Level, LocalFinding
 from reporails_cli.core.platform.dto.results import HookEntry
-
-_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
 def normalize_finding_path(file_path: str, project_root: Path | None = None) -> str:
@@ -67,31 +72,6 @@ def normalize_finding_path(file_path: str, project_root: Path | None = None) -> 
 
 
 @dataclass(frozen=True)
-class FindingItem:
-    """A single finding in the combined output, from any source."""
-
-    file: str
-    line: int
-    severity: str  # "error" | "warning" | "info"
-    rule: str  # diagnostic rule identifier or rule_id
-    message: str
-    fix: str = ""
-    source: str = "local"  # "m_probe" | "client_check" | "server"
-    impact_tier: str = ""  # the grade the reply gives this finding; "" when it gives none, and none is shown
-    signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
-    check_id: str = ""  # the local check that produced it; "" for server findings
-    convention: bool = (
-        False  # a documentation convention the file does not follow: listed apart from findings to act on
-    )
-    # The instruction's place in its file, when the finding is on one; never part of a finding's identity.
-    pi: int | None = field(default=None, compare=False)
-    # A per-file overlap finding's partner file, its line and shared percentage, when the reply names them.
-    partner_file: str | None = field(default=None, compare=False)
-    partner_line: int | None = field(default=None, compare=False)
-    overlap_pct: int | None = field(default=None, compare=False)
-
-
-@dataclass(frozen=True)
 class CombinedStats:
     """Aggregate statistics for the combined result."""
 
@@ -110,18 +90,9 @@ class CombinedStats:
 
 
 @dataclass(frozen=True)
-class CombinedResult:
-    """Merged local + server findings — the output of the new pipeline."""
+class ServerReply:
+    """What the diagnostics service answered with, carried onto every output surface."""
 
-    findings: tuple[FindingItem, ...] = ()
-    cross_file: tuple[CrossFileFinding, ...] = ()
-    quality: QualityResult | None = None
-    per_file_analysis: tuple[FileAnalysis, ...] = ()
-    stats: CombinedStats = field(default_factory=CombinedStats)
-    offline: bool = True
-    hints: tuple[Any, ...] = ()  # tuple[Hint, ...] from tier gating
-    cross_file_coordinates: tuple[Any, ...] = ()  # tuple[CrossFileCoordinate, ...] free tier
-    level: Level = Level.L0
     tier: str = ""  # Tier label propagated from LintResult ("free", "pro", "anonymous"); empty when offline
     # The composable remediation HOW; `None` offline, on the anon tier, or
     # from a pre-0.6.0 server. Carried through so JSON / MCP consumers can render it.
@@ -135,22 +106,45 @@ class CombinedResult:
     # the caller attaches it once it has both the merged result and the funnel
     # outcome (see `interfaces/cli/check_orchestration.py::_dispatch_output`).
     server_error: FunnelError | None = None
-    # The hooks found in the project's agent hook configs, set by the assemble spine from the
-    # features it already computes for the level; empty for a hand-built result.
-    hooks: tuple[HookEntry, ...] = ()
-    # The `(rule id, project-relative file)` pairs whose check did not finish in time, so says
-    # nothing about that file; empty when every check finished.
-    not_evaluated: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class Omissions:
+    """What the run left out or could not check."""
+
     # The folders and file globs the user left out of the run (built-in default excludes are not listed).
     excluded_dirs: tuple[str, ...] = ()
     excluded_files: tuple[str, ...] = ()
     # True when a checked file imports text from a file the user left out; that text still counts there.
     excluded_imported: bool = False
+    # The `(rule id, project-relative file)` pairs whose check did not finish in time, so says
+    # nothing about that file; empty when every check finished.
+    not_evaluated: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class CombinedResult:
+    """Merged local + server findings — the output of the new pipeline."""
+
+    findings: tuple[FindingItem, ...] = ()
+    cross_file: tuple[CrossFileFinding, ...] = ()
+    quality: QualityResult | None = None
+    per_file_analysis: tuple[FileAnalysis, ...] = ()
+    stats: CombinedStats = field(default_factory=CombinedStats)
+    offline: bool = True
+    hints: tuple[Hint, ...] = ()  # from tier gating
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = ()  # free tier
+    level: Level = Level.L0
+    reply: ServerReply = field(default_factory=ServerReply)
+    # The hooks found in the project's agent hook configs, set by the assemble spine from the
+    # features it already computes for the level; empty for a hand-built result.
+    hooks: tuple[HookEntry, ...] = ()
+    omissions: Omissions = field(default_factory=Omissions)
 
 
 def _collect_server_diagnostics(
     server_report: RulesetReport,
-    norm_fn: object,
+    norm_fn: Callable[[str], str],
 ) -> tuple[list[FindingItem], set[tuple[str, int, str]]]:
     """Extract server diagnostics as FindingItems and build dedup key set.
 
@@ -165,13 +159,11 @@ def _collect_server_diagnostics(
     items: list[FindingItem] = []
     server_keys: set[tuple[str, int, str]] = set()
     seen: set[tuple[str, int, str, str, str, str, int | None, str | None]] = set()
-    from reporails_cli.core.lint.rule_pages import rule_title
-
     for fa in server_report.per_file:
         for diag in fa.diagnostics:
             if not diag.message:
                 diag = replace(diag, message=rule_title(diag.rule))
-            norm_file = norm_fn(diag.file)  # type: ignore[operator]
+            norm_file = norm_fn(diag.file)
             server_keys.add((norm_file, diag.line, diag.rule))
             same = (
                 norm_file,
@@ -209,20 +201,24 @@ def _merge_local_findings(
     local_findings: list[LocalFinding],
     server_keys: set[tuple[str, int, str]],
     source: str,
-    norm_fn: object,
+    norm_fn: Callable[[str], str],
 ) -> tuple[list[FindingItem], int]:
-    """Convert local findings to FindingItems, deduplicating against server keys."""
+    """Convert local findings to FindingItems, deduplicating against server keys.
+
+    A format or bold client-check finding is never dropped for a server finding.
+    """
     items: list[FindingItem] = []
     reported: set[tuple[str, int, str, str, str, str]] = set()
     for finding in local_findings:
-        norm_file = norm_fn(finding.file)  # type: ignore[operator]
+        norm_file = norm_fn(finding.file)
         key = (norm_file, finding.line, finding.rule)
         # An identical finding reached through two passes over the same file is one finding.
         identity = (norm_file, finding.line, finding.rule, finding.check_id, finding.message, finding.signature)
         if identity in reported:
             continue
         reported.add(identity)
-        if key not in server_keys:
+        # A format or bold client check is its own detection: a server finding of that rule on the line is another.
+        if finding.check_id in CLIENT_CHECK_KINDS or key not in server_keys:
             items.append(
                 FindingItem(
                     file=norm_file,
@@ -246,7 +242,7 @@ _SAME_SECRET_RULES = ("CORE:G:0009", "CORE:G:0002")
 
 def _same_secret_rank(item: FindingItem) -> tuple[int, int]:
     """Sort key for the finding kept: more severe first, then the subagent rule."""
-    return _SEVERITY_ORDER.get(item.severity, 9), _SAME_SECRET_RULES.index(item.rule)
+    return SEVERITY_RANK.get(item.severity, 9), _SAME_SECRET_RULES.index(item.rule)
 
 
 def _dedup_same_secret(items: tuple[FindingItem, ...]) -> list[FindingItem]:
@@ -273,7 +269,16 @@ def _dedup_same_secret(items: tuple[FindingItem, ...]) -> list[FindingItem]:
     return keep
 
 
-def _severity_counts(findings: Sequence[FindingItem]) -> dict[str, Any]:
+class _SeverityCounts(TypedDict):
+    """The `CombinedStats` fields holding the total and per-severity finding counts."""
+
+    total_findings: int
+    errors: int
+    warnings: int
+    infos: int
+
+
+def _severity_counts(findings: Sequence[FindingItem]) -> _SeverityCounts:
     """The total and per-severity finding counts, keyed by their `CombinedStats` field."""
     return {
         "total_findings": len(findings),
@@ -291,8 +296,9 @@ def rebuild_severity_stats(stats: CombinedStats, findings: Sequence[FindingItem]
 def drop_findings(result: CombinedResult, kept: Sequence[FindingItem]) -> CombinedResult:
     """The result holding only `kept`, its counters repaired.
 
-    A dropped finding is the same detection reported another way, not a second one, so its
-    local source count drops with it.
+    The total and per-severity counts are recomputed over `kept`, and each dropped finding
+    is subtracted from the count of its source (probe, client check or server), so the
+    source counts still add up to the total.
     """
     if len(kept) == len(result.findings):
         return result
@@ -301,6 +307,7 @@ def drop_findings(result: CombinedResult, kept: Sequence[FindingItem]) -> Combin
         rebuild_severity_stats(result.stats, kept),
         m_probe_count=result.stats.m_probe_count - dropped["m_probe"],
         client_check_count=result.stats.client_check_count - dropped["client_check"],
+        server_diagnostic_count=result.stats.server_diagnostic_count - dropped["server"],
     )
     return replace(result, findings=tuple(kept), stats=stats)
 
@@ -315,11 +322,9 @@ def collapse_same_secret(result: CombinedResult) -> CombinedResult:
 
 
 def _served_tiers(
-    workflow: Any, project_root: Path | None
+    workflow: RemediationWorkflow, project_root: Path | None
 ) -> tuple[dict[tuple[str, str, int], str], dict[tuple[str, str], str]]:
     """The tiers a workflow serves, by (file, rule, line) and, for a line-0 row, by (file, rule)."""
-    from reporails_cli.core.platform.dto.diagnostics import walk_findings
-
     exact: dict[tuple[str, str, int], str] = {}
     whole_file: dict[tuple[str, str], str] = {}
     for location in workflow.locations:
@@ -342,9 +347,9 @@ def stamp_served_tiers(result: CombinedResult, project_root: Path | None = None)
     any line. A finding that already has a tier, a served row without one, and a finding the
     workflow does not serve are left as they are.
     """
-    if result.workflow is None:
+    if result.reply.workflow is None:
         return result
-    exact, whole_file = _served_tiers(result.workflow, project_root)
+    exact, whole_file = _served_tiers(result.reply.workflow, project_root)
     stamped = tuple(
         replace(f, impact_tier=tier)
         if not f.impact_tier and (tier := exact.get((f.file, f.rule, f.line)) or whole_file.get((f.file, f.rule)))
@@ -401,7 +406,7 @@ def stamp_local_tiers(
 
 def count_cross_file_repetitions(
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> int:
     """Count cross-file repetitions from whichever form the run carries.
 
@@ -422,7 +427,7 @@ def _unordered(file_1: str, file_2: str) -> tuple[str, str]:
 
 def overlapping_pairs(
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> list[tuple[str, str]]:
     """The file pairs that overlap in topic, most shared instructions first.
 
@@ -444,10 +449,23 @@ def overlapping_pairs(
 
 def count_cross_file_overlaps(
     cross_file: tuple[CrossFileFinding, ...],
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> int:
     """Count the distinct file pairs that overlap in topic, from whichever form the run carries."""
     return len(overlapping_pairs(cross_file, cross_file_coordinates))
+
+
+def rebuild_cross_file_stats(
+    stats: CombinedStats,
+    cross_file: tuple[CrossFileFinding, ...],
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
+) -> CombinedStats:
+    """The stats with the cross-file counts recomputed over the cross-file data the run keeps."""
+    return replace(
+        stats,
+        cross_file_repetitions=count_cross_file_repetitions(cross_file, cross_file_coordinates),
+        cross_file_overlaps=count_cross_file_overlaps(cross_file, cross_file_coordinates),
+    )
 
 
 def _compute_stats(
@@ -455,7 +473,7 @@ def _compute_stats(
     cross_file: tuple[CrossFileFinding, ...],
     m_probe_count: int,
     client_count: int,
-    cross_file_coordinates: tuple[Any, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
 ) -> CombinedStats:
     """Compute aggregate statistics from merged findings."""
     return CombinedStats(
@@ -472,7 +490,7 @@ def _merged_items(
     m_probe_findings: list[LocalFinding],
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
-    norm_fn: Any,
+    norm_fn: Callable[[str], str],
 ) -> tuple[list[FindingItem], int, int]:
     """Every finding as one sorted list, with the M-probe and client-check counts.
 
@@ -486,7 +504,7 @@ def _merged_items(
     c_items, c_count = _merge_local_findings(client_check_findings, server_keys, "client_check", norm_fn)
     items.extend(m_items)
     items.extend(c_items)
-    items.sort(key=lambda f: (f.file, _SEVERITY_ORDER.get(f.severity, 9), f.line))
+    items.sort(key=lambda f: (f.file, SEVERITY_RANK.get(f.severity, 9), f.line))
     return items, m_count, c_count
 
 
@@ -494,8 +512,9 @@ def merge_results(
     m_probe_findings: list[LocalFinding],
     client_check_findings: list[LocalFinding],
     server_report: RulesetReport | None,
-    hints: tuple[Any, ...] = (),
-    cross_file_coordinates: tuple[Any, ...] = (),
+    *,
+    hints: tuple[Hint, ...] = (),
+    cross_file_coordinates: tuple[CrossFileCoordinate, ...] = (),
     project_root: Path | None = None,
     level: Level = Level.L0,
     tier: str = "",
@@ -540,5 +559,5 @@ def merge_results(
         hints=hints,
         cross_file_coordinates=cross_file_coordinates,
         level=level,
-        tier=tier,
+        reply=ServerReply(tier=tier),
     )

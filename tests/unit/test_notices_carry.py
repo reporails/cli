@@ -21,10 +21,11 @@ from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.adapters.notices_wire import NOTICES_HEADER
 from reporails_cli.core.platform.dto.diagnostics import FunnelError, LintResponse, Notice
 from reporails_cli.core.platform.dto.ruleset import RulesetMap, RulesetSummary
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult, ServerReply
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.interfaces.cli.main import app
 from reporails_cli.interfaces.mcp import tools
+from tests.conftest import ails_client
 
 WARN = Notice("pay", "warn", "Payment failed [bold]x[/bold]", "https://example.test/pay")
 INFO = Notice("ends", "info", "Pro ends on 1 June")
@@ -77,10 +78,10 @@ class _Reply:
 def _lint(status: int, body: Any, headers: dict[str, str], *, key: str = "") -> LintResponse:
     payload = {"files": [{"path": "CLAUDE.md"}]}
     with (
-        patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=payload),
+        patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=payload),
         patch("httpx.post", return_value=_Reply(status, body, headers)),
     ):
-        client = AilsClient(base_url="https://example.test", tier="pro")
+        client = ails_client("https://example.test", tier="pro")
         client.api_key = key
         return client.lint(_map(), root=Path("/tmp/notices-carry-root"))
 
@@ -119,16 +120,17 @@ def test_assemble_result_puts_notices_on_the_result(tmp_path: Path) -> None:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=lambda _r: set(),
         notices=(WARN, INFO),
     )
-    assert assemble_result(inp).notices == (WARN, INFO)
+    assert assemble_result(inp).reply.notices == (WARN, INFO)
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_json_carries_every_notice_and_an_empty_list_when_none() -> None:
-    data = json_formatter.format_combined_result(CombinedResult(notices=(WARN, INFO)), ruleset_map=None)
+    data = json_formatter.format_combined_result(
+        CombinedResult(reply=ServerReply(notices=(WARN, INFO))), ruleset_map=None
+    )
     assert data["notices"] == RAW
     assert json_formatter.format_combined_result(CombinedResult(), ruleset_map=None)["notices"] == []
 
@@ -164,7 +166,8 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path, 
     root.mkdir()
     (root / "CLAUDE.md").write_text("# Project\n\nUse uv for Python.\n", encoding="utf-8")
     monkeypatch.chdir(root)
-    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.map_instruction_files", lambda *_a, **_k: _map())
+    monkeypatch.setattr("reporails_cli.interfaces.mcp.tools.map_instruction_files", lambda *_a, **_k: _map())
+    monkeypatch.setattr("reporails_cli.interfaces.cli.check_pipeline.map_instruction_files", lambda *_a, **_k: _map())
     monkeypatch.setattr(
         AilsClient, "lint", lambda *_a, **_k: LintResponse(funnel_error=None, result=None, notices=(WARN, INFO))
     )
@@ -180,10 +183,10 @@ def _check() -> str:
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_text_prints_notices_after_the_header_escaped_and_info_only_once(project: Path) -> None:
+def test_text_prints_notices_after_the_score_escaped_and_info_only_once(project: Path) -> None:
     first = _check()
-    header, notice = first.index("Diagnostics"), first.index("Payment failed [bold]x[/bold]")
-    assert header < notice
+    score, notice = first.index("Summary"), first.index("Payment failed [bold]x[/bold]")
+    assert score < notice
     assert "Pro ends on 1 June" in first
     second = _check()
     assert "Payment failed [bold]x[/bold]" in second
@@ -280,9 +283,9 @@ def test_env_var_hides_a_promo_and_keeps_the_warning(promo_project: Path, monkey
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_text_run_shows_a_promo_once_a_day(promo_project: Path) -> None:
+def test_text_run_shows_a_promo_on_every_run(promo_project: Path) -> None:
     assert "Fixture promo [bold]x[/bold]" in _check()
-    assert "Fixture promo" not in _check()
+    assert "Fixture promo [bold]x[/bold]" in _check()
 
 
 @pytest.mark.unit

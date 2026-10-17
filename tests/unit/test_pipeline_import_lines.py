@@ -3,7 +3,7 @@ importing file's OWN source line, not the import-EXPANDED line.
 
 `pipeline._classify_file` expands imports, tokenizes the expanded content, and
 translates every fresh atom's `line` back to source-file
-coordinates via `imports.expand_imports_with_line_map` — BEFORE the per-file
+coordinates via `imports.expand_imports_with_origins` — BEFORE the per-file
 cache `put`, so a cache hit and a cold tokenize agree.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper import pipeline as pl
-from reporails_cli.core.mapper.imports import expand_imports_with_line_map
+from reporails_cli.core.mapper.imports import expand_imports_with_origins
 
 
 def _write_fixture(tmp_path: Path) -> Path:
@@ -36,7 +36,7 @@ def _write_fixture(tmp_path: Path) -> Path:
     return main
 
 
-# --- expand_imports_with_line_map: the line-map primitive ------------------
+# --- expand_imports_with_origins: the line-map primitive ------------------
 
 
 @pytest.mark.unit
@@ -44,7 +44,7 @@ def _write_fixture(tmp_path: Path) -> Path:
 def test_line_map_attributes_import_content_to_reference_line(tmp_path: Path) -> None:
     main = _write_fixture(tmp_path)
     raw = main.read_text(encoding="utf-8")
-    expanded, line_map = expand_imports_with_line_map(raw, main)
+    expanded, line_map, _origins = expand_imports_with_origins(raw, main)
 
     expanded_lines = expanded.split("\n")
     # Sanity: the expansion did shift "Never skip..." down to expanded line 9,
@@ -71,7 +71,7 @@ def test_line_map_attributes_import_content_to_reference_line(tmp_path: Path) ->
 def test_line_map_identity_when_no_imports(tmp_path: Path) -> None:
     content = "One.\nTwo.\nThree.\n"
     src = tmp_path / "plain.md"
-    expanded, line_map = expand_imports_with_line_map(content, src)
+    expanded, line_map, _origins = expand_imports_with_origins(content, src)
     assert expanded == content
     assert line_map == [1, 2, 3, 4]  # trailing empty element from the final "\n"
 

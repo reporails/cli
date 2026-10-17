@@ -26,7 +26,7 @@ def _found(md: str) -> bool:
         files=(),
         atoms=tuple(atoms),
     )
-    return has_project_description(rm, "CLAUDE.md", terms=_TERMS).found
+    return has_project_description(rm, "CLAUDE.md", {"terms": _TERMS}).found
 
 
 @pytest.mark.unit

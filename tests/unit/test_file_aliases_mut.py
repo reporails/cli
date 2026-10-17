@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.discovery.file_aliases import _dedupe_with_aliases
+from reporails_cli.core.discovery.file_aliases import dedupe_with_aliases
 
 
 @pytest.mark.unit
@@ -26,7 +26,7 @@ def test_broken_symlinks_to_same_target_collapse(tmp_path: Path) -> None:
     os.symlink(target, link_a)
     os.symlink(target, link_b)
 
-    representatives, aliases = _dedupe_with_aliases([link_a, link_b])
+    representatives, aliases = dedupe_with_aliases([link_a, link_b])
 
     assert representatives == [link_a]
     assert aliases == {link_a: [link_b]}

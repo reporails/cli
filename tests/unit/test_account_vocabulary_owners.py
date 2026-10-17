@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from reporails_cli.core.platform.dto import diagnostics
+from tests.conftest import ails_client
 
 
 @pytest.mark.unit
@@ -35,10 +36,8 @@ def test_auth_rejections_are_known_errors() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_a_malformed_header_is_not_read_as_a_propagation_delay(monkeypatch: pytest.MonkeyPatch) -> None:
-    from reporails_cli.core.platform.adapters.api_client import AilsClient
-
-    monkeypatch.setattr("reporails_cli.core.platform.config.credentials.signed_in_recently", lambda key: True)
-    client = AilsClient(base_url="http://srv", api_key="k")
+    monkeypatch.setattr("reporails_cli.core.platform.adapters.api_client.signed_in_recently", lambda key: True)
+    client = ails_client("http://srv", api_key="k")
     for token, rewritten in (("invalid_api_key", True), ("missing_or_invalid_api_key", False)):
         err = diagnostics.FunnelError(error=token, message="m")
         assert (client._early_rejection(err).message == diagnostics.STILL_REACHING_MESSAGE) is rewritten

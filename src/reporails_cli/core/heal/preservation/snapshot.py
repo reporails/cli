@@ -6,14 +6,14 @@ Nothing here reads a file: the caller hands over the text and the map.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any
 
-from reporails_cli.core.heal.preservation.words import NEGATION_RE, content_words
+from reporails_cli.core.heal.preservation.words import NEGATION_RE, AtomView, content_words
 from reporails_cli.core.lint.content_queries import instruction_atoms_for_file
 from reporails_cli.core.mapper.imports import import_refs
 from reporails_cli.core.mapper.structure import read_structure
-from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.platform.dto.ruleset import Atom, AtomFormat, Modality, RulesetMap
 from reporails_cli.core.platform.dto.structure import DocumentStructure
 from reporails_cli.core.platform.policy.negative_headings import is_negative_heading
 
@@ -26,13 +26,13 @@ class SnapshotAtom:
     text: str
     charge_value: int
     named_tokens: tuple[str, ...]
-    format: str
+    format: AtomFormat
     embedding_int8: tuple[int, ...] | None
     heading_context: str = ""
     scope_conditional: bool = False
     heading: bool = False
     plain_text: str = ""
-    modality: str = "none"
+    modality: Modality = "none"
 
 
 @dataclass(frozen=True)
@@ -53,20 +53,20 @@ class Snapshot:
         object.__setattr__(self, "imports", tuple(import_refs(self.text)))
 
 
-def is_instruction_heading(atom: Any) -> bool:
+def is_instruction_heading(atom: AtomView) -> bool:
     """Whether a heading atom is an instruction of its own: charged, and not a bare negative label.
     A neutral heading and a bare negative heading are left to the structure checks."""
     return atom.charge_value != 0 and not is_negative_heading(atom.text)
 
 
-def is_hedge_fragment(atom: Any) -> bool:
+def is_hedge_fragment(atom: AtomView) -> bool:
     """Whether `atom` is nothing but a hedge (`Consider`, `You should`) — the lead-in the mapper
     reads as an instruction of its own when it cuts a hedged sentence in two."""
     return atom.modality == "hedged" and not content_words(atom.plain_text) and not NEGATION_RE.search(atom.plain_text)
 
 
 def take_snapshot(
-    file_path: str, text: str, ruleset_map: Any, score: float | None, relation_lines: Any = ()
+    file_path: str, text: str, ruleset_map: RulesetMap | None, score: float | None, relation_lines: Iterable[int] = ()
 ) -> Snapshot:
     """The baseline of `file_path`, whose content is `text` and whose atoms `ruleset_map` holds
     (`None` for a file with none): list objects and neutral or bare negative headings left out."""
@@ -90,7 +90,7 @@ def take_snapshot(
     return Snapshot(file_path=file_path, text=text, atoms=atoms, score=score, relation_lines=frozenset(relation_lines))
 
 
-def rewritten_atoms(new_map: Any, file_path: str) -> list[Atom]:
+def rewritten_atoms(new_map: RulesetMap | None, file_path: str) -> list[Atom]:
     """`new_map`'s instruction atoms of `file_path` (list objects and hedge lead-ins left out, an
     instruction heading included), in file order."""
     atoms = (

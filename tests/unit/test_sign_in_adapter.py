@@ -74,6 +74,29 @@ def test_start_that_is_refused_or_unreadable_raises(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.unit
 @pytest.mark.subsys_api
+@pytest.mark.parametrize(
+    ("raw", "accepted"),
+    [
+        (600, True),
+        ("600", True),
+        (600.0, True),
+        (True, False),
+        ("10m", False),
+        (600.5, False),
+        (None, False),
+    ],
+)
+def test_start_reads_expires_in_as_a_whole_number(monkeypatch: pytest.MonkeyPatch, raw: object, accepted: bool) -> None:
+    _serve(monkeypatch, lambda r: httpx.Response(200, json={**_GRANT, "expires_in": raw}))
+    if accepted:
+        assert start_sign_in(_SITE, "laptop").expires_in == 600
+    else:
+        with pytest.raises(PlatformUnavailableError):
+            start_sign_in(_SITE, "laptop")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_api
 def test_start_on_a_network_fault_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _serve(monkeypatch, lambda r: httpx.ConnectError("down"))
     with pytest.raises(PlatformUnavailableError):

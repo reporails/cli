@@ -49,7 +49,7 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.config import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -81,7 +81,7 @@ def _cli_payload(project: Path) -> dict:
 
 
 def _mcp_payload(project: Path) -> dict:
-    return tools.validate_tool(str(project), full=True)
+    return tools.run_pipeline_for_path(str(project), full=True)[0]
 
 
 @requires_model
@@ -180,7 +180,7 @@ def test_cli_and_mcp_agree_on_a_single_file_target(level2_project: Path, monkeyp
         os.chdir(cwd)
     assert result.exit_code in (0, 1), result.output
     cli_payload = json.loads(result.output)
-    mcp_payload = tools.validate_tool(str(target_file), full=True)
+    mcp_payload = tools.run_pipeline_for_path(str(target_file), full=True)[0]
 
     cli_tuples = _finding_tuples(cli_payload)
     mcp_tuples = _finding_tuples(mcp_payload)
@@ -196,7 +196,7 @@ def _isolate_global_config(monkeypatch, tmp_path: Path) -> None:
     project that doesn't set its own `.ails/config.yml` value -- these tests assert exact
     empty-project / unknown-agent shapes that a stray global `default_agent` would mask."""
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        "reporails_cli.core.platform.config.config.get_global_config_path",
         lambda: tmp_path / "unused-global-config.yml",
     )
 
@@ -224,7 +224,7 @@ def test_agents_md_only_project_under_misconfigured_default_agent_matches_cli(tm
     (project / ".ails" / "config.yml").write_text("default_agent: claude\n", encoding="utf-8")
 
     cli_payload = _cli_payload(project)
-    mcp_payload = tools.validate_tool(str(project), full=True)
+    mcp_payload = tools.run_pipeline_for_path(str(project), full=True)[0]
 
     assert "error" not in mcp_payload, mcp_payload
     # One envelope on BOTH surfaces: the normal-run shape over an empty finding set.
@@ -257,7 +257,7 @@ def test_typo_default_agent_surfaces_as_unknown_agent_on_both_surfaces(tmp_path,
     assert result.exit_code == 2
     assert "Unknown agent: cluade" in result.output
 
-    mcp_payload = tools.validate_tool(str(project), full=True)
+    mcp_payload = tools.run_pipeline_for_path(str(project), full=True)[0]
     assert mcp_payload.get("error") == "Unknown agent: cluade"
     assert "known_agents" in mcp_payload
 
@@ -288,7 +288,7 @@ def test_rules_only_tree_with_no_distinctive_agent_matches_cli(tmp_path, monkeyp
     )
 
     cli_payload = _cli_payload(project)
-    mcp_payload = tools.validate_tool(str(project), full=True)
+    mcp_payload = tools.run_pipeline_for_path(str(project), full=True)[0]
 
     assert "error" not in mcp_payload, mcp_payload
     # `elapsed_ms` is a CLI-only wall-clock echo; `funnel` is an intentional MCP-only key
@@ -334,7 +334,7 @@ def test_generic_scan_import_reached_file_set_matches_cli(tmp_path, monkeypatch)
     )
 
     cli_payload = _cli_payload(project)
-    mcp_payload = tools.validate_tool(str(project), full=True)
+    mcp_payload = tools.run_pipeline_for_path(str(project), full=True)[0]
 
     assert set(cli_payload.get("files", {})) == set(mcp_payload.get("files", {}))
     assert "docs/arch.md" in mcp_payload.get("files", {})

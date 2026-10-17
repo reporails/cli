@@ -11,6 +11,7 @@ Network is always mocked — no test here reaches a real host.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import sys
 import threading
@@ -20,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper import model_fetch
-from reporails_cli.core.mapper.model_fetch import ModelFetchError
+from reporails_cli.core.mapper import model_fetch, model_manifest
+from reporails_cli.core.mapper.model_manifest import ModelFetchError
 
 
 class _Resp:
@@ -80,10 +81,12 @@ def _use_fake(monkeypatch, client: _FakeClient) -> None:
     monkeypatch.setattr(model_fetch, "_http_client", _client)
     pins = {rel: hashlib.sha256(client.body(rel)).hexdigest() for rel in model_fetch.REQUIRED_RELPATHS}
     monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
+    monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
 
 
 def _cache_at(monkeypatch, root: Path) -> Path:
     monkeypatch.setattr(model_fetch, "cache_models_dir", lambda version=model_fetch.MODEL_VERSION: root)
+    monkeypatch.setattr(model_manifest, "cache_models_dir", lambda version=model_manifest.MODEL_VERSION: root)
     return root
 
 
@@ -346,7 +349,7 @@ def test_contract_file_is_not_fetched_required_or_pinned():
     # functional-presence set, or the pin table.
     assert "two_encoder_contract.json" not in model_fetch.FETCH_RELPATHS
     assert "two_encoder_contract.json" not in model_fetch.REQUIRED_RELPATHS
-    assert "two_encoder_contract.json" not in model_fetch.GATED_FILES
+    assert "two_encoder_contract.json" not in model_manifest.GATED_FILES
     assert "two_encoder_contract.json" not in model_fetch.FETCH_SHA256
 
 
@@ -378,7 +381,7 @@ def test_repair_cache_redownloads_only_the_mismatched_file(tmp_path, monkeypatch
     # The licence files carry no pin, so they are always re-fetched on a repair,
     # independent of this fix — see LICENSE_FILES.
     corrupted_asset = model_fetch.asset_name("charge_encoder_encA.onnx")
-    license_assets = {model_fetch.asset_name(f) for f in model_fetch.LICENSE_FILES}
+    license_assets = {model_fetch.asset_name(f) for f in model_manifest.LICENSE_FILES}
     unexpected_calls = [
         c for c in fake.calls if not (c.endswith(corrupted_asset) or c.rsplit("/", 1)[-1] in license_assets)
     ]
@@ -559,10 +562,12 @@ def test_two_threads_repairing_the_same_corruption_never_get_filenotfound(tmp_pa
 
 @pytest.fixture
 def _bundled(monkeypatch):
-    import reporails_cli.bundled as bundled
+    from reporails_cli.core.mapper import model_store
 
-    monkeypatch.setattr(bundled, "_tree_present", None)
-    return bundled
+    monkeypatch.setattr(
+        model_manifest, "in_package_tree_present", functools.cache(model_manifest.in_package_tree_present.__wrapped__)
+    )
+    return model_store
 
 
 def _no_fetch(*a, **k):
@@ -574,28 +579,28 @@ def _no_fetch(*a, **k):
 def test_resolver_prefers_dev_tree(tmp_path, monkeypatch, _bundled):
     tree = tmp_path / "pkg" / "models"
     _populate(tree)
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "pkg")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "pkg")
     monkeypatch.setattr(model_fetch, "ensure_models_present", _no_fetch)
 
-    assert _bundled.get_models_path() == tree
+    assert model_manifest.get_models_path() == tree
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_resolver_never_downloads(tmp_path, monkeypatch, _bundled):
     # No dev tree and an empty cache: the resolver points at the cache, fetches nothing.
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     cache = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     monkeypatch.setattr(model_fetch, "ensure_models_present", _no_fetch)
 
-    assert _bundled.get_models_path() == cache
+    assert model_manifest.get_models_path() == cache
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_ensure_downloads_when_absent(tmp_path, monkeypatch, _bundled):
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
 
@@ -607,7 +612,7 @@ def test_ensure_downloads_when_absent(tmp_path, monkeypatch, _bundled):
 @pytest.mark.subsys_map
 def test_ensure_offline_skips_download(tmp_path, monkeypatch, _bundled):
     monkeypatch.setenv("AILS_MODEL_OFFLINE", "1")
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     monkeypatch.setattr(model_fetch, "ensure_models_present", _no_fetch)
 
@@ -618,11 +623,12 @@ def test_ensure_offline_skips_download(tmp_path, monkeypatch, _bundled):
 @pytest.mark.subsys_map
 def test_ensure_offline_uses_a_model_on_disk(tmp_path, monkeypatch, _bundled):
     monkeypatch.setenv("AILS_MODEL_OFFLINE", "1")
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _populate(root)
     pins = {rel: hashlib.sha256((root / rel).read_bytes()).hexdigest() for rel in model_fetch.REQUIRED_RELPATHS}
     monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
+    monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
 
     assert _bundled.ensure_models_available() == root
 
@@ -632,7 +638,7 @@ def test_ensure_offline_uses_a_model_on_disk(tmp_path, monkeypatch, _bundled):
 def test_ensure_repairs_a_same_size_damaged_file_in_the_cache(tmp_path, monkeypatch, _bundled):
     """A cached file damaged at the same size is re-fetched when the set is made available."""
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
     _use_fake(monkeypatch, fake)
@@ -649,18 +655,18 @@ def test_ensure_repairs_a_same_size_damaged_file_in_the_cache(tmp_path, monkeypa
 @pytest.mark.subsys_map
 def test_ensure_rehashes_nothing_for_an_unchanged_cache(tmp_path, monkeypatch, _bundled):
     """A cached set whose files did not change is not hashed again by a later run."""
-    from reporails_cli.core.mapper import bio_graphs
+    from reporails_cli.core.mapper import graph_hash
 
     monkeypatch.delenv("AILS_MODEL_OFFLINE", raising=False)
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _use_fake(monkeypatch, _FakeClient())
     _bundled.ensure_models_available()  # downloads
     _bundled.ensure_models_available()  # verifies the set once and records it
-    bio_graphs._graph_hash_cache.clear()
-    monkeypatch.setattr(bio_graphs, "_sidecar_data", None)
+    graph_hash._graph_hash_cache.clear()
+    graph_hash._load_sidecar.cache_clear()
     calls: list[Path] = []
-    monkeypatch.setattr(bio_graphs, "_hash_file_bytes", lambda p: calls.append(p) or "unused")
+    monkeypatch.setattr(graph_hash, "_hash_file_bytes", lambda p: calls.append(p) or "unused")
 
     assert _bundled.ensure_models_available() == root
 
@@ -672,7 +678,7 @@ def test_ensure_rehashes_nothing_for_an_unchanged_cache(tmp_path, monkeypatch, _
 def test_ensure_offline_with_a_damaged_cache_raises_the_repair_error(tmp_path, monkeypatch, _bundled):
     """With `AILS_MODEL_OFFLINE` set, a damaged cached file is reported, not used silently."""
     monkeypatch.setenv("AILS_MODEL_OFFLINE", "1")
-    monkeypatch.setattr(_bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     root = _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     _populate(root)
 
@@ -688,7 +694,7 @@ def test_ensure_offline_with_a_damaged_cache_raises_the_repair_error(tmp_path, m
 def test_check_exits_2_when_the_model_cannot_be_fetched(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    import reporails_cli.bundled as bundled
+    from reporails_cli.interfaces.cli import check_support as bundled
     from reporails_cli.interfaces.cli.main import app
 
     def _fail():
@@ -713,6 +719,7 @@ def test_functional_file_without_a_pin_is_refused(tmp_path, monkeypatch):
     pins = dict(model_fetch.FETCH_SHA256)
     del pins["multislot_head_encA.onnx"]
     monkeypatch.setattr(model_fetch, "FETCH_SHA256", pins)
+    monkeypatch.setattr(model_manifest, "FETCH_SHA256", pins)
 
     with pytest.raises(ModelFetchError, match="no pinned checksum"):
         model_fetch.ensure_models_present()
@@ -742,11 +749,12 @@ def test_stale_staging_from_a_killed_run_is_swept(tmp_path, monkeypatch):
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_mcp_validate_reports_downloading_without_blocking(tmp_path, monkeypatch):
-    import reporails_cli.bundled as bundled
     from reporails_cli.interfaces.mcp import tools
 
-    monkeypatch.setattr(bundled, "_tree_present", None)
-    monkeypatch.setattr(bundled, "get_bundled_path", lambda: tmp_path / "empty")
+    monkeypatch.setattr(
+        model_manifest, "in_package_tree_present", functools.cache(model_manifest.in_package_tree_present.__wrapped__)
+    )
+    monkeypatch.setattr(model_manifest, "get_bundled_path", lambda: tmp_path / "empty")
     _cache_at(monkeypatch, tmp_path / "cache" / "models" / model_fetch.MODEL_VERSION)
     monkeypatch.setattr(model_fetch, "ensure_models_present", _no_fetch)
 
@@ -852,7 +860,7 @@ def test_repair_downloads_only_missing_or_mismatched_files(tmp_path, monkeypatch
     assert model_fetch.ensure_models_present() == root
 
     fetched = {url.rsplit("/", 1)[-1] for url in fake.calls}
-    assert fetched == {"charge_encoder_encB.onnx", "multislot_head_encA.onnx", *model_fetch.LICENSE_FILES}
+    assert fetched == {"charge_encoder_encB.onnx", "multislot_head_encA.onnx", *model_manifest.LICENSE_FILES}
     for rel in model_fetch.FETCH_RELPATHS:
         assert (root / rel).read_bytes() == fake.body(rel)
 
@@ -887,7 +895,7 @@ def _record_ensure(monkeypatch) -> list[float]:
     """Replace the ensure step with one that records the wall-clock timer left while it runs."""
     import signal
 
-    import reporails_cli.bundled as bundled
+    from reporails_cli.interfaces.cli import check_support as bundled
 
     seen: list[float] = []
 
@@ -1160,7 +1168,7 @@ def test_cached_model_in_github_actions_prints_nothing(tmp_path, monkeypatch, ca
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
-@pytest.mark.parametrize("name", model_fetch.LICENSE_FILES)
+@pytest.mark.parametrize("name", model_manifest.LICENSE_FILES)
 def test_a_missing_licence_file_fails_the_whole_fetch(tmp_path, monkeypatch, name):
     root = _cache_at(monkeypatch, tmp_path / "models" / model_fetch.MODEL_VERSION)
     fake = _FakeClient()
@@ -1186,8 +1194,8 @@ def test_licence_names_agree_across_fetch_manifest_package_metadata_and_release_
     assert checked is not None
     release_names = re.findall(r"'([^']+)'", checked.group(1))
 
-    assert set(model_fetch.LICENSE_FILES) <= set(metadata)
-    assert set(metadata) - set(model_fetch.LICENSE_FILES) == {"LICENSE"}
-    assert tuple(release_names) == model_fetch.LICENSE_FILES
+    assert set(model_manifest.LICENSE_FILES) <= set(metadata)
+    assert set(metadata) - set(model_manifest.LICENSE_FILES) == {"LICENSE"}
+    assert tuple(release_names) == model_manifest.LICENSE_FILES
     for name in metadata:
         assert (repo / name).is_file()

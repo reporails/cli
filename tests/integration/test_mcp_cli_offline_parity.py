@@ -41,7 +41,7 @@ requires_model = pytest.mark.skipif(not _has_onnx_model, reason="Bundled ONNX mo
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.config import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -90,7 +90,7 @@ def _isolate_global_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     """Point the global config at a path that can't exist, so the machine's real
     `~/.reporails/config.yml` never leaks a `default_agent` / `tier` into this fixture."""
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        "reporails_cli.core.platform.config.config.get_global_config_path",
         lambda: tmp_path / "unused-global-config.yml",
     )
 
@@ -136,7 +136,7 @@ def test_cli_and_mcp_agree_offline_and_server_error_on_a_server_error_response(
     with _stub_error_server(status_code) as server_url:
         monkeypatch.setenv("AILS_SERVER_URL", server_url)
         cli_payload = _cli_payload(project)
-        mcp_payload = tools.validate_tool(str(project), full=True)
+        mcp_payload = tools.run_pipeline_for_path(str(project), full=True)[0]
 
     assert cli_payload["offline"] is True, cli_payload
     assert mcp_payload["offline"] is True, mcp_payload

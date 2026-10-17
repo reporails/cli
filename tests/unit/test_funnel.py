@@ -420,12 +420,6 @@ class TestMergeUtm:
     def test_non_http_url_unchanged(self) -> None:
         assert merge_utm("javascript:alert(1)") == "javascript:alert(1)"
 
-    @pytest.mark.unit
-    @pytest.mark.subsys_funnel
-    def test_custom_source(self) -> None:
-        url = "https://reporails.com/contact"
-        assert "utm_source=action" in merge_utm(url, source="action")
-
 
 class TestFunnelErrorResetPhrase:
     @pytest.mark.unit

@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-from reporails_cli.core.mapper import models as models_mod
 from reporails_cli.core.mapper.models import Models, get_models
 
 
@@ -35,10 +34,8 @@ def test_st_loads_embedder_on_first_access() -> None:
 # --- get_models: singleton creation gate (L65) ----------------------------
 @pytest.mark.unit
 @pytest.mark.subsys_map
-def test_get_models_creates_singleton_when_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(models_mod, "_models", None)
+def test_get_models_creates_singleton_when_unset() -> None:
+    get_models.cache_clear()
     result = get_models()
     # `is None`->`is not None` skips creation and returns None.
     assert result is not None

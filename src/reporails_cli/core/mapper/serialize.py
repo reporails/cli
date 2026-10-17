@@ -8,7 +8,7 @@ Two responsibilities:
    embeddings as base64 byte strings). This is the on-disk format the mapper
    daemon hands back to the client.
 
-2. Post-hoc validation — `validate_atoms` / `validate_map` apply three layers
+2. Post-hoc validation — `validate_atoms` applies three layers
    of deterministic invariants over a finished atom set: schema (legal
    charge/modality values), charge consistency (negation→constraint), and
    distribution sanity (charge ratios outside the expected bands). Findings
@@ -23,31 +23,39 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import get_args
 
 from reporails_cli.core.mapper.classify import (
-    _MODAL_ABSOLUTE,
     ABSOLUTE_CUES,
     _strip_md_for_classify,
     leading_prohibition,
-    starts_bare_no_status,
-    starts_descriptive_no,
-    words_of,
 )
+from reporails_cli.core.mapper.classify_lexicon import MODAL_ABSOLUTE, words_of
+from reporails_cli.core.mapper.classify_no import starts_bare_no_status, starts_descriptive_no
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object, as_str
+from reporails_cli.core.platform.dto.diagnostics import FindingSeverity
 from reporails_cli.core.platform.dto.ruleset import (
+    NO_CHARGE,
+    SLOT_COORD_FIELDS,
+    SLOT_SPAN_FIELDS,
     Atom,
     AtomSlots,
+    Charge,
     FileRecord,
+    Modality,
     RulesetMap,
     RulesetSummary,
+    file_record_scalars,
+    int8_bytes,
 )
+from reporails_cli.core.platform.policy.negative_headings import PROHIBITION_ADJECTIVES
 
 # ──────────────────────────────────────────────────────────────────
 # SERIALIZATION
 # ──────────────────────────────────────────────────────────────────
 
 
-def _pack_optional_atom_fields(atom: Atom, d: dict[str, Any]) -> None:
+def _pack_optional_atom_fields(atom: Atom, d: JsonObject) -> None:
     """Add optional per-atom fields to the dict when populated."""
     if atom.topics:
         d["topics"] = list(atom.topics)
@@ -70,10 +78,8 @@ def _pack_optional_atom_fields(atom: Atom, d: dict[str, Any]) -> None:
     _pack_granularity_and_span_fields(atom, d)
 
 
-def _pack_granularity_and_span_fields(atom: Atom, d: dict[str, Any]) -> None:
+def _pack_granularity_and_span_fields(atom: Atom, d: JsonObject) -> None:
     """Add the caps/cell/stage/granularity-audit fields, the import origin, and the slot coordinates."""
-    if atom.cell_straddle:
-        d["cell_straddle"] = True
     if atom.stage:
         d["stage"] = atom.stage
     if atom.over_merged:
@@ -88,35 +94,31 @@ def _pack_granularity_and_span_fields(atom: Atom, d: dict[str, Any]) -> None:
     _pack_slot_coords(atom, d)
 
 
-def _pack_slot_coords(atom: Atom, d: dict[str, Any]) -> None:
+def _pack_slot_coords(atom: Atom, d: JsonObject) -> None:
     """Add the axis-span coordinate half of ``slots`` under ``slot_coords``.
 
-    Mirrors `map_cache._SLOT_COORD_FIELDS`: token-offset spans + per-span
+    Stores `SLOT_COORD_FIELDS`: token-offset spans + per-span
     confidences only — never the slot text (subject/predicate/object/scope
     strings). Omitted entirely when every span offset is absent.
     """
-    from reporails_cli.core.cache.map_cache import _SLOT_COORD_FIELDS, _SLOT_SPAN_FIELDS
-
     slots = atom.slots
     if slots is None:
         return
-    if not any(getattr(slots, f) is not None for f in _SLOT_SPAN_FIELDS):
+    if not any(getattr(slots, f) is not None for f in SLOT_SPAN_FIELDS):
         return
-    d["slot_coords"] = {f: getattr(slots, f) for f in _SLOT_COORD_FIELDS}
+    d["slot_coords"] = {f: getattr(slots, f) for f in SLOT_COORD_FIELDS}
 
 
 def _encode_embedding_b64(vec: tuple[int, ...] | None) -> str | None:
     """Base64-encode an int8 embedding vector (None → None)."""
-    import numpy as np
-
     if vec is None:
         return None
-    return base64.b64encode(np.asarray(vec, dtype=np.int8).tobytes()).decode("ascii")
+    return base64.b64encode(int8_bytes(vec)).decode("ascii")
 
 
-def _atom_to_dict(atom: Atom) -> dict[str, Any]:
+def _atom_to_dict(atom: Atom) -> JsonObject:
     """Serialize an Atom to a JSON-compatible dict."""
-    d: dict[str, Any] = {
+    d: JsonObject = {
         "line": atom.line,
         "text": atom.text,
         "kind": atom.kind,
@@ -135,7 +137,7 @@ def _atom_to_dict(atom: Atom) -> dict[str, Any]:
     if emb is not None:
         d["embedding_b64"] = emb
     # Inline formatting — converged format
-    inline: list[dict[str, str]] = []
+    inline: list[JsonValue] = []
     for tok in atom.named_tokens:
         inline.append({"term": tok, "style": "backtick"})
     for tok in atom.italic_tokens:
@@ -159,114 +161,73 @@ def _decode_embedding_b64(b64: str | None) -> tuple[int, ...] | None:
     return tuple(v if v < 128 else v - 256 for v in raw)
 
 
-def _atom_from_dict(d: dict[str, Any]) -> Atom:
+def _atom_from_dict(d: JsonObject) -> Atom:
     """Deserialize an Atom from a dict."""
     # Parse converged inline format back to separate lists
-    named_tokens: list[str] = []
-    italic_tokens: list[str] = []
-    bold_tokens: list[str] = []
-    unformatted_code: list[str] = []
-    for span in d.get("inline", []):
-        style = span.get("style", "none")
-        term = span["term"]
-        if style == "backtick":
-            named_tokens.append(term)
-        elif style == "italic":
-            italic_tokens.append(term)
-        elif style == "bold":
-            bold_tokens.append(term)
-        elif style == "none":
-            unformatted_code.append(term)
+    styled: dict[str, list[str]] = {"backtick": [], "italic": [], "bold": [], "none": []}
+    for span in as_list(d.get("inline", [])):
+        entry = as_object(span)
+        style = as_str(entry.get("style", "none"))
+        if style in styled:
+            styled[style].append(as_str(entry["term"]))
 
-    return Atom(
-        line=d["line"],
-        text=d["text"],
-        kind=d.get("kind", "excitation"),
-        charge=d["charge"],
-        charge_value=d["charge_value"],
-        modality=d["modality"],
-        specificity=d.get("specificity", "abstract"),
-        scope_conditional=d.get("scope_conditional", False),
-        format=d.get("format", "prose"),
-        named_tokens=named_tokens,
-        italic_tokens=italic_tokens,
-        bold_tokens=bold_tokens,
-        unformatted_code=unformatted_code,
-        position_index=d.get("position_index", 0),
-        token_count=d.get("token_count", 0),
-        file_path=d.get("file_path", ""),
-        embedding_int8=_decode_embedding_b64(d.get("embedding_b64")),
-        plain_text=d.get("plain_text", ""),
-        heading_context=d.get("heading_context", ""),
-        depth=d.get("depth"),
-        list_depth=d.get("list_depth", 0),
-        lead_in=d.get("lead_in", False),
-        rule=d.get("rule", ""),
-        ambiguous=d.get("ambiguous", False),
-        cell_straddle=d.get("cell_straddle", False),
-        embedded_charge_markers=d.get("embedded_charge_markers", []),
-        topics=tuple(d.get("topics", [])),
-        role=d.get("role", ""),
-        over_merged=d.get("over_merged", False),
-        min_clause_cosine=d.get("min_clause_cosine"),
-        abstained=d.get("abstained", False),
-        stage=d.get("stage", ""),
-        slots=_unpack_slot_coords(d.get("slot_coords")),
-        imported_from=d.get("imported_from", ""),
-        imported_line=d.get("imported_line", 0),
-    )
+    fields: JsonObject = {k: v for k, v in d.items() if k not in _ATOM_WIRE_ONLY_FIELDS}
+    fields.setdefault("kind", "excitation")
+    fields.setdefault("specificity", "abstract")
+    fields["named_tokens"] = [*styled["backtick"]]
+    fields["italic_tokens"] = [*styled["italic"]]
+    fields["bold_tokens"] = [*styled["bold"]]
+    fields["unformatted_code"] = [*styled["none"]]
+    embedding = _decode_embedding_b64(_optional_str(d.get("embedding_b64")))
+    fields["embedding_int8"] = None if embedding is None else [*embedding]
+    atom = Atom.model_validate(fields)
+    atom.slots = _unpack_slot_coords(_optional_object(d.get("slot_coords")))
+    return atom
 
 
-def _unpack_slot_coords(slot_coords: dict[str, Any] | None) -> AtomSlots | None:
+# Wire keys that carry a differently shaped value than the Atom field of the same meaning.
+_ATOM_WIRE_ONLY_FIELDS = frozenset({"inline", "embedding_b64", "slot_coords", "slots"})
+
+
+def _optional_str(value: JsonValue) -> str | None:
+    """The string a field holds, None when absent."""
+    return value if isinstance(value, str) else None
+
+
+def _optional_object(value: JsonValue) -> JsonObject | None:
+    """The object a field holds, None when absent."""
+    return value if isinstance(value, dict) else None
+
+
+def _unpack_slot_coords(slot_coords: JsonObject | None) -> AtomSlots | None:
     """Restore the axis-span coordinate half of ``slots`` from ``slot_coords``.
 
     Tolerant of older JSON with no `slot_coords` key (returns None — slots
     stay unset, exactly like an atom that never carried spans). Slot TEXT is
     never round-tripped (see `_pack_slot_coords`); only offsets + confidences.
     """
-    from reporails_cli.core.cache.map_cache import _as_offset
-
     if not slot_coords:
         return None
-    return AtomSlots(
-        subject_span=_as_offset(slot_coords.get("subject_span")),
-        predicate_span=_as_offset(slot_coords.get("predicate_span")),
-        object_span=_as_offset(slot_coords.get("object_span")),
-        scope_span=_as_offset(slot_coords.get("scope_span")),
-        subject_conf=slot_coords.get("subject_conf", 0.0),
-        predicate_conf=slot_coords.get("predicate_conf", 0.0),
-        object_conf=slot_coords.get("object_conf", 0.0),
-        scope_conf=slot_coords.get("scope_conf", 0.0),
-    )
+    return AtomSlots.from_coords(slot_coords)
 
 
 def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
     """Serialize a RulesetMap to JSON."""
-    import numpy as np
-
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
+    data: JsonObject = {
         "schema_version": ruleset_map.schema_version,
         "embedding_model": ruleset_map.embedding_model,
         "generated_at": ruleset_map.generated_at,
         "files": [
             {
                 "path": f.path,
-                "content_hash": f.content_hash,
-                "loading": f.loading,
-                "scope": f.scope,
-                "agent": f.agent,
-                "type": f.type,
+                **file_record_scalars(f),
                 "activation": f.activation,
                 **({"reach": list(f.reach)} if f.reach else {}),
                 **({"globs": list(f.globs)} if f.globs else {}),
                 **({"description": f.description} if f.description else {}),
                 **(
-                    {
-                        "description_embedding_b64": base64.b64encode(
-                            np.asarray(f.description_embedding, dtype=np.int8).tobytes()
-                        ).decode("ascii")
-                    }
+                    {"description_embedding_b64": base64.b64encode(int8_bytes(f.description_embedding)).decode("ascii")}
                     if f.description_embedding
                     else {}
                 ),
@@ -283,38 +244,27 @@ def save_ruleset_map(ruleset_map: RulesetMap, path: Path) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _file_record_from_dict(f: JsonObject) -> FileRecord:
+    """Deserialize a FileRecord from its disk form."""
+    fields: JsonObject = {k: v for k, v in f.items() if k != "description_embedding_b64"}
+    embedding = _decode_embedding_b64(_optional_str(f.get("description_embedding_b64")))
+    fields["description_embedding"] = None if embedding is None else [*embedding]
+    return FileRecord.model_validate(fields)
+
+
 def load_ruleset_map(path: Path) -> RulesetMap:
     """Deserialize a RulesetMap from JSON."""
-    data = json.loads(path.read_text(encoding="utf-8"))
+    loaded: JsonValue = json.loads(path.read_text(encoding="utf-8"))
+    data = as_object(loaded)
 
-    files = tuple(
-        FileRecord(
-            path=f["path"],
-            content_hash=f["content_hash"],
-            loading=f.get("loading", "session_start"),
-            scope=f.get("scope", "global"),
-            globs=tuple(f.get("globs", [])),
-            agent=f.get("agent", "generic"),
-            type=f.get("type", "generic"),
-            activation=f.get("activation", "always"),
-            reach=tuple(f.get("reach", [])),
-            description=f.get("description", ""),
-            description_embedding=_decode_embedding_b64(f.get("description_embedding_b64")),
-        )
-        for f in data["files"]
-    )
-    atoms = tuple(_atom_from_dict(a) for a in data["atoms"])
-    s = data["summary"]
-    summary = RulesetSummary(
-        n_atoms=s["n_atoms"],
-        n_charged=s["n_charged"],
-        n_neutral=s["n_neutral"],
-    )
+    files = tuple(_file_record_from_dict(as_object(f)) for f in as_list(data["files"]))
+    atoms = tuple(_atom_from_dict(as_object(a)) for a in as_list(data["atoms"]))
+    summary = RulesetSummary.model_validate(data["summary"])
 
     return RulesetMap(
-        schema_version=data["schema_version"],
-        embedding_model=data["embedding_model"],
-        generated_at=data["generated_at"],
+        schema_version=as_str(data["schema_version"]),
+        embedding_model=as_str(data["embedding_model"]),
+        generated_at=as_str(data["generated_at"]),
         files=files,
         atoms=atoms,
         summary=summary,
@@ -330,27 +280,24 @@ def load_ruleset_map(path: Path) -> RulesetMap:
 class MapFinding:
     """A validation finding from map inspection."""
 
-    severity: str  # error | warn | info
+    severity: FindingSeverity
     rule: str
     message: str
     line: int = 0
     text: str = ""
-    charge: str = ""
 
 
 # Strong charge words that should not appear in NEUTRAL atoms (unless quoted): the classifier's words
 # for an order that admits no exception, in capitals, and the two capitalised prohibition adjectives
 # it carries only as verb stems.
 _STRONG_CHARGE_RE = re.compile(
-    r"\b("
-    + "|".join(sorted(w.upper() for w in _MODAL_ABSOLUTE | ABSOLUTE_CUES | {"forbidden", "prohibited"}))
-    + r")\b",
+    r"\b(" + "|".join(sorted(w.upper() for w in MODAL_ABSOLUTE | ABSOLUTE_CUES | PROHIBITION_ADJECTIVES)) + r")\b",
 )
 _QUOTED_ATOM_RE = re.compile(r'^["“„]')
 
 
-_VALID_CHARGES = frozenset({"CONSTRAINT", "DIRECTIVE", "IMPERATIVE", "NEUTRAL", "AMBIGUOUS"})
-_VALID_MODS = frozenset({"imperative", "direct", "absolute", "hedged", "none"})
+_VALID_CHARGES = frozenset(get_args(Charge))
+_VALID_MODS = frozenset(get_args(Modality))
 
 
 def _validate_atom_schema(a: Atom, findings: list[MapFinding]) -> None:
@@ -360,14 +307,14 @@ def _validate_atom_schema(a: Atom, findings: list[MapFinding]) -> None:
         (chg not in _VALID_CHARGES, "schema", f"Invalid charge: {chg}"),
         (mod not in _VALID_MODS, "schema", f"Invalid modality: {mod}"),
         (cv not in (-1, 0, 1), "schema", f"Invalid charge_value: {cv}"),
-        (cv == 0 and chg not in ("NEUTRAL", "AMBIGUOUS"), "consistency", f"charge_value=0 but charge={chg}"),
+        (cv == 0 and chg not in NO_CHARGE, "consistency", f"charge_value=0 but charge={chg}"),
         (cv != 0 and chg == "NEUTRAL", "consistency", "charge_value!=0 but charge=NEUTRAL"),
         (cv == 0 and mod != "none", "consistency", f"NEUTRAL with modality={mod}"),
         (cv != 0 and mod == "none", "consistency", "Charged with modality=none"),
     ]
     for condition, rule, message in _checks:
         if condition:
-            findings.append(MapFinding("error", rule, message, a.line, a.text[:80], chg))
+            findings.append(MapFinding("error", rule, message, a.line, a.text[:80]))
 
 
 def validate_atoms(atoms: tuple[Atom, ...] | list[Atom]) -> list[MapFinding]:
@@ -406,7 +353,7 @@ def validate_atoms(atoms: tuple[Atom, ...] | list[Atom]) -> list[MapFinding]:
             and not starts_bare_no_status(clean_words)
         ):
             msg = f"Negation at start but charge={a.charge}"
-            findings.append(MapFinding("warn", "must_constraint", msg, a.line, a.text[:80], a.charge))
+            findings.append(MapFinding("warning", "must_constraint", msg, a.line, a.text[:80]))
         is_unquoted_neutral = (
             a.charge_value == 0 and not _QUOTED_ATOM_RE.match(a.text.strip()) and _STRONG_CHARGE_RE.search(a.text)
         )
@@ -418,7 +365,6 @@ def validate_atoms(atoms: tuple[Atom, ...] | list[Atom]) -> list[MapFinding]:
                     "NEUTRAL atom contains strong charge word",
                     a.line,
                     a.text[:80],
-                    a.charge,
                 )
             )
 
@@ -429,14 +375,9 @@ def validate_atoms(atoms: tuple[Atom, ...] | list[Atom]) -> list[MapFinding]:
         ratio = n_charged / n_exc
         if ratio > 0.90:
             msg = f"Charge ratio {ratio:.0%} ({n_charged}/{n_exc}) — unusually high"
-            findings.append(MapFinding("warn", "distribution", msg))
+            findings.append(MapFinding("warning", "distribution", msg))
         if ratio < 0.05 and n_exc > 10:
             msg = f"Charge ratio {ratio:.0%} ({n_charged}/{n_exc}) — unusually low"
-            findings.append(MapFinding("warn", "distribution", msg))
+            findings.append(MapFinding("warning", "distribution", msg))
 
     return findings
-
-
-def validate_map(ruleset_map: RulesetMap) -> list[MapFinding]:
-    """Validate a RulesetMap. Delegates to validate_atoms."""
-    return validate_atoms(ruleset_map.atoms)

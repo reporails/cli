@@ -16,9 +16,17 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.bio_pipeline import _decode_plan
-from reporails_cli.core.mapper.multislot_frames import tag_atom_multislot_frames
+from reporails_cli.core.mapper.bio_pipeline import _decode_plan, _SentEntry
+from reporails_cli.core.mapper.bio_tagger import AtomTuple
+from reporails_cli.core.mapper.multislot_frames import _decode_logits_batch, _frames_from_decoded
 from reporails_cli.core.mapper.parse import tokenize
+
+
+def tag_atom_multislot_frames(text: str) -> list[AtomTuple]:
+    """The frame-atoms of one sentence, decoded as the mapper decodes a batch."""
+    (decoded,) = _decode_logits_batch([text])
+    return _frames_from_decoded(decoded, text)
+
 
 _CONSTRAINT = "Never push to main."
 _DIRECTIVE = "Add backtick-wrapped names to your instructions."
@@ -58,6 +66,17 @@ def test_span_offsets_index_the_atom_own_text() -> None:
                 assert span.text.strip(".,;") in local or local in span.text, (
                     f"span {span.text!r} != atom-local slice {local!r}"
                 )
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_map
+@pytest.mark.requires_model
+def test_frames_do_not_depend_on_the_batch_they_are_decoded_in() -> None:
+    """A sentence decoded alone and inside a larger batch yields the same frame-atoms."""
+    texts = [_CONSTRAINT, _DIRECTIVE, "Reporails recognizes agent files and runs the validator.", _CONSTRAINT]
+    in_batch = [_frames_from_decoded(dec, t) for t, dec in zip(texts, _decode_logits_batch(texts), strict=True)]
+    for text, got in zip(texts, in_batch, strict=True):
+        assert got == tag_atom_multislot_frames(text), text
 
 
 # ── word coverage: no atom silently drops a word the head tagged O ──────────
@@ -119,10 +138,9 @@ def test_corpus_sample_drops_no_words() -> None:
         atoms = tokenize(content)
         texts, plan = _decode_plan(atoms)
         for entry in plan:
-            if entry[0] != "sent":
+            if not isinstance(entry, _SentEntry):
                 continue
-            _, _atom, _plain, start, units = entry
-            for t in texts[start : start + len(units)]:
+            for t in texts[entry.start : entry.start + len(entry.units)]:
                 src_words = t.split()
                 if not src_words:
                     continue

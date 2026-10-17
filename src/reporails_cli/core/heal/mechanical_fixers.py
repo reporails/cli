@@ -20,8 +20,9 @@ from reporails_cli.core.mapper.annotate import backticked_words, is_unbacked_lib
 from reporails_cli.core.mapper.imports import IMPORT_REF_RE
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import EmphasisRun, emphasis_runs, has_bold_label, replace_spans
+from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark, sentence_spans
 from reporails_cli.core.mapper.structure import LineSpans, in_any_span, line_spans, paragraph_lines
-from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, Atom
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,7 @@ logger = logging.getLogger(__name__)
 class MechanicalFix:
     """Outcome of a mechanical fix applied to raw file content."""
 
-    fix_type: str  # format | bold | italic_constraint
-    file_path: str
     line: int
-    description: str
     before: str
     after: str
 
@@ -187,10 +185,7 @@ def fix_unformatted_code(atoms: list[Atom], lines: list[str]) -> list[Mechanical
         if lines[idx] != original:
             fixes.append(
                 MechanicalFix(
-                    fix_type="format",
-                    file_path=atom.file_path,
                     line=atom.line,
-                    description="Wrapped code tokens in backticks",
                     before=original.rstrip(),
                     after=lines[idx].rstrip(),
                 )
@@ -259,10 +254,7 @@ def fix_bold_on_constraints(atoms: list[Atom], lines: list[str], *, any_charge: 
                 spans[idx] = spans[idx].softened(run)
         fixes.append(
             MechanicalFix(
-                fix_type="bold",
-                file_path=atom.file_path,
                 line=atom.line,
-                description="Replaced bold with italic on constraint",
                 before=original.rstrip(),
                 after=modified.rstrip(),
             )
@@ -294,8 +286,6 @@ def _takes_italic(flat: str, start: int, end: int) -> bool:
     return emphasis_runs(wrapped) == tuple(sorted([*moved, new], key=lambda run: (run.start, -run.end)))
 
 
-_SENTENCE_END_RE = re.compile(r"[.!?]+[*_\"')\]]*(?=\s|$)")
-_ABBREVIATION_RE = re.compile(r"(?:\be\.g|\bi\.e|\betc|\bvs|\bcf|\bviz|\bresp)\.$", re.IGNORECASE)
 # Marker characters are dropped on both sides when an atom's text is found in the paragraph, whatever
 # they pair with: the atom may have been read before an earlier fixer moved a mark.
 _NORMALISE_DROP = frozenset("`*_")
@@ -311,6 +301,7 @@ class _Prose:
 
     @classmethod
     def read(cls, lines: list[str]) -> _Prose:
+        """The prose map of `lines`: its plain paragraphs and code spans as the markdown parse reads them."""
         content = "".join(lines)
         return cls(lines, paragraph_lines(content), line_spans(content))
 
@@ -319,6 +310,7 @@ class _Prose:
         return next(((lo, hi) for lo, hi in self.paragraphs if lo <= idx <= hi), None)
 
     def is_code(self, line: int, col: int) -> bool:
+        """Whether the character at `line`, `col` sits in a code span."""
         return in_any_span(col, _spans_at(self.spans, line).code)
 
 
@@ -361,31 +353,27 @@ def _find_atom_text(flat: str, text: str, line_range: tuple[int, int]) -> tuple[
     return keep[hits[0].start()], keep[hits[0].end() - 1] + 1
 
 
-def _sentence_spans(flat: str, in_code: list[bool]) -> list[tuple[int, int]] | None:
-    """[start, end) of each sentence in the flattened paragraph; None when a boundary is unclear.
+def _sentence_spans(flat: str, in_code: list[bool]) -> list[tuple[int, int]]:
+    """[start, end) of each sentence in the flattened paragraph.
 
-    A full stop inside a code span is not a boundary. An abbreviation such as `e.g.` makes
-    the boundary unclear, so the paragraph is left alone.
+    The text is split with its code spans filled in and its emphasis marks blanked, so a full stop
+    inside a code span is no boundary and an emphasised sentence ends where its text does; each
+    sentence then takes back the emphasis marks that touch it.
     """
-    spans: list[tuple[int, int]] = []
-    start = 0
-    for m in _SENTENCE_END_RE.finditer(flat):
-        if in_code[m.start()]:
-            continue
-        if _ABBREVIATION_RE.search(flat[: m.start() + 1]):
-            return None
-        spans.append((start, m.end()))
-        start = m.end()
-    if flat[start:].strip():
-        spans.append((start, len(flat)))
+    marks = [False] * len(flat)
+    plain = [("x" if in_code[i] else ch) for i, ch in enumerate(flat)]
+    for run in emphasis_runs(flat):
+        for i in range(run.start, run.content_start):
+            marks[i], plain[i] = True, " "
+        for i in range(run.content_end, run.end):
+            marks[i], plain[i] = True, " " if ends_with_sentence_mark(flat[:i]) else "x"
     out = []
-    for a, b in spans:
-        while a < b and flat[a].isspace():
-            a += 1
-        while b > a and flat[b - 1].isspace():
-            b -= 1
-        if a < b:
-            out.append((a, b))
+    for a, b in sentence_spans("".join(plain)):
+        while b < len(flat) and marks[b]:
+            b += 1
+        while a > 0 and marks[a - 1]:
+            a -= 1
+        out.append((a, b))
     return out
 
 
@@ -417,7 +405,7 @@ def _locate_sentence(atom: Atom, prose: _Prose) -> _Located | None:
     in_code = [prose.is_code(n, col) for n, col in where]
     found = _find_atom_text(flat, atom.text, (on_line[0], on_line[-1] + 1))
     sentences = _sentence_spans(flat, in_code)
-    if found is None or sentences is None:
+    if found is None:
         return None
     holding = [sp for sp in sentences if sp[0] <= found[0] and found[1] <= sp[1]]
     if len(holding) != 1:
@@ -440,7 +428,7 @@ def _constraint_sentence(atom: Atom, prose: _Prose) -> _Span | None:
     return where[a], (where[b - 1][0], where[b - 1][1] + 1)
 
 
-def _wrap_spans(found: dict[_Span, Atom], lines: list[str]) -> list[MechanicalFix]:
+def _wrap_spans(found: set[_Span], lines: list[str]) -> list[MechanicalFix]:
     """Insert the italic markers for each located sentence, bottom to top.
 
     Sentences that share a line are reported as one fix, whose text shows the whole edit.
@@ -462,10 +450,7 @@ def _wrap_spans(found: dict[_Span, Atom], lines: list[str]) -> list[MechanicalFi
             lines[sl] = lines[sl][:sc] + "*" + lines[sl][sc:]
         fixes.append(
             MechanicalFix(
-                fix_type="italic_constraint",
-                file_path=found[group[0]].file_path,
                 line=first + 1,
-                description="Wrapped constraint in full-sentence italic",
                 before=before,
                 after="".join(lines[first : last + 1]).rstrip(),
             )
@@ -483,16 +468,16 @@ def fix_italic_constraints(atoms: list[Atom], lines: list[str]) -> list[Mechanic
     warrants — a table row, where changing a cell's length breaks the row's column padding,
     and any sentence whose start and end cannot be located with certainty in the raw text.
     """
-    found: dict[_Span, Atom] = {}
+    found: set[_Span] = set()
     prose = _Prose.read(lines)
     for atom in atoms:
         if atom.charge_value != -1:
             continue
-        if atom.kind == "heading" or atom.format in ("list", "numbered", "table"):
+        if atom.kind == "heading" or atom.format in LIST_ITEM_FORMATS or atom.format == "table":
             continue
         if not 0 <= atom.line - 1 < len(lines):
             continue
         span = _constraint_sentence(atom, prose)
         if span is not None:
-            found.setdefault(span, atom)
+            found.add(span)
     return _wrap_spans(found, lines)

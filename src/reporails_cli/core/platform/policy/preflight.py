@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
+from reporails_cli.core.platform.contract.json_value import WireObject, wire_list
 from reporails_cli.core.platform.dto.diagnostics import (
     DEFAULT_RETRY_AFTER_S,
     ENTITLED_TIERS,
@@ -119,15 +119,16 @@ def _is_project_relative(path: str) -> bool:
     return bool(path) and not path.startswith(("~/", "/")) and ":" not in path.split("/", 1)[0]
 
 
-def _atoms_per_file(payload: dict[str, Any]) -> dict[str, int]:
+def _atoms_per_file(payload: WireObject) -> dict[str, int]:
     """Atom count per project-relative file path; files outside the project are left out."""
-    files = payload.get("files", [])
+    files = wire_list(payload.get("files", []))
     counts: dict[str, int] = {}
-    for atom in payload.get("atoms", []):
+    for atom in wire_list(payload.get("atoms", [])):
         index = atom.get("fi") if isinstance(atom, dict) else None
         if not isinstance(index, int) or not 0 <= index < len(files):
             continue
-        path = str(files[index].get("path", "")) if isinstance(files[index], dict) else ""
+        entry = files[index]
+        path = str(entry.get("path", "")) if isinstance(entry, dict) else ""
         if _is_project_relative(path):
             counts[path] = counts.get(path, 0) + 1
     return counts
@@ -160,7 +161,7 @@ def _shown_dirs(per_file: dict[str, int], total: int) -> tuple[tuple[str, int], 
     return tuple(("/".join(key), n) for key, n in ranked[:_DENSE_DIRS_SHOWN])
 
 
-def _dense_dirs_and_route(payload: dict[str, Any], cap: int) -> tuple[tuple[tuple[str, int], ...], tuple[str, ...]]:
+def _dense_dirs_and_route(payload: WireObject, cap: int) -> tuple[tuple[tuple[str, int], ...], tuple[str, ...]]:
     """The densest folder paths with their atom counts, and the folder names to leave out to get under `cap`.
 
     A name removes every file with that name anywhere in its path (the way `--exclude-dirs`
@@ -169,7 +170,7 @@ def _dense_dirs_and_route(payload: dict[str, Any], cap: int) -> tuple[tuple[tupl
     project under the cap.
     """
     per_file = _atoms_per_file(payload)
-    total = len(payload.get("atoms", []))
+    total = len(wire_list(payload.get("atoms", [])))
     return _shown_dirs(per_file, total), _route(_files_by_name(per_file), per_file, total - cap)
 
 
@@ -249,12 +250,12 @@ def _greedy_route(by_name: dict[str, set[str]], per_file: dict[str, int], excess
 
 
 def preflight_oversized(
-    payload: dict[str, Any],
+    payload: WireObject,
     has_api_key: bool,
 ) -> FunnelError | None:
     """Local check on universal absolute caps (atoms, files)."""
     presumed_tier = "pro" if has_api_key else "anonymous"
-    n_atoms = len(payload.get("atoms", []))
+    n_atoms = len(wire_list(payload.get("atoms", [])))
     if n_atoms > UNIVERSAL_ATOM_CAP:
         dense_dirs, exclude_route = _dense_dirs_and_route(payload, UNIVERSAL_ATOM_CAP)
         return FunnelError(
@@ -262,12 +263,12 @@ def preflight_oversized(
             tier=presumed_tier,
             limit=UNIVERSAL_ATOM_CAP,
             size=n_atoms,
-            files=len(payload.get("files", [])),
+            files=len(wire_list(payload.get("files", []))),
             upgrade_url=_preflight_url("atom_cap_exceeded", presumed_tier),
             dense_dirs=dense_dirs,
             exclude_route=exclude_route,
         )
-    n_files = len(payload.get("files", []))
+    n_files = len(wire_list(payload.get("files", [])))
     if n_files > WIRE_MAX_FILES:
         # A separate token from `payload_too_large`: the file-count cap is the same
         # for every plan, so it carries no upgrade or contact-form link.

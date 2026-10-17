@@ -1,6 +1,6 @@
-"""Post-merge finding filters — inline-directive suppression and surface-scoped mutation.
+"""Post-merge finding filters — inline-directive suppression, the run's rule set and surface-scoped mutation.
 
-Two filters run at the same chokepoint (after merge, before display and strict gating):
+Three filters run at the same chokepoint (after merge, before display and strict gating):
 
 1. Inline per-line suppression — an author marks a single reviewed finding as intentional
    with a rule-named inline directive on the offending line; the rule stays armed on every
@@ -18,31 +18,46 @@ Two filters run at the same chokepoint (after merge, before display and strict g
    its frontmatter; `apply_surface_mutations` reads that declaration and drops the rule's
    findings on memory-surface files. Filtering post-merge covers both locally-computed and
    server-emitted findings uniformly.
+
+3. Run rule set — a rule the run does not report (disabled, excluded by an agent, gated out
+   by its capabilities or superseded) loses its findings, hints, cross-file rows and
+   remediation rows (`apply_rule_set`).
 """
 
 from __future__ import annotations
 
 import os
-import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
+from reporails_cli.core.classify.file_tags import classify_file
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.imports import expand_imports_with_origins
+from reporails_cli.core.platform.adapters.rules_query import rule_slug
 from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.contract.json_value import JsonObject
 from reporails_cli.core.platform.dto.diagnostics import (
+    FindingBase,
+    FindingItem,
     ListedFinding,
+    LocationFinding,
+    LocationRelation,
+    RemediationWorkflow,
+    WorkflowLocation,
     subtree_tier_rank,
     walk_findings,
     workflow_summary,
 )
-from reporails_cli.core.platform.runtime.merger import normalize_finding_path, rebuild_severity_stats
+from reporails_cli.core.platform.dto.models import Rule
+from reporails_cli.core.platform.runtime.merger import (
+    CombinedResult,
+    drop_findings,
+    normalize_finding_path,
+    rebuild_cross_file_stats,
+)
+from reporails_cli.core.platform.utils.directives import parse_directives
 from reporails_cli.core.platform.utils.utils import matches_any_glob
-
-# Canonical form is an inline HTML comment, invisible when the file renders.
-_DIRECTIVE_RE = re.compile(r"<!--\s*ails-disable-line\b(?P<rules>[^>]*?)-->")
-_RULE_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]*$")
 
 
 class SuppressionIndex(dict[tuple[str, int], set[str]]):
@@ -70,31 +85,6 @@ class SuppressionIndex(dict[tuple[str, int], set[str]]):
 ImportedPlaces = Mapping[tuple[str, int], tuple[str, int]]
 
 
-def _rule_tokens(captured: str) -> set[str]:
-    """Pull valid rule names out of a directive's body, dropping separators."""
-    return {tok for tok in re.split(r"[,\s]+", captured.strip()) if _RULE_TOKEN_RE.match(tok)}
-
-
-def parse_directives(text: str) -> dict[int, set[str]]:
-    """Map 1-based line number to the set of rule names suppressed on that line."""
-    out: dict[int, set[str]] = {}
-    for lineno, line in enumerate(text.split("\n"), start=1):
-        for match in _DIRECTIVE_RE.finditer(line):
-            rules = _rule_tokens(match.group("rules"))
-            if rules:
-                out.setdefault(lineno, set()).update(rules)
-    return out
-
-
-def strip_directives(content: str) -> str:
-    """Remove suppression-directive comments so they never reach classification.
-
-    Replaces each directive comment with an equal run of spaces, preserving
-    every newline and column offset so atom line numbers stay exact.
-    """
-    return _DIRECTIVE_RE.sub(lambda m: " " * (m.end() - m.start()), content)
-
-
 def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
     """Read `path`, expand its imports and record each directive into `index`.
 
@@ -102,8 +92,6 @@ def _index_file(index: SuppressionIndex, rel: str, path: Path) -> None:
     one written inside an imported file is keyed under `rel`, the imported file and
     its own line.
     """
-    from reporails_cli.core.mapper.imports import expand_imports_with_origins
-
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -164,50 +152,67 @@ def suppressed_lines(
     return out
 
 
+# A rule a suppression directive may also name by its short token, as it has always been written.
+SHORT_TOKEN = {"CORE:S:0039": "heading_instruction"}
+
+
+def rule_aliases(rule: str) -> set[str]:
+    """Every name a suppression directive may use for a rule: its id, its slug and its short token."""
+    names = {rule}
+    if rule in SHORT_TOKEN:
+        names.add(SHORT_TOKEN[rule])
+    slug = rule_slug(rule)
+    if slug:
+        names.add(slug)
+    return names
+
+
 def is_suppressed(
-    finding: Any,
+    finding: FindingBase | LocationFinding,
     index: SuppressionIndex,
-    alias_fn: Callable[[str], set[str]] | None = None,
     imported: ImportedPlaces | None = None,
+    pi: int | None = None,
 ) -> bool:
     """True when a directive on the finding's line names the finding's rule.
 
     A finding on an instruction an `@path` import brings in (`imported` maps its file and
     position index to where it is written) is also silenced by a directive on that
-    instruction's own line of the imported file.
+    instruction's own line of the imported file. `pi` is the finding's instruction position,
+    `None` for a finding that has none.
     """
     named = set(index.get((finding.file, finding.line)) or ())
-    place = imported.get((finding.file, finding.pi)) if imported and getattr(finding, "pi", None) is not None else None
+    place = imported.get((finding.file, pi)) if imported and pi is not None else None
     if place is not None:
         named |= index.imported.get((finding.file, place[0], place[1])) or set()
-    elif getattr(finding, "pi", None) is None:
+    elif pi is None:
         # A finding with no position cannot be told apart per imported line: every directive
         # under the import line counts.
         named |= index.import_rules.get((finding.file, finding.line)) or set()
     if not named:
         return False
-    aliases = alias_fn(finding.rule) if alias_fn else {finding.rule}
-    return bool(named & aliases)
+    return bool(named & rule_aliases(finding.rule))
 
 
-def renumbered(locations: Sequence[Any]) -> list[Any]:
-    """`locations` numbered from 1 in their order, whether each is a dict or a dataclass."""
-    return [
-        {**loc, "order": i} if isinstance(loc, dict) else replace(loc, order=i)
-        for i, loc in enumerate(locations, start=1)
-    ]
+def renumbered(locations: Sequence[WorkflowLocation]) -> list[WorkflowLocation]:
+    """`locations` numbered from 1 in their order."""
+    return [replace(loc, order=i) for i, loc in enumerate(locations, start=1)]
 
 
-def _location_files(location: Any) -> set[str]:
-    return {x.file for x in (*walk_findings(location.findings), *location.relations)}
+def renumbered_json(locations: Sequence[JsonObject]) -> list[JsonObject]:
+    """`locations`, each a serialized workflow location, numbered from 1 in their order."""
+    return [{**loc, "order": i} for i, loc in enumerate(locations, start=1)]
 
 
-def _row_key(f: Any) -> tuple[int, str, int, int, str]:
+def _location_files(location: WorkflowLocation) -> set[str]:
+    return {x.file for x in walk_findings(location.findings)} | {r.file for r in location.relations}
+
+
+def _row_key(f: LocationFinding) -> tuple[int, str, int, int, str]:
     """The order a location's rows keep: heaviest tier in the row's subtree, then file, line, instruction, rule."""
     return (subtree_tier_rank(f), f.file, f.line, -1 if f.pi is None else f.pi, f.rule)
 
 
-def _surviving(f: Any, gone: Callable[[Any], bool]) -> list[Any]:
+def _surviving(f: LocationFinding, gone: Callable[[LocationFinding], bool]) -> list[LocationFinding]:
     """The rows `f` leaves behind once its suppressed findings are removed.
 
     A suppressed finding releases its members as rows. A kept finding whose members all stand
@@ -224,12 +229,14 @@ def _surviving(f: Any, gone: Callable[[Any], bool]) -> list[Any]:
     return [replace(f, members=members)]
 
 
-def _row_coordinate(f: Any, norm: Callable[[str], str]) -> tuple[str, str, int, int | None]:
+def _row_coordinate(f: LocationFinding | FindingItem, norm: Callable[[str], str]) -> tuple[str, str, int, int | None]:
     """The (file, rule, line, instruction) a finding or served row is told apart by."""
     return (norm(f.file), f.rule, f.line, f.pi)
 
 
-def _listed_without(workflow: Any, dropped: Sequence[Any], kept: Sequence[Any]) -> tuple[Any, ...]:
+def _listed_without(
+    workflow: RemediationWorkflow, dropped: Sequence[FindingItem | ListedFinding], kept: Sequence[FindingItem]
+) -> tuple[ListedFinding, ...]:
     """`workflow.listed` without the rules whose findings were all removed.
 
     An entry whose rule lost a finding and has none left is removed; every other entry keeps
@@ -241,8 +248,11 @@ def _listed_without(workflow: Any, dropped: Sequence[Any], kept: Sequence[Any]) 
 
 
 def _pruned_location(
-    loc: Any, gone: Callable[[Any], bool], relation_gone: Callable[[Any], bool] | None, norm: Callable[[str], str]
-) -> Any:
+    loc: WorkflowLocation,
+    gone: Callable[[LocationFinding], bool],
+    relation_gone: Callable[[LocationRelation], bool] | None,
+    norm: Callable[[str], str],
+) -> WorkflowLocation | None:
     """`loc` without the rows `gone` and the relations `relation_gone` name, a file it listed
     only for them dropped; `loc` itself when nothing is removed, `None` when nothing is left."""
     rows = [row for f in loc.findings for row in _surviving(f, gone)]
@@ -258,13 +268,14 @@ def _pruned_location(
 
 
 def prune_workflow(
-    workflow: Any,
-    gone: Callable[[Any], bool],
+    workflow: RemediationWorkflow,
+    gone: Callable[[LocationFinding], bool],
     norm: Callable[[str], str],
-    dropped: Sequence[Any] = (),
-    kept_findings: Sequence[Any] = (),
-    relation_gone: Callable[[Any], bool] | None = None,
-) -> Any:
+    *,
+    dropped: Sequence[FindingItem | ListedFinding] = (),
+    kept_findings: Sequence[FindingItem] = (),
+    relation_gone: Callable[[LocationRelation], bool] | None = None,
+) -> RemediationWorkflow:
     """`workflow` without the rows `gone` and the relations `relation_gone` name and the findings
     `dropped`; every field agrees.
 
@@ -275,7 +286,7 @@ def prune_workflow(
     again for the locations kept, so no field names a location or finding that is gone.
     """
     changed = False
-    kept: list[Any] = []
+    kept: list[WorkflowLocation] = []
     for loc in workflow.locations:
         pruned = _pruned_location(loc, gone, relation_gone, norm)
         changed = changed or pruned is not loc
@@ -293,12 +304,12 @@ def prune_workflow(
 CONFIG_LISTED_REASON = "config-file"
 
 
-def _is_config_location(loc: Any, norm: Callable[[str], str]) -> bool:
+def _is_config_location(loc: WorkflowLocation, norm: Callable[[str], str]) -> bool:
     files = _location_files(loc) or set(loc.files)
     return bool(files) and all(finding_surface(norm(x)) == "config" for x in files)
 
 
-def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
+def list_config_locations(workflow: RemediationWorkflow, norm: Callable[[str], str]) -> RemediationWorkflow:
     """`workflow` with each location made only of config-format files moved into `listed`.
 
     Settings, hook and MCP config files take no rewrite location: each rule that fired there
@@ -310,8 +321,8 @@ def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
         return workflow
     counts: dict[str, int] = {}
     for loc in moved:
-        for f in (*walk_findings(loc.findings), *loc.relations):
-            counts[f.rule] = counts.get(f.rule, 0) + 1
+        for rule in (*(f.rule for f in walk_findings(loc.findings)), *(r.rule for r in loc.relations)):
+            counts[rule] = counts.get(rule, 0) + 1
     listed = list(workflow.listed)
     for rule, n in counts.items():
         at = next((i for i, e in enumerate(listed) if e.rule == rule), None)
@@ -326,7 +337,9 @@ def list_config_locations(workflow: Any, norm: Callable[[str], str]) -> Any:
 HEAL_EXCLUDED_REASON = "excluded"
 
 
-def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Callable[[str], str]) -> Any:
+def list_heal_excluded(
+    workflow: RemediationWorkflow, excluded: Callable[[str], bool], norm: Callable[[str], str]
+) -> RemediationWorkflow:
     """`workflow` with the findings and relations on `excluded` files moved into `listed`.
 
     The rows leave their location (`prune_workflow`: a location left with nothing is dropped,
@@ -335,9 +348,10 @@ def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Cal
     """
     counts: dict[str, int] = {}
     for loc in workflow.locations:
-        for f in (*walk_findings(loc.findings), *loc.relations):
-            if excluded(norm(f.file)):
-                counts[f.rule] = counts.get(f.rule, 0) + 1
+        rows = (*((f.file, f.rule) for f in walk_findings(loc.findings)), *((r.file, r.rule) for r in loc.relations))
+        for file, rule in rows:
+            if excluded(norm(file)):
+                counts[rule] = counts.get(rule, 0) + 1
     if not counts:
         return workflow
     pruned = prune_workflow(
@@ -350,11 +364,11 @@ def list_heal_excluded(workflow: Any, excluded: Callable[[str], bool], norm: Cal
     return replace(pruned, listed=listed, summary=workflow_summary(pruned.locations, listed))
 
 
-def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
+def apply_config_listing(result: CombinedResult, project_root: Path | None = None) -> CombinedResult:
     """`result` whose workflow lists config-format files' findings, and those of files in the
     project's `heal_exclude`, instead of locating them. Findings, scores and stats stay as they are."""
-    workflow = result.workflow
-    if getattr(workflow, "locations", None) is None:
+    workflow = result.reply.workflow
+    if workflow is None:
         return result
 
     def norm(file: str) -> str:
@@ -366,19 +380,18 @@ def apply_config_listing(result: Any, project_root: Path | None = None) -> Any:
         projected = list_heal_excluded(
             projected, lambda rel: matches_any_glob(project_root / rel, patterns, project_root), norm
         )
-    return result if projected is workflow else replace(result, workflow=projected)
+    return result if projected is workflow else replace(result, reply=replace(result.reply, workflow=projected))
 
 
-def _workflow_files(workflow: Any, norm: Callable[[str], str]) -> list[str]:
+def _workflow_files(workflow: RemediationWorkflow, norm: Callable[[str], str]) -> list[str]:
     return [norm(f.file) for loc in workflow.locations for f in walk_findings(loc.findings)]
 
 
 def apply_suppressions(
-    result: Any,
+    result: CombinedResult,
     project_root: Path | None = None,
-    alias_fn: Callable[[str], set[str]] | None = None,
     imported: ImportedPlaces | None = None,
-) -> Any:
+) -> CombinedResult:
     """Return `result` with directive-suppressed findings removed and stats rebuilt.
 
     The same suppressions apply to the findings the result's remediation `workflow` lists
@@ -388,7 +401,7 @@ def apply_suppressions(
     def norm(file: str) -> str:
         return normalize_finding_path(file, project_root)
 
-    workflow = result.workflow if getattr(result.workflow, "locations", None) is not None else None
+    workflow = result.reply.workflow
     if not result.findings and workflow is None:
         return result
     files = [f.file for f in result.findings]
@@ -397,21 +410,73 @@ def apply_suppressions(
     index = build_index(files, project_root)
     if not index:
         return result
-    kept_list: list[Any] = []
-    dropped: list[Any] = []
+    kept_list: list[FindingItem] = []
+    dropped: list[FindingItem] = []
     for f in result.findings:
-        (dropped if is_suppressed(f, index, alias_fn, imported) else kept_list).append(f)
+        (dropped if is_suppressed(f, index, imported, f.pi) else kept_list).append(f)
     kept = tuple(kept_list)
     if workflow is not None:
 
-        def _gone(f: Any) -> bool:
-            return is_suppressed(replace(f, file=norm(f.file)), index, alias_fn, imported)
+        def _gone(f: LocationFinding) -> bool:
+            return is_suppressed(replace(f, file=norm(f.file)), index, imported, f.pi)
 
-        workflow = prune_workflow(workflow, _gone, norm, dropped, kept)
-    if len(kept) == len(result.findings) and (workflow is None or workflow is result.workflow):
+        workflow = prune_workflow(workflow, _gone, norm, dropped=dropped, kept_findings=kept)
+    if len(kept) == len(result.findings) and (workflow is None or workflow is result.reply.workflow):
         return result
-    stats = rebuild_severity_stats(result.stats, kept) if len(kept) != len(result.findings) else result.stats
-    return replace(result, findings=kept, stats=stats, workflow=workflow if workflow is not None else result.workflow)
+    result = drop_findings(result, kept)
+    return replace(
+        result,
+        reply=replace(result.reply, workflow=workflow if workflow is not None else result.reply.workflow),
+    )
+
+
+def apply_rule_set(
+    result: CombinedResult, resolved: Collection[str], known: Collection[str], project_root: Path | None = None
+) -> CombinedResult:
+    """Return `result` without the findings of a rule the run does not report.
+
+    A finding whose rule is one of the `known` rules but not among the `resolved` ones (a
+    disabled rule, one an agent excludes, one its capabilities gate out or a superseded one) is
+    dropped with its remediation `workflow` rows and listed entries, and leaves the source
+    counts as if it never ran. The same goes for its hints and cross-file rows, and the
+    cross-file counts follow what is kept. A rule name no known rule carries (a classifier or
+    memory check's own label) is kept.
+    """
+
+    def out(rule: str) -> bool:
+        return rule in known and rule not in resolved
+
+    kept = [f for f in result.findings if not out(f.rule)]
+    dropped = [f for f in result.findings if out(f.rule)]
+    result = drop_findings(result, kept)
+    cross_file = tuple(row for row in result.cross_file if not out(row.rule))
+    coordinates = tuple(row for row in result.cross_file_coordinates if not out(row.rule))
+    hints = tuple(hint for hint in result.hints if not out(hint.diagnostic_type))
+    if (cross_file, coordinates, hints) != (result.cross_file, result.cross_file_coordinates, result.hints):
+        result = replace(
+            result,
+            cross_file=cross_file,
+            cross_file_coordinates=coordinates,
+            hints=hints,
+            stats=rebuild_cross_file_stats(result.stats, cross_file, coordinates),
+        )
+    workflow = result.reply.workflow
+    if workflow is None:
+        return result
+
+    def norm(file: str) -> str:
+        return normalize_finding_path(file, project_root)
+
+    listed_out = [entry for entry in workflow.listed if out(entry.rule)]
+    pruned = prune_workflow(
+        workflow,
+        lambda row: out(row.rule),
+        norm,
+        dropped=[*dropped, *listed_out],
+        kept_findings=kept,
+        relation_gone=lambda relation: out(relation.rule),
+    )
+    return result if pruned is workflow else replace(result, reply=replace(result.reply, workflow=pruned))
 
 
 def finding_surface(file: str) -> str:
@@ -425,19 +490,17 @@ def finding_surface(file: str) -> str:
     patterns, so this covers the auto-memory index (`~/.claude/projects/*/memory/`) AND the
     subagent-memory scopes (`agent-memory/` user+project, `agent-memory-local/` local) uniformly.
     """
-    from reporails_cli.core.classify.file_tags import classify_file
-
     return classify_file(file).split(":")[0]
 
 
-def _surface_excluded(rule: Any, surface: str) -> bool:
+def _surface_excluded(rule: Rule | None, surface: str) -> bool:
     """True when `rule` declares `surface_mutations: {<surface>: {applies: false}}`.
 
     `surface` is always a non-empty tag (`finding_surface` falls back to `file`); an unknown
     surface simply misses `mutations.get(surface)` and returns False, so no empty-string guard
     is needed.
     """
-    mutations = getattr(rule, "surface_mutations", None)
+    mutations = rule.surface_mutations if rule is not None else None
     if not mutations:
         return False
     entry = mutations.get(surface)
@@ -445,54 +508,47 @@ def _surface_excluded(rule: Any, surface: str) -> bool:
 
 
 def _finding_surface_excluded(
-    finding: Any,
+    finding: FindingItem,
     surface: str,
-    rules_by_id: dict[str, Any],
-    alias_fn: Callable[[str], set[str]] | None,
+    rules_by_id: Mapping[str, Rule],
 ) -> bool:
-    """True when any name the finding's rule is known by declares the surface non-applicable.
-
-    Client-side findings carry a raw token (`format`, `heading_instruction`, `scope`) that aliases to a
-    canonical `CORE:*` id; server findings carry the canonical id directly. Resolving through
-    `alias_fn` (the same resolver `apply_suppressions` uses) lets a `surface_mutations` block on
-    the canonical rule suppress the raw-token finding too.
-    """
-    names = alias_fn(finding.rule) if alias_fn else {finding.rule}
-    return any(_surface_excluded(rules_by_id.get(name), surface) for name in names)
+    """True when the finding's rule declares the surface non-applicable."""
+    return _surface_excluded(rules_by_id.get(finding.rule), surface)
 
 
 def apply_surface_mutations(
-    result: Any,
-    rules_by_id: dict[str, Any],
-    alias_fn: Callable[[str], set[str]] | None = None,
+    result: CombinedResult,
+    rules_by_id: Mapping[str, Rule],
     project_root: Path | None = None,
-) -> Any:
+) -> CombinedResult:
     """Return `result` with findings dropped on a surface their rule marks non-applicable.
 
-    A finding survives unless its rule (resolved through `alias_fn` to every name it is known
-    by) declares the finding's surface non-applicable via `surface_mutations`. Stats are rebuilt
-    over the kept findings, mirroring `apply_suppressions`, and the remediation `workflow`
-    loses the same findings.
+    A finding survives unless its rule declares the finding's surface non-applicable via
+    `surface_mutations`. The total, per-severity and per-source counts drop with the dropped
+    findings, and the remediation `workflow` loses the same findings.
     """
     if not result.findings:
         return result
-    kept_list: list[Any] = []
-    dropped: list[Any] = []
+    kept_list: list[FindingItem] = []
+    dropped: list[FindingItem] = []
     for f in result.findings:
-        excluded = _finding_surface_excluded(f, finding_surface(f.file), rules_by_id, alias_fn)
+        excluded = _finding_surface_excluded(f, finding_surface(f.file), rules_by_id)
         (dropped if excluded else kept_list).append(f)
     if not dropped:
         return result
     kept = tuple(kept_list)
-    workflow = result.workflow
-    if getattr(workflow, "locations", None) is not None:
+    workflow = result.reply.workflow
+    if workflow is not None:
 
         def norm(file: str) -> str:
             return normalize_finding_path(file, project_root)
 
         gone_rows = {_row_coordinate(f, norm) for f in dropped}
-        workflow = prune_workflow(workflow, lambda row: _row_coordinate(row, norm) in gone_rows, norm, dropped, kept)
-    return replace(result, findings=kept, stats=rebuild_severity_stats(result.stats, kept), workflow=workflow)
+        workflow = prune_workflow(
+            workflow, lambda row: _row_coordinate(row, norm) in gone_rows, norm, dropped=dropped, kept_findings=kept
+        )
+    result = drop_findings(result, kept)
+    return replace(result, reply=replace(result.reply, workflow=workflow))
 
 
 def resolve_finding_path(rel: str, project_root: Path | None) -> Path | None:

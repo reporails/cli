@@ -1,6 +1,6 @@
 """User-facing notices for the ``ails check`` heal path.
 
-Small output emitters split out of ``main.py``
+Small output emitters split out of ``check_command.py``
 so the command module stays focused on orchestration. Each renders in the
 active output format — plain console for humans, a single JSON object on the
 ``json`` / ``github`` machine channels.
@@ -13,8 +13,13 @@ import sys
 from typing import TYPE_CHECKING
 
 from reporails_cli.core.heal.apply import heal_withheld_for_run
-from reporails_cli.interfaces.cli.check_orchestration import _dispatch_output
+from reporails_cli.core.pipeline.assemble import with_exclusions
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.formatters.text.verdict import render_excluded_line
+from reporails_cli.interfaces.cli.check_orchestration import RenderContext, _dispatch_output
 from reporails_cli.interfaces.cli.helpers import _print_no_instruction_files, console
+from reporails_cli.interfaces.cli.output_formats import MACHINE_READABLE_CHECK_FORMATS
 
 if TYPE_CHECKING:
     from reporails_cli.interfaces.cli.check_flow import CheckState
@@ -26,7 +31,7 @@ def _notify_heal_scope_skips(n_skipped: int, output_format: str) -> None:
     Without this a capability/dir heal over symlinks-into-a-shared-tree reports `0 fixes`
     and reads as "nothing to fix" when it actually refused to touch out-of-scope files.
     """
-    if n_skipped <= 0 or output_format in ("json", "github"):
+    if n_skipped <= 0 or output_format in MACHINE_READABLE_CHECK_FORMATS:
         return
     console.print(
         f"[dim]{n_skipped} file(s) skipped — they resolve outside the heal scope "
@@ -46,7 +51,7 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
         funnel_tier=getattr(funnel_error, "tier", None),
         server_replied=server_replied,
     )
-    if output_format in ("json", "github"):
+    if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(json.dumps({"error": code, "message": message}), file=sys.stderr)
         return
     console.print(f"[yellow]{message}[/yellow]")
@@ -54,7 +59,7 @@ def _emit_heal_withheld(output_format: str, *, funnel_error: object, tier: str |
 
 def _emit_heal_scope_refusal(output_format: str) -> None:
     """Emit the --heal scope-safety refusal in the active output format."""
-    if output_format in ("json", "github"):
+    if output_format in MACHINE_READABLE_CHECK_FORMATS:
         print(
             json.dumps(
                 {
@@ -77,7 +82,6 @@ def _agent_is_pinned(state: CheckState) -> bool:
     """True when the run is set to one agent: ``--agent`` or the configured ``default_agent``."""
     if state.inputs.agent:
         return True
-    from reporails_cli.core.platform.config.config import get_project_config
 
     return bool(get_project_config(state.targets.target).default_agent)
 
@@ -96,21 +100,19 @@ def _emit_empty_run(state: CheckState) -> None:
     silently matched nothing indistinguishable from a clean one. Text keeps its
     human message, which says plainly that nothing was found.
     """
-    if state.targets.output_format in ("json", "github"):
-        from reporails_cli.core.pipeline.assemble import with_exclusions
-        from reporails_cli.core.platform.runtime.merger import CombinedResult
-
+    if state.targets.output_format in MACHINE_READABLE_CHECK_FORMATS:
         _dispatch_output(
             state.targets.output_format,
             with_exclusions(CombinedResult(), state.render.excluded),
             None,
             0.0,
-            set(),
-            state.targets.target,
-            state.inputs.ascii_mode,
-            state.inputs.verbose,
-            None,
-            None,
+            funnel_error=None,
+            context=RenderContext(
+                project_root=state.targets.target,
+                capability_paths=set(),
+                ascii_mode=state.inputs.ascii_mode,
+                verbose=state.inputs.verbose,
+            ),
         )
         return
     whole_project = not state.targets.capability_specs and all(
@@ -126,8 +128,5 @@ def _print_excluded_record(state: CheckState) -> None:
     dirs, files = state.render.excluded
     if not (dirs or files):
         return
-    from reporails_cli.core.pipeline.assemble import with_exclusions
-    from reporails_cli.core.platform.runtime.merger import CombinedResult
-    from reporails_cli.formatters.text.verdict import render_excluded_line
 
     render_excluded_line(with_exclusions(CombinedResult(), state.render.excluded), scored=False)

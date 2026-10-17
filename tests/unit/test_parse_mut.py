@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.mapper import charge_floors, embedded_markers, fence_atoms
 from reporails_cli.core.mapper import parse as p
 from reporails_cli.core.platform.dto.ruleset import Atom
 
@@ -40,7 +41,7 @@ def _atom(text: str, *, kind: str = "excitation", fmt: str = "prose", cv: int = 
 def test_non_verb_bold_definition_is_structural() -> None:
     """A `**Term**: desc` whose term is NOT a verb stays a structural definition
     (kills L139 `m and group in verbs` -> `or`, which would un-defn every label)."""
-    assert p._is_structural("**Widget**: a small reusable UI element") is True
+    assert charge_floors._is_structural("**Widget**: a small reusable UI element") is True
 
 
 @pytest.mark.unit
@@ -48,9 +49,9 @@ def test_non_verb_bold_definition_is_structural() -> None:
 def test_only_a_whole_line_quotation_is_structural() -> None:
     # A line that IS a quotation stays neutral; a line that merely opens with a quoted
     # term and carries on is running text and keeps its charge.
-    assert p._is_structural('"Never push to main."') is True
-    assert p._is_structural("\u201cNever push to main.\u201d") is True
-    assert p._is_structural('"Feature creep" is a known failure mode; flag it early.') is False
+    assert charge_floors._is_structural('"Never push to main."') is True
+    assert charge_floors._is_structural("\u201cNever push to main.\u201d") is True
+    assert charge_floors._is_structural('"Feature creep" is a known failure mode; flag it early.') is False
 
 
 @pytest.mark.unit
@@ -58,7 +59,7 @@ def test_only_a_whole_line_quotation_is_structural() -> None:
 def test_pipe_reference_line_is_structural() -> None:
     """A prose line shaped like a code|desc table row is structural
     (kills L154 `or pipe_ref` -> `and`)."""
-    assert p._is_structural("`build` | the build command", "prose") is True
+    assert charge_floors._is_structural("`build` | the build command", "prose") is True
 
 
 # ── _classify_content scope flag (L171, L175) ────────────────────────
@@ -68,7 +69,7 @@ def test_pipe_reference_line_is_structural() -> None:
 @pytest.mark.subsys_map
 def test_structural_classification_is_not_scope_conditional() -> None:
     """A structural atom returns scope_conditional=False (kills L171 False->True)."""
-    result = p._classify_content(
+    result = charge_floors._classify_content(
         "**Widget**: a small reusable UI element", "Widget: a small reusable UI element", "prose"
     )
     assert result == ("NEUTRAL", 0, "none", "structural", False)
@@ -78,7 +79,7 @@ def test_structural_classification_is_not_scope_conditional() -> None:
 @pytest.mark.subsys_map
 def test_third_person_classification_is_not_scope_conditional() -> None:
     """A 3rd-person atom returns scope_conditional=False (kills L175 False->True)."""
-    result = p._classify_content("Triggers the build workflow", "Triggers the build workflow", "prose")
+    result = charge_floors._classify_content("Triggers the build workflow", "Triggers the build workflow", "prose")
     assert result == ("NEUTRAL", 0, "none", "third_person", False)
 
 
@@ -103,28 +104,28 @@ def test_drop_contentless_reindexes_non_heading_atoms() -> None:
 @pytest.mark.subsys_map
 def test_empty_module_is_trivial() -> None:
     """An empty parsed module is trivial (kills L259 True->False)."""
-    assert p._ast_is_trivial(ast.parse("")) is True
+    assert fence_atoms._ast_is_trivial(ast.parse("")) is True
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_bare_name_module_is_trivial() -> None:
     """A bare-name expression module is trivial (kills L265 True->False)."""
-    assert p._ast_is_trivial(ast.parse("config")) is True
+    assert fence_atoms._ast_is_trivial(ast.parse("config")) is True
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_json_body_parses_as_code() -> None:
     """A JSON object body is recognised as code (kills the json-branch True->False)."""
-    assert p._fence_parses_as_code('{"a": 1}') is True
+    assert fence_atoms._fence_parses_as_code('{"a": 1}') is True
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_toml_body_parses_as_code() -> None:
     """A TOML-only body (not valid JSON) is recognised as code (kills L283 True->False)."""
-    assert p._fence_parses_as_code('key = "value"') is True
+    assert fence_atoms._fence_parses_as_code('key = "value"') is True
 
 
 # ── fence directive routing (L311, L331, L495) ───────────────────────
@@ -227,7 +228,7 @@ def test_charged_atom_is_scanned_for_opposite_markers() -> None:
     """A charged atom is scanned for opposite-direction markers (kills L1269 `==` -> `!=`,
     which would skip every charged atom)."""
     atom = _atom("mention it but never delete it", cv=1, charge="DIRECTIVE")
-    p._scan_charged_for_compound_markers([atom])
+    embedded_markers._scan_charged_for_compound_markers([atom])
     assert atom.embedded_charge_markers == ["constraint:never"]
 
 
@@ -293,26 +294,26 @@ def test_real_rule_file_yaml_fence_survives_body_blanking() -> None:
 @pytest.mark.subsys_map
 def test_command_reference_led_by_a_double_backtick_span_is_structural() -> None:
     """A command reference opens with a code span however many backticks delimit it."""
-    assert p._is_structural("``git commit -m `x` `` - the commit command") is True
-    assert p._is_structural("``make test`` | the test command", "prose") is True
+    assert charge_floors._is_structural("``git commit -m `x` `` - the commit command") is True
+    assert charge_floors._is_structural("``make test`` | the test command", "prose") is True
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_unmatched_backtick_is_not_a_version_note() -> None:
     """A lone backtick before a digit is text, not a code span holding a version."""
-    assert p._is_structural("`3 files must be kept in sync") is False
-    assert p._is_structural("`3.10` or later") is True
-    assert p._is_structural("~3.10 is required") is True
+    assert charge_floors._is_structural("`3 files must be kept in sync") is False
+    assert charge_floors._is_structural("`3.10` or later") is True
+    assert charge_floors._is_structural("~3.10 is required") is True
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_map
 def test_fence_is_markdown_sample_reads_atx_headings_from_the_parse() -> None:
-    assert p._fence_is_markdown_sample("## Audit: {agent}\n\nfindings\n") is True
-    assert p._fence_is_markdown_sample("title\n---\nbody\n") is False
-    assert p._fence_is_markdown_sample("    # indented comment\n") is False
-    assert p._fence_is_markdown_sample("#hashtag\n") is False
+    assert fence_atoms._fence_is_markdown_sample("## Audit: {agent}\n\nfindings\n") is True
+    assert fence_atoms._fence_is_markdown_sample("title\n---\nbody\n") is False
+    assert fence_atoms._fence_is_markdown_sample("    # indented comment\n") is False
+    assert fence_atoms._fence_is_markdown_sample("#hashtag\n") is False
 
 
 @pytest.mark.unit

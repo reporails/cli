@@ -22,24 +22,23 @@ from reporails_cli.core.heal.mechanical_fixers import (
 from reporails_cli.core.heal.preservation.conditions import conditional
 from reporails_cli.core.heal.preservation.fragments import opens_step, rewrite_cut
 from reporails_cli.core.lint.client_checks import running_sentences
-from reporails_cli.core.mapper.bio_tagger import words_between
-from reporails_cli.core.mapper.classify import HEDGE_LEADS, hedges_with_should
+from reporails_cli.core.mapper.classify import HEDGE_ADVERB_LEADS, hedges_with_should
 from reporails_cli.core.mapper.instructions import holds_comma_series, opens_command, without_joining_word
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs, link_spans
+from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import in_any_span, paragraph_lines, read_structure
-from reporails_cli.core.platform.dto.heal_plan import Edit, PlanOp
-from reporails_cli.core.platform.dto.ruleset import Atom
+from reporails_cli.core.mapper.word_spans import words_between
+from reporails_cli.core.platform.dto.heal_plan import Edit, HealOp, PlanOp
+from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, PROSE_OR_LIST_FORMATS, Atom
 
 # The joint between two instructions the mapper cut apart: a mark (or spaced dash) and a joining `and` it left behind.
 _JOINT_TAIL_RE = re.compile(r"(?:\s*[\u2014\u2013;,]|\s-)\s*(?:and\s+)?$", re.IGNORECASE)
-_SENTENCE_MARK_RE = re.compile(r"[.!?][)\]\"'`*_]*$")
 _NEVER_RE = re.compile(r"(Never|never)\b(?=\s+\S)")
-_HEDGE_WORDS = (HEDGE_LEADS - {"prefer", "preferably", "consider", "try"}) | {"please"}
+_HEDGE_WORDS = HEDGE_ADVERB_LEADS | {"please"}
 _HEDGE_RE = re.compile(
     rf"(?:you\s+should|try\s+to|(?:{'|'.join(sorted(_HEDGE_WORDS))})\b,?)\s+",
     re.IGNORECASE,
 )
-_RUNNING_FORMATS = frozenset({"prose", "list", "numbered"})
 _OBJECT_TRIM = " \t.,;:!?*_"
 
 
@@ -79,7 +78,7 @@ def _packed_sentences(atoms: Sequence[Atom], op: PlanOp) -> list[list[Atom]] | s
         for s in running_sentences(list(atoms))
         if len(s) >= 2 and any(a.line == op.line and (op.pi is None or a.position_index == op.pi) for a in s)
     ]
-    if not held or any(a.line != op.line or a.format not in _RUNNING_FORMATS for s in held for a in s):
+    if not held or any(a.line != op.line or a.format not in PROSE_OR_LIST_FORMATS for s in held for a in s):
         return ""
     if any(a.lead_in for s in held for a in s):
         return "split-keep-lead-in"
@@ -134,7 +133,7 @@ def _cut_at(content: str, start: int) -> tuple[str, int, int] | None:
         return None
     spanning = [r for r in emphasis_runs(content) if r.content_start <= joint.start() and start < r.content_end]
     spanning.sort(key=lambda r: (r.start, -r.end))
-    stop = "" if _SENTENCE_MARK_RE.search(head) else "."
+    stop = "" if ends_with_sentence_mark(head) else "."
     closers = "".join(r.marker for r in reversed(spanning))
     openers = "".join(r.marker for r in spanning)
     rest = without_joining_word(content[start:])
@@ -321,7 +320,7 @@ def _moves_within_one_block(atoms: Sequence[Atom], lines: Sequence[str], target:
     if any(lo + 1 <= target <= hi + 1 and lo + 1 <= anchor <= hi + 1 for lo, hi in paragraph_lines(content)):
         return True
     first, last = _whole_line_atom(atoms, target), _whole_line_atom(atoms, anchor)
-    if first is None or last is None or first.format not in ("list", "numbered") or first.list_depth != last.list_depth:
+    if first is None or last is None or first.format not in LIST_ITEM_FORMATS or first.list_depth != last.list_depth:
         return False
     items = dict(read_structure(content).list_items)
     probe = {*range(min(target, anchor), max(target, anchor) + 1), target + 1, anchor + 1}
@@ -371,7 +370,7 @@ def dedupe(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str], partner: Ato
     its partner (a copy the partner's file only imports from the target's is no second copy); a paragraph
     line also takes one blank line beside it."""
     atom = _whole_line_atom(atoms, op.line)
-    if atom is None or partner is None or not 0 < op.line <= len(lines) or atom.format not in _RUNNING_FORMATS:
+    if atom is None or partner is None or not 0 < op.line <= len(lines) or atom.format not in PROSE_OR_LIST_FORMATS:
         return None
     if partner.imported_from:  # a copy the partner's file only imports from this one is no second copy
         return None
@@ -425,7 +424,7 @@ def code(op: PlanOp, atoms: Sequence[Atom], lines: Sequence[str]) -> Edit | None
     return _through_fixer(fix_unformatted_code, op, atoms, lines)
 
 
-TRANSFORMS: dict[str, Callable[..., Edit | None]] = {
+TRANSFORMS: dict[HealOp, Callable[[PlanOp, Sequence[Atom], Sequence[str]], Edit | None]] = {
     "direct": direct,
     "negation-form": negation_form,
     "move": move,

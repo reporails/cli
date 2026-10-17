@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from reporails_cli.core.heal.preservation import PRESERVATION_CONTRACT
-from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots, tools
+from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots
 
 pytestmark = [pytest.mark.unit, pytest.mark.subsys_server]
 
@@ -28,7 +28,7 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.config import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -88,45 +88,15 @@ def _main_location(files: list[str]) -> dict[str, Any]:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-@requires_rules
-def test_the_guide_renders_as_markdown_in_rule_order_and_the_same_every_time() -> None:
-    markdown = remedy_brief.ideal_instruction_markdown()
-
-    guide = remedy_brief.ideal_instruction_guide()
-    headings = [line for line in markdown.splitlines() if line.startswith("### ")]
-    assert headings == [f"### {g['title']} ({g['id']})" for g in guide]
-    assert [g["id"] for g in guide] == list(remedy_brief.IDEAL_INSTRUCTION_RULE_IDS)
-    for entry in guide:
-        assert entry["pass"] in markdown
-        assert entry["antipatterns"] in markdown
-    assert markdown.count("# The Ideal Instruction\n") == 0, "a rule's own title line is not repeated"
-    assert remedy_brief.ideal_instruction_markdown() == markdown
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
-@requires_rules
-def test_ideal_instruction_ids_are_in_fixed_order_with_statement_and_examples() -> None:
-    guide = remedy_brief.ideal_instruction_guide()
-    assert [g["id"] for g in guide] == list(remedy_brief.IDEAL_INSTRUCTION_RULE_IDS)
-    for entry in guide:
-        assert set(entry) == {"id", "title", "statement", "pass", "antipatterns"}
-        assert entry["title"], entry["id"]
-    # At least the well-documented rules carry a non-empty statement / pass / antipatterns —
-    # a wholly-empty guide entry for every field would mean the extraction broke.
-    assert any(e["statement"] for e in guide)
-    assert any(e["pass"] for e in guide)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_server
 def test_a_file_with_no_map_makes_the_whole_brief_a_structured_error(monkeypatch, tmp_path: Path) -> None:
     """When a file of the location yields no map (a pipeline error, an offline server),
     the whole reply is a structured `brief_unavailable` error naming the file — never an entry
     with empty inventories and no snapshot, which reads as "there is genuinely nothing here".
     The message also names the underlying cause (here the payload's own `error` field, since
     there is no `mapper_error`), so a caller can tell WHY, not just THAT."""
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"error": "offline"}, None, None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"error": "offline"}, None, None)
+    )
     location = _main_location(["CLAUDE.md"])
 
     reply = remedy_brief.build_remedy_brief(location, tmp_path)
@@ -145,7 +115,7 @@ def test_no_map_names_the_mapper_s_own_swallowed_exception(monkeypatch, tmp_path
     THAT — not the generic "produced no map" — and must prefer it over a bare `error` field
     when both are present, since `mapper_error` is the more specific cause."""
     monkeypatch.setattr(
-        tools,
+        remedy_brief,
         "run_pipeline_for_path",
         lambda path, full=False: (
             {"error": "offline", "mapper_error": "RuntimeError: dictionary changed size during iteration"},
@@ -179,7 +149,7 @@ def test_a_second_file_with_no_map_also_makes_the_whole_brief_an_error(monkeypat
             return {"files": {}}, _fake_map(), None
         return {"error": "offline"}, None, None
 
-    monkeypatch.setattr(tools, "run_pipeline_for_path", fake_run)
+    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", fake_run)
     location = _main_location(["CLAUDE.md", "SKILL.md"])
 
     reply = remedy_brief.build_remedy_brief(location, tmp_path)
@@ -202,7 +172,7 @@ def test_a_directory_in_files_still_briefs_the_locations_real_skill_files(monkey
     def fake_run(path: str, full: bool = False) -> tuple[dict[str, Any], Any, float | None]:
         return {"files": {}}, _fake_map(), None
 
-    monkeypatch.setattr(tools, "run_pipeline_for_path", fake_run)
+    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", fake_run)
     location = {
         "order": 2,
         "element": ".claude/skills/presentation",
@@ -313,7 +283,7 @@ def test_a_dilution_finding_does_not_make_its_line_deletable(monkeypatch, tmp_pa
         imported_from="",
     )
     fake_map = SimpleNamespace(atoms=(trimmable, control), files=())
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
 
     location = _main_location(["CLAUDE.md"])
     location["relations"] = []
@@ -368,7 +338,7 @@ def test_brief_unavailable_leaves_an_earlier_file_s_snapshot_untouched(monkeypat
             return {"files": {}}, _fake_map(), 9.0
         return {"error": "offline"}, None, None
 
-    monkeypatch.setattr(tools, "run_pipeline_for_path", fake_run)
+    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", fake_run)
     location = _main_location(["CLAUDE.md", "SKILL.md"])
 
     reply = remedy_brief.build_remedy_brief(location, tmp_path)
@@ -382,7 +352,9 @@ def test_brief_unavailable_leaves_an_earlier_file_s_snapshot_untouched(monkeypat
 @pytest.mark.subsys_server
 @requires_rules
 def test_the_brief_carries_the_fixed_preservation_contract_and_a_next_step(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+    )
     location = _main_location(["CLAUDE.md"])
 
     reply = remedy_brief.build_remedy_brief(location, tmp_path)
@@ -403,7 +375,9 @@ def test_the_brief_carries_the_root_and_each_file_s_absolute_path(monkeypatch, t
     project_root.mkdir(parents=True)
     abs_file = project_root / "CLAUDE.md"
     abs_file.write_text("# Project\n", encoding="utf-8")
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+    )
     location = _main_location(["CLAUDE.md"])
 
     reply = remedy_brief.build_remedy_brief(location, project_root)
@@ -487,14 +461,13 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
     `plugin_update_required` before any work: no pipeline run, no snapshot, and the circuit
     breaker counters stay as they were."""
     server._validate_states.clear()
-    snapshots.clear_snapshots()
     target = tmp_path / "CLAUDE.md"
     target.write_text("# T\n\nAlways run the tests.\n", encoding="utf-8")
 
     def _boom(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("the pipeline must not run for a refused caller")
 
-    monkeypatch.setattr(tools, "run_pipeline_for_path", _boom)
+    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", _boom)
     payload = {"workflow": {"locations": [{"order": 1, "kind": "main", "files": ["CLAUDE.md"]}]}}
     state = server._CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
     server._validate_states[str(tmp_path.resolve())] = state
@@ -512,7 +485,9 @@ def test_a_caller_without_the_rewrite_guide_is_told_to_update_and_nothing_runs(
 @pytest.mark.subsys_server
 def test_a_caller_with_the_rewrite_guide_gets_the_brief(monkeypatch, tmp_path: Path) -> None:
     server._validate_states.clear()
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+    )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
     server._validate_states[str(tmp_path.resolve())] = server._CircuitState(full_payload=payload, scan_root=tmp_path)
 
@@ -543,7 +518,9 @@ def test_serve_remedy_brief_resets_call_count_but_leaves_consecutive_unchanged(m
     """A served brief resets `call_count` (the agent is still working the loop) every
     time it is served; `consecutive_unchanged` — the actual no-progress guard — is untouched."""
     server._validate_states.clear()
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, _fake_map(), None)
+    )
     payload = {"workflow": {"locations": [{"order": 1, "kind": "other", "files": []}]}}
     state = server._CircuitState(full_payload=payload, scan_root=tmp_path, call_count=3, consecutive_unchanged=1)
     server._validate_states[str(tmp_path.resolve())] = state
@@ -613,10 +590,9 @@ def _op_location(op: str, line: int, expect: dict[str, Any]) -> dict[str, Any]:
 
 
 def _brief_with(monkeypatch, tmp_path: Path, text: str, atoms: list[Any], location: dict[str, Any]) -> dict[str, Any]:
-    snapshots.clear_snapshots()
     (tmp_path / "CLAUDE.md").write_text(text, encoding="utf-8")
     fake_map = SimpleNamespace(atoms=tuple(atoms), files=())
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
+    monkeypatch.setattr(remedy_brief, "run_pipeline_for_path", lambda path, full=False: ({"files": {}}, fake_map, None))
     return remedy_brief.build_remedy_brief(location, tmp_path, fake_map)
 
 
@@ -756,4 +732,6 @@ def test_a_line_the_guide_lets_the_agent_delete_does_not_fail_the_check(monkeypa
     new = "# T\n\nKeep `foo`.\n\nOther `foo` thing.\n"
     file.write_text(new, encoding="utf-8")
     fresh = SimpleNamespace(atoms=(_atom(file, 3, "Keep `foo`."), _atom(file, 5, "Other `foo` thing.")), files=())
-    assert "lost_instructions" not in failed_checks(check_rewrite(snap, file, fresh, new, None, tmp_path))
+    assert "lost_instructions" not in failed_checks(
+        check_rewrite(snap, file, fresh, new, score=None, scan_root=tmp_path)
+    )

@@ -9,16 +9,21 @@ from __future__ import annotations
 
 import re
 
-from reporails_cli.core.mapper.classify import (
-    _VERBS_AMBIGUOUS,
-    _VERBS_CORE,
-    _VERBS_SUPPLEMENT,
-    is_conditional_frame,
+from reporails_cli.core.mapper.charge_floors import _SEE_POINTER_RE
+from reporails_cli.core.mapper.classify import is_conditional_frame
+from reporails_cli.core.mapper.classify_lexicon import (
+    CLAUSE_JOINERS,
+    DETERMINERS,
+    VERBS_AMBIGUOUS,
+    VERBS_CORE,
+    VERBS_NAMING_TOOLS,
+    VERBS_SUPPLEMENT,
 )
+from reporails_cli.core.mapper.lexical import DASH_MARKS
 from reporails_cli.core.mapper.markers import without_list_marker
 from reporails_cli.core.mapper.md_parser import code_spans, leading_bold_run
-from reporails_cli.core.mapper.parse import _SEE_POINTER_RE, _build_scope_mask
-from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE, Atom
+from reporails_cli.core.mapper.parse import _build_scope_mask
+from reporails_cli.core.platform.dto.ruleset import LIST_ITEM_FORMATS, LIST_OBJECT_ROLE, Atom
 
 # Where a sentence can start another clause: a semicolon, a comma, a spaced dash, or a bare `and` / `then`.
 _CLAUSE_CUT_RE = re.compile(r"[;,]\s+|\s+[\u2014\u2013]\s+|\s+(?:and|then)\s+", re.IGNORECASE)
@@ -30,9 +35,6 @@ _NEGATION_ONSET_RE = re.compile(r"(?:do not|don't|never|avoid|refrain from)\b", 
 # `never` before what it excludes (`…, never the two-file base`) closes a contrast; it forbids nothing.
 _CONTRAST_RE = re.compile(r"never\s+(?:the|a|an|this|that|these|those|one)\b", re.IGNORECASE)
 _WORD_RE = re.compile(r"[`\w'\-/.]+")
-# Words that also name tools (`find`, `make`, `mock`) join the words that are also nouns (`format`, `test`,
-# `build`): either opens a command only with its object after it.
-_TOOL_NAMES = frozenset({"find", "make", "mock"})
 # Command verbs the shared charge lexicon does not carry, that a packed sentence's second
 # clause still needs recognised to find where it starts (`Bump the version and update the
 # changelog.`) — a split-boundary decision this module owns, not a charge decision the
@@ -59,12 +61,9 @@ _UNLEXICONED_COMMAND_VERBS = frozenset(
         "upgrade",
     }
 )
-_COMMAND_VERBS = frozenset(_VERBS_CORE | _VERBS_SUPPLEMENT | _UNLEXICONED_COMMAND_VERBS) - _TOOL_NAMES
-_NOUN_OR_VERB = frozenset(_VERBS_AMBIGUOUS | _TOOL_NAMES)
-_OBJECT_OPENERS = frozenset(
-    {"the", "a", "an", "it", "them", "this", "that", "these", "those", "every", "all", "each", "any", "your", "its"}
-    | {"sure"}
-)
+_COMMAND_VERBS = frozenset(VERBS_CORE | VERBS_SUPPLEMENT | _UNLEXICONED_COMMAND_VERBS) - VERBS_NAMING_TOOLS
+_NOUN_OR_VERB = frozenset(VERBS_AMBIGUOUS | VERBS_NAMING_TOOLS)
+_OBJECT_OPENERS = frozenset(DETERMINERS | {"a", "an", "it", "them", "your", "its", "sure"})
 # `to install`, `to build`: the verbs listed after it say what the one instruction is for.
 _PURPOSE_RE = re.compile(r"\bto\s+([a-z]+)\b", re.IGNORECASE)
 _WORD_START_RE = re.compile(r"\S+")
@@ -160,7 +159,7 @@ def _states_purpose(clause: str) -> bool:
 
 def _boundary(cut: re.Match[str]) -> int:
     """Where the next instruction's text begins: after a comma, semicolon or dash; before a joining word."""
-    joined_by_word = cut.group().strip().lower() in {"and", "then"}
+    joined_by_word = cut.group().strip().lower() in CLAUSE_JOINERS
     return cut.start() + len(cut.group()) - len(cut.group().lstrip()) if joined_by_word else cut.end()
 
 
@@ -190,11 +189,7 @@ def _is_prohibition(clause: str) -> bool:
 
 def _titles_next(clauses: list[tuple[int, str, str]], k: int) -> bool:
     """Whether clause `k` is only a bold label and a dash joins it to the clause it titles."""
-    return (
-        k + 1 < len(clauses)
-        and _is_bold_label(clauses[k][1].strip())
-        and clauses[k + 1][2].strip() in ("\u2014", "\u2013")
-    )
+    return k + 1 < len(clauses) and _is_bold_label(clauses[k][1].strip()) and clauses[k + 1][2].strip() in DASH_MARKS
 
 
 def _joins_actions(clause: str) -> bool:
@@ -293,11 +288,6 @@ def holds_comma_series(text: str) -> bool:
     )
 
 
-def instruction_count(sentence: str) -> int:
-    """How many instructions a sentence gives: the clauses that each start with a command."""
-    return len(instruction_starts(sentence))
-
-
 def instruction_word_cuts(sentence: str) -> list[int]:
     """The word index where each instruction after the first begins.
 
@@ -331,9 +321,6 @@ def without_joining_word(instruction: str) -> str:
     return _JOINING_AND_RE.sub("", instruction)
 
 
-_LIST_FORMATS = frozenset({"list", "numbered"})
-
-
 def _list_after(atoms: list[Atom], k: int) -> list[Atom]:
     """The list nested under the lead-in ``atoms[k]``: the list items after it, deeper than it, each
     starting within two lines of the one before."""
@@ -343,7 +330,7 @@ def _list_after(atoms: list[Atom], k: int) -> list[Atom]:
     for atom in atoms[k + 1 :]:
         if (
             atom.kind == "heading"
-            or atom.format not in _LIST_FORMATS
+            or atom.format not in LIST_ITEM_FORMATS
             or atom.list_depth <= lead.list_depth
             or atom.line > last + 2
         ):

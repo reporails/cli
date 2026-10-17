@@ -8,8 +8,9 @@ false-positive. This is markdown analysis, not agent-specific file classificatio
 
 from __future__ import annotations
 
-from typing import Any
+from markdown_it.token import Token
 
+from reporails_cli.core.mapper.md_parser import LINK_TOKENS
 from reporails_cli.core.mapper.parse import parse_blocks
 
 _DATA_LANGS = frozenset({"mermaid", "yaml", "yml", "json", "toml", "xml", "csv"})
@@ -33,7 +34,7 @@ def _fence_format(info: str) -> str:
     return "data_block" if words and words[0].lower() in _DATA_LANGS else "code_block"
 
 
-def _has_prose(tokens: list[Any], index: int) -> bool:
+def _has_prose(tokens: list[Token], index: int) -> bool:
     """Whether the top-level paragraph opened at ``tokens[index]`` has a non-trivial line."""
     lines = tokens[index + 1].content.split("\n")
     return any(len(line.strip()) > _PROSE_MIN_LEN for line in lines)
@@ -73,7 +74,7 @@ def detect_content_format(text: str) -> list[str]:
             kinds = {child.type for child in tok.children or []}
             if "code_inline" in kinds:
                 formats.add("inline_code")
-            if kinds & {"link_open", "image"}:
+            if kinds & LINK_TOKENS:
                 formats.add("link")
             if "strong_open" in kinds:
                 formats.add("bold")

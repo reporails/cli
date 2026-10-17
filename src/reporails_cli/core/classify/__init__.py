@@ -7,21 +7,22 @@ classification engine resolves files to types and matches rules to files.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from pathlib import Path
 
-import yaml
-
 from reporails_cli.core.classify.content_format import detect_content_format
+from reporails_cli.core.classify.generic_type import make_generic_classified
+from reporails_cli.core.classify.link_walker import LinkEdge, walk_markdown_links
+from reporails_cli.core.discovery.agent_config import extract_patterns, extract_properties, load_config_file_types
 from reporails_cli.core.discovery.agent_discovery import is_memory_recall_entry
 from reporails_cli.core.discovery.exclusions import RunExclusions
 from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
-from reporails_cli.core.platform.dto.models import ClassifiedFile, FileMatch, FileTypeDeclaration
-from reporails_cli.core.platform.policy.matching import match_files
-from reporails_cli.core.platform.utils.utils import config_pattern_matches, is_loose_leaf_pattern, load_yaml_file
-
-logger = logging.getLogger(__name__)
+from reporails_cli.core.discovery.project_root import resolve_project_root
+from reporails_cli.core.discovery.surface_config import surface_include_patterns
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.contract.json_value import JsonObject
+from reporails_cli.core.platform.dto.models import ClassifiedFile, FileTypeDeclaration
+from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
 
 
 def load_file_types(
@@ -44,32 +45,13 @@ def load_file_types(
     Returns:
         List of FileTypeDeclaration, empty if no config found
     """
-    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
-
-    candidates: list[Path] = []
-    if rules_paths:
-        candidates.extend(rules_dir / agent / "config.yml" for rules_dir in rules_paths)
-    candidates.append(get_agent_config_path(agent))
-
-    for config_path in candidates:
-        if not config_path.exists():
-            continue
-        try:
-            data = load_yaml_file(config_path)
-            if not data:
-                logger.warning("Agent config is empty: %s", config_path)
-                continue
-            file_types_data = data.get("file_types", {})
-            if not file_types_data:
-                continue
-            decls = _parse_file_types(file_types_data)
-            if project_root is not None:
-                decls = _apply_project_overrides(decls, agent, project_root)
-            return decls
-        except (yaml.YAMLError, OSError) as exc:
-            logger.warning("Failed to parse agent file_types %s: %s", config_path, exc)
-            continue
-    return []
+    file_types_data = load_config_file_types(agent, rules_paths)
+    if file_types_data is None:
+        return []
+    decls = _parse_file_types(file_types_data)
+    if project_root is not None:
+        decls = _apply_project_overrides(decls, agent, project_root)
+    return decls
 
 
 def _apply_project_overrides(
@@ -83,27 +65,11 @@ def _apply_project_overrides(
     `agents.<agent>.fallback_filenames` (for `main`) so classification can
     match user-configured fallback instruction files.
     """
-    from reporails_cli.core.platform.config.config import get_project_config
-
     project_config = get_project_config(project_root)
-
-    surfaces = getattr(project_config, "surfaces", {}) or {}
-    agents_cfg = getattr(project_config, "agents", {}) or {}
 
     out: list[FileTypeDeclaration] = []
     for decl in declarations:
-        extra: list[str] = []
-        surface_cfg = surfaces.get(f"{agent}.{decl.name}", {})
-        if isinstance(surface_cfg, dict):
-            include = surface_cfg.get("include", [])
-            if isinstance(include, list):
-                extra.extend(str(p) for p in include)
-        if decl.name in ("main", "nested_context"):
-            agent_cfg = agents_cfg.get(agent, {})
-            if isinstance(agent_cfg, dict):
-                fallbacks = agent_cfg.get("fallback_filenames", [])
-                if isinstance(fallbacks, list):
-                    extra.extend(f"**/{name}" for name in fallbacks if isinstance(name, str))
+        extra = surface_include_patterns(agent, decl.name, project_config)
         if extra:
             out.append(
                 FileTypeDeclaration(
@@ -118,51 +84,29 @@ def _apply_project_overrides(
     return out
 
 
-def _parse_file_types(data: dict[str, object]) -> list[FileTypeDeclaration]:
+def _parse_file_types(data: JsonObject) -> list[FileTypeDeclaration]:
     """Parse file_types dict from agent config into FileTypeDeclaration list.
 
     Supports both v0.3.0 (patterns + properties nested) and v0.5.0
     (scopes with patterns, properties flattened) schema versions.
     """
-    from reporails_cli.core.discovery.agents import _extract_patterns
-    from reporails_cli.core.discovery.agents import _extract_properties as _agent_props
-
     declarations: list[FileTypeDeclaration] = []
     for name, spec in data.items():
         if not isinstance(spec, dict):
             continue
-        patterns = _extract_patterns(spec)
+        patterns = extract_patterns(spec)
         # v0.3.0: properties nested; v0.5.0: flattened at file type level
-        raw_props = spec.get("properties")
-        if isinstance(raw_props, dict):
-            props = _extract_properties(raw_props)
-        else:
-            props = _extract_properties(_agent_props(spec))
+        props = extract_properties(spec)
         declarations.append(
             FileTypeDeclaration(
                 name=name,
                 patterns=tuple(str(p) for p in patterns),
-                required=spec.get("required", False),
+                required=spec.get("required", False) is True,
                 properties=props,
-                entry_patterns=tuple(str(p) for p in _extract_patterns(spec, "entry_patterns")),
+                entry_patterns=tuple(str(p) for p in extract_patterns(spec, "entry_patterns")),
             )
         )
     return declarations
-
-
-def _extract_properties(props: dict[str, object] | None) -> dict[str, str | list[str]]:
-    """Extract properties from config. Preserves lists for multi-valued properties."""
-    if not props:
-        return {}
-    result: dict[str, str | list[str]] = {}
-    for k, v in props.items():
-        if v is None:
-            continue
-        if isinstance(v, list):
-            result[k] = [str(item) for item in v]
-        else:
-            result[k] = str(v)
-    return result
 
 
 def _compute_ancestor_chain(scan_root: Path) -> set[Path]:
@@ -172,20 +116,18 @@ def _compute_ancestor_chain(scan_root: Path) -> set[Path]:
     (in cwd's ancestor chain) from files loaded on-demand (in descendant
     subdirectories). Mirrors the agent's actual loading model.
     """
-    from reporails_cli.core.discovery.agent_discovery import resolve_project_root
-
     root = resolve_project_root(scan_root)
     chain: set[Path] = set()
     current = scan_root if scan_root.is_dir() else scan_root.parent
     while True:
         chain.add(current)
-        if current == root or current == current.parent:
+        if current in (root, current.parent):
             break
         current = current.parent
     return chain
 
 
-def _location_matches_mode(
+def location_matches_mode(
     file_path: Path,
     ft: FileTypeDeclaration,
     ancestor_chain: set[Path],
@@ -257,7 +199,7 @@ def _classify_one(
                 pattern
                 for pattern in ft.patterns
                 if config_pattern_hits(file_path, rel, pattern, scan_root)
-                and _location_matches_mode(file_path, ft, ancestor_chain, pattern)
+                and location_matches_mode(file_path, ft, ancestor_chain, pattern)
             ),
             None,
         )
@@ -288,6 +230,7 @@ def classify_files(
     scan_root: Path,
     files: list[Path],
     file_types: list[FileTypeDeclaration],
+    *,
     generic_scanning: bool = False,
     skills: Mapping[str, str] | None = None,
     exclusions: RunExclusions | None = None,
@@ -352,12 +295,7 @@ def _classify_generic_via_links(
     edge-attribution properties — `link_source_type`, `link_source_path`,
     `link_depth`, `loading_verb` — set from the incoming `LinkEdge` set.
 
-    Lazy-imported to avoid pulling the walker module when generic scanning
-    is off (the default).
     """
-    from reporails_cli.core.classify.generic_type import make_generic_classified
-    from reporails_cli.core.classify.link_walker import LinkEdge, walk_markdown_links
-
     seed_map: dict[Path, str] = {cf.path: cf.file_type for cf in classified}
     classified_paths = set(seed_map.keys())
     edges = walk_markdown_links(seed_map, scan_root, classified_paths, exclusions=exclusions)
@@ -369,50 +307,3 @@ def _classify_generic_via_links(
     return [
         make_generic_classified(target, target_edges, scan_root) for target, target_edges in sorted(by_target.items())
     ]
-
-
-def resolve_match_to_paths(
-    classified: list[ClassifiedFile],
-    match: FileMatch | None,
-    scan_root: Path,
-) -> list[str]:
-    """Resolve match criteria to relative path strings for the regex runner.
-
-    Args:
-        classified: Previously classified files
-        match: Match criteria, or None for all files
-        scan_root: Project root for relative paths
-
-    Returns:
-        List of relative path strings
-    """
-    targets = classified if match is None else match_files(classified, match)
-
-    paths: list[str] = []
-    for cf in targets:
-        try:
-            paths.append(cf.path.relative_to(scan_root).as_posix())
-        except ValueError:
-            paths.append(cf.path.as_posix())
-    return paths
-
-
-def _matches_any_pattern(rel_path: str, patterns: tuple[str, ...]) -> bool:
-    """Check if a relative path matches any glob pattern.
-
-    Glob matching is `glob_matches`: ``**`` spans zero or more directory components
-    (``a/**/b`` matches ``a/b`` and ``a/x/b``).
-    """
-    return _first_matching_pattern(rel_path, patterns) is not None
-
-
-def _first_matching_pattern(rel_path: str, patterns: tuple[str, ...]) -> str | None:
-    """Return the first pattern that matches `rel_path`, or None.
-
-    Used by `_matches_any_pattern` and by callers that only need "does any
-    pattern match", with no location-mode disambiguation. `classify_files`
-    itself calls `config_pattern_matches` directly so a pattern that matches
-    but fails the location check does not block a later pattern of the
-    same file_type from getting a turn.
-    """
-    return next((pattern for pattern in patterns if config_pattern_matches(rel_path, pattern)), None)

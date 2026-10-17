@@ -26,20 +26,19 @@ class TestRegexEngineResults:
         tmp_path: Path,
     ) -> None:
         """No matches should return valid SARIF with empty results."""
-        from reporails_cli.core.lint.regex import run_validation
+        from tests.conftest import run_rule_files
 
         rule_yaml = """\
 checks:
   - id: wont-match
     message: "Won't find this"
-    severity: WARNING
-    languages: [generic]
+    severity: medium
     pattern-regex: "XYZZY_IMPOSSIBLE_STRING_12345"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "test.md").write_text("# Hello World\n")
 
-        result = run_validation([rule_path], tmp_path)
+        result = run_rule_files([rule_path], tmp_path)
 
         assert "runs" in result
         runs = result.get("runs", [])
@@ -55,20 +54,19 @@ checks:
         tmp_path: Path,
     ) -> None:
         """Matching patterns should return SARIF results."""
-        from reporails_cli.core.lint.regex import run_validation
+        from tests.conftest import run_rule_files
 
         rule_yaml = """\
 checks:
   - id: finds-hello
     message: "Found hello"
-    severity: WARNING
-    languages: [generic]
+    severity: medium
     pattern-regex: "Hello"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "test.md").write_text("# Hello World\n")
 
-        result = run_validation([rule_path], tmp_path)
+        result = run_rule_files([rule_path], tmp_path)
 
         assert "runs" in result
         runs = result.get("runs", [])
@@ -83,7 +81,7 @@ checks:
         tmp_path: Path,
     ) -> None:
         """Invalid/incomplete rules should not crash, just be skipped."""
-        from reporails_cli.core.lint.regex import run_validation
+        from tests.conftest import run_rule_files
 
         bad_yaml = """\
 checks:
@@ -93,7 +91,7 @@ checks:
         rule_path = create_temp_rule_file(tmp_path, bad_yaml)
         (tmp_path / "test.md").write_text("# Test\n")
 
-        result = run_validation([rule_path], tmp_path)
+        result = run_rule_files([rule_path], tmp_path)
 
         assert isinstance(result, dict), "Should return dict even on invalid rules"
         assert "runs" in result
@@ -105,14 +103,13 @@ checks:
         tmp_path: Path,
     ) -> None:
         """'No files matched' should not be treated as an error."""
-        from reporails_cli.core.lint.regex import run_validation
+        from tests.conftest import run_rule_files
 
         rule_yaml = """\
 checks:
   - id: rust-only
     message: "Rust check"
-    severity: WARNING
-    languages: [generic]
+    severity: medium
     pattern-regex: "fn main"
     paths:
       include:
@@ -121,7 +118,7 @@ checks:
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "readme.md").write_text("# No Rust here\n")
 
-        result = run_validation([rule_path], tmp_path)
+        result = run_rule_files([rule_path], tmp_path)
 
         assert "runs" in result
         # Should succeed, just with no results for .rs filter on .md files
@@ -137,20 +134,19 @@ class TestSARIFOutputFormat:
         tmp_path: Path,
     ) -> None:
         """SARIF output must have runs[].tool.driver.rules[] and runs[].results[]."""
-        from reporails_cli.core.lint.regex import run_validation
+        from tests.conftest import run_rule_files
 
         rule_yaml = """\
 checks:
   - id: test-structure
     message: "Found TODO"
-    severity: WARNING
-    languages: [generic]
+    severity: medium
     pattern-regex: "TODO"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "test.md").write_text("# TODO: Add more tests\n")
 
-        result = run_validation([rule_path], tmp_path)
+        result = run_rule_files([rule_path], tmp_path)
 
         assert "runs" in result
         runs = result["runs"]
@@ -180,20 +176,19 @@ checks:
         tmp_path: Path,
     ) -> None:
         """SARIF tool.driver.rules[] must have matching definitions for results."""
-        from reporails_cli.core.lint.regex import run_validation
+        from tests.conftest import run_rule_files
 
         rule_yaml = """\
 checks:
   - id: test-defs
     message: "Match"
-    severity: WARNING
-    languages: [generic]
+    severity: medium
     pattern-regex: "Hello"
 """
         rule_path = create_temp_rule_file(tmp_path, rule_yaml)
         (tmp_path / "test.md").write_text("Hello World\n")
 
-        result = run_validation([rule_path], tmp_path)
+        result = run_rule_files([rule_path], tmp_path)
 
         run = result["runs"][0]
         rule_defs = {r["id"] for r in run["tool"]["driver"]["rules"]}

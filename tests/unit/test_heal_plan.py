@@ -472,7 +472,6 @@ def test_build_plan_scripts_what_applies_and_slots_the_rest() -> None:
         _op("elaborate", 3),
         _op("charge", 2),
         _op("split", 9),
-        _op("together", 1),
     ]
     plan = build_plan(ops, {F: atoms}, {F: lines})
     assert [(e.line, e.op) for e in plan.edits] == [(1, "split")]

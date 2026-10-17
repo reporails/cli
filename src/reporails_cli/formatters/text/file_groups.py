@@ -3,18 +3,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
 
-from reporails_cli.formatters.text.display_constants import SEV_WEIGHT, path_tag
+from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
+from reporails_cli.core.platform.dto.diagnostics import SEVERITY_RANK, FindingItem, Hint
+from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.formatters.text.display_constants import path_tag
+from reporails_cli.formatters.triage import Regime, classify_regime
 
 
 def group_key(filepath: str, ft: dict[str, str], root: Path, skill_of: dict[str, str] | None) -> str:
     """File-group key for a path: `skills` for a file inside a skill folder first, then `imported` /
     `referenced` by classifier type, else the path-based tag (a `SKILL.md` outside every skill
     folder is a plain file whenever a skill lookup exists)."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     norm = normalize_finding_path(filepath, root)
     if skill_of is not None and norm in skill_of:
@@ -26,12 +28,12 @@ def group_key(filepath: str, ft: dict[str, str], root: Path, skill_of: dict[str,
 
 
 def build_file_groups(
-    result: Any,
+    result: CombinedResult,
     file_type_by_path: dict[str, str] | None = None,
     project_root: Path | None = None,
     skill_of: dict[str, str] | None = None,
     aliases_by_file: dict[str, list[str]] | None = None,
-) -> dict[str, list[tuple[str, list[Any]]]]:
+) -> dict[str, list[tuple[str, list[FindingItem]]]]:
     """Group findings by file type, sorted worst-first within each group.
 
     A file that is an alias of another (`aliases_by_file`) has no card of its own: its findings
@@ -44,12 +46,12 @@ def build_file_groups(
     """
     ft = file_type_by_path or {}
     root = project_root or Path.cwd()
-    by_file: dict[str, list[Any]] = {}
+    by_file: dict[str, list[FindingItem]] = {}
     for f in result.findings:
         by_file.setdefault(f.file, []).append(f)
     by_file = _fold_alias_items(by_file, aliases_by_file, lambda f: (f.line, f.rule, f.message))
 
-    groups: dict[str, list[tuple[str, list[Any]]]] = {}
+    groups: dict[str, list[tuple[str, list[FindingItem]]]] = {}
     for filepath, findings in by_file.items():
         if filepath in (".", ".:0"):
             continue
@@ -57,16 +59,16 @@ def build_file_groups(
         groups.setdefault(key, []).append((filepath, findings))
 
     for group_files in groups.values():
-        group_files.sort(key=lambda x: (min(SEV_WEIGHT.get(f.severity, 9) for f in x[1]), -len(x[1])))
+        group_files.sort(key=lambda x: (min(SEVERITY_RANK.get(f.severity, 9) for f in x[1]), -len(x[1])))
 
     return groups
 
 
-def _fold_alias_items(
-    by_file: dict[str, list[Any]],
+def _fold_alias_items[T](
+    by_file: dict[str, list[T]],
     aliases_by_file: dict[str, list[str]] | None,
-    identity: Callable[[Any], tuple[Any, ...]],
-) -> dict[str, list[Any]]:
+    identity: Callable[[T], tuple[object, ...]],
+) -> dict[str, list[T]]:
     """Move each alias file's items under its canonical file, dropping an item the canonical already holds.
 
     `identity` names what makes two items the same (a finding by line, rule and message). Items
@@ -75,8 +77,8 @@ def _fold_alias_items(
     canonical_of = {alias: canonical for canonical, aliases in (aliases_by_file or {}).items() for alias in aliases}
     if not canonical_of.keys() & by_file.keys():
         return by_file
-    folded: dict[str, list[Any]] = {}
-    seen: dict[str, set[tuple[Any, ...]]] = {}
+    folded: dict[str, list[T]] = {}
+    seen: dict[str, set[tuple[object, ...]]] = {}
     # Canonical files first, so an alias item is the one dropped when both carry it.
     for path in sorted(by_file, key=lambda p: p in canonical_of):
         target = canonical_of.get(path, path)
@@ -91,13 +93,11 @@ def _fold_alias_items(
 
 
 def build_hints_by_file(
-    hints: Any, project_root: Path, aliases_by_file: dict[str, list[str]] | None = None
-) -> dict[str, list[Any]]:
+    hints: Iterable[Hint], project_root: Path, aliases_by_file: dict[str, list[str]] | None = None
+) -> dict[str, list[Hint]]:
     """Build a file-keyed index of hints for inline display; an alias file's hints fold into its canonical's."""
-    result: dict[str, list[Any]] = {}
+    result: dict[str, list[Hint]] = {}
     if hints:
-        from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
         for h in hints:
             norm = normalize_finding_path(h.file, project_root)
             result.setdefault(norm, []).append(h)
@@ -108,16 +108,14 @@ def build_hints_by_file(
     )
 
 
-def build_regime_by_file(result: Any, project_root: Path) -> dict[str, Any]:
+def build_regime_by_file(result: CombinedResult, project_root: Path) -> dict[str, Regime]:
     """Build a file-keyed index of per-file regimes from server analysis stats.
 
     Empty for offline runs (no `per_file_analysis`) — callers then render the
     neutral findings view.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-    from reporails_cli.formatters.triage import classify_regime
 
-    regimes: dict[str, Any] = {}
+    regimes: dict[str, Regime] = {}
     for fa in result.per_file_analysis:
         regime = classify_regime(fa.stats)
         if regime is not None:
@@ -125,7 +123,7 @@ def build_regime_by_file(result: Any, project_root: Path) -> dict[str, Any]:
     return regimes
 
 
-def build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str]]:
+def build_aliases_by_file(project_root: Path, result: CombinedResult) -> dict[str, list[str]]:
     """Combine discovery-time symlink aliases with display-time same-dir content aliases.
 
     `get_file_aliases` returns paths the discovery layer already collapsed
@@ -135,8 +133,6 @@ def build_aliases_by_file(project_root: Path, result: Any) -> dict[str, list[str
     one row. Both alias sources are returned as project-relative posix strings
     so `_print_file_card` can do a plain dict lookup.
     """
-    from reporails_cli.core.discovery.file_aliases import compute_same_dir_content_aliases, get_file_aliases
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     out: dict[str, list[str]] = {}
     for canonical, alias_paths in get_file_aliases(project_root).items():

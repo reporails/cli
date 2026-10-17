@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reporails_cli.core.classify.link_walker import LinkEdge
+from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 GENERIC_TYPE_NAME = "generic"
@@ -27,7 +28,7 @@ REFERENCED_TYPE_NAME = "referenced"
 
 # Source surfaces whose files load eagerly when in context. A generic
 # file pointed at by any of these inherits `loading: session_start`.
-_EAGER_SOURCES: frozenset[str] = frozenset({"main", "memory", "subagent_memory"})
+_EAGER_SOURCES: frozenset[str] = frozenset({"main"}) | MEMORY_SURFACES
 
 
 def make_generic_classified(

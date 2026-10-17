@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.interfaces.mcp.scan_fingerprint import scan_inputs_fingerprint
+from reporails_cli.interfaces.mcp.scan_fingerprint import compute_scan_fingerprint
+
+
+def scan_inputs_fingerprint(root: Path) -> str:
+    """The fingerprint of a scan of `root` before any run has mapped a file."""
+    return compute_scan_fingerprint(root, None, None, root)[1]
 
 
 @pytest.fixture

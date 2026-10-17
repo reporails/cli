@@ -31,20 +31,23 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
+import httpx
+from filelock import FileLock, Timeout
+
+from reporails_cli.core.mapper.model_manifest import (
+    FETCH_RELPATHS,
+    FETCH_SHA256,
+    MODEL_VERSION,
+    REQUIRED_RELPATHS,
+    ModelFetchError,
+    cache_models_dir,
+    models_present,
+)
+from reporails_cli.core.platform.adapters.api_key import default_server_api_key
 from reporails_cli.core.platform.config.bootstrap import env_flag
 
-if TYPE_CHECKING:
-    import httpx
-
-# ─── Version + host ───────────────────────────────────────────────────
-
-# Model-set identity, independent of the CLI version. Bump to ship a new
-# encoder set: the runtime fetches into a fresh cache dir. After a fetch the
-# cache keeps the new set and the most recent other one (a downgrade by one
-# model version still finds its cache); older sets are removed.
-MODEL_VERSION = "m1"
+# ─── Host ───────────────────────────────────────────────────
 
 # Default host: ``<base>/<asset>`` with the base below. Overridable to any
 # flat-keyed host (a mirror or internal cache) via ``AILS_MODEL_URL``.
@@ -77,81 +80,6 @@ _CI_CACHE_HINT = (
 # Staging dirs older than this were left by a run that died mid-download.
 _STALE_STAGING_S = 6 * 3600
 
-# ─── Manifest (single source of truth for WHAT ships) ─────────────────
-
-# The embedder subtree, mirrored from the current ``bundled/models/`` layout. Only the
-# model graph and the self-contained ``tokenizer.json`` are read at runtime; the other
-# metadata files that sit beside them in the source layout are never read, so they are
-# excluded from the fetch.
-EMBEDDER_SUBDIR = "minilm-l6-v2"
-EMBEDDER_FILES: tuple[str, ...] = (
-    "onnx/model.onnx",
-    "tokenizer.json",
-)
-
-# The classifier files, at the models root.
-GATED_FILES: tuple[str, ...] = (
-    "charge_encoder_encA.onnx",
-    "charge_encoder_encB.onnx",
-    "multislot_head_encA.onnx",
-    "multislot_head_encB.onnx",
-)
-
-# The licence files travel with the model set: a file pulled from a user's cache carries its own
-# grant (the model licence, the third-party notice and the Apache-2.0 text that notice refers to).
-# The fetch is strict about them — a licence file the host cannot serve fails the whole fetch, so
-# no weight reaches a cache without its grant. They are not part of the functional present-check
-# below, because loading the model does not read them.
-LICENSE_FILES: tuple[str, ...] = ("LICENSE-weights", "NOTICE", "LICENSE-APACHE-2.0")
-
-
-def _required_relpaths() -> tuple[str, ...]:
-    """Functional files that must all be present for the model to load."""
-    return GATED_FILES + tuple(f"{EMBEDDER_SUBDIR}/{f}" for f in EMBEDDER_FILES)
-
-
-# Everything the resolver requires (functional) vs. everything fetched.
-REQUIRED_RELPATHS: tuple[str, ...] = _required_relpaths()
-FETCH_RELPATHS: tuple[str, ...] = (*REQUIRED_RELPATHS, *LICENSE_FILES)
-
-# Pinned sha256 of every functional file for ``MODEL_VERSION``. A download whose
-# digest differs is rejected before it can enter the cache. Regenerate these
-# together with a ``MODEL_VERSION`` bump; the published set must match byte for byte.
-FETCH_SHA256: dict[str, str] = {
-    "charge_encoder_encA.onnx": "b0003d88d3073bbd319d257b2c6048366c862f7fcfe562a9dd016fdfc0380a3d",
-    "charge_encoder_encB.onnx": "e60c2835dbfe7ba19ab6b8d8445bd03944edc1db270e5b519d1e77c820b526c3",
-    "multislot_head_encA.onnx": "a843c33ba1305801d11fb9ded04dc93ea4408c0aee912946dc9596b9aa8b4a62",
-    "multislot_head_encB.onnx": "374d906000690083c1a991d8c5df3e614ff7d855d0eaaa112a57385aec852b63",
-    "minilm-l6-v2/onnx/model.onnx": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
-    "minilm-l6-v2/tokenizer.json": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
-}
-
-
-class ModelFetchError(RuntimeError):
-    """Raised when the model set cannot be fetched or verified."""
-
-
-# ─── Presence + cache location ────────────────────────────────────────
-
-
-def models_present(root: Path, relpaths: tuple[str, ...] = REQUIRED_RELPATHS) -> bool:
-    """Whether every file in *relpaths* (default: the functional set) exists and is non-empty under *root*."""
-    for rel in relpaths:
-        f = root / rel
-        try:
-            if not f.is_file() or f.stat().st_size == 0:
-                return False
-        except OSError:
-            return False
-    return True
-
-
-def cache_models_dir(version: str = MODEL_VERSION) -> Path:
-    """The persistent cache dir for a model version: ``~/.reporails/cache/models/<version>/``."""
-    from reporails_cli.core.platform.config.bootstrap import get_global_cache_dir
-
-    return get_global_cache_dir() / "models" / version
-
 
 offline_requested = functools.partial(env_flag, _ENV_OFFLINE)  # AILS_MODEL_OFFLINE: never download
 
@@ -178,9 +106,8 @@ def _lock_path(cache_dir: Path, version: str) -> Path:
 
 
 @functools.cache
-def _file_lock_class() -> type:
+def _file_lock_class() -> type[FileLock]:
     """A ``FileLock`` that raises ``NotImplementedError`` where the filesystem has no file locking."""
-    from filelock import FileLock
 
     class _HardFileLock(FileLock):
         def _fallback_to_soft_lock(self) -> None:
@@ -203,14 +130,12 @@ def _fetch_lock(cache_dir: Path, version: str) -> Iterator[None]:
                 lock.release()
 
 
-def _acquire_file_lock(lock: Any, cache_dir: Path, version: str) -> bool:
+def _acquire_file_lock(lock: FileLock, cache_dir: Path, version: str) -> bool:
     """Take *lock*, waiting while another process's download of *version* makes progress.
 
     Returns False without the lock when the filesystem has no file locking, or when the
     other download has stopped making progress; the caller then downloads on its own.
     """
-    from filelock import Timeout
-
     try:
         try:
             lock.acquire(timeout=_ANNOUNCE_AFTER_S)
@@ -222,14 +147,12 @@ def _acquire_file_lock(lock: Any, cache_dir: Path, version: str) -> bool:
         return False
 
 
-def _wait_while_progressing(lock: Any, cache_dir: Path, version: str) -> bool:
+def _wait_while_progressing(lock: FileLock, cache_dir: Path, version: str) -> bool:
     """Retry *lock* while the other download grows.
 
     Returns False once the model set is in place (another run finished it) or the other
     download has stalled for ``_STALL_S``.
     """
-    from filelock import Timeout
-
     seen = _staged_bytes(cache_dir, version)
     last_progress = time.monotonic()
     while True:
@@ -263,15 +186,13 @@ def _staged_bytes(cache_dir: Path, version: str) -> int:
     return total
 
 
-def download_in_progress(version: str = MODEL_VERSION) -> bool:
-    """Whether a download of *version* is running now, in this process or another."""
+def download_in_progress() -> bool:
+    """Whether a download of the model version is running now, in this process or another."""
     if _FETCH_LOCK.locked():
         return True
-    lock_path = _lock_path(cache_models_dir(version).parent, version)
+    lock_path = _lock_path(cache_models_dir(MODEL_VERSION).parent, MODEL_VERSION)
     if not lock_path.exists():
         return False
-    from filelock import Timeout
-
     lock = _file_lock_class()(str(lock_path))
     try:
         lock.acquire(timeout=0)
@@ -358,8 +279,6 @@ def _auth_headers(base: str, version: str) -> dict[str, str]:
     """
     if base != _DEFAULT_BASE.format(version=version):
         return {}
-    from reporails_cli.core.platform.adapters.api_client import default_server_api_key
-
     key = default_server_api_key()
     return {"Authorization": f"Bearer {key}"} if key else {}
 
@@ -590,8 +509,6 @@ def _swap_into_place(staging: Path, root: Path, *, force: bool = False) -> None:
 
 
 def _http_client(headers: dict[str, str] | None = None) -> httpx.Client:
-    import httpx
-
     return httpx.Client(timeout=120.0, follow_redirects=True, headers=headers)
 
 

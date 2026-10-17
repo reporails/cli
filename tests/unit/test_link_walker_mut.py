@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.classify import link_walker
 from reporails_cli.core.classify.link_walker import (
     _looks_like_url,
     _resolve_md_target,
@@ -32,14 +33,15 @@ def _targets(edges: list) -> set[Path]:
 # --- walk_markdown_links: depth cap (L72) ---------------------------------
 @pytest.mark.unit
 @pytest.mark.subsys_classify
-def test_walk_stops_at_max_depth(tmp_path: Path) -> None:
+def test_walk_stops_at_max_depth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     a = tmp_path / "a.md"
     b = tmp_path / "b.md"
     c = tmp_path / "c.md"
     a.write_text("Read [b](b.md).\n", encoding="utf-8")
     b.write_text("Read [c](c.md).\n", encoding="utf-8")
     c.write_text("# c\n", encoding="utf-8")
-    edges = walk_markdown_links({a: "main"}, tmp_path, {a}, max_depth=1)
+    monkeypatch.setattr(link_walker, "MAX_LINK_DEPTH", 1)
+    edges = walk_markdown_links({a: "main"}, tmp_path, {a})
     targets = _targets(edges)
     assert b.resolve() in targets
     # `>=`->`>` would walk one level deeper and reach c.md beyond max_depth.

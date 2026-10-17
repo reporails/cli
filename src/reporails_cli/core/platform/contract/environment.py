@@ -15,12 +15,9 @@ class ProjectEnvironment(Protocol):
     def path_exists(self, candidate: str) -> bool:
         """Whether `candidate` is an existing path: `~`-expanded, else under the project root or
         the file's own directory."""
-        ...
 
     def on_path(self, program: str) -> bool:
         """Whether `program` is an executable on the machine's `PATH`."""
-        ...
 
     def manifest_text(self) -> str:
         """The project's own manifests and CI workflow files, concatenated."""
-        ...

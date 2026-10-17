@@ -7,9 +7,13 @@ daemon's background warmup thread and a serving thread can't double-initialise i
 
 from __future__ import annotations
 
+import functools
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +27,20 @@ class Models:
     """
 
     def __init__(self) -> None:
-        self._st: Any | None = None
+        self._st: OnnxEmbedder | None = None
         self._st_lock = threading.Lock()
 
     @property
-    def st(self) -> Any:
+    def st(self) -> OnnxEmbedder:
+        """The loaded embedder, loading it on first access."""
         if self._st is None:
             with self._st_lock:
                 if self._st is None:
                     # The bundled embedder, loaded directly from its shipped graph.
-                    try:
-                        from reporails_cli.core.mapper.onnx_embedder import OnnxEmbedder
-                    except ImportError as exc:
-                        raise RuntimeError("onnxruntime / tokenizers not installed.\nRun: uv sync") from exc
+                    from reporails_cli.core.mapper.onnx_embedder import (  # pylint: disable=import-outside-toplevel  # ML runtime loads on first model use
+                        OnnxEmbedder,
+                    )
+
                     self._st = OnnxEmbedder()
         return self._st
 
@@ -51,12 +56,7 @@ class Models:
             self._st = None
 
 
-_models: Models | None = None
-
-
+@functools.cache
 def get_models() -> Models:
-    """Get or create the process-wide resource handle."""
-    global _models
-    if _models is None:
-        _models = Models()
-    return _models
+    """Get or create the process-wide resource handle (reset with ``.cache_clear()``)."""
+    return Models()

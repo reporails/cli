@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from reporails_cli.core.heal.mechanical_fixers import (
@@ -389,7 +387,6 @@ class TestItalicConstraintWrapsTheSentence:
         lines, fixes = self._heal(raw, atoms)
 
         assert lines == ["Run `uv run pytest` before every commit. *Never skip the `ruff` check on generated files.*\n"]
-        assert [f.fix_type for f in fixes] == ["italic_constraint"]
         assert fixes[0].before == raw[0].rstrip()
         assert fixes[0].after == lines[0].rstrip()
 
@@ -456,7 +453,6 @@ class TestItalicConstraintWrapsTheSentence:
     @pytest.mark.parametrize(
         "raw",
         [
-            ["Run it, e.g. now. Never skip it.\n"],  # abbreviation: the sentence start is unclear
             ["*Do not pad. Do not repeat.*\n"],  # one emphasis run across two sentences
             ["Keep it short. *Never pad.*\n"],
         ],
@@ -468,6 +464,38 @@ class TestItalicConstraintWrapsTheSentence:
 
         assert lines == raw
         assert fixes == []
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_an_abbreviation_does_not_end_the_sentence_before_the_prohibition(self) -> None:
+        raw = ["Prefer small tools, e.g. `ruff` or `mypy`. Never skip the `ruff` check on generated files.\n"]
+        atoms = [_constraint_atom(1, "Never skip the `ruff` check on generated files.")]
+
+        lines, _ = self._heal(raw, atoms)
+
+        assert lines == [
+            "Prefer small tools, e.g. `ruff` or `mypy`. *Never skip the `ruff` check on generated files.*\n"
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_full_stop_inside_a_code_span_is_no_boundary(self) -> None:
+        raw = ["Run `ls . && echo done. now` first. Never skip the `ruff` check on generated files.\n"]
+        atoms = [_constraint_atom(1, "Never skip the `ruff` check on generated files.")]
+
+        lines, _ = self._heal(raw, atoms)
+
+        assert lines == ["Run `ls . && echo done. now` first. *Never skip the `ruff` check on generated files.*\n"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_an_italic_sentence_before_the_prohibition_stays_its_own_sentence(self) -> None:
+        raw = ["*Keep it short.* Never skip the `ruff` check on generated files.\n"]
+        atoms = [_constraint_atom(1, "Never skip the `ruff` check on generated files.")]
+
+        lines, _ = self._heal(raw, atoms)
+
+        assert lines == ["*Keep it short.* *Never skip the `ruff` check on generated files.*\n"]
 
 
 class TestItalicConstraintSkipsUnderscoreEmphasis:
@@ -818,35 +846,6 @@ class TestItalicWrapReadsTheParsedParagraph:
         lines = [line + "\n"]
         fix_italic_constraints([_constraint_atom(1, sentence)], lines)
         assert lines == [after + "\n"]
-
-
-def _heal_file(path: Path, line: int, text: str, tokens: list[str]) -> None:
-    from reporails_cli.core.heal.file_io import read_lines, write_lines
-
-    lines, endings = read_lines(path)
-    fix_unformatted_code([_atom(line, text, tokens)], lines)
-    write_lines(path, lines, endings)
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_heal
-def test_heal_keeps_each_lines_own_ending(tmp_path: Path) -> None:
-    """A CRLF, LF and lone-CR line each keep their ending after a fix."""
-    f = tmp_path / "CLAUDE.md"
-    f.write_bytes(b"# T\r\nRun pyproject.toml here.\r\nplain\nmore\rtext\n")
-    _heal_file(f, 2, "Run pyproject.toml here.", ["pyproject.toml"])
-    assert f.read_bytes() == b"# T\r\nRun `pyproject.toml` here.\r\nplain\nmore\rtext\n"
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_heal
-@pytest.mark.parametrize("sep", [chr(0x2028), chr(0x2029), "\x0c", "\x85", "\x1c", "\x0b"])
-def test_heal_counts_only_newlines_as_lines(tmp_path: Path, sep: str) -> None:
-    """A Unicode line separator in an earlier line does not shift the fixed line."""
-    f = tmp_path / "CLAUDE.md"
-    f.write_bytes(f"# T{sep}x\nRun pyproject.toml here.\n".encode())
-    _heal_file(f, 2, "Run pyproject.toml here.", ["pyproject.toml"])
-    assert f.read_bytes() == f"# T{sep}x\nRun `pyproject.toml` here.\n".encode()
 
 
 def _tokenized(md: str) -> list[Atom]:

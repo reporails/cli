@@ -184,7 +184,9 @@ def _patch_dispatch(monkeypatch):
 def test_dispatch_json_prints_json_not_text(monkeypatch, capsys, tmp_path):
     """output_format 'json' must route to JSON, not text (L216 `==`)."""
     text_calls = _patch_dispatch(monkeypatch)
-    orch._dispatch_output("json", object(), object(), 1.0, set(), tmp_path, False, False, None)
+    orch._dispatch_output(
+        "json", object(), object(), 1.0, funnel_error=None, context=orch.RenderContext(tmp_path, set())
+    )
     out = capsys.readouterr().out
     assert '"ok"' in out
     assert text_calls == []
@@ -195,7 +197,9 @@ def test_dispatch_json_prints_json_not_text(monkeypatch, capsys, tmp_path):
 def test_dispatch_github_prints_annotations_not_text(monkeypatch, capsys, tmp_path):
     """output_format 'github' must route to GitHub, not text (L230 `==`)."""
     text_calls = _patch_dispatch(monkeypatch)
-    orch._dispatch_output("github", object(), object(), 1.0, set(), tmp_path, False, False, None)
+    orch._dispatch_output(
+        "github", object(), object(), 1.0, funnel_error=None, context=orch.RenderContext(tmp_path, set())
+    )
     out = capsys.readouterr().out
     assert "GHANNOT" in out
     assert text_calls == []
@@ -205,9 +209,9 @@ def test_dispatch_github_prints_annotations_not_text(monkeypatch, capsys, tmp_pa
 
 
 def _patch_resolve(monkeypatch, *, resolved, expand_ret):
-    monkeypatch.setattr(cap_paths, "capability_declared", lambda *a, **k: True)
-    monkeypatch.setattr(cap_paths, "resolve_capability", lambda *a, **k: resolved)
-    monkeypatch.setattr(cap_paths, "list_capability_targets", lambda *a, **k: [])
+    monkeypatch.setattr(focus_mod, "capability_declared", lambda *a, **k: True)
+    monkeypatch.setattr(focus_mod, "resolve_capability", lambda *a, **k: resolved)
+    monkeypatch.setattr(focus_mod, "list_capability_targets", lambda *a, **k: [])
     monkeypatch.setattr(focus_mod, "expand_focus", lambda *a, **k: expand_ret)
 
 
@@ -263,8 +267,8 @@ def test_undeclared_capability_message_shows_none(monkeypatch, tmp_path):
     import typer
 
     printed = []
-    monkeypatch.setattr(cap_paths, "capability_declared", lambda *a, **k: False)
-    monkeypatch.setattr(cap_paths, "available_capabilities", lambda *a, **k: [])
+    monkeypatch.setattr(focus_mod, "capability_declared", lambda *a, **k: False)
+    monkeypatch.setattr(focus_mod, "available_capabilities", lambda *a, **k: [])
     monkeypatch.setattr(orch.console, "print", lambda *a, **k: printed.append(str(a)))
     with pytest.raises(typer.Exit):
         orch._resolve_capability_paths_one("skills", "foo", "claude", tmp_path)
@@ -277,16 +281,15 @@ def test_undeclared_capability_message_shows_none(monkeypatch, tmp_path):
 def _run_heal_capture(monkeypatch, *, isatty, output_format):
     captured = {}
     import reporails_cli.core.lint.suppression as supp
-    import reporails_cli.interfaces.cli.heal as heal
 
-    def _fake_mech(ruleset_map, target, workflow, dry_run, show, console, files, suppressed):
-        captured["show"] = show
+    def _fake_mech(ruleset_map, target, workflow, *, dry_run, show_progress, console, allowed_files, suppressed):
+        captured["show"] = show_progress
         return SimpleNamespace(fixes=[], decisions=[], put_back=[])
 
     monkeypatch.setattr(supp, "suppressed_lines", lambda *a, **k: {})
-    monkeypatch.setattr(heal, "_apply_keyed_fixes", _fake_mech)
-    monkeypatch.setattr(heal, "_collect_section_suggestions", lambda *a, **k: [])
-    monkeypatch.setattr(heal, "_output_heal_results", lambda *a, **k: None)
+    monkeypatch.setattr(orch, "_apply_keyed_fixes", _fake_mech)
+    monkeypatch.setattr(orch, "_collect_section_suggestions", lambda *a, **k: [])
+    monkeypatch.setattr(orch, "_output_heal_results", lambda *a, **k: None)
     monkeypatch.setattr(orch.sys.stdout, "isatty", lambda: isatty, raising=False)
     orch._run_heal_pass(Path("."), orch.HealScope([], "claude"), object(), True, output_format)
     return captured["show"]

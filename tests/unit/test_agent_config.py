@@ -42,10 +42,9 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
-        assert result.agent == "claude"
         assert result.excludes == ["S4", "S5"]
         assert result.overrides["E2-no-ritual-section"] == {"severity": "medium"}
         assert result.overrides["E5-no-grep-guidance"] == {"severity": "low", "disabled": True}
@@ -54,7 +53,7 @@ class TestGetAgentConfig:
     @pytest.mark.subsys_lint
     def test_missing_config_returns_defaults(self) -> None:
         with patch(
-            "reporails_cli.core.platform.config.bootstrap.get_agent_config_path",
+            "reporails_cli.core.platform.config.config.get_agent_config_path",
             return_value=Path("/nonexistent/config.yml"),
         ):
             result = get_agent_config("claude")
@@ -68,7 +67,7 @@ class TestGetAgentConfig:
     def test_malformed_yaml_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file(": : : invalid yaml [[[", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
@@ -78,7 +77,7 @@ class TestGetAgentConfig:
     def test_empty_file_returns_defaults(self, tmp_path: Path, make_config_file) -> None:
         config_path = make_config_file("", subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result == AgentConfig()
@@ -89,10 +88,9 @@ class TestGetAgentConfig:
         config_data = {"agent": "claude", "vars": {"instruction_files": "CLAUDE.md"}}
         config_path = make_config_file(yaml.dump(config_data), subdir=".", name="config.yml")
 
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
-        assert result.agent == "claude"
         assert result.excludes == []
         assert result.overrides == {}
 
@@ -108,12 +106,11 @@ class TestGetAgentConfig:
         }
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.prefix == "CLAUDE"
         assert result.name == "Claude Code"
-        assert result.core is False
         assert result.excludes == ["CODEX:*"]
 
     @pytest.mark.unit
@@ -123,25 +120,11 @@ class TestGetAgentConfig:
         config_data = {"agent": "claude"}
         config_path = make_config_file(yaml.dump(config_data), subdir="agents/claude")
 
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
+        with patch("reporails_cli.core.platform.config.config.get_agent_config_path", return_value=config_path):
             result = get_agent_config("claude")
 
         assert result.prefix == ""
         assert result.name == ""
-        assert result.core is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_core_agent_config(self, tmp_path: Path, make_config_file) -> None:
-        """Core agent (generic) sets core=True."""
-        config_data = {"agent": "generic", "prefix": "CORE", "core": True}
-        config_path = make_config_file(yaml.dump(config_data), subdir="agents/generic")
-
-        with patch("reporails_cli.core.platform.config.bootstrap.get_agent_config_path", return_value=config_path):
-            result = get_agent_config("generic")
-
-        assert result.core is True
-        assert result.prefix == "CORE"
 
 
 # =============================================================================
@@ -167,7 +150,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_severity_changed(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
 
         overrides = {"E2-check": {"severity": "low"}}
@@ -180,8 +163,8 @@ class TestApplyAgentOverrides:
     @pytest.mark.subsys_lint
     def test_check_disabled(self) -> None:
         checks = [
-            Check(id="E2-check-a"),
-            Check(id="E2-check-b"),
+            Check(id="E2-check-a", type="mechanical"),
+            Check(id="E2-check-b", type="mechanical"),
         ]
         rules = {"E2": _make_rule("E2", checks)}
 
@@ -194,7 +177,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_nonexistent_check_is_noop(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
 
         overrides = {"BOGUS-check": {"severity": "low"}}
@@ -205,7 +188,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_all_checks_disabled_leaves_empty_list(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks)}
 
         overrides = {"E2-check": {"disabled": True}}
@@ -216,7 +199,7 @@ class TestApplyAgentOverrides:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_invalid_severity_skipped(self) -> None:
-        checks = [Check(id="E2-check")]
+        checks = [Check(id="E2-check", type="mechanical")]
         rules = {"E2": _make_rule("E2", checks, severity=Severity.HIGH)}
 
         overrides = {"E2-check": {"severity": "bogus"}}
@@ -228,8 +211,8 @@ class TestApplyAgentOverrides:
     @pytest.mark.subsys_lint
     def test_multiple_rules_overridden(self) -> None:
         rules = {
-            "E2": _make_rule("E2", [Check(id="E2-c1")], severity=Severity.HIGH),
-            "E5": _make_rule("E5", [Check(id="E5-c1")], severity=Severity.MEDIUM),
+            "E2": _make_rule("E2", [Check(id="E2-c1", type="mechanical")], severity=Severity.HIGH),
+            "E5": _make_rule("E5", [Check(id="E5-c1", type="mechanical")], severity=Severity.MEDIUM),
         }
 
         overrides = {
@@ -264,8 +247,11 @@ class TestLoadRulesExcludes:
                 f"targets: '{{{{instruction_files}}}}'\nbacked_by:\n  - anthropic-docs\n---\n"
             )
 
-        agent_config = AgentConfig(agent="test", excludes=["CORE:S:0001"])
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig(excludes=["CORE:S:0001"])
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules
@@ -283,8 +269,11 @@ class TestLoadRulesExcludes:
             "targets: '{{instruction_files}}'\nbacked_by:\n  - anthropic-docs\n---\n"
         )
 
-        agent_config = AgentConfig(agent="test", excludes=["NONEXISTENT"])
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig(excludes=["NONEXISTENT"])
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" in rules
@@ -325,11 +314,13 @@ class TestLoadRulesExcludes:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         agent_config = AgentConfig(
-            agent="copilot",
             prefix="COPILOT",
             excludes=["CLAUDE:*", "CODEX:*"],
         )
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="copilot")
 
         assert "CORE:S:0001" in rules
@@ -356,10 +347,12 @@ class TestLoadRulesExcludes:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         agent_config = AgentConfig(
-            agent="test",
             excludes=["CORE:S:0001", "CLAUDE:*"],
         )
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="test")
 
         assert "CORE:S:0001" not in rules  # exact exclude
@@ -389,7 +382,7 @@ class TestPrefixNamespaceFiltering:
         ],
     )
     def test_is_other_agent_rule(self, rule_id: str, agent_prefix: str, expected: bool) -> None:
-        assert _is_other_agent_rule(rule_id, agent_prefix) == expected
+        assert _is_other_agent_rule(rule_id, agent_prefix, frozenset({"CLAUDE", "CODEX"})) == expected
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -410,8 +403,11 @@ class TestPrefixNamespaceFiltering:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         # Agent name is "myagent" but prefix is "MYPREFIX" — prefix should win
-        agent_config = AgentConfig(agent="myagent", prefix="MYPREFIX")
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig(prefix="MYPREFIX")
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="myagent")
 
         assert "CORE:S:0001" in rules
@@ -437,8 +433,11 @@ class TestPrefixNamespaceFiltering:
             (rule_dir / "rule.md").write_text(rule_fm.format(coord, coord, slug))
 
         # No prefix — agent.upper() = "CLAUDE" used for filtering
-        agent_config = AgentConfig(agent="claude")
-        with patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config):
+        agent_config = AgentConfig()
+        with (
+            patch("reporails_cli.core.platform.adapters.registry.get_agent_config", return_value=agent_config),
+            patch("reporails_cli.core.platform.adapters.registry._agent_prefixes", return_value=frozenset({"OTHER"})),
+        ):
             rules = load_rules([tmp_path], agent="claude")
 
         assert "CORE:S:0001" in rules

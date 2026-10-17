@@ -151,3 +151,8 @@ def load_run_exclusions(
     return RunExclusions(
         root=target, dirs=dirs, files=files, walk_dirs=DEFAULT_EXCLUDE_DIRS | {d for d in dirs if "/" not in d}
     )
+
+
+def load_project_exclude_dirs(target: Path) -> frozenset[str]:
+    """The built-in default excludes plus the project's `exclude_dirs`."""
+    return load_run_exclusions(target).walk_dirs

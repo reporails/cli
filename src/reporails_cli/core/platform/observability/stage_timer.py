@@ -15,7 +15,8 @@ so the parent sees only the coarse total.
 from __future__ import annotations
 
 import time
-from typing import Any
+
+from reporails_cli.core.platform.contract.json_value import JsonValue
 
 
 class StageTimer:
@@ -28,6 +29,7 @@ class StageTimer:
 
     @property
     def enabled(self) -> bool:
+        """Whether stage marks are being recorded."""
         return self._enabled
 
     def configure(self, enabled: bool) -> None:
@@ -49,7 +51,7 @@ class StageTimer:
         self.records.append((label, (now - self._last) * 1000.0))
         self._last = now
 
-    def as_dict(self) -> list[dict[str, Any]]:
+    def as_dict(self) -> list[JsonValue]:
         """Stage records as `[{stage, ms}, ...]` for JSON emission."""
         return [{"stage": label, "ms": round(ms, 1)} for label, ms in self.records]
 

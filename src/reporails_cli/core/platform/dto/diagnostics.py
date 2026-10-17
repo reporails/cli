@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Literal, TypeGuard, get_args, overload
+
+from reporails_cli.core.platform.contract.json_value import JsonValue
 
 # The tier vocabulary, in ONE place. Every surface that has to answer "is this
 # session entitled?" (the scorecard banner, the funnel CTA, the contact-link
@@ -39,8 +41,10 @@ def tier_label(tier: str) -> str:
 # A short message for the user. `level` is one of NOTICE_LEVELS; `kind` is one of
 # NOTICE_KINDS ("promo" is an announcement, "notice" anything else); `url` is "" when
 # the notice links nowhere.
-NOTICE_LEVELS = frozenset({"info", "warn"})
-NOTICE_KINDS = frozenset({"notice", "promo"})
+NoticeLevel = Literal["info", "warn"]
+NoticeKind = Literal["notice", "promo"]
+NOTICE_LEVELS: frozenset[NoticeLevel] = frozenset(get_args(NoticeLevel))
+NOTICE_KINDS: frozenset[NoticeKind] = frozenset(get_args(NoticeKind))
 
 
 @dataclass(frozen=True)
@@ -48,10 +52,10 @@ class Notice:
     """One message for the user: an id (stable across runs), a level, the text, an optional link, a kind."""
 
     id: str
-    level: str
+    level: NoticeLevel
     text: str
     url: str = ""
-    kind: str = "notice"
+    kind: NoticeKind = "notice"
 
 
 # Failures that clear by themselves: a busy server, a request that took too long, and the
@@ -79,22 +83,64 @@ KNOWN_ERRORS = frozenset(
 # Seconds to wait before retrying when the server names none.
 DEFAULT_RETRY_AFTER_S = 10
 
+# How serious a finding is.
+FindingSeverity = Literal["error", "warning", "info"]
+# Each severity's place when findings sort most serious first.
+SEVERITY_RANK: dict[FindingSeverity, int] = {"error": 0, "warning": 1, "info": 2}
+
+
+def is_finding_severity(value: object) -> TypeGuard[FindingSeverity]:
+    """Whether `value`, read from a reply, is one of the finding severities."""
+    return value in SEVERITY_RANK
+
 
 @dataclass(frozen=True)
-class Diagnostic:
-    """A single diagnostic from the server."""
+class FindingBase:
+    """The fields every finding carries, whichever source it came from."""
 
     file: str
     line: int
-    severity: str  # "error" | "warning" | "info"
-    rule: str  # diagnostic rule identifier
+    severity: FindingSeverity
+    rule: str  # rule id, check label or diagnostic rule identifier
     message: str
     fix: str = ""
+
+
+@dataclass(frozen=True)
+class Diagnostic(FindingBase):
+    """A single diagnostic from the server."""
+
     impact_tier: str = ""  # server-computed leverage tier; "" when offline/not computed
     pi: int | None = None  # the finding's instruction by its position index in the file; None when line-addressed
     partner_line: int | None = None  # the other side's line of a pairwise finding, when the reply names it
     partner_file: str | None = None  # the file a per-file overlap finding overlaps with, when the reply names it
     overlap_pct: int | None = None  # the share of this file's instructions that overlap, 0-100, when named
+
+
+# The check ids a client check reports under rule `CORE:E:0003`: unformatted code tokens and bold
+# on terms. A finding whose `check_id` is one of these is that client check's own detection.
+FORMAT_CHECK = "format"
+BOLD_CHECK = "bold"
+CLIENT_CHECK_KINDS = frozenset({FORMAT_CHECK, BOLD_CHECK})
+
+
+@dataclass(frozen=True)
+class FindingItem(FindingBase):
+    """A single finding in the combined output, from any source."""
+
+    source: str = "local"  # "m_probe" | "client_check" | "server"
+    impact_tier: str = ""  # the grade the reply gives this finding; "" when it gives none, and none is shown
+    signature: str = ""  # matched text — same secret flagged by two rules shares this, so it counts once
+    check_id: str = ""  # the local check that produced it; "" for server findings
+    convention: bool = (
+        False  # a documentation convention the file does not follow: listed apart from findings to act on
+    )
+    # The instruction's place in its file, when the finding is on one; never part of a finding's identity.
+    pi: int | None = field(default=None, compare=False)
+    # A per-file overlap finding's partner file, its line and shared percentage, when the reply names them.
+    partner_file: str | None = field(default=None, compare=False)
+    partner_line: int | None = field(default=None, compare=False)
+    overlap_pct: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -108,9 +154,13 @@ class Hint:
     file: str
     diagnostic_type: str
     count: int
-    severity: str = "warning"  # worst severity of the gated diagnostics
+    severity: FindingSeverity = "warning"  # worst severity of the gated diagnostics
     error_count: int = 0  # how many of the gated diagnostics were errors
     warning_count: int = 0  # how many were warnings
+
+
+# The rule each cross-file finding type reports under.
+CROSS_FILE_RULES = {"repetition": "CORE:C:0040", "overlap": "CORE:C:0044"}
 
 
 @dataclass(frozen=True)
@@ -125,6 +175,11 @@ class CrossFileCoordinate:
     finding_type: str  # "repetition" | "overlap" ("conflict" is dropped at merge)
     count: int
 
+    @property
+    def rule(self) -> str:
+        """The rule this finding type reports under; empty for a type no rule carries."""
+        return CROSS_FILE_RULES.get(self.finding_type, "")
+
 
 @dataclass(frozen=True)
 class CrossFileFinding:
@@ -135,6 +190,11 @@ class CrossFileFinding:
     line_1: int
     line_2: int
     finding_type: str  # "repetition" | "overlap" ("conflict" is dropped at merge)
+
+    @property
+    def rule(self) -> str:
+        """The rule this finding type reports under; empty for a type no rule carries."""
+        return CROSS_FILE_RULES.get(self.finding_type, "")
 
 
 @dataclass(frozen=True)
@@ -152,7 +212,7 @@ class FileAnalysis:
 
     file: str
     diagnostics: tuple[Diagnostic, ...] = ()
-    stats: dict[str, Any] = field(default_factory=dict)
+    stats: dict[str, JsonValue] = field(default_factory=dict)
     # 0-10 per-file quality score, rendered verbatim. `None` marks an unscored file
     # (a non-instruction surface or an empty instruction file); rendered as "not scored".
     display_score: float | None = None
@@ -205,20 +265,31 @@ class LocationFinding:
     line: int
     pi: int | None
     op: str = ""
-    expect: dict[str, Any] = field(default_factory=dict)
+    expect: dict[str, JsonValue] = field(default_factory=dict)
     impact_tier: str = ""
     members: tuple[LocationFinding, ...] = ()
 
 
-def walk_findings(findings: Iterable[Any]) -> Iterator[Any]:
+@overload
+def walk_findings(findings: Iterable[LocationFinding]) -> Iterator[LocationFinding]: ...
+
+
+@overload
+def walk_findings(findings: Iterable[JsonValue]) -> Iterator[JsonValue]: ...
+
+
+def walk_findings(findings: Iterable[LocationFinding] | Iterable[JsonValue]) -> Iterator[LocationFinding | JsonValue]:
     """Every finding of `findings`, each owner followed by its members, depth-first.
 
     Reads dataclass findings and the dict findings of a serialized workflow alike.
     """
     for f in findings:
         yield f
-        members = f.get("members") if isinstance(f, dict) else getattr(f, "members", ())
-        yield from walk_findings(members or ())
+        if isinstance(f, LocationFinding):
+            yield from walk_findings(f.members)
+        elif isinstance(f, dict):
+            members = f.get("members")
+            yield from walk_findings(members if isinstance(members, list) else ())
 
 
 # A finding's `impact_tier` sort weight — most load-bearing first, so the agent meets the
@@ -227,15 +298,17 @@ def walk_findings(findings: Iterable[Any]) -> Iterator[Any]:
 IMPACT_ORDER = {"gate_mover": 0, "conditional": 1, "cosmetic": 2, "": 3}
 
 
-def subtree_tier_rank(finding: Any) -> int:
+def subtree_tier_rank(finding: LocationFinding | JsonValue) -> int:
     """The `IMPACT_ORDER` weight of the heaviest tier in `finding` and all its members.
 
     Reads dataclass and dict findings alike.
     """
-    tiers = (
-        f.get("impact_tier") if isinstance(f, dict) else getattr(f, "impact_tier", "") for f in walk_findings([finding])
-    )
-    return min(IMPACT_ORDER.get(t or "", 3) for t in tiers)
+    tiers: list[JsonValue]
+    if isinstance(finding, LocationFinding):
+        tiers = [f.impact_tier for f in walk_findings([finding])]
+    else:
+        tiers = [f.get("impact_tier") if isinstance(f, dict) else "" for f in walk_findings([finding])]
+    return min(IMPACT_ORDER.get(t if isinstance(t, str) else "", 3) for t in tiers)
 
 
 @dataclass(frozen=True)
@@ -253,7 +326,7 @@ class LocationRelation:
     partner_file: str
     partner_line: int
     op: str = ""
-    expect: dict[str, Any] = field(default_factory=dict)
+    expect: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -292,7 +365,7 @@ class RemediationWorkflow:
     summary: str = ""
 
 
-def workflow_summary(locations: Sequence[Any], listed: Sequence[Any]) -> str:
+def workflow_summary(locations: Sequence[WorkflowLocation], listed: Sequence[ListedFinding]) -> str:
     """The workflow's one-line headline for `locations`: their count, then each kind's count in round order.
 
     `listed` only chooses the wording when no location is left.
@@ -372,7 +445,7 @@ class FunnelError:
 class LintResponse:
     """Envelope returned by AilsClient.lint()."""
 
-    result: Any = None
+    result: LintResult | None = None
     funnel_error: FunnelError | None = None
     # The messages the server sent with this reply, success or error; empty when it sent none.
     notices: tuple[Notice, ...] = ()

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from difflib import SequenceMatcher
 
 from reporails_cli.core.heal.plan import apply_edits
 from reporails_cli.core.lint.client_checks import running_sentences, sentence_instructions
 from reporails_cli.core.mapper.md_parser import code_spans, emphasis_runs
 from reporails_cli.core.mapper.structure import read_structure
-from reporails_cli.core.platform.dto.heal_plan import Deviation, Edit, Plan, Slot
+from reporails_cli.core.platform.dto.heal_plan import Deviation, Edit, HealOp, Plan, Slot
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 
@@ -41,7 +41,7 @@ def _line_atoms(atoms: Sequence[Atom], new_line: int, nth: int | None) -> list[A
     return [on_line[nth]] if nth is not None and nth < len(on_line) else on_line
 
 
-def _split_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+def _split_met(_before: str, new_line: int, _text: str, atoms: _Atoms, nth: _Nth) -> _Found:
     """The sentences that hold an addressed atom each hold one instruction: a split cuts the sentences that held
     the op's atom (all the line's when it names none) and no other."""
     addressed = {id(a) for a in _line_atoms(atoms, new_line, nth)}
@@ -52,32 +52,32 @@ def _split_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) 
     return ("instr:1", f"instr:{worst}") if worst > 1 else None
 
 
-def _direct_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+def _direct_met(_before: str, new_line: int, _text: str, atoms: _Atoms, nth: _Nth) -> _Found:
     """The addressed atom is no longer hedged: the dropped hedge opened that atom's own text."""
     hedged = any(a.modality == "hedged" for a in _line_atoms(atoms, new_line, nth))
     return ("mod:direct", "mod:hedged") if hedged else None
 
 
-def _negation_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+def _negation_met(_before: str, new_line: int, _text: str, atoms: _Atoms, nth: _Nth) -> _Found:
     """The addressed atom is still a prohibition after `Never` became `Do not`."""
     held = any(a.charge_value == -1 for a in _line_atoms(atoms, new_line, nth))
     return None if held else ("charge:-1", "charge:other")
 
 
-def _italic_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+def _italic_met(before: str, _new_line: int, text: str, _atoms: _Atoms, _nth: _Nth) -> _Found:
     return None if _emphasis(text)[0] > _emphasis(before)[0] else ("italic:+1", "italic:same")
 
 
-def _unbold_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+def _unbold_met(before: str, _new_line: int, text: str, _atoms: _Atoms, _nth: _Nth) -> _Found:
     return None if _emphasis(text)[1] < _emphasis(before)[1] else ("bold:-1", "bold:same")
 
 
-def _code_met(before: str, new_line: int, text: str, atoms: _Atoms, nth: _Nth) -> _Found:  # noqa: ARG001
+def _code_met(before: str, _new_line: int, text: str, _atoms: _Atoms, _nth: _Nth) -> _Found:
     more = len(code_spans(text)) > len(code_spans(before))
     return None if more else ("code:+1", "code:same")
 
 
-_OP_CHECKS = {
+_OP_CHECKS: dict[HealOp, Callable[[str, int, str, _Atoms, _Nth], _Found]] = {
     "split": _split_met,
     "direct": _direct_met,
     "negation-form": _negation_met,
@@ -150,13 +150,14 @@ def _check_file(
     out, where, mapped = _unplanned_changes(file, edits, slots, old_raw, new)
     expected, _ = apply_edits(old_raw, edits)
     for e in edits:
-        out.extend(_check_edit(e, file, where, mapped, new, atoms, expected))
+        out.extend(_check_edit(e, file, where=where, mapped=mapped, new=new, atoms=atoms, expected=expected))
     return out
 
 
 def _check_edit(
     edit: Edit,
     file: str,
+    *,
     where: Mapping[int, int],
     mapped: Mapping[int, int],
     new: Sequence[str],

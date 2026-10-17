@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import reporails_cli.interfaces.cli.main as main_mod
+from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -50,7 +50,7 @@ class TestCheckOptionDefaults:
         # Kills L77-L80 `False -> True`: the captured CheckInputs carries each
         # default straight through, so a flipped default shows up here.
         captured: dict[str, object] = {}
-        monkeypatch.setattr(main_mod, "run_check_flow", lambda state: captured.setdefault("state", state))
+        monkeypatch.setattr(check_flow, "run_check_flow", lambda state: captured.setdefault("state", state))
 
         result = runner.invoke(app, ["check"])
         assert result.exit_code == 0

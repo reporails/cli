@@ -15,13 +15,13 @@ import pytest
 from rich.console import Console
 
 import reporails_cli.formatters.text.item_scorecard as isc
-from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.formatters.text.health import SurfaceHealth, count_tag
 from reporails_cli.formatters.text.item_scorecard import (
     _display_name_for_path,
     compute_item_scores,
 )
-from reporails_cli.formatters.text.scorecard import SurfaceHealth, _count_tag
 
 
 @dataclass
@@ -43,11 +43,11 @@ def _finding(severity: str) -> FindingItem:
 
 
 class TestSeverityCounts:
-    """Per-item error/warning/info counts come from `== <severity>` filters."""
+    """Per-item error counts come from an `== error` filter."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_counts_are_per_severity_equality(self) -> None:
+    def test_error_count_is_severity_equality(self) -> None:
         # 1 error, 2 warnings, 4 infos — every count differs from its
         # complement, so `== -> !=` on any line changes the reported count.
         findings = (
@@ -68,8 +68,6 @@ class TestSeverityCounts:
         item = compute_item_scores(result, ruleset_map=ruleset)[0]
 
         assert item.errors == 1  # kills L58 == -> !=
-        assert item.warnings == 2  # kills L59 == -> !=
-        assert item.infos == 4  # kills L60 == -> !=
 
 
 # ── Item ordering (L82) ──────────────────────────────────────────────
@@ -133,8 +131,8 @@ class TestBreakdownGate:
         with_findings = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=3, item_count=1)
         without = SurfaceHealth(name="x", score=5.0, file_count=1, finding_count=0, item_count=1)
 
-        assert "3 findings" in _count_tag(with_findings)
-        assert _count_tag(without) == ""
+        assert "3 findings" in count_tag(with_findings)
+        assert count_tag(without) == ""
 
 
 # ── Band separation in render (L148, L149) ───────────────────────────

@@ -1,21 +1,20 @@
 """Mutation-closing tests for `core/classify/stopwords_sync.py`.
 
-Each test pins a behavioral output (result.updated / result.skipped, the written
-checks.yml content, or StalenessResult.stale) that a specific injected operator
-mutation flips, so the test reddens the moment that bug returns. Derived from the
-mutation probe over `stopwords_sync.py`; targets the sync-dispatch, targeted-field,
-auto-detect, and staleness branches the existing suite left uncovered.
+Each test pins a behavioral output (result.updated / result.skipped, or the written checks.yml
+content) that a specific injected operator mutation flips, so the test reddens the moment that
+bug returns. Derived from the mutation probe over `stopwords_sync.py`; targets the sync-dispatch
+and targeted-field branches the existing suite left uncovered.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
 from reporails_cli.core.classify.stopwords_sync import (
-    check_staleness,
     sync_all,
     sync_vocab,
 )
@@ -320,155 +319,165 @@ class TestSyncWriteGating:
         assert _read_checks(rule_dir)[0]["pattern-regex"] == "(?:a|b|c)"
 
 
-# ── check_staleness ───────────────────────────────────────────────────
-
-
-class TestStaleness:
+class TestNonTextVocabTerm:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_parse_error_is_stale(self, tmp_path: Path) -> None:
-        """Unparseable checks.yml is reported stale, not clean.
+    def test_a_term_yaml_reads_as_non_text_writes_no_pattern(self, tmp_path: Path) -> None:
+        """`yes`, `no` and `404` are not text to YAML; the entry is skipped, named, and the file untouched."""
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": r"\b(?:old|word)\b"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text("words: [yes, maybe, perhaps, no, 404]\n", encoding="utf-8")
+        before = (tmp_path / "checks.yml").read_text(encoding="utf-8")
 
-        Kills L265 `stale=True`->`False` (parse-error branch).
-        """
-        (tmp_path / "checks.yml").write_text("checks: [unclosed\n", encoding="utf-8")
-        (tmp_path / "vocab.yml").write_text(yaml.dump({"d": ["a", "b"]}), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is True
-        assert "parse error" in result.stale_checks
+        result = sync_vocab(tmp_path)
 
+        assert (result.updated, result.skipped) == (0, 1)
+        assert result.messages == [
+            "'words': item 1 reads as true/false (yes, no, on, off, true and false all do), not text; "
+            "quote it. No pattern written",
+            "'words': item 4 reads as true/false (yes, no, on, off, true and false all do), not text; "
+            "quote it. No pattern written",
+            "'words': item 5 reads as the number 404, not text; quote it. No pattern written",
+        ]
+        assert (tmp_path / "checks.yml").read_text(encoding="utf-8") == before
+
+
+class TestEverySkippedEntryIsNamed:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
-    def test_non_mapping_vocab_is_stale(self, tmp_path: Path) -> None:
-        """A vocab.yml that is a list (not a mapping) is invalid -> stale.
-
-        Kills L267 `or`->`and`: with `and`, a non-dict vocab beside a valid
-        checks_data would fall through to `.items()` on a list.
-        """
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump({"checks": [{"id": "X.0001.d", "type": "deterministic", "pattern-regex": "(?:a|b)"}]}),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(yaml.dump(["a", "b"]), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is True
-        assert "invalid format" in result.stale_checks
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_auto_prefers_patterns_array(self, tmp_path: Path) -> None:
-        """A list vocab (auto) reads terms from the patterns array, not a
-        non-decomposable standalone pattern-regex.
-
-        Kills L209 `and`->`or` in _auto_detect_terms.
-        """
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump(
-                {
-                    "checks": [
-                        {
-                            "id": "X.0001.d",
-                            "type": "deterministic",
-                            "pattern-regex": "^---",
-                            "patterns": [{"pattern-regex": "(?:a|b)"}],
-                        }
-                    ]
-                }
+    @pytest.mark.parametrize(
+        ("vocab", "messages"),
+        [
+            (
+                "words:\n  pattern-regex:\n    - a\n    -\n    - c\n",
+                ["'words' pattern-regex: item 2 is empty; remove it. No pattern written"],
             ),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(yaml.dump({"d": ["a", "b"]}), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_args_pattern_target_matches(self, tmp_path: Path) -> None:
-        """A dict vocab targeting args.pattern reads current mechanical terms.
-
-        Kills L227 `==`->`!=` (args.pattern target guard in
-        _extract_current_terms).
-        """
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump(
-                {
-                    "checks": [
-                        {
-                            "id": "X.0001.mc",
-                            "type": "mechanical",
-                            "check": "content_absent",
-                            "args": {"pattern": "(?:a|b)"},
-                        }
-                    ]
-                }
+            ("words:\n", ["'words': is empty; give it a list of terms. No pattern written"]),
+            ("words: []\n", ["'words': is empty; give it a list of terms. No pattern written"]),
+            (
+                "words: {pattern-regex: []}\n",
+                ["'words' pattern-regex: is empty; give it a list of terms. No pattern written"],
             ),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(yaml.dump({"mc": {"args.pattern": ["a", "b"]}}), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_pattern_regex_target_matches(self, tmp_path: Path) -> None:
-        """A dict vocab targeting pattern-regex reads the standalone terms.
-
-        Kills L231 `==`->`!=` (pattern-regex target guard).
-        """
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump({"checks": [{"id": "X.0001.d", "type": "deterministic", "pattern-regex": "(?:a|b)"}]}),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(yaml.dump({"d": {"pattern-regex": ["a", "b"]}}), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_unrelated_target_reads_no_terms(self, tmp_path: Path) -> None:
-        """A pattern-not-regex target on a pattern-regex-only check finds no
-        current terms -> stale.
-
-        Kills L231 `and`->`or`: with `or`, the standalone pattern-regex would
-        be read for an unrelated target and (matching) mask the staleness.
-        """
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump({"checks": [{"id": "X.0001.d", "type": "deterministic", "pattern-regex": "(?:a|b)"}]}),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(yaml.dump({"d": {"pattern-not-regex": ["a", "b"]}}), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is True
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_target_absent_from_patterns_entry_is_stale(self, tmp_path: Path) -> None:
-        """A pattern-regex target absent from the sole patterns entry -> stale.
-
-        Kills L236 `and`->`or`: `target in entry and not is_guard(entry[target])`
-        must short-circuit; `or` evaluates `entry[target]` on a missing key.
-        """
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump(
-                {
-                    "checks": [
-                        {
-                            "id": "X.0001.d",
-                            "type": "deterministic",
-                            "patterns": [{"pattern-not-regex": "(?:a|b)"}],
-                        }
-                    ]
-                }
+            (
+                "words: [a, .nan]\n",
+                ["'words': item 2 reads as a special number (.nan or .inf), not text; quote it. No pattern written"],
             ),
-            encoding="utf-8",
+            ("words: maybe\n", ["'words': holds a single value, not a list of terms. No pattern written"]),
+            (
+                "words: {pattern-regex: 404}\n",
+                ["'words' pattern-regex: holds a single value, not a list of terms. No pattern written"],
+            ),
+            ("words: {}\n", ["'words': names no field; give it a list of terms. No pattern written"]),
+            (
+                "words: [a, 12:30, 12:30]\n",
+                [
+                    "'words': item 2 reads as the number 750, not text; quote it. No pattern written",
+                    "'words': item 3 reads as the number 750, not text; quote it. No pattern written",
+                ],
+            ),
+            (
+                "words: [a, [b], {c: d}]\n",
+                [
+                    "'words': item 2 is a nested list, not text. No pattern written",
+                    "'words': item 3 is a nested mapping, not text. No pattern written",
+                ],
+            ),
+        ],
+    )
+    def test_each_offending_item_and_each_skipped_shape_has_a_message(
+        self, tmp_path: Path, vocab: str, messages: list[str]
+    ) -> None:
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": r"\b(?:old|word)\b"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text(vocab, encoding="utf-8")
+
+        result = sync_vocab(tmp_path)
+
+        assert (result.updated, result.skipped) == (0, 1)
+        assert result.messages == messages
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_an_entry_already_in_sync_is_silent_and_not_skipped(self, tmp_path: Path) -> None:
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": r"\b(?:old|word)\b"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text("words: [old, word]\n", encoding="utf-8")
+
+        result = sync_vocab(tmp_path)
+
+        assert (result.updated, result.skipped, result.messages) == (0, 0, [])
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_field_no_pattern_takes_is_named_beside_a_field_that_updated(self, tmp_path: Path) -> None:
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": r"\b(?:old|word)\b"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text(
+            "words:\n  pattern-regex: [old, word, new]\n  pattern-regx: [x, y]\n", encoding="utf-8"
         )
-        (tmp_path / "vocab.yml").write_text(yaml.dump({"d": {"pattern-regex": ["a", "b"]}}), encoding="utf-8")
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is True
+
+        result = sync_vocab(tmp_path)
+
+        assert (result.updated, result.skipped) == (1, 0)
+        assert result.messages == ["'words' pattern-regx: no pattern of the check takes this field"]
+        assert "(?:old|word|new)" in (tmp_path / "checks.yml").read_text(encoding="utf-8")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_plain_list_no_pattern_takes_is_skipped_and_named(self, tmp_path: Path) -> None:
+        check = {"id": "CORE.S.1.words", "type": "semantic"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text("words: [a, b]\n", encoding="utf-8")
+
+        result = sync_vocab(tmp_path)
+
+        assert (result.updated, result.skipped) == (0, 1)
+        assert result.messages == ["'words': no pattern of the check takes these terms"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_an_invalid_field_stops_a_good_field_of_the_same_entry_from_writing(self, tmp_path: Path) -> None:
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": r"\b(?:old|word)\b"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text(
+            "words:\n  pattern-regex: [old, word, new]\n  pattern-not-regex: []\n", encoding="utf-8"
+        )
+        before = (tmp_path / "checks.yml").read_text(encoding="utf-8")
+
+        result = sync_vocab(tmp_path)
+
+        assert (result.updated, result.skipped) == (0, 1)
+        assert result.messages == ["'words' pattern-not-regex: is empty; give it a list of terms. No pattern written"]
+        assert (tmp_path / "checks.yml").read_text(encoding="utf-8") == before
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_pattern_that_is_not_an_alternation_is_named_not_skipped_silently(self, tmp_path: Path) -> None:
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": "^---"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text("words: [a, b]\n", encoding="utf-8")
+
+        result = sync_vocab(tmp_path)
+
+        assert (result.updated, result.skipped) == (0, 1)
+        assert result.messages == [
+            "'words': the pattern '^---' is not an alternation of terms; it cannot take terms. No pattern written"
+        ]
+
+
+class TestStopwordsSyncCommandShowsWhySkipped:
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    def test_the_reason_an_entry_is_skipped_is_printed(self, tmp_path: Path) -> None:
+        from typer.testing import CliRunner
+
+        from reporails_cli.interfaces.cli.stopwords_command import stopwords_app
+
+        check = {"id": "CORE.S.1.words", "type": "deterministic", "pattern-regex": r"\b(?:old|word)\b"}
+        (tmp_path / "checks.yml").write_text(yaml.dump({"checks": [check]}), encoding="utf-8")
+        (tmp_path / "vocab.yml").write_text("words: [yes, maybe, perhaps, no, 404]\n", encoding="utf-8")
+
+        result = CliRunner().invoke(stopwords_app, ["sync", "--rules-root", str(tmp_path)])
+
+        plain = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", result.output).split())
+        assert "item 5 reads as the number 404, not text; quote it" in plain

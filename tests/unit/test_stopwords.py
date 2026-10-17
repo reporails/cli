@@ -16,7 +16,7 @@ from reporails_cli.core.classify.stopwords import (
     is_guard,
     recompose,
 )
-from reporails_cli.core.classify.stopwords_sync import check_staleness, sync_vocab
+from reporails_cli.core.classify.stopwords_sync import sync_vocab
 
 # ── decompose / recompose ────────────────────────────────────────────
 
@@ -65,8 +65,21 @@ class TestDecompose:
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
-    def test_decompose_returns_none_for_single_term_group(self) -> None:
-        assert decompose("(?:single)") is None
+    @pytest.mark.parametrize(
+        "pattern", [r"\b(?:single)\b", "(single)", "(?:a)*", "(?:a)+", "(?:a){1,3}", "(?:a)?", "(?:)"]
+    )
+    def test_decompose_leaves_a_one_term_group_alone(self, pattern: str) -> None:
+        assert decompose(pattern) is None
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_map
+    @pytest.mark.parametrize("terms", [["a", "b"], ["a", "b", "c", "d", "e"]])
+    def test_recompose_then_decompose_returns_the_terms(self, terms: list[str]) -> None:
+        parts = decompose(r"\b(?:x|y)\b")
+        assert parts is not None
+        again = decompose(recompose(parts, terms))
+        assert again is not None
+        assert again.terms == terms
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
@@ -442,8 +455,7 @@ class TestSyncVocab:
             vocab={"same": ["a", "b"]},
         )
         result = sync_vocab(tmp_path)
-        assert result.updated == 0
-        assert result.skipped == 1
+        assert (result.updated, result.skipped, result.messages) == (0, 0, [])
 
     @pytest.mark.unit
     @pytest.mark.subsys_map
@@ -542,63 +554,3 @@ class TestRoundTrip:
         # Verify pattern is unchanged
         data = yaml.safe_load((tmp_path / "checks.yml").read_text(encoding="utf-8"))
         assert data["checks"][0]["pattern-regex"] == original_pattern
-
-
-# ── Staleness detection ──────────────────────────────────────────────
-
-
-class TestStaleness:
-    @pytest.mark.unit
-    @pytest.mark.subsys_map
-    def test_stale_when_terms_differ(self, tmp_path: Path) -> None:
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump(
-                {
-                    "checks": [
-                        {
-                            "id": "X.0001.check",
-                            "type": "deterministic",
-                            "pattern-regex": "(?:a|b)",
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(
-            yaml.dump({"check": ["a", "b", "c"]}),
-            encoding="utf-8",
-        )
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is True
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_map
-    def test_not_stale_when_terms_match(self, tmp_path: Path) -> None:
-        (tmp_path / "checks.yml").write_text(
-            yaml.dump(
-                {
-                    "checks": [
-                        {
-                            "id": "X.0001.check",
-                            "type": "deterministic",
-                            "pattern-regex": "(?:a|b)",
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        (tmp_path / "vocab.yml").write_text(
-            yaml.dump({"check": ["a", "b"]}),
-            encoding="utf-8",
-        )
-        result = check_staleness(tmp_path)
-        assert result is not None
-        assert result.stale is False
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_map
-    def test_no_vocab_returns_none(self, tmp_path: Path) -> None:
-        assert check_staleness(tmp_path) is None

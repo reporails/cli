@@ -1,7 +1,7 @@
 ---
 title: "Getting Started"
 description: "Install, first run, what the output means"
-version: "0.6.1"
+version: "0.6.4"
 last_updated: 2026-09-20
 ---
 

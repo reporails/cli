@@ -30,4 +30,11 @@ class CredentialsUnreadableError(PlatformError):
 
 
 class ConfigUnreadableError(PlatformError):
-    """The global config exists but could not be read or parsed."""
+    """A config file exists but could not be read, is not valid YAML, or is not a mapping.
+
+    Also raised when a config lists a rule package that is not installed.
+    """
+
+
+class BundledConfigMissingError(PlatformError):
+    """The agent configs that ship with the package are missing or unreadable: a broken install."""

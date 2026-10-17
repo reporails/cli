@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from reporails_cli.core.platform.runtime.merger import FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.formatters.text import triage_view
 from reporails_cli.formatters.text.display_constants import element_namer
 from reporails_cli.formatters.triage import classify_regime
@@ -16,7 +16,7 @@ _REPLY_GRADES = {
     "CORE:C:0058": "conditional",
     "CORE:C:0060": "conditional",
     "CORE:E:0004": "conditional",
-    "format": "cosmetic",
+    "CORE:E:0003": "cosmetic",
 }
 
 
@@ -30,6 +30,7 @@ def _finding(
     impact_tier: str | None = None,
     partner_file: str | None = None,
     overlap_pct: int | None = None,
+    check_id: str = "",
 ) -> FindingItem:
     tier = _REPLY_GRADES.get(rule, "") if impact_tier is None else impact_tier
     return FindingItem(
@@ -43,6 +44,8 @@ def _finding(
         impact_tier=tier,
         partner_file=partner_file,
         overlap_pct=overlap_pct,
+        source="client_check" if check_id else "server",
+        check_id=check_id,
     )
 
 
@@ -50,7 +53,9 @@ def _render(monkeypatch: pytest.MonkeyPatch, findings: list[FindingItem], regime
     lines: list[str] = []
     monkeypatch.setattr(triage_view.console, "print", lambda *a, **k: lines.append(" ".join(str(x) for x in a)))
     sev_icons = {"error": "X", "warning": "!", "info": "i"}
-    triage_view.print_file_card("CLAUDE.md", findings, sev_icons, verbose, regime)
+    triage_view.print_file_card(
+        "CLAUDE.md", findings, triage_view.CardContext(sev_icons=sev_icons, verbose=verbose), regime
+    )
     return "\n".join(lines)
 
 
@@ -66,7 +71,7 @@ class TestCollapseTail:
             _finding("CORE:C:0060", "warning", "Broad scope"),
             _finding("CORE:C:0037", "warning", "Static before dynamic"),
             _finding("CORE:S:0010", "warning", "File count outside bounds"),
-            *[_finding("format", "warning", "unformatted", line=i) for i in range(10, 22)],
+            *[_finding("CORE:E:0003", "warning", "unformatted", line=i, check_id="format") for i in range(10, 22)],
         ]
         out = _render(monkeypatch, findings, regime)
         assert "Unresolved imports: main" in out
@@ -114,7 +119,7 @@ class TestCollapseTail:
         regime = classify_regime({"triage_tier": "partial"})
         findings = [
             _finding("CORE:S:0024", "error", "Unresolved imports: main"),
-            *[_finding("format", "warning", "unformatted", line=i) for i in range(10, 22)],
+            *[_finding("CORE:E:0003", "warning", "unformatted", line=i, check_id="format") for i in range(10, 22)],
         ]
         out = _render(monkeypatch, findings, regime, verbose=True)
         assert "+12 more" not in out
@@ -128,7 +133,7 @@ class TestCollapseTail:
         assert regime is not None and regime.confident is False
         findings = [
             _finding("CORE:S:0024", "error", "Unresolved imports: main"),
-            *[_finding("format", "warning", "unformatted", line=i) for i in range(10, 22)],
+            *[_finding("CORE:E:0003", "warning", "unformatted", line=i, check_id="format") for i in range(10, 22)],
         ]
         out = _render(monkeypatch, findings, regime)
         assert "more · -v to list" not in out
@@ -167,19 +172,23 @@ class TestNoRemedyInTerminal:
 
 
 class TestClientCheckRuleIds:
-    """Client-check labels render their canonical rule ID, consistent with server findings."""
+    """A client check renders under its rule ID and is counted under its own kind."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_display_rule_id_maps_client_labels(self) -> None:
-        from reporails_cli.formatters.text.rule_meta import display_rule_id
-
-        assert display_rule_id("format") == "CORE:E:0003"
-        assert display_rule_id("bold") == "CORE:E:0003"
-        assert display_rule_id("heading_instruction") == "CORE:S:0039"
-        # Server IDs and unmapped client diagnostics pass through unchanged.
-        assert display_rule_id("CORE:C:0042") == "CORE:C:0042"
-        assert display_rule_id("ambiguous_charge") == "ambiguous_charge"
+    def test_format_and_bold_checks_are_counted_apart_from_the_server_rule(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        findings = [
+            _finding("CORE:E:0003", "warning", "", line=2, check_id="format"),
+            _finding("CORE:E:0003", "warning", "", line=3, check_id="format"),
+            _finding("CORE:E:0003", "info", "", line=4, check_id="bold"),
+            _finding("CORE:E:0003", "warning", "", line=5),
+        ]
+        out = _render(monkeypatch, findings, None)
+        assert "2 unformatted" in out
+        assert "1 bold" in out
+        assert "1 bold issues" in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
@@ -236,6 +245,26 @@ class TestHeadingCount:
         out = _render(monkeypatch, findings, None)
         assert out.count("heading as instruction") == 1
         assert "3 heading as instruction" in out
+
+
+class TestMergedContentCheckCounts:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_a_merged_content_check_counts_as_heading_and_a_client_format_as_unformatted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        heading = FindingItem(
+            file="CLAUDE.md",
+            line=3,
+            severity="warning",
+            rule="CORE:S:0039",
+            message='Instruction in heading: "A"',
+            source="client_check",
+            check_id="CORE.S.0039.content_check",
+        )
+        out = _render(monkeypatch, [heading, _finding("CORE:E:0003", "warning", "", line=5, check_id="format")], None)
+        assert "1 heading as instruction" in out
+        assert "1 unformatted" in out
 
 
 class TestPackedSentenceRow:
@@ -418,11 +447,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert "overlaps 62% with x (skill)" in rows[0] and "CORE:C:0044" in rows[0]
@@ -472,11 +503,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 1
@@ -509,11 +542,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 2
@@ -526,11 +561,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             path,
             findings,
-            {"warning": "!"},
-            verbose,
+            triage_view.CardContext(
+                sev_icons={"warning": "!"},
+                verbose=verbose,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path) if rmap is not None else None,
+            ),
             classify_regime({"triage_tier": "partial"}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path) if rmap is not None else None,
         )
         return lines
 
@@ -643,12 +680,14 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "skills/foo/SKILL.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+                partners_of=partner_lookup(cross, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
-            partners_of=partner_lookup(cross, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert len(rows) == 2 and "%" not in "".join(rows)
@@ -678,11 +717,13 @@ class TestFileLevelOverlap:
         triage_view.print_file_card(
             "CLAUDE.md",
             findings,
-            {},
-            True,
+            triage_view.CardContext(
+                sev_icons={},
+                verbose=True,
+                project_root=tmp_path,
+                element_of=element_namer(rmap, tmp_path),
+            ),
             classify_regime({}),
-            project_root=tmp_path,
-            element_of=element_namer(rmap, tmp_path),
         )
         rows = [r for r in lines if "CORE:C:0044" in r]
         assert "overlaps 42% with feedback_surface_progress_on_background_work (memory)" in rows[0]

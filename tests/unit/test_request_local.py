@@ -20,6 +20,7 @@ from reporails_cli.core.platform.adapters.payload import (
     project_local,
 )
 from reporails_cli.core.platform.adapters.registry import registry_rule_ids, structural_rule_ids
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
@@ -29,7 +30,6 @@ from reporails_cli.core.platform.dto.models import (
     RuleType,
     Severity,
 )
-from reporails_cli.core.platform.runtime.merger import FindingItem
 
 
 def _finding(rule: str, severity: str = "error", file: str = "a.md", line: int = 1, check: str = "") -> FindingItem:
@@ -44,6 +44,17 @@ def _entries(findings: list[FindingItem], file_level: frozenset[str] = frozenset
 
 
 class TestLocalEntries:
+    @pytest.mark.unit
+    @pytest.mark.subsys_diagnostic
+    def test_client_check_findings_are_left_out_of_the_request(self) -> None:
+        findings = [
+            _finding("CORE:E:0003", check="format"),
+            _finding("CORE:E:0003", check="bold"),
+            _finding("CORE:C:0058", check="packed"),
+            _finding("CORE:C:0034", line=2),
+        ]
+        assert _entries(findings) == [("CORE:C:0058", "/p/a.md", 1), ("CORE:C:0034", "/p/a.md", 2)]
+
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_each_finding_is_one_entry_in_order(self) -> None:
@@ -70,7 +81,7 @@ class TestLocalEntries:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_instruction_level_findings_are_sent(self) -> None:
-        rules = ("CORE:E:0006", "CORE:S:0039", "format", "bold", "heading_instruction")
+        rules = ("CORE:E:0006", "CORE:S:0039", "CORE:E:0003", "CORE:C:0058", "CORE:C:0060")
         findings = [_finding(rule) for rule in rules]
         assert [e[0] for e in _entries(findings)] == list(rules)
 

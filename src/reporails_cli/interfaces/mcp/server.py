@@ -9,49 +9,48 @@ SDK derives no output schema from an internal model — only the explicit wire
 payload is exposed and no non-wire field can reach the schema.
 """
 
-# ─────────────────────────────────────────────────────────────────────
-# CRITICAL: the import blocker MUST run before any import that could
-# transitively pull a heavy ML backend. The MCP server is long-lived and
-# serves many tool calls; skipping that import makes the first validate/score
-# calls fast. See `_torch_blocker` docstring for details.
+import asyncio
+import contextlib
+import json
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
+
+from reporails_cli.core.mapper.model_manifest import ModelFetchError
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_list
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime import _torch_blocker
-
-_torch_blocker.install()
-# ─────────────────────────────────────────────────────────────────────
-
-import asyncio  # noqa: E402
-import json  # noqa: E402
-import threading  # noqa: E402
-from dataclasses import dataclass, field  # noqa: E402
-from pathlib import Path  # noqa: E402
-from typing import Any  # noqa: E402
-
-from mcp.types import CallToolResult, TextContent, ToolAnnotations  # noqa: E402
-
-from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels  # noqa: E402
-from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices  # noqa: E402
-from reporails_cli.interfaces.mcp import snapshots  # noqa: E402
-from reporails_cli.interfaces.mcp.feedback import file_feedback  # noqa: E402
-from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written  # noqa: E402
-from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity  # noqa: E402
-from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief  # noqa: E402
-from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool  # noqa: E402
-from reporails_cli.interfaces.mcp.scan_fingerprint import (  # noqa: E402
+from reporails_cli.core.platform.utils.utils import compact_json
+from reporails_cli.core.platform.utils.version import installed_version
+from reporails_cli.formatters.mcp import bound_validate_payload, with_rule_labels
+from reporails_cli.formatters.mcp_view import has_text_view, render_text_view, unseen_notices
+from reporails_cli.interfaces.mcp import snapshots
+from reporails_cli.interfaces.mcp.feedback import file_feedback
+from reporails_cli.interfaces.mcp.heal_apply import heal_apply_message, heal_apply_write, release_written
+from reporails_cli.interfaces.mcp.idle_release import lifespan, touch_activity
+from reporails_cli.interfaces.mcp.remedy_brief import build_remedy_brief
+from reporails_cli.interfaces.mcp.rule_tools import explain_tool, preflight_tool
+from reporails_cli.interfaces.mcp.scan_fingerprint import (
     combine_scan_inputs,
     compute_scan_fingerprint,
     dependency_files,
 )
-from reporails_cli.interfaces.mcp.tools import (  # noqa: E402
+from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer
+from reporails_cli.interfaces.mcp.tools import (
     _resolve_scan_target,
     is_retryable_reply,
     model_not_ready_error,
     run_pipeline_for_path,
     unpaid_signed_in_reply,
 )
-from reporails_cli.interfaces.mcp.validate_targets import (  # noqa: E402
-    keep_target_locations,
-    resolve_validate_targets,
-)
+from reporails_cli.interfaces.mcp.validate_targets import keep_target_locations, resolve_validate_targets
+
+# The long-lived MCP server never needs a heavy ML backend: block it before any tool runs, so a
+# transitive import cannot pull one in and slow the first validate call.
+_torch_blocker.install()
 
 # Circuit breaker: content-aware loop detection.
 _MAX_CALLS = 10
@@ -67,7 +66,7 @@ class _CircuitState:
     # follow-up to a bounded call (the response's own hint tells the caller to make exactly
     # this call) is served from here instead of re-running the pipeline, and does not count
     # as an unchanged repeat — only a re-run after a content change counts.
-    full_payload: dict[str, Any] | None = None
+    full_payload: JsonObject | None = None
     # The last fresh reply came to a signed-in user on a non-paid tier: it is never reused, since
     # the user may have upgraded since (the sign-in on disk still names the old tier).
     unpaid_reply: bool = False
@@ -77,7 +76,7 @@ class _CircuitState:
     # The ruleset map + file score from the last fresh pipeline run against `last_mtime_hash` —
     # a cached (unchanged-content) reply's preservation check reuses these instead of
     # re-running the pipeline a second time just to get them again.
-    last_ruleset_map: Any = None
+    last_ruleset_map: RulesetMap | None = None
     last_score: float | None = None
     # The notices a text view already showed for this path: each shows once per run.
     shown_notices: set[str] = field(default_factory=set)
@@ -105,7 +104,15 @@ def _state_key(path: str, tokens: tuple[str, ...]) -> str:
 
 def _serve_remedy_brief(
     path: str, location: int, targets: list[str] | None = None, has_guide: bool = False
-) -> dict[str, Any]:
+) -> JsonObject:
+    """`remedy_brief`'s reply; an unreadable config file answers `config_unreadable` naming the file and line."""
+    try:
+        return _remedy_brief_reply(path, location, targets, has_guide)
+    except ConfigUnreadableError as exc:
+        return _config_unreadable(exc)
+
+
+def _remedy_brief_reply(path: str, location: int, targets: list[str] | None, has_guide: bool) -> JsonObject:
     """`remedy_brief(path, location, targets, has_guide)`'s body: a caller that does not
     carry the rewrite guide (`has_guide` false) is refused with `plugin_update_required` before
     anything else — no state read, no build, no snapshot, no breaker counter touched. Reads the last `validate(path,
@@ -148,7 +155,7 @@ def _serve_remedy_brief(
             "error": "no_workflow",
             "message": "Call validate for this path (and these targets) first; remedy_brief reads its workflow.",
         }
-    locations = workflow.get("locations") or []
+    locations = as_list(workflow.get("locations"))
     loc = next((entry for entry in locations if isinstance(entry, dict) and entry.get("order") == location), None)
     if loc is None:
         return {
@@ -162,7 +169,7 @@ def _serve_remedy_brief(
     return reply
 
 
-def _with_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> dict[str, Any]:
+def _with_feedback(payload: JsonObject, target: Path, scan_root: Path) -> JsonObject:
     """Add the `feedback` block to `payload` when `target` is a file `remedy_brief`
     snapshotted — same gate as `_with_preservation`, so the two blocks always ride together on
     a snapshotted file's reply."""
@@ -170,12 +177,14 @@ def _with_feedback(payload: dict[str, Any], target: Path, scan_root: Path) -> di
         return payload
     if not target.is_file() or not snapshots.has_snapshot(target):
         return payload
-    return {**payload, "feedback": file_feedback(payload, target, scan_root)}
+    state = _validate_states.get(_state_key(str(scan_root), ()))
+    stored = state.full_payload if state is not None else None
+    return {**payload, "feedback": [*file_feedback(payload, target, scan_root, stored)]}
 
 
 def _with_preservation(
-    payload: dict[str, Any], target: Path, ruleset_map: Any, score: float | None, scan_root: Path | None
-) -> dict[str, Any]:
+    payload: JsonObject, target: Path, ruleset_map: RulesetMap | None, score: float | None, scan_root: Path | None
+) -> JsonObject:
     """Add the `preservation` block, and the `conformance` block (the file against the plan its
     brief listed), to `payload` when `target` is a file `remedy_brief` snapshotted.
     Carried on both the bounded and full replies — the caller bounds afterward.
@@ -199,7 +208,7 @@ def _with_preservation(
         new_text = target.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return payload
-    block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score, scan_root)
+    block = snapshots.check_rewrite(snap, target, ruleset_map, new_text, score=score, scan_root=scan_root)
     block["introduced"] = snapshots.introduced_count(target, payload)
     out = {**payload, "preservation": block}
     conformance = snapshots.check_conformance(target, ruleset_map, new_text, scan_root)
@@ -210,7 +219,7 @@ def _with_preservation(
 
 async def _fresh_validate_payload(
     path: str, tokens: tuple[str, ...], scan_root: Path, state: _CircuitState
-) -> dict[str, Any] | tuple[dict[str, Any], Any, float | None]:
+) -> JsonObject | tuple[JsonObject, RulesetMap | None, float | None]:
     """Run the pipeline fresh (never served from `state.full_payload`) — resolve `tokens` to a
     location selection first when targeted, narrow the payload's `workflow.locations` to it
     (`keep_target_locations`), and memoize the map/score on `state` for the next same-content
@@ -237,51 +246,12 @@ async def _fresh_validate_payload(
     return payload, ruleset_map, score
 
 
-async def _run_validate(path: str, full: bool, targets: list[str] | None = None) -> dict[str, Any]:
-    """Compute the `validate` payload with the content-aware circuit breaker.
-
-    With `targets`, the whole project is diagnosed as without them and the reply's
-    `workflow.locations` keep only the locations holding a targeted file, re-numbered from 1
-    (`keep_target_locations`); the counters and the stored workflow are kept per
-    `(path, targets)`.
-
-    Two layers of safety:
-      1. Path-existence checks emit structured errors the slash command body can
-         branch on (no bare strings).
-      2. The circuit breaker (`_MAX_CALLS` total, `_MAX_UNCHANGED` consecutive
-         no-op validates per path) catches a model that re-validates without
-         applying fixes. The mtime-tracker resets on any file edit. A `full=true`
-         call for unchanged content is served from the memoized full payload rather
-         than counted as another unchanged repeat, since it is the bounded
-         response's own suggested next call, not a sign of no progress.
-
-    The circuit-breaker state read-modify-write runs inline on the event loop —
-    no `await` between the `_validate_states` read and its write — so concurrent
-    same-path calls serialize (a retryable reply edits that live state, never a copy); only the
-    blocking pipeline (`run_pipeline_for_path`) is offloaded to a worker thread. The
-    pipeline always runs `full=True` internally (the bounding step is the last
-    thing it does) and the bounded view is derived here via `bound_validate_payload`,
-    so a cached full payload serves either shape without a second pipeline run.
-    Returns a structured-success dict for every expected condition (needs_install /
-    path_not_found / circuit_breaker); an unexpected exception propagates for the
-    SDK to surface as an execution error.
-    """
-    target = Path(path).resolve()
-
-    # A model that is not ready yet is not a validate attempt: answer before the
-    # circuit-breaker counters move, so retries during a first download never trip it.
-    model_error = await asyncio.to_thread(model_not_ready_error)
-    if model_error is not None:
-        return model_error
-
-    # The mtime hash walks the same scan root the pipeline itself discovers from — a FILE
-    # target's root is its enclosing project (`_resolve_scan_target`), never the bare file
-    # path, which discovery reads as an (empty) directory. Without this a
-    # file-scoped validate's hash is always the empty string, `unchanged` is always False, and
-    # a same-content repeat validate never hits the cached-reply path at all.
-    scan_root = _resolve_scan_target(target)[0]
-
-    tokens = _target_tokens(targets)
+async def _begin_validate_call(
+    path: str, tokens: tuple[str, ...], full: bool, target: Path, scan_root: Path
+) -> tuple[_CircuitState, bool, str]:
+    """Fingerprint the scan inputs, then count this `validate` call on its `(path, targets)` state.
+    Returns `(state, unchanged, base_hash)`: whether the content matches the last call's, and the
+    fingerprint base the fresh run later extends with the files it mapped."""
     path_key = _state_key(path, tokens)
     # The input walk is blocking file IO: run it off the event loop, before the state read, so
     # the read-modify-write below stays free of any `await`.
@@ -301,6 +271,59 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
     state.last_mtime_hash = mtime_hash
     state.call_count += 1
     _validate_states[path_key] = state
+    return state, unchanged, base_hash
+
+
+def _config_unreadable(exc: ConfigUnreadableError) -> JsonObject:
+    """The one `config_unreadable` error payload every MCP tool answers for an unreadable config."""
+    return {"error": "config_unreadable", "message": str(exc)}
+
+
+async def _run_validate(path: str, full: bool, targets: list[str] | None = None) -> JsonObject:
+    """The `validate` payload; an unreadable config file answers `config_unreadable` naming the file and line."""
+    try:
+        return await _validate_reply(path, full, targets)
+    except ConfigUnreadableError as exc:
+        return _config_unreadable(exc)
+
+
+async def _validate_reply(path: str, full: bool, targets: list[str] | None = None) -> JsonObject:
+    """Compute the `validate` payload with the content-aware circuit breaker.
+
+    With `targets`, the whole project is diagnosed as without them and the reply's
+    `workflow.locations` keep only the locations holding a targeted file, re-numbered from 1
+    (`keep_target_locations`); the counters and the stored workflow are kept per
+    `(path, targets)`.
+
+    Path-existence checks emit structured errors the slash command body can branch on. The
+    circuit breaker (`_MAX_CALLS` total, `_MAX_UNCHANGED` consecutive no-op validates per path)
+    catches a model that re-validates without applying fixes; the mtime-tracker resets on any
+    file edit. A `full=true` call for unchanged content is served from the memoized full payload,
+    not counted as another unchanged repeat.
+
+    The circuit-breaker state read-modify-write runs inline on the event loop (no `await`
+    between the `_validate_states` read and its write), so concurrent same-path calls serialize;
+    only the blocking pipeline (`run_pipeline_for_path`) is offloaded to a worker thread. The
+    pipeline always runs `full=True` internally and the bounded view is derived here via
+    `bound_validate_payload`, so a cached full payload serves either shape. Returns a
+    structured dict for every expected condition (needs_install / path_not_found /
+    circuit_breaker); an unexpected exception propagates for the SDK to surface.
+    """
+    target = Path(path).resolve()
+
+    # A model that is not ready yet is not a validate attempt: answer before the
+    # circuit-breaker counters move, so retries during a first download never trip it.
+    model_error = await asyncio.to_thread(model_not_ready_error)
+    if model_error is not None:
+        return model_error
+
+    # The mtime hash walks the scan root the pipeline discovers from: a FILE target's root is its
+    # enclosing project, never the bare file path (which reads as an empty directory and would
+    # keep a same-content repeat validate from ever hitting the cached reply).
+    scan_root = _resolve_scan_target(target)[0]
+
+    tokens = _target_tokens(targets)
+    state, unchanged, base_hash = await _begin_validate_call(path, tokens, full, target, scan_root)
 
     if state.call_count > _MAX_CALLS or state.consecutive_unchanged >= _MAX_UNCHANGED:
         return {
@@ -324,9 +347,7 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
 
     if unchanged and state.full_payload is not None:
         payload = state.full_payload
-        # Reuse the map/score the last fresh run stored, instead of re-running the
-        # pipeline a second time (with its own server diagnose) just for the preservation
-        # check on a reply that is otherwise served entirely from cache.
+        # Reuse the map/score the last fresh run stored rather than re-running the pipeline.
         ruleset_map, score = state.last_ruleset_map, state.last_score
     else:
         result = await _fresh_validate_payload(path, tokens, scan_root, state)
@@ -345,17 +366,21 @@ async def _run_validate(path: str, full: bool, targets: list[str] | None = None)
             )
         )
 
-    # `_with_preservation` is CPU/IO work (a fenced-block scan over the file's text, a
-    # possible read) — run it off the event loop too, so a preservation check never blocks a
-    # concurrent tool call the way running it inline here used to.
+    # `_with_preservation` is CPU/IO work: run it off the event loop so it never blocks a concurrent tool call.
     payload = await asyncio.to_thread(_with_preservation, payload, target, ruleset_map, score, scan_root)
-    # `_with_feedback` reads only `payload` + `target` — no pipeline re-run, no IO — but stays
-    # off the event loop too, so it never carries a stray blocking op later without review.
     payload = await asyncio.to_thread(_with_feedback, payload, target, scan_root)
     return with_rule_labels(payload) if full else bound_validate_payload(payload)
 
 
 async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
+    """`heal_apply`'s reply; an unreadable config file is reported with the file and line."""
+    try:
+        return await _heal_apply_reply(path, targets)
+    except ConfigUnreadableError as exc:
+        return heal_apply_message(_config_unreadable(exc))
+
+
+async def _heal_apply_reply(path: str, targets: list[str] | None = None) -> str:
     """`heal_apply`'s body: the pipeline `validate` runs, then the keyed heal the CLI runs."""
     target = Path(path).resolve()
     model_error = await asyncio.to_thread(model_not_ready_error)
@@ -382,15 +407,12 @@ async def _run_heal_apply(path: str, targets: list[str] | None = None) -> str:
 # `MCPServer`'s own `version` defaults to `""` when not passed, so `initialize`'s
 # `serverInfo.version` was always empty — a caller has no way to tell which server build it
 # is talking to. `StrictArgsMCPServer` also closes a related gap: an unknown tool argument.
-from reporails_cli import __version__ as _ails_version  # noqa: E402
-from reporails_cli.interfaces.mcp.strict_tool_args import StrictArgsMCPServer  # noqa: E402
-
-server = StrictArgsMCPServer("ails", version=_ails_version, lifespan=lifespan)
+server = StrictArgsMCPServer("ails", version=installed_version(), lifespan=lifespan)
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 
-def _result(payload: dict[str, Any]) -> CallToolResult:
+def _result(payload: JsonObject) -> CallToolResult:
     """Wrap a payload as a compact structured result.
 
     Returns `structuredContent` (machine-readable, ending the consumer string-parse)
@@ -400,7 +422,7 @@ def _result(payload: dict[str, Any]) -> CallToolResult:
     economy the bounded envelope exists to protect.
     """
     return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload, separators=(",", ":")))],
+        content=[TextContent(type="text", text=compact_json(payload))],
         structured_content=payload,
     )
 
@@ -515,7 +537,10 @@ async def heal_apply(path: str = ".", targets: list[str] | None = None) -> CallT
 async def preflight(capability: str, agent: str = "") -> CallToolResult:
     """Return workflow-ordered rules for authoring a file of `capability`."""
     touch_activity()
-    return _result(preflight_tool(capability, agent))
+    try:
+        return _result(preflight_tool(capability, agent))
+    except ConfigUnreadableError as exc:
+        return _result(_config_unreadable(exc))
 
 
 @server.tool(
@@ -536,53 +561,18 @@ async def explain(rule_id: str) -> str:
     caller still reads one shape.
     """
     touch_activity()
-    result = explain_tool(rule_id)
-    return result if isinstance(result, str) else json.dumps(result)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Back-compat module shims — the callable surface tests + callers share.
-# ─────────────────────────────────────────────────────────────────────
-
-
-async def list_tools() -> list[Any]:
-    """List the registered tools (`validate`, `preflight`, `explain`)."""
-    return await server.list_tools()
-
-
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[Any]:
-    """Invoke a tool and return its content blocks (the text/structured result).
-
-    An unknown tool name is a protocol error the high-level server raises; the shim
-    maps it to a structured error block so an internal caller reads one shape. An unknown
-    argument name is rejected the same way (`StrictArgsMCPServer.call_tool`), before the
-    tool body ever runs.
-    """
-    import json
-
-    from mcp.server.mcpserver.exceptions import ToolError
-
     try:
-        result = await server.call_tool(name, arguments or {})
-    except ToolError as exc:
-        return [TextContent(type="text", text=json.dumps({"error": str(exc)}))]
-    if not isinstance(result, CallToolResult):
-        # Our read-only tools never request elicitation input (InputRequiredResult).
-        return [TextContent(type="text", text=json.dumps({"error": "unexpected input-required result"}))]
-    content = list(result.content)
-    if not content:
-        # A structured-only result: surface its JSON as a text block so callers
-        # that read `content[0].text` still see the payload.
-        content = [TextContent(type="text", text=json.dumps(result.structured_content or {}))]
-    return content
+        result = explain_tool(rule_id)
+    except ConfigUnreadableError as exc:
+        result = _config_unreadable(exc)
+    return result if isinstance(result, str) else json.dumps(result)
 
 
 def _prewarm_models() -> None:
     """Fetch the model set in the background so the first `validate` rarely waits on it."""
-    import contextlib
-
-    from reporails_cli.bundled import ensure_models_available
-    from reporails_cli.core.mapper.model_fetch import ModelFetchError
+    from reporails_cli.core.mapper.model_store import (  # pylint: disable=import-outside-toplevel  # startup: the model fetch loads off the MCP handshake path
+        ensure_models_available,
+    )
 
     # On failure `validate` retries and reports the error to the caller.
     with contextlib.suppress(ModelFetchError):
@@ -591,7 +581,6 @@ def _prewarm_models() -> None:
 
 def main() -> None:
     """Entry point for the MCP server (stdio transport)."""
-
     threading.Thread(target=_prewarm_models, name="model-prewarm", daemon=True).start()
     server.run("stdio")
 

@@ -35,14 +35,12 @@ def _fail(rule_dir: Path, content: str, name: str = "CLAUDE.md") -> None:
     (d / name).write_text(content)
 
 
-def _info(rule_dir: Path, checks: list[dict], rule_id: str = "CORE:S:0001", rtype: str = "deterministic") -> RuleInfo:
+def _info(rule_dir: Path, checks: list[dict], rule_id: str = "CORE:S:0001") -> RuleInfo:
     return RuleInfo(
         rule_id=rule_id,
         slug=rule_dir.name,
         title="T",
         category="structure",
-        rule_type=rtype,
-        match={},
         checks=checks,
         rule_dir=rule_dir,
         checks_yml=rule_dir / "checks.yml",
@@ -50,7 +48,13 @@ def _info(rule_dir: Path, checks: list[dict], rule_id: str = "CORE:S:0001", rtyp
 
 
 def _det_check(check_id: str = "CORE.S.0001.check", expect: str = "absent") -> dict:
-    return {"id": check_id, "type": "deterministic", "severity": "medium", "expect": expect, "name": "d"}
+    return {
+        "id": check_id,
+        "type": "deterministic",
+        "severity": "medium",
+        "expect": expect,
+        "pattern-regex": "x",
+    }
 
 
 def _checks_yml(rule_dir: Path, rules_yaml: str) -> None:
@@ -62,8 +66,7 @@ def _one_pattern(check_id: str, pattern: str) -> str:
         "checks:\n"
         f"- id: {check_id}\n"
         "  message: m\n"
-        "  severity: WARNING\n"
-        "  languages: [generic]\n"
+        "  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n"
         f"  pattern-regex: '{pattern}'\n"
     )
@@ -112,10 +115,10 @@ def test_no_matching_rule_reports_no_pattern(tmp_path: Path) -> None:
         rd,
         "checks:\n"
         "- id: CORE.S.9991.other\n"
-        "  message: m\n  severity: WARNING\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
         "- id: CORE.S.9992.other2\n"
-        "  message: m\n  severity: WARNING\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'QQQNOMATCH'\n",
     )
     result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0001.check", expect="absent")]), [])
@@ -145,10 +148,10 @@ def test_matching_rule_selected_by_id(tmp_path: Path) -> None:
         rd,
         "checks:\n"
         "- id: CORE.S.0001.check\n"  # WRONG rule: pattern would not fire
-        "  message: m\n  severity: WARNING\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'ZZZNOMATCH'\n"
         "- id: CORE.S.0002.check\n"  # RIGHT rule: matches the check id + fixture
-        "  message: m\n  severity: WARNING\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*.md']\n  pattern-regex: 'Commands'\n",
     )
     result = run_rule(_info(rd, [_det_check(check_id="CORE.S.0002.check", expect="present")]), [])
@@ -200,7 +203,7 @@ def test_fail_fixture_without_violation_is_failed(tmp_path: Path) -> None:
         "check": "file_exists",
         "args": {"path": "**/*.md"},
     }
-    result = run_rule(_info(rd, [check], rtype="mechanical"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.FAILED
     assert _fail_run(result).passed is True
 
@@ -227,7 +230,7 @@ def test_content_query_passes_on_pass_fixture(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "cq-pass")
     _pass(rd, "# ok\n")
     check = {"id": "CORE.S.0001.cq", "type": "content_query", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="content_query"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.PASSED
     run = _pass_run(result)
     assert run.passed is True
@@ -243,25 +246,12 @@ def test_content_query_fail_fixture_finds_no_violation(tmp_path: Path) -> None:
     rd = _rule_dir(tmp_path, "cq-fail")
     _fail(rd, "# ok\n")
     check = {"id": "CORE.S.0001.cq", "type": "content_query", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="content_query"), [])
+    result = run_rule(_info(rd, [check]), [])
     assert result.status == HarnessStatus.FAILED
     assert "content_query" in _fail_run(result).message
 
 
 # ── unknown check type (L307, L339) ──────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_unknown_check_type_pass_fixture_fails(tmp_path: Path) -> None:
-    """An unknown check type does not pass the pass fixture → FAILED
-    (kills L307 False->True and its CheckRun flag)."""
-    rd = _rule_dir(tmp_path, "unknown-pass")
-    _pass(rd, "# ok\n")
-    check = {"id": "CORE.S.0001.x", "type": "bogus", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="bogus"), [])
-    assert result.status == HarnessStatus.FAILED
-    assert _pass_run(result).passed is False
 
 
 @pytest.mark.unit
@@ -279,23 +269,10 @@ def test_excluded_fixture_file_is_not_scanned(tmp_path: Path) -> None:
         rd,
         "checks:\n"
         "- id: CORE.S.0001.check\n"
-        "  message: m\n  severity: WARNING\n  languages: [generic]\n"
+        "  message: m\n  severity: medium\n"
         "  paths:\n    include: ['**/*']\n  pattern-regex: 'Commands'\n",
     )
     # expect=present: the match lives only in the excluded file, so a correctly
     # filtered scan finds nothing → FAILED; letting .gitkeep through → PASSED.
     result = run_rule(_info(rd, [_det_check(expect="present")]), [])
     assert result.status == HarnessStatus.FAILED
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_unknown_check_type_fail_fixture_no_violation(tmp_path: Path) -> None:
-    """An unknown check type finds no violation on the fail fixture → FAILED
-    (kills L339 violation False->True and its CheckRun flag False->True)."""
-    rd = _rule_dir(tmp_path, "unknown-fail")
-    _fail(rd, "# ok\n")
-    check = {"id": "CORE.S.0001.x", "type": "bogus", "severity": "medium"}
-    result = run_rule(_info(rd, [check], rtype="bogus"), [])
-    assert result.status == HarnessStatus.FAILED
-    assert _fail_run(result).passed is False

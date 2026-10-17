@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from reporails_cli.interfaces.mcp import remedy_brief, server, snapshots, tools
+from reporails_cli.interfaces.mcp import remedy_brief, server
 
 
 def _payload(*rules: str) -> dict[str, Any]:
@@ -21,11 +21,12 @@ def _payload(*rules: str) -> dict[str, Any]:
 
 
 def _brief(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *rules: str) -> Path:
-    snapshots.clear_snapshots()
     file = tmp_path / "CLAUDE.md"
     file.write_text("# Project\n\nThe build uses a local cache.\n", encoding="utf-8")
     fake_map = SimpleNamespace(atoms=(), files=())
-    monkeypatch.setattr(tools, "run_pipeline_for_path", lambda path, full=False: (_payload(*rules), fake_map, 5.0))
+    monkeypatch.setattr(
+        remedy_brief, "run_pipeline_for_path", lambda path, full=False: (_payload(*rules), fake_map, 5.0)
+    )
     location = {
         "order": 1, "element": "CLAUDE.md", "kind": "main", "loading": "session_start", "files": ["CLAUDE.md"],
         "importance": "gate_mover", "findings": [], "relations": [],

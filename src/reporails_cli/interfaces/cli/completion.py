@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.platform.adapters.rules_query import list_known_agents, load_all_rules
+
 
 def complete_rule_token(incomplete: str) -> list[str]:
     """Complete a rule ID (`CORE:S:0024`) or slug (`italic-constraints`)."""
-    from reporails_cli.core.platform.adapters.rules_query import load_all_rules
 
     needle = incomplete.lower()
     out: set[str] = set()
@@ -26,8 +28,9 @@ def complete_rule_token(incomplete: str) -> list[str]:
 
 def complete_capability(incomplete: str) -> list[str]:
     """Complete a capability keyword for the currently-detected agent."""
-    from reporails_cli.core.classify.capability_paths import available_capabilities
-    from reporails_cli.core.discovery.agents import detect_agents
+    from reporails_cli.core.classify.capability_paths import (  # pylint: disable=import-outside-toplevel  # startup: loads when completing
+        available_capabilities,
+    )
 
     project_root = Path.cwd()
     detected = detect_agents(project_root)
@@ -40,7 +43,6 @@ def complete_capability(incomplete: str) -> list[str]:
 
 def complete_agent(incomplete: str) -> list[str]:
     """Complete an agent name (`claude`, `codex`, `copilot`, ...)."""
-    from reporails_cli.core.platform.adapters.rules_query import list_known_agents
 
     return sorted(a for a in list_known_agents() if a.startswith(incomplete))
 
@@ -62,8 +64,9 @@ def complete_target_token(incomplete: str) -> list[str]:
 
 def _complete_capability_target_name(capability: str, name_prefix: str) -> list[str]:
     """Names declared under <capability> for the current agent (e.g. skills under .claude/skills/)."""
-    from reporails_cli.core.classify.capability_paths import list_capability_targets
-    from reporails_cli.core.discovery.agents import detect_agents
+    from reporails_cli.core.classify.capability_paths import (  # pylint: disable=import-outside-toplevel  # startup: loads when completing
+        list_capability_targets,
+    )
 
     project_root = Path.cwd()
     detected = detect_agents(project_root)

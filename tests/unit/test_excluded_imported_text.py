@@ -11,7 +11,7 @@ import pytest
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.core.discovery.features import detect_features_filesystem
 from reporails_cli.core.pipeline.assemble import AssembleInputs, _imports_left_out
-from reporails_cli.core.platform.runtime.merger import CombinedResult
+from reporails_cli.core.platform.runtime.merger import CombinedResult, Omissions
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp_view
 from reporails_cli.formatters.text.display_constants import excluded_phrase
@@ -30,7 +30,6 @@ def _inputs(root: Path, imported_from: str | None) -> AssembleInputs:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=lambda _r: set(),
     )
 
 
@@ -59,8 +58,10 @@ def test_text_line_ends_with_the_clause_only_when_an_import_crosses() -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_lint
 def test_json_excluded_object_carries_the_flag() -> None:
-    on = json_formatter.format_combined_result(CombinedResult(excluded_dirs=("ext",), excluded_imported=True))
-    off = json_formatter.format_combined_result(CombinedResult(excluded_dirs=("ext",)))
+    on = json_formatter.format_combined_result(
+        CombinedResult(omissions=Omissions(excluded_dirs=("ext",), excluded_imported=True))
+    )
+    off = json_formatter.format_combined_result(CombinedResult(omissions=Omissions(excluded_dirs=("ext",))))
     assert on["excluded"] == {"dirs": ["ext"], "files": [], "imported_text_counted": True}
     assert off["excluded"]["imported_text_counted"] is False
 
@@ -100,10 +101,10 @@ def test_import_with_parent_hop_is_judged_by_where_it_lands(tmp_path: Path) -> N
 def test_the_flag_needs_something_listed() -> None:
     from reporails_cli.core.pipeline.assemble import with_exclusions
 
-    flagged = CombinedResult(excluded_imported=True)
-    assert not with_exclusions(flagged, ((), ())).excluded_imported
-    assert with_exclusions(flagged, (("ext",), ())).excluded_imported
-    assert with_exclusions(flagged, ((), ("a/*.md",))).excluded_imported
+    flagged = CombinedResult(omissions=Omissions(excluded_imported=True))
+    assert not with_exclusions(flagged, ((), ())).omissions.excluded_imported
+    assert with_exclusions(flagged, (("ext",), ())).omissions.excluded_imported
+    assert with_exclusions(flagged, ((), ("a/*.md",))).omissions.excluded_imported
 
 
 @pytest.mark.unit

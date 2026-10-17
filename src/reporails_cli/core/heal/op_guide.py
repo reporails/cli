@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
+from reporails_cli.core.platform.dto.heal_plan import HealOp
+
 _CHANGE_THIS_LINE = "Make the stated change on this line only."
 
-OP_GUIDE: dict[str, str] = {
+OP_GUIDE: dict[HealOp, str] = {
     "elaborate": (
         "Add the object this instruction acts on, using only words from its own section; "
         "add no clause, condition or reason."
@@ -28,10 +32,6 @@ OP_GUIDE: dict[str, str] = {
     "dedupe": _CHANGE_THIS_LINE,
 }
 
-# The ops whose guide lets the line leave its file: `dedupe` and `keep-cut` delete it, `hoist` moves it away.
-LINE_LEAVING_OPS: frozenset[str] = frozenset({"dedupe", "keep-cut", "hoist"})
-
-
 CHANGE_GUIDE: dict[str, str] = {
     "split-keep-lead-in": (
         "Keep the lead-in with every item: repeat it in each sentence you make, or leave the sentence whole."
@@ -54,6 +54,6 @@ def change_lines(changes: set[str] | frozenset[str]) -> dict[str, str]:
     return {kind: CHANGE_GUIDE[kind] for kind in sorted(kinds) if kind in CHANGE_GUIDE}
 
 
-def op_lines(ops: set[str] | frozenset[str]) -> dict[str, str]:
-    """The guide line of each op in `ops`, in name order; an op with no entry reads as the generic line."""
-    return {op: OP_GUIDE.get(op, _CHANGE_THIS_LINE) for op in sorted(ops)}
+def op_lines(ops: Iterable[HealOp]) -> dict[str, str]:
+    """The guide line of each op in `ops`, in name order."""
+    return {op: OP_GUIDE[op] for op in sorted(set(ops))}

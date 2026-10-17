@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from reporails_cli.core.platform.runtime.merger import FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
 from reporails_cli.formatters.triage import (
     LeverageTier,
     Regime,

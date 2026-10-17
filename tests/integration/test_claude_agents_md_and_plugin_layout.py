@@ -96,8 +96,8 @@ def _rules_on(data: dict, rel: str) -> set[str]:
 
 def _resolution(project: Path) -> tuple[str, bool, dict[str, str], set[str]]:
     """(effective agent, mixed, per-file rule-running owner, claude's own discovered files)."""
-    from reporails_cli.core.discovery.agent_discovery import discover_from_config, partition_by_native_owner
-    from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents
+    from reporails_cli.core.discovery.agent_discovery import discover_from_config
+    from reporails_cli.core.discovery.agents import clear_agent_cache, detect_agents, partition_by_native_owner
     from reporails_cli.core.pipeline.mapping import resolve_agent_filters
 
     clear_agent_cache()
@@ -159,7 +159,7 @@ def test_claude_as_the_projects_agent_reads_an_agents_md_only_project(
 
     _write(project, ".ails/config.yml", "default_agent: claude\n")
     cli = _json(monkeypatch, project)
-    assert _tuples(cli) == _tuples(tools.validate_tool(str(project), full=True))
+    assert _tuples(cli) == _tuples(tools.run_pipeline_for_path(str(project), full=True)[0])
 
 
 # ── 2. the same plus a CLAUDE.md ─────────────────────────────────────

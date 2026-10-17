@@ -45,6 +45,7 @@ def test_pooled_encode_byte_identical_to_serial(monkeypatch: pytest.MonkeyPatch,
     single-bucket or disabled-pool fallback cannot make the comparison vacuous.
     """
     from reporails_cli.core.mapper import encode_pool as pool_mod
+    from reporails_cli.core.mapper import multislot_frames, onnx_embedder
     from reporails_cli.core.mapper.models import get_models
     from reporails_cli.core.mapper.pipeline import map_ruleset
     from reporails_cli.core.mapper.serialize import _atom_to_dict
@@ -61,9 +62,9 @@ def test_pooled_encode_byte_identical_to_serial(monkeypatch: pytest.MonkeyPatch,
         pooled_worker_counts.append((pool_mod.encode_pool_workers(), len(tasks)))
         return real_run_buckets(tasks, on_done)
 
-    # bio_tagger and onnx_embedder import run_buckets locally at call time, so
-    # patching the module attribute is seen by both call sites.
-    monkeypatch.setattr(pool_mod, "run_buckets", _spy)
+    # Both call sites bind run_buckets at import, so each module's name is patched.
+    monkeypatch.setattr(onnx_embedder, "run_buckets", _spy)
+    monkeypatch.setattr(multislot_frames, "run_buckets", _spy)
 
     monkeypatch.setenv("AILS_MAP_ENCODE_WORKERS", "1")
     serial = map_ruleset(paths, models=models, root=_CORPUS, cache_dir=None)

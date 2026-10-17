@@ -186,10 +186,10 @@ def documented_path(path: Path, documented: str) -> Path | None:
     return named if _same_file(named, path) else None
 
 
-def _same_file(documented_path: Path, listed_path: Path) -> bool:
+def _same_file(first: Path, second: Path) -> bool:
     """Whether two paths resolve to one existing file."""
     try:
-        return documented_path.samefile(listed_path)
+        return first.samefile(second)
     except OSError:
         return False
 

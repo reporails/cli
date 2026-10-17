@@ -1,1 +1,0 @@
-  {filepath} ({count} {issue_word})

@@ -9,16 +9,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from reporails_cli.core.pipeline import assemble as assemble_module
 from reporails_cli.core.pipeline.assemble import AssembleInputs, lint_request_local
 from reporails_cli.core.platform.adapters.payload import project_local
-from reporails_cli.core.platform.dto.models import LocalEntry
+from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 _MAIN = (
     "# Project\n\nRun `pytest tests/` before committing a parser change.\n\n"
@@ -40,7 +38,6 @@ def _inputs(root: Path) -> AssembleInputs:
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=rule_aliases,
     )
 
 
@@ -95,7 +92,7 @@ def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
         ),
         atoms=(),
     )
-    finding = SimpleNamespace(rule="CORE:S:0056", file=str(supporting), line=1, severity="error")
+    finding = LocalFinding(rule="CORE:S:0056", file=str(supporting), line=1, severity="error", message="")
     monkeypatch.setattr(assemble_module, "reported_local_findings", lambda inp: (finding,))
 
     inp = AssembleInputs(
@@ -107,7 +104,6 @@ def test_a_locally_reported_skill_supporting_file_takes_the_skill_s_type(
         filter_agents=None,
         effective_agent="claude",
         lint_result=None,
-        alias_fn=rule_aliases,
     )
 
     entries, _required = lint_request_local(inp)

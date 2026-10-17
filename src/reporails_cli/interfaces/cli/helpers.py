@@ -1,25 +1,34 @@
-"""Shared CLI utilities — app instance, console, environment helpers."""
+"""Shared CLI utilities — console, environment helpers."""
 
 from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
 
+from reporails_cli.core.discovery.agents import get_known_agents
+from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
+
+if TYPE_CHECKING:
+    from reporails_cli.core.classify.focus_expansion import UnresolvedSkill
+    from reporails_cli.core.discovery.agents import DetectedAgent
+    from reporails_cli.core.platform.dto.models import Rule
+
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(
-    name="ails",
-    help=("what ails your repo? Let's find out!\n\nrun `ails check` to diagnose your project's instructions"),
-    no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
-)
 console = Console(emoji=False, highlight=False)
+
+
+def run_uv_tool(uv: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run `uv tool <args>` and capture its output."""
+    return subprocess.run([uv, "tool", *args], capture_output=True, text=True, timeout=120, check=False)
 
 
 def _is_ci() -> bool:
@@ -28,7 +37,7 @@ def _is_ci() -> bool:
     return any(os.environ.get(var) for var in ci_vars)
 
 
-def _warn_unresolved_skills(unresolved: list[Any], project_root: Path) -> None:
+def _warn_unresolved_skills(unresolved: list[UnresolvedSkill], project_root: Path) -> None:
     """Print one stderr warning per declared-but-unresolved skill."""
     for skill in unresolved:
         try:
@@ -56,10 +65,9 @@ def _default_format() -> str:
 
 def _validate_agent(agent: str, con: Console) -> str:
     """Normalize and validate --agent value. Returns normalized agent or exits."""
-    from reporails_cli.core.discovery.agents import get_known_agents as _get_known
 
     agent = agent.lower().strip()
-    known = _get_known()
+    known = get_known_agents()
     if agent and agent not in known:
         con.print(f"[red]Error:[/red] Unknown agent: {agent}")
         con.print(f"Known agents: {', '.join(sorted(known))}")
@@ -72,7 +80,7 @@ def _show_agent_auto_detect_hint(
     output_format: str,
     assumed: bool,
     mixed_signals: bool,
-    detected_agents: list[Any],
+    detected_agents: list[DetectedAgent],
 ) -> None:
     """Show auto-detect or generic-fallback hint for agent resolution."""
     if output_format not in ("text", "compact") or not sys.stdout.isatty():
@@ -94,7 +102,7 @@ def _show_agent_auto_detect_hint(
             console.print(f"[dim]{line:^{w}}[/dim]")
 
 
-def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
+def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Rule]) -> None:
     """Print grouped available rules when an unknown rule ID is given."""
     console.print(f"[red]Error:[/red] Unknown rule: {rule_id}")
     grouped: dict[str, list[str]] = {}
@@ -107,7 +115,9 @@ def _print_unknown_rule(rule_id: str, loaded_rules: dict[str, Any]) -> None:
         console.print(f"  {ns}: {', '.join(ids[:5])}{tail}")
 
 
-def _print_no_instruction_files(effective_agent: str, con: Console, detected_agents: list[Any] | None = None) -> None:
+def _print_no_instruction_files(
+    effective_agent: str, con: Console, detected_agents: list[DetectedAgent] | None = None
+) -> None:
     """Print the human message for a run that found nothing to check.
 
     Text surface only. The machine surfaces (`json` / `github`) render the same
@@ -115,9 +125,6 @@ def _print_no_instruction_files(effective_agent: str, con: Console, detected_age
     consumer reads one envelope shape whether or not anything was in scope —
     see `check_notices._emit_empty_run`.
     """
-    from reporails_cli.core.discovery.agents import get_known_agents
-    from reporails_cli.core.platform.dto.models import Level
-    from reporails_cli.core.platform.policy.levels import LEVEL_LABELS
 
     at = get_known_agents().get(effective_agent)
     others = sorted(

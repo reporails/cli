@@ -18,7 +18,6 @@ shared decode primitives this module imports).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from reporails_cli.core.mapper.bio_graphs import _head_a_path, _head_b_path
 from reporails_cli.core.mapper.bio_tagger import (
@@ -33,22 +32,28 @@ from reporails_cli.core.mapper.bio_tagger import (
     _SPAN_B,
     _SPAN_I,
     _TAG_CLASS,
+    CHARGE_OUTPUTS,
+    SPAN_OUTPUTS,
     AtomTuple,
+    Float32Array,
+    HeadClass,
     Span,
     _enc_a,
     _enc_b,
-    _extract_pass,
     _extract_pass_from_states,
     _head_session,
     _softmax_rows,
 )
+from reporails_cli.core.mapper.encode_pool import run_buckets
+from reporails_cli.core.platform.dto.ruleset import Modality
+
+# One charge run: (word start, word end exclusive, head class, modality, mean confidence).
+type ChargeRun = tuple[int, int, HeadClass, Modality, float]
 
 _BUCKET_SIZE = 32
-_CHARGE_OUT = ["logits_charge", "logits_modality"]
-_SPAN_OUT = ["logits_subject", "logits_target", "logits_action", "logits_scope"]
 
 
-def _decode_span_axis_runs(logits: Any, word_spans: list[tuple[int, int]], text: str) -> list[Span]:
+def _decode_span_axis_runs(logits: Float32Array, word_spans: list[tuple[int, int]], text: str) -> list[Span]:
     """O/B/I decode of a ``[n_words, 3]`` span axis → one :class:`Span` per disjoint B-run.
 
     Keeps the runs separate (sentence order) — the multiplicity a compound carries.
@@ -80,8 +85,8 @@ def _decode_span_axis_runs(logits: Any, word_spans: list[tuple[int, int]], text:
 
 
 def _charge_runs(
-    logits_charge: Any, logits_modality: Any, covered: list[bool] | None = None
-) -> list[tuple[int, int, str, str, float]]:
+    logits_charge: Float32Array, logits_modality: Float32Array, covered: list[bool] | None = None
+) -> list[ChargeRun]:
     """Argmax the charge tags into per-atom runs — each B-run is one atom.
 
     Only a B-tag opens a run (its class is the run's charge); an I-tag extends the
@@ -98,8 +103,8 @@ def _charge_runs(
     tags = logits_charge.argmax(axis=1)
     mod_idx = logits_modality.argmax(axis=1)
     probs = _softmax_rows(logits_charge).max(axis=1)
-    runs: list[tuple[int, int, str, str, float]] = []
-    cur: str | None = None
+    runs: list[ChargeRun] = []
+    cur: HeadClass | None = None
     start = 0
     acc: list[float] = []
 
@@ -125,9 +130,7 @@ def _charge_runs(
     return runs
 
 
-def _widen_runs_to_cover(
-    runs: list[tuple[int, int, str, str, float]], n_words: int
-) -> list[tuple[int, int, str, str, float]]:
+def _widen_runs_to_cover(runs: list[ChargeRun], n_words: int) -> list[ChargeRun]:
     """Widen each surviving charge run so consecutive runs partition ``[0, n_words)`` with no gap.
 
     A charge run's own word extent is only the words the head actually tagged
@@ -138,7 +141,7 @@ def _widen_runs_to_cover(
     the run's charge class, modality, and confidence are untouched, so the
     number of atoms and their signs are exactly what :func:`_charge_runs` decoded.
     """
-    widened: list[tuple[int, int, str, str, float]] = []
+    widened: list[ChargeRun] = []
     for i, (cs, _ce, cls, mod, conf) in enumerate(runs):
         new_cs = 0 if i == 0 else cs
         new_ce = runs[i + 1][0] if i + 1 < len(runs) else n_words
@@ -146,12 +149,12 @@ def _widen_runs_to_cover(
     return widened
 
 
-def _acts(run: tuple[int, int, str, str, float], predicate_runs: list[Span]) -> bool:
+def _acts(run: ChargeRun, predicate_runs: list[Span]) -> bool:
     """Whether a run's words hold a decoded action (a predicate span overlaps it)."""
     return any(p.offset is not None and p.offset[0] < run[1] and p.offset[1] > run[0] for p in predicate_runs)
 
 
-def _fold_back(folded: list[tuple[int, int, str, str, float]], run: tuple[int, int, str, str, float]) -> None:
+def _fold_back(folded: list[ChargeRun], run: ChargeRun) -> None:
     """Join ``run`` onto the run before it when both carry the same sign, else keep it apart."""
     if folded and _POLARITY[folded[-1][2]] == _POLARITY[run[2]]:
         folded[-1] = (folded[-1][0], run[1], *folded[-1][2:])
@@ -159,15 +162,13 @@ def _fold_back(folded: list[tuple[int, int, str, str, float]], run: tuple[int, i
         folded.append(run)
 
 
-def _fold_actionless_runs(
-    runs: list[tuple[int, int, str, str, float]], predicate_runs: list[Span]
-) -> list[tuple[int, int, str, str, float]]:
+def _fold_actionless_runs(runs: list[ChargeRun], predicate_runs: list[Span]) -> list[ChargeRun]:
     """Fold a charged run that decodes no action — a joining word (`Or`), a bare subject — into the run of
     the same sign beside it: the one after it, else the one before it. The joined run keeps the charge of
     the run that holds the action. A neutral run, and a run whose neighbours carry the other sign, stay apart.
     """
-    folded: list[tuple[int, int, str, str, float]] = []
-    pending: tuple[int, int, str, str, float] | None = None
+    folded: list[ChargeRun] = []
+    pending: ChargeRun | None = None
     for run in runs:
         if pending is not None:
             if _POLARITY[run[2]] == _POLARITY[pending[2]]:
@@ -206,32 +207,38 @@ def _assign_span(runs: list[Span], cs: int, ce: int, word_spans: list[tuple[int,
     return Span(text[word_spans[lo][0] : word_spans[hi - 1][1]], conf, (lo - cs, hi - cs))
 
 
+def _atom_modality(cls: HeadClass, modality: Modality) -> Modality:
+    """The modality an atom carries: none when neutral, and never none when charged."""
+    if cls == "NEUTRAL":
+        return "none"
+    return modality if modality != "none" else "direct"
+
+
 def _atom_from_charge_run(
-    run: tuple[int, int, str, str, float],
+    run: ChargeRun,
     axis_runs: dict[str, list[Span]],
     word_spans: list[tuple[int, int]],
     text: str,
-    n: int,
 ) -> AtomTuple:
     """One atom from a (widened) charge run: text = the run's covered extent, spans = the axis runs it contains."""
     cs, ce, cls, modality, _ = run
     atom_text = text[word_spans[cs][0] : word_spans[ce - 1][1]]
-    mod = "none" if cls == "NEUTRAL" else (modality if modality != "none" else "direct")
+    mod = _atom_modality(cls, modality)
     sp = {axis: _assign_span(axis_runs[axis], cs, ce, word_spans, text) for axis in _SOAS_AXES}
-    return AtomTuple(
-        _POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], 0.0, n > 1, atom_text
-    )
+    return AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], atom_text)
 
 
-_Decoded = tuple[dict[str, Any], list[tuple[int, int]], list[bool]]
+_Decoded = tuple[dict[str, Float32Array], list[tuple[int, int]], list[bool]]
 
 
 def _neutral_tuple(text: str) -> AtomTuple:
     empty = Span("", 0.0)
-    return AtomTuple(0, "none", empty, empty, empty, empty, 0.0, False, text)
+    return AtomTuple(0, "none", empty, empty, empty, empty, text)
 
 
-def _merge(out: dict[str, Any] | None, out_b: dict[str, Any] | None) -> dict[str, Any] | None:
+def _merge(
+    out: dict[str, Float32Array] | None, out_b: dict[str, Float32Array] | None
+) -> dict[str, Float32Array] | None:
     """Merge the span pass's aliased logits into the charge pass; ``None`` if either is empty."""
     if not out or not out_b:
         return None
@@ -239,29 +246,14 @@ def _merge(out: dict[str, Any] | None, out_b: dict[str, Any] | None) -> dict[str
     return out
 
 
-def _decode_logits(text: str) -> _Decoded | None:
-    """Run both classification passes (per-text) and merge their aliased logits.
-
-    ``covered`` comes from the first pass — it is what :func:`_charge_runs`
-    reads to keep a past-truncation word from extending a signed run on a
-    fallback-vector guess.
-    """
-    out, word_spans, covered = _extract_pass(text, _enc_a(), _head_a_path(), _CHARGE_OUT)
-    out_b, _, _ = _extract_pass(text, _enc_b(), _head_b_path(), _SPAN_OUT)
-    merged = _merge(out, out_b)
-    return (merged, word_spans, covered) if merged is not None else None
-
-
 def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] | None = None) -> list[_Decoded | None]:
-    """Batched :func:`_decode_logits`: each distinct text is decoded once, one pool task per bucket.
+    """The decoded outputs of each text: each distinct text is decoded once, one pool task per length bucket.
 
-    ``progress(done, total)`` counts distinct texts and is called from the calling
-    thread. Results equal the per-text path for every input position.
+    A position holds `None` when its text yields no decodable output. ``progress(done, total)``
+    counts distinct texts and is called from the calling thread. Results come back in input order.
     """
     if not texts:
         return []
-    from reporails_cli.core.mapper.encode_pool import run_buckets
-
     enc_a, enc_b = _enc_a(), _enc_b()
     head_a, head_b = _head_a_path(), _head_b_path()
     _head_session(str(head_a))
@@ -274,8 +266,8 @@ def _decode_logits_batch(texts: list[str], progress: Callable[[int, int], None] 
             for text, (ha, oa), (hb, ob) in zip(
                 bucket, enc_a.forward_bucket(bucket), enc_b.forward_bucket(bucket), strict=True
             ):
-                out, word_spans, covered = _extract_pass_from_states(ha, oa, text, head_a, _CHARGE_OUT)
-                out_b, _, _ = _extract_pass_from_states(hb, ob, text, head_b, _SPAN_OUT)
+                out, word_spans, covered = _extract_pass_from_states(ha, oa, text, head_a, CHARGE_OUTPUTS)
+                out_b, _, _ = _extract_pass_from_states(hb, ob, text, head_b, SPAN_OUTPUTS)
                 merged = _merge(out, out_b)
                 decoded.append((merged, word_spans, covered) if merged is not None else None)
             return decoded
@@ -316,7 +308,7 @@ def _frames_from_decoded(decoded: _Decoded | None, text: str) -> list[AtomTuple]
     runs = _widen_runs_to_cover(runs, len(word_spans))
     axis_runs = {axis: _decode_span_axis_runs(out[f"logits_{axis}"], word_spans, text) for axis in _SOAS_AXES}
     runs = _fold_actionless_runs(runs, axis_runs["predicate"])
-    return [_atom_from_charge_run(r, axis_runs, word_spans, text, len(runs)) for r in runs]
+    return [_atom_from_charge_run(r, axis_runs, word_spans, text) for r in runs]
 
 
 def _heading_tuple_from_decoded(decoded: _Decoded | None, text: str) -> AtomTuple:
@@ -333,36 +325,10 @@ def _heading_tuple_from_decoded(decoded: _Decoded | None, text: str) -> AtomTupl
     runs = _charge_runs(out["logits_charge"], out["logits_modality"], covered)
     dom = max(runs, key=lambda r: r[4]) if runs else None
     cls, modality = (dom[2], dom[3]) if dom else ("NEUTRAL", "none")
-    mod = "none" if cls == "NEUTRAL" else (modality if modality != "none" else "direct")
+    mod = _atom_modality(cls, modality)
     n = len(word_spans)
     sp = {
         axis: _assign_span(_decode_span_axis_runs(out[f"logits_{axis}"], word_spans, text), 0, n, word_spans, text)
         for axis in _SOAS_AXES
     }
-    return AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], 0.0, False, text)
-
-
-def tag_atom_multislot_frames(text: str) -> list[AtomTuple]:
-    """Decode one sentence into N atoms via charge-run segmentation.
-
-    The charge BIO tags argmax-decode into runs — each run is one atom, its
-    word extent the atom's text, its class the atom's charge. Each axis span is
-    assigned to the atom whose extent contains it, its offset rebased to the
-    atom's own text. Pure argmax, no threshold.
-    """
-    return _frames_from_decoded(_decode_logits(text), text)
-
-
-def tag_heading_multislot(text: str) -> AtomTuple:
-    """Decode a heading as ONE atom via the same argmax/no-threshold path (dominant charge run)."""
-    return _heading_tuple_from_decoded(_decode_logits(text), text)
-
-
-def tag_atoms_multislot_frames_batch(texts: list[str]) -> list[list[AtomTuple]]:
-    """Batched :func:`tag_atom_multislot_frames` — one encoder forward per encoder for the batch."""
-    return [_frames_from_decoded(dec, t) for t, dec in zip(texts, _decode_logits_batch(texts), strict=True)]
-
-
-def tag_headings_multislot_batch(texts: list[str]) -> list[AtomTuple]:
-    """Batched :func:`tag_heading_multislot`."""
-    return [_heading_tuple_from_decoded(dec, t) for t, dec in zip(texts, _decode_logits_batch(texts), strict=True)]
+    return AtomTuple(_POLARITY[cls], mod, sp["subject"], sp["predicate"], sp["object"], sp["scope"], text)

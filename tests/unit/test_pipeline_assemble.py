@@ -30,7 +30,6 @@ def _inputs(**overrides: object) -> AssembleInputs:
         "filter_agents": None,
         "effective_agent": "",
         "lint_result": None,
-        "alias_fn": lambda _rule: set(),
     }
     base.update(overrides)
     return AssembleInputs(**base)  # type: ignore[arg-type]
@@ -42,7 +41,7 @@ def test_assemble_folds_memory_validation(tmp_path):
     """Surface 1: a broken memory link on a ruleset-map file surfaces in the merged findings."""
     memory_file = tmp_path / "MEMORY.md"
     memory_file.write_text("# Memory\n\n- [broken](does-not-exist.md)\n", encoding="utf-8")
-    ruleset_map = SimpleNamespace(files=[SimpleNamespace(path=str(memory_file), type="memory")])
+    ruleset_map = SimpleNamespace(files=[SimpleNamespace(path=str(memory_file), type="memory")], atoms=())
 
     result = assemble_result(_inputs(ruleset_map=ruleset_map, scan_root=tmp_path))
 
@@ -84,8 +83,8 @@ def test_assemble_unpacks_lint_result_and_attaches_workflow(tmp_path):
 
     result = assemble_result(_inputs(scan_root=tmp_path, lint_result=lint_result))
 
-    assert result.tier == "pro"
-    assert result.workflow is sentinel_workflow
+    assert result.reply.tier == "pro"
+    assert result.reply.workflow is sentinel_workflow
 
 
 @pytest.mark.unit
@@ -94,7 +93,7 @@ def test_assemble_leaves_workflow_none_when_lint_result_absent(tmp_path):
     """No lint result (offline) → no workflow attached, no crash on the `None` unpack."""
     result = assemble_result(_inputs(scan_root=tmp_path, lint_result=None))
 
-    assert result.workflow is None
+    assert result.reply.workflow is None
 
 
 def _subagent_credential_findings() -> list[object]:
@@ -120,9 +119,7 @@ def test_assemble_reports_one_credential_finding_per_secret(tmp_path):
     """The generic and the subagent credential rule on one secret report it once."""
     _write_subagent(tmp_path, 'api_key = "sk-live-abc123"')
 
-    result = assemble_result(
-        _inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
 
     assert [f.rule for f in result.findings] == ["CORE:G:0009"]
     assert result.stats.total_findings == 1
@@ -141,9 +138,7 @@ def test_assemble_ignoring_one_credential_rule_keeps_the_other(tmp_path, ignored
     other rule's finding on the same secret is still reported."""
     _write_subagent(tmp_path, f'api_key = "sk-live-abc123"  <!-- ails-disable-line {ignored} -->')
 
-    result = assemble_result(
-        _inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(m_findings=_subagent_credential_findings(), scan_root=tmp_path))
 
     assert [f.rule for f in result.findings] == [reported]
     assert result.stats.total_findings == 1
@@ -162,7 +157,7 @@ def test_assemble_keeps_two_other_rules_that_matched_the_same_text(tmp_path):
         LocalFinding("CLAUDE.md", 5, "error", "CORE:C:0050", "Second", signature="TODO"),
     ]
 
-    result = assemble_result(_inputs(m_findings=findings, scan_root=tmp_path, alias_fn=lambda rule: {rule}))
+    result = assemble_result(_inputs(m_findings=findings, scan_root=tmp_path))
 
     assert sorted(f.rule for f in result.findings) == ["CORE:C:0049", "CORE:C:0050"]
     assert result.stats.total_findings == 2
@@ -185,9 +180,7 @@ def test_a_finding_takes_the_grade_of_the_reply_row_at_its_coordinates(tmp_path)
     )
     lint_result = SimpleNamespace(report=report, hints=(), cross_file_coordinates=(), tier="pro", workflow=None)
 
-    result = assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(scan_root=tmp_path, m_findings=findings, lint_result=lint_result))
 
     assert [(f.line, f.impact_tier) for f in result.findings if f.rule == "CORE:C:0011"] == [
         (3, ""),
@@ -204,9 +197,7 @@ def test_an_offline_run_grades_no_finding(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("# Project\n\nFirst line.\n", encoding="utf-8")
     findings = [LocalFinding("CLAUDE.md", 3, "error", "CORE:C:0011", "m", check_id="c")]
 
-    result = assemble_result(
-        _inputs(scan_root=tmp_path, m_findings=findings, lint_result=None, alias_fn=lambda rule: {rule})
-    )
+    result = assemble_result(_inputs(scan_root=tmp_path, m_findings=findings, lint_result=None))
 
     assert {f.impact_tier for f in result.findings} == {""}
 
@@ -233,7 +224,6 @@ def test_a_finding_whose_dependency_reports_on_its_file_is_neither_shown_nor_sen
         m_findings=_dependent_pair_project(tmp_path),
         scan_root=tmp_path,
         effective_agent="claude",
-        alias_fn=lambda rule: {rule},
     )
 
     result = assemble_result(inputs)
@@ -255,7 +245,6 @@ def test_silencing_a_dependency_inline_does_not_bring_back_the_finding_that_depe
         m_findings=_dependent_pair_project(tmp_path, ignored="CORE:S:0002"),
         scan_root=tmp_path,
         effective_agent="claude",
-        alias_fn=lambda rule: {rule},
     )
 
     result = assemble_result(inputs)
@@ -340,8 +329,8 @@ def test_a_listed_config_file_finding_keeps_the_tier_its_row_carried(tmp_path, d
     )
 
     assert [f.impact_tier for f in result.findings if f.rule == "CODEX:E:0002"] == ["gate_mover"]
-    assert [loc.element for loc in result.workflow.locations] == [main]
-    assert [(e.rule, e.reason) for e in result.workflow.listed] == [("CODEX:E:0002", "config-file")]
+    assert [loc.element for loc in result.reply.workflow.locations] == [main]
+    assert [(e.rule, e.reason) for e in result.reply.workflow.listed] == [("CODEX:E:0002", "config-file")]
 
 
 @pytest.mark.unit
@@ -433,9 +422,9 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
     result = _archive_project(tmp_path, 'heal_exclude: ["archive/**"]\n')
 
     assert sorted(f.file for f in result.findings) == ["AGENTS.md", "archive/AGENTS.md"]
-    assert [loc.element for loc in result.workflow.locations] == ["AGENTS.md"]
-    assert [loc.order for loc in result.workflow.locations] == [1]
-    [entry] = result.workflow.listed
+    assert [loc.element for loc in result.reply.workflow.locations] == ["AGENTS.md"]
+    assert [loc.order for loc in result.reply.workflow.locations] == [1]
+    [entry] = result.reply.workflow.listed
     assert (entry.rule, entry.reason, entry.count) == ("CODEX:E:0001", "excluded", 1)
 
 
@@ -444,8 +433,8 @@ def test_a_heal_excluded_file_keeps_its_findings_and_takes_no_rewrite_location(t
 def test_without_heal_exclude_every_location_is_kept(tmp_path, dev_rules_dir):
     result = _archive_project(tmp_path, "exclude_dirs: [examples]\n")
 
-    assert [loc.order for loc in result.workflow.locations] == [1, 2]
-    assert not result.workflow.listed
+    assert [loc.order for loc in result.reply.workflow.locations] == [1, 2]
+    assert not result.reply.workflow.listed
 
 
 @pytest.mark.unit
@@ -476,6 +465,6 @@ def test_with_exclusions_states_the_recorded_value(tmp_path):
     from reporails_cli.core.pipeline.assemble import with_exclusions
 
     result = with_exclusions(assemble_result(_inputs(scan_root=tmp_path)), (("agents", "docs"), ("a.md",)))
-    assert result.excluded_dirs == ("agents", "docs")
-    assert result.excluded_files == ("a.md",)
-    assert assemble_result(_inputs(scan_root=tmp_path)).excluded_dirs == ()
+    assert result.omissions.excluded_dirs == ("agents", "docs")
+    assert result.omissions.excluded_files == ("a.md",)
+    assert assemble_result(_inputs(scan_root=tmp_path)).omissions.excluded_dirs == ()

@@ -53,9 +53,9 @@ def test_fenced_constraint_appearance_fields_are_empty() -> None:
 def test_italic_constraints_skips_fenced_constraint_but_count_holds() -> None:
     rm = _rm("```\nNever use **mock** in the test suite.\n```\n")
     # No italic-constraints violation (the literal `**` is not rendered bold)…
-    assert has_non_italic_constraints(rm, "rules.md").found is False
+    assert has_non_italic_constraints(rm, "rules.md", {}).found is False
     # …but the charge count still sees the fenced constraint.
-    assert has_constraint_atoms(rm, "rules.md").found is True
+    assert has_constraint_atoms(rm, "rules.md", {}).found is True
 
 
 @pytest.mark.unit
@@ -63,8 +63,8 @@ def test_italic_constraints_skips_fenced_constraint_but_count_holds() -> None:
 def test_client_bold_check_skips_fenced_directive_but_count_holds() -> None:
     rm = _rm("```\nAlways run the **full suite** before every commit.\n```\n")
     findings = run_client_checks(rm)
-    assert not [f for f in findings if f.rule == "bold"]
-    assert has_directive_atoms(rm, "rules.md").found is True
+    assert not [f for f in findings if f.check_id == "bold"]
+    assert has_directive_atoms(rm, "rules.md", {}).found is True
 
 
 @pytest.mark.unit
@@ -73,4 +73,4 @@ def test_client_unformatted_check_skips_fenced_line() -> None:
     # A bare code-ish token inside a fence is already in a code container, so the
     # "wrap in backticks" appearance check must not fire on it.
     rm = _rm("```\nNever call rm -rf on the cache directory during a build.\n```\n")
-    assert not [f for f in run_client_checks(rm) if f.rule == "format"]
+    assert not [f for f in run_client_checks(rm) if f.check_id == "format"]

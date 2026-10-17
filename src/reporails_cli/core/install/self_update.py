@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
@@ -10,6 +11,8 @@ PKG_NAME = "reporails-cli"
 
 
 class InstallMethod(str, Enum):
+    """How the package was installed."""
+
     UV = "uv"
     PIP = "pip"
     PIPX = "pipx"
@@ -27,8 +30,6 @@ def detect_install_method() -> InstallMethod:
     # Check for editable/dev install via direct_url.json
     direct_url = dist.read_text("direct_url.json")
     if direct_url is not None:
-        import json
-
         try:
             data = json.loads(direct_url)
             if data.get("dir_info", {}).get("editable", False):
@@ -40,7 +41,7 @@ def detect_install_method() -> InstallMethod:
     dist_files = dist.files
     if dist_files:
         first_file = str(dist_files[0])
-        location = str(Path(dist._path).resolve()) if hasattr(dist, "_path") else ""
+        location = str(Path(str(dist.locate_file(""))).resolve())
         if "pipx" in location or "pipx" in first_file:
             return InstallMethod.PIPX
 

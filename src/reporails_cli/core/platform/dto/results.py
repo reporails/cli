@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from reporails_cli.core.platform.dto.analytics import AnalyticsEntry
-from reporails_cli.core.platform.dto.models import JudgmentRequest, Level, Violation
+from reporails_cli.core.platform.contract.json_value import JsonValue
 
 # =============================================================================
 # Feature Detection Models
@@ -26,32 +24,31 @@ class HookEntry:
 
 
 @dataclass
+class DiscoveryFeatures:
+    """What discovery found: whether the project has more than one instruction file."""
+
+    has_multiple_instruction_files: bool = False
+
+
+@dataclass
+class MemoryFeatures:
+    """L7 capabilities (Adaptive): memory and state persistence."""
+
+    has_memory_dir: bool = False  # memory/state persistence directory
+    has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
+
+
+@dataclass
 class DetectedFeatures:
     """Features detected in a project for capability-gate level detection.
 
-    Used by determine_level_from_gates() for project level assignment,
-    by display summaries, and for symlink resolution.
+    Used by determine_level_from_gates() for project level assignment.
     """
 
     # Base existence
     has_instruction_file: bool = False
-    has_claude_md: bool = False  # CLAUDE.md at root
 
-    # Directory structure
-    is_abstracted: bool = False  # .claude/rules/, .claude/skills/, etc.
-    has_shared_files: bool = False  # .shared/, shared/
-    has_backbone: bool = False  # .ails/backbone.yml
-
-    # Discovery
-    instruction_file_count: int = 0
-    has_multiple_instruction_files: bool = False
-    has_hierarchical_structure: bool = False  # nested instruction files
-    component_count: int = 0  # components from backbone.yml
-
-    # L2 capabilities
-    is_size_controlled: bool = False  # root instruction file under size threshold
-    has_explicit_constraints: bool = False  # MUST/NEVER keywords in content
-    has_imports: bool = False  # @import references in content
+    discovery: DiscoveryFeatures = field(default_factory=DiscoveryFeatures)
 
     # L3 capabilities (Scoped)
     has_path_scoped_rules: bool = False  # an agent's rule files (with or without `paths:`), or nested instruction files
@@ -65,39 +62,7 @@ class DetectedFeatures:
         Path, ...
     ] = ()  # repo-scoped hook files that count toward L6: a dedicated file, or a shared one with hooks
     hooks: tuple[HookEntry, ...] = ()  # every hook found in every scope of each agent's hooks surface
-    # L7 capabilities (Adaptive)
-    has_memory_dir: bool = False  # memory/state persistence directory
-    has_auto_memory: bool = False  # auto-memory writes (~/.claude/projects/*/memory/)
-
-    # Symlink resolution (for regex engine extra targets)
-    resolved_symlinks: list[Path] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class FrictionEstimate:
-    """Friction estimate from violations."""
-
-    level: str  # "extreme", "high", "medium", "small", "none"
-
-
-@dataclass(frozen=True)
-class RuleResult:
-    """Per-rule pass/fail outcome for the violation matrix."""
-
-    rule_id: str  # e.g., "CORE:C:0001"
-    status: str  # "pass" or "fail"
-
-
-@dataclass(frozen=True)
-class CategoryStats:
-    """Per-category rule statistics for the category summary table."""
-
-    code: str  # "S", "C", "D", "E", "M", "G"
-    name: str  # "Structure", "Coherence", "Direction", etc.
-    total: int
-    passed: int
-    failed: int
-    worst_severity: str | None  # "critical"/"high"/"medium"/"low" or None
+    memory: MemoryFeatures = field(default_factory=MemoryFeatures)
 
 
 # =============================================================================
@@ -127,12 +92,10 @@ class SubagentHooks:
 class AgentConfig:
     """Agent configuration from framework (agents/{agent}/config.yml)."""
 
-    agent: str = ""
     prefix: str = ""  # Uppercase namespace prefix (e.g., "CLAUDE")
     name: str = ""  # Display name (e.g., "Claude Code")
-    core: bool = False  # True for CORE config (generic agent)
     excludes: list[str] = field(default_factory=list)
-    overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    overrides: dict[str, dict[str, JsonValue]] = field(default_factory=dict)
     subagent_hooks: SubagentHooks = field(default_factory=SubagentHooks)
     # Hook events that run before a file tool and can block it, each with the tools of Read/Edit/Write it gates.
     intercept_events: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -179,7 +142,6 @@ class GlobalConfig:
 class ProjectConfig:
     """Project-level configuration (.ails/config.yml + .ails/config.local.yml)."""
 
-    framework_version: str | None = None  # Pin version
     packages: list[str] = field(default_factory=list)  # Project rule packages
     disabled_rules: list[str] = field(default_factory=list)
     exclude_dirs: list[str] = field(default_factory=list)  # Directory names to exclude
@@ -204,113 +166,3 @@ class ProjectConfig:
     # Mapper atomizer tuning. `mapper.segmentation` picks the boundary policy
     # ("legacy" | "structure-aware"), defaulting to the shipped behavior.
     mapper: MapperConfig = field(default_factory=MapperConfig)
-
-
-# =============================================================================
-# Result Models
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class ScanDelta:
-    """Comparison between current and previous scan."""
-
-    score_delta: float | None  # None if no previous or unchanged
-    level_previous: str | None  # None if unchanged or no previous
-    level_improved: bool | None  # True=up, False=down, None=unchanged/no previous
-    violations_delta: int | None  # Negative=improvement, positive=regression, None if unchanged
-
-    @classmethod
-    def compute(
-        cls,
-        current_score: float,
-        current_level: str,
-        current_violations: int,
-        previous: AnalyticsEntry | None,
-    ) -> ScanDelta:
-        """Compute delta from current values and previous scan entry.
-
-        Args:
-            current_score: Current scan score
-            current_level: Current level (e.g., "L3")
-            current_violations: Current violation count
-            previous: Previous AnalyticsEntry or None
-
-        Returns:
-            ScanDelta with computed differences
-        """
-        if previous is None:
-            return cls(None, None, None, None)
-
-        # Score delta (round to 1 decimal, None if unchanged)
-        raw_score_delta = round(current_score - previous.score, 1)
-        score_delta = raw_score_delta if raw_score_delta != 0 else None
-
-        # Level comparison (extract number from "L3" etc)
-        curr_num = int(current_level[1:]) if current_level.startswith("L") and current_level[1:].isdigit() else 0
-        prev_num = int(previous.level[1:]) if previous.level.startswith("L") and previous.level[1:].isdigit() else 0
-        if curr_num != prev_num:
-            level_previous = previous.level
-            level_improved = curr_num > prev_num
-        else:
-            level_previous = None
-            level_improved = None
-
-        # Violations delta (None if unchanged)
-        viol_delta = current_violations - previous.violations_count
-        violations_delta = viol_delta if viol_delta != 0 else None
-
-        return cls(score_delta, level_previous, level_improved, violations_delta)
-
-
-@dataclass(frozen=True)
-class PendingSemantic:
-    """Summary of pending semantic rules for partial evaluation."""
-
-    rule_count: int  # Number of semantic rules pending
-    file_count: int  # Files with pending semantic checks
-    rules: tuple[str, ...]  # Rule IDs (e.g., "C6", "C10")
-
-
-@dataclass(frozen=True)
-class ValidationResult:
-    """Complete validation output."""
-
-    score: float  # 0.0-10.0 scale
-    level: Level  # Maturity level
-    violations: tuple[Violation, ...]  # Immutable
-    judgment_requests: tuple[JudgmentRequest, ...]
-    rules_checked: int  # Deterministic rules checked
-    rules_passed: int
-    rules_failed: int
-    feature_summary: str  # Human-readable
-    friction: FrictionEstimate
-    # Per-category breakdown
-    category_summary: tuple[CategoryStats, ...] = ()
-    # Per-rule pass/fail (for violation matrix construction)
-    rule_results: tuple[RuleResult, ...] = ()
-    # Evaluation completeness
-    is_partial: bool = True  # True for CLI (pattern-only), False for MCP (includes semantic)
-    pending_semantic: PendingSemantic | None = None  # Summary of pending semantic rules
-
-
-@dataclass(frozen=True)
-class InitResult:
-    """Result of initialization."""
-
-    success: bool
-    rules_path: Path | None
-    framework_version: str | None
-    errors: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class UpdateResult:
-    """Result of framework update."""
-
-    success: bool
-    message: str
-    old_version: str | None = None
-    new_version: str | None = None
-    rules_path: Path | None = None
-    rules_count: int = 0

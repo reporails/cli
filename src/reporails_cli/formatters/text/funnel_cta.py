@@ -9,10 +9,17 @@ from __future__ import annotations
 
 import shlex
 import sys
-from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from rich.markup import escape as escape_markup
+from rich.markup import render as render_markup
+
+from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.dto.diagnostics import DEFAULT_RETRY_AFTER_S, UNENTITLED_TIERS, FunnelError
+from reporails_cli.core.platform.utils.version import installed_version
+
+# URL schemes the terminal renders as a clickable link.
+LINK_SCHEMES = ("https://", "http://")
 
 BUG_REPORT_URL = "https://github.com/reporails/cli/issues"
 BUG_REPORT_NEW_URL = "https://github.com/reporails/cli/issues/new"
@@ -27,11 +34,9 @@ UNPAID_PITCH_LINE = "  Pro adds the remedies and the order to apply them."
 # The Pro line that tells a user of any other coding agent how to run the rewrite.
 OTHER_AGENT_HEAL_TEXT = "in another coding agent, ask it to run the reporails heal."
 
-# The Pro footer under a check: where the remedies are, then how to run the rewrite in each agent.
-PRO_HEAL_FOOTER_LINES = (
-    "  [dim]The remedies are in --format json. Run [bold]ails install[/bold], then[/dim]",
-    "  [dim][bold]/reporails:ails heal[/bold] in Claude Code to rewrite your instruction files;[/dim]",
-    f"  [dim]{OTHER_AGENT_HEAL_TEXT}[/dim]",
+# The Pro line under a check: how to fix the findings.
+PRO_HEAL_FOOTER_LINE = (
+    "  [dim]Fix them: [bold]ails install[/bold], then ask your coding agent to run the reporails heal.[/dim]"
 )
 
 
@@ -71,7 +76,6 @@ def no_score_reason(err: object) -> str:
 
 def _has_key() -> bool:
     """True when this CLI holds an API key (env override or stored credentials)."""
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
 
     return has_api_key()
 
@@ -107,14 +111,6 @@ def _cta_upgrade_url(err: FunnelError) -> str:
     return err.support_url
 
 
-def _cli_version() -> str:
-    """Return the installed CLI version, or 'unknown' if metadata is missing."""
-    try:
-        return version("reporails-cli")
-    except PackageNotFoundError:
-        return "unknown"
-
-
 def format_bug_report_url(err: FunnelError) -> str:
     """Return the GitHub-issues URL for the bug-report exit ramp.
 
@@ -134,7 +130,7 @@ def format_bug_report_url(err: FunnelError) -> str:
         "## What happened\n\n"
         f"{err.message}\n\n"
         "## Environment\n\n"
-        f"- reporails-cli: {_cli_version()}\n"
+        f"- reporails-cli: {installed_version()}\n"
         f"- OS: {sys.platform}\n"
         f"- Python: {sys.version.split()[0]}\n\n"
         "## Steps to reproduce\n\n"
@@ -144,15 +140,15 @@ def format_bug_report_url(err: FunnelError) -> str:
     return f"{BUG_REPORT_NEW_URL}?{params}"
 
 
-def merge_utm(url: str, source: str = "cli") -> str:
-    """Append utm_source to URL query string when absent."""
-    if not url or not url.startswith(("http://", "https://")):
+def merge_utm(url: str) -> str:
+    """Append utm_source=cli to URL query string when absent."""
+    if not url or not url.startswith(LINK_SCHEMES):
         return url
     parts = urlsplit(url)
     params = dict(parse_qsl(parts.query, keep_blank_values=True))
     if "utm_source" in params:
         return url
-    params["utm_source"] = source
+    params["utm_source"] = "cli"
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), parts.fragment))
 
 
@@ -169,7 +165,6 @@ def format_cta(err: FunnelError, *, command_line: bool = True) -> str:
     `command_line` is False for a caller with no command to add flags to (JSON and MCP text): an
     over-cap refusal then names the config key instead of a flag.
     """
-    from rich.markup import escape as escape_markup
 
     if err.retryable:
         return retry_text(err)
@@ -195,7 +190,6 @@ def _atom_cap_route(err: FunnelError, tier: str, command_line: bool = True) -> s
     With a command line the route says to run the same command with the flags added; without one it
     names the folders and points at `exclude_dirs:` in `.ails/config.yml`.
     """
-    from rich.markup import escape as escape_markup
 
     lines = []
     if err.dense_dirs:
@@ -239,7 +233,6 @@ def plain_cta(err: FunnelError) -> str:
     shortcode renders as the literal text, not a substituted emoji glyph, in JSON/MCP
     output.
     """
-    from rich.markup import render as render_markup
 
     return render_markup(format_cta(err, command_line=False), emoji=False).plain
 

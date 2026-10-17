@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -100,3 +101,41 @@ def test_lint_names_an_invalid_checks_file_without_a_traceback(tmp_path: Path) -
     assert result.exit_code != 0
     assert "Traceback" not in result.output
     assert "core/demo-bad/checks.yml" in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+@pytest.mark.parametrize("name", ["checks.yml", "rule.md"])
+def test_a_rule_file_that_is_not_utf8_is_a_load_error_not_a_crash(
+    tmp_path: Path, name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    from reporails_cli.core.platform.adapters.registry import _scan_rules
+
+    root = _root(tmp_path)
+    rule_dir = _rule(root, "demo-bad", "CORE:S:9999", GOOD_CHECKS)
+    _rule(root, "demo-good", "CORE:S:9998", GOOD_CHECKS)
+    if name == "rule.md":
+        (rule_dir / name).write_bytes(
+            b"---\nid: CORE:S:9999\nslug: demo-bad\ntitle: T\ncategory: structure\ntype: mechanical\n"
+            b"enforcement_required: true\nnote: caf\xe9\n---\n"
+        )
+    else:
+        (rule_dir / name).write_bytes(b"checks:\n# caf\xe9\n")
+
+    with caplog.at_level("WARNING"):
+        rules = _scan_rules(root)
+
+    assert [rule.id for rule in rules.values()] == ["CORE:S:9998"]
+    assert f"{Path('core') / 'demo-bad' / name}: is not UTF-8 text" in caplog.text
+
+    result = runner.invoke(app, ["test", "--lint", "--rules-root", str(root)])
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+    assert f"core/demo-bad/{name}" in result.output
+    plain = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", result.output).split())
+    assert plain.count("is not UTF-8 text") == 1
+    # A rule.md whose frontmatter was recovered is linted on that frontmatter (no severity, an
+    # unnamed enforcement partner); a checks.yml failure leaves a complete rule.md clean.
+    assert ("rule.md: severity: Field required" in plain) is (name == "rule.md")
+    assert ("enforcement_mechanism" in plain) is (name == "rule.md")

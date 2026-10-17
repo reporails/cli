@@ -5,7 +5,7 @@ below rather than decorated:
 
   - `model_config = ConfigDict(frozen=True)` on FileTypeDeclaration,
     ClassifiedFile, FileMatch, Check, Rule and `@dataclass(frozen=True)` on
-    LocalFinding, Violation, JudgmentRequest, JudgmentResponse: none of these
+    LocalFinding, Violation: none of these
     models is ever hashed as a whole object or used as a set member / dict key
     (dedup throughout the codebase keys on strings and tuples), and no code path
     relies on assignment raising. Flipping `frozen` to False changes no

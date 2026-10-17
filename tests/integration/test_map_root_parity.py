@@ -47,10 +47,10 @@ class _LoopbackDaemonSock:
         pass
 
     def sendall(self, payload: bytes) -> None:
-        from reporails_cli.core.mapper import daemon
+        from reporails_cli.core.mapper import daemon_server
 
         request = json.loads(payload.decode("utf-8"))
-        response = daemon._handle_map_ruleset(request, None)
+        response = daemon_server._handle_map_ruleset(request, None)
         self.pending = (json.dumps(response) + "\n").encode("utf-8")
 
     def recv(self, size: int) -> bytes:
@@ -114,19 +114,23 @@ def test_in_process_and_daemon_arms_attribute_files_identically(
     project.mkdir()
     files = _build_fixture(project)
 
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.get_global_cache_dir", lambda: tmp_path / "cache-daemon")
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_cache_dir", lambda: tmp_path / "cache-daemon"
+        "reporails_cli.core.mapper.daemon_server.get_global_cache_dir", lambda: tmp_path / "cache-daemon"
     )
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon.is_daemon_running", lambda: True)
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.ping", lambda: {"ok": True})
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: True)
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.ping", lambda: {"ok": True})
     monkeypatch.setattr("reporails_cli.core.mapper.daemon_client.connect", _LoopbackDaemonSock)
     daemon_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False)
     assert daemon_map is not None
 
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_cache_dir", lambda: tmp_path / "cache-in-process"
+        "reporails_cli.core.pipeline.mapping.get_global_cache_dir", lambda: tmp_path / "cache-in-process"
     )
-    monkeypatch.setattr("reporails_cli.core.mapper.daemon.is_daemon_running", lambda: False)
+    monkeypatch.setattr(
+        "reporails_cli.core.mapper.daemon_server.get_global_cache_dir", lambda: tmp_path / "cache-in-process"
+    )
+    monkeypatch.setattr("reporails_cli.core.pipeline.mapping.is_daemon_running", lambda: False)
     in_process_map = mapping.map_instruction_files(project, list(files), spawn_daemon=False)
     assert in_process_map is not None
 

@@ -91,7 +91,7 @@ def _named_paths(payload: dict[str, Any]) -> set[str]:
 @pytest.mark.parametrize(("case", "config", "flags", "surface"), _PARAMS, ids=[f"{p[0]}-{p[3]}" for p in _PARAMS])
 def test_left_out_files_are_not_checked(tmp_path: Path, case: str, config: str, flags: list[str], surface: str) -> None:
     project = _project(tmp_path, config)
-    payload = _cli(project, *flags) if surface == "cli" else tools.validate_tool(str(project), full=True)
+    payload = _cli(project, *flags) if surface == "cli" else tools.run_pipeline_for_path(str(project), full=True)[0]
     named = _named_paths(payload)
     assert "CLAUDE.md" in named
     assert not named & set(_LEFT_OUT), sorted(named)

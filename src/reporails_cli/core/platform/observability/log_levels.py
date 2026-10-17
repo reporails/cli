@@ -8,11 +8,11 @@ from contextlib import contextmanager
 
 
 @contextmanager
-def quiet_loggers(names: Iterable[str], level: int = logging.ERROR) -> Iterator[None]:
-    """Hold the named loggers at `level` for the block and restore their previous levels on exit."""
+def quiet_loggers(names: Iterable[str]) -> Iterator[None]:
+    """Hold the named loggers at ERROR for the block and restore their previous levels on exit."""
     previous = {name: logging.getLogger(name).level for name in names}
     for name in previous:
-        logging.getLogger(name).setLevel(level)
+        logging.getLogger(name).setLevel(logging.ERROR)
     try:
         yield
     finally:

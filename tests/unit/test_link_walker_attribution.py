@@ -129,7 +129,7 @@ def test_max_depth_cuts_off(tmp_path: Path) -> None:
     d.write_text("[e](e.md)\n", encoding="utf-8")
     e.write_text("# e\n", encoding="utf-8")
 
-    edges = walk_markdown_links({a: "main"}, tmp_path, {a}, max_depth=3)
+    edges = walk_markdown_links({a: "main"}, tmp_path, {a})
     reached = {edge.target for edge in edges}
     assert d.resolve() in reached
     assert e.resolve() not in reached

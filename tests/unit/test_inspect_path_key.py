@@ -1,6 +1,6 @@
 """Path-filter SEAM for the mapper's per-file loading classification.
 
-`_detect_file_loading` decides whether a rule file is always loaded or loaded only
+`_detect_file_activation` decides whether a rule file is always loaded or loaded only
 for matching paths, by reading the frontmatter key the matched file type declares
 as its path filter. A Claude rule scoped with `paths:` read as `session_start`
 before the key was declared, so these run the real bundled registry and redden
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper.inspect import (
-    _detect_file_loading,
+    _detect_file_activation,
     _load_registry,
 )
 from reporails_cli.core.platform.adapters.payload import MAX_FILE_GLOBS, project_payload
@@ -127,7 +127,7 @@ def _write(root: Path, rel: str, text: str) -> Path:
 )
 def test_rule_loading_reads_the_declared_path_key(tmp_path, rel, frontmatter, expected):
     path = _write(tmp_path, rel, f"---\n{frontmatter}---\n\n# Rule\n\nUse the shared client.\n")
-    assert _detect_file_loading(path, tmp_path, _load_registry()) == expected
+    assert _detect_file_activation(path, tmp_path, _load_registry())[:5] == expected
 
 
 @pytest.mark.unit
@@ -182,7 +182,7 @@ def test_payload_caps_file_globs():
 )
 def test_nested_instruction_files_load_on_demand(tmp_path, rel, expected):
     path = _write(tmp_path, rel, "# Notes\n\nUse the shared client.\n")
-    assert _detect_file_loading(path, tmp_path, _load_registry()) == expected
+    assert _detect_file_activation(path, tmp_path, _load_registry())[:5] == expected
 
 
 @pytest.mark.unit
@@ -190,14 +190,14 @@ def test_nested_instruction_files_load_on_demand(tmp_path, rel, expected):
 def test_every_agent_declares_where_a_skills_entry_file_sits():
     """Each agent's `skills` scopes name the entry file's place: one level below the skills
     folder, except Cursor, which walks its skills folders recursively."""
-    from reporails_cli.core.discovery.agents import _extract_patterns
+    from reporails_cli.core.discovery.agent_config import extract_patterns
 
     for agent, config in _load_registry().items():
         skills = (config.get("file_types") or {}).get("skills")
         if skills is None:
             continue
         for scope, spec in skills["scopes"].items():
-            entry = _extract_patterns({"scopes": {scope: spec}}, "entry_patterns")
+            entry = extract_patterns({"scopes": {scope: spec}}, "entry_patterns")
             assert entry, f"{agent}/{scope} declares no entry_patterns"
             wanted = "*/**/SKILL.md" if agent == "cursor" else "*/SKILL.md"
             assert all(p.endswith("/skills/" + wanted) or p == "skills/" + wanted for p in entry), (agent, entry)
@@ -214,7 +214,7 @@ def test_every_agent_declares_where_a_skills_entry_file_sits():
 )
 def test_a_comma_separated_path_filter_is_split_for_every_agent(tmp_path: Path, rel: str, key: str, value: str) -> None:
     path = _write(tmp_path, rel, f"---\n{key}: {value}\n---\nbody\n")
-    _loading, _scope, globs, _agent, _ft = _detect_file_loading(path, tmp_path, _load_registry())
+    _loading, _scope, globs, _agent, _ft = _detect_file_activation(path, tmp_path, _load_registry())[:5]
     assert len(globs) == 2 and all("," not in g for g in globs)
 
 

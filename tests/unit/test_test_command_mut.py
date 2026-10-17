@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.platform.config.bootstrap import get_rules_path
+from reporails_cli.core.platform.config.config import get_rules_path
 from reporails_cli.interfaces.cli.main import app
 
 runner = CliRunner()
@@ -53,8 +53,8 @@ def test_explicit_rules_root_still_honored(tmp_path) -> None:
 def test_test_fetches_the_model_before_running_the_rules(monkeypatch) -> None:
     """`ails test` obtains the model through the same fetch step `ails check` uses,
     before any rule is run."""
-    import reporails_cli.bundled as bundled_mod
     from reporails_cli.core.lint import harness
+    from reporails_cli.interfaces.cli import check_support as bundled_mod
 
     calls: list[str] = []
     monkeypatch.setattr(bundled_mod, "ensure_models_available", lambda: calls.append("fetch") or object())
@@ -69,8 +69,8 @@ def test_test_fetches_the_model_before_running_the_rules(monkeypatch) -> None:
 @pytest.mark.subsys_cli_ux
 def test_test_stops_with_a_short_error_when_the_model_cannot_be_fetched(monkeypatch) -> None:
     """A failed model download ends `ails test` with the one-line error and exit code 2, no traceback."""
-    import reporails_cli.bundled as bundled_mod
-    from reporails_cli.core.mapper.model_fetch import ModelFetchError
+    from reporails_cli.core.mapper.model_manifest import ModelFetchError
+    from reporails_cli.interfaces.cli import check_support as bundled_mod
 
     def _fail() -> None:
         raise ModelFetchError("could not download the reporails model")
@@ -90,7 +90,7 @@ def test_test_stops_with_a_short_error_when_the_model_cannot_be_fetched(monkeypa
 def test_test_stops_with_a_short_error_when_offline_and_no_model(monkeypatch) -> None:
     """With `AILS_MODEL_OFFLINE` set and no model on disk, `ails test` exits 2 with a short
     message instead of failing inside the rule run."""
-    import reporails_cli.bundled as bundled_mod
+    from reporails_cli.interfaces.cli import check_support as bundled_mod
 
     monkeypatch.setattr(bundled_mod, "ensure_models_available", lambda: None)
 
@@ -99,3 +99,13 @@ def test_test_stops_with_a_short_error_when_offline_and_no_model(monkeypatch) ->
     assert result.exit_code == 2
     assert "needs the reporails model" in result.output
     assert "Traceback" not in result.output
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_score_is_not_an_option_of_test() -> None:
+    """`ails test --score` is rejected as an unknown option."""
+    result = runner.invoke(app, ["test", "--score"])
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output

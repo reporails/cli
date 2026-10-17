@@ -63,7 +63,7 @@ def test_fully_bold_atom_not_flagged() -> None:
     # Kills L134 `== -> !=`: a fully-bold atom (span == whole text) is skipped, no bold finding.
     atoms = [_atom(5, +1, text="**deploy the service**")]
     findings = run_client_checks(_make_map(atoms))
-    bold = [f for f in findings if f.rule == "bold"]
+    bold = [f for f in findings if f.check_id == "bold"]
     assert len(bold) == 0
 
 
@@ -73,7 +73,7 @@ def test_partial_bold_directive_flagged() -> None:
     # Kills L140 `== -> !=`: a +1 directive with a harmful partial bold span is flagged.
     atoms = [_atom(5, +1, text="Please **carefully** review the code")]
     findings = run_client_checks(_make_map(atoms))
-    bold = [f for f in findings if f.rule == "bold"]
+    bold = [f for f in findings if f.check_id == "bold"]
     assert len(bold) == 1
 
 
@@ -83,5 +83,5 @@ def test_partial_bold_constraint_not_flagged() -> None:
     # Companion for L140: a -1 constraint with the same bold span is NOT flagged (bold is +1-only).
     atoms = [_atom(5, -1, text="Please **carefully** review the code")]
     findings = run_client_checks(_make_map(atoms))
-    bold = [f for f in findings if f.rule == "bold"]
+    bold = [f for f in findings if f.check_id == "bold"]
     assert len(bold) == 0

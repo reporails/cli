@@ -10,7 +10,6 @@ from reporails_cli.core.lint.rule_pages import (
     _section,
     load_rule_description,
     load_rule_examples,
-    load_rule_guides,
 )
 from reporails_cli.core.platform.dto.models import Category, Rule, RuleType, Severity
 
@@ -115,14 +114,6 @@ def test_description_drops_frontmatter_and_the_pass_fail_section(tmp_path: Path)
 @pytest.mark.subsys_lint
 def test_description_none_without_frontmatter(tmp_path: Path) -> None:
     assert load_rule_description(_page(tmp_path, "# Title\n\nBody.\n")) is None
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_lint
-def test_guides_carry_title_pass_and_antipatterns() -> None:
-    guides = load_rule_guides(["CORE:S:0024", "CORE:S:0024", "CORE:S:9999"])
-    assert list(guides) == ["CORE:S:0024"]
-    assert guides["CORE:S:0024"]["title"]
 
 
 @pytest.mark.unit

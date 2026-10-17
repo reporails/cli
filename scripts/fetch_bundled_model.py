@@ -38,28 +38,28 @@ from pathlib import Path
 # The manifest — which files make up the model set — has one source of truth:
 # the runtime fetch module. This dev/CI helper imports it so the dev tree and the
 # runtime cache stay in lockstep.
-from reporails_cli.core.mapper import model_fetch
+from reporails_cli.core.mapper import model_fetch, model_manifest
 
 _MODELS_BUNDLE_RELPATH = Path("src/reporails_cli/bundled/models")
 
 # ─── ONNX embedder (public, ungated) ──────────────────────────────────
 
-_ONNX_ALLOW_PATTERNS: list[str] = list(model_fetch.EMBEDDER_FILES)
-_ONNX_BUNDLE_RELPATH = _MODELS_BUNDLE_RELPATH / model_fetch.EMBEDDER_SUBDIR
+_ONNX_ALLOW_PATTERNS: list[str] = list(model_manifest.EMBEDDER_FILES)
+_ONNX_BUNDLE_RELPATH = _MODELS_BUNDLE_RELPATH / model_manifest.EMBEDDER_SUBDIR
 _ONNX_HF_REPO_ID = "Xenova/all-MiniLM-L6-v2"
 
 # ─── Gated model artifacts (authenticated download) ───────────────────
 
 # Relative paths of the gated artifacts, resolved against the bundle root
 # ``src/reporails_cli/bundled/models/``.
-_GATED_RELPATHS: list[str] = list(model_fetch.GATED_FILES)
+_GATED_RELPATHS: list[str] = list(model_manifest.GATED_FILES)
 
 # License files that must travel with the weights — a weight file pulled from a
 # user's cache carries these next to it, since the repo copies do not travel
 # with a separately-fetched artifact. The repo-root files are the ONLY
 # source: this script stages them into the working tree, and the runtime fetch
 # manifest pulls them from the host, so the copies can never diverge.
-_BUNDLE_LICENSE_NAMES: tuple[str, ...] = model_fetch.LICENSE_FILES
+_BUNDLE_LICENSE_NAMES: tuple[str, ...] = model_manifest.LICENSE_FILES
 
 
 def _repo_root() -> Path:
@@ -76,7 +76,7 @@ def _models_root() -> Path:
 
 
 def _onnx_already_present(target: Path) -> bool:
-    return model_fetch.models_present(target, model_fetch.EMBEDDER_FILES)
+    return model_manifest.models_present(target, model_manifest.EMBEDDER_FILES)
 
 
 def _fetch_onnx() -> int:
@@ -169,7 +169,7 @@ def _refresh_token(stale: str) -> str | None:
 
 
 def _gated_all_present() -> bool:
-    return model_fetch.models_present(_models_root(), model_fetch.GATED_FILES)
+    return model_manifest.models_present(_models_root(), model_manifest.GATED_FILES)
 
 
 def _download_one(client, base_url: str, rel: str, token: str, target: Path) -> str:

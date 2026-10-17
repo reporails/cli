@@ -234,7 +234,7 @@ def test_shell_gate_ignores_spaced_pipe_in_table_and_prose() -> None:
     # REGRESSION: a ' | ' spaced pipe (every markdown table row, and prose) must not
     # signal a shell line — otherwise a fenced table matched _SHELL_LINE_RE on every row and the
     # whole fence was read as a neutral shell block, silencing every directive in it.
-    from reporails_cli.core.mapper.parse import _fence_looks_like_shell
+    from reporails_cli.core.mapper.fence_atoms import _fence_looks_like_shell
 
     assert _fence_looks_like_shell("| Always commit | before push |\n| Never force | to main |") is False
     assert _fence_looks_like_shell("Use the A | B pattern here") is False

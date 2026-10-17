@@ -13,7 +13,11 @@ from pathlib import Path
 import typer
 
 from reporails_cli.core.platform.config.credentials import effective_tier
-from reporails_cli.interfaces.cli.helpers import app, console
+from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
+from reporails_cli.core.platform.utils.version import UNKNOWN_VERSION, installed_version
+from reporails_cli.interfaces.cli.helpers import console, run_uv_tool
+from reporails_cli.interfaces.cli.typer_app import app
 
 logger = logging.getLogger(__name__)
 
@@ -82,20 +86,14 @@ def _install_to_path() -> bool:
         console.print("  [dim]Install uv (https://docs.astral.sh/uv/) then run: uv tool install reporails-cli[/dim]")
         return False
 
-    from reporails_cli import __version__
-
     # A floor (>=), not an exact pin (==): `uv tool upgrade` keeps an `==` pin
     # forever, so a floor is what lets a later `ails update` / `uv tool
     # upgrade` move the engine past this version.
-    spec = f"reporails-cli>={__version__}"
+    version = installed_version()
+    spec = "reporails-cli" if version == UNKNOWN_VERSION else f"reporails-cli>={version}"
     console.print("  Installing ails to PATH...")
     try:
-        result = subprocess.run(
-            [uv, "tool", "install", spec, "--force"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        result = run_uv_tool(uv, "install", spec, "--force")
         if result.returncode == 0:
             console.print("  [green]ails installed to PATH[/green]")
             return True
@@ -109,13 +107,18 @@ def _install_to_path() -> bool:
         return False
 
 
+def _is_local_path(source: str) -> bool:
+    """Whether a marketplace source names a folder (rooted, home-relative or `.`-relative) rather than a repo."""
+    return is_rooted_pattern(source) or source.startswith(".")
+
+
 def _plugin_source() -> str:
     """Marketplace source for the plugin: `AILS_PLUGIN_SOURCE`, else the public repo.
 
     A path is made absolute so every command resolves it to the same folder.
     """
     value = os.environ.get(_PLUGIN_SOURCE_ENV, "").strip() or _PLUGIN_REPO
-    if value.startswith(("/", "~", ".")):
+    if _is_local_path(value):
         return os.path.abspath(os.path.expanduser(value))
     return value
 
@@ -164,7 +167,7 @@ def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess
 def _normalize_source(value: str) -> str:
     """Comparable form of a marketplace source: a real path, or `owner/repo` for a GitHub URL."""
     value = value.strip().rstrip("/")
-    if value.startswith(("/", "~", ".")):
+    if _is_local_path(value):
         return os.path.realpath(os.path.expanduser(value))
     value = re.sub(r"^(https://|git@)github\.com[/:]", "", value)
     return value.removesuffix(".git")
@@ -254,7 +257,7 @@ def _inspect(agent: str, exe: str, source: str, root: Path | None) -> tuple[str,
         elif listed and listed.returncode == 0:
             found = (_claude_marketplaces if agent == "claude" else _codex_marketplaces)(listed.stdout or "")
             if _MARKETPLACE in found:
-                is_path = source.startswith(("/", "~", "."))
+                is_path = _is_local_path(source)
                 if agent == "claude" or is_path:
                     same = _same_source(found[_MARKETPLACE], source)
                 else:
@@ -275,6 +278,7 @@ def _agent_steps(
     exe: str,
     source: str,
     state: tuple[str, set[str]],
+    *,
     scope: str | None = None,
     refresh: bool = False,
 ) -> list[tuple[list[str], bool]]:
@@ -369,7 +373,7 @@ def _install_agent_plugin(agent: str, project: bool = False) -> bool:
     source = _plugin_source()
     state = _inspect(agent, exe, source, root)
     _note_replaced(label, source, state[0])
-    steps = _agent_steps(agent, exe, source, state, "project" if scoped else None)
+    steps = _agent_steps(agent, exe, source, state, scope="project" if scoped else None)
     if not _run_steps(label, steps, manual, "install", root):
         return False
     console.print(f"  [green]{label} plugin installed{where}[/green]")
@@ -404,9 +408,7 @@ def _warm_engine() -> None:
     if not uvx:
         console.print("  [yellow]The plugin's server needs uv (https://docs.astral.sh/uv/).[/yellow]")
         return
-    from reporails_cli import __version__
-
-    spec = _engine_spec(__version__)
+    spec = _engine_spec(installed_version())
     console.print("  Preparing the plugin's engine...")
     try:
         result = subprocess.run(
@@ -437,7 +439,9 @@ def install(
     with collaborators through the project's Claude Code settings; Codex
     installs for your user.
     """
-    from reporails_cli.core.platform.adapters.api_client import has_api_key
+    from reporails_cli.core.platform.adapters.api_key import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        has_api_key,
+    )
 
     console.print("[bold]Installing the reporails engine (CLI + MCP server)...[/bold]")
     _install_to_path()
@@ -463,8 +467,6 @@ def install(
     if not in_place["claude"]:
         console.print("\n[green]Done.[/green] Claude Code's plugin steps are printed above.")
         return
-    from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS
-
     # A tier of neither kind is unknown, which reads as entitled.
     tier = effective_tier() if signed_in else ""
     entitled = bool(tier) and tier not in UNENTITLED_TIERS

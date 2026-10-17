@@ -11,15 +11,19 @@ from pathlib import Path
 
 from reporails_cli.core.heal.mechanical_fixers import unformatted_token_is_reportable
 from reporails_cli.core.mapper.annotate import backticked_words
+from reporails_cli.core.mapper.classify_lexicon import CONDITION_OPENERS
 from reporails_cli.core.mapper.instructions import instruction_starts, without_lead
 from reporails_cli.core.mapper.markers import strip_markdown_inline
 from reporails_cli.core.mapper.md_parser import emphasis_runs, has_bold_label, wrapping_runs
+from reporails_cli.core.mapper.prose_split import ends_with_sentence_mark
 from reporails_cli.core.mapper.structure import line_spans
+from reporails_cli.core.platform.dto.diagnostics import BOLD_CHECK, FORMAT_CHECK, SEVERITY_RANK
 from reporails_cli.core.platform.dto.models import LocalFinding
-from reporails_cli.core.platform.dto.ruleset import Atom, RulesetMap
+from reporails_cli.core.platform.dto.ruleset import RUNNING_TEXT_FORMATS, Atom, RulesetMap
+from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 _SCOPE_RE = re.compile(
-    r"^(?:when|if|unless|before|after)\s+(.+?),\s+",
+    r"^(?:" + "|".join(re.escape(word) for word in sorted(CONDITION_OPENERS)) + r")\s+(.+?),\s+",
     re.IGNORECASE,
 )
 # Words that put an outside system in the condition, singular or plural. Wide but harmless wording
@@ -37,12 +41,9 @@ _BROAD_SCOPE_WORDS = (
 # that has nothing to do with scope.
 _BROAD_SCOPE_RE = re.compile(r"\b(?:" + "|".join(_BROAD_SCOPE_WORDS) + r")\b", re.IGNORECASE)
 
-_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
-
 BROAD_SCOPE_RULE = "CORE:C:0060"
 PACKED_SENTENCE_RULE = "CORE:C:0058"
-_RUNNING_TEXT = frozenset({"prose", "list", "numbered", "blockquote", "table"})
-_SENTENCE_END_RE = re.compile(r"[.!?][)\]\"'`]*$")
+FORMATTING_RULE = "CORE:E:0003"
 
 
 def run_client_checks(ruleset_map: RulesetMap) -> list[LocalFinding]:
@@ -62,14 +63,12 @@ def run_client_checks(ruleset_map: RulesetMap) -> list[LocalFinding]:
         display = _relative_display_path(filepath)
         findings.extend(_check_file(atoms, display, _source_lines(filepath)))
 
-    findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 9), f.line))
+    findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9), f.line))
     return findings
 
 
 def _relative_display_path(file_path: str) -> str:
     """Normalize file path for display. Uses merger's normalize_finding_path."""
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
-
     return normalize_finding_path(file_path)
 
 
@@ -102,12 +101,12 @@ def running_sentences(atoms: list[Atom]) -> list[list[Atom]]:
     """
     sentences: list[list[Atom]] = []
     for a in atoms:
-        if a.kind == "heading" or a.format not in _RUNNING_TEXT:
+        if a.kind == "heading" or a.format not in RUNNING_TEXT_FORMATS:
             continue
         prev = sentences[-1][-1] if sentences else None
         continues = (
             prev is not None
-            and not _SENTENCE_END_RE.search(strip_markdown_inline(prev.text, keep_code=True).rstrip())
+            and not ends_with_sentence_mark(strip_markdown_inline(prev.text, keep_code=True))
             and (a.line == prev.line or (a.format == prev.format == "prose" and a.line == prev.line + 1))
         )
         if continues:
@@ -199,7 +198,8 @@ def _check_unformatted_code(
                     file=filepath,
                     line=a.line,
                     severity="warning",
-                    rule="format",
+                    rule=FORMATTING_RULE,
+                    check_id=FORMAT_CHECK,
                     message=f"'{code_tok}' should be in backticks — use `{code_tok}`",
                     fix=f"Wrap in backticks: `{code_tok}`",
                     source="client_check",
@@ -251,7 +251,8 @@ def _check_bold_patterns(charged: list[Atom], filepath: str) -> list[LocalFindin
                 file=filepath,
                 line=a.line,
                 severity="info",
-                rule="bold",
+                rule=FORMATTING_RULE,
+                check_id=BOLD_CHECK,
                 message=(
                     f"Bold on terms: {terms_str}. "
                     f"Bold competes for attention between instructions — "

@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
+from reporails_cli.core.mapper import skills as skills_module
 from reporails_cli.core.mapper.skills import record_skills
 
 
@@ -29,7 +31,8 @@ def _rec(path: Path, type_: str = "skills") -> SimpleNamespace:
 
 def _record(root: Path, rels: list[str], registry: dict[str, dict[str, Any]]) -> dict[str, SimpleNamespace]:
     recs = {rel: _rec(root / rel) for rel in rels}
-    record_skills(SimpleNamespace(files=list(recs.values())), ["claude"], root, registry)
+    with patch.object(skills_module, "_load_registry", return_value=registry):
+        record_skills(SimpleNamespace(files=list(recs.values())), ["claude"], root)
     return recs
 
 

@@ -20,7 +20,7 @@ from reporails_cli.core.platform.dto.diagnostics import (
     RemediationWorkflow,
     WorkflowLocation,
 )
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.json import format_combined_result
 
 
@@ -251,7 +251,7 @@ def test_render_workflow_present_in_json() -> None:
         ),
         summary="sum",
     )
-    data = format_combined_result(_result(workflow=wf))
+    data = format_combined_result(_result(reply=ServerReply(workflow=wf)))
     loc = data["workflow"]["locations"][0]
     assert data["workflow"]["summary"] == "sum"
     assert loc["order"] == 1 and "tier" not in loc and loc["kind"] == "main"
@@ -296,7 +296,9 @@ def test_render_normalizes_absolute_location_paths() -> None:
         ),
         summary="s",
     )
-    loc = format_combined_result(_result(workflow=wf), project_root=Path("/home/u/proj"))["workflow"]["locations"][0]
+    loc = format_combined_result(_result(reply=ServerReply(workflow=wf)), project_root=Path("/home/u/proj"))[
+        "workflow"
+    ]["locations"][0]
     assert loc["element"] == ".claude/rules/style.md"
     assert loc["files"] == [".claude/rules/style.md"]
     assert loc["findings"][0]["file"] == ".claude/rules/style.md"
@@ -328,7 +330,7 @@ def test_render_carries_finding_impact_tier() -> None:
         ),
         summary="s",
     )
-    data = format_combined_result(_result(workflow=wf))
+    data = format_combined_result(_result(reply=ServerReply(workflow=wf)))
     assert data["workflow"]["locations"][0]["findings"][0]["impact_tier"] == "gate_mover"
 
 
@@ -339,14 +341,14 @@ def test_render_carries_listed_reason_code() -> None:
         listed=(ListedFinding(rule="CORE:S:0039", reason="cosmetic", count=2),),
         summary="s",
     )
-    data = format_combined_result(_result(workflow=wf))
+    data = format_combined_result(_result(reply=ServerReply(workflow=wf)))
     assert data["workflow"]["listed"] == [{"rule": "CORE:S:0039", "reason": "cosmetic", "count": 2}]
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_diagnostic
 def test_render_workflow_omitted_when_absent() -> None:
-    data = format_combined_result(_result(workflow=None))
+    data = format_combined_result(_result(reply=ServerReply(workflow=None)))
     assert "workflow" not in data
 
 
@@ -357,7 +359,9 @@ def test_render_empty_workflow_still_renders() -> None:
     "nothing to rewrite" — not the absence of the paid feature. Before the fix this read
     exactly like the anon/offline case (no `workflow` key at all), so a paid clean project's
     own client read "no workflow" and told the user heal needs a paid account."""
-    data = format_combined_result(_result(workflow=RemediationWorkflow(locations=(), listed=(), summary="none")))
+    data = format_combined_result(
+        _result(reply=ServerReply(workflow=RemediationWorkflow(locations=(), listed=(), summary="none")))
+    )
     assert data["workflow"]["locations"] == []
     assert data["workflow"]["summary"] == "none"
     assert "listed" not in data["workflow"]
@@ -368,7 +372,7 @@ def test_render_empty_workflow_still_renders() -> None:
 def test_render_workflow_present_via_listed_alone() -> None:
     # No locations but a non-empty `listed` still counts as a workflow to render.
     wf = RemediationWorkflow(listed=(ListedFinding(rule="CORE:S:0039", reason="cosmetic", count=2),), summary="s")
-    data = format_combined_result(_result(workflow=wf))
+    data = format_combined_result(_result(reply=ServerReply(workflow=wf)))
     assert data["workflow"]["locations"] == []
     assert data["workflow"]["listed"] == [{"rule": "CORE:S:0039", "reason": "cosmetic", "count": 2}]
 
@@ -399,7 +403,9 @@ def test_render_carries_relations_with_relative_paths() -> None:
         ),
         summary="s",
     )
-    loc = format_combined_result(_result(workflow=wf), project_root=Path("/proj"))["workflow"]["locations"][0]
+    loc = format_combined_result(_result(reply=ServerReply(workflow=wf)), project_root=Path("/proj"))["workflow"][
+        "locations"
+    ][0]
     assert loc["relations"] == [
         {
             "rule": "CORE:C:0044",
@@ -438,7 +444,7 @@ def test_render_carries_a_move_s_expected_coordinates_relative() -> None:
         ),
         summary="s",
     )
-    data = format_combined_result(_result(workflow=wf), project_root=Path("/proj"))
+    data = format_combined_result(_result(reply=ServerReply(workflow=wf)), project_root=Path("/proj"))
     finding = data["workflow"]["locations"][0]["findings"][0]
     assert finding["op"] == "move" and finding["expect"] == {"after": ["CLAUDE.md", 2, 1]}
     assert "message" not in finding and "remedy" not in finding

@@ -10,7 +10,7 @@ Covers two behaviours:
   sibling repeat as already-visited and left the second occurrence literal.
   A real cycle (a file importing an ancestor still being expanded) must still
   be caught.
-- M4 line-translation companion (`expand_imports_with_line_map`) is covered
+- M4 line-translation companion (`expand_imports_with_origins`) is covered
   in `test_pipeline_import_lines.py`, since it is pipeline-facing.
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.mapper.imports import expand_imports, expand_imports_with_line_map
+from reporails_cli.core.mapper.imports import expand_imports, expand_imports_with_origins
 
 # --- non-markdown extensions stay literal ------------------------------
 
@@ -171,6 +171,6 @@ def test_inline_code_mask_does_not_change_line_map(tmp_path: Path) -> None:
     (the identity map)."""
     src = tmp_path / "main.md"
     content = "Run `npx @reporails/cli check .` here.\nSee @docs/guide.md there.\n"
-    expanded, line_map = expand_imports_with_line_map(content, src)
+    expanded, line_map, _origins = expand_imports_with_origins(content, src)
     assert expanded == content  # neither reference resolves to a real file -> unexpanded
     assert line_map == [1, 2, 3]

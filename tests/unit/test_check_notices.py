@@ -7,7 +7,7 @@ import pytest
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.interfaces.cli.check_notices import _emit_heal_withheld
 
-_KEY = "reporails_cli.core.platform.adapters.api_client.has_api_key"
+_KEY = "reporails_cli.core.heal.apply.has_api_key"
 
 
 @pytest.mark.unit

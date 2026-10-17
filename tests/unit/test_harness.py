@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.lint.harness_models import LintError
 from reporails_cli.core.platform.dto.models import Check, FileTypeDeclaration
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -50,6 +51,14 @@ def _make_rule_dir(tmp_path: Path, slug: str, frontmatter: str, body: str = "") 
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text(f"---\n{frontmatter}\n---\n\n{body}")
     return rule_dir
+
+
+def _lint(root: Path, **filters: str) -> list[LintError]:
+    """Discover the rules under `root` and run the structural lint over them."""
+    from reporails_cli.core.lint.harness_discovery import discover_rules
+    from reporails_cli.core.lint.harness_quality import lint_rules
+
+    return lint_rules(discover_rules(root, **filters))
 
 
 def _make_fixtures(rule_dir: Path, pass_content: str | None, fail_content: str | None) -> None:
@@ -197,6 +206,20 @@ class TestLoadAgentConfig:
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
+    def test_generic_excludes_come_from_core_dir_of_given_root(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness import load_agent_config
+
+        (tmp_path / "core").mkdir()
+        (tmp_path / "core" / "config.yml").write_text(
+            "agent: generic\nprefix: CORE\nfile_types:\n  main:\n    patterns: ['**/AGENTS.md']\n"
+            "excludes:\n  - CORE:S:0042\n"
+        )
+
+        _file_types, excludes = load_agent_config(tmp_path, "generic")
+        assert excludes == ["CORE:S:0042"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
     def test_missing_config_returns_empty(self, tmp_path: Path) -> None:
         from reporails_cli.core.lint.harness import load_agent_config
 
@@ -233,8 +256,6 @@ class TestMechanicalChecks:
             slug="file-exists",
             title="File Exists",
             category="structure",
-            rule_type="mechanical",
-            match={},
             checks=[
                 {"id": "CORE.S.0001.file-exists", "type": "mechanical", "severity": "medium", "check": "file_exists"}
             ],
@@ -261,8 +282,6 @@ class TestMechanicalChecks:
             slug="empty",
             title="Empty",
             category="structure",
-            rule_type="mechanical",
-            match={},
             checks=[],
             rule_dir=rule_dir,
             checks_yml=rule_dir / "checks.yml",
@@ -289,8 +308,6 @@ class TestMechanicalChecks:
             slug="no-fix",
             title="No Fix",
             category="structure",
-            rule_type="mechanical",
-            match={},
             checks=[{"id": "CORE.S.0098.check", "type": "mechanical", "severity": "medium", "check": "file_exists"}],
             rule_dir=rule_dir,
             checks_yml=rule_dir / "checks.yml",
@@ -323,8 +340,7 @@ class TestDeterministicChecks:
             "checks:\n"
             "- id: CORE.S.0003.check\n"
             "  message: Wall of prose\n"
-            "  severity: WARNING\n"
-            "  languages: [generic]\n"
+            "  severity: medium\n"
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '\\.\\s+[A-Z][a-z]+\\s.*\\.\\s+[A-Z][a-z]+\\s.*\\.'\n",
         )
@@ -341,14 +357,12 @@ class TestDeterministicChecks:
             slug="det-rule",
             title="Det Rule",
             category="structure",
-            rule_type="deterministic",
-            match={},
             checks=[
                 {
                     "id": "CORE.S.0003.check",
                     "type": "deterministic",
                     "severity": "medium",
-                    "name": "wall-of-prose",
+                    "pattern-regex": "x",
                     "expect": "absent",
                 }
             ],
@@ -378,8 +392,7 @@ class TestDeterministicChecks:
             "checks:\n"
             "- id: CORE.C.0001.check\n"
             "  message: Has project context\n"
-            "  severity: WARNING\n"
-            "  languages: [generic]\n"
+            "  severity: medium\n"
             "  paths:\n    include: ['**/*.md']\n"
             "  pattern-regex: '## (Commands|Architecture)'\n",
         )
@@ -396,15 +409,13 @@ class TestDeterministicChecks:
             slug="evidence-rule",
             title="Evidence Rule",
             category="coherence",
-            rule_type="deterministic",
-            match={},
             checks=[
                 {
                     "id": "CORE.C.0001.check",
                     "type": "deterministic",
                     "severity": "medium",
                     "expect": "present",
-                    "name": "has-context",
+                    "pattern-regex": "x",
                 }
             ],
             rule_dir=rule_dir,
@@ -413,46 +424,6 @@ class TestDeterministicChecks:
 
         result = run_rule(info, _fts_claude())
         assert result.status == HarnessStatus.PASSED
-
-
-# ── Semantic check tests ─────────────────────────────────────────────
-
-
-class TestSemanticChecks:
-    """Tests for semantic check handling (always skip)."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_semantic_always_passes(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness import HarnessStatus, RuleInfo, run_rule
-
-        rule_dir = _make_rule_dir(
-            tmp_path,
-            "sem-rule",
-            "id: CORE:C:0005\nslug: sem-rule\ntitle: Semantic\n"
-            "category: content\ntype: semantic\nlevel: L1\nmatch: {}\n"
-            "checks:\n- id: CORE.C.0005.sem\n  type: semantic\n  severity: medium\n  name: sem-eval",
-        )
-        _make_fixtures(rule_dir, "# Good content\n", "# Bad content\n")
-
-        info = RuleInfo(
-            rule_id="CORE:C:0005",
-            slug="sem-rule",
-            title="Semantic",
-            category="coherence",
-            rule_type="semantic",
-            match={},
-            checks=[{"id": "CORE.C.0005.sem", "type": "semantic", "severity": "medium", "name": "sem-eval"}],
-            rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
-        )
-
-        result = run_rule(info, _fts_claude())
-        # Semantic-only rules have no M/D checks to detect violations in the
-        # fail fixture, so the harness reports FAILED because the fail fixture
-        # produced no violations (a harness failure — the fail case should be
-        # caught but semantic-only rules can't detect it without M/D pre-checks).
-        assert result.status == HarnessStatus.FAILED
 
 
 # ── Batch runner tests ───────────────────────────────────────────────
@@ -538,8 +509,7 @@ class TestFixtureDiscovery:
             "checks:\n"
             "- id: CORE.S.0099.check\n"
             "  message: Bad setting\n"
-            "  severity: WARNING\n"
-            "  languages: [generic]\n"
+            "  severity: medium\n"
             "  paths:\n    include: ['**/*.json']\n"
             "  pattern-regex: 'dangerous_setting'\n",
         )
@@ -557,9 +527,15 @@ class TestFixtureDiscovery:
             slug="json-rule",
             title="JSON Rule",
             category="structure",
-            rule_type="deterministic",
-            match={"type": "config"},
-            checks=[{"id": "CORE.S.0099.check", "type": "deterministic", "severity": "medium", "expect": "absent"}],
+            checks=[
+                {
+                    "id": "CORE.S.0099.check",
+                    "type": "deterministic",
+                    "severity": "medium",
+                    "expect": "absent",
+                    "pattern-regex": "x",
+                }
+            ],
             rule_dir=rule_dir,
             checks_yml=rule_dir / "checks.yml",
         )
@@ -578,21 +554,21 @@ class TestCheckAliases:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_tracked_alias(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+        from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["file_tracked"] is MECHANICAL_CHECKS["git_tracked"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_memory_dir_exists_alias(self) -> None:
-        from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+        from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["memory_dir_exists"] is MECHANICAL_CHECKS["directory_exists"]
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_total_size_check_alias(self) -> None:
-        from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+        from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 
         assert MECHANICAL_CHECKS["total_size_check"] is MECHANICAL_CHECKS["aggregate_byte_size"]
 
@@ -811,19 +787,7 @@ class TestScaffoldFixture:
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
 
-        checks = [_c({"type": "deterministic", "id": "test", "severity": "medium"})]
-        result = _scaffold_fixture(fixture_dir, checks, [])
-        assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_lint
-    def test_no_scaffold_for_semantic_only(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.rule_scaffold import _scaffold_fixture
-
-        fixture_dir = tmp_path / "fixture"
-        fixture_dir.mkdir()
-
-        checks = [_c({"type": "semantic", "id": "test"})]
+        checks = [_c({"type": "deterministic", "id": "test", "severity": "medium", "pattern-regex": "x"})]
         result = _scaffold_fixture(fixture_dir, checks, [])
         assert result is None
 
@@ -960,8 +924,6 @@ class TestFailScaffoldIntegration:
             slug="fname-rule",
             title="Filename Rule",
             category="structure",
-            rule_type="mechanical",
-            match={},
             checks=[
                 {
                     "id": "CORE.S.0004.fname",
@@ -1005,8 +967,6 @@ class TestFailScaffoldIntegration:
             slug="absent-rule",
             title="Absent Rule",
             category="structure",
-            rule_type="mechanical",
-            match={},
             checks=[
                 {
                     "id": "CORE.S.0005.absent",
@@ -1029,60 +989,384 @@ class TestEnforcementPartnerGap:
     `enforcement_required: true` must name an `enforcement_mechanism`. Reddens if the gap
     check stops firing on an unnamed mechanism or over-fires on a well-declared rule."""
 
-    @staticmethod
-    def _info(rule_dir: Path, rule_id: str = "CORE:G:0099") -> object:
-        from reporails_cli.core.lint.harness import RuleInfo
-
-        return RuleInfo(
-            rule_id=rule_id,
-            slug="x",
-            title="X",
-            category="governance",
-            rule_type="mechanical",
-            match={},
-            checks=[],
-            rule_dir=rule_dir,
-            checks_yml=rule_dir / "checks.yml",
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_md_that_is_not_utf8_reports_its_load_error_and_its_recovered_frontmatter_findings(
+        self, tmp_path: Path
+    ) -> None:
+        rule_dir = tmp_path / "core" / "bad"
+        rule_dir.mkdir(parents=True)
+        (rule_dir / "rule.md").write_bytes(
+            b"---\nid: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\n"
+            b"enforcement_required: true\nnote: caf\xe9\n---\n"
         )
+
+        errors = _lint(tmp_path)
+
+        assert errors[0].check_name == "checks_schema"
+        assert errors[0].message.endswith("is not UTF-8 text")
+        assert [e.check_name for e in errors[1:]] == ["required_frontmatter", "enforcement_partner"]
+        assert errors[1].message == "core/bad/rule.md: severity: Field required"
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_required_without_mechanism_flagged(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness_quality import lint_rules
-
-        rule_dir = _make_rule_dir(
+        _make_rule_dir(
             tmp_path,
             "gap",
             "id: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\n"
             "severity: high\nenforcement_required: true\nmatch: {}",
         )
-        errors = lint_rules([self._info(rule_dir)])
+        errors = _lint(tmp_path)
         assert any(e.check_name == "enforcement_partner" for e in errors)
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_required_with_mechanism_passes(self, tmp_path: Path) -> None:
-        from reporails_cli.core.lint.harness_quality import lint_rules
-
-        rule_dir = _make_rule_dir(
+        _make_rule_dir(
             tmp_path,
             "declared",
             "id: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\n"
             "severity: high\nenforcement_required: true\nenforcement_mechanism: hook\nmatch: {}",
         )
-        errors = lint_rules([self._info(rule_dir)])
+        errors = _lint(tmp_path)
         assert not any(e.check_name == "enforcement_partner" for e in errors)
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_not_required_passes(self, tmp_path: Path) -> None:
         # A rule that does not declare enforcement_required needs no mechanism.
-        from reporails_cli.core.lint.harness_quality import lint_rules
-
-        rule_dir = _make_rule_dir(
+        _make_rule_dir(
             tmp_path,
             "plain",
             "id: CORE:G:0099\nslug: x\ntitle: X\ncategory: governance\ntype: mechanical\nseverity: high\nmatch: {}",
         )
-        errors = lint_rules([self._info(rule_dir)])
+        errors = _lint(tmp_path)
         assert not any(e.check_name == "enforcement_partner" for e in errors)
+
+
+class TestLoadFailureLint:
+    """A rule that failed to load keeps the checks its readable parts allow; the RuleInfo
+    declaration flags reach the lint through the real discover -> lint path."""
+
+    _FM = "slug: x\ntitle: X\ncategory: structure\ntype: mechanical\n"
+
+    @staticmethod
+    def _rule(root: Path, folder: str, frontmatter: str, checks: str = "") -> None:
+        rule_dir = _make_rule_dir(root, folder, frontmatter)
+        if checks:
+            (rule_dir / "checks.yml").write_text(checks)
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_duplicate_id_is_reported_when_one_copy_fails_to_load(self, tmp_path: Path) -> None:
+        fm = f"id: CORE:S:0001\n{self._FM}severity: high"
+        self._rule(tmp_path, "a", fm, "checks: [unclosed\n")
+        self._rule(tmp_path, "b", fm)
+
+        names = [e.check_name for e in _lint(tmp_path)]
+
+        assert names.count("checks_schema") == 1
+        assert names.count("duplicate_rule_id") == 1
+        assert "required_frontmatter" not in names
+
+    def _filter_tree(self, root: Path) -> None:
+        self._rule(root, "good", f"id: CORE:S:0001\n{self._FM}severity: high")
+        bad = root / "core" / "bad"
+        bad.mkdir(parents=True)
+        (bad / "rule.md").write_bytes(b"---\nid: CORE:S:0002\nnote: caf\xe9\n---\n")
+        self._rule(root, "noid", f"{self._FM}severity: high")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_filter_keeps_only_the_rule_it_names(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness_discovery import discover_rules
+
+        self._filter_tree(tmp_path)
+
+        assert [r.rule_id for r in discover_rules(tmp_path, filter_rule="CORE:S:0001")] == ["CORE:S:0001"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_filter_naming_a_non_utf8_rule_reports_its_load_error(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness_discovery import discover_rules
+
+        self._filter_tree(tmp_path)
+
+        found = discover_rules(tmp_path, filter_rule="CORE:S:0002")
+
+        assert [(r.rule_id, r.load_error.endswith("is not UTF-8 text")) for r in found] == [("CORE:S:0002", True)]
+        errors = _lint(tmp_path, filter_rule="CORE:S:0002")
+        assert errors[0].check_name == "checks_schema"
+        assert {e.message for e in errors[1:] if e.check_name == "required_frontmatter"} == {
+            "core/bad/rule.md: slug: Field required",
+            "core/bad/rule.md: severity: Field required",
+            *(f"core/bad/rule.md: {name}: Field required" for name in ("title", "category", "type")),
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_filter_naming_no_rule_finds_nothing(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness_discovery import discover_rules
+
+        self._filter_tree(tmp_path)
+
+        assert discover_rules(tmp_path, filter_rule="CORE:S:9999") == []
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_bad_category_is_reported_once_as_invalid(self, tmp_path: Path) -> None:
+        self._rule(
+            tmp_path, "r", "id: CORE:S:0001\nslug: x\ntitle: X\ncategory: structur\ntype: mechanical\nseverity: high"
+        )
+
+        errors = _lint(tmp_path)
+
+        assert [e.check_name for e in errors] == ["invalid_frontmatter"]
+        assert errors[0].message.startswith("core/r/rule.md: category: ")
+
+    _WRONG_CHECK = "checks:\n  - id: WRONG.a\n    type: mechanical\n    check: file_exists\n"
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_md_field_error_names_rule_md_and_the_checks_are_still_linted(self, tmp_path: Path) -> None:
+        self._rule(
+            tmp_path,
+            "r",
+            "id: CORE:S:0001\nslug: x\ntitle: X\ncategory: structur\ntype: mechanical\nseverity: high",
+            self._WRONG_CHECK,
+        )
+
+        errors = _lint(tmp_path)
+
+        assert sorted(e.check_name for e in errors) == ["check_id_prefix", "invalid_frontmatter"]
+        assert next(e for e in errors if e.check_name == "invalid_frontmatter").message.startswith(
+            "core/r/rule.md: category: "
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_missing_title_is_reported_once(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", "id: CORE:S:0001\nslug: x\ncategory: structure\ntype: mechanical\nseverity: high")
+
+        errors = _lint(tmp_path)
+
+        assert [e.check_name for e in errors] == ["required_frontmatter"]
+        assert errors[0].message.startswith("core/r/rule.md: title: ")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_present_non_text_id_is_invalid_not_missing(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", f"id: 5\n{self._FM}severity: high")
+
+        errors = _lint(tmp_path)
+
+        assert [(e.check_name, e.message.startswith("core/r/rule.md: id: ")) for e in errors] == [
+            ("invalid_frontmatter", True)
+        ]
+        assert [e.check_name for e in errors] == ["invalid_frontmatter"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_missing_title_and_a_bad_type_are_both_reported_naming_rule_md(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", "id: CORE:S:0001\nslug: x\ncategory: structure\ntype: bogus\nseverity: high")
+
+        errors = _lint(tmp_path)
+
+        assert sorted((e.check_name, e.message.split(": ")[0:2]) for e in errors) == [
+            ("invalid_frontmatter", ["core/r/rule.md", "type"]),
+            ("required_frontmatter", ["core/r/rule.md", "title"]),
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_bad_check_severity_names_checks_yml_and_the_severity_policy_is_still_reported(
+        self, tmp_path: Path
+    ) -> None:
+        bad = "checks:\n  - id: CORE.S.0001.a\n    type: mechanical\n    check: file_exists\n    severity: bogus\n"
+        self._rule(tmp_path, "r", f"id: CORE:S:0001\n{self._FM}", bad)
+
+        errors = _lint(tmp_path)
+
+        assert sorted(e.check_name for e in errors) == ["checks_schema", "required_frontmatter"]
+        assert next(e for e in errors if e.check_name == "checks_schema").message.startswith("core/r/checks.yml: ")
+        assert next(e for e in errors if e.check_name == "required_frontmatter").message == (
+            "core/r/rule.md: severity: Field required"
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_missing_id_gives_one_finding_and_no_check_prefix_findings(self, tmp_path: Path) -> None:
+        two = (
+            "checks:\n  - id: CORE.S.0001.a\n    type: mechanical\n    check: file_exists\n"
+            "  - id: CORE.S.0001.b\n    type: mechanical\n    check: file_exists\n"
+        )
+        self._rule(tmp_path, "r", f"{self._FM}severity: high", two)
+
+        errors = _lint(tmp_path)
+
+        assert [(e.check_name, e.message.startswith("core/r/rule.md: id: ")) for e in errors] == [
+            ("required_frontmatter", True)
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_bad_category_with_a_wrong_check_prefix_reports_both_but_not_the_id_category_match(
+        self, tmp_path: Path
+    ) -> None:
+        fm = "id: CORE:S:0001\nslug: x\ntitle: X\ncategory: structur\ntype: mechanical\nseverity: high"
+        self._rule(tmp_path, "r", fm, self._WRONG_CHECK)
+
+        names = sorted(e.check_name for e in _lint(tmp_path))
+
+        assert names == ["check_id_prefix", "invalid_frontmatter"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_malformed_checks_yml_names_checks_yml(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", f"id: CORE:S:0001\n{self._FM}severity: high", "checks: [unclosed\n")
+
+        errors = _lint(tmp_path)
+
+        assert [e.check_name for e in errors] == ["checks_schema"]
+        assert errors[0].message.startswith("core/r/checks.yml: ")
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_the_registry_scan_logs_the_file_at_fault(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        from reporails_cli.core.platform.adapters.registry import _scan_rules
+
+        self._rule(
+            tmp_path,
+            "r",
+            "id: CORE:S:0001\nslug: x\ntitle: X\ncategory: structur\ntype: mechanical\nseverity: high",
+            self._WRONG_CHECK,
+        )
+        self._rule(tmp_path, "c", f"id: CORE:S:0002\n{self._FM}severity: high", "checks: [unclosed\n")
+
+        with caplog.at_level("WARNING"):
+            assert _scan_rules(tmp_path) == {}
+
+        logged = " ".join(r.getMessage() for r in caplog.records)
+        assert f"{Path('r') / 'rule.md'}: " in logged
+        assert f"{Path('c') / 'checks.yml'}: " in logged
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    @pytest.mark.parametrize("name", ["id", "title"])
+    def test_an_empty_id_or_title_is_reported(self, tmp_path: Path, name: str) -> None:
+        fields = {"id": "CORE:S:0001", "slug": "x", "title": "X", "category": "structure", "type": "mechanical"}
+        fields[name] = '""'
+        fm = "\n".join(f"{k}: {v}" for k, v in fields.items()) + "\nseverity: high"
+        check = "checks:\n  - id: CORE.S.0001.a\n    type: mechanical\n    check: file_exists\n"
+        self._rule(tmp_path, "r", fm, check)
+
+        errors = _lint(tmp_path)
+
+        assert [(e.rule_id, e.check_name, e.message) for e in errors] == [
+            (
+                "(unknown)" if name == "id" else "CORE:S:0001",
+                "required_frontmatter",
+                f"core/r/rule.md: {name}: Field required",
+            )
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_an_invalid_union_field_gives_one_finding_naming_the_field(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", f"id: CORE:S:0001\n{self._FM}severity: high\nmatch:\n  type: 5")
+
+        errors = _lint(tmp_path)
+
+        assert [(e.check_name, e.message) for e in errors] == [
+            ("invalid_frontmatter", "core/r/rule.md: match.type: Input should be a valid list or a valid string")
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_union_field_failing_inside_its_list_branch_gives_one_finding(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", f"id: CORE:S:0001\n{self._FM}severity: high\nmatch:\n  format:\n    - 1")
+
+        errors = _lint(tmp_path)
+
+        assert [(e.check_name, e.message) for e in errors] == [
+            ("invalid_frontmatter", "core/r/rule.md: match.format: Input should be a valid string")
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_field_problems_gives_one_record_per_field_path_without_union_tags(self) -> None:
+        from pydantic import ValidationError
+
+        from reporails_cli.core.platform.adapters.rule_builder import field_problems
+        from reporails_cli.core.platform.dto.models import FieldProblem, Rule
+
+        with pytest.raises(ValidationError) as caught:
+            Rule.model_validate({"id": "a", "category": "structure", "type": "mechanical", "match": {"type": 5}})
+
+        assert field_problems(caught.value, Rule) == [
+            FieldProblem("title", "Field required", "missing"),
+            FieldProblem("match.type", "Input should be a valid list or a valid string", "invalid"),
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_missing_severity_is_flagged(self, tmp_path: Path) -> None:
+        self._rule(tmp_path, "r", f"id: CORE:S:0001\n{self._FM}")
+
+        assert [e.message for e in _lint(tmp_path)] == ["core/r/rule.md: severity: Field required"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_with_broken_checks_keeps_its_frontmatter_findings(self, tmp_path: Path) -> None:
+        self._rule(
+            tmp_path, "r", "id: CORE:G:0001\nslug: x\ncategory: structure\ntype: mechanical", "checks: [unclosed\n"
+        )
+
+        errors = _lint(tmp_path)
+
+        assert errors[0].check_name == "checks_schema"
+        assert {(e.check_name, e.message) for e in errors[1:]} == {
+            ("id_category_match", "ID has category code 'G' (governance) but category field is 'structure'"),
+            ("required_frontmatter", "core/r/rule.md: title: Field required"),
+            ("required_frontmatter", "core/r/rule.md: severity: Field required"),
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_rule_md_with_no_readable_frontmatter_gets_only_its_load_error(self, tmp_path: Path) -> None:
+        rule_dir = tmp_path / "core" / "bad"
+        rule_dir.mkdir(parents=True)
+        (rule_dir / "rule.md").write_bytes(b"---\n\xff\xfe: [\n---\n")
+
+        assert [e.check_name for e in _lint(tmp_path)] == ["checks_schema"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_rules_whose_id_cannot_be_read_are_not_duplicates_of_each_other(self, tmp_path: Path) -> None:
+        for folder in ("a", "b"):
+            self._rule(tmp_path, folder, f"{self._FM}severity: high")
+
+        names = [e.check_name for e in _lint(tmp_path)]
+
+        assert "duplicate_rule_id" not in names
+        assert names == ["required_frontmatter", "required_frontmatter"]
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_lint
+    def test_a_child_inherits_from_the_good_parent_when_a_broken_duplicate_shares_its_id(self, tmp_path: Path) -> None:
+        from reporails_cli.core.lint.harness_discovery import apply_check_inheritance, discover_rules
+
+        good = f"id: CORE:S:0001\n{self._FM}severity: high"
+        check = "checks:\n  - id: CORE.S.0001.a\n    type: mechanical\n    check: file_exists\n"
+        self._rule(tmp_path, "a", good, check)
+        bad = tmp_path / "core" / "b"
+        bad.mkdir(parents=True)
+        (bad / "rule.md").write_bytes(b"---\nid: CORE:S:0001\nnote: caf\xe9\n---\n")
+        self._rule(tmp_path, "c", f"id: CORE:S:0002\n{self._FM}severity: high\ninherited: CORE:S:0001", "checks: []\n")
+        rules = discover_rules(tmp_path)
+
+        apply_check_inheritance(rules)
+
+        child = next(r for r in rules if r.rule_id == "CORE:S:0002")
+        assert [c.id for c in child.checks] == ["CORE.S.0001.a"]

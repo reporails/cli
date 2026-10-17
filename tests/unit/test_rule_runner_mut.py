@@ -23,6 +23,7 @@ from reporails_cli.core.lint.rule_runner import (
     run_content_quality_checks,
     run_m_probes,
 )
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 from reporails_cli.core.platform.dto.models import (
     Category,
     Check,
@@ -33,12 +34,6 @@ from reporails_cli.core.platform.dto.models import (
     Severity,
 )
 
-_CLASSIFY = "reporails_cli.core.classify"
-_REGISTRY = "reporails_cli.core.platform.adapters.registry"
-_CONFIG = "reporails_cli.core.platform.config.config"
-_MECH_RUNNER = "reporails_cli.core.lint.mechanical.runner"
-_REGEX = "reporails_cli.core.lint.regex"
-_CONTENT = "reporails_cli.core.lint.content_checker"
 _RR = "reporails_cli.core.lint.rule_runner"
 
 
@@ -64,7 +59,6 @@ def _rule(**kw: object) -> Rule:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("error", "error"),
         ("critical", "error"),
         ("high", "error"),
         ("low", "info"),
@@ -92,7 +86,12 @@ def test_has_deterministic_true() -> None:
 
     Kills: L78 `c.type == "deterministic" -> !=`.
     """
-    assert _has_deterministic_checks(_rule(checks=[Check(id="c", type="deterministic", check="x", args={})])) is True
+    assert (
+        _has_deterministic_checks(
+            _rule(checks=[Check.model_validate({"id": "c", "type": "deterministic", "pattern-regex": "x"})])
+        )
+        is True
+    )
 
 
 @pytest.mark.unit
@@ -184,7 +183,7 @@ def test_mechanical_check_runs_in_a_local_rule_of_any_type(tmp_path: Path, monke
             ("CORE:X:0003", RuleType.MECHANICAL, Execution.SERVER),
         )
     }
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: rules)
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: rules)
 
     findings = run_m_probes(tmp_path, [main], agent="claude")
 
@@ -206,7 +205,7 @@ def test_collect_mechanical_preserves_check_id(tmp_path: Path, monkeypatch: pyte
         fix=None,
         check_id="CHK1",
     )
-    monkeypatch.setattr(f"{_MECH_RUNNER}.run_mechanical_checks", lambda *a, **k: [viol])
+    monkeypatch.setattr(f"{_RR}.run_mechanical_checks", lambda *a, **k: [viol])
 
     findings = _collect_mechanical_findings({}, tmp_path, [])
     assert len(findings) == 1
@@ -229,7 +228,7 @@ def test_deterministic_type_rule_with_mechanical_checks_still_runs(
     `!= -> ==` and with `and -> or` (either would wrongly skip the rule).
     """
     sentinel = object()
-    monkeypatch.setattr(f"{_REGEX}.run_checks", lambda *a, **k: [sentinel])
+    monkeypatch.setattr(f"{_RR}.run_checks", lambda *a, **k: [sentinel])
 
     yml = tmp_path / "r.yml"
     yml.write_text("x")
@@ -247,13 +246,13 @@ def test_deterministic_rule_without_yml_path_is_skipped(tmp_path: Path, monkeypa
     Kills: L112 `not yml_path or not yml_path.exists()` with `or -> and`
     (`and` dereferences `.exists()` on None -> AttributeError).
     """
-    monkeypatch.setattr(f"{_REGEX}.run_checks", lambda *a, **k: [object()])
+    monkeypatch.setattr(f"{_RR}.run_checks", lambda *a, **k: [object()])
     rule = _rule(
         id="R",
         type=RuleType.DETERMINISTIC,
         match=None,
         yml_path=None,
-        checks=[Check(id="c", type="deterministic", check="x", args={})],
+        checks=[Check.model_validate({"id": "c", "type": "deterministic", "pattern-regex": "x"})],
     )
     assert _collect_deterministic_findings({"R": rule}, tmp_path, [tmp_path / "a.md"], []) == []
 
@@ -281,31 +280,18 @@ class TestRunMProbesScopedDefault:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_run_m_probes_config_error_defaults_generic_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When project-config load fails, generic scanning defaults OFF.
-
-    Kills: L201 `generic_scanning = False -> True` in the except branch.
-    """
-    captured: dict[str, object] = {}
+def test_run_m_probes_stops_on_an_unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unreadable project config stops the probe run; it never falls back to generic scanning off."""
 
     def raise_cfg(_pd: Path) -> object:
-        raise ValueError("boom")
+        raise ConfigUnreadableError("boom")
 
-    def fake_classify(
-        pd: Path, files: list, ft: object, generic_scanning: bool, skills: object = None, exclusions: object = None
-    ) -> list:
-        captured["gs"] = generic_scanning
-        return []
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
+    monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
+    monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
 
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: {})
-    monkeypatch.setattr(f"{_CLASSIFY}.load_file_types", lambda _a, **_kw: {})
-    monkeypatch.setattr(f"{_CONFIG}.get_project_config", raise_cfg)
-    monkeypatch.setattr(f"{_CLASSIFY}.classify_files", fake_classify)
-    monkeypatch.setattr(f"{_RR}._collect_mechanical_findings", lambda *a, **k: [])
-    monkeypatch.setattr(f"{_RR}._collect_deterministic_findings", lambda *a, **k: [])
-
-    assert run_m_probes(tmp_path, []) == []
-    assert captured["gs"] is False
+    with pytest.raises(ConfigUnreadableError, match="boom"):
+        run_m_probes(tmp_path, [])
 
 
 # --- run_content_quality_checks (L241 agent default, L247 config fallback) --
@@ -326,12 +312,12 @@ def test_content_quality_agent_defaults_to_generic(tmp_path: Path, monkeypatch: 
     the empty string through instead of the generic default).
     """
     captured: dict[str, object] = {}
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: {})
-    monkeypatch.setattr(f"{_CONTENT}.run_content_checks", lambda *a, **k: [])
-    monkeypatch.setattr(f"{_CLASSIFY}.load_file_types", lambda a, **_kw: captured.__setitem__("agent", a) or {})
-    monkeypatch.setattr(f"{_CLASSIFY}.classify_files", lambda *a, **k: [])
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
+    monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
+    monkeypatch.setattr(f"{_RR}.load_file_types", lambda a, **_kw: captured.__setitem__("agent", a) or {})
+    monkeypatch.setattr(f"{_RR}.classify_files", lambda *a, **k: [])
     monkeypatch.setattr(
-        f"{_CONFIG}.get_project_config",
+        f"{_RR}.get_project_config",
         lambda _pd: SimpleNamespace(generic_scanning=False, exclude_files=None),
     )
 
@@ -341,27 +327,16 @@ def test_content_quality_agent_defaults_to_generic(tmp_path: Path, monkeypatch: 
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_content_quality_config_error_defaults_generic_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When project-config load fails, content-quality generic scanning is OFF.
-
-    Kills: L247 `generic_scanning = False -> True` in the except branch.
-    """
-    captured: dict[str, object] = {}
+def test_content_quality_stops_on_an_unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unreadable project config stops the content-quality run; it never falls back to generic scanning off."""
 
     def raise_cfg(_pd: Path) -> object:
-        raise ValueError("boom")
+        raise ConfigUnreadableError("boom")
 
-    def fake_classify(
-        pd: Path, files: list, ft: object, generic_scanning: bool, skills: object = None, exclusions: object = None
-    ) -> list:
-        captured["gs"] = generic_scanning
-        return []
+    monkeypatch.setattr(f"{_RR}.load_rules", lambda **k: {})
+    monkeypatch.setattr(f"{_RR}.run_content_checks", lambda *a, **k: [])
+    monkeypatch.setattr(f"{_RR}.load_file_types", lambda _a, **_kw: {})
+    monkeypatch.setattr(f"{_RR}.get_project_config", raise_cfg)
 
-    monkeypatch.setattr(f"{_REGISTRY}.load_rules", lambda **k: {})
-    monkeypatch.setattr(f"{_CONTENT}.run_content_checks", lambda *a, **k: [])
-    monkeypatch.setattr(f"{_CLASSIFY}.load_file_types", lambda _a, **_kw: {})
-    monkeypatch.setattr(f"{_CONFIG}.get_project_config", raise_cfg)
-    monkeypatch.setattr(f"{_CLASSIFY}.classify_files", fake_classify)
-
-    run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude")
-    assert captured["gs"] is False
+    with pytest.raises(ConfigUnreadableError, match="boom"):
+        run_content_quality_checks(_ruleset_map(), tmp_path, instruction_files=[tmp_path / "a.md"], agent="claude")

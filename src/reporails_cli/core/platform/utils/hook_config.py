@@ -14,7 +14,8 @@ import tomllib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
 
 # A config file larger than this is not read.
 MAX_HOOK_CONFIG_BYTES = 1_048_576
@@ -29,29 +30,33 @@ class HookSite:
 
     event: str
     matcher: str
-    handler: dict[str, Any]
+    handler: JsonObject
     path: HookPath
 
 
-def value_at(data: Any, path: HookPath) -> Any:
+def value_at(data: JsonValue, path: HookPath) -> JsonValue:
     """The value at ``path`` in parsed data, or None when the path does not exist."""
     for step in path:
-        if not isinstance(data, list if isinstance(step, int) else dict):
-            return None
-        try:
+        if isinstance(step, int) and isinstance(data, list):
+            if not -len(data) <= step < len(data):
+                return None
             data = data[step]
-        except (KeyError, IndexError):
+        elif isinstance(step, str) and isinstance(data, dict):
+            if step not in data:
+                return None
+            data = data[step]
+        else:
             return None
     return data
 
 
-def _matcher_of(holder: dict[str, Any]) -> str:
+def _matcher_of(holder: JsonObject) -> str:
     """The matcher an entry or group carries; empty when it has none or it is not text."""
     matcher = holder.get("matcher")
     return matcher if isinstance(matcher, str) else ""
 
 
-def _event_sites(event: str, entries: list[Any], where: HookPath, grouped: bool) -> Iterator[HookSite]:
+def _event_sites(event: str, entries: list[JsonValue], where: HookPath, grouped: bool) -> Iterator[HookSite]:
     """The handlers one event lists: its entries, or the members of each entry's ``hooks`` list."""
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -65,7 +70,9 @@ def _event_sites(event: str, entries: list[Any], where: HookPath, grouped: bool)
                 yield HookSite(event, _matcher_of(entry), member, (*where, index, "hooks", position))
 
 
-def walk_hooks(data: Any, *, block: str = "", named_hooks: bool = False, grouped: bool = False) -> Iterator[HookSite]:
+def walk_hooks(
+    data: JsonValue, *, block: str = "", named_hooks: bool = False, grouped: bool = False
+) -> Iterator[HookSite]:
     """Each hook handler the parsed file declares.
 
     ``block`` is the top-level key holding the hooks (empty: the top-level object is the
@@ -89,7 +96,7 @@ def walk_hooks(data: Any, *, block: str = "", named_hooks: bool = False, grouped
                 yield from _event_sites(str(event), entries, (*map_path, event), grouped)
 
 
-def hook_sites(data: Any) -> Iterator[HookSite]:
+def hook_sites(data: JsonValue) -> Iterator[HookSite]:
     """Every hook handler in a hook config of any agent, whichever shape it is written in.
 
     The hooks sit under a top-level ``hooks`` key when there is one, else the top-level
@@ -98,13 +105,14 @@ def hook_sites(data: Any) -> Iterator[HookSite]:
     """
     if not isinstance(data, dict):
         return
-    block = "hooks" if isinstance(data.get("hooks"), dict) else ""
-    members = data["hooks"] if block else data
+    hooks = data.get("hooks")
+    block = "hooks" if isinstance(hooks, dict) else ""
+    members = hooks if isinstance(hooks, dict) else data
     named = any(isinstance(value, dict) for value in members.values())
     yield from walk_hooks(data, block=block, named_hooks=named, grouped=True)
 
 
-class _Located(dict[str, Any]):
+class _Located(dict[str, JsonValue]):
     """A parsed JSON object that remembers the line its opening brace is on."""
 
     line: int = 0
@@ -127,17 +135,18 @@ def _object_lines(text: str) -> Iterator[int]:
             yield open_lines.pop()
 
 
-def _load_json(text: str) -> Any:
+def _load_json(text: str) -> JsonValue:
     """Parse JSON; every object in the result knows the line it starts on."""
     lines = _object_lines(text)
 
-    def located(pairs: list[tuple[str, Any]]) -> _Located:
+    def located(pairs: list[tuple[str, JsonValue]]) -> _Located:
         # The decoder completes objects in the order their closing braces appear.
         obj = _Located(pairs)
         obj.line = next(lines, 0)
         return obj
 
-    return json.loads(text, object_pairs_hook=located)
+    data: JsonValue = json.loads(text, object_pairs_hook=located)
+    return data
 
 
 @dataclass(frozen=True)
@@ -145,7 +154,7 @@ class HookConfig:
     """A hook config file read once: its text and the data parsed from it."""
 
     text: str
-    data: Any
+    data: JsonValue
 
 
 def read_hook_config(path: Path) -> HookConfig | None:

@@ -10,27 +10,44 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
+from reporails_cli.core.classify import classify_files, load_file_types
 from reporails_cli.core.discovery.exclusions import RunExclusions
-from reporails_cli.core.heal.keyed import put_back_line
+from reporails_cli.core.heal.apply import apply_keyed_heal
+from reporails_cli.core.heal.fixers import suggest_missing_sections
+from reporails_cli.core.heal.keyed import KeyedResult, put_back_line
+from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
+from reporails_cli.core.lint.suppression import build_index, is_suppressed
+from reporails_cli.core.mapper.skills import skill_membership
+from reporails_cli.core.platform.adapters.registry import load_rules
+from reporails_cli.core.platform.adapters.rules_query import rule_title
+from reporails_cli.core.platform.config.config import get_project_config
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_str
+from reporails_cli.core.platform.dto.models import ClassifiedFile, LocalFinding, Rule, Severity, Violation
 from reporails_cli.formatters.json import format_notices
+
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from reporails_cli.core.platform.dto.diagnostics import Notice, RemediationWorkflow
+    from reporails_cli.core.platform.dto.ruleset import RulesetMap
 
 logger = logging.getLogger(__name__)
 
 
 def _apply_keyed_fixes(
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     target: Path,
-    workflow: Any,
+    workflow: RemediationWorkflow | None,
+    *,
     dry_run: bool,
     show_progress: bool,
-    console: Any,
+    console: Console,
     allowed_files: list[Path] | None = None,
     suppressed: dict[Path, set[int]] | None = None,
-) -> Any:
+) -> KeyedResult:
     """Fix each finding at the place it names; list the places that need a decision (`apply_keyed_heal`)."""
-    from reporails_cli.core.heal.apply import apply_keyed_heal
 
     if show_progress and ruleset_map is not None and workflow is not None:
         console.print("[bold]Applying fixes...[/bold]")
@@ -42,12 +59,13 @@ def _apply_keyed_fixes(
 def _collect_section_suggestions(
     target: Path,
     instruction_files: list[Path],
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     effective_agent: str,
+    *,
     show_progress: bool,
-    console: Any,
+    console: Console,
     exclusions: RunExclusions | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, str]]:
     """Run M probes + content-quality checks and collect missing-section suggestions.
 
     Never writes a file — read-only under `--heal`, `--fix`, and `--dry-run` alike,
@@ -58,9 +76,6 @@ def _collect_section_suggestions(
     on its line with an inline `<!-- ails-disable-line <rule> -->` directive — the
     same directive the main report honors — never turns into a suggestion either.
     """
-    from reporails_cli.core.heal.fixers import suggest_missing_sections
-    from reporails_cli.core.lint.rule_runner import run_content_quality_checks, run_m_probes
-    from reporails_cli.core.mapper.skills import skill_membership
 
     if show_progress:
         console.print("[bold]Checking for missing sections...[/bold]")
@@ -84,11 +99,10 @@ def _collect_section_suggestions(
     ]
 
 
-def _drop_suppressed(findings: list[Any], target: Path) -> list[Any]:
+def _drop_suppressed(findings: list[LocalFinding], target: Path) -> list[LocalFinding]:
     """Drop a finding silenced by an inline `ails-disable-line` directive on its own
     line — the same suppression the main report already honors.
     """
-    from reporails_cli.core.lint.suppression import build_index, is_suppressed
 
     index = build_index((f.file for f in findings), target)
     if not index:
@@ -96,16 +110,14 @@ def _drop_suppressed(findings: list[Any], target: Path) -> list[Any]:
     return [f for f in findings if not is_suppressed(f, index)]
 
 
-def _findings_to_violations(findings: list[Any]) -> list[Any]:
+def _findings_to_violations(findings: list[LocalFinding]) -> list[Violation]:
     """Convert `LocalFinding`s to the `Violation` shape the section suggesters read."""
-    from reporails_cli.core.platform.dto.models import Severity, Violation
 
-    sev_map = {"critical": Severity.CRITICAL, "high": Severity.HIGH, "medium": Severity.MEDIUM, "low": Severity.LOW}
     return [
         Violation(
             rule_id=f.rule,
             rule_title="",
-            severity=sev_map.get(f.severity, Severity.MEDIUM),
+            severity=Severity.MEDIUM,
             message=f.message,
             location=f"{f.file}:{f.line}" if f.line else f.file,
         )
@@ -115,20 +127,14 @@ def _findings_to_violations(findings: list[Any]) -> list[Any]:
 
 def _classify_for_suggestions(
     target: Path, instruction_files: list[Path], agent: str, exclusions: RunExclusions | None = None
-) -> tuple[list[Any], dict[str, Any]]:
+) -> tuple[list[ClassifiedFile], dict[str, Rule]]:
     """Classify files and load rules so a section suggestion can name the file the
     rule's own `match.type` is about, instead of wherever the underlying finding
     happened to be pinned (a project-wide content check reports the first matching
     file in sorted path order, which is not necessarily the project's main file).
     """
-    from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.platform.adapters.registry import load_rules
-    from reporails_cli.core.platform.config.config import get_project_config
 
-    try:
-        generic_scanning = get_project_config(target).generic_scanning
-    except (OSError, ValueError):
-        generic_scanning = False
+    generic_scanning = get_project_config(target).generic_scanning
     file_types = load_file_types(agent or "generic")
     classified = classify_files(
         target, instruction_files, file_types, generic_scanning=generic_scanning, exclusions=exclusions
@@ -138,14 +144,15 @@ def _classify_for_suggestions(
 
 
 def _output_heal_results(
-    mechanical_results: list[dict[str, Any]],
-    suggested: list[dict[str, Any]],
+    mechanical_results: list[JsonObject],
+    suggested: list[dict[str, str]],
+    *,
     dry_run: bool,
     elapsed_ms: float,
     output_format: str,
-    console: Any,
-    notices: Any = (),
-    keyed: Any = None,
+    console: Console,
+    notices: tuple[Notice, ...] = (),
+    keyed: KeyedResult | None = None,
 ) -> None:
     """Output heal results in the requested format.
 
@@ -158,7 +165,7 @@ def _output_heal_results(
     decisions = keyed.decisions if keyed else []
     put_back = keyed.put_back if keyed else []
     if output_format == "json":
-        data = {
+        data: dict[str, object] = {
             "auto_fixed": mechanical_results,
             "suggested": suggested,
             "decisions": decisions,
@@ -175,31 +182,40 @@ def _output_heal_results(
         }
         print(json.dumps(data, indent=2))
     else:
-        _print_text_result(mechanical_results, suggested, dry_run, elapsed_ms, console, decisions, put_back)
+        _print_text_result(
+            mechanical_results,
+            suggested,
+            dry_run=dry_run,
+            elapsed_ms=elapsed_ms,
+            console=console,
+            decisions=decisions,
+            put_back=put_back,
+        )
 
 
-def _print_decisions(decisions: list[dict[str, Any]], put_back: list[dict[str, Any]], console: Any) -> None:
+def _print_decisions(decisions: list[JsonObject], put_back: list[JsonObject], console: Console) -> None:
     """The files put back, then one line per place that needs a decision: `file:line  op  rule title`."""
     for pb in put_back:
         console.print(f"[yellow]{put_back_line(pb)}[/yellow]")
     if not decisions:
         return
-    from reporails_cli.core.lint.rule_pages import rule_title
 
     n = len(decisions)
     console.print(f"\n[bold]{n}[/bold] place{'s' if n != 1 else ''} need{'' if n != 1 else 's'} a decision:")
     for d in decisions:
-        console.print(f"  {d['file']}:{d['line']}  {d['op']}  {rule_title(d['rule']) or d['rule']}")
+        rule = as_str(d["rule"])
+        console.print(f"  {d['file']}:{d['line']}  {d['op']}  {rule_title(rule) or rule}")
 
 
 def _print_text_result(
-    fixes: list[dict[str, Any]],
-    suggested: list[dict[str, Any]],
+    fixes: list[JsonObject],
+    suggested: list[dict[str, str]],
+    *,
     dry_run: bool,
     elapsed_ms: float,
-    console: Any,
-    decisions: list[dict[str, Any]] | None = None,
-    put_back: list[dict[str, Any]] | None = None,
+    console: Console,
+    decisions: list[JsonObject] | None = None,
+    put_back: list[JsonObject] | None = None,
 ) -> None:
     """Print human-readable heal results: fixes, put-back files, decisions, then suggested sections.
 
@@ -211,9 +227,9 @@ def _print_text_result(
 
     if fixes:
         # Group by file
-        by_file: dict[str, list[dict[str, Any]]] = {}
+        by_file: dict[str, list[JsonObject]] = {}
         for f in fixes:
-            by_file.setdefault(f.get("file_path", "?"), []).append(f)
+            by_file.setdefault(as_str(f.get("file_path", "?")), []).append(f)
 
         for filepath, file_fixes in sorted(by_file.items()):
             console.print(f"\n[bold]{filepath}[/bold]")

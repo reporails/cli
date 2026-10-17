@@ -1,12 +1,12 @@
 """The JSON serialize round-trip must be payload-lossless.
 
 `ails check` tries the mapper daemon first, and the daemon hands the client its
-`RulesetMap` via `daemon._ruleset_map_to_dict` — a JSON round-trip through
+`RulesetMap` via `daemon_server._ruleset_map_to_dict` — a JSON round-trip through
 `save_ruleset_map`/`load_ruleset_map` (`core/mapper/serialize.py`). The
 whole-map cache (`full_map_cache.py`) round-trips the SAME two functions to
 disk. `_atom_to_dict`/`_atom_from_dict` must carry `slots` (the span coordinates the
 wire `so` block projects), plus `stage`, `over_merged`, `min_clause_cosine`,
-`cell_straddle`, and `abstained` — so a daemon or whole-map-cache-hit run
+and `abstained` — so a daemon or whole-map-cache-hit run
 ships the same payload, `so` block included, as a cold in-process run.
 
 This runs the real bundled multi-slot classifier + embedder (no stubs — the

@@ -29,16 +29,20 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.walk import safe_resolve
+from reporails_cli.core.mapper.imports import expand_imports_with_origins
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_object, as_str
 from reporails_cli.core.platform.dto.ruleset import (
     EMBEDDING_MODEL,
     SCHEMA_VERSION,
+    SLOT_COORD_FIELDS,
     Atom,
     AtomSlots,
     FileRecord,
 )
+from reporails_cli.core.platform.utils.directives import strip_directives
+from reporails_cli.core.platform.utils.utils import compact_json
 
 logger = logging.getLogger(__name__)
 
@@ -68,18 +72,14 @@ def file_cache_key(
     if plain:
         return chash
     base = safe_resolve(path).parent
-    signature = json.dumps(
-        [line_map, [None if o is None else [Path(os.path.relpath(o[0], base)).as_posix(), o[1]] for o in origins]],
-        separators=(",", ":"),
+    signature = compact_json(
+        [[*line_map], [None if o is None else [Path(os.path.relpath(o[0], base)).as_posix(), o[1]] for o in origins]]
     )
     return f"{chash}+{hashlib.sha256(signature.encode('utf-8')).hexdigest()[:16]}"
 
 
 def cache_key_for_path(path: Path) -> str:
     """The per-file cache key the mapper uses for `path`."""
-    from reporails_cli.core.lint.suppression import strip_directives
-    from reporails_cli.core.mapper.imports import expand_imports_with_origins
-
     expanded, line_map, origins = expand_imports_with_origins(path.read_text(encoding="utf-8", errors="replace"), path)
     return file_cache_key(path, content_hash(strip_directives(expanded)), line_map, origins)
 
@@ -89,25 +89,9 @@ def cache_key_for_path(path: Path) -> str:
 # Atom(**d) on an unexpected keyword.
 _ATOM_FIELD_NAMES = frozenset(Atom.model_fields)
 
-# AtomSlots fields carrying the span-coordinate half (offsets + per-span
-# confidence) — the only part of `slots` that survives the cache round-trip.
-# Slot TEXT (subject/predicate/object/scope strings) stays cli-local-per-run
-# and is never written to `slot_coords`: slot text stays local to the run.
-_SLOT_COORD_FIELDS = (
-    "subject_span",
-    "predicate_span",
-    "object_span",
-    "scope_span",
-    "subject_conf",
-    "predicate_conf",
-    "object_conf",
-    "scope_conf",
-)
-_SLOT_SPAN_FIELDS = ("subject_span", "predicate_span", "object_span", "scope_span")
-
 # Bump when the cached atom shape or the way atoms are read changes: every entry
 # stored under an older version then misses and is rebuilt on the next run.
-_CACHE_VERSION = 40
+_CACHE_VERSION = 41
 _MAX_CACHE_ENTRIES = 5000  # global cache serves all projects
 _STALE_IDENTITY_DAYS = 30  # a sibling configuration's folder unused this long is removed
 
@@ -116,8 +100,7 @@ _STALE_IDENTITY_DAYS = 30  # a sibling configuration's folder unused this long i
 class CachedFileEntry:
     """Cached tokenization + embedding result for a single file."""
 
-    content_hash: str
-    atoms: list[dict[str, Any]] = field(default_factory=list)
+    atoms: list[JsonObject] = field(default_factory=list)
     last_used: str = ""  # ISO timestamp for LRU eviction
     description_embedding: list[int] | None = None  # int8 embedding of the frontmatter description
 
@@ -134,21 +117,39 @@ def _identity_digest(version: int, model: str, schema: str, segmentation: str, c
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def _shard_payload(entry: CachedFileEntry) -> dict[str, Any]:
+def _shard_payload(entry: CachedFileEntry) -> JsonObject:
     """The JSON body of one shard."""
-    payload: dict[str, Any] = {"atoms": entry.atoms, "last_used": entry.last_used}
+    payload: JsonObject = {"atoms": [*entry.atoms], "last_used": entry.last_used}
     if entry.description_embedding is not None:
-        payload["description_embedding"] = entry.description_embedding
+        payload["description_embedding"] = [*entry.description_embedding]
     return payload
 
 
-def _shard_filename(content_hash: str) -> str:
+def _entry_from_shard(data: JsonValue) -> CachedFileEntry | None:
+    """The cache entry a shard's JSON holds; None when its atoms or description embedding are not the shapes written."""
+    body = as_object(data)
+    atoms = body.get("atoms", [])
+    embedding = body.get("description_embedding")
+    if not isinstance(atoms, list) or not all(isinstance(a, dict) for a in atoms):
+        return None
+    if embedding is not None and not (
+        isinstance(embedding, list) and all(isinstance(v, int) and not isinstance(v, bool) for v in embedding)
+    ):
+        return None
+    return CachedFileEntry(
+        atoms=[a for a in atoms if isinstance(a, dict)],
+        last_used=as_str(body.get("last_used", "")),
+        description_embedding=[v for v in embedding if isinstance(v, int)] if isinstance(embedding, list) else None,
+    )
+
+
+def _shard_filename(chash: str) -> str:
     """Filesystem-safe shard filename for a content hash.
 
     Content hashes may carry a `sha256:` prefix; `:` and `/` are not portable in
     filenames, so replace them (the hex charset means no distinct hash collides).
     """
-    return content_hash.replace(":", "_").replace("/", "_") + ".json"
+    return chash.replace(":", "_").replace("/", "_") + ".json"
 
 
 class MapCache:
@@ -165,7 +166,7 @@ class MapCache:
         entry = cache.get("sha256:abc...")
         if entry is None:
             atoms = tokenize(content)
-            cache.put(content_hash, CachedFileEntry(content_hash, [...]))
+            cache.put(content_hash, CachedFileEntry([...]))
         cache.enforce_cap()
         cache.save()
     """
@@ -231,11 +232,12 @@ class MapCache:
         if not self.cache_path.exists():
             return
         try:
-            raw = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            parsed: JsonValue = json.loads(self.cache_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             with contextlib.suppress(OSError):
                 self.cache_path.unlink()
             return
+        raw = as_object(parsed)
         identity_ok = (
             raw.get("version") == _CACHE_VERSION
             and raw.get("model") == self._model
@@ -248,12 +250,13 @@ class MapCache:
             with contextlib.suppress(OSError):
                 self.cache_path.unlink()
             return
-        entries = raw.get("entries", {})
+        entries = as_object(raw.get("entries", {}))
         all_ok = True
         for chash, entry_data in entries.items():
+            entry_body = as_object(entry_data)
             if not self._write_shard(
                 chash,
-                {"atoms": entry_data.get("atoms", []), "last_used": entry_data.get("last_used", "")},
+                {"atoms": entry_body.get("atoms", []), "last_used": entry_body.get("last_used", "")},
             ):
                 all_ok = False
         logger.debug("Migrated %d monolith entries to shards", len(entries))
@@ -266,10 +269,10 @@ class MapCache:
         else:
             logger.warning("Monolith migration had shard-write failures; keeping map-cache.json for retry")
 
-    def _shard_path(self, content_hash: str) -> Path:
-        return self._shard_dir / _shard_filename(content_hash)
+    def _shard_path(self, chash: str) -> Path:
+        return self._shard_dir / _shard_filename(chash)
 
-    def _write_shard(self, content_hash: str, payload: dict[str, Any]) -> bool:
+    def _write_shard(self, chash: str, payload: JsonObject) -> bool:
         """Atomically write one shard (mkstemp + os.replace). Never raises.
 
         Returns True on success. A cache write must never take down the run, so
@@ -281,8 +284,8 @@ class MapCache:
             fd, tmp_name = tempfile.mkstemp(dir=self._shard_dir, prefix=".shard-", suffix=".tmp")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(payload, separators=(",", ":")))
-                os.replace(tmp_name, self._shard_path(content_hash))
+                    f.write(compact_json(payload))
+                os.replace(tmp_name, self._shard_path(chash))
             except OSError:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp_name)
@@ -292,42 +295,39 @@ class MapCache:
             return False
         return True
 
-    def get(self, content_hash: str) -> CachedFileEntry | None:
+    def get(self, chash: str) -> CachedFileEntry | None:
         """Look up cached atoms by content hash, reading the shard on a memory miss.
 
         Touches the shard's mtime on a disk hit so mtime-LRU sees the access. The
         touch is a single-file `Path.touch` — cheap now that entries are separate
         files, unlike the old whole-blob rewrite a read-touch used to imply.
         """
-        entry = self._entries.get(content_hash)
+        entry = self._entries.get(chash)
         if entry is not None:
             entry.last_used = _now_iso()
             return entry
-        path = self._shard_path(content_hash)
+        path = self._shard_path(chash)
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data: JsonValue = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        entry = CachedFileEntry(
-            content_hash=content_hash,
-            atoms=data.get("atoms", []),
-            last_used=data.get("last_used", ""),
-            description_embedding=data.get("description_embedding"),
-        )
-        self._entries[content_hash] = entry
+        entry = _entry_from_shard(data)
+        if entry is None:
+            return None
+        self._entries[chash] = entry
         with contextlib.suppress(OSError):
             path.touch()
         entry.last_used = _now_iso()
         return entry
 
-    def put(self, content_hash: str, entry: CachedFileEntry) -> None:
+    def put(self, chash: str, entry: CachedFileEntry) -> None:
         """Store atoms for a content hash and write its shard immediately."""
         entry.last_used = _now_iso()
-        self._entries[content_hash] = entry
-        if self._write_shard(content_hash, _shard_payload(entry)):
-            self._pending.discard(content_hash)
+        self._entries[chash] = entry
+        if self._write_shard(chash, _shard_payload(entry)):
+            self._pending.discard(chash)
         else:
-            self._pending.add(content_hash)
+            self._pending.add(chash)
 
     def save(self) -> None:
         """Retry any shard writes that failed at `put()` time.
@@ -419,21 +419,11 @@ def _now_iso() -> str:
     return time.strftime("%Y%m%dT%H%M%S", time.gmtime())
 
 
-def _as_offset(v: Any) -> tuple[int, int] | None:
-    """JSON round-trips a tuple offset as a 2-element list; restore the tuple."""
-    return tuple(v) if v is not None else None
-
-
-def atoms_to_dicts(atoms: list[Atom]) -> list[dict[str, Any]]:
+def atoms_to_dicts(atoms: list[Atom]) -> list[JsonObject]:
     """Serialize atoms to dicts for cache storage."""
-    result = []
+    result: list[JsonObject] = []
     for a in atoms:
-        d = a.model_dump()
-        # Convert tuple fields to lists for JSON
-        if d.get("embedding_int8") is not None:
-            d["embedding_int8"] = list(d["embedding_int8"])
-        if d.get("topics"):
-            d["topics"] = list(d["topics"])
+        d: JsonObject = a.model_dump(mode="json")
         # `slots` text (subject/predicate/object/scope strings) is never cached. The
         # coordinate half (token offsets + per-span confidence) DOES survive, under
         # `slot_coords`, so a cache hit still carries the spans.
@@ -442,41 +432,27 @@ def atoms_to_dicts(atoms: list[Atom]) -> list[dict[str, Any]]:
         # round-trips back to `AtomSlots()`, not `None`: gating on "any span set"
         # made the write and the read asymmetric for that all-None case.
         slots = d.pop("slots", None)
-        if slots is not None:
-            d["slot_coords"] = {f: slots[f] for f in _SLOT_COORD_FIELDS}
+        if isinstance(slots, dict):
+            d["slot_coords"] = {f: slots[f] for f in SLOT_COORD_FIELDS}
         result.append(d)
     return result
 
 
-def dicts_to_atoms(dicts: list[dict[str, Any]]) -> list[Atom]:
+def dicts_to_atoms(dicts: list[JsonObject]) -> list[Atom]:
     """Deserialize atom dicts back to Atom instances.
 
-    Copies each source dict (dropping keys the current Atom no longer declares)
-    so the reconstructed atom never aliases the cache entry's stored dict and a
-    stale-shape entry from a prior CLI version rehydrates instead of raising.
+    Drops keys the current Atom no longer declares, so a stale-shape entry from a prior
+    CLI version rehydrates instead of raising, and the reconstructed atom never aliases the
+    cache entry's stored dict.
     """
-    atoms = []
+    atoms: list[Atom] = []
     for src in dicts:
-        d = {k: v for k, v in src.items() if k in _ATOM_FIELD_NAMES}
-        # Convert lists back to tuples
-        if d.get("embedding_int8") is not None:
-            d["embedding_int8"] = tuple(d["embedding_int8"])
-        if d.get("topics") is not None:
-            d["topics"] = tuple(d["topics"])
-        # slots TEXT is never persisted (see atoms_to_dicts); drop a stale/raw
+        # `slots` TEXT is never persisted (see atoms_to_dicts); drop a stale/raw
         # `slots` dict from a prior CLI version rather than pass it through as-is.
-        d.pop("slots", None)
-        slot_coords = src.get("slot_coords")
+        d = {k: v for k, v in src.items() if k in _ATOM_FIELD_NAMES and k != "slots"}
+        atom = Atom.model_validate(d)
+        slot_coords = as_object(src.get("slot_coords"))
         if slot_coords:
-            d["slots"] = AtomSlots(
-                subject_span=_as_offset(slot_coords.get("subject_span")),
-                predicate_span=_as_offset(slot_coords.get("predicate_span")),
-                object_span=_as_offset(slot_coords.get("object_span")),
-                scope_span=_as_offset(slot_coords.get("scope_span")),
-                subject_conf=slot_coords.get("subject_conf", 0.0),
-                predicate_conf=slot_coords.get("predicate_conf", 0.0),
-                object_conf=slot_coords.get("object_conf", 0.0),
-                scope_conf=slot_coords.get("scope_conf", 0.0),
-            )
-        atoms.append(Atom(**d))
+            atom.slots = AtomSlots.from_coords(slot_coords)
+        atoms.append(atom)
     return atoms

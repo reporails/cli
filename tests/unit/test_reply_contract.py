@@ -11,10 +11,10 @@ import pytest
 
 from reporails_cli.core.platform.adapters.api_client import _deserialize_lint_result
 from reporails_cli.core.platform.adapters.payload import local_entries, project_payload
-from reporails_cli.core.platform.dto.diagnostics import RulesetReport
+from reporails_cli.core.platform.dto.diagnostics import FindingItem, RulesetReport
 from reporails_cli.core.platform.dto.models import LocalEntry
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem, merge_results
+from reporails_cli.core.platform.runtime.merger import CombinedResult, merge_results
 from reporails_cli.formatters import json as json_formatter
 from reporails_cli.formatters import mcp as mcp_formatter
 from reporails_cli.formatters.text import display

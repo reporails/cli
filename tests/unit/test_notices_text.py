@@ -6,10 +6,11 @@ import io
 import re
 
 import pytest
+from rich.cells import cell_len
 from rich.console import Console
 
 from reporails_cli.core.platform.dto.diagnostics import Notice
-from reporails_cli.formatters.text.notices import notice_lines, print_notices
+from reporails_cli.formatters.text.notices import _notice_lines, print_notices
 
 
 def _printed(notices: list[Notice]) -> str:
@@ -39,16 +40,65 @@ def test_markup_in_text_carries_no_style_when_rendered() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_warn_is_yellow_and_info_is_plain() -> None:
-    warn, info = (notice_lines([Notice("a", level, "msg")])[0] for level in ("warn", "info"))
+def test_warn_is_a_highlighted_block_on_a_terminal_and_yellow_elsewhere() -> None:
+    warn, info = (_notice_lines(Notice("a", level, "msg"), "→")[0] for level in ("warn", "info"))
     assert warn == "[yellow]msg[/yellow]"
     assert info == "msg"
+    assert _notice_lines(Notice("a", "warn", "msg"), "→", block=True)[0] == "msg"
+
+
+def _colour(notices: list[Notice], width: int = 100, *, ascii_mode: bool = False) -> list[str]:
+    console = Console(force_terminal=True, color_system="standard", width=width, file=io.StringIO(), highlight=False)
+    with console.capture() as cap:
+        print_notices(console, notices, ascii_mode=ascii_mode)
+    return cap.get().splitlines()
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_BG = "103"  # bright_yellow background in the standard palette
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_long_warning_is_a_block_of_equal_width_lines_on_yellow() -> None:
+    lines = _colour([Notice("a", "warn", "Your payment failed and the plan ends soon. " * 5)])
+    assert len(lines) > 1
+    assert all(_BG in line for line in lines)
+    assert len({len(_ANSI.sub("", line)) for line in lines}) == 1
+    assert all(_ANSI.sub("", line).startswith("   ") for line in lines)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_the_link_under_a_warning_has_no_background() -> None:
+    lines = _colour([Notice("a", "warn", "Pay now", "https://example.test/pay")])
+    assert _BG in lines[0]
+    assert "https://example.test/pay" in lines[1]
+    assert _BG not in lines[1]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_warning_without_colour_or_in_ascii_mode_has_no_background() -> None:
+    plain = _printed([Notice("a", "warn", "Pay now")])
+    assert plain == "  Pay now\n"
+    ascii_lines = _colour([Notice("a", "warn", "Pay now")], ascii_mode=True)
+    assert all(_BG not in line for line in ascii_lines)
+    assert "Pay now" in "".join(ascii_lines)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_markup_in_a_warning_prints_literally_on_the_block() -> None:
+    lines = _colour([Notice("a", "warn", "Pay [bold]now[/bold]")])
+    assert "Pay [bold]now[/bold]" in _ANSI.sub("", lines[0])
+    assert "\x1b[1m" not in lines[0].replace("\x1b[1;30;103m", "")
 
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_https_url_renders_as_a_link_and_brackets_cannot_close_the_tag() -> None:
-    lines = notice_lines([Notice("a", "info", "msg", "https://example.test/a[1]")])
+    lines = _notice_lines(Notice("a", "info", "msg", "https://example.test/a[1]"), "→")
     assert lines[1].startswith("→ [link=https://example.test/a%5B1%5D]")
     assert "https://example.test/a[1]" not in lines[1].split("]", 1)[0]
 
@@ -56,7 +106,7 @@ def test_https_url_renders_as_a_link_and_brackets_cannot_close_the_tag() -> None
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_non_web_url_is_text_not_a_link() -> None:
-    lines = notice_lines([Notice("a", "info", "msg", "file:///etc/passwd")])
+    lines = _notice_lines(Notice("a", "info", "msg", "file:///etc/passwd"), "→")
     assert "[link" not in lines[1]
     assert "file:///etc/passwd" in lines[1]
 
@@ -153,3 +203,40 @@ def test_markup_in_promo_text_prints_literally(plain: bool) -> None:
     out = _render([promo], ascii_mode=plain)
     assert "Pay [bold]now[/bold] [red]x[/red]" in out
     assert "https://e.test/[a]" in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_notices_are_separated_by_one_blank_line_and_none_around_them() -> None:
+    out = _printed([Notice("a", "info", "First"), Notice("b", "info", "Second")])
+    assert out.splitlines() == ["  First", "", "  Second"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_promo_text_stays_within_its_rules_on_a_wide_terminal() -> None:
+    promo = Notice("p", "info", "Fixture promo text that is long enough to wrap " * 4, kind="promo")
+    lines = _render([promo], ascii_mode=False, width=100, color_system="standard")
+    plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines.splitlines()]
+    rule = len(plain[0])
+    assert rule == 2 + 60
+    body = plain[1:-1]
+    assert len(body) > 1
+    assert all(len(line) <= rule for line in body)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_long_plain_notice_still_wraps_at_the_console_width() -> None:
+    out = _render([Notice("a", "info", "word " * 60)], width=100, force_terminal=False)
+    widths = [len(line) for line in out.splitlines()]
+    assert max(widths) > 62
+    assert max(widths) <= 100
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_warning_with_wide_characters_is_equal_in_cell_width() -> None:
+    lines = _colour([Notice("a", "warn", "漢字 payment failed 漢字 and the plan ends soon " * 4)], width=40)
+    assert len(lines) > 1
+    assert len({cell_len(_ANSI.sub("", line)) for line in lines}) == 1

@@ -1,29 +1,33 @@
 """Advanced mechanical checks — content reading, import following, aggregation.
 
 These checks are more complex than the simple structural checks in checks.py.
-They are imported and registered in MECHANICAL_CHECKS by checks.py.
+They are registered in MECHANICAL_CHECKS by registry.py.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.discovery.exclusions import DEFAULT_EXCLUDE_DIRS
 from reporails_cli.core.discovery.walk import safe_resolve, walk_files, walk_glob_matches
 from reporails_cli.core.lint.mechanical.checks import (
+    CheckArgs,
     _get_counted_files,
-    _resolve_glob_targets,
     _safe_float,
+    annotation_entries,
+    arg_int,
+    arg_value,
     get_target_files,
     run_exclusions,
+    target_texts,
 )
-from reporails_cli.core.mapper.imports import import_refs, import_refs_with_lines, import_target
+from reporails_cli.core.mapper.imports import MARKDOWN_RULE_SUFFIXES, import_refs, import_refs_with_lines
 from reporails_cli.core.mapper.inspect import path_filter_key, split_top_level_commas
 from reporails_cli.core.mapper.parse import parse_blocks
 from reporails_cli.core.mapper.skills import one_level_skills_roots, slot_subfolders
-from reporails_cli.core.mapper.structure import link_targets, strip_anchor
+from reporails_cli.core.platform.contract.json_value import JsonValue, as_list, str_list
 from reporails_cli.core.platform.dto.checks import CheckResult
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 from reporails_cli.core.platform.utils.utils import (
@@ -35,7 +39,7 @@ from reporails_cli.core.platform.utils.utils import (
 
 def frontmatter_present(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that every target file has a YAML frontmatter block.
@@ -50,7 +54,7 @@ def frontmatter_present(
 
     missing: list[tuple[str, str]] = []
     for match in targets:
-        read = read_frontmatter_file(match, lenient=bool(args.get("lenient", False)))
+        read = read_frontmatter_file(match, lenient=bool(arg_value(args, "lenient", False)))
         if read is None or read.block is None:
             rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
             missing.append((f"{rel}:0", "No frontmatter block found"))
@@ -66,7 +70,7 @@ def frontmatter_present(
 
 def frontmatter_matches_dirname(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check a frontmatter field equals its file's containing directory name.
@@ -83,16 +87,17 @@ def frontmatter_matches_dirname(
     Operates on the classified target files so an external single-file target
     resolves correctly, unlike a project-root glob.
     """
-    field = str(args.get("field", "name"))
+    field = str(arg_value(args, "field", "name"))
     for target in get_target_files(args, classified_files, root):
         if not target.is_file():
             continue
         directory = target.parent.name
-        read = read_frontmatter_file(target, lenient=bool(args.get("lenient", False)))
+        read = read_frontmatter_file(target, lenient=bool(arg_value(args, "lenient", False)))
         fm = read.data if read is not None else None
-        if fm is None or not isinstance(fm.get(field), str):
+        raw = fm.get(field) if fm is not None else None
+        if not isinstance(raw, str):
             continue
-        value = fm[field].strip()
+        value = raw.strip()
         if value != directory:
             rel = target.relative_to(root).as_posix() if target.is_relative_to(root) else target.name
             return CheckResult(
@@ -105,7 +110,7 @@ def frontmatter_matches_dirname(
 
 def frontmatter_valid_yaml(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that every target file's frontmatter block reads as a YAML mapping.
@@ -116,7 +121,8 @@ def frontmatter_valid_yaml(
     """
     broken: list[tuple[str, str]] = []
     for match in get_target_files(args, classified_files, root):
-        read = read_frontmatter_file(match, lenient=bool(args.get("lenient", False))) if match.is_file() else None
+        lenient = bool(arg_value(args, "lenient", False))
+        read = read_frontmatter_file(match, lenient=lenient) if match.is_file() else None
         if read is not None and read.problem is not None:
             rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
             broken.append((f"{rel}:{read.problem.line}", f"Frontmatter is not valid YAML: {read.problem.message}"))
@@ -142,7 +148,7 @@ def _broken_heading_line(content: str) -> int | None:
     """
     tokens, offset = parse_blocks(content)
     for i, tok in enumerate(tokens):
-        if tok.type != "inline" or tokens[i - 1].type != "paragraph_open" or tokens[i - 1].level:
+        if tok.type != "inline" or tokens[i - 1].type != "paragraph_open" or tokens[i - 1].level or tok.map is None:
             continue
         for n, line in enumerate(tok.content.split("\n")):
             if _BROKEN_HEADING_RE.match(line):
@@ -152,31 +158,25 @@ def _broken_heading_line(content: str) -> int | None:
 
 def valid_markdown(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check for structural markdown issues in target files."""
-    for match in get_target_files(args, classified_files, root):
-        if not match.is_file():
-            continue
-        try:
-            content = match.read_text(encoding="utf-8", errors="replace")
-            line_num = _broken_heading_line(content)
-            if line_num is not None:
-                rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
-                return CheckResult(
-                    passed=False,
-                    message=f"Broken heading (missing space after #) in {match.name}",
-                    location=f"{rel}:{line_num}",
-                )
-        except OSError:
-            continue
+    for match, content in target_texts(args, classified_files, root):
+        line_num = _broken_heading_line(content)
+        if line_num is not None:
+            rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else match.name
+            return CheckResult(
+                passed=False,
+                message=f"Broken heading (missing space after #) in {match.name}",
+                location=f"{rel}:{line_num}",
+            )
     return CheckResult(passed=True, message="Markdown structure valid")
 
 
 def path_resolves(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that target paths exist."""
@@ -188,7 +188,7 @@ def path_resolves(
 
 def extract_imports(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check for @import references in instruction files.
@@ -216,7 +216,7 @@ def extract_imports(
         return CheckResult(
             passed=True,
             message=f"Found {len(imports_found)} import(s)",
-            annotations={"discovered_imports": imports_found},
+            annotations={"discovered_imports": [*imports_found]},
         )
     # No imports is valid — nothing to validate. Pass with empty annotations
     # so check_import_targets_exist sees no work and also passes.
@@ -258,7 +258,7 @@ def _eager_bytes(cf: ClassifiedFile) -> int:
 
 def aggregate_byte_size(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check the always-injected ("one round") instruction footprint against a byte cap.
@@ -269,8 +269,8 @@ def aggregate_byte_size(
     (`loading: on_demand` / `discoverable`, incl. recalled memory siblings) not at all.
     The `pattern` form keeps counting full file sizes (no classified metadata).
     """
-    max_bytes = _safe_float(args.get("max"), float("inf"))
-    if args.get("pattern"):
+    max_bytes = _safe_float(arg_value(args, "max"), float("inf"))
+    if arg_value(args, "pattern"):
         total = sum(f.stat().st_size for f in _get_counted_files(args, classified_files, root))
     else:
         total = sum(_eager_bytes(cf) for cf in classified_files if cf.path.is_file())
@@ -281,11 +281,11 @@ def aggregate_byte_size(
 
 def import_depth(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that @import chains do not exceed max depth."""
-    max_depth_val = int(args.get("max", 5))
+    max_depth_val = arg_int(args, "max", 5)
 
     def follow(filepath: Path, visited: set[Path], depth: int) -> int:
         if filepath in visited or not filepath.is_file():
@@ -316,12 +316,12 @@ def import_depth(
 
 def directory_file_types(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that all files in a directory match allowed extensions."""
-    path = str(args.get("path", ""))
-    extensions: list[str] = list(args.get("extensions", []))
+    path = str(arg_value(args, "path", ""))
+    extensions = str_list(arg_value(args, "extensions", []))
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=True, message=f"Directory not found: {path} (OK)")
@@ -333,7 +333,7 @@ def directory_file_types(
 
 def skill_entrypoint_present(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Flag skill directories that lack a SKILL.md entry point.
@@ -344,7 +344,7 @@ def skill_entrypoint_present(
     skill sit deeper (a category folder) is not checked. Project-aggregate: enumerates whole
     skills roots, so its check entry is marked `project_scope: aggregate` to skip under scoped runs.
     """
-    entry = str(args.get("entry", "SKILL.md"))
+    entry = str(arg_value(args, "entry", "SKILL.md"))
     roots = one_level_skills_roots(classified_files, root)
     missing: list[str] = []
     for skills_root in sorted(roots):
@@ -363,7 +363,7 @@ def skill_entrypoint_present(
 
 def frontmatter_valid_glob(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that YAML frontmatter path entries use valid glob syntax.
@@ -375,9 +375,9 @@ def frontmatter_valid_glob(
     Cursor's own path-scoped rule extension. When the run classified files, only the rule
     files among them are checked, so a rule file the run left out gets no finding.
     """
-    path = str(args.get("path", ""))
-    require_matches = args.get("require_matches", False)
-    lenient = bool(args.get("lenient", False))
+    path = str(arg_value(args, "path", ""))
+    require_matches = bool(arg_value(args, "require_matches", False))
+    lenient = bool(arg_value(args, "lenient", False))
     target = root / path
     if not target.is_dir():
         return CheckResult(passed=True, message=f"Directory not found: {path} (OK)")
@@ -385,7 +385,7 @@ def frontmatter_valid_glob(
     exclusions = run_exclusions(args, root)
     subjects = [
         f
-        for f in walk_files(target, exclusions.feature_walk_dirs, lambda f: f.suffix in (".md", ".mdc"))
+        for f in walk_files(target, exclusions.feature_walk_dirs, lambda f: f.suffix in MARKDOWN_RULE_SUFFIXES)
         if not exclusions.leaves_out(f)
     ]
     if classified_files:
@@ -426,9 +426,8 @@ def _validate_file_globs(
     if read is None or read.block is None or read.data is None:
         return None
     key = path_filter_key(f, root)
-    paths = (read.data.get(key) if key else next((read.data[k] for k in _PATH_KEYS if read.data.get(k)), None)) or []
-    if isinstance(paths, str):
-        paths = split_top_level_commas(paths)
+    raw = read.data.get(key) if key else next((read.data[k] for k in _PATH_KEYS if read.data.get(k)), None)
+    paths: Sequence[JsonValue] = split_top_level_commas(raw) if isinstance(raw, str) else as_list(raw)
     for p in paths:
         if not isinstance(p, str):
             return CheckResult(passed=False, message=f"{f.name}: non-string path: {p}")
@@ -457,7 +456,7 @@ def _frontmatter_line(block: FrontmatterBlock, value: str) -> int:
 
 def count_at_most(
     _root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that a metadata list has at most N entries.
@@ -465,12 +464,8 @@ def count_at_most(
     Reads a named metadata key from args (injected by pipeline from annotations).
     Args: threshold (int, default 0), plus the metadata key name -> list.
     """
-    threshold = int(args.get("threshold", 0))
-    items: list[str] = []
-    for value in args.values():
-        if isinstance(value, list):
-            items = value
-            break
+    threshold = arg_int(args, "threshold", 0)
+    items = annotation_entries(args)
     if len(items) <= threshold:
         return CheckResult(passed=True, message=f"Count {len(items)} within limit ({threshold})")
     return CheckResult(passed=False, message=f"Count {len(items)} exceeds max {threshold}")
@@ -478,7 +473,7 @@ def count_at_most(
 
 def count_at_least(
     _root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     _classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that a metadata list has at least N entries.
@@ -486,155 +481,16 @@ def count_at_least(
     Reads a named metadata key from args (injected by pipeline from annotations).
     Args: threshold (int, default 1), plus the metadata key name -> list.
     """
-    threshold = int(args.get("threshold", 1))
-    items: list[str] = []
-    for value in args.values():
-        if isinstance(value, list):
-            items = value
-            break
+    threshold = arg_int(args, "threshold", 1)
+    items = annotation_entries(args)
     if len(items) >= threshold:
         return CheckResult(passed=True, message=f"Count {len(items)} meets minimum ({threshold})")
     return CheckResult(passed=False, message=f"Count {len(items)} below minimum {threshold}")
 
 
-def check_import_targets_exist(
-    root: Path,
-    args: dict[str, Any],
-    _classified_files: list[ClassifiedFile],
-) -> CheckResult:
-    """Check that all @import paths from metadata resolve to existing files.
-
-    Reads `discovered_imports` from args (D check annotations, `"<file-rel>::<ref>::<line>"`
-    entries). Each reference resolves against the folder of the file that holds it, as the
-    agent reads it. Each file with unresolved imports is one occurrence, located on its first
-    unresolved import's line.
-    """
-    entries: list[str] = []
-    for value in args.values():
-        if isinstance(value, list):
-            entries = value
-            break
-    if not entries:
-        return CheckResult(passed=True, message="No import paths to check")
-    missing: dict[str, list[str]] = {}
-    first_line: dict[str, str] = {}
-    for raw in entries:
-        parts = raw.split("::")
-        if len(parts) != 3:
-            continue
-        src_rel, ref, line = parts
-        if not import_target(ref, root / src_rel).exists():
-            missing.setdefault(src_rel, []).append(ref)
-            first_line.setdefault(src_rel, line)
-    if missing:
-        return CheckResult(
-            passed=False,
-            message=f"{len(missing)} file(s) with unresolved imports",
-            occurrences=[
-                (f"{src_rel}:{first_line[src_rel]}", f"Unresolved imports: {', '.join(refs[:5])}")
-                for src_rel, refs in missing.items()
-            ],
-        )
-    return CheckResult(passed=True, message=f"All {len(entries)} import(s) resolve")
-
-
-def _is_external_link(target: str) -> bool:
-    """Skip URLs (http://, mailto:, etc.) and pure anchor refs."""
-    if "://" in target or target.startswith("mailto:"):
-        return True
-    return target.startswith("#")
-
-
-def broken_link_message(target: str) -> str:
-    """The finding text for a link whose target does not exist."""
-    return f"Broken link — `{target}` does not exist."
-
-
-def extract_markdown_links(
-    root: Path,
-    args: dict[str, Any],
-    classified_files: list[ClassifiedFile],
-) -> CheckResult:
-    """Discover `[text](path)` + `[ref]: path` link targets in target files.
-
-    Annotates `discovered_markdown_links` as a list of `"<file-rel>::<target>::<line>"`
-    entries; the validate step splits on `::` to resolve each target against
-    the source file's parent directory and to report it on its own line.
-
-    Filters URLs (`://`, `mailto:`), bare anchor refs (`#frag`), and absolute
-    paths (`/foo`). Anchors trailing on otherwise-valid links are stripped.
-    Reads links from the markdown parse (`link_targets`), the same reading the
-    generic-class classifier uses, so the two disagree on no link.
-    """
-    annotations: list[str] = []
-    for match in get_target_files(args, classified_files, root):
-        if not match.is_file():
-            continue
-        try:
-            text = match.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        rel = match.relative_to(root).as_posix() if match.is_relative_to(root) else str(match)
-        for line, raw in link_targets(text):
-            cleaned = strip_anchor(raw)
-            if not cleaned or _is_external_link(cleaned):
-                continue
-            # Absolute paths (`/foo/bar.md`) are user-system paths, not
-            # project-relative; treat as out-of-scope.
-            if cleaned.startswith("/"):
-                continue
-            annotations.append(f"{rel}::{cleaned}::{line}")
-    if annotations:
-        return CheckResult(
-            passed=True,
-            message=f"Found {len(annotations)} markdown link(s)",
-            annotations={"discovered_markdown_links": annotations},
-        )
-    return CheckResult(passed=True, message="No markdown links found")
-
-
-def check_markdown_link_targets_exist(
-    root: Path,
-    args: dict[str, Any],
-    _classified_files: list[ClassifiedFile],
-) -> CheckResult:
-    """Verify each discovered markdown link resolves to an existing path.
-
-    Reads `discovered_markdown_links` from args (D-check annotations,
-    `"<file-rel>::<target>::<line>"` entries). Each target is resolved relative
-    to the source file's parent directory. Each missing target is one occurrence
-    located on its own line; passes when all resolve.
-    """
-    entries: list[str] = []
-    for value in args.values():
-        if isinstance(value, list):
-            entries = value
-            break
-    if not entries:
-        return CheckResult(passed=True, message="No markdown links to check")
-    missing: list[tuple[str, str]] = []
-    for raw in entries:
-        parts = raw.split("::")
-        if len(parts) != 3:
-            continue
-        src_rel, target, line = parts
-        src_path = root / src_rel
-        base_dir = src_path.parent if src_path.exists() else root
-        candidate = safe_resolve(base_dir / target)
-        if not candidate.exists():
-            missing.append((f"{src_rel}:{line}", broken_link_message(target)))
-    if missing:
-        return CheckResult(
-            passed=False,
-            message=f"{len(missing)} broken markdown link(s)",
-            occurrences=missing,
-        )
-    return CheckResult(passed=True, message=f"All {len(entries)} markdown link(s) resolve")
-
-
 def filename_matches_pattern(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that every target filename matches a regex pattern.
@@ -643,7 +499,7 @@ def filename_matches_pattern(
     Each non-matching file is its own occurrence, so a correctly-named
     sibling does not hide another file's bad name.
     """
-    pattern = str(args.get("pattern", ""))
+    pattern = str(arg_value(args, "pattern", ""))
     if not pattern:
         return CheckResult(passed=False, message="filename_matches_pattern: no pattern specified")
     try:
@@ -666,126 +522,9 @@ def filename_matches_pattern(
     return CheckResult(passed=True, message="All filenames match pattern")
 
 
-def _scope_dir_from_glob(glob_pattern: str) -> str:
-    """Extract the non-glob directory prefix from a glob pattern.
-
-    >>> _scope_dir_from_glob(".claude/skills/**/*.md")
-    '.claude/skills'
-    >>> _scope_dir_from_glob("**/CLAUDE.md")
-    ''
-    """
-    parts = glob_pattern.replace("\\", "/").split("/")
-    dirs: list[str] = []
-    for part in parts:
-        if any(c in part for c in "*?[{"):
-            break
-        dirs.append(part)
-    return "/".join(dirs)
-
-
-def _match_type_label(match_type: str | list[str]) -> str:
-    """Render `_match_type` for a human-facing message — `config/hooks`, never a list repr."""
-    return "/".join(match_type) if isinstance(match_type, list) else str(match_type)
-
-
-def _resolve_scope_dir(match_type: str | list[str], classified_files: list[ClassifiedFile]) -> str:
-    """Resolve a scope directory from classified files matching the given type.
-
-    `match_type` may be a list (`match: {type: [config, hooks]}`). The listed types
-    are tried in SORTED order (not classified-files discovery order), each checked
-    against every classified file, so the resolved directory is deterministic — it
-    always anchors on the alphabetically-first type that has a classified file,
-    regardless of filesystem walk order.
-    """
-    from reporails_cli.core.platform.policy.matching import _prop_matches
-
-    if not match_type:
-        return ""
-    types = sorted(match_type) if isinstance(match_type, list) else [match_type]
-    for one_type in types:
-        for cf in classified_files:
-            if _prop_matches(one_type, cf.file_type):
-                rel = str(cf.path.parent)
-                # Extract the non-glob prefix from the relative path
-                return _scope_dir_from_glob(rel)
-    return ""
-
-
-def file_absent(
-    root: Path,
-    args: dict[str, Any],
-    classified_files: list[ClassifiedFile],
-) -> CheckResult:
-    """Check that NO file matching the pattern exists.
-
-    When ``_match_type`` is injected (from rule.match.type), scopes the search
-    to the target directory instead of the project root.
-    """
-    pattern = str(args.get("pattern", ""))
-    if not pattern:
-        return CheckResult(passed=False, message="file_absent: no pattern specified")
-    match_type = args.get("_match_type", "")
-    exclusions = run_exclusions(args, root)
-    scope_dir = _resolve_scope_dir(match_type, classified_files)
-
-    # If the rule targets a specific file type but no files of that type were
-    # classified, the scope cannot be resolved.  Falling through to the project
-    # root would produce false positives (e.g. root README.md flagged by a
-    # skill-scoped rule), so return pass.
-    if match_type and not scope_dir:
-        return CheckResult(passed=True, message=f"No {_match_type_label(match_type)} files classified")
-
-    if scope_dir:
-        scope_root = root / scope_dir
-        direct_path = scope_root / pattern
-        matches = [
-            m
-            for m in walk_glob_matches(scope_root, f"**/{pattern}", exclusions.feature_walk_dirs)
-            if not exclusions.leaves_out(m)
-        ]
-    else:
-        direct_path = root / pattern
-        matches = _resolve_glob_targets(pattern, root, exclusions)
-    if matches:
-        name = matches[0].relative_to(root).as_posix() if matches[0].is_relative_to(root) else matches[0].name
-        return CheckResult(passed=False, message=f"Forbidden file exists: {name}")
-    if direct_path.exists() and not exclusions.leaves_out(direct_path):
-        rel = f"{scope_dir}/{pattern}" if scope_dir else pattern
-        return CheckResult(passed=False, message=f"Forbidden file exists: {rel}")
-    return CheckResult(passed=True, message="Forbidden file not found")
-
-
-def content_absent(
-    root: Path,
-    args: dict[str, Any],
-    classified_files: list[ClassifiedFile],
-) -> CheckResult:
-    """Check that a regex pattern does NOT appear in matching files."""
-    pattern = str(args.get("pattern", ""))
-    if not pattern:
-        return CheckResult(passed=False, message="content_absent: no pattern specified")
-    try:
-        compiled = re.compile(pattern)
-    except re.error as e:
-        return CheckResult(passed=False, message=f"content_absent: invalid regex: {e}")
-    for match in get_target_files(args, classified_files, root):
-        if not match.is_file():
-            continue
-        try:
-            content = match.read_text(encoding="utf-8", errors="replace")
-            if compiled.search(content):
-                return CheckResult(
-                    passed=False,
-                    message=f"{match.name}: forbidden pattern found",
-                )
-        except OSError:
-            continue
-    return CheckResult(passed=True, message="Forbidden pattern not found")
-
-
 def frontmatter_extra_keys(
     root: Path,
-    args: dict[str, Any],
+    args: CheckArgs,
     classified_files: list[ClassifiedFile],
 ) -> CheckResult:
     """Check that frontmatter contains only allowed keys.
@@ -793,11 +532,12 @@ def frontmatter_extra_keys(
     Args (via args dict):
         allowed: list of allowed key names (e.g., ["paths"])
     """
-    allowed = set(args.get("allowed", []))
+    allowed = set(str_list(arg_value(args, "allowed", [])))
     if not allowed:
         return CheckResult(passed=False, message="frontmatter_extra_keys: no allowed keys specified")
     for match in get_target_files(args, classified_files, root):
-        read = read_frontmatter_file(match, lenient=bool(args.get("lenient", False))) if match.is_file() else None
+        lenient = bool(arg_value(args, "lenient", False))
+        read = read_frontmatter_file(match, lenient=lenient) if match.is_file() else None
         if read is None or read.data is None:
             continue
         extra = sorted(k for k in read.data if k not in allowed)

@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from reporails_cli.core.lint.mechanical.checks import MECHANICAL_CHECKS
+from reporails_cli.core.lint.mechanical.registry import MECHANICAL_CHECKS
 from reporails_cli.core.platform.dto.models import ClassifiedFile
 
 # The shapes the shipped rules describe, as `args`.

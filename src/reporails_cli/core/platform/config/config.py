@@ -7,64 +7,95 @@ from path resolution (filesystem layout knowledge).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import get_type_hints
 
 import yaml
 
-from reporails_cli.core.platform.utils.utils import is_first_yaml_failure, load_yaml_file, yaml_error_line
-
-if TYPE_CHECKING:
-    from reporails_cli.core.platform.dto.results import (
-        AgentConfig,
-        GlobalConfig,
-        HookFact,
-        ProjectConfig,
-        SubagentHooks,
-    )
+from reporails_cli.core.platform.config.bootstrap import (
+    get_global_config_path,
+    get_local_config_path,
+    get_project_config_path,
+    get_reporails_home,
+)
+from reporails_cli.core.platform.config.bundled import get_bundled_package_root, get_bundled_rules_path
+from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
+from reporails_cli.core.platform.contract.json_value import (
+    JsonObject,
+    JsonValue,
+    as_object,
+    as_str,
+    str_list,
+)
+from reporails_cli.core.platform.dto.results import (
+    AgentConfig,
+    GlobalConfig,
+    HookFact,
+    MapperConfig,
+    ProjectConfig,
+    SubagentHooks,
+)
+from reporails_cli.core.platform.utils.utils import (
+    load_yaml_file,
+    non_text_items,
+    unreadable_file_problem,
+    value_reading,
+    yaml_error_line,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def get_agent_config(agent: str) -> AgentConfig:
+def get_agent_config(agent: str, rules_root: Path | None = None) -> AgentConfig:
     """Load agent config (excludes + overrides) from framework.
 
     Args:
         agent: Agent identifier (e.g., "claude")
+        rules_root: Rules root to read from; the resolved default rules path when None
 
     Returns:
         AgentConfig with excludes and overrides, or defaults if missing/malformed
     """
-    from reporails_cli.core.platform.config.bootstrap import get_agent_config_path
-    from reporails_cli.core.platform.dto.results import AgentConfig
 
-    config_path = get_agent_config_path(agent)
-    if not config_path.exists():
+    data = read_agent_config(get_agent_config_path(agent, rules_root))
+    if data is None:
         return AgentConfig()
+    return AgentConfig(
+        prefix=as_str(data.get("prefix", "")),
+        name=as_str(data.get("name", "")),
+        excludes=str_list(data.get("excludes", [])),
+        overrides={key: as_object(val) for key, val in as_object(data.get("overrides", {})).items()},
+        subagent_hooks=_subagent_hooks(data.get("subagent_hooks")),
+        intercept_events=_intercept_events(data.get("intercept_events")),
+    )
 
+
+def read_agent_config(config_path: Path) -> JsonObject | None:
+    """Read an agent `config.yml` as its top-level mapping.
+
+    An absent file reads as None. A file that cannot be read, is not UTF-8, is not valid YAML, is
+    empty or is not a mapping is logged as a warning on each read and also reads as None.
+    """
+    if not config_path.exists():
+        return None
     try:
         data = load_yaml_file(config_path)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        problem = unreadable_file_problem(exc)
+    else:
         if not data:
-            msg = f"Agent config is empty: {config_path}"
-            raise ValueError(msg)
-        return AgentConfig(
-            agent=data.get("agent", ""),
-            prefix=data.get("prefix", ""),
-            name=data.get("name", ""),
-            core=data.get("core", False),
-            excludes=data.get("excludes", []),
-            overrides=data.get("overrides", {}),
-            subagent_hooks=_subagent_hooks(data.get("subagent_hooks")),
-            intercept_events=_intercept_events(data.get("intercept_events")),
-        )
-    except (yaml.YAMLError, OSError, ValueError) as exc:
-        logger.warning("Failed to parse agent config %s: %s", config_path, exc)
-        return AgentConfig()
+            problem = "is empty"
+        elif not isinstance(data, dict):
+            problem = "is not a mapping"
+        else:
+            return data
+    logger.warning("Skipping agent config %s: %s", config_path, problem)
+    return None
 
 
 def _hook_fact(raw: object) -> HookFact:
     """One `subagent_hooks` fact; a missing or malformed one reads as `unconfirmed`."""
-    from reporails_cli.core.platform.dto.results import HookFact
 
     if not isinstance(raw, dict):
         return HookFact()
@@ -86,7 +117,6 @@ def _intercept_events(raw: object) -> dict[str, tuple[str, ...]]:
 
 def _subagent_hooks(raw: object) -> SubagentHooks:
     """The optional top-level `subagent_hooks:` key of an agent's config.yml."""
-    from reporails_cli.core.platform.dto.results import SubagentHooks
 
     facts = raw if isinstance(raw, dict) else {}
     return SubagentHooks(
@@ -108,16 +138,14 @@ def _coerce_segmentation(raw: object) -> str | None:
     return None
 
 
-def _data_str_list(data: dict[str, object], key: str) -> list[str]:
+def _data_str_list(data: JsonObject, key: str) -> list[str]:
     """Coerce `data[key]` to a list of strings, or empty when absent / wrong shape."""
-    val = data.get(key)
-    return list(val) if isinstance(val, list) else []
+    return str_list(data.get(key))
 
 
-def _data_str_dict(data: dict[str, object], key: str) -> dict[str, dict[str, object]]:
+def _data_str_dict(data: JsonObject, key: str) -> dict[str, dict[str, object]]:
     """Coerce `data[key]` to a `dict[str, dict]`, or empty when absent / wrong shape."""
-    val = data.get(key)
-    return dict(val) if isinstance(val, dict) else {}
+    return {name: {**as_object(val)} for name, val in as_object(data.get(key)).items()}
 
 
 def _coerce_rule_thresholds(raw: object) -> dict[str, dict[str, int]]:
@@ -127,7 +155,7 @@ def _coerce_rule_thresholds(raw: object) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
     for rule_id, args in raw.items():
         if isinstance(args, dict):
-            out[str(rule_id)] = {str(k): int(v) for k, v in args.items() if isinstance(v, (int, float))}
+            out[str(rule_id)] = {str(k): v for k, v in args.items() if isinstance(v, int) and not isinstance(v, bool)}
     return out
 
 
@@ -141,40 +169,27 @@ def get_global_config() -> GlobalConfig:
     absent — `None` signals "no global preference" so the project layer
     can keep its default semantics.
     """
-    from reporails_cli.core.platform.config.bootstrap import get_global_config_path
-    from reporails_cli.core.platform.dto.results import GlobalConfig
 
-    config_path = get_global_config_path()
-    if not config_path.exists():
-        return GlobalConfig()
-
-    try:
-        raw = load_yaml_file(config_path) or {}
-        data: dict[str, object] = raw if isinstance(raw, dict) else {}
-        framework_path = data.get("framework_path")
-        gs_raw = data.get("generic_scanning")
-        generic_scanning = bool(gs_raw) if isinstance(gs_raw, bool) else None
-        return GlobalConfig(
-            framework_path=Path(framework_path) if isinstance(framework_path, str) else None,
-            default_agent=str(data.get("default_agent", "")) if isinstance(data.get("default_agent"), str) else "",
-            tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
-            disabled_rules=_data_str_list(data, "disabled_rules"),
-            exclude_dirs=_data_str_list(data, "exclude_dirs"),
-            exclude_files=_data_str_list(data, "exclude_files"),
-            rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
-            generic_scanning=generic_scanning,
-            packages=_data_str_list(data, "packages"),
-            agents=_data_str_dict(data, "agents"),
-            surfaces=_data_str_dict(data, "surfaces"),
-            segmentation=_coerce_segmentation(data.get("segmentation")),
-        )
-    except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError: not UTF-8
-        if is_first_yaml_failure(config_path):
-            logger.warning("Global config %s is not read: %s", config_path, yaml_error_line(exc))
-        return GlobalConfig()
+    data = read_config_file(get_global_config_path())
+    framework_path = data.get("framework_path")
+    gs_raw = data.get("generic_scanning")
+    generic_scanning = bool(gs_raw) if isinstance(gs_raw, bool) else None
+    config = GlobalConfig(
+        framework_path=Path(framework_path) if isinstance(framework_path, str) else None,
+        default_agent=str(data.get("default_agent", "")) if isinstance(data.get("default_agent"), str) else "",
+        tier=str(data.get("tier", "")) if isinstance(data.get("tier"), str) else "",
+        rule_thresholds=_coerce_rule_thresholds(data.get("rule_thresholds")),
+        generic_scanning=generic_scanning,
+        agents=_data_str_dict(data, "agents"),
+        surfaces=_data_str_dict(data, "surfaces"),
+        segmentation=_coerce_segmentation(data.get("segmentation")),
+    )
+    for key in _GLOBAL_LIST_KEYS:
+        setattr(config, key, _data_str_list(data, key))
+    return config
 
 
-def _deep_merge_config(base: dict[str, object], overlay: dict[str, object]) -> dict[str, object]:
+def _deep_merge_config(base: JsonObject, overlay: JsonObject) -> JsonObject:
     """Deep-merge `overlay` onto `base` for project config layering.
 
     Object keys merge recursively. Array keys extend (overlay appended after
@@ -185,7 +200,7 @@ def _deep_merge_config(base: dict[str, object], overlay: dict[str, object]) -> d
         return base
     if not base:
         return dict(overlay)
-    merged: dict[str, object] = dict(base)
+    merged: JsonObject = dict(base)
     for key, ov in overlay.items():
         existing = merged.get(key)
         if isinstance(existing, dict) and isinstance(ov, dict):
@@ -197,22 +212,84 @@ def _deep_merge_config(base: dict[str, object], overlay: dict[str, object]) -> d
     return merged
 
 
-def _load_yaml_dict(config_path: Path) -> dict[str, object] | None:
-    """Read a YAML file and return its top-level dict, or None on error/missing."""
+def read_config_file(config_path: Path, check_items: bool = True) -> JsonObject:
+    """Read a config file's top-level mapping; an absent or empty file reads as an empty mapping.
+
+    Raises ConfigUnreadableError naming the file and the problem (with its line)
+    when the file cannot be read, is not UTF-8, is not valid YAML, or is not a mapping.
+    With `check_items` (the default) it also raises for a setting of the wrong shape: a list
+    holding a non-text item, an `agents` / `surfaces` entry that is not a mapping, or a
+    `rule_thresholds` value that is not a whole number. A caller
+    that is about to replace such a setting passes False and gets the mapping as written.
+    """
     if not config_path.exists():
-        return None
+        return {}
     try:
         data = load_yaml_file(config_path)
-        if not data:
-            return None
-        if not isinstance(data, dict):
-            logger.warning("Config file %s did not parse to a mapping", config_path)
-            return None
-        return data
     except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError: not UTF-8
-        if is_first_yaml_failure(config_path):
-            logger.warning("Project config %s is not read: %s", config_path, yaml_error_line(exc))
-        return None
+        raise ConfigUnreadableError(f"{config_path}: {yaml_error_line(exc)}") from exc
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigUnreadableError(f"{config_path}: the file is not a mapping of settings")
+    if check_items:
+        for key in TEXT_LIST_KEYS:
+            _check_text_list(config_path, key, data.get(key))
+        for key in _MAPPING_KEYS:
+            _check_mapping(config_path, key, data.get(key))
+        _check_thresholds(config_path, data.get("rule_thresholds"))
+    return data
+
+
+def _list_keys(config_cls: type) -> tuple[str, ...]:
+    """The fields of a config dataclass that hold a list of names, read from the field types."""
+    return tuple(name for name, kind in get_type_hints(config_cls).items() if kind == list[str])
+
+
+# Config keys that hold a list of names: every such field of `ProjectConfig`; `GlobalConfig` carries a subset.
+TEXT_LIST_KEYS = _list_keys(ProjectConfig)
+_GLOBAL_LIST_KEYS = _list_keys(GlobalConfig)
+_MAPPING_KEYS = ("agents", "surfaces")
+
+
+def _check_text_list(config_path: Path, key: str, value: JsonValue) -> None:
+    """Raise ConfigUnreadableError when `key` holds anything but a list of text items."""
+    if value is None:
+        return
+    if not isinstance(value, list):
+        raise ConfigUnreadableError(f"{config_path}: {key} must be a list of text items")
+    for _, reading in non_text_items(value)[:1]:
+        raise ConfigUnreadableError(f"{config_path}: {key}: {reading}")
+
+
+def _check_mapping(config_path: Path, key: str, value: JsonValue) -> None:
+    """Raise ConfigUnreadableError when `key` or one of its entries is not a mapping."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ConfigUnreadableError(f"{config_path}: {key} must be a mapping")
+    for name, entry in value.items():
+        if entry is not None and not isinstance(entry, dict):
+            raise ConfigUnreadableError(f"{config_path}: {key}.{name} must be a mapping")
+
+
+def _check_thresholds(config_path: Path, value: JsonValue) -> None:
+    """Raise ConfigUnreadableError when `rule_thresholds` holds anything but whole numbers per rule."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ConfigUnreadableError(f"{config_path}: rule_thresholds must be a mapping")
+    for rule, entry in value.items():
+        if entry is None:
+            continue
+        if not isinstance(entry, dict):
+            raise ConfigUnreadableError(f"{config_path}: rule_thresholds.{rule} must be a mapping")
+        for key, number in entry.items():
+            if isinstance(number, int) and not isinstance(number, bool):
+                continue
+            reading = value_reading(number)
+            problem = f"{reading}; give a whole number" if number is None else f"{reading}, not a whole number"
+            raise ConfigUnreadableError(f"{config_path}: rule_thresholds.{rule}.{key}: {problem}")
 
 
 def get_project_config(project_root: Path) -> ProjectConfig:
@@ -229,8 +306,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     `generic_scanning` use the project value when set, otherwise inherit
     from the global layer.
 
-    Returns default config if neither file exists or both are malformed,
-    still applying global defaults.
+    Returns default config if neither file exists, still applying global
+    defaults. Raises ConfigUnreadableError when any config file is unreadable.
 
     Args:
         project_root: Root directory of the project
@@ -238,10 +315,9 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     Returns:
         ProjectConfig with loaded or default values, layered with globals.
     """
-    from reporails_cli.core.platform.dto.results import MapperConfig, ProjectConfig
 
-    base = _load_yaml_dict(project_root / ".ails" / "config.yml") or {}
-    local = _load_yaml_dict(project_root / ".ails" / "config.local.yml") or {}
+    base = read_config_file(get_project_config_path(project_root))
+    local = read_config_file(get_local_config_path(project_root))
     data = _deep_merge_config(base, local)
     global_cfg = get_global_config()
 
@@ -254,11 +330,6 @@ def get_project_config(project_root: Path) -> ProjectConfig:
     seg = _coerce_segmentation(data.get("segmentation"))
 
     config = ProjectConfig(
-        packages=_data_str_list(data, "packages"),
-        disabled_rules=_data_str_list(data, "disabled_rules"),
-        exclude_dirs=_data_str_list(data, "exclude_dirs"),
-        exclude_files=_data_str_list(data, "exclude_files"),
-        heal_exclude=_data_str_list(data, "heal_exclude"),
         default_agent=da if isinstance(da, str) else "",
         agents=_data_str_dict(data, "agents"),
         surfaces=_data_str_dict(data, "surfaces"),
@@ -266,6 +337,8 @@ def get_project_config(project_root: Path) -> ProjectConfig:
         generic_scanning=bool(gs_raw) if has_gs_in_project else False,
         mapper=MapperConfig(segmentation=seg or "legacy"),
     )
+    for key in TEXT_LIST_KEYS:
+        setattr(config, key, _data_str_list(data, key))
     return _apply_globals(
         config,
         global_cfg,
@@ -293,7 +366,7 @@ def _apply_globals(
     config.exclude_dirs = _extend_unique(config.exclude_dirs, global_cfg.exclude_dirs)
     config.exclude_files = _extend_unique(config.exclude_files, global_cfg.exclude_files)
     config.packages = _extend_unique(config.packages, global_cfg.packages)
-    config.rule_thresholds = _merge_under(config.rule_thresholds, global_cfg.rule_thresholds)
+    config.rule_thresholds = _merge_thresholds(config.rule_thresholds, global_cfg.rule_thresholds)
     config.agents = _merge_under(config.agents, global_cfg.agents)
     config.surfaces = _merge_under(config.surfaces, global_cfg.surfaces)
     if not has_project_generic_scanning and global_cfg.generic_scanning is not None:
@@ -316,17 +389,99 @@ def _extend_unique(project: list[str], globals_: list[str]) -> list[str]:
     return out
 
 
-def _merge_under(project: dict[str, Any], globals_: dict[str, Any]) -> dict[str, Any]:
+def _merge_objects(project: dict[str, object], globals_: dict[str, object]) -> dict[str, object]:
     """Deep-merge `globals_` UNDER `project` — project wins on conflicting keys."""
     if not globals_:
         return project
     if not project:
         return dict(globals_)
-    merged: dict[str, Any] = dict(globals_)
+    merged = dict(globals_)
     for key, project_val in project.items():
         global_val = merged.get(key)
         if isinstance(project_val, dict) and isinstance(global_val, dict):
-            merged[key] = _merge_under(project_val, global_val)
+            merged[key] = _merge_objects(project_val, global_val)
         else:
             merged[key] = project_val
     return merged
+
+
+def _merge_under(
+    project: dict[str, dict[str, object]], globals_: dict[str, dict[str, object]]
+) -> dict[str, dict[str, object]]:
+    """Merge `globals_` UNDER `project` per key — project wins on conflicting keys."""
+    merged = dict(globals_)
+    for key, project_val in project.items():
+        merged[key] = _merge_objects(project_val, merged[key]) if key in merged else project_val
+    return merged
+
+
+def _merge_thresholds(
+    project: dict[str, dict[str, int]], globals_: dict[str, dict[str, int]]
+) -> dict[str, dict[str, int]]:
+    """Merge `globals_` thresholds UNDER `project` per rule — project wins on conflicting args."""
+    merged = dict(globals_)
+    for rule_id, args in project.items():
+        merged[rule_id] = {**merged.get(rule_id, {}), **args}
+    return merged
+
+
+def get_rules_path() -> Path:
+    """Get path to rules directory.
+
+    Resolution: config override → bundled (package default).
+    """
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        rules_sub = config.framework_path / "rules"
+        if rules_sub.is_dir():
+            return rules_sub
+        return config.framework_path
+
+    bundled = get_bundled_rules_path()
+    if bundled is not None:
+        return bundled
+
+    # Unreachable when installed correctly, but return a sane default
+    return get_reporails_home() / "rules"
+
+
+def get_framework_root() -> Path:
+    """Get the root where schemas/, registry/, sources.yml live.
+
+    Resolution: config override → bundled package root.
+    """
+    config = get_global_config()
+    if config.framework_path and config.framework_path.is_dir():
+        return config.framework_path
+
+    bundled_root = get_bundled_package_root()
+    if bundled_root is not None:
+        return bundled_root
+
+    return get_reporails_home() / "rules"
+
+
+def get_agent_config_path(agent: str, rules_root: Path | None = None) -> Path:
+    """Get path to agent config file under ``rules_root`` (default rules path when None).
+
+    The generic agent's config lives in core/ (not a separate directory).
+    """
+    dir_name = "core" if agent == "generic" else agent
+    return (rules_root if rules_root is not None else get_rules_path()) / dir_name / "config.yml"
+
+
+def iter_agent_configs(rules_dir: Path) -> Iterator[tuple[Path, JsonObject]]:
+    """Each readable `*/config.yml` under `rules_dir`, in path order, as `(folder, parsed mapping)`.
+
+    A config that `read_agent_config` cannot read is skipped.
+    """
+    for config_path in sorted(rules_dir.glob("*/config.yml")):
+        data = read_agent_config(config_path)
+        if data is not None:
+            yield config_path.parent, data
+
+
+def is_initialized() -> bool:
+    """Check if rules are available (installed, config override, or bundled)."""
+    rules_path = get_rules_path()
+    return rules_path.is_dir() and (rules_path / "core").is_dir()

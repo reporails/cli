@@ -16,7 +16,6 @@ import pytest
 from reporails_cli.core.lint.rule_runner import run_m_probes
 from reporails_cli.core.pipeline.assemble import AssembleInputs, lint_request_local
 from reporails_cli.core.platform.adapters.registry import load_rules, structural_rule_ids
-from reporails_cli.formatters.text.rule_meta import rule_aliases
 
 HANDLER_RULE_SLUGS = {
     "hook-command-has-field",
@@ -445,7 +444,6 @@ def test_handler_finding_is_sent_as_a_located_entry(tmp_path: Path, dev_rules_di
         filter_agents=None,
         effective_agent=agent,
         lint_result=None,
-        alias_fn=rule_aliases,
     )
     entries, structural_total = lint_request_local(inputs)
     wanted = _handler_rule_ids(agent)

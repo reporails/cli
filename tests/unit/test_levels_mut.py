@@ -1,8 +1,7 @@
 """Mutation-killing tests for core.platform.policy.levels.
 
 Each test reddens when a specific injected operator bug returns (verified by
-scripts/mutation_probe.py). Covers Mechanism 2 (capability gates) and the
-list-valued property branch that test_gates.py does not exercise.
+scripts/mutation_probe.py). Covers the capability gates.
 """
 
 from __future__ import annotations
@@ -11,25 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.results import DetectedFeatures
+from reporails_cli.core.platform.dto.results import DetectedFeatures, MemoryFeatures
 from reporails_cli.core.platform.policy.levels import (
     _detect_capability,
     _level_has_capability,
-    _property_depth,
 )
-
-# ── List-valued property divergence (L79) ────────────────────────────
-
-
-class TestPropertyDepthListValued:
-    @pytest.mark.unit
-    @pytest.mark.subsys_gates
-    def test_list_of_only_nonbaseline_values_diverges(self) -> None:
-        # Kills L79 `!= -> ==`: a list holding ONLY a non-baseline value
-        # (`format: [frontmatter]`, baseline is `freeform`) diverges under
-        # `any(v != base)` but not under `any(v == base)`.
-        assert _property_depth({"format": ["frontmatter"]}) == 1
-
 
 # ── Governance / adaptive-memory OR detectors (L168, L170) ───────────
 
@@ -52,7 +37,7 @@ class TestOrDetectors:
     def test_adaptive_memory_fires_on_auto_memory_alone(self) -> None:
         # Kills L170 `or -> and`: auto-memory present but no memory dir still
         # counts as adaptive under OR, but not under AND.
-        features = DetectedFeatures(has_auto_memory=True, has_memory_dir=False)
+        features = DetectedFeatures(memory=MemoryFeatures(has_auto_memory=True, has_memory_dir=False))
         assert _detect_capability(features, "adaptive_memory") is True
 
 

@@ -10,9 +10,9 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Any
 
-from reporails_cli.core.platform.dto.diagnostics import NOTICE_LEVELS, Notice
+from reporails_cli.core.platform.contract.json_value import JsonValue
+from reporails_cli.core.platform.dto.diagnostics import NOTICE_KINDS, NOTICE_LEVELS, Notice, NoticeKind, NoticeLevel
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,30 @@ NOTICES_HEADER = "X-Reporails-Notices"
 MAX_NOTICES = 10
 
 
-def _notice(entry: Any) -> Notice | None:
+def _level(value: str, ident: str) -> NoticeLevel:
+    """`value` when it is a known level; otherwise `info`, with a warning naming the value."""
+    for known in NOTICE_LEVELS:
+        if value == known:
+            return known
+    logger.warning("Notice %r has unknown level %r; showing it as info", ident, value)
+    return "info"
+
+
+def _kind(value: object, ident: str) -> NoticeKind:
+    """The notice kind; a missing kind is a plain notice, an unknown one is too, with a warning."""
+    if value is None:
+        return "notice"
+    for known in NOTICE_KINDS:
+        if value == known:
+            return known
+    logger.warning("Notice %r has unknown kind %r; showing it as a notice", ident, value)
+    return "notice"
+
+
+def _notice(entry: JsonValue) -> Notice | None:
     """One entry as a `Notice`; `None` when it is not a dict with a usable id, level, text and url.
 
-    A `kind` other than exactly `"promo"` reads as a plain notice.
+    A level or kind outside the known values keeps the notice as `info` / `notice`.
     """
     if not isinstance(entry, dict):
         return None
@@ -33,10 +53,9 @@ def _notice(entry: Any) -> Notice | None:
     url = entry.get("url", "")
     if not (isinstance(ident, str) and ident and isinstance(text, str) and text):
         return None
-    if not (isinstance(level, str) and isinstance(url, str)) or level not in NOTICE_LEVELS:
+    if not (isinstance(level, str) and isinstance(url, str)):
         return None
-    kind = "promo" if entry.get("kind") == "promo" else "notice"
-    return Notice(id=ident, level=level, text=text, url=url, kind=kind)
+    return Notice(id=ident, level=_level(level, ident), text=text, url=url, kind=_kind(entry.get("kind"), ident))
 
 
 def notices_from_list(raw: object) -> tuple[Notice, ...]:

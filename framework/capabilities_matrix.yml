@@ -68,3 +68,8 @@ agents:
   warp:       [main, rules, cross_read, templates]
   windsurf:   [main, rules, skills, mcp, memory, agents_md, user_surfaces, config, templates]
   zed:        [main, mcp, agents_md, cross_read, user_surfaces, config, output]
+
+# Root instruction files of cataloged agents that no implemented agent config declares.
+# Keyed by agent_id; each file name is read as a `main` file wherever it sits in a project.
+legacy_main_files:
+  windsurf: [".windsurfrules"]

@@ -3,117 +3,165 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from types import UnionType
+from typing import Annotated, Union, get_args, get_origin
 
-from reporails_cli.core.platform.dto.models import (
-    Category,
-    Check,
-    Execution,
-    FileMatch,
-    PatternConfidence,
-    Rule,
-    RuleType,
-    Severity,
-)
+from pydantic import BaseModel, ValidationError
+
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue
+from reporails_cli.core.platform.dto.models import Check, FieldProblem, FileMatch, Rule, Severity
 
 
-def _load_checks(frontmatter: dict[str, Any]) -> list[Check]:
-    """Load check entries from frontmatter (pre-populated by registry from checks.yml)."""
+class RuleFieldError(ValueError):
+    """A `rule.md` whose fields cannot build a rule; `problems` has one record per rejected field."""
+
+    def __init__(self, problems: list[FieldProblem]) -> None:
+        super().__init__("; ".join(p.text for p in problems))
+        self.problems = problems
+
+
+def _step(candidates: list[object], part: str | int) -> list[object] | None:
+    """The annotations `part` leads to from `candidates`; None when `part` names no field, index or key."""
+    members: list[object] = []
+    for ann in candidates:
+        while get_origin(ann) is Annotated:
+            ann = get_args(ann)[0]
+        if get_origin(ann) in (Union, UnionType):
+            members.extend(get_args(ann))
+        else:
+            members.append(ann)
+    nxt: list[object] = []
+    for ann in members:
+        origin, args = get_origin(ann), get_args(ann)
+        if isinstance(ann, type) and issubclass(ann, BaseModel):
+            for name, info in ann.model_fields.items():
+                if part == (info.alias or name):
+                    nxt.append(info.annotation)
+        elif origin in (list, set, frozenset) and isinstance(part, int) and args:
+            nxt.append(args[0])
+        elif origin is dict and len(args) == 2:
+            nxt.append(args[1])
+    return nxt or None
+
+
+def _field_path(model: type[BaseModel], loc: tuple[int | str, ...]) -> str:
+    """The dotted path of `loc` through `model`, ending at the first part that names no field, index or key.
+
+    That part is a union member tag pydantic adds, so every branch of a union field shares the field's path.
+    """
+    candidates: list[object] = [model]
+    parts: list[str] = []
+    for part in loc:
+        stepped = _step(candidates, part)
+        if stepped is None:
+            break
+        candidates = stepped
+        parts.append(str(part))
+    return ".".join(parts)
+
+
+def _joined(messages: list[str]) -> str:
+    """The messages as one line; a shared leading `Input should be ` is stated once."""
+    unique = list(dict.fromkeys(messages))
+    prefix = "Input should be "
+    if len(unique) > 1 and all(m.startswith(prefix) for m in unique):
+        return prefix + " or ".join(m[len(prefix) :] for m in unique)
+    return "; ".join(unique)
+
+
+def field_problems(exc: ValidationError, model: type[BaseModel]) -> list[FieldProblem]:
+    """One record per rejected field path of `exc` against `model`: dotted path, one-line message, missing or invalid.
+
+    Several errors on one path (one per union member) give one record whose message joins them.
+    """
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    for err in exc.errors():
+        if err["type"] == "extra_forbidden":
+            parent = _field_path(model, err["loc"][:-1])
+            path = f"{parent}.{err['loc'][-1]}" if parent else str(err["loc"][-1])
+            grouped.setdefault(path, []).append(("is not a known key", err["type"]))
+            continue
+        path = _field_path(model, err["loc"])
+        grouped.setdefault(path, []).append((err["msg"], err["type"]))
     return [
-        Check(
-            id=item.get("id", ""),
-            type=item.get("type", "deterministic"),
-            check=item.get("check"),
-            args=item.get("args"),
-            query=item.get("query"),
-            expect=item.get("expect", "present"),
-            metadata_keys=item.get("metadata_keys", []),
-            replaces=item.get("replaces", ""),
-            severity=item.get("severity", ""),
-            message=item.get("message", ""),
-            project_scope=item.get("project_scope", ""),
-            convention=item.get("convention", False),
+        FieldProblem(
+            field=path,
+            message=_joined([msg for msg, _ in found]),
+            kind="missing" if all(kind == "missing" for _, kind in found) else "invalid",
         )
-        for item in frontmatter.get("checks", [])
+        for path, found in grouped.items()
     ]
 
 
-def _parse_severity(frontmatter: dict[str, Any]) -> Severity:
-    """Parse rule-level severity from frontmatter or legacy check-level severity."""
-    raw = frontmatter.get("severity")
-    if not raw:
-        raw_checks = frontmatter.get("checks", [])
-        if raw_checks:
-            raw = raw_checks[0].get("severity")
-    return Severity(raw) if raw else Severity.MEDIUM
+def load_checks(frontmatter: JsonObject) -> list[Check]:
+    """Load check entries from frontmatter (pre-populated by registry from checks.yml).
+
+    Raises ValueError naming up to three problems as `check N (id): field: message`.
+    """
+    raw_checks = frontmatter.get("checks", [])
+    if not isinstance(raw_checks, list):
+        raise ValueError(f"`checks` must be a list, not a {type(raw_checks).__name__}")
+    checks: list[Check] = []
+    problems: list[str] = []
+    for index, item in enumerate(raw_checks, start=1):
+        if not isinstance(item, dict):
+            problems.append(f"check {index} must be a mapping, not a {type(item).__name__}")
+            continue
+        try:
+            checks.append(Check.model_validate(item))
+        except ValidationError as exc:
+            label = f"check {index}" + (f" ({item['id']})" if isinstance(item.get("id"), str) else "")
+            problems.extend(f"{label}: {p.text}" for p in field_problems(exc, Check)[:2])
+    if problems:
+        raise ValueError("; ".join(problems[:3]))
+    return checks
 
 
-def _parse_match(frontmatter: dict[str, Any]) -> FileMatch | None:
-    """Parse property-based file targeting from frontmatter."""
+def _parse_severity(frontmatter: JsonObject, checks: list[Check]) -> JsonValue | Severity:
+    """The rule-level severity: the frontmatter value, else the first check's severity; falsy when neither."""
+    return frontmatter.get("severity") or (checks[0].severity if checks else None)
+
+
+def _parse_match(frontmatter: JsonObject) -> JsonValue | FileMatch:
+    """Property-based file targeting from frontmatter; an empty `match:` (YAML null) matches all files."""
     raw = frontmatter.get("match")
-    if isinstance(raw, dict):
-        return FileMatch(
-            type=raw.get("type"),
-            scope=raw.get("scope"),
-            format=raw.get("format"),
-            content_format=raw.get("content_format"),
-            cardinality=raw.get("cardinality"),
-            lifecycle=raw.get("lifecycle"),
-            maintainer=raw.get("maintainer"),
-            vcs=raw.get("vcs"),
-            loading=raw.get("loading"),
-            precedence=raw.get("precedence"),
-            loading_verb=raw.get("loading_verb"),
-            link_source_type=raw.get("link_source_type"),
-        )
-    if raw is not None:
-        # Empty match (match: {}) parsed as None by YAML — treat as match-all
-        return FileMatch()
-    return None
+    if isinstance(raw, dict) or raw is None:
+        return raw
+    return FileMatch()
 
 
-def build_rule(frontmatter: dict[str, Any], md_path: Path, yml_path: Path | None) -> Rule:
-    """Build Rule from parsed frontmatter. Raises KeyError/ValueError on bad input."""
-    raw_confidence = frontmatter.get("pattern_confidence")
-    raw_execution = frontmatter.get("execution", "local")
+def build_rule(frontmatter: JsonObject, md_path: Path, yml_path: Path | None, checks: list[Check]) -> Rule:
+    """Build Rule from parsed frontmatter and its already-built `checks`.
 
-    return Rule(
-        id=frontmatter["id"],
-        title=frontmatter["title"],
-        category=Category(frontmatter["category"]),
-        type=RuleType(frontmatter["type"]),
-        severity=_parse_severity(frontmatter),
-        slug=frontmatter.get("slug", ""),
-        execution=Execution(raw_execution),
-        fix=str(frontmatter.get("fix", "") or "").strip(),
-        match=_parse_match(frontmatter),
-        supersedes=frontmatter.get("supersedes"),
-        inherited=frontmatter.get("inherited"),
-        depends_on=frontmatter.get("depends_on", []),
-        enforcement_required=bool(frontmatter.get("enforcement_required", False)),
-        enforcement_mechanism=frontmatter.get("enforcement_mechanism"),
-        requires_capability=frontmatter.get("requires_capability"),
-        surface_mutations=frontmatter.get("surface_mutations"),
-        checks=_load_checks(frontmatter),
-        sources=frontmatter.get("sources", []),
-        see_also=frontmatter.get("see_also", []),
-        backed_by=[e for e in frontmatter.get("backed_by", []) if isinstance(e, str)],
-        pattern_confidence=PatternConfidence(raw_confidence) if raw_confidence else None,
-        md_path=md_path,
-        yml_path=yml_path,
-    )
-
-
-def get_rules_by_type(rules: dict[str, Rule], rule_type: RuleType) -> dict[str, Rule]:
-    """Filter rules by type."""
-    return {k: v for k, v in rules.items() if v.type == rule_type}
-
-
-def get_rules_by_category(rules: dict[str, Rule], category: Category) -> dict[str, Rule]:
-    """Filter rules by category."""
-    return {k: v for k, v in rules.items() if v.category == category}
-
-
-def get_checks_paths(rules: dict[str, Rule]) -> list[Path]:
-    """Get checks.yml paths for rules that have them."""
-    return [r.yml_path for r in rules.values() if r.yml_path is not None]
+    Raises RuleFieldError with one problem per rejected field when the fields do not validate.
+    """
+    raw: dict[str, object] = {
+        "fix": str(frontmatter.get("fix", "") or "").strip(),
+        "match": _parse_match(frontmatter),
+        "depends_on": frontmatter.get("depends_on", []),
+        "see_also": frontmatter.get("see_also", []),
+        "checks": checks,
+        "md_path": md_path,
+        "yml_path": yml_path,
+    }
+    for name in (
+        "id",
+        "title",
+        "category",
+        "type",
+        "slug",
+        "execution",
+        "supersedes",
+        "inherited",
+        "requires_capability",
+        "surface_mutations",
+    ):
+        if name in frontmatter:
+            raw[name] = frontmatter[name]
+    severity = _parse_severity(frontmatter, checks)
+    if severity:
+        raw["severity"] = severity
+    try:
+        return Rule.model_validate(raw)
+    except ValidationError as exc:
+        raise RuleFieldError(field_problems(exc, Rule)) from exc

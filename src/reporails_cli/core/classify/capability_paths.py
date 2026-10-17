@@ -14,19 +14,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
-from reporails_cli.core.classify import load_file_types
-from reporails_cli.core.discovery.agent_discovery import _is_external_pattern
+from reporails_cli.core.classify import classify_files, load_file_types, location_matches_mode
+from reporails_cli.core.discovery.agent_discovery import MEMORY_SURFACES, discover_from_config
+from reporails_cli.core.discovery.agents import detect_agents
+from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
+from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
 from reporails_cli.core.discovery.plugin_roots import expand_plugin_patterns
 from reporails_cli.core.discovery.read_gates import apply_read_gate
 from reporails_cli.core.discovery.walk import safe_resolve, walk_glob_matches
+from reporails_cli.core.platform.config.config import get_project_config
 from reporails_cli.core.platform.config.vocabulary import load_capability_vocabulary
 from reporails_cli.core.platform.dto.models import FileTypeDeclaration
-from reporails_cli.core.platform.utils.utils import is_loose_leaf_pattern
-
-if TYPE_CHECKING:
-    from reporails_cli.core.discovery.exclusions import RunExclusions
+from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
 
 def available_capabilities(agent: str, project_root: Path | None = None) -> list[str]:
@@ -77,6 +77,7 @@ class TargetError(ValueError):
         capability: str,
         agent: str,
         project_root: Path,
+        *,
         name: str = "",
         available: tuple[str, ...] = (),
     ) -> None:
@@ -104,7 +105,7 @@ def looks_like_windows_path(token: str) -> bool:
 
 
 def classify_target_token(
-    token: str, sniff_agent: str, project_root: Path, base: Path | None = None
+    token: str, agent: str, project_root: Path, base: Path | None = None
 ) -> tuple[str, tuple[str, str] | Path]:
     """Classify one target token as a capability spec or a path.
 
@@ -127,14 +128,14 @@ def classify_target_token(
         return "path", _path(token[len("file:") :])
     if token.startswith("@"):
         cap = token[1:]
-        canonical = canonicalize_capability(cap, sniff_agent, project_root) if sniff_agent else None
+        canonical = canonicalize_capability(cap, agent, project_root) if agent else None
         return "capability", (canonical if canonical is not None else cap, "")
     if ":" in token and not looks_like_windows_path(token):
         cap, name = token.split(":", 1)
-        canonical = canonicalize_capability(cap, sniff_agent, project_root) if sniff_agent else None
+        canonical = canonicalize_capability(cap, agent, project_root) if agent else None
         return "capability", (canonical if canonical is not None else cap, name)
-    if sniff_agent and is_capability_keyword(token, sniff_agent, project_root):
-        canonical = canonicalize_capability(token, sniff_agent, project_root)
+    if agent and is_capability_keyword(token, agent, project_root):
+        canonical = canonicalize_capability(token, agent, project_root)
         if canonical is not None:
             return "capability", (canonical, "")
     return "path", _path(token)
@@ -144,17 +145,11 @@ def sniff_agent(agent: str, project_root: Path) -> str:
     """The agent whose vocabulary reads target tokens: `agent` when given, else the project's
     configured default agent, else the first agent detected under `project_root` (`""` when
     none is)."""
-    from reporails_cli.core.discovery.agents import detect_agents
-    from reporails_cli.core.platform.config.config import get_project_config
-
     if agent:
         return agent
-    try:
-        cfg = get_project_config(project_root)
-        if cfg.default_agent:
-            return cfg.default_agent
-    except (OSError, ValueError):
-        pass
+    default_agent = get_project_config(project_root).default_agent
+    if default_agent:
+        return default_agent
     for det in detect_agents(project_root):
         return det.agent_type.id
     return ""
@@ -174,36 +169,6 @@ def capability_declared(capability: str, agent: str, project_root: Path) -> bool
         return True
     fold = vocab.fold.get(capability)
     return bool(fold and any(f in decls for f in fold))
-
-
-def resolve_capability_spec(
-    capability: str,
-    name: str,
-    agent: str,
-    project_root: Path,
-    exclusions: RunExclusions | None = None,
-) -> tuple[set[Path], list[Any]]:
-    """Resolve one (capability, name) spec to its file set + the skills an agent preloads that
-    did not resolve. An empty `name` targets every instance the run's `exclusions` keep; a named
-    instance resolves whatever is excluded, and a named subagent brings the skills it preloads
-    that the exclusions keep. Raises `TargetError` when the spec names no file."""
-    from reporails_cli.core.classify.focus_expansion import expand_focus
-
-    if not capability_declared(capability, agent, project_root):
-        raise TargetError(
-            "undeclared", capability, agent, project_root, name, tuple(available_capabilities(agent, project_root))
-        )
-    if not name:
-        return set(list_capability_targets(agent, capability, project_root, exclusions)), []
-    resolved = resolve_capability(agent, capability, name, project_root)
-    if resolved is None:
-        available = list_capability_targets(agent, capability, project_root, exclusions)
-        raise TargetError("unnamed", capability, agent, project_root, name, tuple(str(p) for p in available))
-    paths = {resolved}
-    unresolved: list[Any] = []
-    if capability == "agents":
-        paths, unresolved = expand_focus(paths, agent, project_root, exclusions)
-    return paths, unresolved
 
 
 def is_capability_keyword(arg: str, agent: str, project_root: Path | None = None) -> bool:
@@ -239,8 +204,6 @@ def list_capability_targets(
     surface in the listing.
     """
     if exclusions is None:
-        from reporails_cli.core.discovery.exclusions import load_run_exclusions
-
         exclusions = load_run_exclusions(project_root)
     if capability == "referenced":
         return _list_referenced_targets(agent, project_root, exclusions)
@@ -277,9 +240,6 @@ def _list_referenced_targets(agent: str, project_root: Path, exclusions: RunExcl
     in the project — if disabled, returns an empty list (classifier won't
     walk).
     """
-    from reporails_cli.core.classify import classify_files, load_file_types
-    from reporails_cli.core.discovery.agent_discovery import discover_from_config
-
     discovered = discover_from_config(project_root, agent, extra_exclude_dirs=exclusions.walk_dirs)
     if discovered is None:
         return []
@@ -313,15 +273,13 @@ def _is_user_scope_memory(ft_name: str, patterns: tuple[str, ...]) -> bool:
     per-project memory directory — delegate when the file_type name is
     `memory` or `subagent_memory` AND any pattern starts with `~/`.
     """
-    if ft_name not in ("memory", "subagent_memory"):
+    if ft_name not in MEMORY_SURFACES:
         return False
     return any(p.startswith("~/") for p in patterns)
 
 
 def _user_scope_memory_paths(agent: str, project_root: Path, exclude_dirs: frozenset[str]) -> list[Path]:
     """Resolve user-scope memory entries via memory_locator, not entering `exclude_dirs`."""
-    from reporails_cli.core.discovery.memory_locator import memory_entries_for_agent
-
     return [entry.path for entry in memory_entries_for_agent(agent, project_root, exclude_dirs)]
 
 
@@ -330,7 +288,6 @@ def resolve_capability(
     capability: str,
     name: str,
     project_root: Path,
-    exclusions: RunExclusions | None = None,
 ) -> Path | None:
     """Resolve `(agent, capability, name)` to a canonical file path.
 
@@ -345,14 +302,10 @@ def resolve_capability(
     - `main` / `override`: filename match against `name` (rarely used
       with an explicit name).
 
-    A named instance resolves whatever is excluded: `exclusions` is the set to resolve under, and
-    `None` means no user exclusions. Returns the first match, or None when no candidate matches.
+    A named instance resolves whatever the user excludes. Returns the first match, or None when no
+    candidate matches.
     """
-    from reporails_cli.core.discovery.exclusions import RunExclusions
-
-    candidates = list_capability_targets(
-        agent, capability, project_root, exclusions if exclusions is not None else RunExclusions.none(project_root)
-    )
+    candidates = list_capability_targets(agent, capability, project_root, RunExclusions.none(project_root))
     extractor = _name_extractor_for(capability)
     for candidate in candidates:
         if extractor(candidate) == name:
@@ -405,7 +358,7 @@ def _glob_patterns(
     expanded = [
         pattern
         for pattern in expand_plugin_patterns(list(patterns), project_root, skip_dirs)
-        if not _is_external_pattern(pattern)
+        if not is_rooted_pattern(pattern)
     ]
     if not expanded:
         return []
@@ -413,7 +366,7 @@ def _glob_patterns(
     out: list[Path] = []
     for pattern in expanded:
         for path in sorted(walk_glob_matches(project_root, pattern, skip_dirs)):
-            if decl is not None and not _decl_location_matches(path, decl, pattern, project_root):
+            if decl is not None and not location_matches_mode(path, decl, {project_root}, pattern):
                 continue
             resolved = safe_resolve(path)
             if resolved in seen_resolved:
@@ -421,33 +374,6 @@ def _glob_patterns(
             seen_resolved.add(resolved)
             out.append(path)
     return out
-
-
-def _decl_location_matches(
-    file_path: Path,
-    decl: FileTypeDeclaration,
-    matched_pattern: str,
-    project_root: Path,
-) -> bool:
-    """Apply the classify-level `scope`/`loading` filter to a listing-path match.
-
-    Mirrors `core.classify._location_matches_mode` for the listing case
-    where `project_root` doubles as scan_root and the ancestor chain
-    reduces to `{project_root}` (the listing path is invoked at the
-    project root, not at an arbitrary cwd).
-    """
-    scope = decl.properties.get("scope")
-    loading = decl.properties.get("loading")
-    parent = file_path.parent
-    in_ancestor_chain = parent == project_root
-
-    if scope == "global" and loading == "session_start":
-        if is_loose_leaf_pattern(matched_pattern):
-            return in_ancestor_chain
-        return True
-    if scope == "nested":
-        return not in_ancestor_chain
-    return True
 
 
 def _name_extractor_for(capability: str) -> Callable[[Path], str]:

@@ -28,7 +28,6 @@ from reporails_cli.core.discovery.agents import (
     get_known_agents,
 )
 from reporails_cli.core.discovery.exclusions import RunExclusions
-from reporails_cli.core.platform.runtime.engine_helpers import _find_project_root
 
 
 def _is_external(f: Path, scope: Path) -> bool:
@@ -210,9 +209,6 @@ class TestProjectRootVsScanRoot:
         """Backbone project root above child: ancestor walk reaches it, files outside it are excluded."""
         child = _make_backbone_project(tmp_path)
 
-        project_root = _find_project_root(child)
-        assert project_root == tmp_path, "project_root should walk up to backbone"
-
         # Ancestor walk reaches tmp_path/CLAUDE.md (the parent main file). External
         # surface files are by-design outside; everything else stays within tmp_path.
         files = get_all_scannable_files(child)
@@ -229,9 +225,6 @@ class TestProjectRootVsScanRoot:
         (tmp_path / ".git").mkdir()
         (tmp_path / "CLAUDE.md").write_text("# Instructions")
 
-        project_root = _find_project_root(tmp_path)
-        assert project_root == tmp_path
-
         files = get_all_scannable_files(tmp_path)
         assert len(files) >= 1
         assert any(f.name == "CLAUDE.md" for f in files)
@@ -247,7 +240,7 @@ class TestResolveProjectRootForFile:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_nested_file_under_backbone_resolves_to_the_backbone_root(self, tmp_path: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (tmp_path / ".ails").mkdir()
         (tmp_path / ".ails" / "backbone.yml").write_text("modules: []\n")
@@ -261,7 +254,7 @@ class TestResolveProjectRootForFile:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_nested_file_under_git_root_resolves_to_the_git_root(self, tmp_path: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (tmp_path / ".git").mkdir()
         rules_dir = tmp_path / ".claude" / "rules"
@@ -274,7 +267,7 @@ class TestResolveProjectRootForFile:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_no_marker_anywhere_falls_back_to_the_file_s_own_directory(self, tmp_path: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         rules_dir = tmp_path / "some" / "nested" / "dir"
         rules_dir.mkdir(parents=True)
@@ -532,9 +525,9 @@ class TestUserScopeSubagentMemoryExclusion:
         ids=["home", "absolute", "drive", "repo-local", "repo-local-2", "glob"],
     )
     def test_external_pattern_classifier(self, pattern: str, external: bool) -> None:
-        from reporails_cli.core.discovery.agent_discovery import _is_external_pattern
+        from reporails_cli.core.platform.utils.utils import is_rooted_pattern
 
-        assert _is_external_pattern(pattern) is external
+        assert is_rooted_pattern(pattern) is external
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint
@@ -867,7 +860,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.subsys_lint
     @pytest.mark.parametrize("marker", [".vscode", ".idea", ".github"])
     def test_marker_at_home_is_ignored(self, home: Path, marker: str) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (home / marker).mkdir()
         proj = home / "work" / "proj"
@@ -880,7 +873,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_marker_at_home_is_ignored_and_agent_folder_still_roots(self, home: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (home / ".vscode").mkdir()
         rules = home / "work" / "proj" / ".claude" / "rules"
@@ -893,7 +886,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_marker_above_home_is_ignored(self, home: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (home.parent / ".vscode").mkdir()
         proj = home / "work" / "proj"
@@ -906,7 +899,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_marker_below_home_still_anchors_the_project(self, home: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (home / ".vscode").mkdir()
         proj = home / "work" / "proj2"
@@ -920,7 +913,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_git_at_home_still_anchors(self, home: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (home / ".git").mkdir()
         proj = home / "work" / "proj"
@@ -933,7 +926,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_project_config_at_home_still_anchors(self, home: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         (home / ".ails").mkdir()
         (home / ".ails" / "backbone.yml").write_text("modules: []\n")
@@ -947,7 +940,7 @@ class TestEditorFolderAtHomeIsNoProjectRoot:
     @pytest.mark.unit
     @pytest.mark.subsys_lint
     def test_file_outside_home_keeps_marker_anchoring(self, home: Path, tmp_path: Path) -> None:
-        from reporails_cli.core.discovery.agent_discovery import resolve_project_root_for_file
+        from reporails_cli.core.discovery.project_root import resolve_project_root_for_file
 
         proj = tmp_path / "elsewhere" / "proj"
         (proj / ".github").mkdir(parents=True)

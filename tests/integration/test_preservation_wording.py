@@ -25,7 +25,7 @@ def _verdict(tmp_path, original: str, rewrite: str) -> dict[str, Any]:
     assert isinstance(snap, Snapshot)
     target.write_text(after_text, encoding="utf-8")
     after_map = map_ruleset([target], models=get_models(), root=tmp_path, cache_dir=None)
-    return compare(snap, after_map, after_text, 5.0, LocalProjectEnvironment(tmp_path))
+    return compare(snap, after_map, after_text, 5.0, environment=LocalProjectEnvironment(tmp_path))
 
 
 _LIST = "- Run the tests.\n- Use real objects in tests.\n- Check the logs."

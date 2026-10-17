@@ -29,7 +29,7 @@ FIXTURES = Path(__file__).parent.parent / "fixtures" / "projects"
 
 
 def _rules_installed() -> bool:
-    from reporails_cli.core.platform.config.bootstrap import get_rules_path
+    from reporails_cli.core.platform.config.config import get_rules_path
 
     return (get_rules_path() / "core").exists()
 
@@ -41,7 +41,7 @@ requires_rules = pytest.mark.skipif(
 
 
 def _model_installed() -> bool:
-    from reporails_cli.bundled import get_models_path
+    from reporails_cli.core.mapper.model_manifest import get_models_path
 
     # The bundled embed model is needed for a content/client finding; the NLTK
     # tagger dependency was removed, so only the ONNX asset is checked now.
@@ -940,7 +940,7 @@ class TestConfigGlobal:
         self.global_home = tmp_path / "fake_home" / ".reporails"
         self.global_home.mkdir(parents=True)
         monkeypatch.setattr(
-            "reporails_cli.interfaces.cli.config_command._global_config_path",
+            "reporails_cli.interfaces.cli.config_command.get_global_config_path",
             lambda: self.global_home / "config.yml",
         )
 
@@ -975,11 +975,14 @@ class TestConfigGlobal:
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
-    def test_global_rejects_non_global_key(self) -> None:
-        """--global set with a project-only key errors."""
+    def test_global_set_accepts_a_project_setting(self) -> None:
+        """--global set takes every setting the project file takes, and reads it back."""
         result = runner.invoke(app, ["config", "set", "--global", "exclude_dirs", "vendor"])
-        assert result.exit_code == 2
-        assert "not supported in global config" in result.output
+        assert result.exit_code == 0, f"global set failed:\n{result.output}"
+
+        result = runner.invoke(app, ["config", "get", "--global", "exclude_dirs"])
+        assert result.exit_code == 0
+        assert "vendor" in result.output
 
     @pytest.mark.e2e
     @pytest.mark.subsys_cli_ux
@@ -1042,7 +1045,7 @@ class TestGlobalDefaultsInCheck:
         self.global_home = tmp_path / "fake_home" / ".reporails"
         self.global_home.mkdir(parents=True)
         monkeypatch.setattr(
-            "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+            "reporails_cli.core.platform.config.config.get_global_config_path",
             lambda: self.global_home / "config.yml",
         )
 

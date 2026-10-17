@@ -13,11 +13,14 @@ from dataclasses import dataclass, field
 import pytest
 from rich.text import Text
 
-from reporails_cli.core.platform.runtime.merger import CombinedStats, FindingItem
+from reporails_cli.core.platform.dto.diagnostics import FindingItem
+from reporails_cli.core.platform.dto.models import Level
+from reporails_cli.core.platform.runtime.merger import CombinedStats, Omissions, ServerReply
 from reporails_cli.formatters.text import item_scorecard, scorecard
+from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
-    SurfaceHealth,
+    ScorecardDetail,
     _render_surface_health,
     _render_verdict_block,
     _surface_cell,
@@ -44,8 +47,9 @@ class _Result:
     quality: _Quality | None = None
     hints: tuple = ()
     per_file_analysis: tuple = ()
-    excluded_dirs: tuple = ()
-    excluded_files: tuple = ()
+    reply: ServerReply = field(default_factory=ServerReply)
+    omissions: Omissions = field(default_factory=Omissions)
+    level: Level = Level.L0
 
 
 def _f(rule: str, severity: str = "warning", tier: str = "", line: int = 1) -> FindingItem:
@@ -68,7 +72,7 @@ def _plain(markup: str) -> str:
 
 def _verdict(result: _Result, **kw: object) -> str:
     with scorecard.console.capture() as cap:
-        _render_verdict_block(result, has_quality=True, n_atoms=0, elapsed_ms=0, **kw)  # type: ignore[arg-type]
+        _render_verdict_block(result, has_quality=True, elapsed_ms=0, **kw)  # type: ignore[arg-type]
     return cap.get()
 
 
@@ -252,7 +256,11 @@ class TestFitsTerminal:
         try:
             with scorecard.console.capture() as cap:
                 print_scorecard(
-                    result, True, tier="free", scope=ScopeInfo(type_str="61 files"), surface_health=surfaces
+                    result,
+                    True,
+                    tier="free",
+                    scope=ScopeInfo(type_str="61 files"),
+                    detail=ScorecardDetail(surface_health=surfaces),
                 )
         finally:
             scorecard.console.width = None
@@ -287,8 +295,7 @@ class TestExcludedLine:
     @pytest.mark.subsys_cli_ux
     def test_names_folders_and_globs_under_quality_in_the_label_column(self) -> None:
         result = _result(_MIXED)
-        result.excluded_dirs = ("agents", "docs")
-        result.excluded_files = ("*.generated.md",)
+        result.omissions = Omissions(excluded_dirs=("agents", "docs"), excluded_files=("*.generated.md",))
         scorecard.console.width = 200
         try:
             lines = _verdict(result).splitlines()
@@ -303,10 +310,10 @@ class TestExcludedLine:
     @pytest.mark.subsys_cli_ux
     def test_files_only_and_dirs_only(self) -> None:
         only_files = _result(_MIXED)
-        only_files.excluded_files = ("a.md",)
+        only_files.omissions = Omissions(excluded_files=("a.md",))
         assert "Excluded  a.md — not checked" in _verdict(only_files)
         only_dirs = _result(_MIXED)
-        only_dirs.excluded_dirs = ("agents",)
+        only_dirs.omissions = Omissions(excluded_dirs=("agents",))
         assert "Excluded  agents/ — not checked" in _verdict(only_dirs)
 
     @pytest.mark.unit
@@ -315,7 +322,7 @@ class TestExcludedLine:
         for quality in (None, _Quality(display_score=None)):
             result = _result(_MIXED)
             result.quality = quality
-            result.excluded_dirs = ("agents",)
+            result.omissions = Omissions(excluded_dirs=("agents",))
             text = _verdict(result)
             assert "Excluded  agents/ — not checked" in text
             assert "the score covers the rest" not in text
@@ -329,7 +336,7 @@ class TestExcludedLine:
     @pytest.mark.subsys_cli_ux
     def test_a_long_list_wraps_under_its_value(self) -> None:
         result = _result(_MIXED)
-        result.excluded_dirs = tuple(f"folder-number-{n}" for n in range(6))
+        result.omissions = Omissions(excluded_dirs=tuple(f"folder-number-{n}" for n in range(6)))
         scorecard.console.width = 60
         try:
             lines = _verdict(result).splitlines()
@@ -352,7 +359,9 @@ class TestExcludedLineOnEveryTextPath:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_findings_run_names_what_was_left_out(self, capsys: pytest.CaptureFixture[str]) -> None:
-        out = self._no_findings(capsys, excluded_dirs=("docs",), excluded_files=("*.generated.md",))
+        out = self._no_findings(
+            capsys, omissions=Omissions(excluded_dirs=("docs",), excluded_files=("*.generated.md",))
+        )
         assert "No findings." in out
         assert "Excluded  docs/, *.generated.md — not checked" in out
         assert "imported text" not in out
@@ -360,7 +369,7 @@ class TestExcludedLineOnEveryTextPath:
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
     def test_no_findings_run_with_imported_text_counted(self, capsys: pytest.CaptureFixture[str]) -> None:
-        out = self._no_findings(capsys, excluded_dirs=("docs",), excluded_imported=True)
+        out = self._no_findings(capsys, omissions=Omissions(excluded_dirs=("docs",), excluded_imported=True))
         assert "; imported text in checked files still counts" in out
 
     @pytest.mark.unit

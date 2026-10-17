@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import pytest
 
+from reporails_cli.core.mapper.charge_floors import _apply_hedged_should_floor
 from reporails_cli.core.mapper.classify import (
     best_to_sign,
     classify_charge,
     has_hedge_cue,
     hedges_with_possible,
-    starts_noun_subject,
 )
-from reporails_cli.core.mapper.instructions import instruction_count
-from reporails_cli.core.mapper.parse import _apply_hedged_should_floor
+from reporails_cli.core.mapper.classify_phases import starts_noun_subject
+from reporails_cli.core.mapper.instructions import instruction_starts
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 
@@ -162,7 +162,7 @@ def test_a_hedge_phrase_inside_a_code_span_is_not_a_hedge(text: str) -> None:
     ],
 )
 def test_a_packed_sentence_with_set_still_counts_two_instructions(text: str) -> None:
-    assert instruction_count(text) == 2
+    assert len(instruction_starts(text)) == 2
 
 
 @pytest.mark.unit

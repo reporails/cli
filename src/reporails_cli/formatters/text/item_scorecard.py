@@ -10,22 +10,24 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 from rich.console import Console
 
-from reporails_cli.formatters.text.display_constants import skill_lookup
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
+from reporails_cli.core.platform.runtime.merger import CombinedResult, normalize_finding_path
+from reporails_cli.formatters.text.display_constants import HEALTH_BAR_WIDTH, skill_lookup
+from reporails_cli.formatters.text.health import SurfaceHealth, count_tag, mean_display_score
 from reporails_cli.formatters.text.score import score_color
-from reporails_cli.formatters.text.scorecard import SurfaceHealth, _count_tag, _mean_display_score
 from reporails_cli.formatters.text.verdict import _score_bar
 
 console = Console()
 
 
 def compute_item_scores(
-    result: Any,
-    ruleset_map: Any,
-    project_root: Any = None,
+    result: CombinedResult,
+    ruleset_map: RulesetMap | None,
+    project_root: Path | str | None = None,
     skill_of: dict[str, str] | None = None,
 ) -> list[SurfaceHealth]:
     """Per-item health scores — name + bar per skill folder or per other scanned file.
@@ -36,19 +38,20 @@ def compute_item_scores(
     item's score is the atom-weighted mean of its files' reported `display_score`;
     severity counts are summed over its files' findings.
     """
-    from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
     if ruleset_map is None:
         return []
     root = Path(project_root) if project_root is not None else Path.cwd()
     skill_of = skill_lookup(ruleset_map, root) if skill_of is None else skill_of
 
-    findings_by_file: dict[str, list[Any]] = {}
+    findings_by_file: dict[str, list[FindingItem]] = {}
     for f in result.findings:
         findings_by_file.setdefault(normalize_finding_path(f.file, root), []).append(f)
     # Server per-file paths are absolute; normalize to the same project-relative
     # key space as `rel` so the per-file display_score lookup matches.
-    analysis_by_file: dict[str, Any] = {normalize_finding_path(fa.file, root): fa for fa in result.per_file_analysis}
+    analysis_by_file: dict[str, FileAnalysis] = {
+        normalize_finding_path(fa.file, root): fa for fa in result.per_file_analysis
+    }
 
     try:
         files = list(ruleset_map.files)
@@ -62,28 +65,32 @@ def compute_item_scores(
         members.setdefault((skill_of or {}).get(rel, rel), {})[rel] = None
     names = _item_names(members, skill_of or {})
 
-    items: list[SurfaceHealth] = []
-    for key, paths in members.items():
-        rels = list(paths)
-        name = names[key]
-        findings = [f for rel in rels for f in findings_by_file.get(rel, [])]
-        analyses = [analysis_by_file[rel] for rel in rels if rel in analysis_by_file]
-        # `None` → unscored: no server analysis, or no score (zero charged atoms).
-        items.append(
-            SurfaceHealth(
-                name=name,
-                score=_mean_display_score(analyses),
-                file_count=len(rels),
-                item_count=1,
-                finding_count=len(findings),
-                errors=sum(1 for f in findings if f.severity == "error"),
-                warnings=sum(1 for f in findings if f.severity == "warning"),
-                infos=sum(1 for f in findings if f.severity == "info"),
-            )
-        )
+    items = [
+        _item_health(names[key], list(paths), findings_by_file, analysis_by_file) for key, paths in members.items()
+    ]
     # Worst first, alphabetical tiebreak; unscored items sort last (score is None).
     items.sort(key=lambda it: (it.score is None, it.score or 0.0, it.name))
     return items
+
+
+def _item_health(
+    name: str,
+    rels: list[str],
+    findings_by_file: dict[str, list[FindingItem]],
+    analysis_by_file: dict[str, FileAnalysis],
+) -> SurfaceHealth:
+    """Health record of one item from its member files' findings and analyses."""
+    findings = [f for rel in rels for f in findings_by_file.get(rel, [])]
+    analyses = [analysis_by_file[rel] for rel in rels if rel in analysis_by_file]
+    # `None` → unscored: no server analysis, or no score (zero charged atoms).
+    return SurfaceHealth(
+        name=name,
+        score=mean_display_score(analyses),
+        file_count=len(rels),
+        item_count=1,
+        finding_count=len(findings),
+        errors=sum(1 for f in findings if f.severity == "error"),
+    )
 
 
 def _display_name_for_path(rel: str, skill_of: dict[str, str] | None = None) -> str:
@@ -113,16 +120,16 @@ def _item_names(members: dict[str, dict[str, None]], skill_of: dict[str, str]) -
     return {key: key if key in folders and counts[name] > 1 else name for key, name in names.items()}
 
 
-def _item_cell(s: SurfaceHealth, label_w: int, bar_width: int = 15, count_width: int = 0) -> str:
+def _item_cell(s: SurfaceHealth, label_w: int, count_width: int = 0) -> str:
     """Format one item row: '<name>:  ▓▓▓▓░░░░░░░░░░░  4.2  35 findings · 2 errors'."""
     label = f"{s.name}:"
-    suffix = _count_tag(s, count_width)
+    suffix = count_tag(s, count_width)
     if s.score is None:
-        empty = "░" * bar_width
+        empty = "░" * HEALTH_BAR_WIDTH
         return f"{label:<{label_w}} [dim]{empty}[/dim]  [dim]not scored[/dim]{suffix}"
     color = score_color(s.score)
-    bar = _score_bar(s.score, bar_width, color)
-    return f"{label:<{label_w}} {bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
+    health_bar = _score_bar(s.score, HEALTH_BAR_WIDTH, color)
+    return f"{label:<{label_w}} {health_bar}  [{color} bold]{s.score:>4.1f}[/{color} bold]{suffix}"
 
 
 def render_item_health(items: list[SurfaceHealth]) -> None:

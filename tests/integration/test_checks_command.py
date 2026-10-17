@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.platform.config.bootstrap import get_rules_path
+from reporails_cli.core.platform.config.config import get_rules_path
 from reporails_cli.interfaces.cli.main import app
 
 _runner = CliRunner()

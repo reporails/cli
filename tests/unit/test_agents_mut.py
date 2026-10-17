@@ -14,13 +14,13 @@ from pathlib import Path
 import pytest
 
 import reporails_cli.core.discovery.agents as agents_mod
+from reporails_cli.core.discovery.agent_config import extract_properties
 from reporails_cli.core.discovery.agents import (
     AgentType,
     DetectedAgent,
     _build_agent_registry,
     _disambiguate_shared_files,
     _distinctive_agents,
-    _extract_properties,
     _parse_agent_config,
     detect_single_agent,
     resolve_agent,
@@ -59,7 +59,7 @@ def _da(
 def test_extract_properties_keeps_only_known_keys() -> None:
     """A v0.5.0 flattened spec keeps only recognised property keys
     (kills `k in prop_keys and v is not None` -> `or`)."""
-    props = _extract_properties({"format": "freeform", "scope": "global", "bogus": "x"})
+    props = extract_properties({"format": "freeform", "scope": "global", "bogus": "x"})
     assert props == {"format": "freeform", "scope": "global"}
     assert "bogus" not in props
 
@@ -150,9 +150,7 @@ def test_rule_pattern_without_dir_prefix_adds_no_none() -> None:
 @pytest.mark.subsys_lint
 def test_registry_empty_when_no_rules_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """No rules path → empty registry, no crash (kills L144 `or` -> `and`)."""
-    import reporails_cli.core.platform.config.bootstrap as bootstrap
-
-    monkeypatch.setattr(bootstrap, "get_rules_path", lambda: None)
+    monkeypatch.setattr(agents_mod, "get_rules_path", lambda: None)
     assert _build_agent_registry() == {}
 
 
@@ -160,15 +158,13 @@ def test_registry_empty_when_no_rules_path(monkeypatch: pytest.MonkeyPatch) -> N
 @pytest.mark.subsys_lint
 def test_registry_skips_non_dict_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A config.yml that loads as a list is skipped, not parsed (kills L152 `or` -> `and`)."""
-    import reporails_cli.core.platform.config.bootstrap as bootstrap
-
     (tmp_path / "badagent").mkdir()
     (tmp_path / "badagent" / "config.yml").write_text("- a\n- b\n")
     (tmp_path / "goodagent").mkdir()
     (tmp_path / "goodagent" / "config.yml").write_text(
         "agent: goodagent\nfile_types:\n  m:\n    patterns: ['**/CLAUDE.md']\n"
     )
-    monkeypatch.setattr(bootstrap, "get_rules_path", lambda: tmp_path)
+    monkeypatch.setattr(agents_mod, "get_rules_path", lambda: tmp_path)
     registry = _build_agent_registry()
     assert "goodagent" in registry
 
@@ -183,11 +179,11 @@ def test_detect_single_agent_scans_repo_scoped(monkeypatch: pytest.MonkeyPatch, 
     hijack it (kills L376 `repo_scoped=True` -> False)."""
     captured: dict = {}
 
-    def _spy(target, agent_id, rules_paths, **kwargs):
+    def _spy(target, agent_id, **kwargs):
         captured.update(kwargs)
         return None
 
-    monkeypatch.setattr(agents_mod, "_discover_from_config", _spy)
+    monkeypatch.setattr(agents_mod, "discover_from_config", _spy)
     detect_single_agent(tmp_path, "claude")
     assert captured.get("repo_scoped") is True
 
@@ -398,7 +394,7 @@ def test_partition_by_native_owner_attributes_a_nested_main_file_to_its_sole_cla
     unambiguous native evidence for that agent the moment it stays distinctive -- the
     namespace/root-file tie-break is only needed once multiple agents claim the SAME
     path (a shared standard like root `AGENTS.md`)."""
-    from reporails_cli.core.discovery.agent_discovery import partition_by_native_owner
+    from reporails_cli.core.discovery.agents import partition_by_native_owner
 
     target = Path("/proj")
     claude = _da(
@@ -422,7 +418,7 @@ def test_partition_by_native_owner_still_falls_back_to_generic_on_a_shared_stand
     call also claims that exact path. Guards the shortcut against over-reaching past
     what it is meant to fix (an UNAMBIGUOUS single-agent file pattern like `CLAUDE.md`,
     not an ambiguous shared standard that merely happens to have one claimant here)."""
-    from reporails_cli.core.discovery.agent_discovery import partition_by_native_owner
+    from reporails_cli.core.discovery.agents import partition_by_native_owner
 
     target = Path("/proj")
     claude = _da("claude", ["/proj/.claude/skills/a/SKILL.md"])
@@ -436,3 +432,26 @@ def test_partition_by_native_owner_still_falls_back_to_generic_on_a_shared_stand
     owner_by_path = partition_by_native_owner([claude, copilot], target)
     assert owner_by_path["/proj/plugin/dashboard/AGENTS.md"] == "generic"
     assert owner_by_path["/proj/.claude/skills/a/SKILL.md"] == "claude"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_lint
+def test_rooted_patterns_are_not_project_markers() -> None:
+    """Home, filesystem-root and drive-rooted patterns sit outside the project, so none becomes a
+    root-level marker (an absolute path once lost its leading `/` and read as a project-relative one)."""
+    data = {
+        "agent": "x",
+        "file_types": {
+            "main": {
+                "patterns": [
+                    "/etc/claude-code/CLAUDE.md",
+                    "~/.claude/CLAUDE.md",
+                    "C:/ProgramData/x/CLAUDE.md",
+                    "**/CLAUDE.md",
+                ]
+            }
+        },
+    }
+    at = _parse_agent_config(data)
+    assert at is not None
+    assert at.instruction_patterns == ("CLAUDE.md",)

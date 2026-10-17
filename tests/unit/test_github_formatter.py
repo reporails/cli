@@ -2,10 +2,8 @@
 
 Tests cover:
 - Severity mapping (critical/high → error, medium/low → warning)
-- File:line parsing from violation location
 - Special character escaping (colons, commas, newlines)
-- Empty violations → no annotations
-- JSON line is valid and contains score/level
+- Combined-result annotations, notices and the trailing JSON line
 """
 
 from __future__ import annotations
@@ -16,88 +14,22 @@ from pathlib import Path
 
 import pytest
 
-from reporails_cli.core.platform.dto.diagnostics import FunnelError
-from reporails_cli.core.platform.dto.models import Level, Severity, Violation
-from reporails_cli.core.platform.dto.results import FrictionEstimate, ScanDelta, ValidationResult
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
+from reporails_cli.core.platform.dto.diagnostics import FindingSeverity, FunnelError
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters import github as github_formatter
 
 
-def _make_violation(
-    rule_id: str = "CORE:S:0005",
-    rule_title: str = "Instruction File Size Limit",
-    location: str = "CLAUDE.md:45",
-    message: str = "File exceeds recommended size",
-    severity: Severity = Severity.HIGH,
-    check_id: str = "CORE:S:0005:check:0001",
-) -> Violation:
-    return Violation(
-        rule_id=rule_id,
-        rule_title=rule_title,
-        location=location,
-        message=message,
-        severity=severity,
-        check_id=check_id,
-    )
-
-
-def _make_result(
-    violations: tuple[Violation, ...] = (),
-    score: float = 7.5,
-    level: Level = Level.L3,
-) -> ValidationResult:
-    return ValidationResult(
-        score=score,
-        level=level,
-        violations=violations,
-        judgment_requests=(),
-        rules_checked=10,
-        rules_passed=10 - len(violations),
-        rules_failed=len(violations),
-        feature_summary="Root file",
-        friction=FrictionEstimate(level="small"),
-    )
-
-
 class TestSeverityMapping:
-    """Test _severity_to_command mapping."""
+    """Test the workflow command each finding severity maps to."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     @pytest.mark.parametrize(
         "severity, expected",
-        [
-            (Severity.CRITICAL, "error"),
-            (Severity.HIGH, "error"),
-            (Severity.MEDIUM, "warning"),
-            (Severity.LOW, "warning"),
-            (Severity.INFO, "notice"),
-        ],
+        [("error", "error"), ("warning", "warning"), ("info", "notice")],
     )
-    def test_severity_to_command(self, severity: Severity, expected: str) -> None:
-        assert github_formatter._severity_to_command(severity) == expected
-
-
-class TestLocationParsing:
-    """Test file:line parsing from violation location."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    @pytest.mark.parametrize(
-        "location, expected_fragment",
-        [
-            ("CLAUDE.md:45", "file=CLAUDE.md,line=45"),
-            ("CLAUDE.md", "file=CLAUDE.md,line=1"),  # no line → default 1
-            (".claude/rules/testing.md:12", "file=.claude/rules/testing.md,line=12"),
-            ("CLAUDE.md:abc", "file=CLAUDE.md%3Aabc,line=1"),  # non-numeric → default 1
-        ],
-        ids=["standard", "file-only", "path-with-dir", "non-numeric-line"],
-    )
-    def test_location_parsing(self, location: str, expected_fragment: str) -> None:
-        v = _make_violation(location=location)
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        assert expected_fragment in output
+    def test_finding_command(self, severity: FindingSeverity, expected: str) -> None:
+        assert github_formatter._finding_command(severity) == expected
 
 
 class TestEscaping:
@@ -135,19 +67,6 @@ class TestEscaping:
 
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
-    def test_title_with_special_chars(self) -> None:
-        v = _make_violation(
-            rule_id="CORE:S:0012",
-            rule_title="Reusable Skills Over Repeated Prompts",
-            message="Multi-step procedure found inline",
-        )
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        # Colons in rule_id should be escaped in title property
-        assert "[CORE%3AS%3A0012]" in output
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
     def test_percent_in_message_escaped_before_other_chars(self) -> None:
         """Percent must be escaped first to avoid double-escaping."""
         result = github_formatter._escape_workflow_data("100%\n")
@@ -158,117 +77,6 @@ class TestEscaping:
     def test_percent_in_property_escaped_before_other_chars(self) -> None:
         result = github_formatter._escape_workflow_property("100%\n:")
         assert result == "100%25%0A%3A"
-
-
-class TestAnnotations:
-    """Test format_annotations output."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_empty_violations_returns_empty(self) -> None:
-        result = _make_result(violations=())
-        output = github_formatter.format_annotations(result)
-        assert output == ""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_single_violation_format(self) -> None:
-        v = _make_violation(
-            rule_id="CORE:S:0012",
-            rule_title="Reusable Skills",
-            location="CLAUDE.md:45",
-            message="Multi-step procedure found",
-            severity=Severity.HIGH,
-        )
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        assert output.startswith("::error ")
-        assert "file=CLAUDE.md" in output
-        assert "line=45" in output
-        assert "Multi-step procedure found" in output
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_multiple_violations_one_per_line(self) -> None:
-        v1 = _make_violation(severity=Severity.HIGH, location="a.md:1")
-        v2 = _make_violation(severity=Severity.MEDIUM, location="b.md:2")
-        result = _make_result(violations=(v1, v2))
-        output = github_formatter.format_annotations(result)
-        lines = output.strip().split("\n")
-        assert len(lines) == 2
-        assert lines[0].startswith("::error ")
-        assert lines[1].startswith("::warning ")
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_warning_severity(self) -> None:
-        v = _make_violation(severity=Severity.LOW)
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_annotations(result)
-        assert output.startswith("::warning ")
-
-
-class TestFormatResult:
-    """Test full format_result output (annotations + JSON)."""
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_json_line_is_last(self) -> None:
-        v = _make_violation()
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_result(result)
-        last_line = output.strip().split("\n")[-1]
-        data = json.loads(last_line)
-        assert "score" in data
-        assert "level" in data
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_json_line_contains_score_and_level(self) -> None:
-        result = _make_result(score=8.5, level=Level.L4)
-        output = github_formatter.format_result(result)
-        last_line = output.strip().split("\n")[-1]
-        data = json.loads(last_line)
-        assert data["score"] == 8.5
-        assert data["level"] == "L4"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_empty_violations_only_json(self) -> None:
-        result = _make_result(violations=())
-        output = github_formatter.format_result(result)
-        lines = output.strip().split("\n")
-        assert len(lines) == 1
-        data = json.loads(lines[0])
-        assert data["violations"] == []
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_delta_included_in_json(self) -> None:
-        result = _make_result(score=7.5)
-        delta = ScanDelta(
-            score_delta=0.5,
-            level_previous="L2",
-            level_improved=True,
-            violations_delta=-2,
-        )
-        output = github_formatter.format_result(result, delta)
-        last_line = output.strip().split("\n")[-1]
-        data = json.loads(last_line)
-        assert data["score_delta"] == 0.5
-        assert data["level_previous"] == "L2"
-
-    @pytest.mark.unit
-    @pytest.mark.subsys_diagnostic
-    def test_annotations_before_json(self) -> None:
-        v = _make_violation(location="CLAUDE.md:10")
-        result = _make_result(violations=(v,))
-        output = github_formatter.format_result(result)
-        lines = output.strip().split("\n")
-        assert len(lines) == 2
-        assert lines[0].startswith("::")
-        # Last line is JSON
-        json.loads(lines[1])
 
 
 def _combined_result(**overrides: object) -> CombinedResult:
@@ -305,7 +113,9 @@ class TestCombinedAnnotationsServerError:
         server_error = FunnelError(
             error="payload_too_large", tier="free", upgrade_url="https://reporails.com/account", status=413
         )
-        output = github_formatter.format_combined_annotations(_combined_result(server_error=server_error))
+        output = github_formatter.format_combined_annotations(
+            _combined_result(reply=ServerReply(server_error=server_error))
+        )
         lines = output.strip().split("\n")
         assert lines[0].startswith("::warning ")
         assert "payload_too_large" in lines[0]
@@ -317,7 +127,9 @@ class TestCombinedAnnotationsServerError:
     @pytest.mark.subsys_diagnostic
     def test_transport_failure_emits_warning(self) -> None:
         server_error = FunnelError(error="network_error", message="Could not reach the diagnostics server")
-        output = github_formatter.format_combined_annotations(_combined_result(server_error=server_error))
+        output = github_formatter.format_combined_annotations(
+            _combined_result(reply=ServerReply(server_error=server_error))
+        )
         lines = output.strip().split("\n")
         assert lines[0].startswith("::warning ")
         assert "network_error" in lines[0]
@@ -335,7 +147,9 @@ class TestCombinedAnnotationsServerError:
         server_error = FunnelError(
             error="rate_limit_exceeded", tier="free", limit=5, upgrade_url="https://reporails.com/account", status=429
         )
-        output = github_formatter.format_combined_annotations(_combined_result(server_error=server_error))
+        output = github_formatter.format_combined_annotations(
+            _combined_result(reply=ServerReply(server_error=server_error))
+        )
         annotation_line = output.strip().split("\n")[0]
         assert "[link=" not in annotation_line
         assert "[bold]" not in annotation_line
@@ -363,7 +177,7 @@ class TestCombinedAnnotationsJsonSummary:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_trailing_json_equals_json_formatter_output(self, tmp_path: Path) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
         from reporails_cli.formatters import json as json_formatter
 
         result = _combined_result(
@@ -401,7 +215,7 @@ class TestInfoSeverityAnnotation:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_info_renders_as_notice(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         result = _combined_result(
             findings=(
@@ -429,7 +243,7 @@ class TestFileLevelAnnotationLine:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_line_zero_finding_omits_the_line_property(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         result = _combined_result(
             findings=(FindingItem(file="CLAUDE.md", line=0, severity="error", rule="CORE:S:0024", message="m"),),
@@ -445,7 +259,7 @@ class TestFileLevelAnnotationLine:
     @pytest.mark.unit
     @pytest.mark.subsys_diagnostic
     def test_normal_line_finding_still_carries_its_line(self) -> None:
-        from reporails_cli.core.platform.runtime.merger import FindingItem
+        from reporails_cli.core.platform.dto.diagnostics import FindingItem
 
         result = _combined_result(
             findings=(FindingItem(file="CLAUDE.md", line=45, severity="warning", rule="CORE:S:0001", message="m"),),
@@ -487,7 +301,7 @@ class TestCombinedAnnotationsNotices:
             Notice("pay", "warn", "Payment failed\nfix it 100%", "https://example.test/pay"),
             Notice("pro", "info", "Pro ends soon", ""),
         )
-        output = github_formatter.format_combined_annotations(_combined_result(notices=notices))
+        output = github_formatter.format_combined_annotations(_combined_result(reply=ServerReply(notices=notices)))
         lines = output.split("\n")
         assert lines[0] == "::warning title=reporails::Payment failed%0Afix it 100%25 https://example.test/pay"
         assert lines[1] == "::notice title=reporails::Pro ends soon"
@@ -502,7 +316,7 @@ class TestCombinedAnnotationsNotices:
             Notice("ad2", "warn", "Loud", kind="promo"),
             Notice("pro", "info", "Pro ends soon", ""),
         )
-        output = github_formatter.format_combined_annotations(_combined_result(notices=notices))
+        output = github_formatter.format_combined_annotations(_combined_result(reply=ServerReply(notices=notices)))
         lines = output.split("\n")
         assert lines[0] == "::notice title=reporails::Pro ends soon"
         assert [line for line in lines if line.startswith("::")] == [lines[0]]

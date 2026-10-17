@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from reporails_cli.core.mapper.skills import record_skills
-from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, QualityResult
+from reporails_cli.core.platform.dto.diagnostics import FileAnalysis, FindingItem, QualityResult
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, FindingItem
+from reporails_cli.core.platform.runtime.merger import CombinedResult
 from reporails_cli.formatters.text import display, file_groups, item_scorecard, scorecard, triage_view
 from reporails_cli.formatters.text.display_constants import file_type_summary, skill_lookup
 from reporails_cli.formatters.text.item_scorecard import _display_name_for_path, compute_item_scores
@@ -268,7 +268,9 @@ class TestSkillFolderCounting:
         )
         assert all(s.name != "Skills" for s in surfaces)
         with triage_view.console.capture() as cap:
-            triage_view.print_file_card(rel, [], {}, False, project_root=tmp_path, skill_of=skill_of)
+            triage_view.print_file_card(
+                rel, [], triage_view.CardContext({}, False, project_root=tmp_path, skill_of=skill_of)
+            )
         assert rel in cap.get().splitlines()[0]  # named by its project-relative path, as a skill would be by "child"
 
     @pytest.mark.unit
@@ -365,12 +367,16 @@ class TestSkillFolderCounting:
             ("plugins/reporails/skills/ails/SKILL.md", "ails"),
         ):
             with triage_view.console.capture() as cap:
-                triage_view.print_file_card(rel, [], {}, False, project_root=tmp_path, skill_of=skill_of)
+                triage_view.print_file_card(
+                    rel, [], triage_view.CardContext({}, False, project_root=tmp_path, skill_of=skill_of)
+                )
             assert expected in cap.get().splitlines()[0]
             assert "ails/ails" not in cap.get()
         with triage_view.console.capture() as cap:  # a raw, absolute finding path names the file the same way
             absolute = (tmp_path / "plugins/reporails/skills/ails/workflows/heal.md").as_posix()
-            triage_view.print_file_card(absolute, [], {}, False, project_root=tmp_path, skill_of=skill_of)
+            triage_view.print_file_card(
+                absolute, [], triage_view.CardContext({}, False, project_root=tmp_path, skill_of=skill_of)
+            )
         assert "ails/workflows/heal.md" in cap.get().splitlines()[0]
 
     @pytest.mark.unit
@@ -388,7 +394,9 @@ class TestSkillFolderCounting:
         heads = {}
         for rel in (".claude/skills/tool/SKILL.md", ".claude/skills/tool/inner/SKILL.md"):
             with triage_view.console.capture() as cap:
-                triage_view.print_file_card(rel, [], {}, False, project_root=tmp_path, skill_of=skill_of)
+                triage_view.print_file_card(
+                    rel, [], triage_view.CardContext({}, False, project_root=tmp_path, skill_of=skill_of)
+                )
             heads[rel] = cap.get().splitlines()[0]
         assert "tool/inner/SKILL.md" in heads[".claude/skills/tool/inner/SKILL.md"]
         assert "tool/" not in heads[".claude/skills/tool/SKILL.md"]
@@ -410,7 +418,13 @@ class TestSkillFolderCounting:
             result = CombinedResult(per_file_analysis=analyses, quality=QualityResult(display_score=7.0))
             with item_scorecard.console.capture() as cap:
                 display._render_findings_and_scorecard(
-                    result, rmap, True, False, scorecard.ScopeInfo(), "free", 0, tmp_path, {}
+                    result,
+                    rmap,
+                    ascii_mode=True,
+                    verbose=False,
+                    summary=display._SummaryInputs(scope=scorecard.ScopeInfo(), tier="free", elapsed_ms=0),
+                    project_root=tmp_path,
+                    file_type_by_path={},
                 )
             assert ("foo:" in cap.get()) is shown
 
@@ -453,7 +467,7 @@ class TestSkillRecordConsumers:
         rmap = _map(tmp_path, *_skill(tmp_path, ".claude/skills/foo"), _rec(tmp_path, ".claude/skills/bar/SKILL.md"))
         inp = AssembleInputs(
             m_findings=[], content_findings=[], client_findings=[], ruleset_map=rmap, scan_root=tmp_path,
-            filter_agents=None, effective_agent="claude", lint_result=None, alias_fn=lambda _r: set(),
+            filter_agents=None, effective_agent="claude", lint_result=None,
         )  # fmt: skip
         typed = _local_finding_type_resolver(inp, _load_registry())
         root = tmp_path.as_posix()

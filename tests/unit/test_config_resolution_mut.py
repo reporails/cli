@@ -15,8 +15,7 @@ import pytest
 from reporails_cli.core.platform.config.config import (
     _coerce_segmentation,
     _deep_merge_config,
-    _merge_under,
-    get_agent_config,
+    _merge_objects,
     get_project_config,
 )
 
@@ -90,28 +89,13 @@ def test_merge_under_dict_vs_scalar_keeps_project() -> None:
     Kills L310 `and->or`: with `or` it recurses into the scalar and
     dict('scalar') raises.
     """
-    result = _merge_under({"k": {"a": 1}}, {"k": "scalar"})
+    result = _merge_objects({"k": {"a": 1}}, {"k": "scalar"})
     assert result["k"] == {"a": 1}
 
 
 # ---------------------------------------------------------------------------
 # YAML default literals (L48, L131)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.subsys_cli_ux
-def test_agent_config_core_defaults_false(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`core` defaults to False when the agent config omits it (L48)."""
-    cfg_file = tmp_path / "agent.yml"
-    cfg_file.write_text("agent: claude\nname: Claude\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_agent_config_path",
-        lambda _agent: cfg_file,
-    )
-
-    cfg = get_agent_config("claude")
-    assert cfg.core is False
 
 
 # ---------------------------------------------------------------------------

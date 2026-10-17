@@ -7,37 +7,27 @@ Resolves bundled rules from two locations:
 
 from __future__ import annotations
 
+import functools
 import importlib.resources
 from pathlib import Path
 
-# Cache to avoid repeated filesystem probes
-_cached_rules: Path | None = None
-_cache_checked = False
 
-
+@functools.cache  # avoids repeated filesystem probes
 def _resolve_bundled_rules() -> Path | None:
     """Locate bundled rules/ directory."""
-    global _cached_rules, _cache_checked
-    if _cache_checked:
-        return _cached_rules
-
-    _cache_checked = True
-
     try:
         pkg = importlib.resources.files("reporails_cli")
         with importlib.resources.as_file(pkg) as pkg_path:
             # Installed wheel: rules/ lives inside the package
             candidate = pkg_path / "rules"
             if candidate.is_dir() and (candidate / "core").is_dir():
-                _cached_rules = candidate
-                return _cached_rules
+                return candidate
 
             # Development mode: src/reporails_cli/ → repo root is ../../
             repo_root = pkg_path.parent.parent
             candidate = repo_root / "framework" / "rules"
             if candidate.is_dir() and (candidate / "core").is_dir():
-                _cached_rules = candidate
-                return _cached_rules
+                return candidate
     except (TypeError, FileNotFoundError, OSError):
         pass
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from reporails_cli.core.mapper.parse import _scan_neutral_for_embedded_markers
+from reporails_cli.core.mapper.embedded_markers import _scan_neutral_for_embedded_markers
 from reporails_cli.core.platform.dto.ruleset import Atom
 
 

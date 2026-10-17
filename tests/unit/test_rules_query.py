@@ -6,12 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.adapters import rules_query
 from reporails_cli.core.platform.adapters.rules_query import (
     filter_rules_by_capability,
     filter_rules_by_severity,
     find_rule_by_id,
     list_known_agents,
     load_all_rules,
+    rule_severity,
     rules_for_capability,
     sort_rules_for_authoring,
 )
@@ -54,8 +56,9 @@ def test_list_known_agents_includes_claude_excludes_core() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_lint
-def test_list_known_agents_empty_when_dir_missing(tmp_path: Path) -> None:
-    assert list_known_agents(tmp_path / "missing") == []
+def test_list_known_agents_empty_when_dir_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rules_query, "get_rules_dir", lambda: tmp_path / "missing")
+    assert list_known_agents() == []
 
 
 @pytest.mark.unit
@@ -168,3 +171,11 @@ def test_rules_for_capability_composite() -> None:
 def test_find_rule_by_id() -> None:
     assert find_rule_by_id("CORE:S:0024") is not None
     assert find_rule_by_id("CORE:S:9999") is None
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_diagnostic
+def test_rule_severity_is_a_bundled_rules_severity_and_empty_when_unknown() -> None:
+    bundled = load_all_rules()[0]
+    assert rule_severity(bundled.id) == bundled.severity.value
+    assert rule_severity("CORE:Z:9999") == ""

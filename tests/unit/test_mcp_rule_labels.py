@@ -93,10 +93,9 @@ def test_rules_block_omits_an_unresolvable_rule_id() -> None:
 
 @pytest.mark.unit
 @pytest.mark.subsys_server
-def test_rules_block_maps_raw_client_check_tokens_to_the_canonical_id() -> None:
-    """A raw client-check token (`format`) keys the map under its canonical id (`CORE:E:0003`)
-    — the same id the rest of the reply shows via `display_rule_id`."""
-    payload = {"files": {"a.md": {"findings": [{"line": 1, "rule": "format", "message": "m"}], "count": 1}}}
+def test_rules_block_keys_a_client_check_finding_under_its_rule_id() -> None:
+    """A client check reports under its rule id (`CORE:E:0003`), which keys the map."""
+    payload = {"files": {"a.md": {"findings": [{"line": 1, "rule": "CORE:E:0003", "message": "m"}], "count": 1}}}
 
     rules = rules_block(payload)
 

@@ -1,16 +1,12 @@
 """Output formatters for reporails.
 
-Each formatter implements the same interface:
-- format_result(result: ValidationResult) -> T
-- format_score(result: ValidationResult) -> T
-- format_rule(rule_id: str, rule_data: dict) -> T
+Each formatter is a submodule (``github``, ``json``, ``mcp``, ``text``) imported by name where used;
+this package imports none of them.
 
-Where T is dict for json/mcp, str for text.
+The ``text`` and ``mcp`` formatters each expose ``format_rule(rule_id, rule_data) -> str``.
 """
 
 from __future__ import annotations
-
-from reporails_cli.formatters import github, json, mcp, text
 
 __all__ = [
     "github",

@@ -8,15 +8,17 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
 
 from reporails_cli.core.heal.conformance import check_plan
 from reporails_cli.core.heal.file_io import split_lines
 from reporails_cli.core.heal.preservation import Snapshot, take_snapshot
 from reporails_cli.core.heal.preservation import check_rewrite as judge_rewrite
 from reporails_cli.core.lint.content_queries import atoms_for_file
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_list, as_object
 from reporails_cli.core.platform.dto.heal_plan import Plan
+from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.core.platform.runtime.merger import normalize_finding_path
 
 logger = logging.getLogger(__name__)
@@ -30,29 +32,21 @@ _plans: dict[str, Plan] = {}
 _released: set[str] = set()
 
 
-def clear_snapshots() -> None:
-    """Drop every stored snapshot."""
-    _snapshots.clear()
-    _rule_counts.clear()
-    _plans.clear()
-    _released.clear()
-
-
 def _key(file_path: Path | str) -> str:
     return os.path.normcase(os.path.normpath(str(file_path)))
 
 
-def file_rule_counts(payload: dict[str, Any]) -> dict[str, int]:
+def file_rule_counts(payload: JsonObject) -> dict[str, int]:
     """How many findings each rule has in a single-file run's `payload` (its per-file findings)."""
     counts: dict[str, int] = {}
-    for entry in (payload.get("files") or {}).values():
-        for finding in entry.get("findings") or ():
-            rule = str(finding.get("rule") or "")
+    for entry in as_object(payload.get("files")).values():
+        for finding in as_list(as_object(entry).get("findings")):
+            rule = str(as_object(finding).get("rule") or "")
             counts[rule] = counts.get(rule, 0) + 1
     return counts
 
 
-def introduced_count(file_path: Path, payload: dict[str, Any]) -> int:
+def introduced_count(file_path: Path, payload: JsonObject) -> int:
     """The findings `payload` (a single-file run of `file_path`) has beyond the ones the file had
     when its brief was served: for each rule, the growth in its count, a rule that fell adding
     nothing. 0 for a file with no recorded counts."""
@@ -62,9 +56,10 @@ def introduced_count(file_path: Path, payload: dict[str, Any]) -> int:
 
 def snapshot_file(
     file_path: Path,
-    ruleset_map: Any,
+    ruleset_map: RulesetMap | None,
     score: float | None,
-    relation_lines: Any = (),
+    relation_lines: Iterable[int] = (),
+    *,
     rule_counts: dict[str, int] | None = None,
     plan: Plan | None = None,
 ) -> None:
@@ -106,15 +101,8 @@ def get_snapshot(file_path: Path) -> Snapshot | None:
 
 
 def has_snapshot(file_path: Path) -> bool:
+    """Whether `file_path` has a stored snapshot."""
     return _key(file_path) in _snapshots
-
-
-def forget_snapshot(file_path: Path) -> None:
-    """Drop the snapshot of `file_path`, if any."""
-    _snapshots.pop(_key(file_path), None)
-    _rule_counts.pop(_key(file_path), None)
-    _plans.pop(_key(file_path), None)
-    _released.discard(_key(file_path))
 
 
 def sibling_texts(snapshot: Snapshot, scan_root: Path | None) -> tuple[str, ...]:
@@ -129,12 +117,24 @@ def sibling_texts(snapshot: Snapshot, scan_root: Path | None) -> tuple[str, ...]
 
 
 def check_rewrite(
-    snapshot: Snapshot, file_path: Path, ruleset_map: Any, new_text: str, score: float | None, scan_root: Path | None
-) -> dict[str, Any]:
+    snapshot: Snapshot,
+    file_path: Path,
+    ruleset_map: RulesetMap | None,
+    new_text: str,
+    *,
+    score: float | None,
+    scan_root: Path | None,
+) -> JsonObject:
     """The `preservation` block for `file_path`: its rewritten `new_text` and `ruleset_map` judged
     against `snapshot`, with the project on disk answering which names and paths exist."""
     return judge_rewrite(
-        snapshot, file_path, ruleset_map, new_text, score, scan_root, sibling_texts(snapshot, scan_root)
+        snapshot,
+        file_path,
+        ruleset_map,
+        new_text,
+        score=score,
+        scan_root=scan_root,
+        siblings=sibling_texts(snapshot, scan_root),
     )
 
 
@@ -144,8 +144,8 @@ def get_plan(file_path: Path) -> Plan | None:
 
 
 def check_conformance(
-    file_path: Path, ruleset_map: Any, new_text: str, scan_root: Path | None
-) -> dict[str, Any] | None:
+    file_path: Path, ruleset_map: RulesetMap | None, new_text: str, scan_root: Path | None
+) -> JsonObject | None:
     """The `conformance` block for `file_path`: its current `new_text` and `ruleset_map` judged
     against the plan its brief listed, `{ok, deviations}`. `None` when the file was never briefed."""
     snap = get_snapshot(file_path)
@@ -155,7 +155,7 @@ def check_conformance(
     key = snap.file_path
     atoms = atoms_for_file(ruleset_map, key) if ruleset_map is not None else []
     found = check_plan(plan, {key: split_lines(snap.text)[0]}, {key: split_lines(new_text)[0]}, {key: atoms})
-    deviations = [
+    deviations: list[JsonValue] = [
         {
             "file": normalize_finding_path(d.file, scan_root) if scan_root is not None else d.file,
             "line": d.line,

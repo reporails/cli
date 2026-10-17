@@ -9,11 +9,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reporails_cli.core.classify.capability_paths import (
-    list_capability_targets,
-    resolve_capability_spec,
-)
-from reporails_cli.core.classify.focus_expansion import expand_focus
+from reporails_cli.core.classify.capability_paths import list_capability_targets
+from reporails_cli.core.classify.focus_expansion import expand_focus, resolve_capability_spec
 from reporails_cli.core.discovery.exclusions import load_run_exclusions
 from reporails_cli.interfaces.cli import check_flow
 from reporails_cli.interfaces.cli.check_flow import CheckInputs, CheckState
@@ -223,7 +220,7 @@ def test_mcp_validate_targets_follow_the_same_rules(project: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
 def test_auto_detect_gives_a_named_config_excluded_skill_to_its_native_owner(project: Path) -> None:
-    from reporails_cli.core.discovery.agent_discovery import partition_by_native_owner
+    from reporails_cli.core.discovery.agents import partition_by_native_owner
 
     _config(project, "exclude_dirs:\n  - backlog\n")
     state = CheckState(
@@ -299,6 +296,7 @@ def test_referenced_listing_honors_a_flag_folder(project: Path) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.subsys_classify
 def test_a_referenced_target_checks_the_file_no_agent_lists(project: Path) -> None:
     (project / "ext").mkdir()
     (project / "ext" / "x.md").write_text("# X\n", "utf-8")

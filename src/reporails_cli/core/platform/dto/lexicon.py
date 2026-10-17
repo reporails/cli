@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from reporails_cli.core.platform.dto.ruleset import InlineFormat
 
-class CapabilityVocabulary(BaseModel):
+
+class CapabilityVocabulary(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """Shape of ``bundled/lexicon/capabilities.yml`` — capability keyword vocabulary.
 
     ``input_forms`` maps a word a user may type for a kind of file to the agent
@@ -28,7 +30,7 @@ class CapabilityVocabulary(BaseModel):
     virtual: list[str] = Field(default_factory=list)
 
 
-class DottedExclusions(BaseModel):
+class DottedExclusions(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """Shape of ``bundled/lexicon/dotted_exclusions.yml``.
 
     ``exclusions`` are English abbreviations that look like dotted code tokens
@@ -41,7 +43,7 @@ class DottedExclusions(BaseModel):
     exclusions: list[str] = Field(default_factory=list)
 
 
-class MarkdownTokens(BaseModel):
+class MarkdownTokens(BaseModel):  # type: ignore[explicit-any]  # pydantic: BaseModel.__init__ takes **data: Any
     """Shape of ``bundled/lexicon/markdown_tokens.yml`` — parse-stage token maps.
 
     Maps markdown-it token-type names to the mapper's block/format vocabulary:
@@ -53,5 +55,5 @@ class MarkdownTokens(BaseModel):
 
     block_types: dict[str, str] = Field(default_factory=dict)
     block_close: list[str] = Field(default_factory=list)
-    format_open: dict[str, list[str]] = Field(default_factory=dict)
+    format_open: dict[str, tuple[str, InlineFormat]] = Field(default_factory=dict)
     format_close: dict[str, str] = Field(default_factory=dict)

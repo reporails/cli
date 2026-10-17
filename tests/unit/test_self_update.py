@@ -71,9 +71,7 @@ class TestDetectInstallMethod:
         mock_file = MagicMock()
         mock_file.__str__ = lambda self: "reporails_cli/__init__.py"
         mock_dist.files = [mock_file]
-        mock_dist._path = (
-            "/home/user/.local/pipx/venvs/reporails-cli/lib/python3.12/site-packages/reporails_cli-0.1.3.dist-info"
-        )
+        mock_dist.locate_file.return_value = "/home/user/.local/pipx/venvs/reporails-cli/lib/python3.12/site-packages"
         with patch("reporails_cli.core.install.self_update.distribution", return_value=mock_dist):
             assert detect_install_method() == InstallMethod.PIPX
 

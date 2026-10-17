@@ -10,13 +10,13 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from reporails_cli.core.platform.adapters.api_client import AilsClient
 from reporails_cli.core.platform.dto.diagnostics import FunnelError
 from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap, RulesetSummary
 from reporails_cli.core.platform.policy.preflight import parse_error_body
 from reporails_cli.formatters.json import format_server_error
 from reporails_cli.formatters.text import display
 from reporails_cli.interfaces.mcp.tools import _attach_funnel
+from tests.conftest import ails_client
 
 _ROOT = Path("/tmp/reporails-test-scan-root")
 
@@ -58,10 +58,10 @@ class _Reply:
 
 def _lint(post: Any) -> FunnelError:
     with (
-        patch("reporails_cli.core.platform.adapters.payload.project_payload", return_value=_payload()),
+        patch("reporails_cli.core.platform.adapters.api_client.project_payload", return_value=_payload()),
         patch("httpx.post", side_effect=post),
     ):
-        response = AilsClient(base_url="https://example.test", tier="pro").lint(_map(), root=_ROOT)
+        response = ails_client("https://example.test", tier="pro").lint(_map(), root=_ROOT)
     assert response.funnel_error is not None
     return response.funnel_error
 

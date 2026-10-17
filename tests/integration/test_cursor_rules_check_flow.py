@@ -72,7 +72,7 @@ def test_unpinned_check_of_an_empty_folder_keeps_the_usual_message(
     (project / "docs").mkdir()
     (project / "docs" / "readme.txt").write_text("hello\n", encoding="utf-8")
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        "reporails_cli.core.platform.config.config.get_global_config_path",
         lambda: tmp_path / "home" / "config.yml",
     )
     monkeypatch.chdir(project)
@@ -92,7 +92,7 @@ def test_pinned_check_of_an_empty_folder_keeps_the_usual_message(
     (project / "docs").mkdir()
     (project / "docs" / "readme.txt").write_text("hello\n", encoding="utf-8")
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        "reporails_cli.core.platform.config.config.get_global_config_path",
         lambda: tmp_path / "home" / "config.yml",
     )
     monkeypatch.chdir(project)
@@ -110,7 +110,7 @@ def test_agent_set_in_config_with_no_files_points_at_the_agent_the_project_has(
     (home / ".reporails").mkdir(parents=True)
     (home / ".reporails" / "config.yml").write_text("default_agent: claude\n", encoding="utf-8")
     monkeypatch.setattr(
-        "reporails_cli.core.platform.config.bootstrap.get_global_config_path",
+        "reporails_cli.core.platform.config.config.get_global_config_path",
         lambda: home / ".reporails" / "config.yml",
     )
     project = _cursor_project(tmp_path)

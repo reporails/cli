@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,6 +20,16 @@ _SUITE_ENV = suite_env(os.environ, drop_ci=False)
 for _name in set(os.environ) - set(_SUITE_ENV):
     del os.environ[_name]
 os.environ.update(_SUITE_ENV)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_mcp_snapshots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test starts with no briefed-file baselines held by the MCP server."""
+    from reporails_cli.interfaces.mcp import snapshots
+
+    for name in ("_snapshots", "_rule_counts", "_plans"):
+        monkeypatch.setattr(snapshots, name, {})
+    monkeypatch.setattr(snapshots, "_released", set())
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +88,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     exactly the tests that need the mapper model, as `ails check` runs without it.
     """
     from reporails_cli.bundled import get_bundled_path
-    from reporails_cli.core.mapper.model_fetch import models_present
+    from reporails_cli.core.mapper.model_manifest import models_present
 
     if models_present(get_bundled_path() / "models"):
         return
@@ -315,7 +326,6 @@ checks:
   - id: test-valid-rule
     message: "Found a TODO comment"
     severity: WARNING
-    languages: [generic]
     pattern-regex: "TODO"
     paths:
       include:
@@ -331,7 +341,6 @@ checks:
   - id: test-patterns-rule
     message: "File missing required section"
     severity: WARNING
-    languages: [generic]
     patterns:
       - pattern-regex: "."
       - pattern-not-regex: "## Commands"
@@ -352,7 +361,6 @@ checks:
   - id: test-invalid-toplevel
     message: "Invalid schema"
     severity: WARNING
-    languages: [generic]
     pattern-not-regex: "something"
     paths:
       include:
@@ -368,3 +376,22 @@ def create_temp_rule_file(tmp_path: Path, content: str, name: str = "test-rule.y
     rule_path = tmp_path / name
     rule_path.write_text(content)
     return rule_path
+
+
+def ails_client(base_url: str, *, tier: str | None = None, api_key: str | None = None) -> Any:
+    """An `AilsClient` built with the server URL (and tier) set in the environment, as a user sets them."""
+    from reporails_cli.core.platform.adapters.api_client import AilsClient
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("AILS_SERVER_URL", base_url)
+        if tier is not None:
+            mp.setenv("AILS_TIER", tier)
+        return AilsClient(api_key=api_key)
+
+
+def run_rule_files(yml_paths: list[Path], target: Path, instruction_files: list[Path] | None = None) -> dict[str, Any]:
+    """Compile rule files and scan `target` with them, returning the SARIF-shaped result."""
+    from reporails_cli.core.lint.regex import scan_ruleset
+    from reporails_cli.core.lint.regex.compiler import compile_rules
+
+    return scan_ruleset(compile_rules(yml_paths), target, instruction_files)

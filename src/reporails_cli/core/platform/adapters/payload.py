@@ -10,19 +10,24 @@ import logging
 import os
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgpack
 
-from reporails_cli.core.platform.adapters.api_client import (
-    _CHARGE_ENC,
-    _FORMAT_ENC,
-    _KIND_ENC,
-    _MODALITY_ENC,
-    _SPECIFICITY_ENC,
+from reporails_cli.core.platform.contract.json_value import WireObject, WireValue
+from reporails_cli.core.platform.dto.diagnostics import CLIENT_CHECK_KINDS, FindingItem
+from reporails_cli.core.platform.dto.models import LocalEntry, LocalFinding
+from reporails_cli.core.platform.dto.ruleset import (
+    LIST_OBJECT_ROLE,
+    Atom,
+    AtomFormat,
+    AtomSlots,
+    Charge,
+    Modality,
+    Specificity,
+    file_record_scalars,
+    int8_bytes,
 )
-from reporails_cli.core.platform.dto.models import LocalEntry
-from reporails_cli.core.platform.dto.ruleset import LIST_OBJECT_ROLE
 from reporails_cli.core.platform.policy.negative_headings import in_negative_section, is_negative_heading
 
 if TYPE_CHECKING:
@@ -32,11 +37,27 @@ logger = logging.getLogger(__name__)
 
 WIRE_SCHEMA_VERSION = 5
 
+# Encoding tables — map semantic names to wire-format short codes.
+_CHARGE_ENC: dict[Charge, int] = {"CONSTRAINT": 0, "DIRECTIVE": 1, "IMPERATIVE": 2, "NEUTRAL": 3, "AMBIGUOUS": 4}
+_MODALITY_ENC: dict[Modality, int] = {"imperative": 0, "direct": 1, "absolute": 2, "hedged": 3, "none": 4}
+_SPECIFICITY_ENC: dict[Specificity, int] = {"named": 0, "abstract": 1}
+_FORMAT_ENC: dict[AtomFormat, int] = {
+    "prose": 0,
+    "heading": 1,
+    "list": 2,
+    "numbered": 3,
+    "table": 4,
+    "blockquote": 5,
+    "code_block": 6,
+    "data_block": 7,
+}
+_KIND_ENC = {"heading": 0, "excitation": 1}
+
 # A file record carries at most this many activation patterns; the rest are dropped.
 MAX_FILE_GLOBS = 50
 
 
-def _project_soas_span(slots: Any) -> dict[str, Any] | None:
+def _project_soas_span(slots: AtomSlots) -> WireObject | None:
     """Project ``AtomSlots``' coordinate half to the frozen ``so`` wire block.
 
     Coordinates + per-span confidences only — never slot text.
@@ -47,10 +68,10 @@ def _project_soas_span(slots: Any) -> dict[str, Any] | None:
     if all(s is None for s in spans):
         return None
     return {
-        "su": list(slots.subject_span) if slots.subject_span is not None else None,
-        "pr": list(slots.predicate_span) if slots.predicate_span is not None else None,
-        "ob": list(slots.object_span) if slots.object_span is not None else None,
-        "scp": list(slots.scope_span) if slots.scope_span is not None else None,
+        "su": [*slots.subject_span] if slots.subject_span is not None else None,
+        "pr": [*slots.predicate_span] if slots.predicate_span is not None else None,
+        "ob": [*slots.object_span] if slots.object_span is not None else None,
+        "scp": [*slots.scope_span] if slots.scope_span is not None else None,
         "sconf": slots.subject_conf,
         "pconf": slots.predicate_conf,
         "oconf": slots.object_conf,
@@ -58,9 +79,9 @@ def _project_soas_span(slots: Any) -> dict[str, Any] | None:
     }
 
 
-def _project_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
+def _project_atom(a: Atom, file_idx: dict[str, int]) -> WireObject:
     """Project a single Atom to its wire shape."""
-    d: dict[str, Any] = {
+    d: WireObject = {
         "line": a.line,
         "t": _KIND_ENC.get(a.kind, 1),
         "c": _CHARGE_ENC.get(a.charge, 3),
@@ -78,7 +99,7 @@ def _project_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
         "ub": len(a.unformatted_code) if a.unformatted_code else 0,
     }
     if a.embedding_int8:
-        d["e"] = bytes(v & 0xFF for v in a.embedding_int8)
+        d["e"] = int8_bytes(a.embedding_int8)
     if a.depth is not None:
         d["d"] = a.depth
     if a.ambiguous:
@@ -90,7 +111,7 @@ def _project_atom(a: Any, file_idx: dict[str, int]) -> dict[str, Any]:
     if a.lead_in:
         d["li"] = True  # a line ending with a colon that introduces the list, code block or table after it
     if a.embedded_charge_markers:
-        d["ecm"] = list(a.embedded_charge_markers)
+        d["ecm"] = [*a.embedded_charge_markers]
     if a.slots is not None:
         so = _project_soas_span(a.slots)
         if so is not None:
@@ -124,18 +145,14 @@ def _relativize(path: str, root: Path) -> str:
     return path
 
 
-def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
+def _project_files(ruleset_map: RulesetMap, root: Path) -> list[WireObject]:
     """Project file records to the wire shape — path relative to the scan root, never the frontmatter
     `description` prose (only its embedding, `de`, is projected)."""
-    out: list[dict[str, Any]] = []
+    out: list[WireObject] = []
     for f in ruleset_map.files:
-        fd: dict[str, Any] = {
+        fd: WireObject = {
             "path": _relativize(f.path, root),
-            "content_hash": f.content_hash,
-            "loading": f.loading,
-            "scope": f.scope,
-            "agent": f.agent,
-            "type": f.type,
+            **file_record_scalars(f),
         }
         if f.skill:
             fd["skill"] = _relativize(f.skill, root)
@@ -144,14 +161,14 @@ def _project_files(ruleset_map: RulesetMap, root: Path) -> list[dict[str, Any]]:
         if f.reach:
             fd["reach"] = [_relativize(r, root) for r in f.reach]
         if f.globs:
-            fd["globs"] = list(f.globs[:MAX_FILE_GLOBS])
+            fd["globs"] = [*f.globs[:MAX_FILE_GLOBS]]
         if f.description_embedding:
-            fd["de"] = bytes(v & 0xFF for v in f.description_embedding)
+            fd["de"] = int8_bytes(f.description_embedding)
         out.append(fd)
     return out
 
 
-def project_payload(ruleset_map: RulesetMap, root: Path) -> dict[str, Any]:
+def project_payload(ruleset_map: RulesetMap, root: Path) -> WireObject:
     """Build the payload dict (pre-encoding). `root` is the scan root every wire path
     rides relative to — the same root the rest of the run resolves local paths against.
     Required: there is no current-directory fallback, so a payload can never silently
@@ -161,10 +178,17 @@ def project_payload(ruleset_map: RulesetMap, root: Path) -> dict[str, Any]:
         "schema_version": str(WIRE_SCHEMA_VERSION),
         "embedding_model": ruleset_map.embedding_model,
         "generated_at": ruleset_map.generated_at,
-        "files": _project_files(ruleset_map, root),
+        "files": [*_project_files(ruleset_map, root)],
         # A list item read as its instruction's object is part of that instruction, not an atom of its own.
         "atoms": [_project_atom(a, file_idx) for a in ruleset_map.atoms if a.role != LIST_OBJECT_ROLE],
     }
+
+
+def mapped_paths(payload: WireObject) -> list[str]:
+    """The wire paths of the payload's file records, in order."""
+    files = payload.get("files")
+    paths = [f.get("path") for f in files if isinstance(f, dict)] if isinstance(files, list) else []
+    return [p for p in paths if isinstance(p, str)]
 
 
 def _path_key(path: str) -> str:
@@ -176,7 +200,7 @@ _MAX_LOCAL_ENTRIES = 10_000
 
 
 def local_entries(
-    findings: Iterable[Any],
+    findings: Iterable[FindingItem | LocalFinding],
     file_level_checks: frozenset[str],
     registry_ids: frozenset[str],
     resolve: Callable[[str], str],
@@ -187,15 +211,16 @@ def local_entries(
     `findings` are the local findings as they will be reported (suppressions applied);
     `file_level_checks` are the check ids whose finding concerns the whole file, sent at line 0;
     `registry_ids` are the rule ids the registry defines: a finding under any other label stays
-    in the user's output but is not sent;
+    in the user's output but is not sent, and so does a finding from a client check
+    (`CLIENT_CHECK_KINDS`);
     `resolve` maps a reported path to its absolute path, and `type_of` an absolute path to its
     file type.
     """
     entries: list[LocalEntry] = []
     for f in findings:
-        if f.rule not in registry_ids:
+        check = f.check_id
+        if f.rule not in registry_ids or check in CLIENT_CHECK_KINDS:
             continue
-        check = getattr(f, "check_id", "") or ""
         line = 0 if check in file_level_checks else max(f.line, 0)
         file = resolve(f.file)
         entries.append(
@@ -215,7 +240,7 @@ def _within_bound(local: Sequence[LocalEntry]) -> list[LocalEntry]:
     return (errors + others)[:_MAX_LOCAL_ENTRIES]
 
 
-def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) -> dict[str, Any]:
+def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) -> WireObject:
     """The request's `local` entries, and the `local_files` they name beyond the mapped files with
     each one's type in `local_types`. `local_files` rides `root`-relative too, via the exact same
     `_relativize` rule `mapped` was built from — a local entry's absolute file matches a mapped
@@ -231,7 +256,7 @@ def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) ->
     resolved: dict[str, int] = {}
     extra: list[str] = []
     extra_types: list[str] = []
-    entries: list[dict[str, Any]] = []
+    entries: list[WireValue] = []
     for e in local:
         key = _path_key(e.file)
         if key not in resolved:
@@ -244,28 +269,16 @@ def project_local(local: Sequence[LocalEntry], mapped: list[str], root: Path) ->
                 extra.append(wire)
                 extra_types.append(e.type)
         entries.append({"r": e.rule, "f": resolved[key], "l": e.line, "s": e.severity, "k": e.check})
-    fields: dict[str, Any] = {"local": entries}
+    fields: WireObject = {"local": entries}
     if extra:
-        fields["local_files"] = extra
-        fields["local_types"] = extra_types
+        fields["local_files"] = [*extra]
+        fields["local_types"] = [*extra_types]
     return fields
 
 
-def encode_msgpack(payload: dict[str, Any]) -> bytes:
+def encode_msgpack(payload: WireObject) -> bytes:
     """Encode the payload as msgpack with a leading version byte."""
     encoded = msgpack.packb(payload, use_bin_type=True)
     if not isinstance(encoded, bytes):
         raise RuntimeError(f"msgpack.packb returned {type(encoded).__name__}, expected bytes")
     return bytes([WIRE_SCHEMA_VERSION]) + encoded
-
-
-def estimated_byte_size(ruleset_map: RulesetMap) -> int:
-    """Cheap upper-bound estimate of the encoded body size."""
-    n_atoms = len(ruleset_map.atoms) if ruleset_map.atoms else 0
-    n_files = len(ruleset_map.files) if ruleset_map.files else 0
-    # Per-atom metadata plus the embedding when the atom carries one.
-    has_emb_atoms = sum(1 for a in ruleset_map.atoms if a.embedding_int8)
-    atom_bytes = n_atoms * 120 + has_emb_atoms * 384
-    has_emb_files = sum(1 for f in ruleset_map.files if f.description_embedding)
-    file_bytes = n_files * 80 + has_emb_files * 386
-    return atom_bytes + file_bytes + 1024

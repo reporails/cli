@@ -10,8 +10,16 @@ folder is one of that skill's files. Decided once per run and recorded on each `
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+
+from reporails_cli.core.discovery.agent_config import extract_patterns
+from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
+from reporails_cli.core.discovery.walk import list_dir, safe_resolve
+from reporails_cli.core.mapper.inspect import _load_registry
+from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
+from reporails_cli.core.platform.dto.models import ClassifiedFile
+from reporails_cli.core.platform.dto.ruleset import FileRecord, RulesetMap
 
 
 def outermost_folder(path: str | Path, folders: Iterable[Path]) -> Path | None:
@@ -32,23 +40,19 @@ def outermost_folder(path: str | Path, folders: Iterable[Path]) -> Path | None:
     return hit
 
 
-def _entry_patterns(registry: dict[str, dict[str, Any]], agent: str) -> list[str]:
+def _entry_patterns(registry: dict[str, JsonObject], agent: str) -> list[str]:
     """The `entry_patterns` globs of `agent`'s `skills` file type: where a skill's `SKILL.md` may sit."""
-    from reporails_cli.core.discovery.agents import _extract_patterns
-
-    ft = ((registry.get(agent) or {}).get("file_types") or {}).get("skills")
-    return _extract_patterns(ft, "entry_patterns") if isinstance(ft, dict) else []
+    ft = as_object(as_object(registry.get(agent)).get("file_types")).get("skills")
+    return extract_patterns(ft, "entry_patterns") if isinstance(ft, dict) else []
 
 
 def entry_pattern(path: Path, root: Path, patterns: list[str]) -> str | None:
     """The first of `patterns` that `path` matches, anchored the way file-type `patterns` are; None when none does."""
-    from reporails_cli.core.discovery.plugin_roots import config_pattern_hits
-
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
     return next((p for p in patterns if config_pattern_hits(path, rel, p, root)), None)
 
 
-def skill_entry_folder(cf: Any) -> Path | None:
+def skill_entry_folder(cf: ClassifiedFile) -> Path | None:
     """The skill folder a classified file is the entry file of: it is a `SKILL.md` sitting directly in
     the folder its `skill` property records. None for any other file."""
     folder = cf.properties.get("skill")
@@ -57,7 +61,7 @@ def skill_entry_folder(cf: Any) -> Path | None:
     return None
 
 
-def skill_type(base: str, path: str | Path, folders: Iterable[Path] | dict[Path, Any]) -> str:
+def skill_type(base: str, path: str | Path, folders: Iterable[Path]) -> str:
     """The type a file of type `base` takes given the recorded skill `folders`: a `skills` or
     `generic` file at or below one is `skills`, a `skills` file in none is `generic`, any other
     type is unchanged. Folder membership is lexical."""
@@ -69,10 +73,9 @@ def skill_type(base: str, path: str | Path, folders: Iterable[Path] | dict[Path,
 
 
 def record_skills(
-    ruleset_map: Any,
+    ruleset_map: RulesetMap,
     agents: Iterable[str],
     root: Path,
-    registry: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Decide each record's skill once and record it in place (`skill`, `type`, and for a file
     joining a skill the entry's `loading` / `scope` / `globs` / `agent`).
@@ -86,13 +89,10 @@ def record_skills(
     folder becomes `generic`. Records of other types keep their type and belong to no skill. Running it again gives
     the same records.
     """
-    from reporails_cli.core.mapper.inspect import _load_registry
-
-    files = getattr(ruleset_map, "files", None)
-    if not files:
+    if not ruleset_map.files:
         return
-    folders = _SkillFolders(files, agents, root, _load_registry() if registry is None else registry)
-    for rec in files:
+    folders = _SkillFolders.of(ruleset_map.files, agents, root, _load_registry())
+    for rec in ruleset_map.files:
         rec.skill = ""
         if rec.type not in ("skills", "generic"):
             continue
@@ -106,24 +106,36 @@ def record_skills(
             _join_skill(rec, folders.entries.get(folder))
 
 
+@dataclass
 class _SkillFolders:
     """Which folders are skill folders for one run, each answer computed once."""
 
-    def __init__(
-        self, files: Iterable[Any], agents: Iterable[str], root: Path, registry: dict[str, dict[str, Any]]
-    ) -> None:
-        self.root = root
-        self.registry = registry
-        self.base = {*agents, *(a for a, cfg in registry.items() if cfg.get("core"))}
-        self._patterns: dict[str, list[str]] = {}
-        self._on_disk: dict[tuple[Path, str], bool] = {}
+    root: Path
+    registry: dict[str, JsonObject]
+    base: set[str]
+    by_path: set[str]
+    entries: dict[Path, FileRecord]  # folder -> the map's own entry record
+    _patterns: dict[str, list[str]] = field(default_factory=dict)
+    _on_disk: dict[tuple[Path, str], bool] = field(default_factory=dict)
+
+    @classmethod
+    def of(
+        cls, files: Iterable[FileRecord], agents: Iterable[str], root: Path, registry: dict[str, JsonObject]
+    ) -> _SkillFolders:
+        """The skill folders of a run's records: the map's own entry records are read up front."""
         files = list(files)
-        self.by_path = {rec.path for rec in files}
-        self.entries: dict[Path, Any] = {}  # folder -> the map's own entry record
+        folders = cls(
+            root=root,
+            registry=registry,
+            base={*agents, *(a for a, cfg in registry.items() if cfg.get("core"))},
+            by_path={rec.path for rec in files},
+            entries={},
+        )
         for rec in files:
             path = Path(rec.path)
-            if rec.type == "skills" and path.name == "SKILL.md" and self._matches(path, rec.agent):
-                self.entries[path.parent] = rec
+            if rec.type == "skills" and path.name == "SKILL.md" and folders._matches(path, rec.agent):
+                folders.entries[path.parent] = rec
+        return folders
 
     def _matches(self, path: Path, agent: str) -> bool:
         for a in (*self.base, agent):
@@ -143,7 +155,7 @@ class _SkillFolders:
         return self._on_disk[key]
 
 
-def _join_skill(rec: Any, owner: Any | None) -> None:
+def _join_skill(rec: FileRecord, owner: FileRecord | None) -> None:
     """A record that was not yet a skill file takes the entry record's load fields."""
     if owner is not None:
         rec.loading, rec.scope, rec.globs, rec.agent = owner.loading, owner.scope, owner.globs, owner.agent
@@ -152,41 +164,35 @@ def _join_skill(rec: Any, owner: Any | None) -> None:
 
 def _has_file(folder: Path, name: str) -> bool:
     """Whether `folder` lists a non-directory entry called `name`."""
-    from reporails_cli.core.discovery.walk import list_dir
-
     listed = list_dir(str(folder))
     return any(e.name == name and not e.is_dir for e in listed or ())
 
 
-def skill_membership(
-    ruleset_map: Any, root: Path | None = None, registry: dict[str, dict[str, Any]] | None = None
-) -> dict[str, str] | None:
+def skill_membership(ruleset_map: RulesetMap | None, root: Path | None = None) -> dict[str, str] | None:
     """`FileRecord.path` -> its recorded skill folder, for every record in a skill; None without a map.
 
     With a project `root`, each slot folder (see `skill_slot_folders`) also maps to itself."""
     if ruleset_map is None:
         return None
-    members = {rec.path: rec.skill for rec in getattr(ruleset_map, "files", ()) if rec.skill}
+    members = {rec.path: rec.skill for rec in ruleset_map.files if rec.skill}
     if root is not None:
-        members.update({slot.as_posix(): slot.as_posix() for slot in skill_slot_folders(ruleset_map, root, registry)})
+        members.update({slot.as_posix(): slot.as_posix() for slot in skill_slot_folders(ruleset_map, root)})
     return members
 
 
-def skill_slot_folders(ruleset_map: Any, root: Path, registry: dict[str, dict[str, Any]] | None = None) -> set[Path]:
+def skill_slot_folders(ruleset_map: RulesetMap, root: Path) -> set[Path]:
     """Direct subfolders of a one-level skills root that are not a recorded skill folder: the slots
     a skill should fill but does not. A root is the parent of a recorded skill folder whose entry file matches an
     entry pattern of its agent or the core agent that names no `**` below the skills folder."""
-    from reporails_cli.core.mapper.inspect import _load_registry
-
-    reg = _load_registry() if registry is None else registry
+    reg = _load_registry()
     core = [a for a, cfg in reg.items() if cfg.get("core")]
     entries = [
         (Path(rec.path), [p for a in (rec.agent, *core) for p in _entry_patterns(reg, a)])
-        for rec in getattr(ruleset_map, "files", ())
+        for rec in ruleset_map.files
         if rec.skill and Path(rec.path).name == "SKILL.md" and Path(rec.path).parent == Path(rec.skill)
     ]
     slots: set[Path] = set()
-    filled = {Path(rec.skill) for rec in getattr(ruleset_map, "files", ()) if rec.skill}
+    filled = {Path(rec.skill) for rec in ruleset_map.files if rec.skill}
     for skills_root in skills_roots(entries, root):
         slots.update(set(slot_subfolders(skills_root)) - filled)
     return slots
@@ -194,8 +200,6 @@ def skill_slot_folders(ruleset_map: Any, root: Path, registry: dict[str, dict[st
 
 def slot_subfolders(skills_root: Path) -> list[Path]:
     """The non-hidden subfolders directly in `skills_root`, sorted."""
-    from reporails_cli.core.discovery.walk import list_dir
-
     return sorted(Path(e.path) for e in list_dir(str(skills_root)) or () if e.is_dir and not e.name.startswith("."))
 
 
@@ -204,11 +208,9 @@ def _one_level(pattern: str) -> bool:
     return "**" not in pattern.removeprefix("**/")
 
 
-def skill_entry_paths(classified_files: Iterable[Any]) -> set[Path] | None:
+def skill_entry_paths(classified_files: Iterable[ClassifiedFile]) -> set[Path] | None:
     """Resolved paths of the classified files that are a skill's entry file (the file sits directly
     in the skill folder its `skill` property records); None when no classified file records a skill."""
-    from reporails_cli.core.discovery.walk import safe_resolve
-
     entries: set[Path] = set()
     recorded = False
     for cf in classified_files:
@@ -232,13 +234,11 @@ def skills_roots(entries: Iterable[tuple[Path, list[str]]], root: Path) -> set[P
     return roots
 
 
-def one_level_skills_roots(classified_files: Iterable[Any], root: Path) -> set[Path]:
+def one_level_skills_roots(classified_files: Iterable[ClassifiedFile], root: Path) -> set[Path]:
     """`skills_roots` of the classified skill entry files and their `skill_entry_patterns`."""
-    return skills_roots(
-        (
-            (Path(cf.path), cf.properties["skill_entry_patterns"])
-            for cf in classified_files
-            if skill_entry_folder(cf) is not None and isinstance(cf.properties.get("skill_entry_patterns"), list)
-        ),
-        root,
-    )
+    entries: list[tuple[Path, list[str]]] = []
+    for cf in classified_files:
+        patterns = cf.properties.get("skill_entry_patterns")
+        if skill_entry_folder(cf) is not None and isinstance(patterns, list):
+            entries.append((Path(cf.path), patterns))
+    return skills_roots(entries, root)

@@ -5,14 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 
 from reporails_cli.interfaces.cli.helpers import console
+from reporails_cli.interfaces.cli.typer_app import HELP_CONTEXT_SETTINGS
 
 stopwords_app = typer.Typer(
     name="stopwords",
     help="Manage term-based regex patterns via vocab.yml.",
     no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 
 
@@ -25,7 +27,10 @@ def stopwords_extract(
     ),
 ) -> None:
     """Extract alternation terms from checks.yml into vocab.yml files."""
-    from reporails_cli.core.classify.stopwords import extract_all, write_vocab
+    from reporails_cli.core.classify.stopwords import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        extract_all,
+        write_vocab,
+    )
 
     root = Path(rules_root).resolve()
     if not root.exists():
@@ -44,6 +49,10 @@ def stopwords_extract(
             written += 1
         else:
             skipped += 1
+            if er.problem:
+                console.print(
+                    f"  [yellow]![/yellow] {escape(str(er.rule_dir / 'checks.yml'))}: skipped, {escape(er.problem)}"
+                )
 
     console.print()
     console.print(f"Extracted: {written} vocab.yml files written, {skipped} skipped")
@@ -63,7 +72,9 @@ def stopwords_sync(
     ),
 ) -> None:
     """Compile vocab.yml terms into checks.yml patterns."""
-    from reporails_cli.core.classify.stopwords_sync import sync_all
+    from reporails_cli.core.classify.stopwords_sync import (  # pylint: disable=import-outside-toplevel  # startup: loads when the command runs
+        sync_all,
+    )
 
     root = Path(rules_root).resolve()
     if not root.exists():
@@ -87,8 +98,7 @@ def stopwords_sync(
         if sr.skipped:
             total_skipped += sr.skipped
         for msg in sr.messages:
-            if "no check matching" in msg or "failed" in msg:
-                console.print(f"  [yellow]![/yellow] {slug}: {msg}")
+            console.print(f"  [yellow]![/yellow] {escape(slug)}: {escape(msg)}")
 
     console.print()
     label = "Would update" if dry_run else "Updated"

@@ -20,8 +20,9 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
 
+from reporails_cli.core.platform.config.bootstrap import get_reporails_home
+from reporails_cli.core.platform.contract.json_value import JsonObject, JsonValue, as_int, as_object, as_str
 from reporails_cli.core.platform.dto.diagnostics import UNENTITLED_TIERS, FunnelError
 from reporails_cli.core.platform.utils.utils import write_json_atomic
 
@@ -38,8 +39,6 @@ def _cooldown_path() -> Path:
     # Kept outside the cache directory: that directory may be restored onto a
     # different machine (CI caches it), and a cooldown belongs to the machine
     # that received the rate-limit response.
-    from reporails_cli.core.platform.config.bootstrap import get_reporails_home
-
     return get_reporails_home() / "rate_limit.json"
 
 
@@ -48,61 +47,68 @@ def _principal_key(base_url: str, api_key: str) -> str:
     return hashlib.sha256(f"{base_url.rstrip('/')}\0{api_key}".encode()).hexdigest()[:32]
 
 
-def _load() -> dict[str, Any]:
+def _load() -> JsonObject:
     try:
-        data = json.loads(_cooldown_path().read_text(encoding="utf-8"))
+        data: JsonValue = json.loads(_cooldown_path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
     except (OSError, ValueError) as exc:
         logger.debug("Ignoring unreadable rate-limit cooldown file: %s", exc)
         return {}
-    return data if isinstance(data, dict) else {}
+    return as_object(data)
 
 
-def _save(entries: dict[str, Any]) -> None:
+def _save(entries: JsonObject) -> None:
     try:
         write_json_atomic(_cooldown_path(), entries)
     except OSError as exc:
         logger.debug("Could not persist rate-limit cooldown: %s", exc)
 
 
-def active_cooldown(base_url: str, api_key: str, now: float | None = None) -> FunnelError | None:
+def _window_open(entry: JsonValue, now: float) -> bool:
+    """True when `entry` is a stored cooldown whose window ends after `now`."""
+    if not isinstance(entry, dict):
+        return False
+    until = entry.get("until")
+    return isinstance(until, (int, float)) and until > now
+
+
+def active_cooldown(base_url: str, api_key: str) -> FunnelError | None:
     """Return the stored rate-limit error while its window is still open, else None."""
     entry = _load().get(_principal_key(base_url, api_key))
     if not isinstance(entry, dict):
         return None
-    now = time.time() if now is None else now
+    until = entry.get("until")
+    if not isinstance(until, (int, float, str)):
+        return None
     try:
-        remaining = int(float(entry["until"]) - now)
-    except (KeyError, TypeError, ValueError):
+        remaining = int(float(until) - time.time())
+    except ValueError:
         return None
     if remaining <= 0:
         return None
-    if api_key and str(entry.get("tier", "")) in UNENTITLED_TIERS:
+    tier = as_str(entry.get("tier", ""))
+    if api_key and tier in UNENTITLED_TIERS:
         return None
     return FunnelError(
         error=RATE_LIMIT_ERROR,
-        tier=str(entry.get("tier", "")),
-        limit=int(entry.get("limit") or 0),
+        tier=tier,
+        limit=as_int(entry.get("limit"), 0),
         reset_in=min(remaining, MAX_COOLDOWN_SECONDS),
-        upgrade_url=str(entry.get("upgrade_url", "")),
-        message=str(entry.get("message", "")),
+        upgrade_url=as_str(entry.get("upgrade_url", "")),
+        message=as_str(entry.get("message", "")),
         status=429,
     )
 
 
-def record_cooldown(base_url: str, api_key: str, err: FunnelError, now: float | None = None) -> None:
+def record_cooldown(base_url: str, api_key: str, err: FunnelError) -> None:
     """Persist a rate-limit error's window; a no-op for any other error or a missing `reset_in`."""
     if err.error != RATE_LIMIT_ERROR or err.reset_in <= 0:
         return
     if api_key and err.tier in UNENTITLED_TIERS:
         return  # never read back: a keyed free user is not held
-    now = time.time() if now is None else now
-    entries = {
-        key: entry
-        for key, entry in _load().items()
-        if isinstance(entry, dict) and isinstance(entry.get("until"), (int, float)) and entry["until"] > now
-    }
+    now = time.time()
+    entries = {key: entry for key, entry in _load().items() if _window_open(entry, now)}
     entries[_principal_key(base_url, api_key)] = {
         "until": now + min(err.reset_in, MAX_COOLDOWN_SECONDS),
         "tier": err.tier,
