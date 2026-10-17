@@ -103,7 +103,6 @@ def _load_registry() -> dict[str, JsonObject]:
 
 
 _ACTIVATION_KEYS = (
-    "loading",
     "precedence",
     "activation",
     "path_key",

@@ -8,8 +8,6 @@
 
 ### Fixed
 
-- `ails check` reads a rule in your user rules folder (Claude Code's `~/.claude/rules/`, Antigravity's `~/.gemini/config/rules/`) as loaded at session start, as the agent loads it.
-
 ### Removed
 
 ### Internal

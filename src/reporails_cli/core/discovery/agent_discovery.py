@@ -408,8 +408,11 @@ class _AgentScope:
     plugin_roots: dict[str, list[Path]] = field(default_factory=dict)
 
 
-def _discover_surface(scope: _AgentScope, ft_name: str, spec: JsonObject) -> tuple[SurfaceBucket, list[Path]] | None:
-    """The bucket and files of one file type, None when the file type contributes nothing."""
+def _discover_surface(
+    scope: _AgentScope, ft_name: str, spec: JsonObject, *, gated: bool = True
+) -> tuple[SurfaceBucket, list[Path]] | None:
+    """The bucket and files of one file type, None when the file type contributes nothing.
+    With `gated` false the agent's read gate leaves the files unnarrowed."""
     target = scope.target
     patterns = _repo_scoped_patterns(extract_patterns(spec), ft_name, scope.repo_scoped, scope.user_dir)
     # A plugin component pattern resolves against each plugin root found here.
@@ -430,21 +433,62 @@ def _discover_surface(scope: _AgentScope, ft_name: str, spec: JsonObject) -> tup
     if scope.exclude_globs:
         found = [p for p in found if not matches_any_glob(p, scope.exclude_globs, target)]
     # A file type the agent reads only under a condition keeps just the files it reads.
-    found = apply_read_gate(scope.agent_id, ft_name, found, target)
+    if gated:
+        found = apply_read_gate(scope.agent_id, ft_name, found, target)
     return bucket, drop_shadowed_fallbacks(found, scope.agent_id, ft_name, scope.project_config)
 
 
-def discover_unread_candidates(
-    target: Path, agent_id: str, file_type_names: tuple[str, ...], excluded: frozenset[str]
+def _agent_scope(
+    target: Path,
+    agent_id: str,
+    file_types: JsonObject,
+    extra_exclude_dirs: frozenset[str] | None,
+    *,
+    project_config: ProjectConfig | None,
+    repo_scoped: bool,
+) -> _AgentScope:
+    """The scope one agent's discovery run shares across its file types."""
+    # Union of every per-surface exclude declared for this agent. Some agents
+    # have multiple surfaces that match the same paths (e.g. cursor.rules and
+    # cursor.bugbot_rules both match `.cursor/rules/**/*.mdc`). Applying each
+    # surface's exclude only within its own loop iteration leaves the file
+    # surfaced from the other surface — counter to the user's mental model
+    # ("I excluded draft, draft should be gone"). The union closes the gap.
+    return _AgentScope(
+        target=target,
+        agent_id=agent_id,
+        project_config=project_config,
+        excluded=extra_exclude_dirs or load_project_exclude_dirs(target),
+        repo_scoped=repo_scoped,
+        user_dir=target if repo_scoped and user_level_agent_dir(target) == target else None,
+        exclude_globs=[
+            g for ft_name in file_types for g in surface_exclude_patterns(agent_id, ft_name, project_config)
+        ],
+    )
+
+
+def discover_ungated(
+    target: Path,
+    agent_id: str,
+    file_type_names: tuple[str, ...],
+    extra_exclude_dirs: frozenset[str],
+    *,
+    project_config: ProjectConfig | None,
 ) -> list[Path]:
-    """The files the named file types of `agent_id` match under `target`, before any read gate narrows them."""
+    """The files the named file types of `agent_id` match under `target` in a repo-scoped run,
+    found as discovery finds them but before the agent's read gate narrows them. Every path is
+    kept under its own name, whatever it links to."""
     file_types = load_config_file_types(agent_id) or {}
-    found: list[Path] = []
+    scope = _agent_scope(
+        target, agent_id, file_types, extra_exclude_dirs, project_config=project_config, repo_scoped=True
+    )
+    found: set[Path] = set()
     for name in file_type_names:
         spec = file_types.get(name)
-        if isinstance(spec, dict):
-            found.extend(glob_file_type_patterns(target, extract_patterns(spec), extract_properties(spec), excluded))
-    return _dedupe_by_canonical(found)
+        surface = _discover_surface(scope, name, spec, gated=False) if isinstance(spec, dict) else None
+        if surface is not None:
+            found.update(surface[1])
+    return sorted(found)
 
 
 def discover_from_config(
@@ -468,22 +512,8 @@ def discover_from_config(
     if file_types is None:
         return None
 
-    # Union of every per-surface exclude declared for this agent. Some agents
-    # have multiple surfaces that match the same paths (e.g. cursor.rules and
-    # cursor.bugbot_rules both match `.cursor/rules/**/*.mdc`). Applying each
-    # surface's exclude only within its own loop iteration leaves the file
-    # surfaced from the other surface — counter to the user's mental model
-    # ("I excluded draft, draft should be gone"). The union closes the gap.
-    scope = _AgentScope(
-        target=target,
-        agent_id=agent_id,
-        project_config=project_config,
-        excluded=extra_exclude_dirs or load_project_exclude_dirs(target),
-        repo_scoped=repo_scoped,
-        user_dir=target if repo_scoped and user_level_agent_dir(target) == target else None,
-        exclude_globs=[
-            g for ft_name in file_types for g in surface_exclude_patterns(agent_id, ft_name, project_config)
-        ],
+    scope = _agent_scope(
+        target, agent_id, file_types, extra_exclude_dirs, project_config=project_config, repo_scoped=repo_scoped
     )
     buckets: dict[SurfaceBucket, list[Path]] = {bucket: [] for bucket in SURFACE_BUCKETS}
     for ft_name, spec in file_types.items():

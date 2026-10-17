@@ -16,7 +16,7 @@ Anything under a `.agents/` directory is never read.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -27,6 +27,7 @@ from reporails_cli.core.platform.config.claude_settings import (
     MODE_CLAUDE_MD_AND_AGENTS_MD,
     MODE_CLAUDE_MD_OR_AGENTS_MD,
     MODES_WITHOUT_AGENTS_MD,
+    MODES_WITHOUT_PROJECT_INSTRUCTIONS,
     claude_instruction_files_mode,
 )
 
@@ -113,9 +114,13 @@ class AgentsMdReads:
     aliases: list[AliasFile]
 
 
-def claude_agents_md_reads(found: list[Path], target: Path) -> AgentsMdReads:
+def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path] = ()) -> AgentsMdReads:
     """Split the `AGENTS.md` files among `found` into those Claude Code loads for a session in
-    `target` and those it skips, each skipped file with its reason."""
+    `target` and those it skips, each skipped file with its reason. A skipped file that is the same
+    file as a `CLAUDE.md`-family file among `read` (the instruction files the session reads) is
+    reported as an alias of it instead."""
+    if not found:
+        return AgentsMdReads([], [], "", [])
     root = resolve_project_root(target)
     mode = claude_instruction_files_mode(root)
     kept: list[Path] = []
@@ -123,12 +128,13 @@ def claude_agents_md_reads(found: list[Path], target: Path) -> AgentsMdReads:
     aliases: list[AliasFile] = []
     claude_above = mode == MODE_CLAUDE_MD_OR_AGENTS_MD and claude_file_at_or_above(root)
     user_file = _user_claude_md()
+    claude_files = {} if mode in MODES_WITHOUT_PROJECT_INSTRUCTIONS else _claude_files_by_identity(read, root)
     for path in found:
         reason = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
         if reason is None:
             kept.append(path)
             continue
-        same_as = _linked_claude_md(path, root)
+        same_as = claude_files.get(safe_resolve(path))
         if same_as is None:
             skipped.append(SkippedFile(path, reason))
         else:
@@ -136,19 +142,21 @@ def claude_agents_md_reads(found: list[Path], target: Path) -> AgentsMdReads:
     return AgentsMdReads(kept, skipped, mode, aliases)
 
 
-def _linked_claude_md(path: Path, root: Path) -> Path | None:
-    """The `CLAUDE.md` Claude Code reads that `path` links to, None when it is not such a link."""
-    target = safe_resolve(path)
-    if target.name.lower() != "claude.md" or not target.is_file():
-        return None
-    resolved_root = safe_resolve(root)
-    read_dirs = {resolved_root, *resolved_root.parents, safe_resolve(path.parent)}
-    if resolved_root in (target.parent, *target.parent.parents):
-        read_dirs.add(target.parent)
-    folder = target.parent
-    if folder.name == ".claude":
-        folder = folder.parent
-    return target if folder in read_dirs else None
+def _claude_files_by_identity(read: Iterable[Path], root: Path) -> dict[Path, Path]:
+    """The `CLAUDE.md`-family files among `read`, each under the resolved path it is the same file as.
+    A file under a `.agents/` directory of the project is not one Claude Code reads."""
+    return {
+        safe_resolve(path): path
+        for path in read
+        if path.name.lower() in _CLAUDE_FAMILY and not _in_agents_dir(path, root)
+    }
+
+
+def _in_agents_dir(path: Path, root: Path) -> bool:
+    try:
+        return ".agents" in (part.lower() for part in path.relative_to(root).parts[:-1])
+    except ValueError:
+        return False
 
 
 def _skip_reason(path: Path, root: Path, mode: str, *, claude_above: bool, user_file: Path) -> SkipReason | None:

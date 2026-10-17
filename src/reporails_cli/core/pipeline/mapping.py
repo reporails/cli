@@ -61,9 +61,9 @@ class ScopeDiscovery(NamedTuple):
     filtered: list[DetectedAgent]
     files: list[Path]
     # The `(folders, file globs)` this pass left out because the user set them; empty when it listed no files.
-    excluded: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
+    excluded: tuple[tuple[str, ...], tuple[str, ...]]
     # The run's exclusions: the command-line patterns joined with the project's config.
-    exclusions: RunExclusions | None = None
+    exclusions: RunExclusions
 
 
 def discover_scope(

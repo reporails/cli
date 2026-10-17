@@ -169,3 +169,127 @@ def test_agents_md_linked_to_claude_md_is_reported_as_that_file(tmp_path: Path) 
     ]
     skipped = {Path(i["path"]).relative_to(resolved).as_posix(): i["reason"] for i in out["skipped"]}
     assert skipped == {"sub2/AGENTS.md": "claude_md_present", "sub3/AGENTS.md": "claude_md_present"}
+
+
+def _link(link: Path, target: str) -> None:
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks cannot be created here")
+
+
+def _skipped_reasons(out: dict, root: Path) -> dict[str, str]:
+    return {k: v["reason"] for k, v in _by_name(out["skipped"], root).items()}
+
+
+def _alias_names(out: dict, root: Path) -> dict[str, str]:
+    resolved = root.resolve()
+    return {
+        Path(a["path"]).relative_to(resolved).as_posix(): Path(a["same_as"]).relative_to(resolved).as_posix()
+        for a in out["aliases"]
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_claude_md_linking_to_regular_agents_md_makes_agents_md_an_alias(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "AGENTS.md")
+    _link(root / "CLAUDE.md", "AGENTS.md")
+    out = expected_loads(root)
+    assert _alias_names(out, root) == {"AGENTS.md": "CLAUDE.md"}
+    assert out["skipped"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_linking_to_claude_local_md_is_an_alias(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.local.md")
+    _link(root / "AGENTS.md", "CLAUDE.local.md")
+    out = expected_loads(root)
+    assert _alias_names(out, root) == {"AGENTS.md": "CLAUDE.local.md"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_linking_into_agents_dir_or_excluded_folder_stays_skipped(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _write(root / ".agents" / "CLAUDE.md")
+    _write(root / "node_modules" / "pkg" / "CLAUDE.md")
+    _link(root / "AGENTS.md", ".agents/CLAUDE.md")
+    _link(root / "a" / "AGENTS.md", "../node_modules/pkg/CLAUDE.md")
+    out = expected_loads(root)
+    assert out["aliases"] == []
+    assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present", "a/AGENTS.md": "claude_md_present"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_links_to_one_file_are_each_reported_under_their_own_name(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _link(root / "AGENTS.md", "CLAUDE.md")
+    _link(root / ".claude" / "AGENTS.md", "../CLAUDE.md")
+    assert _alias_names(expected_loads(root), root) == {
+        "AGENTS.md": "CLAUDE.md",
+        ".claude/AGENTS.md": "CLAUDE.md",
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_excluded_in_config_is_not_reported_as_skipped(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _write(root / "AGENTS.md")
+    _write(root / "legacy" / "AGENTS.md")
+    _write(
+        root / ".ails" / "config.yml",
+        'schema_version: "0.1.0"\nsurfaces:\n  claude.agents_md:\n    exclude: ["legacy/**"]\n',
+    )
+    assert set(_skipped_reasons(expected_loads(root), root)) == {"AGENTS.md"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_managed_only_skips_project_instruction_files_and_reports_no_alias(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _link(root / "AGENTS.md", "CLAUDE.md")
+    _write(root / ".claude" / "rules" / "style.md")
+    _mode("managed-only")
+    out = expected_loads(root)
+    assert out["aliases"] == []
+    assert set(_by_name(out["files"], root)) == {".claude/rules/style.md"}
+    skipped = _by_name(out["skipped"], root)
+    assert {k: (v["reason"], v["setting"]) for k, v in skipped.items()} == {
+        "CLAUDE.md": ("setting_off", "managed-only"),
+        "AGENTS.md": ("setting_off", "managed-only"),
+    }
+    assert (skipped["CLAUDE.md"]["file_type"], skipped["AGENTS.md"]["file_type"]) == ("main", "agents_md")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_no_candidates_reads_no_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from reporails_cli.core.discovery import read_gates
+
+    def boom(_root: Path) -> str:
+        raise AssertionError("settings read for an empty input")
+
+    monkeypatch.setattr(read_gates, "claude_instruction_files_mode", boom)
+    reads = read_gates.claude_agents_md_reads([], tmp_path)
+    assert (reads.kept, reads.skipped, reads.aliases) == ([], [], [])
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_command_rejects_a_path_that_is_not_a_folder(tmp_path: Path) -> None:
+    _write(tmp_path / "CLAUDE.md")
+    for bad in (tmp_path / "typo-dir", tmp_path / "CLAUDE.md"):
+        result = runner.invoke(app, ["expected-loads", str(bad)])
+        assert result.exit_code == 2
+        assert "Path not found or not a folder" in result.output

@@ -26,4 +26,8 @@ def expected_loads_command(
     if agent != AGENT:
         typer.echo(f"Error: only --agent {AGENT} is supported", err=True)
         raise typer.Exit(2)
-    typer.echo(compact_json(expected_loads(Path(path).resolve())))
+    folder = Path(path).resolve()
+    if not folder.is_dir():
+        typer.echo(f"Error: Path not found or not a folder: {folder}", err=True)
+        raise typer.Exit(2)
+    typer.echo(compact_json(expected_loads(folder)))

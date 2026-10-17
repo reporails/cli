@@ -40,6 +40,9 @@ _MODES = frozenset({MODE_CLAUDE_MD_OR_AGENTS_MD, MODE_CLAUDE_MD_AND_AGENTS_MD, M
 # Modes under which Claude Code reads no AGENTS.md at all.
 MODES_WITHOUT_AGENTS_MD = frozenset({MODE_CLAUDE_MD, MODE_MANAGED_ONLY})
 
+# Modes under which Claude Code reads no project or user instruction file, `CLAUDE.md` included.
+MODES_WITHOUT_PROJECT_INSTRUCTIONS = frozenset({MODE_MANAGED_ONLY})
+
 
 def _settings_patterns() -> dict[str, list[str]]:
     """Scope name -> settings-file patterns, from Claude's `config` file type."""
