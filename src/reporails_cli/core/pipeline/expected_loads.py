@@ -49,6 +49,9 @@ def expected_loads(target: Path) -> JsonObject:
         }
         for item in sorted(reads.skipped, key=lambda s: s.path)
     ]
+    aliases: list[JsonValue] = [
+        {"path": str(item.path), "same_as": str(item.same_as)} for item in sorted(reads.aliases, key=lambda a: a.path)
+    ]
     return {
         "version": 1,
         "agent": AGENT,
@@ -56,6 +59,7 @@ def expected_loads(target: Path) -> JsonObject:
         "event_log_dir": str(get_xray_log_dir()),
         "files": files,
         "skipped": skipped,
+        "aliases": aliases,
     }
 
 

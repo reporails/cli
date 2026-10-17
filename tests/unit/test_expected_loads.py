@@ -138,8 +138,34 @@ def test_command_prints_one_json_object(tmp_path: Path) -> None:
     result = runner.invoke(app, ["expected-loads", str(root), "--agent", "claude"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert list(data) == ["version", "agent", "root", "event_log_dir", "files", "skipped"]
+    assert list(data) == ["version", "agent", "root", "event_log_dir", "files", "skipped", "aliases"]
     assert data["version"] == 1
     assert data["agent"] == "claude"
     assert data["event_log_dir"] == str(Path.home() / ".reporails" / "xray")
     assert set(data["files"][0]) == {"path", "file_type", "loading", "precedence"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_linked_to_claude_md_is_reported_as_that_file(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _write(root / "sub" / "CLAUDE.md")
+    _write(root / "sub2" / "CLAUDE.md")
+    _write(root / "sub2" / "AGENTS.md")
+    _write(root / "sub3" / "CLAUDE.md")
+    _write(root / "sub3" / "notes.md")
+    try:
+        (root / "AGENTS.md").symlink_to("CLAUDE.md")
+        (root / "sub" / "AGENTS.md").symlink_to("CLAUDE.md")
+        (root / "sub3" / "AGENTS.md").symlink_to("notes.md")
+    except OSError:
+        pytest.skip("symlinks cannot be created here")
+    out = expected_loads(root)
+    resolved = root.resolve()
+    assert out["aliases"] == [
+        {"path": str(resolved / "AGENTS.md"), "same_as": str(resolved / "CLAUDE.md")},
+        {"path": str(resolved / "sub" / "AGENTS.md"), "same_as": str(resolved / "sub" / "CLAUDE.md")},
+    ]
+    skipped = {Path(i["path"]).relative_to(resolved).as_posix(): i["reason"] for i in out["skipped"]}
+    assert skipped == {"sub2/AGENTS.md": "claude_md_present", "sub3/AGENTS.md": "claude_md_present"}

@@ -95,12 +95,22 @@ class SkippedFile:
 
 
 @dataclass(frozen=True)
+class AliasFile:
+    """An `AGENTS.md` that links to a `CLAUDE.md` Claude Code reads: the same file under another name."""
+
+    path: Path
+    same_as: Path
+
+
+@dataclass(frozen=True)
 class AgentsMdReads:
-    """The `AGENTS.md` files Claude Code loads, the ones it skips, and the setting that decided."""
+    """The `AGENTS.md` files Claude Code loads, the ones it skips, the ones that are a `CLAUDE.md`
+    it reads under another name, and the setting that decided."""
 
     kept: list[Path]
     skipped: list[SkippedFile]
     mode: str
+    aliases: list[AliasFile]
 
 
 def claude_agents_md_reads(found: list[Path], target: Path) -> AgentsMdReads:
@@ -110,15 +120,35 @@ def claude_agents_md_reads(found: list[Path], target: Path) -> AgentsMdReads:
     mode = claude_instruction_files_mode(root)
     kept: list[Path] = []
     skipped: list[SkippedFile] = []
+    aliases: list[AliasFile] = []
     claude_above = mode == MODE_CLAUDE_MD_OR_AGENTS_MD and claude_file_at_or_above(root)
     user_file = _user_claude_md()
     for path in found:
         reason = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
         if reason is None:
             kept.append(path)
-        else:
+            continue
+        same_as = _linked_claude_md(path, root)
+        if same_as is None:
             skipped.append(SkippedFile(path, reason))
-    return AgentsMdReads(kept, skipped, mode)
+        else:
+            aliases.append(AliasFile(path, same_as))
+    return AgentsMdReads(kept, skipped, mode, aliases)
+
+
+def _linked_claude_md(path: Path, root: Path) -> Path | None:
+    """The `CLAUDE.md` Claude Code reads that `path` links to, None when it is not such a link."""
+    target = safe_resolve(path)
+    if target.name.lower() != "claude.md" or not target.is_file():
+        return None
+    resolved_root = safe_resolve(root)
+    read_dirs = {resolved_root, *resolved_root.parents, safe_resolve(path.parent)}
+    if resolved_root in (target.parent, *target.parent.parents):
+        read_dirs.add(target.parent)
+    folder = target.parent
+    if folder.name == ".claude":
+        folder = folder.parent
+    return target if folder in read_dirs else None
 
 
 def _skip_reason(path: Path, root: Path, mode: str, *, claude_above: bool, user_file: Path) -> SkipReason | None:
