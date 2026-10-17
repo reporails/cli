@@ -3,7 +3,7 @@
 # Run before pushing a release branch to catch errors that would fail CI.
 #
 # Usage: ./scripts/pre-release-check.sh
-#        Or automatically via .git/hooks/pre-push (see bottom of script)
+#        Also runs as part of `uv run poe release_gates`
 
 set -euo pipefail
 
