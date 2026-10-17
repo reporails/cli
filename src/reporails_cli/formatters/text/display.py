@@ -45,7 +45,7 @@ from reporails_cli.formatters.text.file_groups import (
 from reporails_cli.formatters.text.funnel_cta import _short_url_label, format_bug_report_url, format_cta, upgrade_link
 from reporails_cli.formatters.text.health import SurfaceHealth
 from reporails_cli.formatters.text.item_scorecard import compute_item_scores
-from reporails_cli.formatters.text.not_evaluated import print_not_evaluated
+from reporails_cli.formatters.text.not_evaluated import not_evaluated_lines, print_not_evaluated
 from reporails_cli.formatters.text.notices import print_notices
 from reporails_cli.formatters.text.scorecard import (
     ScopeInfo,
@@ -289,13 +289,17 @@ def _print_header(tier: str) -> None:
     console.print(f"\n[bold]Reporails[/bold] \u2014 Diagnostics{tier_badge}\n")
 
 
-def _print_notices(notices: Sequence[Notice], ascii_mode: bool) -> None:
-    """Print the notices under the header, then a blank line; nothing when there are none."""
+def _print_notices(notices: Sequence[Notice], ascii_mode: bool, *, blank_before: bool) -> None:
+    """Print the notices last, one blank line after the output before them; nothing when there are none.
+
+    `blank_before` is False when the output already ends on a blank line.
+    """
     if not notices:
         return
 
+    if blank_before:
+        console.print()
     print_notices(console, notices, ascii_mode=ascii_mode)
-    console.print()
 
 
 def print_text_result(
@@ -328,12 +332,11 @@ def print_text_result(
     scope.type_str = file_type_summary(all_files, skill_of) if all_files else "0 files"
 
     _print_header(tier)
-    _print_notices(result.reply.notices, ascii_mode)
     if not result.findings:
         console.print(f"  {'ok' if ascii_mode else chr(0x2713)}  No findings.")
         render_excluded_line(result, scored=has_quality)
         print_not_evaluated(console, result.omissions.not_evaluated)
-        _render_funnel_cta(funnel_error)
+        _print_notices(result.reply.notices, ascii_mode, blank_before=not _render_funnel_cta(funnel_error))
         return
 
     _render_findings_and_scorecard(
@@ -347,7 +350,9 @@ def print_text_result(
         skill_of=skill_of,
     )
     print_not_evaluated(console, result.omissions.not_evaluated)
-    _render_funnel_cta(funnel_error)
+    # The scorecard ends on a blank line; the not-evaluated lines, when printed, end the output without one.
+    ends_blank = not not_evaluated_lines(result.omissions.not_evaluated)
+    _print_notices(result.reply.notices, ascii_mode, blank_before=not (_render_funnel_cta(funnel_error) or ends_blank))
 
 
 @dataclass(frozen=True)
@@ -468,19 +473,22 @@ def _render_findings_and_scorecard(
     )
 
 
-def _render_funnel_cta(funnel_error: FunnelError | None) -> None:
-    """Render the conversion CTA + bug-report link when a FunnelError is present."""
+def _render_funnel_cta(funnel_error: FunnelError | None) -> bool:
+    """Render the conversion CTA + bug-report link when a FunnelError is present.
+
+    Returns True when it printed, which is always followed by a blank line.
+    """
 
     if funnel_error is None:
-        return
+        return False
     cta = format_cta(funnel_error)
     if not cta:
-        return
+        return False
     if funnel_error.retryable:
         console.print()
         console.print(f"  [yellow]⚠[/yellow]  {cta}")
         console.print()
-        return
+        return True
     bug_url = format_bug_report_url(funnel_error)
     bug_label = _short_url_label(bug_url)
     console.print()
@@ -490,3 +498,4 @@ def _render_funnel_cta(funnel_error: FunnelError | None) -> None:
         link = f"[link={bug_url}][bold]{bug_label}[/bold][/link]"
         console.print(f"  [dim]Did you see an error? Let us know: {link}[/dim]")
     console.print()
+    return True

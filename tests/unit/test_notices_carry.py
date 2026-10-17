@@ -183,10 +183,10 @@ def _check() -> str:
 
 @pytest.mark.unit
 @pytest.mark.subsys_cli_ux
-def test_text_prints_notices_after_the_header_escaped_and_info_only_once(project: Path) -> None:
+def test_text_prints_notices_after_the_score_escaped_and_info_only_once(project: Path) -> None:
     first = _check()
-    header, notice = first.index("Diagnostics"), first.index("Payment failed [bold]x[/bold]")
-    assert header < notice
+    score, notice = first.index("Summary"), first.index("Payment failed [bold]x[/bold]")
+    assert score < notice
     assert "Pro ends on 1 June" in first
     second = _check()
     assert "Payment failed [bold]x[/bold]" in second

@@ -60,17 +60,22 @@ def _print_body(console: Console, lines: list[str], width: int) -> None:
 def print_notices(console: Console, notices: Iterable[Notice], *, ascii_mode: bool | None = None) -> None:
     """Print `notices` on `console`: the text indented two spaces, wrapped lines too; a link on one line.
 
+    One blank line separates consecutive notices. An announcement's text wraps within its rules.
+
     `ascii_mode` None follows `AILS_ASCII`.
     """
     ascii_on = ASCII_MODE if ascii_mode is None else ascii_mode
     chars = get_chars(ascii_on)
     styled = console.is_terminal and not console.no_color and not ascii_on
     width = max(console.width - 2, 1)
-    rule = Text("  " + chars["sep"] * max(min(console.width - 2, _RULE_MAX), 1), style=_RULE_STYLE)
-    for notice in notices:
+    rule_width = max(min(console.width - 2, _RULE_MAX), 1)
+    rule = Text("  " + chars["sep"] * rule_width, style=_RULE_STYLE)
+    for index, notice in enumerate(notices):
         promo = styled and notice.kind == "promo"
+        if index:
+            console.print()
         if promo:
             console.print(rule, soft_wrap=True)
-        _print_body(console, _notice_lines(notice, chars["arrow"], bold=promo), width)
+        _print_body(console, _notice_lines(notice, chars["arrow"], bold=promo), rule_width if promo else width)
         if promo:
             console.print(rule, soft_wrap=True)

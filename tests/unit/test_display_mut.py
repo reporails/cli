@@ -13,9 +13,16 @@ from types import SimpleNamespace
 import pytest
 
 from reporails_cli.core.mapper.skills import record_skills
-from reporails_cli.core.platform.dto.diagnostics import CrossFileFinding, FileAnalysis, FindingItem, QualityResult
+from reporails_cli.core.platform.dto.diagnostics import (
+    CrossFileFinding,
+    FileAnalysis,
+    FindingItem,
+    FunnelError,
+    Notice,
+    QualityResult,
+)
 from reporails_cli.core.platform.dto.ruleset import Atom, FileRecord, RulesetMap
-from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats
+from reporails_cli.core.platform.runtime.merger import CombinedResult, CombinedStats, ServerReply
 from reporails_cli.formatters.text import display, file_groups
 from reporails_cli.formatters.text.display import (
     _count_atoms,
@@ -505,6 +512,33 @@ class TestPrintTextResultHasQuality:
         # L401 has_quality guard; `and -> or` there evaluates bool(None.compliance_band) and
         # raises first, so no group header/footer would reach the console.
         assert "1 findings" in out  # kills L401 `and -> or`
+
+    @pytest.mark.unit
+    @pytest.mark.subsys_cli_ux
+    @pytest.mark.parametrize("with_finding", [False, True])
+    @pytest.mark.parametrize("retryable", [None, True, False])
+    def test_notices_print_last_after_the_score_with_one_blank_line(self, tmp_path, with_finding, retryable) -> None:
+        findings = (
+            (FindingItem(file=str(tmp_path / "CLAUDE.md"), line=2, severity="error", rule="CORE:S:0001", message="m"),)
+            if with_finding
+            else ()
+        )
+        reply = ServerReply(notices=(Notice("n", "info", "Zed notice text"),))
+        result = CombinedResult(findings=findings, quality=None, reply=reply)
+        error = None if retryable is None else FunnelError(error="timeout" if retryable else "invalid_api_key")
+        with display.console.capture() as cap:
+            display.print_text_result(
+                result, elapsed_ms=0, ascii_mode=True, verbose=False, project_root=tmp_path, funnel_error=error
+            )
+        lines = cap.get().rstrip("\n").split("\n")
+        at = lines.index("  Zed notice text")
+        assert at == len(lines) - 1
+        assert lines[at - 1] == ""
+        assert lines[at - 2] != ""
+        score_at = max(i for i, line in enumerate(lines) if "No findings." in line or "1 findings" in line)
+        assert score_at < at
+        if error is not None and not retryable:
+            assert any("Server diagnostics unavailable." in line for line in lines[:at])
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

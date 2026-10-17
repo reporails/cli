@@ -153,3 +153,32 @@ def test_markup_in_promo_text_prints_literally(plain: bool) -> None:
     out = _render([promo], ascii_mode=plain)
     assert "Pay [bold]now[/bold] [red]x[/red]" in out
     assert "https://e.test/[a]" in out
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_notices_are_separated_by_one_blank_line_and_none_around_them() -> None:
+    out = _printed([Notice("a", "info", "First"), Notice("b", "info", "Second")])
+    assert out.splitlines() == ["  First", "", "  Second"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_promo_text_stays_within_its_rules_on_a_wide_terminal() -> None:
+    promo = Notice("p", "info", "Fixture promo text that is long enough to wrap " * 4, kind="promo")
+    lines = _render([promo], ascii_mode=False, width=100, color_system="standard")
+    plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines.splitlines()]
+    rule = len(plain[0])
+    assert rule == 2 + 60
+    body = plain[1:-1]
+    assert len(body) > 1
+    assert all(len(line) <= rule for line in body)
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_cli_ux
+def test_a_long_plain_notice_still_wraps_at_the_console_width() -> None:
+    out = _render([Notice("a", "info", "word " * 60)], width=100, force_terminal=False)
+    widths = [len(line) for line in out.splitlines()]
+    assert max(widths) > 62
+    assert max(widths) <= 100
