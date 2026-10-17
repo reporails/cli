@@ -91,6 +91,11 @@ def load_yaml_file(path: Path) -> JsonValue:
     return data
 
 
+def forget_yaml_file(path: Path) -> None:
+    """Drop the cached read of a YAML file this process just rewrote, so the next read parses the new content."""
+    _yaml_file_cache.pop(str(path), None)
+
+
 def yaml_error_line(exc: Exception) -> str:
     """One line naming what is wrong in a YAML read: the parser's problem and its line, when it gives them."""
     problem = getattr(exc, "problem", None)

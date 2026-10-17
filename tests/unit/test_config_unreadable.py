@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 import pytest
@@ -83,7 +84,7 @@ def test_a_file_that_is_not_a_mapping_or_not_utf8_is_unreadable(tmp_path: Path) 
         config_mod.read_config_file(listing)
     binary = tmp_path / "b.yml"
     binary.write_bytes(b"tier: \xff\xfe\n")
-    with pytest.raises(ConfigUnreadableError, match=str(binary)):
+    with pytest.raises(ConfigUnreadableError, match=re.escape(str(binary))):
         config_mod.read_config_file(binary)
     assert config_mod.read_config_file(tmp_path / "absent.yml") == {}
 

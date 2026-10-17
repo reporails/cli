@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,17 @@ def test_sync_then_sync_again_has_nothing_to_change(tmp_path: Path, terms: list[
     first = sync_vocab(rule)
     assert first.updated == 1
     assert _pattern(rule) == r"\b(?:" + "|".join(terms) + r")\b"
+    second = sync_vocab(rule)
+    assert (second.updated, second.skipped, second.messages) == (0, 0, [])
+
+
+def test_a_same_size_rewrite_in_one_timestamp_tick_is_not_read_back_stale(tmp_path: Path) -> None:
+    rule = _rule(tmp_path / "r", _simple(), {"c": ["a", "b"]})
+    checks = rule / "checks.yml"
+    before = checks.stat()
+    assert sync_vocab(rule).updated == 1
+    assert checks.stat().st_size == before.st_size
+    os.utime(checks, ns=(before.st_atime_ns, before.st_mtime_ns))
     second = sync_vocab(rule)
     assert (second.updated, second.skipped, second.messages) == (0, 0, [])
 

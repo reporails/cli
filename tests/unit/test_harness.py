@@ -1248,8 +1248,8 @@ class TestLoadFailureLint:
             assert _scan_rules(tmp_path) == {}
 
         logged = " ".join(r.getMessage() for r in caplog.records)
-        assert "r/rule.md: " in logged
-        assert "c/checks.yml: " in logged
+        assert f"{Path('r') / 'rule.md'}: " in logged
+        assert f"{Path('c') / 'checks.yml'}: " in logged
 
     @pytest.mark.unit
     @pytest.mark.subsys_lint

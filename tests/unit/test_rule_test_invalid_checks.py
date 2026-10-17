@@ -126,7 +126,7 @@ def test_a_rule_file_that_is_not_utf8_is_a_load_error_not_a_crash(
         rules = _scan_rules(root)
 
     assert [rule.id for rule in rules.values()] == ["CORE:S:9998"]
-    assert f"core/demo-bad/{name}: is not UTF-8 text" in caplog.text
+    assert f"{Path('core') / 'demo-bad' / name}: is not UTF-8 text" in caplog.text
 
     result = runner.invoke(app, ["test", "--lint", "--rules-root", str(root)])
 
