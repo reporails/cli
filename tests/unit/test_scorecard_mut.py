@@ -497,19 +497,20 @@ class TestFreeTierCta:
 
 
 class TestProTierFixLocationLine:
-    """The Pro terminal names where its fix text actually lives (JSON + MCP)."""
+    """The Pro run says how to fix the findings."""
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux
-    def test_pro_tier_gets_the_fix_location_line(self) -> None:
+    def test_pro_tier_gets_the_fix_line(self) -> None:
         from reporails_cli.formatters.text import scorecard
 
         with scorecard.console.capture() as cap:
             print_scorecard(_full_result(), True, tier="Pro", scope=ScopeInfo(type_str="2 files"))
         out = cap.get()
-        assert "--format json" in out
-        assert "/reporails:ails heal" in out
-        assert "ask it to run the reporails heal" in out
+        assert "Fix them:" in out
+        assert "ails install" in out
+        assert "ask your coding agent to run the reporails heal" in out
+        assert "The remedies are in" not in out
 
     @pytest.mark.unit
     @pytest.mark.subsys_cli_ux

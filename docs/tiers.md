@@ -83,8 +83,7 @@ Pro output folds a topic-overlap finding back into the per-file list with its li
   │
   └─ 26 findings
   ...
-  The remedies are in --format json. Run ails install, then
-  /reporails:ails heal in Claude Code to rewrite your instruction files.
+  Fix them: ails install, then ask your coding agent to run the reporails heal.
 ```
 
 A finding about a single instruction inside one file — a vague, weak or too-brief instruction, say — renders with its line on both tiers; the interaction and cross-file findings are where the tiers differ, as above.

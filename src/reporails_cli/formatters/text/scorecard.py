@@ -37,7 +37,7 @@ from reporails_cli.formatters.text.display_constants import (
     path_tag,
     skill_lookup,
 )
-from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINES, UNPAID_PITCH_LINE, upgrade_link_line
+from reporails_cli.formatters.text.funnel_cta import PRO_HEAL_FOOTER_LINE, UNPAID_PITCH_LINE, upgrade_link_line
 from reporails_cli.formatters.text.health import SurfaceHealth, count_tag, mean_display_score
 from reporails_cli.formatters.text.item_scorecard import render_item_health
 from reporails_cli.formatters.text.rule_meta import rule_docs_url
@@ -532,8 +532,7 @@ def _render_tier_footer(result: CombinedResult, tier: str) -> None:
             console.print("  \u2192 sign in with [bold]ails login[/bold], then upgrade to Pro")
     elif tier == "Pro" and not refused:
         console.print()
-        for line in PRO_HEAL_FOOTER_LINES:
-            console.print(line)
+        console.print(PRO_HEAL_FOOTER_LINE)
 
 
 def print_scorecard(
