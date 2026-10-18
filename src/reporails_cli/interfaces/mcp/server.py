@@ -461,8 +461,11 @@ def _text_result(text: str) -> CallToolResult:
         " `introduced`, and a"
         " `feedback` list of the file's remaining findings, with any problem the rewrite newly"
         " introduced listed first."
-        " `notices`, when present, are messages for the user about their account (for example a"
-        " failed payment): show each one to the user."
+        " `notices`, when present, are short messages for the user: either about their account"
+        " (for example a failed payment) or an announcement from reporails, marked"
+        ' `kind: "promo"` (a `promo:` line in the text view). Show each one to the user,'
+        " presenting an announcement as an announcement, not as an account message."
+        " `AILS_NO_PROMO=1` in the server's environment leaves announcements out."
         " Use when user asks to check, validate, or improve instruction files."
     ),
     annotations=_READ_ONLY,

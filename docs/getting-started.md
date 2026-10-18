@@ -114,7 +114,7 @@ ails check --heal --cwd          # with --heal: opt into rewriting the whole pro
 
 `--heal` needs an explicit target — a path or a capability like `skills` — or `--cwd` to opt into rewriting the whole project; a bare `ails check --heal` exits with an error naming both options. It also needs a Pro account: run `ails login` with one. Without one (anonymous, or signed in on a free account) the run still prints the full diagnosis, then declines the fix pass with `Applying fixes needs a Pro account.` and applies nothing. See [Tiers and Limits](tiers.md).
 
-The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats`, a `notices` list of messages about your account, and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
+The JSON output groups findings under `files{path: {findings: [...], count: N}}` plus aggregate `stats`, a `notices` list of messages about your account and announcements from reporails, and (when present) `cross_file` blocks — see [Configuration → Output format](configuration.md#output-format) for the full shape, including which fields are tier-conditional.
 
 ## Focus on one file or capability
 
