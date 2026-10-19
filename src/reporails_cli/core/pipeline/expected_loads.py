@@ -41,7 +41,7 @@ def expected_loads(target: Path) -> JsonObject:
             exclusions.walk_dirs,
             project_config=project_config,
         )
-    skipped = [SkippedFile(path, "setting_off") for path in switched_off]
+    skipped = [SkippedFile(path, "setting_off", None) for path in switched_off]
     reads = claude_agents_md_reads([p for p in candidates if not exclusions.leaves_out(p)], root, read_instructions)
     skipped.extend(reads.skipped)
     skipped_out: list[JsonValue] = [
@@ -49,6 +49,7 @@ def expected_loads(target: Path) -> JsonObject:
             "path": str(item.path),
             "file_type": switched_off.get(item.path) or _file_type_of_skipped(item.path, root, registry),
             "reason": item.reason,
+            "cause": None if item.cause is None else str(item.cause),
             "setting": mode,
         }
         for item in sorted(skipped, key=lambda s: s.path)

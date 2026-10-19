@@ -35,39 +35,39 @@ _AGENTS_MD = "agents.md"
 _CLAUDE_FAMILY = ("claude.md", "claude.local.md")
 
 
-def _names_in(directory: Path) -> set[str]:
-    return {entry.name.lower() for entry in list_dir(str(directory)) or () if entry.is_file}
-
-
-def _dot_claude_md(directory: Path) -> Path | None:
-    """`directory/.claude/CLAUDE.md` (any case), or None."""
-    dot_claude = directory / ".claude"
-    for entry in list_dir(str(dot_claude)) or ():
-        if entry.name.lower() == "claude.md" and entry.is_file:
+def _file_named(directory: Path, name: str) -> Path | None:
+    """The file in `directory` called `name` (any case), or None."""
+    for entry in list_dir(str(directory)) or ():
+        if entry.name.lower() == name and entry.is_file:
             return Path(entry.path)
     return None
 
 
-def _has_claude_file(directory: Path, user_file: Path) -> bool:
-    """Whether `directory` holds a `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md`."""
-    if _names_in(directory) & set(_CLAUDE_FAMILY):
-        return True
-    dot = _dot_claude_md(directory)
-    if dot is None:
-        return False
-    return safe_resolve(dot) != user_file
+def _claude_file_in(directory: Path, user_file: Path) -> Path | None:
+    """The `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in `directory`, in that order, or None."""
+    plain = _file_named(directory, "claude.md")
+    if plain is not None:
+        return plain
+    dot = _file_named(directory / ".claude", "claude.md")
+    if dot is not None and safe_resolve(dot) != user_file:
+        return dot
+    return _file_named(directory, "claude.local.md")
 
 
 def _user_claude_md() -> Path:
     return safe_resolve(Path.home() / ".claude" / "CLAUDE.md")
 
 
-def claude_file_at_or_above(root: Path) -> bool:
-    """Whether a `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` sits in `root` or
-    any directory above it, other than the user's own `~/.claude/CLAUDE.md`."""
+def claude_file_at_or_above(root: Path) -> Path | None:
+    """The `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` nearest `root`, looking in `root`
+    and then each directory above it, other than the user's own `~/.claude/CLAUDE.md`; None when there is none."""
     user_file = _user_claude_md()
     start = safe_resolve(root)
-    return any(_has_claude_file(directory, user_file) for directory in (start, *start.parents))
+    for directory in (start, *start.parents):
+        found = _claude_file_in(directory, user_file)
+        if found is not None:
+            return found
+    return None
 
 
 def _never_read(path: Path, root: Path) -> bool:
@@ -89,10 +89,12 @@ SkipReason = Literal["claude_md_present", "subdir_has_claude_md", "setting_off",
 
 @dataclass(frozen=True)
 class SkippedFile:
-    """An `AGENTS.md` Claude Code does not read, and why."""
+    """An `AGENTS.md` Claude Code does not read, and why; `cause` is the `CLAUDE.md`-family file that made
+    it skip the file (`claude_md_present`, `subdir_has_claude_md`), None for the other reasons."""
 
     path: Path
     reason: SkipReason
+    cause: Path | None
 
 
 @dataclass(frozen=True)
@@ -126,17 +128,17 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
     kept: list[Path] = []
     skipped: list[SkippedFile] = []
     aliases: list[AliasFile] = []
-    claude_above = mode == MODE_CLAUDE_MD_OR_AGENTS_MD and claude_file_at_or_above(root)
+    claude_above = claude_file_at_or_above(root) if mode == MODE_CLAUDE_MD_OR_AGENTS_MD else None
     user_file = _user_claude_md()
     claude_files = {} if mode in MODES_WITHOUT_LAUNCH_INSTRUCTIONS else _claude_files_by_identity(read, root)
     for path in found:
-        reason = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
-        if reason is None:
+        skip = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
+        if skip is None:
             kept.append(path)
             continue
         same_as = claude_files.get(safe_resolve(path))
         if same_as is None:
-            skipped.append(SkippedFile(path, reason))
+            skipped.append(SkippedFile(path, *skip))
         else:
             aliases.append(AliasFile(path, same_as))
     return AgentsMdReads(kept, skipped, mode, aliases)
@@ -159,19 +161,22 @@ def _in_agents_dir(path: Path, root: Path) -> bool:
         return False
 
 
-def _skip_reason(path: Path, root: Path, mode: str, *, claude_above: bool, user_file: Path) -> SkipReason | None:
-    """Why Claude Code skips `path`, None when it loads it."""
+def _skip_reason(
+    path: Path, root: Path, mode: str, *, claude_above: Path | None, user_file: Path
+) -> tuple[SkipReason, Path | None] | None:
+    """Why Claude Code skips `path` and the `CLAUDE.md`-family file that made it, None when it loads it."""
     if _never_read(path, root):
-        return "never_read"
+        return "never_read", None
     if mode in MODES_WITHOUT_AGENTS_MD:
-        return "setting_off"
+        return "setting_off", None
     if mode == MODE_CLAUDE_MD_AND_AGENTS_MD:
         return None
-    if claude_above:
-        return "claude_md_present"
-    if _loads_at_session_start(path, root) or not _has_claude_file(path.parent, user_file):
+    if claude_above is not None:
+        return "claude_md_present", claude_above
+    if _loads_at_session_start(path, root):
         return None
-    return "subdir_has_claude_md"
+    beside = _claude_file_in(path.parent, user_file)
+    return None if beside is None else ("subdir_has_claude_md", beside)
 
 
 def claude_agents_md_files(found: list[Path], target: Path) -> list[Path]:

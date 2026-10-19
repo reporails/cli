@@ -365,3 +365,57 @@ def test_command_rejects_a_path_that_is_not_a_folder(tmp_path: Path) -> None:
         result = runner.invoke(app, ["expected-loads", str(bad)])
         assert result.exit_code == 2
         assert "Path not found or not a folder" in result.output
+
+
+def _causes(out: dict, root: Path) -> dict[str, str | None]:
+    return {name: item["cause"] for name, item in _by_name(out["skipped"], root).items()}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_skipped_agents_md_names_the_plain_claude_md_that_caused_it(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    _write(root / "AGENTS.md")
+    assert _causes(expected_loads(root), root) == {"AGENTS.md": str(root / "CLAUDE.md")}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_skipped_agents_md_names_a_dot_claude_claude_md(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / ".claude" / "CLAUDE.md")
+    _write(root / "AGENTS.md")
+    assert _causes(expected_loads(root), root) == {"AGENTS.md": str(root / ".claude" / "CLAUDE.md")}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_subfolder_agents_md_names_the_claude_local_md_beside_it(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "sub" / "CLAUDE.local.md")
+    _write(root / "sub" / "AGENTS.md")
+    _write(root / "AGENTS.md")
+    out = expected_loads(root)
+    assert _causes(out, root) == {"sub/AGENTS.md": str(root / "sub" / "CLAUDE.local.md")}
+    assert _by_name(out["skipped"], root)["sub/AGENTS.md"]["reason"] == "subdir_has_claude_md"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_below_a_parent_folders_claude_md_names_that_file(tmp_path: Path) -> None:
+    _write(tmp_path / "CLAUDE.md")
+    root = _project(tmp_path)
+    _write(root / "AGENTS.md")
+    out = expected_loads(root)
+    assert _causes(out, root) == {"AGENTS.md": str(tmp_path / "CLAUDE.md")}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_skip_without_a_claude_file_has_no_cause(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "AGENTS.md")
+    _write(root / ".agents" / "AGENTS.md")
+    _mode("claude-md")
+    assert set(_causes(expected_loads(root), root).values()) == {None}
