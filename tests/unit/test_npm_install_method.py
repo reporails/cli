@@ -36,14 +36,6 @@ def test_launcher_variable_is_consumed_once(monkeypatch):
     assert bootstrap.consume_npm_launch() is True
 
 
-def _stub(folder: Path) -> Path:
-    folder.mkdir(parents=True)
-    exe = folder / "ails"
-    exe.write_text("#!/bin/sh\n", encoding="utf-8")
-    exe.chmod(0o755)
-    return exe
-
-
 _REAL_WHICH = shutil.which
 
 
@@ -93,6 +85,96 @@ def test_install_to_path_sees_a_real_copy_behind_a_node_modules_one(two_folder_p
     assert ran == []
 
 
+def _no_install(monkeypatch) -> list[tuple[object, ...]]:
+    ran: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        install_module, "run_uv_tool", lambda *a, **k: ran.append(a) or subprocess.CompletedProcess(a, 0, "", "")
+    )
+    return ran
+
+
+@pytest.mark.skipif(os.name == "nt", reason="stub executables are POSIX scripts")
+def test_install_to_path_sees_the_path_copy_despite_one_in_the_current_folder(
+    two_folder_path, tmp_path, monkeypatch, capsys
+):
+    """Windows searches the current folder first; the PATH copy must still be found."""
+    real = _stub(two_folder_path[1])
+    here = tmp_path / "cwd"
+    here.mkdir()
+    _stub(here)
+    monkeypatch.chdir(here)
+    ran = _no_install(monkeypatch)
+    assert install_module._install_to_path() is True
+    assert str(real) in "".join(capsys.readouterr().out.split())
+    assert ran == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="stub executables are POSIX scripts")
+def test_install_to_path_ignores_an_ails_only_in_the_current_folder(two_folder_path, tmp_path, monkeypatch, capsys):
+    here = tmp_path / "cwd"
+    here.mkdir()
+    _stub(here)
+    monkeypatch.chdir(here)
+    ran = _no_install(monkeypatch)
+    assert install_module._install_to_path() is True
+    assert len(ran) == 1
+    assert "already on PATH" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("windows", "pathext", "expected"),
+    [
+        (True, ".COM;.EXE;.BAT;.CMD", ["ails.COM", "ails.EXE", "ails.BAT", "ails.CMD"]),
+        (True, ".EXE;;.CMD", ["ails.EXE", "ails.CMD"]),
+        (False, ".EXE", ["ails"]),
+    ],
+)
+def test_ails_names(windows, pathext, expected):
+    assert install_module._ails_names(windows, pathext) == expected
+
+
+@pytest.mark.skipif(os.name == "nt", reason="stub executables are POSIX scripts")
+def test_ails_in_folder_needs_an_executable_file(tmp_path):
+    assert install_module._ails_in_folder(str(tmp_path)) is None
+    plain = tmp_path / "ails"
+    plain.write_text("x", encoding="utf-8")
+    plain.chmod(0o644)
+    assert install_module._ails_in_folder(str(tmp_path)) is None
+    plain.chmod(0o755)
+    assert install_module._ails_in_folder(str(tmp_path)) == str(plain)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="stub executables are POSIX scripts")
+def test_uv_cache_dir_is_asked_once_per_install(two_folder_path, tmp_path, monkeypatch):
+    """Two PATH copies outside node_modules, the first inside uv's cache: one lookup."""
+    cache = tmp_path / "cache"
+    one, two = cache / "bin", tmp_path / "other" / "bin"
+    one.mkdir(parents=True)
+    two.mkdir(parents=True)
+    _stub(one)
+    _stub(two)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(one), str(two)]))
+    calls: list[str] = []
+    monkeypatch.setattr(install_module, "_uv_cache_dir", lambda uv: calls.append(uv) or str(cache))
+    _no_install(monkeypatch)
+    assert install_module._install_to_path() is True
+    assert len(calls) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="stub executables are POSIX scripts")
+@pytest.mark.parametrize("with_node_modules_copy", [True, False])
+def test_uv_cache_dir_is_not_asked_without_a_copy_outside_node_modules(
+    two_folder_path, monkeypatch, with_node_modules_copy
+):
+    if with_node_modules_copy:
+        _stub(two_folder_path[0])
+    calls: list[str] = []
+    monkeypatch.setattr(install_module, "_uv_cache_dir", lambda uv: calls.append(uv))
+    _no_install(monkeypatch)
+    assert install_module._install_to_path() is True
+    assert calls == []
+
+
 def test_update_prints_hint_and_runs_nothing(monkeypatch, capsys):
     monkeypatch.setenv("AILS_LAUNCHER", "npm")
     calls: list[object] = []
@@ -118,4 +200,4 @@ def test_update_prints_hint_and_runs_nothing(monkeypatch, capsys):
     ],
 )
 def test_node_modules_copy_is_temporary(path, expected):
-    assert _is_temporary_ails(path, None) is expected
+    assert _is_temporary_ails(path, lambda: None) is expected

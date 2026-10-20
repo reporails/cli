@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
 
 import typer
@@ -64,26 +66,49 @@ def _uv_cache_dir(uv: str) -> str | None:
     return result.stdout.strip() or None if result.returncode == 0 else None
 
 
-def _is_temporary_ails(ails_path: str, uv: str | None) -> bool:
+def _is_temporary_ails(ails_path: str, cache: Callable[[], str | None]) -> bool:
     """True for an `ails` inside a `node_modules` folder or in uv's cache.
 
-    That is a one-shot or project copy, not a PATH install.
+    That is a one-shot or project copy, not a PATH install. `cache` is a getter for uv's
+    cache folder, called only when the `node_modules` rule does not decide.
     """
     if "node_modules" in PureWindowsPath(ails_path).parts:
         return True
-    cache = _uv_cache_dir(uv) if uv else None
-    if cache:
-        return Path(os.path.realpath(ails_path)).is_relative_to(os.path.realpath(cache))
+    cache_dir = cache()
+    if cache_dir:
+        return Path(os.path.realpath(ails_path)).is_relative_to(os.path.realpath(cache_dir))
     return "/.cache/uv/" in ails_path
+
+
+def _ails_names(windows: bool, pathext: str) -> list[str]:
+    """File names that count as the `ails` program in one folder.
+
+    Windows runs only a name with a PATHEXT extension, so there is no bare `ails` there.
+    """
+    if windows:
+        return [f"ails{ext}" for ext in pathext.split(";") if ext]
+    return ["ails"]
+
+
+def _ails_in_folder(entry: str) -> str | None:
+    """The `ails` executable directly inside PATH folder `entry`, or None."""
+    pathext = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    for name in _ails_names(os.name == "nt", pathext):
+        candidate = os.path.join(entry, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
 
 
 def _install_to_path() -> bool:
     """Install ails to PATH via uv tool install. Returns True on success."""
     uv = shutil.which("uv")
+    cache = functools.cache(lambda: _uv_cache_dir(uv) if uv else None)
+
     # Already on PATH as a real install (not uvx one-shot)?
-    entries = os.environ.get("PATH", "").split(os.pathsep)
-    hits = (shutil.which("ails", path=entry) for entry in entries if entry)
-    ails_path = next((hit for hit in hits if hit and not _is_temporary_ails(hit, uv)), None)
+    entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+    hits = (_ails_in_folder(entry) for entry in entries)
+    ails_path = next((hit for hit in hits if hit and not _is_temporary_ails(hit, cache)), None)
     if ails_path:
         console.print(f"  [dim]ails already on PATH: {ails_path}[/dim]")
         return True
