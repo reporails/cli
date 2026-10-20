@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
 
@@ -28,6 +29,17 @@ def env_int(var_name: str) -> int | None:
 def running_in_github_actions() -> bool:
     """True when the process runs under GitHub Actions."""
     return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def running_in_ci() -> bool:
+    """True when the process runs under a CI system."""
+    return running_in_github_actions() or any(env_text(var) for var in ("CI", "GITLAB_CI", "JENKINS_URL", "CIRCLECI"))
+
+
+def environment_without(names: Iterable[str]) -> dict[str, str]:
+    """The process environment minus the named variables."""
+    dropped = set(names)
+    return {key: value for key, value in os.environ.items() if key not in dropped}
 
 
 def env_flag(var_name: str) -> bool:

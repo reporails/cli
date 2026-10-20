@@ -57,6 +57,9 @@ def _update_engine() -> bool:
 
     result = run_uv_tool(uv, "upgrade", "reporails-cli")
 
+    if result is None:
+        console.print("[red]Update failed:[/red] uv could not be run or did not finish in time.")
+        return False
     if result.returncode == 0:
         output = result.stdout.strip() or result.stderr.strip()
         if "already up to date" in output.lower() or "nothing to upgrade" in output.lower():
@@ -67,10 +70,11 @@ def _update_engine() -> bool:
 
     # Maybe not installed as a tool yet — install instead
     result2 = run_uv_tool(uv, "install", "reporails-cli", "--force")
-    if result2.returncode == 0:
+    if result2 is not None and result2.returncode == 0:
         console.print("[green]Installed latest version.[/green]")
         return True
-    console.print(f"[red]Update failed:[/red] {result2.stderr.strip()}")
+    detail = result2.stderr.strip() if result2 is not None else "uv could not be run or did not finish in time."
+    console.print(f"[red]Update failed:[/red] {detail}")
     return False
 
 

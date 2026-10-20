@@ -14,9 +14,10 @@
 
 ### Fixed
 
-- `ails install` run through npx, `pnpm dlx` or `bunx`, or from a project's own dependency, puts `ails` on your PATH instead of reporting that copy as already installed. An `ails` in the current folder that is not on PATH no longer counts as installed.
-- A project's CLAUDE.md that a subfolder's CLAUDE.md links to is listed and checked as the project's main file, not as that subfolder's file.
 - `ails install` run through npx, `pnpm dlx` or `bunx`, or from a project's own dependency, puts `ails` on your PATH instead of reporting that copy as already installed.
+- On Windows, `ails install` no longer counts an `ails` in the current folder or in uv's cache as installed, and an empty PATHEXT no longer hides an installed `ails`.
+- `ails update` reports a uv run that cannot start or times out, instead of crashing.
+- A project's CLAUDE.md that a subfolder's CLAUDE.md links to is listed and checked as the project's main file, not as that subfolder's file.
 - A pinned `npx @reporails/cli@X.Y.Z` or `npm install -g @reporails/cli@X.Y.Z` runs that version; a bare `npx @reporails/cli` runs the latest release unless a copy is installed globally or in the project.
 - `ails check` honours Claude Code's Project instructions setting saved under the plugin ID Claude Code has used since 2.1.285 (`cc-plugin-agents-md@builtin`), as well as the older `agents-md@builtin`.
 - A rules file in a subdirectory's `.claude/rules/` folder is checked as loading on demand, as Claude Code loads it, rather than at session start.

@@ -197,7 +197,36 @@ def test_update_prints_hint_and_runs_nothing(monkeypatch, capsys):
         ("/usr/local/bin/ails", False),
         ("/home/linuxbrew/.linuxbrew/bin/ails", False),
         ("C:\\Users\\u\\AppData\\Roaming\\npm\\ails.cmd", False),
+        ("C:\\Users\\u\\AppData\\Local\\uv\\cache\\archive-v0\\x\\Scripts\\ails.exe", True),
+        ("/home/u/.cache/uv/archive-v0/x/bin/ails", True),
+        ("C:\\tools\\ails.exe", False),
     ],
 )
 def test_node_modules_copy_is_temporary(path, expected):
-    assert _is_temporary_ails(path, lambda: None) is expected
+    assert _is_temporary_ails(path, None) is expected
+
+
+@pytest.mark.skipif(os.name == "nt", reason="stub executables are POSIX scripts")
+@pytest.mark.parametrize("pathext", [None, ""])
+def test_unset_or_empty_pathext_means_the_default_windows_extensions(tmp_path, monkeypatch, pathext):
+    exe = tmp_path / "ails.COM"
+    exe.write_text("", encoding="utf-8")
+    exe.chmod(0o755)
+    if pathext is None:
+        monkeypatch.delenv("PATHEXT", raising=False)
+    else:
+        monkeypatch.setenv("PATHEXT", pathext)
+    with monkeypatch.context() as windows:
+        windows.setattr(install_module.os, "name", "nt")
+        found = install_module._ails_in_folder(str(tmp_path))
+    assert found == str(exe)
+
+
+def test_update_stops_when_uv_cannot_run(monkeypatch):
+    monkeypatch.delenv("AILS_LAUNCHER", raising=False)
+    monkeypatch.setattr(commands_module, "npm_update_hint", lambda method: None)
+    monkeypatch.setattr(commands_module.shutil, "which", lambda cmd: "/fake/uv")
+    calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(commands_module, "run_uv_tool", lambda *a: calls.append(a))
+    assert commands_module._update_engine() is False
+    assert len(calls) == 1
