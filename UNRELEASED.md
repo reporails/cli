@@ -28,3 +28,4 @@
 ### Internal
 
 - A build check fails when a fixed set of named values is spelled out as plain text in another list or table instead of using the names; the one place that did it, the capability-level table, now uses the names.
+- Build checks fail when the environment is read, or a program is started, outside the one place that owns it.

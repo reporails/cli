@@ -2,8 +2,10 @@
 
 One rule, pure `ast`, over every `src/reporails_cli/**/*.py`:
 
-- P1 stray process: `import subprocess`, `import subprocess as x` or `from subprocess import ...` in
-  any module but `interfaces/cli/helpers.py`; and, anywhere in src, a call to `os.system`,
+- P1 stray process: `import subprocess`, `import subprocess as x` or `from subprocess import ...`, and the same for
+  `webbrowser` and `pty`, in any module but `interfaces/cli/helpers.py`; an attribute reference to
+  `asyncio.create_subprocess_exec` or `asyncio.create_subprocess_shell` anywhere;
+  and, anywhere in src, a call to `os.system`,
   `os.popen`, `os.startfile`, `os.spawn*`, `os.exec*` or `os.posix_spawn*` (through `import os`,
   an alias of it, or a name imported from `os`). `os.fork` is allowed: the mapper daemon owns its
   own start.
@@ -23,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.architecture._os_aliases import os_names
+
 pytestmark = pytest.mark.architecture
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -31,6 +35,7 @@ RUNNER = "interfaces/cli/helpers.py"
 
 _OS_EXACT = {"system", "popen", "startfile"}
 _OS_PREFIXES = ("spawn", "exec", "posix_spawn")
+_ASYNCIO_STARTERS = {"create_subprocess_exec", "create_subprocess_shell"}
 
 
 @dataclass(frozen=True)
@@ -45,22 +50,23 @@ def _starts_a_program(name: str) -> bool:
     return name in _OS_EXACT or name.startswith(_OS_PREFIXES)
 
 
-def _os_names(tree: ast.Module) -> set[str]:
-    """The local names the `os` module is bound to: `import os`, `import os as x`, `import os.path`."""
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Import):
-            continue
-        for alias in node.names:
-            if alias.name == "os":
-                names.add(alias.asname or "os")
-            elif alias.name.startswith("os.") and not alias.asname:
-                names.add("os")
-    return names
+_RUNNER_MODULES = ("subprocess", "pty", "webbrowser")
 
 
-def _is_subprocess(module: str | None) -> bool:
-    return module == "subprocess" or (module or "").startswith("subprocess.")
+def _is_runner_module(module: str | None) -> bool:
+    """True for `subprocess`, `pty` or `webbrowser`, or a submodule of one: each starts a program."""
+    return any(module == name or (module or "").startswith(f"{name}.") for name in _RUNNER_MODULES)
+
+
+def _asyncio_names(tree: ast.Module) -> set[str]:
+    """The local names the `asyncio` module is bound to."""
+    return {
+        alias.asname or "asyncio"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "asyncio"
+    }
 
 
 def stray_process_violations(sources: list[Path], root: Path) -> list[Violation]:
@@ -69,7 +75,8 @@ def stray_process_violations(sources: list[Path], root: Path) -> list[Violation]
     for py in sources:
         rel = py.relative_to(root).as_posix()
         tree = ast.parse(py.read_text(encoding="utf-8"))
-        modules = _os_names(tree)
+        modules = os_names(tree)
+        asyncio_names = _asyncio_names(tree)
         from_os = {
             alias.asname or alias.name: alias.name
             for node in ast.walk(tree)
@@ -82,10 +89,17 @@ def stray_process_violations(sources: list[Path], root: Path) -> list[Violation]
                 out.extend(
                     Violation("P1", f"{rel}:{node.lineno} imports {alias.name}")
                     for alias in node.names
-                    if _is_subprocess(alias.name)
+                    if _is_runner_module(alias.name)
                 )
-            elif rel != RUNNER and isinstance(node, ast.ImportFrom) and _is_subprocess(node.module):
+            elif rel != RUNNER and isinstance(node, ast.ImportFrom) and _is_runner_module(node.module):
                 out.append(Violation("P1", f"{rel}:{node.lineno} imports from {node.module}"))
+            elif (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in asyncio_names
+                and node.attr in _ASYNCIO_STARTERS
+            ):
+                out.append(Violation("P1", f"{rel}:{node.lineno} uses asyncio.{node.attr}"))
             elif isinstance(node, ast.Call):
                 func = node.func
                 if (
@@ -137,6 +151,12 @@ def _plant(tmp_path: Path, files: dict[str, str]) -> list[Path]:
         ("import os\nos.spawnl(0, 'x')\n", "mod.py:2 calls os.spawnl"),
         ("import os\nos.execv('x', [])\n", "mod.py:2 calls os.execv"),
         ("import os\nos.posix_spawn('x', [], {})\n", "mod.py:2 calls os.posix_spawn"),
+        ("import webbrowser\n", "mod.py:1 imports webbrowser"),
+        ("from webbrowser import open\n", "mod.py:1 imports from webbrowser"),
+        ("import pty\n", "mod.py:1 imports pty"),
+        ("from pty import spawn\n", "mod.py:1 imports from pty"),
+        ("import asyncio\nasyncio.create_subprocess_exec\n", "mod.py:2 uses asyncio.create_subprocess_exec"),
+        ("import asyncio\nx = asyncio.create_subprocess_shell\n", "mod.py:2 uses asyncio.create_subprocess_shell"),
         ("import os as o\no.system('x')\n", "mod.py:2 calls os.system"),
         ("from os import system as s\ns('x')\n", "mod.py:2 calls os.system"),
     ],

@@ -7,6 +7,8 @@ One rule, pure `ast`, over every `src/reporails_cli/**/*.py` outside `core/platf
   `environb`, `getenv`, `getenvb`. `.get`, `.pop`, `.setdefault`, `.items`, `in os.environ`,
   `os.environ[...]` loads and passing `os.environ` along all count. The one exception is a write:
   `os.environ[...] = value` and `del os.environ[...]` set or remove a variable and read nothing.
+  That is a write through a subscript store or delete; a method write (`.update`, `.clear`, `|=`) and
+  `os.environ[...] += ...` count as a read.
 
 Why: a variable read in many places is trimmed, defaulted and validated many ways. One folder owns
 the reads, so each variable has one meaning.
@@ -22,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+
+from tests.unit.architecture._os_aliases import os_names
 
 pytestmark = pytest.mark.architecture
 
@@ -41,24 +45,15 @@ class Violation:
     detail: str
 
 
-def _os_names(tree: ast.Module) -> set[str]:
-    """The local names the `os` module is bound to: `import os`, `import os as x`, `import os.path`."""
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Import):
-            continue
-        for alias in node.names:
-            if alias.name == "os":
-                names.add(alias.asname or "os")
-            elif alias.name.startswith("os.") and not alias.asname:
-                names.add("os")
-    return names
-
-
 def _is_write_target(node: ast.Attribute, parents: dict[ast.AST, ast.AST]) -> bool:
     """True when `node` is the object of a subscript store or delete (`os.environ["X"] = "1"`)."""
     parent = parents.get(node)
-    return isinstance(parent, ast.Subscript) and parent.value is node and isinstance(parent.ctx, (ast.Store, ast.Del))
+    if not (isinstance(parent, ast.Subscript) and parent.value is node):
+        return False
+    # `os.environ["X"] += "..."` reads the value before it writes, so it counts as a read.
+    return isinstance(parent.ctx, ast.Del) or (
+        isinstance(parent.ctx, ast.Store) and not isinstance(parents.get(parent), ast.AugAssign)
+    )
 
 
 def _reads_env(node: ast.AST, modules: set[str], parents: dict[ast.AST, ast.AST]) -> bool:
@@ -77,7 +72,7 @@ def env_read_violations(sources: list[Path], root: Path) -> list[Violation]:
             continue
         tree = ast.parse(py.read_text(encoding="utf-8"))
         parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-        modules = _os_names(tree)
+        modules = os_names(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module == "os":
                 out.extend(
@@ -130,6 +125,8 @@ def _plant(tmp_path: Path, files: dict[str, str]) -> list[Path]:
         ("from os import getenv as g\n", "mod.py:1 imports os.getenv"),
         ("import os as x\ny = x.environ\n", "mod.py:2 reads os.environ"),
         ("import os.path\ny = os.getenv('A')\n", "mod.py:2 reads os.getenv"),
+        ("import os\nos.environ['PATH'] += ':x'\n", "mod.py:2 reads os.environ"),
+        ("import os\nos.environ.update({'A': '1'})\n", "mod.py:2 reads os.environ"),
     ],
 )
 def test_e1_env_read_fires(tmp_path: Path, body: str, detail: str) -> None:
