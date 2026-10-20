@@ -72,10 +72,23 @@ def test_launcher_exits_with_the_engine_exit_code(tmp_path: Path) -> None:
     assert code == 3
 
 
+FAKE_CURL_DEFAULT = 'echo "stub curl called" >&2\nexit 1\n'
+
+
 def _run_without_uv_on_path(
-    tmp_path: Path, stub_dir: Path, **extra_env: str
-) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
-    """Run the launcher with `which` on PATH but no uv/uvx, and a uvx stub in `stub_dir`."""
+    tmp_path: Path,
+    stub_dir: Path | None,
+    *,
+    curl_body: str = FAKE_CURL_DEFAULT,
+    expect_run: bool = True,
+    **extra_env: str,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object] | None, str]:
+    """Run the launcher with `which` on PATH but no uv/uvx, and a uvx stub in `stub_dir`.
+
+    A fake `curl` sits first on PATH so the installer can never reach the network; it runs
+    `curl_body` (a /bin/sh fragment). Returns the process, the stub's record (None when it
+    never ran and `expect_run` is false), and the PATH the launcher was given.
+    """
     node = shutil.which("node")
     which = shutil.which("which")
     if node is None or which is None:
@@ -83,32 +96,50 @@ def _run_without_uv_on_path(
     which_dir = Path(which).parent
     if (which_dir / "uv").exists() or (which_dir / "uvx").exists():
         pytest.skip(f"uv or uvx sits beside `which` in {which_dir}; cannot build a PATH without uv")
-    stub_dir.mkdir(parents=True, exist_ok=True)
-    stub = stub_dir / "uvx"
-    stub.write_text(f"#!{sys.executable}\n{STUB}", encoding="utf-8")
-    stub.chmod(0o755)
+    if stub_dir is not None:
+        stub_dir.mkdir(parents=True, exist_ok=True)
+        stub = stub_dir / "uvx"
+        stub.write_text(f"#!{sys.executable}\n{STUB}", encoding="utf-8")
+        stub.chmod(0o755)
+    curl_dir = tmp_path / "fakecurl"
+    curl_dir.mkdir()
+    curl = curl_dir / "curl"
+    curl.write_text(f"#!/bin/sh\n{curl_body}", encoding="utf-8")
+    curl.chmod(0o755)
+    path = os.pathsep.join([str(curl_dir), str(which_dir)])
     out = tmp_path / "out.json"
     env = {
         **os.environ,
-        "PATH": str(which_dir),
+        "PATH": path,
         "HOME": str(tmp_path),
         "STUB_OUT": str(out),
         "STUB_EXIT": "4",
         **extra_env,
     }
-    for name in ("UV_INSTALL_DIR", "XDG_BIN_HOME", "XDG_DATA_HOME", "AILS_LAUNCHER"):
+    for name in (
+        "UV_INSTALL_DIR",
+        "CARGO_DIST_FORCE_INSTALL_DIR",
+        "XDG_BIN_HOME",
+        "XDG_DATA_HOME",
+        "CARGO_HOME",
+        "AILS_LAUNCHER",
+    ):
         if name not in extra_env:
             env.pop(name, None)
     result = subprocess.run([node, str(LAUNCHER), "version"], env=env, capture_output=True, text=True, timeout=60)
     if not out.exists():
-        pytest.fail(f"the uvx stub never ran\nstdout: {result.stdout}\nstderr: {result.stderr}")
-    return result, json.loads(out.read_text(encoding="utf-8"))
+        if expect_run:
+            pytest.fail(f"the uvx stub never ran\nstdout: {result.stdout}\nstderr: {result.stderr}")
+        return result, None, path
+    return result, json.loads(out.read_text(encoding="utf-8")), path
 
 
 def test_launcher_runs_uvx_from_the_installer_folder_without_reinstalling(tmp_path: Path) -> None:
     version = json.loads((NPM_DIR / "package.json").read_text(encoding="utf-8"))["version"]
-    result, seen = _run_without_uv_on_path(tmp_path, tmp_path / ".local" / "bin")
-    assert "installing" not in result.stdout
+    result, seen, _ = _run_without_uv_on_path(tmp_path, tmp_path / ".local" / "bin")
+    assert seen is not None
+    assert "installing" not in result.stdout + result.stderr
+    assert "stub curl called" not in result.stderr
     assert seen["argv"] == ["--from", f"reporails-cli=={version}", "ails", "version"]
     assert seen["launcher"] == "npm"
     assert result.returncode == 4
@@ -116,13 +147,51 @@ def test_launcher_runs_uvx_from_the_installer_folder_without_reinstalling(tmp_pa
 
 def test_launcher_prefers_uv_install_dir(tmp_path: Path) -> None:
     custom = tmp_path / "custom"
-    result, seen = _run_without_uv_on_path(tmp_path, custom, UV_INSTALL_DIR=str(custom))
-    assert "installing" not in result.stdout
+    result, seen, _ = _run_without_uv_on_path(tmp_path, custom, UV_INSTALL_DIR=str(custom))
+    assert seen is not None
+    assert "installing" not in result.stdout + result.stderr
     assert seen["launcher"] == "npm"
     assert result.returncode == 4
 
 
-def test_launcher_puts_the_uvx_folder_first_on_the_child_path(tmp_path: Path) -> None:
+def test_launcher_leaves_the_child_path_as_given(tmp_path: Path) -> None:
+    _, seen, path = _run_without_uv_on_path(tmp_path, tmp_path / ".local" / "bin")
+    assert seen is not None
+    assert seen["path"] == path
+
+
+def test_launcher_skips_a_uvx_that_is_not_executable(tmp_path: Path) -> None:
     folder = tmp_path / ".local" / "bin"
-    _, seen = _run_without_uv_on_path(tmp_path, folder)
-    assert str(seen["path"]).split(os.pathsep)[0] == str(folder)
+    folder.mkdir(parents=True)
+    (folder / "uvx").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (folder / "uvx").chmod(0o644)
+    result, seen, _ = _run_without_uv_on_path(tmp_path, None, expect_run=False)
+    assert seen is None
+    assert result.returncode != 0
+    assert "stub curl called" in result.stderr
+
+
+def test_launcher_installs_uv_and_keeps_stdout_clean(tmp_path: Path) -> None:
+    version = json.loads((NPM_DIR / "package.json").read_text(encoding="utf-8"))["version"]
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    (payload / "uvx").write_text(f"#!{sys.executable}\n{STUB}", encoding="utf-8")
+    curl_body = (
+        "cat <<'EOF'\n"
+        'echo "installer says hello"\n'
+        'mkdir -p "$HOME/.local/bin"\n'
+        f'cp "{payload}/uvx" "$HOME/.local/bin/uvx"\n'
+        'chmod +x "$HOME/.local/bin/uvx"\n'
+        "printf '#!/bin/sh\\nexit 0\\n' > \"$HOME/.local/bin/uv\"\n"
+        'chmod +x "$HOME/.local/bin/uv"\n'
+        "EOF\n"
+    )
+    result, seen, _ = _run_without_uv_on_path(tmp_path, None, curl_body=curl_body)
+    assert seen is not None
+    assert seen["argv"] == ["--from", f"reporails-cli=={version}", "ails", "version"]
+    assert result.returncode == 4
+    assert result.stdout == ""
+    assert "installing" in result.stderr
+    assert "installer says hello" in result.stderr
+    assert "Open a new terminal" in result.stderr
+    assert str(tmp_path / ".local" / "bin") in result.stderr
