@@ -11,11 +11,25 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Literal
 
 from reporails_cli.core.cache.hashing import file_bytes_digest
 from reporails_cli.core.discovery.walk import has_symlink_loop, safe_resolve
 
 logger = logging.getLogger(__name__)
+
+# How a file's text reaches the agent through another file: the same file under another
+# name (`link`) or a separate file with exactly the same text (`copy`).
+AliasHow = Literal["link", "copy"]
+
+
+def has_same_text(first: Path, second: Path) -> bool:
+    """True when both files can be read and hold exactly the same bytes."""
+    try:
+        return first.read_bytes() == second.read_bytes()
+    except OSError:
+        return False
+
 
 # Cache keyed on project root; cleared alongside the agent cache on --refresh.
 _alias_cache: dict[str, dict[Path, list[Path]]] = {}

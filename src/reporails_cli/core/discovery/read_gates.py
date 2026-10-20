@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from reporails_cli.core.discovery.file_aliases import AliasHow, has_same_text
 from reporails_cli.core.discovery.project_root import resolve_project_root
 from reporails_cli.core.discovery.walk import list_dir, safe_resolve
 from reporails_cli.core.platform.config.claude_settings import (
@@ -99,10 +100,12 @@ class SkippedFile:
 
 @dataclass(frozen=True)
 class AliasFile:
-    """An `AGENTS.md` that links to a `CLAUDE.md` Claude Code reads: the same file under another name."""
+    """An `AGENTS.md` whose text reaches Claude through a `CLAUDE.md` it reads: `link` when it is the
+    same file under another name, `copy` when it is a separate file with exactly the same text."""
 
     path: Path
     same_as: Path
+    how: AliasHow
 
 
 @dataclass(frozen=True)
@@ -119,8 +122,8 @@ class AgentsMdReads:
 def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path] = ()) -> AgentsMdReads:
     """Split the `AGENTS.md` files among `found` into those Claude Code loads for a session in
     `target` and those it skips, each skipped file with its reason. A skipped file that is the same
-    file as a `CLAUDE.md`-family file among `read` (the instruction files the session reads) is
-    reported as an alias of it instead."""
+    file as, or holds exactly the text of, a `CLAUDE.md`-family file among `read` (the instruction
+    files the session reads) is reported as an alias of it instead."""
     if not found:
         return AgentsMdReads([], [], "", [])
     root = resolve_project_root(target)
@@ -137,11 +140,21 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
             kept.append(path)
             continue
         same_as = claude_files.get(safe_resolve(path))
-        if same_as is None:
-            skipped.append(SkippedFile(path, *skip))
-        else:
-            aliases.append(AliasFile(path, same_as))
+        if same_as is not None:
+            aliases.append(AliasFile(path, same_as, "link"))
+            continue
+        twin = _file_with_same_text(path, claude_files.values(), prefer=skip[1])
+        if twin is not None:
+            aliases.append(AliasFile(path, twin, "copy"))
+            continue
+        skipped.append(SkippedFile(path, *skip))
     return AgentsMdReads(kept, skipped, mode, aliases)
+
+
+def _file_with_same_text(path: Path, claude_files: Iterable[Path], *, prefer: Path | None) -> Path | None:
+    """The `CLAUDE.md`-family file Claude Code reads that holds exactly the text of `path`, `prefer` first."""
+    candidates = sorted(claude_files, key=lambda file: (file != prefer, str(file)))
+    return next((file for file in candidates if has_same_text(path, file)), None)
 
 
 def _claude_files_by_identity(read: Iterable[Path], root: Path) -> dict[Path, Path]:

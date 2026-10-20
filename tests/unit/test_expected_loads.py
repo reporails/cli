@@ -18,7 +18,9 @@ from reporails_cli.interfaces.cli.main import app
 runner = CliRunner()
 
 
-def _write(path: Path, text: str = "# Notes\n\nRun the tests.\n") -> Path:
+def _write(path: Path, text: str | None = None) -> Path:
+    if text is None:
+        text = "# Agents\n\nBuild with make.\n" if path.name == "AGENTS.md" else "# Notes\n\nRun the tests.\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
@@ -163,7 +165,7 @@ def test_agents_md_linked_to_claude_md_is_reported_as_that_file(tmp_path: Path) 
     _write(root / "sub2" / "CLAUDE.md")
     _write(root / "sub2" / "AGENTS.md")
     _write(root / "sub3" / "CLAUDE.md")
-    _write(root / "sub3" / "notes.md")
+    _write(root / "sub3" / "notes.md", "# Other\n")
     try:
         (root / "AGENTS.md").symlink_to("CLAUDE.md")
         (root / "sub" / "AGENTS.md").symlink_to("CLAUDE.md")
@@ -173,8 +175,12 @@ def test_agents_md_linked_to_claude_md_is_reported_as_that_file(tmp_path: Path) 
     out = expected_loads(root)
     resolved = root.resolve()
     assert out["aliases"] == [
-        {"path": str(resolved / "AGENTS.md"), "same_as": str(resolved / "CLAUDE.md")},
-        {"path": str(resolved / "sub" / "AGENTS.md"), "same_as": str(resolved / "sub" / "CLAUDE.md")},
+        {"path": str(resolved / "AGENTS.md"), "same_as": str(resolved / "CLAUDE.md"), "how": "link"},
+        {
+            "path": str(resolved / "sub" / "AGENTS.md"),
+            "same_as": str(resolved / "sub" / "CLAUDE.md"),
+            "how": "link",
+        },
     ]
     skipped = {Path(i["path"]).relative_to(resolved).as_posix(): i["reason"] for i in out["skipped"]}
     assert skipped == {"sub2/AGENTS.md": "claude_md_present", "sub3/AGENTS.md": "claude_md_present"}
@@ -226,8 +232,8 @@ def test_agents_md_linking_to_claude_local_md_is_an_alias(tmp_path: Path) -> Non
 def test_agents_md_linking_into_agents_dir_or_excluded_folder_stays_skipped(tmp_path: Path) -> None:
     root = _project(tmp_path)
     _write(root / "CLAUDE.md")
-    _write(root / ".agents" / "CLAUDE.md")
-    _write(root / "node_modules" / "pkg" / "CLAUDE.md")
+    _write(root / ".agents" / "CLAUDE.md", "# Other\n")
+    _write(root / "node_modules" / "pkg" / "CLAUDE.md", "# Another\n")
     _link(root / "AGENTS.md", ".agents/CLAUDE.md")
     _link(root / "a" / "AGENTS.md", "../node_modules/pkg/CLAUDE.md")
     out = expected_loads(root)
@@ -547,3 +553,57 @@ def test_unreadable_entry_leaves_the_answer_unchanged(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(Path, "chmod", refuse)
     assert _answer(root) == before
+
+
+def _how_by_name(out: dict, root: Path) -> dict[str, str]:
+    resolved = root.resolve()
+    return {Path(a["path"]).relative_to(resolved).as_posix(): a["how"] for a in out["aliases"]}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize(
+    ("agents_text", "how", "skipped"),
+    [
+        ("# Notes\n\nRun the tests.\n", "copy", {}),
+        ("# Notes\n\nRun the tests!\n", None, {"AGENTS.md": "claude_md_present"}),
+        (None, "link", {}),
+    ],
+    ids=["copy", "near-copy", "link"],
+)
+def test_agents_md_reaching_claude_through_claude_md_is_an_alias_with_how(
+    tmp_path: Path, agents_text: str | None, how: str | None, skipped: dict[str, str]
+) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    if agents_text is None:
+        _link(root / "AGENTS.md", "CLAUDE.md")
+    else:
+        _write(root / "AGENTS.md", agents_text)
+    out = expected_loads(root)
+    assert _how_by_name(out, root) == ({} if how is None else {"AGENTS.md": how})
+    assert _skipped_reasons(out, root) == skipped
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize("reason", ["claude_md_present", "setting_off", "never_read"])
+@pytest.mark.parametrize("same_text", [True, False])
+def test_agents_md_with_the_text_of_a_read_claude_md_is_a_copy_whatever_the_skip_reason(
+    tmp_path: Path, reason: str, same_text: bool
+) -> None:
+    root = _project(tmp_path)
+    claude_text = "# Notes\n\nRun the tests.\n"
+    _write(root / "CLAUDE.md", claude_text)
+    agents = Path(".agents/AGENTS.md") if reason == "never_read" else Path("AGENTS.md")
+    _write(root / agents, claude_text if same_text else claude_text + "Also lint.\n")
+    if reason == "setting_off":
+        _mode("claude-md")
+    out = expected_loads(root)
+    if same_text:
+        assert _alias_names(out, root) == {agents.as_posix(): "CLAUDE.md"}
+        assert {a["how"] for a in out["aliases"]} == {"copy"}
+        assert _skipped_reasons(out, root) == {}
+    else:
+        assert out["aliases"] == []
+        assert _skipped_reasons(out, root) == {agents.as_posix(): reason}

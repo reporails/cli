@@ -90,7 +90,8 @@ def expected_loads(target: Path) -> JsonObject:
         for item in sorted(skipped, key=lambda s: s.path)
     ]
     aliases: list[JsonValue] = [
-        {"path": str(item.path), "same_as": str(item.same_as)} for item in sorted(reads.aliases, key=lambda a: a.path)
+        {"path": str(item.path), "same_as": str(item.same_as), "how": item.how}
+        for item in sorted(reads.aliases, key=lambda a: a.path)
     ]
     return {
         "version": 1,
