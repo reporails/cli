@@ -23,6 +23,8 @@ import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from reporails_cli.core.platform.config.bootstrap import env_int
+
 
 def _cpu_count() -> int:
     return os.cpu_count() or 1
@@ -30,12 +32,9 @@ def _cpu_count() -> int:
 
 def encode_pool_workers() -> int:
     """Thread-pool size for the per-bucket encode. Default = cpu_count, min 1."""
-    raw = os.environ.get("AILS_MAP_ENCODE_WORKERS", "").strip()
-    if raw:
-        try:
-            return max(1, int(raw))
-        except ValueError:
-            pass
+    workers = env_int("AILS_MAP_ENCODE_WORKERS")
+    if workers is not None:
+        return max(1, workers)
     return max(1, _cpu_count())
 
 
@@ -48,12 +47,9 @@ def ort_intra_threads() -> int:
     intra-op threads so the serial path still spreads across cores. Either way
     ``pool * intra_op ~= cpu_count``.
     """
-    env = os.environ.get("AILS_ORT_THREADS")
-    if env is not None:
-        try:
-            return max(1, int(env))
-        except ValueError:
-            pass
+    threads = env_int("AILS_ORT_THREADS")
+    if threads is not None:
+        return max(1, threads)
     return 1 if encode_pool_workers() > 1 else _cpu_count()
 
 

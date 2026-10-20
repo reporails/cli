@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from collections.abc import Iterable
 from pathlib import Path
 
 from reporails_cli.core.discovery.agents import clear_agent_cache
-from reporails_cli.core.platform.adapters.api_key import DEFAULT_SERVER_URL, has_api_key
+from reporails_cli.core.platform.adapters.api_key import has_api_key
 from reporails_cli.core.platform.config.bootstrap import (
     get_global_config_path,
     get_local_config_path,
@@ -16,6 +15,7 @@ from reporails_cli.core.platform.config.bootstrap import (
 )
 from reporails_cli.core.platform.config.config import get_global_config
 from reporails_cli.core.platform.config.credentials import credentials_path
+from reporails_cli.core.platform.config.endpoints import server_url
 from reporails_cli.core.platform.contract.json_value import JsonObject, as_object
 from reporails_cli.core.platform.dto.ruleset import RulesetMap
 from reporails_cli.interfaces.mcp.tools import _discover_files
@@ -47,8 +47,7 @@ def scan_inputs_base(scan_root: Path) -> str:
     ]
     parts = _stat_parts({*scanned, *config_files})
     tier = get_global_config().tier
-    server = os.environ.get("AILS_SERVER_URL", "").strip().rstrip("/") or DEFAULT_SERVER_URL
-    parts.append(f"signed_in={has_api_key()}:tier={tier}:server={server}")
+    parts.append(f"signed_in={has_api_key()}:tier={tier}:server={server_url()}")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 

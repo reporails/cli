@@ -20,6 +20,7 @@
 - A pinned `npx @reporails/cli@X.Y.Z` or `npm install -g @reporails/cli@X.Y.Z` runs that version; a bare `npx @reporails/cli` runs the latest release unless a copy is installed globally or in the project.
 - `ails check` honours Claude Code's Project instructions setting saved under the plugin ID Claude Code has used since 2.1.285 (`cc-plugin-agents-md@builtin`), as well as the older `agents-md@builtin`.
 - A rules file in a subdirectory's `.claude/rules/` folder is checked as loading on demand, as Claude Code loads it, rather than at session start.
+- A space before the address in `AILS_SERVER_URL` no longer stops `ails check` from reaching that server.
 
 ### Removed
 

@@ -55,7 +55,7 @@ def _colour(notices: list[Notice], width: int = 100, *, ascii_mode: bool = False
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
-_BG = "103"  # bright_yellow background in the standard palette
+_BG = re.compile(r"\x1b\[(?:\d+;)*103(?:;\d+)*m")  # bright_yellow background in the standard palette
 
 
 @pytest.mark.unit
@@ -63,7 +63,7 @@ _BG = "103"  # bright_yellow background in the standard palette
 def test_a_long_warning_is_a_block_of_equal_width_lines_on_yellow() -> None:
     lines = _colour([Notice("a", "warn", "Your payment failed and the plan ends soon. " * 5)])
     assert len(lines) > 1
-    assert all(_BG in line for line in lines)
+    assert all(_BG.search(line) for line in lines)
     assert len({len(_ANSI.sub("", line)) for line in lines}) == 1
     assert all(_ANSI.sub("", line).startswith("   ") for line in lines)
 
@@ -72,9 +72,9 @@ def test_a_long_warning_is_a_block_of_equal_width_lines_on_yellow() -> None:
 @pytest.mark.subsys_cli_ux
 def test_the_link_under_a_warning_has_no_background() -> None:
     lines = _colour([Notice("a", "warn", "Pay now", "https://example.test/pay")])
-    assert _BG in lines[0]
+    assert _BG.search(lines[0])
     assert "https://example.test/pay" in lines[1]
-    assert _BG not in lines[1]
+    assert not _BG.search(lines[1])
 
 
 @pytest.mark.unit
@@ -83,7 +83,7 @@ def test_a_warning_without_colour_or_in_ascii_mode_has_no_background() -> None:
     plain = _printed([Notice("a", "warn", "Pay now")])
     assert plain == "  Pay now\n"
     ascii_lines = _colour([Notice("a", "warn", "Pay now")], ascii_mode=True)
-    assert all(_BG not in line for line in ascii_lines)
+    assert not any(_BG.search(line) for line in ascii_lines)
     assert "Pay now" in "".join(ascii_lines)
 
 

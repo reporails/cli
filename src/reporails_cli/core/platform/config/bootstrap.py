@@ -9,9 +9,30 @@ from pathlib import Path
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
 
 
+def env_text(var_name: str) -> str:
+    """The env var's value with surrounding spaces removed ("" when unset)."""
+    return os.environ.get(var_name, "").strip()
+
+
+def env_int(var_name: str) -> int | None:
+    """The env var as an integer; None when unset, blank or not an integer."""
+    raw = env_text(var_name)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def running_in_github_actions() -> bool:
+    """True when the process runs under GitHub Actions."""
+    return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
 def env_flag(var_name: str) -> bool:
     """True when the env var is set to anything but blank, 0, false, no or off (case and spaces ignored)."""
-    return os.environ.get(var_name, "").strip().lower() not in ("", "0", "false", "no", "off")
+    return env_text(var_name).lower() not in ("", "0", "false", "no", "off")
 
 
 @cache
@@ -23,12 +44,8 @@ def consume_npm_launch() -> bool:
 def parse_idle_timeout_env(var_name: str, default_s: int) -> int | None:
     """Parse an idle-timeout env var (seconds): unset/blank/non-numeric → default,
     a positive int → that value, 0 or negative → None (idle shutdown disabled)."""
-    raw = os.environ.get(var_name, "").strip()
-    if not raw:
-        return default_s
-    try:
-        value = int(raw)
-    except ValueError:
+    value = env_int(var_name)
+    if value is None:
         return default_s
     return value if value > 0 else None
 
