@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from reporails_cli.core.platform.dto.models import Level
 from reporails_cli.core.platform.dto.results import DetectedFeatures, MemoryFeatures
 from reporails_cli.core.platform.policy.levels import (
     _detect_capability,
@@ -50,7 +51,7 @@ class TestLevelHasCapability:
     def test_level_with_no_capabilities_passes_vacuously(self) -> None:
         # Kills L199 `return True -> False`: a level whose capability list is
         # empty (L0) passes vacuously.
-        assert _level_has_capability(DetectedFeatures(), "L0") is True
+        assert _level_has_capability(DetectedFeatures(), Level.L0) is True
 
 
 # ── Detector dispatch (L206, L207) ───────────────────────────────────

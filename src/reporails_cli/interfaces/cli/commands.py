@@ -6,7 +6,7 @@ import shutil
 
 import typer
 
-from reporails_cli.core.install.self_update import detect_install_method
+from reporails_cli.core.install.self_update import detect_install_method, npm_update_hint
 from reporails_cli.core.platform.utils.version import installed_version
 from reporails_cli.interfaces.cli.helpers import console, run_uv_tool
 from reporails_cli.interfaces.cli.typer_app import app
@@ -40,7 +40,12 @@ def show_version() -> None:
 
 
 def _update_engine() -> bool:
-    """Upgrade the engine with uv; True when it is current or was installed."""
+    """Upgrade the engine with the tool that installed it; True when it is current or was installed."""
+    hint = npm_update_hint(detect_install_method())
+    if hint:
+        console.print(hint)
+        return True
+
     uv = shutil.which("uv")
     if not uv:
         console.print("[red]uv not found.[/red] Install it: https://docs.astral.sh/uv/")

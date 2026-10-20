@@ -7,6 +7,8 @@ from enum import Enum
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
+from reporails_cli.core.platform.config.bootstrap import npm_launcher
+
 PKG_NAME = "reporails-cli"
 
 
@@ -16,11 +18,42 @@ class InstallMethod(str, Enum):
     UV = "uv"
     PIP = "pip"
     PIPX = "pipx"
+    NPM = "npm"
+    NPX = "npx"
     DEV = "dev"
     UNKNOWN = "unknown"
 
 
+NPM_LAUNCHES = frozenset({InstallMethod.NPM, InstallMethod.NPX})
+
+
 def detect_install_method() -> InstallMethod:
+    """Detect how reporails-cli was installed: the npm launcher when it names one, else package metadata."""
+    try:
+        launcher = InstallMethod(npm_launcher())
+    except ValueError:
+        return _method_from_metadata()
+    if launcher in NPM_LAUNCHES:
+        return launcher
+    return _method_from_metadata()
+
+
+def npm_update_hint(method: InstallMethod) -> str | None:
+    """The sentence `ails update` prints for an npm or npx install; None for other methods."""
+    if method == InstallMethod.NPX:
+        return (
+            "This ails ran through npx. A bare `npx @reporails/cli` runs the latest release on every run; "
+            "a pinned `npx @reporails/cli@X.Y.Z` runs that version, so raise the version to move it."
+        )
+    if method == InstallMethod.NPM:
+        return (
+            "This ails runs from the npm package. Update a global install with "
+            "`npm install -g @reporails/cli@latest`; for a project dependency, raise its version in package.json."
+        )
+    return None
+
+
+def _method_from_metadata() -> InstallMethod:
     """Detect how reporails-cli was installed using package metadata."""
     try:
         dist = distribution(PKG_NAME)

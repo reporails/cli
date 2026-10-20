@@ -65,7 +65,9 @@ def _uv_cache_dir(uv: str) -> str | None:
 
 
 def _is_temporary_ails(ails_path: str, uv: str | None) -> bool:
-    """True when `ails_path` sits in uv's cache, i.e. a one-shot `uvx` environment."""
+    """True when `ails_path` sits in an npx cache or in uv's cache, i.e. a one-shot copy."""
+    if "_npx" in Path(ails_path).parts:
+        return True
     cache = _uv_cache_dir(uv) if uv else None
     if cache:
         return Path(os.path.realpath(ails_path)).is_relative_to(os.path.realpath(cache))

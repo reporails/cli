@@ -40,15 +40,15 @@ _LEVEL_ORDER = [Level.L1, Level.L2, Level.L3, Level.L4, Level.L5, Level.L6, Leve
 # per the ladder's "highest architectural capability present" rule — a
 # project may skip a level (skills + sub-agents + memory with no path-scoped
 # rules) and still reach the level its highest surface supports.
-LEVEL_CAPS: dict[str, list[str]] = {
-    "L0": [],
-    "L1": ["instruction_file"],
-    "L2": ["multiple_files"],
-    "L3": ["path_scoping"],
-    "L4": ["skills"],
-    "L5": ["agents"],
-    "L6": ["governance"],
-    "L7": ["adaptive_memory"],
+LEVEL_CAPS: dict[Level, list[str]] = {
+    Level.L0: [],
+    Level.L1: ["instruction_file"],
+    Level.L2: ["multiple_files"],
+    Level.L3: ["path_scoping"],
+    Level.L4: ["skills"],
+    Level.L5: ["agents"],
+    Level.L6: ["governance"],
+    Level.L7: ["adaptive_memory"],
 }
 
 # Capability → detection mapping (CLI-owned).
@@ -82,19 +82,19 @@ def determine_level_from_gates(features: DetectedFeatures) -> Level:
     reaches the level its richest surface supports instead of being capped at
     L2. A project with no instruction file at all is L0.
     """
-    if not _level_has_capability(features, Level.L1.value):
+    if not _level_has_capability(features, Level.L1):
         return Level.L0
 
     highest = Level.L0
     for level in _LEVEL_ORDER:
-        if _level_has_capability(features, level.value):
+        if _level_has_capability(features, level):
             highest = level
     return highest
 
 
-def _level_has_capability(features: DetectedFeatures, level_key: str) -> bool:
+def _level_has_capability(features: DetectedFeatures, level: Level) -> bool:
     """Check if at least one capability at the given level is detected (OR)."""
-    capabilities = LEVEL_CAPS.get(level_key, [])
+    capabilities = LEVEL_CAPS.get(level, [])
     if not capabilities:
         return True
     return any(_detect_capability(features, cap_id) for cap_id in capabilities)
