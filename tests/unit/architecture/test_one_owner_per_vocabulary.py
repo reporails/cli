@@ -433,10 +433,11 @@ def test_a1_dict_keyed_by_vocabulary_values_fires(tmp_path: Path) -> None:
             "vocab.py": _VOCAB,
             "install.py": _ENUM + '_LAUNCHERS = {"npm": InstallMethod.NPM, "npx": InstallMethod.NPX}\n',
             "red.py": 'from install import InstallMethod\nT = {"npm": 1, "uv": 2}\n',
+            "wrapped.py": 'WRAPPED = frozenset({"prose": 1, "list": 2})\n',
         },
     )
     found = private_group_violations(sources, tmp_path)
-    assert {v.key for v in found} == {"A1 red.py:2", "A1 install.py:6"}
+    assert {v.key for v in found} == {"A1 red.py:2", "A1 install.py:6", "A1 wrapped.py:1"}
 
 
 @pytest.mark.architecture

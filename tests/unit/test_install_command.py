@@ -47,7 +47,7 @@ def test_install_to_path_pins_a_floor_not_an_exact_version(monkeypatch: pytest.M
     `uv tool upgrade` keeps an `==` pin forever, so only a floor lets a later
     `ails update` / `uv tool upgrade` move the engine past this version.
     """
-    monkeypatch.setattr(install_module.shutil, "which", lambda cmd: None if cmd == "ails" else "/usr/bin/uv")
+    monkeypatch.setattr(install_module.shutil, "which", lambda cmd, path=None: None if cmd == "ails" else "/usr/bin/uv")
 
     calls: list[list[str]] = []
 
@@ -723,8 +723,14 @@ def _path_install(
     monkeypatch: pytest.MonkeyPatch, ails: str, uv: str | None, cache_dir: str | None
 ) -> tuple[bool, list[list[str]]]:
     """Run `_install_to_path` with `ails` on PATH, uv reporting `cache_dir` (None: the command fails)."""
-    found = {"ails": ails, "uv": uv}
-    monkeypatch.setattr(install_module.shutil, "which", lambda cmd: found.get(cmd))
+    monkeypatch.setenv("PATH", os.path.dirname(ails))
+
+    def which(cmd: str, mode: int = os.F_OK | os.X_OK, path: str | None = None) -> str | None:
+        if cmd == "uv":
+            return uv
+        return ails if path == os.path.dirname(ails) else None
+
+    monkeypatch.setattr(install_module.shutil, "which", which)
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: Any) -> MagicMock:

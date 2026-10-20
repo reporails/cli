@@ -63,7 +63,7 @@ uv tool install reporails-cli
 npm install -g @reporails/cli
 ```
 
-A global npm install stays on the version it installed; `ails update` prints the npm command that moves it to the latest release.
+A global npm install stays on the version it installed; `ails update` prints the npm command that moves it to the latest release. A bare `npx @reporails/cli` runs the latest release unless a copy is installed globally or in the project, where npx runs that copy.
 
 `ails install` then ensures the binary is on PATH. After it runs, `ails check` works from anywhere without the `npx` / `uvx` prefix.
 

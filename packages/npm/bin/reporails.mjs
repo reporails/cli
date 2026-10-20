@@ -4,14 +4,12 @@ import { execSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { platform } from "node:os";
 import { argv, env, exit } from "node:process";
-import { fileURLToPath } from "node:url";
 
 const PYPI_PACKAGE = "reporails-cli";
 const CLI_COMMAND = "ails";
 const VERSION = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ).version;
-const LAUNCHER = /[\\/]_npx[\\/]/.test(fileURLToPath(import.meta.url)) ? "npx" : "npm";
 
 const HELP = `
 ails — Validate and score AI instruction files
@@ -91,7 +89,7 @@ function proxy(args) {
 
   const child = spawn("uvx", ["--from", `${PYPI_PACKAGE}==${VERSION}`, CLI_COMMAND, ...args], {
     stdio: "inherit",
-    env: { ...env, AILS_LAUNCHER: LAUNCHER },
+    env: { ...env, AILS_LAUNCHER: "npm" },
   });
 
   child.on("error", (err) => {

@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import typer
 
@@ -65,8 +65,11 @@ def _uv_cache_dir(uv: str) -> str | None:
 
 
 def _is_temporary_ails(ails_path: str, uv: str | None) -> bool:
-    """True when `ails_path` sits in an npx cache or in uv's cache, i.e. a one-shot copy."""
-    if "_npx" in Path(ails_path).parts:
+    """True for an `ails` inside a `node_modules` folder or in uv's cache.
+
+    That is a one-shot or project copy, not a PATH install.
+    """
+    if "node_modules" in PureWindowsPath(ails_path).parts:
         return True
     cache = _uv_cache_dir(uv) if uv else None
     if cache:
@@ -78,8 +81,10 @@ def _install_to_path() -> bool:
     """Install ails to PATH via uv tool install. Returns True on success."""
     uv = shutil.which("uv")
     # Already on PATH as a real install (not uvx one-shot)?
-    ails_path = shutil.which("ails")
-    if ails_path and not _is_temporary_ails(ails_path, uv):
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    hits = (shutil.which("ails", path=entry) for entry in entries if entry)
+    ails_path = next((hit for hit in hits if hit and not _is_temporary_ails(hit, uv)), None)
+    if ails_path:
         console.print(f"  [dim]ails already on PATH: {ails_path}[/dim]")
         return True
 

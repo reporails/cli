@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from functools import cache
 from pathlib import Path
 
 from reporails_cli.core.platform.contract.errors import ConfigUnreadableError
@@ -13,9 +14,10 @@ def env_flag(var_name: str) -> bool:
     return os.environ.get(var_name, "").strip().lower() not in ("", "0", "false", "no", "off")
 
 
-def npm_launcher() -> str:
-    """The launcher named by AILS_LAUNCHER, stripped; blank when unset."""
-    return os.environ.get("AILS_LAUNCHER", "").strip()
+@cache
+def consume_npm_launch() -> bool:
+    """Whether the npm package started this process; the first call reads and clears the launch variable."""
+    return os.environ.pop("AILS_LAUNCHER", "").strip() == "npm"
 
 
 def parse_idle_timeout_env(var_name: str, default_s: int) -> int | None:

@@ -123,7 +123,7 @@ steps:
   - run: ails check
 ```
 
-Install a pinned version as shown (or `uvx --from "reporails-cli==<version>" ails check` where `uv` is set up). A pinned `npx @reporails/cli@<version>` or `npm install -g @reporails/cli@<version>` runs exactly that version from 0.6.5 on (earlier npm releases ran the latest release whatever version was named), so it can key the cache too; a bare `npx @reporails/cli` runs the latest release. `actions/cache` saves only when the job succeeds: a job that fails on `ails check --strict` findings saves nothing, and the next run downloads the model again. The GitHub Action keeps the model even when the check fails.
+Install a pinned version as shown (or `uvx --from "reporails-cli==<version>" ails check` where `uv` is set up). A pinned `npx @reporails/cli@<version>` or `npm install -g @reporails/cli@<version>` runs exactly that version from 0.6.5 on (earlier npm releases ran the latest release whatever version was named), so it can key the cache too; a bare `npx @reporails/cli` runs the latest release unless a copy is installed globally or in the project, where npx runs that copy. `actions/cache` saves only when the job succeeds: a job that fails on `ails check --strict` findings saves nothing, and the next run downloads the model again. The GitHub Action keeps the model even when the check fails.
 
 When `ails` downloads the model inside GitHub Actions, it prints a line pointing to this section.
 
