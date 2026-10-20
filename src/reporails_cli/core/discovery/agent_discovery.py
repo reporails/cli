@@ -524,9 +524,9 @@ def discover_from_config(
             buckets[surface[0]].extend(surface[1])
 
     return (
-        _dedupe_by_canonical(buckets["instruction"]),
-        _dedupe_by_canonical(buckets["rule"]),
-        _dedupe_by_canonical(buckets["config"]),
+        _dedupe_by_canonical(buckets["instruction"], target),
+        _dedupe_by_canonical(buckets["rule"], target),
+        _dedupe_by_canonical(buckets["config"], target),
     )
 
 
@@ -545,20 +545,22 @@ def _canonical_path(path: Path) -> Path:
         return path
 
 
-def _dedupe_by_canonical(paths: list[Path]) -> list[Path]:
+def _dedupe_by_canonical(paths: list[Path], root: Path) -> list[Path]:
     """Dedupe paths by their canonical (symlink-resolved) target, sorted.
 
     Two surface paths can refer to the same underlying file when one or
     both are symlinks (common pattern: `.claude/skills -> ../.agents/skills`).
     Naive `set(paths)` keeps both because path equality compares strings.
     Canonicalizing via `Path.resolve(strict=True)` collapses symlinks; of the
-    paths that share a target, the one with the fewest path parts (nearest the
-    scan root) stands for it, and equal depth keeps the first in sort order.
+    paths that share a target, one inside `root` stands for it over one outside,
+    then the one with the fewest path parts below `root`, then the first in sort order.
     """
-    best: dict[Path, Path] = {}
+    best: dict[Path, tuple[bool, int, Path]] = {}
     for p in sorted(set(paths)):
         canonical = _canonical_path(p)
+        inside = p.is_relative_to(root)
+        rank = (not inside, len(p.relative_to(root).parts) if inside else len(p.parts), p)
         kept = best.get(canonical)
-        if kept is None or len(p.parts) < len(kept.parts):
-            best[canonical] = p
-    return sorted(best.values())
+        if kept is None or rank[:2] < kept[:2]:
+            best[canonical] = rank
+    return sorted(rank[2] for rank in best.values())

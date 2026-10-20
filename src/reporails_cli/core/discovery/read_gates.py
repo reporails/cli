@@ -146,27 +146,33 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Mapping[Path, 
         if skip is None:
             kept.append(path)
             continue
-        folder = safe_resolve(path.parent)
-        same_as = claude_files.get(safe_resolve(path))
-        if same_as is not None and _loads_wherever_read(*same_as, folder):
-            aliases.append(AliasFile(path, same_as[0], "link"))
-            continue
-        twin = _file_with_same_text(path, claude_files, prefer=skip[1])
-        if twin is not None:
-            aliases.append(AliasFile(path, twin, "copy"))
+        alias = _alias_of(path, claude_files, prefer=skip[1])
+        if alias is not None:
+            aliases.append(alias)
             continue
         skipped.append(SkippedFile(path, *skip))
     return AgentsMdReads(kept, skipped, mode, aliases)
 
 
-def _file_with_same_text(path: Path, candidates: dict[Path, tuple[Path, str]], *, prefer: Path | None) -> Path | None:
-    """The `CLAUDE.md`-family file among `candidates` (by resolved path) that holds exactly the text
-    of `path` and loads in every session that reads `path`, the one at `prefer` first."""
+def _alias_of(path: Path, claude_files: dict[Path, tuple[Path, str]], *, prefer: Path | None) -> AliasFile | None:
+    """`path` as a `link` of, else a `copy` of, a `CLAUDE.md`-family file among `claude_files` (by resolved
+    path, with its loading) that loads in every session that reads `path`; None when it is neither."""
     folder = safe_resolve(path.parent)
+    same_as = claude_files.get(safe_resolve(path))
+    if same_as is not None and _loads_wherever_read(*same_as, folder):
+        return AliasFile(path, same_as[0], "link")
+    twin = _file_with_same_text(path, folder, claude_files, prefer=prefer)
+    return None if twin is None else AliasFile(path, twin, "copy")
+
+
+def _file_with_same_text(
+    path: Path, folder: Path, candidates: dict[Path, tuple[Path, str]], *, prefer: Path | None
+) -> Path | None:
+    """The `CLAUDE.md`-family file among `candidates` (by resolved path) that holds exactly the text
+    of `path` and loads in every session that reads `path` (whose resolved folder is `folder`), the one at
+    `prefer` first."""
     wanted = safe_resolve(prefer) if prefer is not None else None
-    ordered = [(r, c) for r, c in candidates.items() if r == wanted] + [
-        (r, c) for r, c in candidates.items() if r != wanted
-    ]
+    ordered = sorted(candidates.items(), key=lambda item: item[0] != wanted)
     return next(
         (
             file

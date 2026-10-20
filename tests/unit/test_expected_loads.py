@@ -708,3 +708,14 @@ def test_agents_md_linked_to_an_on_demand_claude_md_stays_skipped(tmp_path: Path
     out = expected_loads(root)
     assert out["aliases"] == []
     assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_project_claude_md_linking_to_the_user_claude_md_stays_the_project_main_file(tmp_path: Path) -> None:
+    root = tmp_path / "deep" / "a" / "b" / "c" / "p"
+    _write(Path.home() / ".claude" / "CLAUDE.md", _SHARED)
+    _link(root / "CLAUDE.md", str(Path.home() / ".claude" / "CLAUDE.md"))
+    out = expected_loads(root)
+    files = _by_name(out["files"], root.resolve())
+    assert (files["CLAUDE.md"]["file_type"], files["CLAUDE.md"]["precedence"]) == ("main", "project")
