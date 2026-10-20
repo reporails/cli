@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -72,3 +74,30 @@ def test_managed_only_leaves_out_launch_files_and_keeps_on_demand_ones(tmp_path:
     }
     assert home / ".claude" / "CLAUDE.md" not in skipped
     assert home / ".claude" / "CLAUDE.md" not in loaded
+
+
+@pytest.mark.integration
+@pytest.mark.subsys_classify
+def test_expected_loads_prunes_the_event_logs_it_names(tmp_path: Path) -> None:
+    for folder in MANAGED_FOLDERS:
+        if Path(folder).exists():
+            pytest.skip(f"managed Claude Code files at {folder} would be listed beside the isolated HOME's")
+    home = tmp_path / "home"
+    project = tmp_path / "proj"
+    _write(project / "CLAUDE.md")
+    xray = home / ".reporails" / "xray"
+    stale = xray / "old.1700000000000.0.jsonl"
+    fresh = xray / "new.1700000000000.0.jsonl"
+    _write(stale, "{}")
+    _write(fresh, "{}")
+    long_ago = time.time() - 40 * 86400
+    os.utime(stale, (long_ago, long_ago))
+    fresh.chmod(0o644)
+
+    out = _expected_loads(project, home)
+
+    assert out["event_log_dir"] == str(xray)
+    assert [Path(i["path"]).name for i in out["files"]] == ["CLAUDE.md"]
+    assert sorted(p.name for p in xray.iterdir()) == [fresh.name]
+    assert stat.S_IMODE(fresh.stat().st_mode) == 0o600
+    assert stat.S_IMODE(xray.stat().st_mode) == 0o700

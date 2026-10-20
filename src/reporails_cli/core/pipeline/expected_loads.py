@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
+import re
+import time
 from pathlib import Path
 
+from reporails_cli.core.cache.sweep import sweep
 from reporails_cli.core.discovery.agent_discovery import discover_from_config, discover_ungated
 from reporails_cli.core.discovery.exclusions import RunExclusions, load_run_exclusions
 from reporails_cli.core.discovery.project_root import resolve_project_root
@@ -14,6 +18,7 @@ from reporails_cli.core.platform.config.bootstrap import get_xray_log_dir
 from reporails_cli.core.platform.config.claude_settings import (
     LAUNCH_INSTRUCTION_FILE_TYPES,
     MODES_WITHOUT_LAUNCH_INSTRUCTIONS,
+    claude_cleanup_period_days,
     claude_instruction_files_mode,
 )
 from reporails_cli.core.platform.config.config import get_project_config
@@ -23,11 +28,41 @@ from reporails_cli.core.platform.utils.utils import strip_frontmatter
 
 AGENT = "claude"
 
+_LOG_RETENTION_DAYS = 30
+_LOG_FOLDER_MAX_BYTES = 100 * 1024 * 1024
+# `<session id>.<start ms>.<part>.jsonl`
+_LOG_NAME = re.compile(r"^[^.]+\.\d+\.\d+\.jsonl$")
+
+
+def _prune_event_logs(root: Path) -> None:
+    """Keep the x-ray's event-log folder private and small: mode 0700 folder, 0600 logs, whole
+    sessions removed after 30 days (sooner under Claude Code's `cleanupPeriodDays`), then oldest
+    sessions until the folder is under 100 MB. Best-effort: a folder or file that cannot be
+    read or changed is left alone and never changes the answer."""
+    # Best-effort housekeeping: an OSError here must not fail the command.
+    with contextlib.suppress(OSError):
+        folder = get_xray_log_dir()
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        folder.chmod(0o700)
+        logs = [p for p in folder.iterdir() if _LOG_NAME.match(p.name)]
+        for log in logs:
+            with contextlib.suppress(OSError):
+                log.chmod(0o600)
+        days = min(_LOG_RETENTION_DAYS, claude_cleanup_period_days(root) or _LOG_RETENTION_DAYS)
+        sweep(
+            logs,
+            unit_of=lambda p: p.name.split(".", 1)[0],
+            now=time.time(),
+            max_age_s=days * 86400,
+            max_bytes=_LOG_FOLDER_MAX_BYTES,
+        )
+
 
 def expected_loads(target: Path) -> JsonObject:
     """The files Claude Code loads for a session in `target` (instruction and rule files, no config
     surfaces) with their file type, loading mode and precedence, and the AGENTS.md files it skips."""
     root = resolve_project_root(target)
+    _prune_event_logs(root)
     exclusions = load_run_exclusions(root, None, None)
     project_config = get_project_config(root)
     registry = _load_registry()

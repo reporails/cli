@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+import time
 from pathlib import Path
 
 import pytest
@@ -419,3 +422,128 @@ def test_skip_without_a_claude_file_has_no_cause(tmp_path: Path) -> None:
     _write(root / ".agents" / "AGENTS.md")
     _mode("claude-md")
     assert set(_causes(expected_loads(root), root).values()) == {None}
+
+
+# --- event-log folder: private and pruned ---------------------------------------------------
+
+DAY = 86400.0
+
+
+def _log(folder: Path, session: str, part: int, age_days: float, size: int = 10) -> Path:
+    path = folder / f"{session}.1700000000000.{part}.jsonl"
+    folder.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+    stamp = time.time() - age_days * DAY
+    os.utime(path, (stamp, stamp))
+    return path
+
+
+def _xray() -> Path:
+    return Path.home() / ".reporails" / "xray"
+
+
+def _answer(root: Path) -> dict:
+    out = expected_loads(root)
+    return {k: v for k, v in out.items() if k != "event_log_dir"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_sessions_older_than_thirty_days_are_removed_whole(tmp_path: Path) -> None:
+    folder = _xray()
+    _log(folder, "stale", 0, 45)
+    _log(folder, "stale", 1, 5)  # the newest file keeps the session
+    _log(folder, "dead", 0, 31)
+    _log(folder, "dead", 1, 40)
+    _log(folder, "fresh", 0, 29)
+    expected_loads(_project(tmp_path))
+    assert sorted(p.name.split(".")[0] for p in folder.iterdir()) == ["fresh", "stale", "stale"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_cleanup_period_days_shortens_the_retention(tmp_path: Path) -> None:
+    _write(Path.home() / ".claude" / "settings.json", json.dumps({"cleanupPeriodDays": 3}))
+    folder = _xray()
+    _log(folder, "old", 0, 4)
+    _log(folder, "new", 0, 2)
+    expected_loads(_project(tmp_path))
+    assert [p.name.split(".")[0] for p in folder.iterdir()] == ["new"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_cleanup_period_days_never_lengthens_the_retention(tmp_path: Path) -> None:
+    _write(Path.home() / ".claude" / "settings.json", json.dumps({"cleanupPeriodDays": 90}))
+    folder = _xray()
+    _log(folder, "old", 0, 40)
+    expected_loads(_project(tmp_path))
+    assert list(folder.iterdir()) == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_oversize_folder_loses_oldest_sessions_first(tmp_path: Path) -> None:
+    mb = 1024 * 1024
+    folder = _xray()
+    _log(folder, "a", 0, 20, 40 * mb)
+    _log(folder, "a", 1, 19, 10 * mb)
+    _log(folder, "b", 0, 10, 40 * mb)
+    _log(folder, "c", 0, 1, 40 * mb)  # 130 MB in all
+    expected_loads(_project(tmp_path))
+    assert sorted(p.name.split(".")[0] for p in folder.iterdir()) == ["b", "c"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_non_log_files_are_left_alone_and_logs_become_private(tmp_path: Path) -> None:
+    folder = _xray()
+    other = _write(folder / "notes.txt", "mine")
+    oddly = _write(folder / "plain.jsonl", "{}")  # not the log name pattern
+    for p in (other, oddly):
+        os.utime(p, (1, 1))
+    log = _log(folder, "s", 0, 1)
+    log.chmod(0o644)
+    folder.chmod(0o755)
+    expected_loads(_project(tmp_path))
+    assert other.read_text() == "mine"
+    assert oddly.exists()
+    assert stat.S_IMODE(log.stat().st_mode) == 0o600
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_missing_folder_is_created_private(tmp_path: Path) -> None:
+    expected_loads(_project(tmp_path))
+    assert stat.S_IMODE(_xray().stat().st_mode) == 0o700
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_unusable_log_folder_leaves_the_answer_unchanged(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    before = _answer(root)
+    _xray().rmdir()
+    _write(_xray(), "a file where the folder should be")
+    assert _answer(root) == before
+    assert _xray().read_text() == "a file where the folder should be"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_unreadable_entry_leaves_the_answer_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md")
+    before = _answer(root)
+    log = _log(_xray(), "s", 0, 1)
+    real = Path.chmod
+
+    def refuse(self: Path, *args: object, **kwargs: object) -> None:
+        if self == log:
+            raise PermissionError(self)
+        real(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "chmod", refuse)
+    assert _answer(root) == before

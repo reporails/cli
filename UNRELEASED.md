@@ -8,6 +8,7 @@
 
 - A global npm install stays on its version until you update it; `ails version` shows `npm` for an install from the npm package (npx included) and `ails update` prints the command that updates it.
 - A run through the npm package no longer re-checks the package index for a newer release every time it starts.
+- The context x-ray's event logs in `~/.reporails/xray/` are private to you, removed after 30 days (sooner if Claude Code is set to keep sessions for less), and the folder stays under 100 MB.
 - `ails expected-loads` names, for each AGENTS.md Claude Code skips, the `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` that made it skip the file.
 - The MCP `validate` tool now tells the agent which messages are announcements from reporails, so it shows them as announcements rather than as account messages.
 

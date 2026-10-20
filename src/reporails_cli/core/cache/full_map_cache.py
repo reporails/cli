@@ -24,6 +24,7 @@ import logging
 from pathlib import Path
 
 from reporails_cli.core.cache.map_cache import _CACHE_VERSION, content_hash
+from reporails_cli.core.cache.sweep import sweep
 from reporails_cli.core.mapper.bio_graphs import multislot_fingerprint
 from reporails_cli.core.mapper.imports import expand_imports
 from reporails_cli.core.mapper.serialize import load_ruleset_map, save_ruleset_map
@@ -149,16 +150,5 @@ class FullMapCache:
         self._evict()
 
     def _evict(self) -> None:
-        """Delete least-recently-used entries beyond the cap. Parallel writers sweep the same
-        directory, so an entry listed here can be gone before it is stat'd — it is skipped,
-        never raised into the caller's map."""
-        dated: list[tuple[float, Path]] = []
-        for entry in self.dir.glob("*.json"):
-            try:
-                dated.append((entry.stat().st_mtime, entry))
-            except OSError:
-                continue
-        dated.sort(key=lambda pair: pair[0])
-        for _mtime, stale in dated[:-_MAX_ENTRIES]:
-            with contextlib.suppress(OSError):
-                stale.unlink(missing_ok=True)
+        """Delete least-recently-used entries beyond the cap."""
+        sweep(self.dir.glob("*.json"), max_units=_MAX_ENTRIES)

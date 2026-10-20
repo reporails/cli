@@ -158,3 +158,25 @@ def claude_instruction_files_mode(project_root: Path | None = None) -> str:
         if value is not None:
             return value if value in _MODES else MODE_CLAUDE_MD_OR_AGENTS_MD
     return MODE_CLAUDE_MD_OR_AGENTS_MD
+
+
+def _cleanup_days_value(data: JsonObject) -> int | None:
+    value = data.get("cleanupPeriodDays")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def claude_cleanup_period_days(project_root: Path | None = None) -> int | None:
+    """Days Claude Code keeps a session, from its `cleanupPeriodDays` setting, or None when no
+    settings file sets a positive whole number. Files are read in Claude Code's precedence: the
+    user's, then the project's shared and local ones, then managed settings, the last to set it
+    winning. It is Claude Code's setting, so an invalid value reads as unset."""
+    scopes = _settings_patterns()
+    files = (
+        _expand(scopes.get("user", []), None)
+        + _expand(scopes.get("project", []), project_root)
+        + _expand(scopes.get("local", []), project_root)
+        + _managed_files(scopes)
+    )
+    return _last_set(files, _cleanup_days_value)
