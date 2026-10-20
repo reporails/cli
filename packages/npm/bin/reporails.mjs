@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { execSync, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { platform } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { delimiter, join } from "node:path";
 import { argv, env, exit } from "node:process";
 
 const PYPI_PACKAGE = "reporails-cli";
@@ -52,8 +53,28 @@ function commandExists(cmd) {
   }
 }
 
-function ensureUv() {
-  if (commandExists("uv")) return;
+// The folders Astral's uv installer writes to, in the installer's own order.
+function uvInstallDirs() {
+  const dirs = [];
+  if (env.UV_INSTALL_DIR) dirs.push(env.UV_INSTALL_DIR);
+  if (env.XDG_BIN_HOME) dirs.push(env.XDG_BIN_HOME);
+  if (env.XDG_DATA_HOME) dirs.push(join(env.XDG_DATA_HOME, "..", "bin"));
+  dirs.push(join(homedir(), ".local", "bin"));
+  return dirs;
+}
+
+function findInstalledUvx() {
+  const file = platform() === "win32" ? "uvx.exe" : "uvx";
+  const dir = uvInstallDirs().find((d) => existsSync(join(d, file)));
+  return dir ? { cmd: join(dir, file), dir } : null;
+}
+
+// Returns the uvx to run: on PATH, else in the installer's folders, else
+// installed first. `dir` is set when uvx is not on PATH.
+function ensureUvx() {
+  if (commandExists("uvx")) return { cmd: "uvx", dir: null };
+  const found = findInstalledUvx();
+  if (found) return found;
 
   console.log("uv not found — installing...");
   try {
@@ -72,12 +93,14 @@ function ensureUv() {
     exit(1);
   }
 
-  if (!commandExists("uv")) {
+  const installed = commandExists("uvx") ? { cmd: "uvx", dir: null } : findInstalledUvx();
+  if (!installed) {
     console.error(
-      "uv was installed but is not on PATH. Restart your shell or add it to PATH, then retry.",
+      `uv was installed but uvx was not found on PATH or in ${uvInstallDirs().join(", ")}. Add uv's folder to PATH, then retry.`,
     );
     exit(1);
   }
+  return installed;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,11 +108,13 @@ function ensureUv() {
 // ---------------------------------------------------------------------------
 
 function proxy(args) {
-  ensureUv();
+  const uvx = ensureUvx();
+  const childEnv = { ...env, AILS_LAUNCHER: "npm" };
+  if (uvx.dir) childEnv.PATH = env.PATH ? `${uvx.dir}${delimiter}${env.PATH}` : uvx.dir;
 
-  const child = spawn("uvx", ["--from", `${PYPI_PACKAGE}==${VERSION}`, CLI_COMMAND, ...args], {
+  const child = spawn(uvx.cmd, ["--from", `${PYPI_PACKAGE}==${VERSION}`, CLI_COMMAND, ...args], {
     stdio: "inherit",
-    env: { ...env, AILS_LAUNCHER: "npm" },
+    env: childEnv,
   });
 
   child.on("error", (err) => {

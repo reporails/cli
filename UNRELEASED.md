@@ -14,6 +14,9 @@
 
 ### Fixed
 
+- A first run through `npx` on a machine without `uv` installs `uv` and finishes your command, instead of stopping to ask you to restart your shell.
+- `ails install` run through npx, `pnpm dlx` or `bunx`, or from a project's own dependency, puts `ails` on your PATH instead of reporting that copy as already installed. An `ails` in the current folder that is not on PATH no longer counts as installed.
+- A project's CLAUDE.md that a subfolder's CLAUDE.md links to is listed and checked as the project's main file, not as that subfolder's file.
 - `ails install` run through npx, `pnpm dlx` or `bunx`, or from a project's own dependency, puts `ails` on your PATH instead of reporting that copy as already installed.
 - On Windows, `ails install` no longer counts an `ails` in the current folder or in uv's cache as installed, and an empty PATHEXT no longer hides an installed `ails`.
 - `ails update` reports a uv run that cannot start or times out, instead of crashing.
