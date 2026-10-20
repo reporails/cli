@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from reporails_cli.core.discovery.read_gates import claude_agents_md_reads
 from reporails_cli.core.pipeline.expected_loads import expected_loads
 from reporails_cli.core.platform.config import claude_settings
 from reporails_cli.interfaces.cli.main import app
@@ -667,3 +668,43 @@ def test_symlinked_project_root_still_prefers_the_file_that_made_the_agents_md_s
         pytest.skip("symlinks cannot be created here")
     out = expected_loads(link)
     assert [Path(a["same_as"]).name for a in out["aliases"]] == ["CLAUDE.md"]
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_project_claude_md_a_subfolder_links_to_stays_the_main_file(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md", "# Root\n- Use pnpm.\n")
+    _link(root / "A" / "CLAUDE.md", "../CLAUDE.md")
+    _write(root / "AGENTS.md", "# Root\n- Use pnpm.\n")
+    out = expected_loads(root)
+    files = _by_name(out["files"], root.resolve())
+    assert (files["CLAUDE.md"]["file_type"], files["CLAUDE.md"]["loading"]) == ("main", "session_start")
+    assert "A/CLAUDE.md" not in files
+    assert _alias_names(out, root) == {"AGENTS.md": "CLAUDE.md"}
+    assert _how_by_name(out, root) == {"AGENTS.md": "copy"}
+    assert out["skipped"] == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_is_a_copy_of_a_managed_claude_md(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    managed = _write(tmp_path / "managed" / "CLAUDE.md", _SHARED)
+    _write(root / "CLAUDE.md", "# Root\n\n- Use pnpm.\n")
+    _write(root / "AGENTS.md", _SHARED)
+    reads = claude_agents_md_reads([root / "AGENTS.md"], root, {managed: "session_start"})
+    assert [(a.path, a.same_as, a.how) for a in reads.aliases] == [(root / "AGENTS.md", managed, "copy")]
+    assert reads.skipped == []
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_linked_to_an_on_demand_claude_md_stays_skipped(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md", "# Root\n\n- Use pnpm.\n")
+    _write(root / "pkg" / "CLAUDE.md", _SHARED)
+    _link(root / "AGENTS.md", "pkg/CLAUDE.md")
+    out = expected_loads(root)
+    assert out["aliases"] == []
+    assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present"}

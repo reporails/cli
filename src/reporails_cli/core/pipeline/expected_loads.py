@@ -106,14 +106,14 @@ def expected_loads(target: Path) -> JsonObject:
 
 def _loaded_files(
     exclusions: RunExclusions, project_config: ProjectConfig, root: Path, registry: dict[str, JsonObject], mode: str
-) -> tuple[list[JsonValue], list[Path], dict[Path, str]]:
+) -> tuple[list[JsonValue], dict[Path, str], dict[Path, str]]:
     """The non-empty instruction and rule files Claude Code loads (the user's own included), the instruction
     files among them, and the launch files the `instructionFiles` setting turns off (each with its
     file type)."""
     found = discover_from_config(root, AGENT, exclusions.walk_dirs, project_config=project_config, repo_scoped=False)
     instruction, rules = (set(bucket) for bucket in found[:2]) if found is not None else (set(), set())
     files: list[JsonValue] = []
-    read_instructions: list[Path] = []
+    read_instructions: dict[Path, str] = {}
     switched_off: dict[Path, str] = {}
     for path in sorted(p for p in instruction | rules if not exclusions.leaves_out(p)):
         read = file_read_by(AGENT, path, root, registry)
@@ -128,7 +128,7 @@ def _loaded_files(
             switched_off[path] = read.file_type
             continue
         if path in instruction:
-            read_instructions.append(path)
+            read_instructions[path] = read.loading
         files.append(
             {"path": str(path), "file_type": read.file_type, "loading": read.loading, "precedence": read.precedence}
         )

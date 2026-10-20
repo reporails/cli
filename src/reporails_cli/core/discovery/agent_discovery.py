@@ -546,20 +546,19 @@ def _canonical_path(path: Path) -> Path:
 
 
 def _dedupe_by_canonical(paths: list[Path]) -> list[Path]:
-    """Sort and dedupe paths by their canonical (symlink-resolved) target.
+    """Dedupe paths by their canonical (symlink-resolved) target, sorted.
 
     Two surface paths can refer to the same underlying file when one or
     both are symlinks (common pattern: `.claude/skills -> ../.agents/skills`).
     Naive `set(paths)` keeps both because path equality compares strings.
-    Canonicalizing via `Path.resolve(strict=True)` collapses symlinks; the
-    first surface path encountered for a canonical target wins.
+    Canonicalizing via `Path.resolve(strict=True)` collapses symlinks; of the
+    paths that share a target, the one with the fewest path parts (nearest the
+    scan root) stands for it, and equal depth keeps the first in sort order.
     """
-    seen_canonical: set[Path] = set()
-    out: list[Path] = []
+    best: dict[Path, Path] = {}
     for p in sorted(set(paths)):
         canonical = _canonical_path(p)
-        if canonical in seen_canonical:
-            continue
-        seen_canonical.add(canonical)
-        out.append(p)
-    return out
+        kept = best.get(canonical)
+        if kept is None or len(p.parts) < len(kept.parts):
+            best[canonical] = p
+    return sorted(best.values())

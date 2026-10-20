@@ -16,7 +16,7 @@ Anything under a `.agents/` directory is never read.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -125,11 +125,12 @@ class AgentsMdReads:
     aliases: list[AliasFile]
 
 
-def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path] = ()) -> AgentsMdReads:
+def claude_agents_md_reads(found: list[Path], target: Path, read: Mapping[Path, str] | None = None) -> AgentsMdReads:
     """Split the `AGENTS.md` files among `found` into those Claude Code loads for a session in
     `target` and those it skips, each skipped file with its reason. A skipped file that is the same
     file as, or holds exactly the text of, a `CLAUDE.md`-family file among `read` (the instruction
-    files the session reads) is reported as an alias of it instead."""
+    files the session reads, each with its loading) is reported as an alias of it instead, when that file
+    loads in every session where the `AGENTS.md` would."""
     if not found:
         return AgentsMdReads([], [], "", [])
     root = resolve_project_root(target)
@@ -139,17 +140,18 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
     aliases: list[AliasFile] = []
     claude_above = claude_file_at_or_above(root) if mode == MODE_CLAUDE_MD_OR_AGENTS_MD else None
     user_file = _user_claude_md()
-    claude_files = {} if mode in MODES_WITHOUT_LAUNCH_INSTRUCTIONS else _claude_files_by_identity(read, root)
+    claude_files = {} if mode in MODES_WITHOUT_LAUNCH_INSTRUCTIONS else _claude_files_by_identity(read or {}, root)
     for path in found:
         skip = _skip_reason(path, root, mode, claude_above=claude_above, user_file=user_file)
         if skip is None:
             kept.append(path)
             continue
+        folder = safe_resolve(path.parent)
         same_as = claude_files.get(safe_resolve(path))
-        if same_as is not None:
-            aliases.append(AliasFile(path, same_as, "link"))
+        if same_as is not None and _loads_wherever_read(*same_as, folder):
+            aliases.append(AliasFile(path, same_as[0], "link"))
             continue
-        twin = _file_with_same_text(path, list(claude_files.items()), prefer=skip[1], user_file=user_file)
+        twin = _file_with_same_text(path, claude_files, prefer=skip[1])
         if twin is not None:
             aliases.append(AliasFile(path, twin, "copy"))
             continue
@@ -157,38 +159,39 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
     return AgentsMdReads(kept, skipped, mode, aliases)
 
 
-def _file_with_same_text(
-    path: Path, candidates: list[tuple[Path, Path]], *, prefer: Path | None, user_file: Path
-) -> Path | None:
-    """The `CLAUDE.md`-family file among `candidates` (resolved path, path) that holds exactly the text
-    of `path` and is read in every session that reads `path`, the one at `prefer` first."""
+def _file_with_same_text(path: Path, candidates: dict[Path, tuple[Path, str]], *, prefer: Path | None) -> Path | None:
+    """The `CLAUDE.md`-family file among `candidates` (by resolved path) that holds exactly the text
+    of `path` and loads in every session that reads `path`, the one at `prefer` first."""
     folder = safe_resolve(path.parent)
     wanted = safe_resolve(prefer) if prefer is not None else None
-    ordered = [pair for pair in candidates if pair[0] == wanted] + [pair for pair in candidates if pair[0] != wanted]
+    ordered = [(r, c) for r, c in candidates.items() if r == wanted] + [
+        (r, c) for r, c in candidates.items() if r != wanted
+    ]
     return next(
         (
             file
-            for resolved, file in ordered
-            if _read_wherever_read(resolved, file, folder, user_file) and has_same_text(path, file)
+            for _, (file, loading) in ordered
+            if _loads_wherever_read(file, loading, folder) and has_same_text(path, file)
         ),
         None,
     )
 
 
-def _read_wherever_read(resolved: Path, claude_file: Path, folder: Path, user_file: Path) -> bool:
-    """True when `claude_file` is the user's own `~/.claude/CLAUDE.md`, or sits in `folder` or a folder above it;
+def _loads_wherever_read(claude_file: Path, loading: str, folder: Path) -> bool:
+    """True when `claude_file` loads at session start, or on demand for `folder` or a folder above it;
     for a `.claude/CLAUDE.md` the folder that counts is the one holding `.claude/`."""
-    if resolved == user_file:
+    if loading == "session_start":
         return True
     owner = safe_resolve(_claude_file_folder(claude_file))
     return owner == folder or owner in folder.parents
 
 
-def _claude_files_by_identity(read: Iterable[Path], root: Path) -> dict[Path, Path]:
-    """The `CLAUDE.md`-family files among `read`, each under the resolved path it is the same file as.
-    A file under a `.agents/` directory of the project is not one Claude Code reads. The dict is ordered by path."""
+def _claude_files_by_identity(read: Mapping[Path, str], root: Path) -> dict[Path, tuple[Path, str]]:
+    """The `CLAUDE.md`-family files among `read`, each under the resolved path it is the same file as,
+    with its loading. A file under a `.agents/` directory of the project is not one Claude Code reads.
+    The dict is ordered by path."""
     return {
-        safe_resolve(path): path
+        safe_resolve(path): (path, read[path])
         for path in sorted(read, key=str)
         if path.name.lower() in _CLAUDE_FAMILY and not _in_agents_dir(path, root)
     }
