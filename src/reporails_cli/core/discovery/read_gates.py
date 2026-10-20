@@ -55,6 +55,12 @@ def _claude_file_in(directory: Path, user_file: Path) -> Path | None:
     return _file_named(directory, "claude.local.md")
 
 
+def _claude_file_folder(claude_file: Path) -> Path:
+    """The folder a `CLAUDE.md`-family file belongs to: the one holding `.claude/` for a `.claude/CLAUDE.md`."""
+    parent = claude_file.parent
+    return parent.parent if parent.name.lower() == ".claude" else parent
+
+
 def _user_claude_md() -> Path:
     return safe_resolve(Path.home() / ".claude" / "CLAUDE.md")
 
@@ -143,7 +149,7 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
         if same_as is not None:
             aliases.append(AliasFile(path, same_as, "link"))
             continue
-        twin = _file_with_same_text(path, claude_files.values(), prefer=skip[1])
+        twin = _file_with_same_text(path, list(claude_files.items()), prefer=skip[1], user_file=user_file)
         if twin is not None:
             aliases.append(AliasFile(path, twin, "copy"))
             continue
@@ -151,18 +157,39 @@ def claude_agents_md_reads(found: list[Path], target: Path, read: Iterable[Path]
     return AgentsMdReads(kept, skipped, mode, aliases)
 
 
-def _file_with_same_text(path: Path, claude_files: Iterable[Path], *, prefer: Path | None) -> Path | None:
-    """The `CLAUDE.md`-family file Claude Code reads that holds exactly the text of `path`, `prefer` first."""
-    candidates = sorted(claude_files, key=lambda file: (file != prefer, str(file)))
-    return next((file for file in candidates if has_same_text(path, file)), None)
+def _file_with_same_text(
+    path: Path, candidates: list[tuple[Path, Path]], *, prefer: Path | None, user_file: Path
+) -> Path | None:
+    """The `CLAUDE.md`-family file among `candidates` (resolved path, path) that holds exactly the text
+    of `path` and is read in every session that reads `path`, the one at `prefer` first."""
+    folder = safe_resolve(path.parent)
+    wanted = safe_resolve(prefer) if prefer is not None else None
+    ordered = [pair for pair in candidates if pair[0] == wanted] + [pair for pair in candidates if pair[0] != wanted]
+    return next(
+        (
+            file
+            for resolved, file in ordered
+            if _read_wherever_read(resolved, file, folder, user_file) and has_same_text(path, file)
+        ),
+        None,
+    )
+
+
+def _read_wherever_read(resolved: Path, claude_file: Path, folder: Path, user_file: Path) -> bool:
+    """True when `claude_file` is the user's own `~/.claude/CLAUDE.md`, or sits in `folder` or a folder above it;
+    for a `.claude/CLAUDE.md` the folder that counts is the one holding `.claude/`."""
+    if resolved == user_file:
+        return True
+    owner = safe_resolve(_claude_file_folder(claude_file))
+    return owner == folder or owner in folder.parents
 
 
 def _claude_files_by_identity(read: Iterable[Path], root: Path) -> dict[Path, Path]:
     """The `CLAUDE.md`-family files among `read`, each under the resolved path it is the same file as.
-    A file under a `.agents/` directory of the project is not one Claude Code reads."""
+    A file under a `.agents/` directory of the project is not one Claude Code reads. The dict is ordered by path."""
     return {
         safe_resolve(path): path
-        for path in read
+        for path in sorted(read, key=str)
         if path.name.lower() in _CLAUDE_FAMILY and not _in_agents_dir(path, root)
     }
 

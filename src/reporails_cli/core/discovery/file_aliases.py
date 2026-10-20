@@ -24,9 +24,9 @@ AliasHow = Literal["link", "copy"]
 
 
 def has_same_text(first: Path, second: Path) -> bool:
-    """True when both files can be read and hold exactly the same bytes."""
+    """True when both files can be read and hold exactly the same bytes; bytes are read only when the sizes match."""
     try:
-        return first.read_bytes() == second.read_bytes()
+        return first.stat().st_size == second.stat().st_size and first.read_bytes() == second.read_bytes()
     except OSError:
         return False
 

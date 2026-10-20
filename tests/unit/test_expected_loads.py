@@ -607,3 +607,63 @@ def test_agents_md_with_the_text_of_a_read_claude_md_is_a_copy_whatever_the_skip
     else:
         assert out["aliases"] == []
         assert _skipped_reasons(out, root) == {agents.as_posix(): reason}
+
+
+_SHARED = "# Shared\n\n- Write tests.\n"
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_agents_md_is_not_a_copy_of_a_claude_md_that_loads_only_in_a_subfolder(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md", "# Root\n\n- Use pnpm.\n")
+    _write(root / "AGENTS.md", _SHARED)
+    _write(root / "pkg" / "CLAUDE.md", _SHARED)
+    out = expected_loads(root)
+    assert out["aliases"] == []
+    assert _skipped_reasons(out, root) == {"AGENTS.md": "claude_md_present"}
+    causes = {k: v["cause"] for k, v in _by_name(out["skipped"], root).items()}
+    assert causes == {"AGENTS.md": str(root.resolve() / "CLAUDE.md")}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_subfolder_agents_md_is_a_copy_of_the_claude_md_beside_it(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _write(root / "pkg" / "CLAUDE.md", _SHARED)
+    _write(root / "pkg" / "AGENTS.md", _SHARED)
+    out = expected_loads(root)
+    assert _alias_names(out, root) == {"pkg/AGENTS.md": "pkg/CLAUDE.md"}
+    assert _how_by_name(out, root) == {"pkg/AGENTS.md": "copy"}
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+@pytest.mark.parametrize("source", ["root", "user"])
+def test_agents_md_is_a_copy_of_a_claude_md_that_loads_wherever_it_would(tmp_path: Path, source: str) -> None:
+    root = _project(tmp_path)
+    _write(root / "CLAUDE.md", _SHARED if source == "root" else "# Root\n\n- Use pnpm.\n")
+    if source == "user":
+        _write(Path.home() / ".claude" / "CLAUDE.md", _SHARED)
+    _write(root / "AGENTS.md", _SHARED)
+    out = expected_loads(root)
+    assert _how_by_name(out, root) == {"AGENTS.md": "copy"}
+    assert _skipped_reasons(out, root) == {}
+    if source == "user":
+        assert out["aliases"][0]["same_as"] == str(Path.home().resolve() / ".claude" / "CLAUDE.md")
+
+
+@pytest.mark.unit
+@pytest.mark.subsys_classify
+def test_symlinked_project_root_still_prefers_the_file_that_made_the_agents_md_skip(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    _write(real / "CLAUDE.md", _SHARED)
+    _write(real / "CLAUDE.local.md", _SHARED)
+    _write(real / "AGENTS.md", _SHARED)
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks cannot be created here")
+    out = expected_loads(link)
+    assert [Path(a["same_as"]).name for a in out["aliases"]] == ["CLAUDE.md"]
